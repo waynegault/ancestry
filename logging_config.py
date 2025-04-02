@@ -160,16 +160,19 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
                     updated_console = True
             # Find File Handler
             elif isinstance(handler, logging.FileHandler):
+                # --- Corrected: Update file handler level as well ---
                 if handler.level != numeric_log_level:
                     handler.setLevel(numeric_log_level)
                     updated_file = True
+                 # --- End Correction ---
 
         if updated_console or updated_file:
             # Log only if something actually changed
-            logger_for_setup.info(f"Log levels updated. Console/File set to {log_level_upper}.")
+            # Use logger directly now as it's initialized
+            logger.info(f"Log levels updated. Console/File set to {log_level_upper}.")
         else:
             # Avoid logging if no change occurred on toggle
-            logger_for_setup.debug(f"Log levels already set to {log_level_upper}. No update needed.")
+            logger.debug(f"Log levels already set to {log_level_upper}. No update needed.")
         return logger # Return the existing logger
 
     # --- First-Time Initialization ---
@@ -214,8 +217,8 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
         # Use standard FileHandler, mode='a' for append between clears
         file_handler = logging.FileHandler(log_file_for_handler, mode='a', encoding="utf-8")
         file_handler.setFormatter(formatter)
-        # >>> MODIFICATION: Set file handler level dynamically <<<
-        file_handler.setLevel(numeric_log_level)
+        # Set file handler level dynamically based on validated input
+        file_handler.setLevel(numeric_log_level) # Use the validated level
         logger.addHandler(file_handler)
         # Log the actual level being used
         logger_for_setup.debug(f"Added standard FileHandler for: {log_file_for_handler} (Level: {log_level_upper})")
@@ -242,6 +245,9 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     try:
         # Set levels first
         logging.getLogger("urllib3").setLevel(logging.WARNING)
+        # *** ADD THIS LINE ***
+        logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+        # *********************
         logging.getLogger("selenium.webdriver.remote.remote_connection").setLevel(logging.INFO)
         logging.getLogger("selenium").setLevel(logging.INFO)
         logging.getLogger("websockets").setLevel(logging.INFO)
@@ -257,11 +263,14 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
         # --- END NEW ---
 
         logger_for_setup.debug("Set external library log levels and handled urllib3 propagation/handlers.")
+        # Add confirmation log for the specific pool logger
+        logger_for_setup.debug(f"urllib3.connectionpool logging level set to WARNING.")
+
     except Exception as e:
         logger_for_setup.error(f"Error setting library log levels: {e}", exc_info=True)
 
     _logging_initialized = True
-    # >>> MODIFICATION: Update final log message <<<
+    # Update final log message to reflect the actual level set for both handlers
     logger_for_setup.info(f"Logging setup complete. Logger '{logger.name}' configured. Console/File Level: {log_level_upper}")
 
     # Redirect setup messages to the main logger now if desired, or keep separate
@@ -270,6 +279,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
 
     return logger
 # end setup_logging
+
 
 # --- Standalone Test Block ---
 if __name__ == "__main__":
