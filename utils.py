@@ -1556,23 +1556,19 @@ class SessionManager:
 
 def _api_req(
     url: str,
-    driver: Optional[WebDriver], # Keep driver for potential header generation (UBE)
+    driver: Optional[WebDriver],
     session_manager: SessionManager,
     method: str = "GET",
-    data: Optional[Dict] = None, # For form data (requests only)
-    json_data: Optional[Dict] = None, # For JSON body
+    data: Optional[Dict] = None,
+    json_data: Optional[Dict] = None,
     use_csrf_token: bool = True,
     headers: Optional[Dict] = None,
-    referer_url: Optional[str] = None, # Keep for potential header setting
+    referer_url: Optional[str] = None,
     api_description: str = "API Call",
-    force_requests: bool = False, # Flag to force using requests library
-    timeout: Optional[int] = None # Timeout specifically for requests library call
+    timeout: Optional[int] = None
 ) -> Optional[Any]:
     """
-    Makes an HTTP request with built-in retry logic for specific status codes
-    and network errors. Uses Python requests library if force_requests=True or
-    method is POST/PUT/PATCH/DELETE. Otherwise, uses driver.execute_script
-    with the Fetch API (primarily for GET).
+    V13 REVISED: Makes an HTTP request using Python requests library with retry logic.
     Handles headers, CSRF, cookies, and rate limiting interaction.
     """
     if not session_manager:
@@ -1581,41 +1577,33 @@ def _api_req(
 
     # --- Retry Configuration ---
     max_retries = config_instance.MAX_RETRIES
-    initial_delay = config_instance.BACKOFF_FACTOR # Use backoff factor as base for initial delay
+    initial_delay = config_instance.BACKOFF_FACTOR
     backoff_factor = config_instance.BACKOFF_FACTOR
     max_delay = config_instance.MAX_DELAY
-    # Status codes that warrant a retry (fetch from config)
     retry_status_codes = config_instance.RETRY_STATUS_CODES
 
-    # --- Determine Method: JS Fetch or Python Requests ---
-    use_requests_lib = force_requests or method.upper() in ["POST", "PUT", "PATCH", "DELETE"]
-
-    # --- Prepare Headers (Common Logic - remains the same) ---
+    # --- Prepare Headers (Common Logic) ---
     final_headers = {}
-    # Start with contextual headers from config
     contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {})
     final_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
-    # Add/override with explicitly passed headers
     if headers:
         final_headers.update({k: v for k, v in headers.items() if v is not None})
-    # Ensure User-Agent
     if 'User-Agent' not in final_headers:
         ua = None
-        if driver:
+        # Attempt to get from driver first for consistency if available
+        if driver and session_manager.is_sess_valid(): # Check validity
             try: ua = driver.execute_script("return navigator.userAgent;")
-            except Exception: pass # Ignore if driver fails
+            except Exception: logger.warning(f"{api_description}: Failed to get User-Agent from driver, using random.")
         if not ua: ua = random.choice(config_instance.USER_AGENTS)
         final_headers['User-Agent'] = ua
-    # Ensure Referer if needed
     if referer_url and 'Referer' not in final_headers:
         final_headers['Referer'] = referer_url
-    # Add CSRF if required
     if use_csrf_token:
         csrf = session_manager.csrf_token
         if csrf: final_headers['X-CSRF-Token'] = csrf
         else: logger.warning(f"{api_description}: CSRF token required but not available.")
-    # Add UBE if driver available
-    if driver and 'ancestry-context-ube' not in final_headers:
+    # Add UBE if driver available and session valid
+    if driver and session_manager.is_sess_valid() and 'ancestry-context-ube' not in final_headers:
          ube_header = make_ube(driver)
          if ube_header: final_headers['ancestry-context-ube'] = ube_header
          else: logger.warning(f"{api_description}: Failed to generate UBE header.")
@@ -1623,286 +1611,119 @@ def _api_req(
     # --- Set Timeout for requests ---
     request_timeout = timeout if timeout is not None else selenium_config.API_TIMEOUT
 
-    # --- Branch 1: Use Python Requests Library ---
-    if use_requests_lib:
-        logger.debug(f"Executing API call via Python requests: {method.upper()} {url}")
-        req_session = session_manager._requests_session # Use the synced session
-        retries_left = max_retries
-        last_exception = None # Store last exception for final raise
+    # --- Use Python Requests Library ---
+    logger.debug(f"Executing API call via Python requests: {method.upper()} {url}")
+    req_session = session_manager._requests_session
+    retries_left = max_retries
+    last_exception = None
 
-        while retries_left > 0:
-            attempt = max_retries - retries_left + 1
+    while retries_left > 0:
+        attempt = max_retries - retries_left + 1
+        try:
+            # --- Sync cookies before each attempt ---
             try:
-                response = req_session.request(
-                    method=method.upper(),
-                    url=url,
-                    headers=final_headers,
-                    data=data,
-                    json=json_data,
-                    timeout=request_timeout,
-                    verify=True
-                )
-                status = response.status_code
-                logger.debug(f"{api_description}: Attempt {attempt}/{max_retries} completed. Status: {status}")
+                 # Only sync if driver is available and session seems valid
+                 if driver and session_manager.is_sess_valid():
+                      session_manager._sync_cookies()
+                 # else: logger.debug("Skipping cookie sync (no driver or invalid session).")
+            except Exception as sync_err:
+                 logger.warning(f"{api_description}: Error syncing cookies before attempt {attempt}: {sync_err}")
+                 # Continue attempt, but session might fail
 
-                # Check for retryable status codes
-                if status in retry_status_codes:
-                    retries_left -= 1
-                    last_exception = HTTPError(f"{status} Server Error: {response.reason}", response=response)
-                    if retries_left == 0:
-                        logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}).")
-                        if status == 429 and session_manager.dynamic_rate_limiter:
-                             session_manager.dynamic_rate_limiter.increase_delay()
-                        raise last_exception # Raise final error
-                    else:
-                        base_sleep = initial_delay * (backoff_factor**(attempt - 1))
-                        jitter = random.uniform(-0.5, 0.5) * max(0.1, min(base_sleep, 1.0))
-                        sleep_time = min(base_sleep + jitter, max_delay)
-                        sleep_time = max(0.1, sleep_time)
-                        logger.warning(f"{api_description}: Received status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s...")
-                        if status == 429 and session_manager.dynamic_rate_limiter:
-                             session_manager.dynamic_rate_limiter.increase_delay() # Increase delay immediately for 429
-                        time.sleep(sleep_time)
-                        continue # Try again
+            response = req_session.request(
+                method=method.upper(),
+                url=url,
+                headers=final_headers,
+                data=data,
+                json=json_data,
+                timeout=request_timeout,
+                verify=True # Standard verification
+            )
+            status = response.status_code
+            logger.debug(f"{api_description}: Attempt {attempt}/{max_retries} completed. Status: {status}")
 
-                # Check for success (2xx)
-                elif response.ok:
-                    if session_manager.dynamic_rate_limiter:
-                        session_manager.dynamic_rate_limiter.decrease_delay()
-                    # Process successful response
-                    content_type = response.headers.get('content-type', '').lower()
-                    force_text_parsing = (api_description == "Get Ladder API")
-                    if force_text_parsing:
-                        return response.text
-                    elif 'application/json' in content_type:
-                        try:
-                            return response.json()
-                        except json.JSONDecodeError:
-                            logger.warning(f"{api_description}: Response OK ({status}), but failed JSON decode.")
-                            logger.debug(f"Response text: {response.text[:500]}")
-                            return response.text
-                    else:
-                        return response.text
-                    # Successful processing exits the loop and function here
-
-                # Handle non-retryable client/server errors (>= 400 and not in retry_status_codes)
-                else:
-                     logger.error(f"{api_description}: Non-retryable error status: {status} {response.reason}")
-                     logger.debug(f"Error Response Body Snippet: {response.text[:500]}")
-                     if status in [401, 403]:
-                         logger.warning(f"{api_description}: Authentication/Authorization error ({status}) received.")
-                         session_manager.api_login_verified = False # Reset verification flag
-                     # Raise HTTPError for the caller or outer retry decorator
-                     response.raise_for_status() # Raises HTTPError
-
-            # Handle Network/Timeout errors specifically
-            except requests.exceptions.RequestException as e:
+            # Check for retryable status codes
+            if status in retry_status_codes:
                 retries_left -= 1
-                last_exception = e # Store the network exception
+                last_exception = HTTPError(f"{status} Server Error: {response.reason}", response=response)
                 if retries_left == 0:
-                     logger.error(f"{api_description}: Network/Timeout error failed after {max_retries} attempts. Final Error: {e}", exc_info=False) # Less verbose for final network error
-                     raise last_exception # Re-raise the final network exception
+                    logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}).")
+                    if status == 429 and session_manager.dynamic_rate_limiter:
+                         session_manager.dynamic_rate_limiter.increase_delay()
+                    # Do not raise here, return None to indicate failure to caller
+                    return None
                 else:
-                     base_sleep = initial_delay * (backoff_factor**(attempt - 1))
-                     jitter = random.uniform(-0.5, 0.5) * max(0.1, min(base_sleep, 1.0))
-                     sleep_time = min(base_sleep + jitter, max_delay)
-                     sleep_time = max(0.1, sleep_time)
-                     logger.warning(f"{api_description}: Network/Timeout error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}")
-                     time.sleep(sleep_time)
-                     continue # Try again
-            except Exception as e: # Catch other unexpected errors during request attempt
-                 logger.critical(f"{api_description}: CRITICAL Unexpected error during requests attempt {attempt}: {e}", exc_info=True)
-                 raise # Re-raise immediately, likely programming error
+                    base_sleep = initial_delay * (backoff_factor**(attempt - 1))
+                    jitter = random.uniform(-0.5, 0.5) * max(0.1, min(base_sleep, 1.0))
+                    sleep_time = min(base_sleep + jitter, max_delay); sleep_time = max(0.1, sleep_time)
+                    logger.warning(f"{api_description}: Received status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s...")
+                    if status == 429 and session_manager.dynamic_rate_limiter:
+                         session_manager.dynamic_rate_limiter.increase_delay()
+                    time.sleep(sleep_time)
+                    continue # Try again
 
-        # Should not be reached if exceptions are raised correctly on final failure
-        logger.critical(f"{api_description}: Exited retry loop unexpectedly (requests path). Returning None.")
-        return None
+            # Check for success (2xx)
+            elif response.ok:
+                if session_manager.dynamic_rate_limiter:
+                    session_manager.dynamic_rate_limiter.decrease_delay()
 
-    # --- Branch 2: Use JavaScript Fetch via WebDriver ---
-    else:
-        logger.debug(f"Executing API call via JS Fetch: {method.upper()} {url}")
-        if not driver:
-            logger.error(f"{api_description}: Aborting JS Fetch - WebDriver instance is required.")
-            return None
-        # Check session validity at the start of the attempt
-        if not session_manager.is_sess_valid():
-            logger.error(f"{api_description}: Aborting JS Fetch - WebDriver session is invalid before first attempt.")
-            return None
+                # --- Text parsing for specific API ---
+                # Check if this specific call needs plain text
+                force_text_parsing = (api_description == "Get Ladder API (Batch)")
+                if force_text_parsing:
+                     return response.text
 
-        # Prepare fetch options (remains the same)
-        fetch_options = { 'method': method.upper(), 'headers': final_headers }
-        if json_data is not None and method.upper() in ['POST', 'PUT', 'PATCH']:
-            fetch_options['body'] = json.dumps(json_data)
-        elif data is not None:
-            logger.error(f"{api_description}: JS Fetch cannot send form data directly. Use requests library.")
-            return None
-
-        # JS script (remains the same)
-        force_text_parsing = (api_description == "Get Ladder API")
-        log_prefix = f"JS Fetch ({api_description}):"
-        script = f"""
-            const url = arguments[0];
-            const options = arguments[1];
-            const callback = arguments[arguments.length - 1];
-            const forceText = {json.dumps(force_text_parsing)};
-            const logPrefix = "{log_prefix}";
-
-            fetch(url, options)
-                .then(response => {{
-                    const status = response.status;
-                    const statusText = response.statusText;
-                    const contentType = response.headers.get('content-type') || '';
-                    const headers = Object.fromEntries(response.headers.entries());
-
-                    const readBodyAsText = (response) => {{
-                        // Use response.clone() carefully, might not always be needed/available
-                        let responseToRead = response;
-                        try {{
-                            responseToRead = response.clone ? response.clone() : response;
-                        }} catch (e) {{
-                            // Ignore clone error if already read or not supported
-                        }}
-                        return responseToRead.text().catch(err => {{
-                            console.error(`${{logPrefix}} Text read error:`, err);
-                            return `Failed to read response body: ${{err.message}}`;
-                        }});
-                    }};
-
-                    if (!response.ok) {{
-                        return readBodyAsText(response).then(bodyText => {{
-                            console.warn(`${{logPrefix}} Error (${{status}}) body snippet:`, bodyText.substring(0, 200));
-                            return {{ ok: false, status: status, statusText: statusText, contentType: contentType, headers: headers, body: bodyText }};
-                        }});
-                    }}
-
-                    if (forceText) {{
-                         return readBodyAsText(response).then(bodyText => ({{ ok: true, status: status, statusText: statusText, contentType: contentType, headers: headers, body: bodyText }}));
-                    }}
-                    else if (contentType.includes('application/json')) {{
+                # --- Standard JSON / Text Handling ---
+                content_type = response.headers.get('content-type', '').lower()
+                if 'application/json' in content_type:
+                    try:
                         return response.json()
-                            .then(data => {{
-                                return {{ ok: true, status: status, statusText: statusText, contentType: contentType, headers: headers, body: data }};
-                             }})
-                            .catch(err => {{
-                                console.error(`${{logPrefix}} JSON parse error:`, err);
-                                return readBodyAsText(response).then(bodyText => {{ // Try reading body again on parse error
-                                     console.warn(`${{logPrefix}} Body after JSON parse error:`, bodyText.substring(0, 200));
-                                     return {{ ok: 'parse_error', status: status, statusText: statusText, contentType: contentType, headers: headers, body: `JSON parse error: ${{err.message}}. Body: ${{bodyText.substring(0,200)}}...` }};
-                                }});
-                             }});
-                    }}
-                    else {{
-                         return readBodyAsText(response).then(bodyText => ({{ ok: true, status: status, statusText: statusText, contentType: contentType, headers: headers, body: bodyText }}));
-                    }}
-                }})
-                .then(result => {{
-                    callback(result); // Send result back to Selenium
-                }})
-                .catch(error => {{
-                    console.error(`${{logPrefix}} Network Error:`, error);
-                    // Status 0 indicates network error in fetch context
-                    callback({{'ok': false, 'status': 0, 'statusText': `Network Error: ${{error.message}}`, 'body': null}});
-                }});
-        """
-
-        # Execute Script with Retry Loop
-        retries_left = max_retries
-        last_exception = None
-
-        while retries_left > 0:
-            attempt = max_retries - retries_left + 1
-            try:
-                logger.debug(f"{api_description}: Executing JS fetch (Attempt {attempt}/{max_retries}) for {method.upper()} {url}")
-                script_timeout = selenium_config.ASYNC_SCRIPT_TIMEOUT
-                driver.set_script_timeout(script_timeout)
-                result = driver.execute_async_script(script, url, fetch_options)
-                status = result.get('status') if result else None # Get status from JS result
-
-                logger.debug(f"{api_description}: JS fetch attempt {attempt}/{max_retries} completed. Reported Status: {status}")
-
-                # Check for retryable status codes from JS result
-                if status in retry_status_codes:
-                    retries_left -= 1
-                    last_exception = WebDriverException(f"JS Fetch failed with status {status}") # Store generic error
-                    if retries_left == 0:
-                        logger.error(f"{api_description}: JS Fetch failed after {max_retries} attempts (Final Status {status}).")
-                        if status == 429 and session_manager.dynamic_rate_limiter:
-                             session_manager.dynamic_rate_limiter.increase_delay()
-                        return None # Final failure after retries
-                    else:
-                        base_sleep = initial_delay * (backoff_factor**(attempt - 1))
-                        jitter = random.uniform(-0.5, 0.5) * max(0.1, min(base_sleep, 1.0))
-                        sleep_time = min(base_sleep + jitter, max_delay)
-                        sleep_time = max(0.1, sleep_time)
-                        logger.warning(f"{api_description}: JS Fetch received status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s...")
-                        if status == 429 and session_manager.dynamic_rate_limiter:
-                             session_manager.dynamic_rate_limiter.increase_delay()
-                        time.sleep(sleep_time)
-                        continue # Try again
-
-                # Check for JS success
-                elif result and result.get('ok') is True:
-                    if session_manager.dynamic_rate_limiter:
-                        session_manager.dynamic_rate_limiter.decrease_delay()
-                    return result.get('body') # Success
-
-                # Handle JS parse error (not retryable)
-                elif result and result.get('ok') == 'parse_error':
-                    status = result.get('status'); body_info = result.get('body', '')
-                    logger.warning(f"{api_description}: Received OK status ({status}), but JS failed JSON parse. Info: {body_info}")
-                    return body_info # Return the error string containing snippet
-
-                # Handle other non-retryable errors reported by JS (e.g., 400, 401, 403, 404, 0 for network)
-                elif result: # ok is false or missing, and status not in retry codes
-                    status = result.get('status'); status_text = result.get('statusText')
-                    response_body = result.get('body'); body_snippet = str(response_body)[:500] if response_body else "N/A"
-
-                    if status == 0: # JS Fetch Network Error
-                         logger.warning(f"{api_description}: JS fetch reported network error (Status 0, Attempt {attempt}/{max_retries}). Text: {status_text}")
-                         # Treat network errors as potentially retryable by raising WebDriverException
-                         raise WebDriverException(f"JS Fetch Network Error (Status 0): {status_text}")
-                    else: # Other non-retryable status
-                         logger.error(f"{api_description}: JS fetch failed with non-retryable status: {status} {status_text}")
-                         logger.debug(f"Error Response Body Snippet: {body_snippet}")
-                         if status in [401, 403]:
-                             logger.warning(f"{api_description}: Authentication/Authorization error ({status}) received.")
-                             session_manager.api_login_verified = False
-                         return None # Return None for other non-retryable JS errors like 400, 404
-
-                # Handle case where execute_async_script returns None or unexpected format
+                    except json.JSONDecodeError:
+                        logger.warning(f"{api_description}: Response OK ({status}), but failed JSON decode.")
+                        logger.debug(f"Response text: {response.text[:500]}")
+                        return response.text # Fallback to text
                 else:
-                    logger.error(f"{api_description}: execute_async_script returned unexpected result: {result}. Treating as failure.")
-                    # This could be a WebDriver issue, attempt retry via exception
-                    raise WebDriverException(f"execute_async_script returned unexpected result: {result}")
+                    # Handle plain text CSRF token response
+                    if api_description == "CSRF Token API" and 'text/plain' in content_type:
+                         return response.text.strip()
+                    return response.text # Return text for other non-JSON types
+                # Successful processing exits the loop and function here
 
-            # Handle WebDriver/Timeout errors during script execution
-            except (TimeoutException, WebDriverException) as e:
-                retries_left -= 1
-                last_exception = e # Store exception
-                if retries_left == 0:
-                     logger.error(f"{api_description}: WebDriver/Timeout error failed after {max_retries} attempts during JS Fetch. Final Error: {e}", exc_info=False) # Less verbose
-                     # return None # Option 1
-                     raise last_exception # Option 2: Re-raise final exception
-                else:
-                     base_sleep = initial_delay * (backoff_factor**(attempt - 1))
-                     jitter = random.uniform(-0.5, 0.5) * max(0.1, min(base_sleep, 1.0))
-                     sleep_time = min(base_sleep + jitter, max_delay)
-                     sleep_time = max(0.1, sleep_time)
-                     logger.warning(f"{api_description}: WebDriver/Timeout error during JS Fetch (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}")
-                     time.sleep(sleep_time)
-                     # Check session validity before next attempt
-                     if not session_manager.is_sess_valid():
-                          logger.critical("Session became invalid during JS Fetch retry loop.")
-                          return None # Abort if session dies
-                     continue # Try again
-            except Exception as e: # Catch other unexpected errors
-                 logger.critical(f"{api_description}: CRITICAL Unexpected error during JS Fetch attempt {attempt}: {e}", exc_info=True)
-                 raise # Re-raise immediately
+            # Handle non-retryable client/server errors (>= 400 and not in retry_status_codes)
+            else:
+                 logger.error(f"{api_description}: Non-retryable error status: {status} {response.reason}")
+                 logger.debug(f"Error Response Body Snippet: {response.text[:500]}")
+                 if status in [401, 403]:
+                     logger.warning(f"{api_description}: Authentication/Authorization error ({status}) received.")
+                     session_manager.api_login_verified = False
+                 # Do not raise here, return None
+                 return None
 
-        # Should not be reached if exceptions are raised correctly on final failure
-        logger.critical(f"{api_description}: Exited retry loop unexpectedly (JS Fetch path). Returning None.")
-        return None
+        # Handle Network/Timeout errors specifically
+        except requests.exceptions.RequestException as e:
+            retries_left -= 1
+            last_exception = e
+            if retries_left == 0:
+                 logger.error(f"{api_description}: Network/Timeout error failed after {max_retries} attempts. Final Error: {e}", exc_info=False)
+                 # Do not raise here, return None
+                 return None
+            else:
+                 base_sleep = initial_delay * (backoff_factor**(attempt - 1))
+                 jitter = random.uniform(-0.5, 0.5) * max(0.1, min(base_sleep, 1.0))
+                 sleep_time = min(base_sleep + jitter, max_delay); sleep_time = max(0.1, sleep_time)
+                 logger.warning(f"{api_description}: Network/Timeout error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}")
+                 time.sleep(sleep_time)
+                 continue # Try again
+        except Exception as e: # Catch other unexpected errors during request attempt
+             logger.critical(f"{api_description}: CRITICAL Unexpected error during requests attempt {attempt}: {e}", exc_info=True)
+             # Raise unexpected critical errors
+             raise
+
+    # Should only be reached if all retries failed due to retryable status codes or network errors
+    logger.error(f"{api_description}: Exited retry loop after {max_retries} failed attempts. Returning None.")
+    return None
 # End of _api_req
+
 
 
 def make_ube(driver):

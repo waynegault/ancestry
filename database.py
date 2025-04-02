@@ -594,63 +594,76 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
 # End of create_dna_match
 
 
-def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["created", "skipped", "error"]:
+def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["created", "updated", "skipped", "error"]:
     """
-    Creates a new FamilyTree record if one doesn't exist for the people_id.
-    Corrected: Ensures ONLY valid keys from the input dictionary are used
-               when instantiating the FamilyTree object.
+    V13 REVISED: Creates or updates a FamilyTree record.
+    - If record exists, checks if key fields have changed before updating.
+    - Uses only known valid keys from tree_data.
     """
     people_id = tree_data.get("people_id")
     if not people_id:
-        logger.error("Cannot create FamilyTree: 'people_id' missing from data.")
+        logger.error("Cannot create/update FamilyTree: 'people_id' missing.")
         return "error"
 
-    log_ref = f"PersonID={people_id}, CFPID={tree_data.get('cfpid', 'N/A')}"
+    cfpid_val = tree_data.get("cfpid") # Can be None
+    log_ref = f"PersonID={people_id}, CFPID={cfpid_val or 'N/A'}"
+    updated = False # Flag for updates
 
     try:
-        # Check if a FamilyTree record already exists
         existing_tree = session.query(FamilyTree).filter_by(people_id=people_id).first()
+
+        # Prepare data for creation or update, using only valid keys
+        valid_tree_args = {
+            "people_id": people_id,
+            "cfpid": cfpid_val,
+            "person_name_in_tree": tree_data.get("person_name_in_tree"),
+            "facts_link": tree_data.get("facts_link"),
+            "view_in_tree_link": tree_data.get("view_in_tree_link"),
+            "actual_relationship": tree_data.get("actual_relationship"),
+            "relationship_path": tree_data.get("relationship_path"),
+        }
+        # Remove keys with None values if desired, although SQLAlchemy handles them
+        # valid_tree_args = {k: v for k, v in valid_tree_args.items() if v is not None}
+
+
         if existing_tree:
-            logger.debug(f"FamilyTree already exists for {log_ref}. Skipping creation.")
-            return "skipped"
+            logger.debug(f"Checking for updates to existing FamilyTree for {log_ref}")
+            # Compare key fields to see if an update is needed
+            fields_to_check = ["cfpid", "person_name_in_tree", "facts_link", "view_in_tree_link", "actual_relationship", "relationship_path"]
+            for field in fields_to_check:
+                new_value = valid_tree_args.get(field)
+                old_value = getattr(existing_tree, field, None)
+                if new_value != old_value:
+                    logger.debug(f"  Updating FamilyTree field '{field}' for {log_ref}: '{old_value}' -> '{new_value}'")
+                    setattr(existing_tree, field, new_value)
+                    updated = True
 
-        logger.debug(f"Creating new FamilyTree record for {log_ref}")
-
-        # --- FINAL CORRECTION: Explicitly map known valid keys ---
-        # Create the FamilyTree object by explicitly referencing the keys
-        # expected in the tree_data dictionary passed from _do_match.
-        new_tree = FamilyTree(
-            people_id=people_id, # Must be present
-            cfpid=tree_data.get("cfpid"),
-            person_name_in_tree=tree_data.get("person_name_in_tree"), # Correct model field name
-            facts_link=tree_data.get("facts_link"),
-            view_in_tree_link=tree_data.get("view_in_tree_link"),
-            actual_relationship=tree_data.get("actual_relationship"),
-            relationship_path=tree_data.get("relationship_path")
-            # DO NOT pass tree_data directly or use **tree_data here.
-        )
-        # --- END FINAL CORRECTION ---
-
-        session.add(new_tree)
-        logger.debug(f"Staged new FamilyTree record for {log_ref}")
-        return "created"
+            if updated:
+                 existing_tree.updated_at = datetime.now()
+                 logger.debug(f"Staged update for FamilyTree record {log_ref}")
+                 return "updated"
+            else:
+                 logger.debug(f"No update needed for existing FamilyTree record {log_ref}")
+                 return "skipped"
+        else:
+            # Create new record
+            logger.debug(f"Creating new FamilyTree record for {log_ref}")
+            new_tree = FamilyTree(**valid_tree_args)
+            session.add(new_tree)
+            logger.debug(f"Staged new FamilyTree record for {log_ref}")
+            return "created"
 
     except TypeError as te:
-         # Rollback handled by caller (_do_match)
-         # This log now clearly indicates an issue with the constructor call itself
-         logger.critical(f"TypeError creating FamilyTree object for {log_ref}: {te}. Check arguments passed to FamilyTree().", exc_info=True)
-         logger.error(f"Data keys attempted: {list(tree_data.keys())}") # Log keys that were available
+         logger.critical(f"TypeError creating/updating FamilyTree for {log_ref}: {te}.", exc_info=True)
+         logger.error(f"Data keys provided: {list(tree_data.keys())}")
          return "error"
     except IntegrityError as ie:
-        # Rollback handled by caller (_do_match)
-        logger.error(f"IntegrityError creating FamilyTree for {log_ref}: {ie}", exc_info=False)
+        logger.error(f"IntegrityError creating/updating FamilyTree for {log_ref}: {ie}", exc_info=False)
         return "error"
     except SQLAlchemyError as e:
-        # Rollback handled by caller (_do_match)
-        logger.error(f"SQLAlchemyError creating FamilyTree for {log_ref}: {e}", exc_info=True)
+        logger.error(f"SQLAlchemyError creating/updating FamilyTree for {log_ref}: {e}", exc_info=True)
         return "error"
     except Exception as e:
-        # Rollback handled by caller (_do_match)
         logger.critical(f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True)
         return "error"
 # End create_family_tree
