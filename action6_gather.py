@@ -40,7 +40,6 @@ from database import (
     DnaMatch,
     FamilyTree,
     Person,
-    check_person_needs, 
     db_transn,
     create_or_update_person, 
     create_dna_match,       
@@ -190,7 +189,18 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
 
             # 14. Fetch matches for the current page
             logger.debug(f"Fetching matches from page {current_page_num}...")
-            matches_on_page = get_matches(session_manager, current_page_num)
+            # Pass DB session for Idea 3 (conditional relationship fetch)
+            db_session_for_page = session_manager.get_db_conn()
+            if not db_session_for_page:
+                 logger.error(f"Could not get DB session for page {current_page_num} match pre-check. Skipping page.")
+                 total_errors += 50 # Assume 50 errors if can't get DB session for checks
+                 time.sleep(2)
+                 continue
+
+            try:
+                matches_on_page = get_matches(session_manager, db_session_for_page, current_page_num)
+            finally:
+                 session_manager.return_session(db_session_for_page) # Ensure session is returned
 
             if matches_on_page is None or not matches_on_page:
                 # Handle failure to get matches for a page
@@ -329,16 +339,22 @@ def _do_match(
     session: Session, match: Dict[str, Any], session_manager: SessionManager
 ) -> Tuple[Literal["skipped", "updated", "new", "error"], Optional[str]]:
     """
-    V11: Processes match. Checks needs (read-only), fetches data (parallel),
-    then calls create_or_update_person ONCE with full data, creates related, commits.
+    V12 REVISED: Processes a match integrating optimizations.
+    1. Single DB Lookup (Person + DNA + Tree) by UUID.
+    2. Determine needs (DNA create, Tree fetch, Person update) based on lookup.
+    3. Conditionally fetch APIs based *only* on determined needs.
+    4. Prepare data dicts.
+    5. Call simplified DB write functions.
+    6. Commit.
     """
-    person_record: Optional[Person] = None
-    person_id_for_verification: Optional[int] = None
+    existing_person: Optional[Person] = None
+    dna_match_record: Optional[DnaMatch] = None
+    family_tree_record: Optional[FamilyTree] = None
 
     # --- Get initial data ---
     match_uuid = match.get("uuid")
     match_username = match.get("username")
-    match_in_my_tree = match.get("in_my_tree", False) # Get flag early
+    match_in_my_tree = match.get("in_my_tree", False) # Get flag early from initial match list
     log_ref = f"UUID={match_uuid or 'N/A'} User='{match_username or 'Unknown'}'"
     log_ref_short = f"UUID={match_uuid} User='{match_username}'"
 
@@ -349,139 +365,266 @@ def _do_match(
 
     # --- Initialize status/flags/data ---
     overall_status: Literal["new", "updated", "skipped", "error"] = "error"
-    dna_status: Literal["created", "skipped", "error"] = "skipped"
-    tree_status: Literal["created", "skipped", "error"] = "skipped"
+    dna_status: Literal["created", "skipped", "error"] = "skipped" # Default to skipped
+    tree_status: Literal["created", "skipped", "error"] = "skipped" # Default to skipped
+    person_status: Literal["created", "updated", "skipped", "error"] = "skipped" # Default to skipped
+
     create_dna_needed: bool = False
     fetch_tree_data: bool = False
-    person_status: Literal["created", "updated", "skipped", "error"] = "error"
+    person_update_needed: bool = False # Flag if existing Person needs update
+    is_new_person: bool = False # Flag if person needs creation
 
-    tree_data_to_process: Optional[Dict[str, Any]] = None
+    # Data buckets
+    full_person_data_to_save: Optional[Dict[str, Any]] = None
     dna_data_to_save: Optional[Dict[str, Any]] = None
-    family_tree_args: Optional[Dict[str, Any]] = None
+    tree_data_to_save: Optional[Dict[str, Any]] = None
+
+    # API Results
     details_fetched: Optional[Dict[str, Any]] = None
     tree_api_data_result: Optional[Dict[str, Any]] = None
     relationship_data_result: Optional[Dict[str, Any]] = None
 
     try:
-        # --- Step 1: Read-Only Check for Data Needs ---
+        # --- Step 1: Single DB Lookup (Read-Only) ---
+        logger.debug(f"{log_ref}: Performing initial DB lookup by UUID...")
         try:
-            create_dna_needed, fetch_tree_data = check_person_needs(
-                session, match_uuid, match_in_my_tree
+            # Eager load everything needed for need determination
+            existing_person = (
+                session.query(Person)
+                .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
+                .filter(Person.uuid == match_uuid.upper())
+                .first()
             )
-            logger.debug(f"Initial DB Needs Check: DNA Needed={create_dna_needed}, Tree Fetch Needed={fetch_tree_data}")
-        except Exception as check_err:
-             logger.error(f"Error during check_person_needs for {log_ref_short}: {check_err}", exc_info=True)
+
+            if existing_person:
+                 logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id}. Evaluating needs.")
+                 dna_match_record = existing_person.dna_match
+                 family_tree_record = existing_person.family_tree
+                 # Expire state *after* fetching initial related data for checks, before potential updates
+                 session.expire(existing_person, ['dna_match', 'family_tree'])
+            else:
+                 logger.debug(f"{log_ref}: No existing person found by UUID.")
+                 is_new_person = True
+
+        except SQLAlchemyError as db_lookup_err:
+             logger.error(f"Initial DB lookup failed for {log_ref_short}: {db_lookup_err}", exc_info=True)
              # Don't rollback here, it was read-only
-             return "error", f"DB needs check failed for {log_ref_short}"
+             return "error", f"Initial DB lookup failed for {log_ref_short}"
+        except Exception as lookup_err:
+             logger.error(f"Unexpected error during initial DB lookup for {log_ref_short}: {lookup_err}", exc_info=True)
+             return "error", f"Unexpected DB lookup error for {log_ref_short}"
 
-        # --- Step 2: Fetch API Data (Conditionally Parallel) ---
-        # (Parallel fetch logic using ThreadPoolExecutor remains the same as V10)
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {}
-            # Task A: Fetch primary details
-            logger.debug(f"Submitting task to fetch primary details for {log_ref_short}")
+        # --- Step 2: Determine Needs based on Lookup ---
+        if is_new_person:
+            create_dna_needed = True
+            fetch_tree_data = match_in_my_tree # Fetch only if flag is initially True
+            person_update_needed = False # It's a creation, not an update
+        else: # Person exists
+            # DNA Need
+            create_dna_needed = (dna_match_record is None)
+
+            # Tree Need (based on flag change or missing record when flag is true)
+            db_in_my_tree = existing_person.in_my_tree # Access potentially expired attribute to reload
+            # Condition 1: Flag changes False -> True
+            if match_in_my_tree and not db_in_my_tree:
+                 fetch_tree_data = True
+            # Condition 2: Flag is True, but tree record missing
+            elif match_in_my_tree and family_tree_record is None:
+                 fetch_tree_data = True
+            else: # Covers: Both False, Both True+Record Exists, True->False change
+                 fetch_tree_data = False
+
+            # Person Update Need (Check if specific fields might need updating)
+            # We will fetch details API if DNA is needed, or if last_login/contactable *could* change
+            # For simplicity now, let's assume we *might* need an update if the person exists.
+            # We'll refine this based on which APIs are actually fetched.
+            person_update_needed = True # Assume potential update needed initially if person exists
+
+        logger.debug(f"{log_ref}: Needs Determined: NewPerson={is_new_person}, UpdatePerson={person_update_needed}, CreateDNA={create_dna_needed}, FetchTree={fetch_tree_data}")
+
+        # --- Step 3: Conditionally Fetch API Data ---
+        # Determine which APIs *must* be called
+        fetch_details_api_needed = create_dna_needed or person_update_needed # Fetch details if creating DNA or potentially updating person
+        fetch_tree_api_needed = fetch_tree_data # Tree API needed only if flag indicates
+
+        logger.debug(f"{log_ref}: API Fetch Needed: Details={fetch_details_api_needed}, Tree={fetch_tree_api_needed}")
+
+        # Use ThreadPoolExecutor only if multiple API calls are needed concurrently
+        if fetch_details_api_needed and fetch_tree_api_needed:
+            logger.debug(f"{log_ref}: Fetching Details and Tree data in parallel.")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {}
+                # Submit Details Fetch Task
+                delay_details = session_manager.dynamic_rate_limiter.wait()
+                logger.debug(f"Waited {delay_details:.2f}s before submitting details fetch task for {log_ref_short}")
+                futures[executor.submit(_get_match_details_and_admin, session_manager, match_uuid)] = "details"
+                # Submit Tree Fetch Task
+                delay_tree = session_manager.dynamic_rate_limiter.wait()
+                logger.debug(f"Waited {delay_tree:.2f}s before submitting tree fetch task for {log_ref_short}")
+                futures[executor.submit(_fetch_full_tree_details, session_manager, match)] = "tree" # Use new combined func
+
+                for future in as_completed(futures):
+                    task_type = futures[future]
+                    try:
+                        if task_type == "details":
+                            details_fetched = future.result()
+                            if not details_fetched: logger.error(f"CRITICAL: Parallel details fetch failed for {log_ref_short}.")
+                        elif task_type == "tree":
+                            # _fetch_full_tree_details returns a single dict or None
+                            tree_fetch_result = future.result()
+                            if tree_fetch_result:
+                                 tree_api_data_result = tree_fetch_result # Assign combined result
+                                 relationship_data_result = tree_fetch_result # Also assign for compatibility
+                                 logger.debug(f"Tree fetch task completed successfully for {log_ref_short}.")
+                            else:
+                                 logger.warning(f"Tree fetch task completed but returned no data for {log_ref_short}.")
+                                 fetch_tree_data = False # Reset flag if fetch failed
+                    except Exception as exc:
+                        logger.error(f"Exception in parallel task '{task_type}' for {log_ref_short}: {exc}", exc_info=True)
+                        if task_type == "details": details_fetched = None # Mark as failed
+                        elif task_type == "tree": fetch_tree_data = False # Reset flag
+
+        elif fetch_details_api_needed: # Only Details needed
+            logger.debug(f"{log_ref}: Fetching only Details data.")
             delay_details = session_manager.dynamic_rate_limiter.wait()
-            logger.debug(f"Waited {delay_details:.2f}s before submitting details fetch task")
-            futures[executor.submit(_get_match_details_and_admin, session_manager, match_uuid)] = "details"
-            # Task B: Conditionally fetch tree details
-            if fetch_tree_data:
-                logger.debug(f"Submitting task to fetch tree data for {log_ref_short}")
-                futures[executor.submit(_fetch_tree_and_relationship_data, session_manager, match)] = "tree"
+            logger.debug(f"Waited {delay_details:.2f}s before details fetch for {log_ref_short}")
+            try:
+                details_fetched = _get_match_details_and_admin(session_manager, match_uuid)
+                if not details_fetched: logger.error(f"CRITICAL: Details fetch failed for {log_ref_short}.")
+            except Exception as exc:
+                 logger.error(f"Exception fetching details for {log_ref_short}: {exc}", exc_info=True)
+                 details_fetched = None
 
-            for future in as_completed(futures):
-                task_type = futures[future]
-                try:
-                    if task_type == "details":
-                        details_fetched = future.result()
-                        if not details_fetched: logger.error(f"CRITICAL: Parallel details fetch failed for {log_ref_short}.")
-                    elif task_type == "tree":
-                        tree_api_data_result, relationship_data_result = future.result()
-                        if not tree_api_data_result:
-                             logger.warning(f"Tree data fetch task completed but returned no tree API data for {log_ref_short}.")
-                             fetch_tree_data = False # Reset flag
-                        else: logger.debug(f"Tree data fetch task completed successfully.")
-                except Exception as exc:
-                    logger.error(f"Exception in parallel task '{task_type}' for {log_ref_short}: {exc}", exc_info=True)
-                    if task_type == "details": return "error", f"Parallel details fetch failed"
-                    elif task_type == "tree": fetch_tree_data = False # Reset flag
+        elif fetch_tree_api_needed: # Only Tree needed
+            logger.debug(f"{log_ref}: Fetching only Tree data.")
+            delay_tree = session_manager.dynamic_rate_limiter.wait()
+            logger.debug(f"Waited {delay_tree:.2f}s before tree fetch for {log_ref_short}")
+            try:
+                tree_fetch_result = _fetch_full_tree_details(session_manager, match)
+                if tree_fetch_result:
+                     tree_api_data_result = tree_fetch_result
+                     relationship_data_result = tree_fetch_result
+                     logger.debug(f"Tree fetch task completed successfully for {log_ref_short}.")
+                else:
+                     logger.warning(f"Tree fetch task completed but returned no data for {log_ref_short}.")
+                     fetch_tree_data = False # Reset flag
+            except Exception as exc:
+                 logger.error(f"Exception fetching tree data for {log_ref_short}: {exc}", exc_info=True)
+                 fetch_tree_data = False # Reset flag
 
-        if not details_fetched:
-             return "error", f"Primary details fetch failed for {log_ref_short}"
+        # --- Step 4: Prepare Final Person Data ---
+        # Only prepare if we are creating OR updating
+        if is_new_person or person_update_needed:
+            # Determine profile/admin IDs and message link (prioritize fetched data)
+            tester_profile_id = details_fetched.get("tester_profile_id") if details_fetched else match.get("profile_id") # Fallback to initial hint
+            admin_profile_id = details_fetched.get("admin_profile_id") if details_fetched else match.get("administrator_profile_id_hint")
+            admin_username = details_fetched.get("admin_username") if details_fetched else match.get("administrator_username_hint")
 
-        # --- Step 3: Prepare Final Person Data ---
-        # (Logic to determine profile/admin IDs and message link - same as before)
-        tester_profile_id = details_fetched.get("tester_profile_id")
-        admin_profile_id = details_fetched.get("admin_profile_id")
-        admin_username = details_fetched.get("admin_username")
-        person_profile_id_to_save = None
-        person_admin_id_to_save = None
-        person_admin_username_to_save = None
-        # ... (rest of admin/profile ID logic) ...
-        if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
-             person_profile_id_to_save = tester_profile_id; person_admin_id_to_save = admin_profile_id; person_admin_username_to_save = admin_username
-        elif admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
-             if admin_username and match_username and match_username.lower() != admin_username.lower():
-                  person_profile_id_to_save = None; person_admin_id_to_save = admin_profile_id; person_admin_username_to_save = admin_username
-             else: person_profile_id_to_save = tester_profile_id; person_admin_id_to_save = None; person_admin_username_to_save = None
-        elif tester_profile_id and not admin_profile_id:
-             person_profile_id_to_save = tester_profile_id; person_admin_id_to_save = None; person_admin_username_to_save = None
-        else: person_profile_id_to_save = None; person_admin_id_to_save = admin_profile_id; person_admin_username_to_save = admin_username
-        message_target_id = admin_profile_id or tester_profile_id
-        constructed_message_link = None
-        if message_target_id and session_manager.my_uuid:
-             constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={message_target_id.upper()}&testguid1={session_manager.my_uuid.upper()}&testguid2={match_uuid.upper()}")
+            person_profile_id_to_save = None
+            person_admin_id_to_save = None
+            person_admin_username_to_save = None
 
-        # Assemble the complete data dictionary
-        person_data_to_save = {
-            "uuid": match_uuid.upper(),
-            "username": match_username,
-            "profile_id": person_profile_id_to_save.upper() if person_profile_id_to_save else None,
-            "administrator_profile_id": person_admin_id_to_save.upper() if person_admin_id_to_save else None,
-            "administrator_username": person_admin_username_to_save,
-            "in_my_tree": match_in_my_tree, # Use the flag determined earlier
-            "first_name": match.get("first_name"),
-            "last_logged_in": details_fetched.get("last_logged_in_dt"),
-            "contactable": details_fetched.get("contactable", False),
-            "gender": details_fetched.get("gender"),
-            "message_link": constructed_message_link,
-            "birth_year": tree_api_data_result.get("their_birth_year") if tree_api_data_result else None,
-        }
-        logger.debug(f"Final Person data prepared after API fetches: {person_data_to_save}")
+            if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
+                person_profile_id_to_save = tester_profile_id
+                person_admin_id_to_save = admin_profile_id
+                person_admin_username_to_save = admin_username
+            elif admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
+                if admin_username and match_username and match_username.lower() != admin_username.lower():
+                    person_profile_id_to_save = None
+                    person_admin_id_to_save = admin_profile_id
+                    person_admin_username_to_save = admin_username
+                else:
+                    person_profile_id_to_save = tester_profile_id
+                    person_admin_id_to_save = None
+                    person_admin_username_to_save = None
+            elif tester_profile_id and not admin_profile_id:
+                person_profile_id_to_save = tester_profile_id
+                person_admin_id_to_save = None
+                person_admin_username_to_save = None
+            else: # Neither tester nor admin ID reliably determined or only admin ID exists
+                person_profile_id_to_save = None
+                person_admin_id_to_save = admin_profile_id # Save admin if it exists
+                person_admin_username_to_save = admin_username
 
-        # --- Step 4: Perform Single Create or Update Person DB Operation ---
-        try:
-            # Call V8 ONCE with the complete data
-            (
-                person_record,
-                person_status, # This is the definitive status
-                _, # Ignore flags, already determined
-                _, # Ignore flags, already determined
-            ) = create_or_update_person(session, person_data_to_save)
+            message_target_id = person_admin_id_to_save or person_profile_id_to_save
+            constructed_message_link = None
+            if message_target_id and session_manager.my_uuid:
+                constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={message_target_id.upper()}&testguid1={session_manager.my_uuid.upper()}&testguid2={match_uuid.upper()}")
 
-            if person_record is None or person_status == "error":
-                 logger.error(f"Final Person create/update V8 failed for {log_ref_short}.")
-                 if session.is_active: session.rollback()
-                 return "error", f"Final Person create/update V8 failed for {log_ref_short}"
-            person_id_for_verification = person_record.id
-            logger.debug(f"Definitive Person DB status: {person_status}")
-
-        except Exception as p_final_err:
-             logger.error(f"Unexpected error during final person create/update for {log_ref_short}: {p_final_err}", exc_info=True)
-             if session.is_active: session.rollback()
-             return "error", f"Unexpected final person processing error for {log_ref_short}"
-
-        # --- Step 5: Create DNA Record (Conditional - using flag from Step 1) ---
-        dna_status = "skipped"
-        if create_dna_needed:
-            # (DNA creation logic remains the same, using details_fetched)
-            logger.debug(f"Proceeding with DNA Match creation for {log_ref_short} (needed: {create_dna_needed}).")
-            pred_rel = match.get("predicted_relationship", "N/A")
-            dna_data_to_save = {
-                "people_id": person_record.id,
-                "compare_link": match.get("compare_link"),
-                "cM_DNA": match.get("cM_DNA"),
-                "predicted_relationship": pred_rel,
+            # Assemble the complete data dictionary, using fetched data where available
+            full_person_data_to_save = {
                 "uuid": match_uuid.upper(),
+                "username": match_username,
+                "profile_id": person_profile_id_to_save.upper() if person_profile_id_to_save else None,
+                "administrator_profile_id": person_admin_id_to_save.upper() if person_admin_id_to_save else None,
+                "administrator_username": person_admin_username_to_save,
+                "in_my_tree": match_in_my_tree, # Use the flag from initial match list
+                "first_name": match.get("first_name"),
+                "last_logged_in": details_fetched.get("last_logged_in_dt") if details_fetched else None,
+                "contactable": details_fetched.get("contactable", False) if details_fetched else False,
+                "gender": details_fetched.get("gender") if details_fetched else None,
+                "message_link": constructed_message_link,
+                "birth_year": tree_api_data_result.get("their_birth_year") if tree_api_data_result else None,
+            }
+            logger.debug(f"{log_ref}: Final Person data prepared: {full_person_data_to_save}")
+        else:
+             logger.debug(f"{log_ref}: No person creation or update needed based on initial checks.")
+
+
+        # --- Step 5: Perform DB Writes (Person, DNA, Tree) ---
+        person_record_for_relations = existing_person # Use existing if found
+
+        # 5a. Create or Update Person
+        if is_new_person or person_update_needed:
+            if not full_person_data_to_save:
+                 logger.error(f"{log_ref}: Logic error - Person create/update needed but data not prepared.")
+                 return "error", f"Person data preparation failed for {log_ref_short}"
+
+            try:
+                # Call V9 simplified function
+                person_record_for_relations, person_status = create_or_update_person(
+                    session, full_person_data_to_save, existing_person=existing_person
+                )
+
+                if person_record_for_relations is None or person_status == "error":
+                    logger.error(f"Person create/update DB write failed for {log_ref_short}.")
+                    if session.is_active: session.rollback() # Rollback on direct failure
+                    return "error", f"Person DB write failed for {log_ref_short}"
+                logger.debug(f"{log_ref}: Person DB write status: {person_status}")
+
+            except Exception as p_final_err:
+                logger.error(f"Unexpected error during person DB write for {log_ref_short}: {p_final_err}", exc_info=True)
+                if session.is_active: session.rollback()
+                return "error", f"Unexpected person DB write error for {log_ref_short}"
+        else:
+            # Person existed and no update fields triggered a change
+            person_status = "skipped"
+            logger.debug(f"{log_ref}: Person DB write skipped (no changes detected).")
+
+        # Ensure we have a person ID for relations if needed
+        if person_record_for_relations is None and (create_dna_needed or fetch_tree_data):
+             logger.error(f"{log_ref}: Cannot create relations - Person record is missing after create/update/skip step.")
+             # If status wasn't error before, make it error now. Rollback likely needed.
+             if session.is_active and person_status != "error": session.rollback()
+             return "error", f"Person record missing for relations for {log_ref_short}"
+
+        # 5b. Create DNA Record (Conditional)
+        if create_dna_needed:
+            if not details_fetched:
+                 logger.error(f"{log_ref}: Cannot create DNA Match - required details were not fetched or fetch failed.")
+                 # Mark overall as error, rollback likely needed
+                 if session.is_active: session.rollback()
+                 return "error", f"Missing details for DNA creation for {log_ref_short}"
+
+            logger.debug(f"{log_ref}: Proceeding with DNA Match creation.")
+            pred_rel = match.get("predicted_relationship", "N/A") # Use relationship from initial list
+            dna_data_to_save = {
+                "people_id": person_record_for_relations.id,
+                "compare_link": match.get("compare_link"), # From initial list
+                "cM_DNA": match.get("cM_DNA"), # From initial list
+                "predicted_relationship": pred_rel,
+                "uuid": match_uuid.upper(), # From initial list
+                # --- Fields from details API ---
                 "shared_segments": details_fetched.get("shared_segments"),
                 "longest_shared_segment": details_fetched.get("longest_shared_segment"),
                 "meiosis": details_fetched.get("meiosis"),
@@ -489,78 +632,81 @@ def _do_match(
                 "from_my_mothers_side": details_fetched.get("from_my_mothers_side", False),
             }
             dna_status = create_dna_match(session, dna_data_to_save)
-            if dna_status == "error": logger.error(f"Failed to create DNA match for {log_ref_short}.")
-            elif dna_status == "skipped": logger.warning(f"DNA match creation needed but skipped for {log_ref_short}.")
+            if dna_status == "error":
+                 logger.error(f"Failed to create DNA match for {log_ref_short}. Rolling back.")
+                 if session.is_active: session.rollback()
+                 return "error", f"DNA match creation failed for {log_ref_short}"
+            elif dna_status == "skipped":
+                 # This case indicates a race condition or logic error if create_dna_needed was True
+                 logger.warning(f"DNA match creation needed but skipped (DB state inconsistent?) for {log_ref_short}.")
+            else: # created
+                 logger.debug(f"{log_ref}: DNA Match created successfully (staged).")
         else:
-            logger.debug(f"Skipping DNA Match creation for {log_ref_short} (create_dna_needed=False).")
+            logger.debug(f"{log_ref}: Skipping DNA Match creation (not needed).")
 
 
-        # --- Step 6: Create Tree Record (Conditional - using flag from Step 1 & fetched results) ---
-        tree_status = "skipped"
-        if fetch_tree_data and tree_api_data_result:
-             # (Tree creation logic remains the same, using tree_api_data_result and relationship_data_result)
-             logger.debug(f"Processing fetched family tree data for {log_ref_short} (Person ID: {person_record.id}).")
-             view_in_tree_link = None
-             facts_link = None
-             their_cfpid_final = tree_api_data_result.get("their_cfpid")
-             if their_cfpid_final and session_manager.my_tree_id:
-                 base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}")
-                 view_in_tree_link = urljoin(base_tree_url, "family")
-                 facts_link = urljoin(base_tree_url, "facts")
-             family_tree_args = {
-                 "people_id": person_record.id,
-                 "cfpid": their_cfpid_final,
-                 "person_name_in_tree": tree_api_data_result.get("their_firstname", "Unknown"),
-                 "facts_link": facts_link,
-                 "view_in_tree_link": view_in_tree_link,
-                 "actual_relationship": relationship_data_result.get("actual_relationship") if relationship_data_result else None,
-                 "relationship_path": relationship_data_result.get("relationship_path") if relationship_data_result else None,
-             }
-             logger.debug(f"Arguments prepared for create_family_tree: {family_tree_args}")
-             tree_status = create_family_tree(session, family_tree_args)
-             if tree_status == "error": logger.error(f"Failed to process family tree for {log_ref_short}.")
-             elif tree_status == "skipped": logger.warning(f"Family tree processing needed but skipped for {log_ref_short}.")
-        elif fetch_tree_data and not tree_api_data_result:
-             logger.warning(f"Skipping Family Tree creation for {log_ref_short} as parallel fetch failed.")
+        # 5c. Create Tree Record (Conditional)
+        if fetch_tree_data:
+            if not tree_api_data_result:
+                 logger.warning(f"{log_ref}: Skipping Family Tree creation as tree API fetch failed or returned no data.")
+                 # Don't treat as critical error, just skip tree part
+            else:
+                 logger.debug(f"{log_ref}: Proceeding with Family Tree creation/update.")
+                 view_in_tree_link = None
+                 facts_link = None
+                 their_cfpid_final = tree_api_data_result.get("their_cfpid")
+                 if their_cfpid_final and session_manager.my_tree_id:
+                     base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}")
+                     view_in_tree_link = urljoin(base_tree_url, "family")
+                     facts_link = urljoin(base_tree_url, "facts")
+
+                 tree_data_to_save = {
+                     "people_id": person_record_for_relations.id,
+                     "cfpid": their_cfpid_final,
+                     "person_name_in_tree": tree_api_data_result.get("their_firstname", "Unknown"), # Use name from tree API
+                     "facts_link": facts_link,
+                     "view_in_tree_link": view_in_tree_link,
+                     "actual_relationship": relationship_data_result.get("actual_relationship") if relationship_data_result else None,
+                     "relationship_path": relationship_data_result.get("relationship_path") if relationship_data_result else None,
+                 }
+                 logger.debug(f"{log_ref}: Arguments prepared for create_family_tree: {tree_data_to_save}")
+                 tree_status = create_family_tree(session, tree_data_to_save)
+                 if tree_status == "error":
+                      logger.error(f"Failed to create family tree for {log_ref_short}. Rolling back.")
+                      if session.is_active: session.rollback()
+                      return "error", f"Family tree creation failed for {log_ref_short}"
+                 elif tree_status == "skipped":
+                      logger.warning(f"Family tree creation needed but skipped (DB state inconsistent?) for {log_ref_short}.")
+                 else: # created
+                      logger.debug(f"{log_ref}: Family Tree created successfully (staged).")
         else: # fetch_tree_data was False initially
-             logger.debug(f"Skipping Family Tree fetch/creation for {log_ref_short} (fetch_tree_data=False).")
+             logger.debug(f"{log_ref}: Skipping Family Tree creation (not needed).")
 
-        # --- Step 7: Commit/Rollback ---
-        # (Commit/rollback logic remains the same)
-        any_errors = (person_status == "error" or dna_status == "error" or tree_status == "error")
-        if any_errors:
-            overall_status = "error"
-            error_msg = f"Processing error for {log_ref_short} (P:{person_status}, D:{dna_status}, T:{tree_status}). Rolling back."
-            logger.warning(error_msg)
-            if session.is_active: session.rollback()
-            return overall_status, error_msg
+        # --- Step 6: Commit/Rollback ---
+        # Determine final overall status based on individual component statuses
+        if person_status == "error" or dna_status == "error" or tree_status == "error":
+             overall_status = "error"
+             # Rollback should have happened within the specific error handling block
+             error_msg = f"Processing error for {log_ref_short} (P:{person_status}, D:{dna_status}, T:{tree_status}). Transaction rolled back."
+             logger.warning(error_msg)
+             return overall_status, error_msg # Return error
+        elif person_status == "created" or dna_status == "created" or tree_status == "created":
+             overall_status = "new" if person_status == "created" else "updated"
+             commit_needed = True
+        elif person_status == "updated": # Person updated, but no new DNA/Tree
+             overall_status = "updated"
+             commit_needed = True
+        else: # All components were skipped
+             overall_status = "skipped"
+             commit_needed = False
 
-        needs_commit = session.new or session.dirty or session.deleted
-        if not needs_commit:
-             # This case should be rarer now, as create/update should make session dirty
-             logger.warning(f"Session unexpectedly clean for {log_ref_short} before commit decision.")
-             if person_status == "created": overall_status = "new"
-             elif person_status == "updated" or dna_status == "created" or tree_status == "created": overall_status = "updated"
-             else: overall_status = "skipped"
-             logger.warning(f"Determined overall status as '{overall_status}' despite clean session.")
-             # If truly nothing happened (all skipped), return skipped
-             if overall_status == 'skipped': return overall_status, None
-             # Otherwise, assume commit IS needed despite session state
-             needs_commit = True
-
-
-        if needs_commit:
+        # Commit if any changes were staged
+        if commit_needed:
             try:
-                commit_log_ref = f"{log_ref_short} (Person ID: {person_id_for_verification})"
-                logger.debug(f"Attempting commit for {commit_log_ref}.")
+                commit_log_ref = f"{log_ref_short} (Person ID: {person_record_for_relations.id if person_record_for_relations else 'N/A'})"
+                logger.debug(f"Attempting commit for {commit_log_ref} (Overall Status: {overall_status}).")
                 session.commit()
                 logger.debug(f"Commit successful for {commit_log_ref}.")
-
-                # Determine final status after successful commit
-                if person_status == "created": overall_status = "new"
-                elif person_status == "updated" or dna_status == "created" or tree_status == "created": overall_status = "updated"
-                else: overall_status = "skipped"
-
             except (IntegrityError, SQLAlchemyError) as commit_e:
                  error_msg = f"Database Commit FAILED for {log_ref_short}"
                  logger.error(f"{error_msg}: {commit_e}", exc_info=True)
@@ -571,27 +717,21 @@ def _do_match(
                  logger.error(f"{error_msg}: {E}", exc_info=True)
                  if session.is_active: session.rollback()
                  return "error", error_msg
+        else:
+             logger.debug(f"{log_ref}: No commit needed (overall status: skipped).")
 
-        # --- Step 8: Post-commit Verification ---
-        # (Logic remains the same)
-        if person_id_for_verification and (person_status == "created" or person_status == "updated"):
-            # ... (verification logic) ...
-             pass
-
-        # --- Step 9: Return final status ---
+        # --- Step 7: Return final status ---
         logger.debug(f"Final overall status for {log_ref_short}: {overall_status}")
         return overall_status, None
 
-    # --- Exception Handling ---
-    # (Logic remains the same)
+    # --- Exception Handling (Outer Catch) ---
     except Exception as e:
         error_msg = f"Unexpected critical error in _do_match for {log_ref}: {e}."
         logger.error(error_msg, exc_info=True)
         if session and session.is_active:
-            try: session.rollback(); logger.debug(f"Rolled back session for {log_ref}.")
-            except Exception as rb_err: logger.error(f"Error rolling back session for {log_ref}: {rb_err}")
+            try: session.rollback(); logger.debug(f"Rolled back session for {log_ref} due to critical error.")
+            except Exception as rb_err: logger.error(f"Error rolling back session for {log_ref} after critical error: {rb_err}")
         return "error", f"Unexpected error processing {log_ref}: {e}"
-
 # End of _do_match
 
 def _log_page_summary(page, page_new, page_updated, page_skipped, page_errors):
@@ -674,13 +814,14 @@ def get_page_count(session_manager, my_uuid: str) -> Optional[int]:
 # end get_page_count
 
 def get_matches(
-    session_manager: SessionManager, current_page: int = 1
+    session_manager: SessionManager, db_session: Session, current_page: int = 1
 ) -> List[Dict[str, Any]]:
     """
-    Fetches and processes match list data for a SINGLE page. Includes administrator
-    hints, attempts to parse last login date, and removes initial message_link construction.
-    Forces use of requests library for the main match list API call and ENSURES CSRF TOKEN IS USED.
-    Adds debug logging for refined matches.
+    REVISED: Fetches and processes match list data for a SINGLE page.
+    - Includes administrator hints.
+    - Fetches predicted relationships CONDITIONALLY based on DB check.
+    - Parses last login date from profile details API only (removed initial attempt).
+    - Forces use of requests library for the main match list API call.
     """
     MAX_LABELS_TO_SHOW = 2
 
@@ -695,11 +836,10 @@ def get_matches(
         return []
 
     my_uuid = session_manager.my_uuid
-    # --- Initialize predicted_relationships dictionary ---
-    predicted_relationships: Dict[str, str] = {} # Ensure it's defined early
+    predicted_relationships: Dict[str, str] = {} # Initialize empty
 
     try:
-        # --- 1. Fetch Match List Data ---
+        # --- 1. Fetch Match List Data (No change here) ---
         match_list_url = urljoin(
             config_instance.BASE_URL,
             f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
@@ -717,17 +857,13 @@ def get_matches(
         )
 
         if api_response is None:
-            logger.warning(
-                f"No response received from match list API for page {current_page} (using requests)."
-            )
+            logger.warning(f"No response received from match list API for page {current_page} (using requests).")
             return []
         if isinstance(api_response, str):
             logger.warning(f"Received string instead of dict from match list API for page {current_page} (using requests): '{api_response[:100]}...'")
             return []
         if not isinstance(api_response, dict):
-            logger.warning(
-                f"Unexpected data type received from match list API for page {current_page} (using requests). Type: {type(api_response)}."
-            )
+            logger.warning(f"Unexpected data type received from match list API for page {current_page} (using requests). Type: {type(api_response)}.")
             logger.debug(f"Response data: {api_response}")
             return []
 
@@ -735,10 +871,9 @@ def get_matches(
         if not match_data_list:
             logger.info(f"No matches found in 'matchList' for page {current_page}.")
             return []
-
         logger.debug(f"Got {len(match_data_list)} raw matches from API on page {current_page}.")
 
-        # --- Filter raw matches for essential 'sampleId' ---
+        # Filter raw matches for essential 'sampleId'
         valid_matches_for_processing: List[Dict[str, Any]] = []
         skipped_sampleid_count = 0
         for m in match_data_list:
@@ -746,169 +881,174 @@ def get_matches(
                 valid_matches_for_processing.append(m)
             else:
                 skipped_sampleid_count += 1
-                logger.warning(
-                    f"Skipping raw match due to missing 'sampleId' on page {current_page}. Data: {m}"
-                )
+                logger.warning(f"Skipping raw match due to missing 'sampleId' on page {current_page}. Data: {m}")
         if skipped_sampleid_count > 0:
-            logger.warning(
-                f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
-            )
+            logger.warning(f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'.")
         if not valid_matches_for_processing:
-            logger.warning(
-                f"No matches with valid 'sampleId' found on page {current_page}."
-            )
+            logger.warning(f"No matches with valid 'sampleId' found on page {current_page}.")
             return []
 
-        sample_ids = [match["sampleId"].upper() for match in valid_matches_for_processing]
+        sample_ids_on_page = [match["sampleId"].upper() for match in valid_matches_for_processing]
+        sample_ids_set = set(sample_ids_on_page) # Set for efficient lookup
 
-        # --- In-Tree and Relationship processing ---
-        in_tree_ids: Set[str] = set() # Ensure type hint
-        # predicted_relationships dict is initialized earlier
-
-        # 2. In-Tree Status Check (logic remains the same)
-        cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids))}"
+        # --- In-Tree Status Check (No change here) ---
+        in_tree_ids: Set[str] = set()
+        cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}" # Use page-specific key
         cached_in_tree = session_manager.cache.get(cache_key_tree)
-        if cached_in_tree is not None and isinstance(cached_in_tree, set): # Check type from cache
+        if cached_in_tree is not None and isinstance(cached_in_tree, set):
             in_tree_ids = cached_in_tree
-            logger.debug(f"Loaded {len(in_tree_ids)} in-tree IDs from cache.")
+            logger.debug(f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}.")
         else:
             in_tree_url = urljoin(
                 config_instance.BASE_URL,
                 f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
             )
-            logger.debug("Fetching in-tree status...")
-            # This API call likely needs CSRF and uses POST, so _api_req will use requests by default
+            logger.debug(f"Fetching in-tree status for page {current_page}...")
             response_in_tree = _api_req(
                 url=in_tree_url,
                 driver=session_manager.driver,
                 session_manager=session_manager,
                 method="POST",
-                json_data={"sampleIds": sample_ids},
+                json_data={"sampleIds": sample_ids_on_page},
                 use_csrf_token=True,
                 api_description="In-Tree Status Check",
                 referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
             )
             if isinstance(response_in_tree, list):
-                in_tree_ids = {
-                    item.upper() for item in response_in_tree if isinstance(item, str)
-                }
-                # Use config_instance.CACHE_TIMEOUT for consistency
-                session_manager.cache.set(
-                    cache_key_tree, in_tree_ids, timeout=config_instance.CACHE_TIMEOUT
-                )
-                logger.debug(f"Fetched/cached {len(in_tree_ids)} in-tree IDs.")
+                in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
+                session_manager.cache.set(cache_key_tree, in_tree_ids, timeout=config_instance.CACHE_TIMEOUT)
+                logger.debug(f"Fetched/cached {len(in_tree_ids)} in-tree IDs for page {current_page}.")
             elif response_in_tree is None:
-                logger.warning("In-Tree Status Check API failed (_api_req returned None).")
+                logger.warning(f"In-Tree Status Check API failed for page {current_page}.")
             else:
-                logger.error(
-                    f"Unexpected in-tree status response format: {type(response_in_tree)}"
-                )
+                logger.error(f"Unexpected in-tree status response format for page {current_page}: {type(response_in_tree)}")
 
-        # 3. Parallel Predicted Relationship Processing (logic remains the same)
-        logger.debug("Getting predicted relationships...")
 
-        @retry()
-        def process_sample(sample_id: str) -> tuple[str, str]:
-            """Fetches relationship probability."""
-            # Ensure my_uuid is available inside the nested function
-            if not session_manager.my_uuid:
-                logger.error("Cannot process relationship sample: my_uuid missing.")
-                return sample_id.upper(), "N/A (Error - Missing Own UUID)"
-            try:
-                my_uuid_upper = session_manager.my_uuid.upper()
-                sample_id_upper = sample_id.upper()
-                rel_url = urljoin(
-                    config_instance.BASE_URL,
-                    f"discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}",
-                )
-                # This API call needs CSRF and uses POST, so _api_req will use requests by default
-                response_rel = _api_req(
-                    url=rel_url,
-                    driver=session_manager.driver,
-                    session_manager=session_manager,
-                    method="POST",
-                    json_data={}, # Empty JSON body
-                    use_csrf_token=True,
-                    api_description="Match Probability API",
-                    referer_url=urljoin(
-                        config_instance.BASE_URL, "/discoveryui-matches/list/"
-                    ),
-                )
-                if response_rel is None:
-                    # Raise specific exception to trigger retry
-                    raise requests.exceptions.RequestException(f"Match Probability API req failed for {sample_id}")
-                if not isinstance(response_rel, dict) or "matchProbabilityToSampleId" not in response_rel:
-                    logger.warning(f"Invalid data format from Match Probability API for {sample_id_upper}. Resp: {response_rel}")
-                    return sample_id_upper, "N/A (Invalid Data)"
+        # --- MODIFIED: Conditional Predicted Relationship Processing ---
+        logger.debug(f"Checking DB for existing DNA records for {len(sample_ids_on_page)} matches on page {current_page}...")
+        try:
+            # Batch query to find existing Person IDs linked to DNA matches for this page's UUIDs
+            existing_dna_people_ids = set(
+                db_session.query(DnaMatch.people_id)
+                .join(Person, DnaMatch.people_id == Person.id)
+                .filter(Person.uuid.in_(sample_ids_on_page))
+                .distinct()
+                .all()
+            )
+             # Flatten the list of tuples
+            existing_dna_people_ids_flat = {pid[0] for pid in existing_dna_people_ids}
 
-                prob_data = response_rel["matchProbabilityToSampleId"]
-                predictions = prob_data.get("relationships", {}).get("predictions", [])
-                if not predictions:
-                    logger.debug(f"No relationship predictions found for {sample_id_upper}. Marking as Distant.")
-                    return sample_id_upper, "Distant relationship?" # Or "No predictions"
 
-                valid_preds = [
-                    p
-                    for p in predictions
-                    if isinstance(p, dict) and "distributionProbability" in p and "pathsToMatch" in p
-                ]
-                if not valid_preds:
-                    logger.warning(f"No valid prediction paths found for {sample_id_upper}.")
-                    return sample_id_upper, "N/A (No Valid Paths)"
+            # Determine which UUIDs *might* need relationship fetching (those without existing DNA record)
+            # Note: This still requires fetching Person records to link UUID to people_id, slightly complex.
+            # Alternative: Simpler check - just fetch Person.uuid for existing DnaMatch records?
+            # Let's try the simpler alternative first:
 
-                # Find the prediction with the highest probability
-                best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
-                top_prob = best_pred.get("distributionProbability", 0.0) 
-                paths = best_pred.get("pathsToMatch", [])
-                labels = [p.get("label") for p in paths if isinstance(p, dict) and p.get("label")]
+            existing_dna_match_uuids = set(
+                 row[0] for row in db_session.query(Person.uuid)
+                 .join(DnaMatch, Person.id == DnaMatch.people_id)
+                 .filter(Person.uuid.in_(sample_ids_on_page))
+                 .distinct()
+                 .all()
+            )
 
-                if not labels:
-                    logger.warning(f"Prediction found for {sample_id_upper}, but no labels in paths.")
-                    return sample_id_upper, f"N/A (No Labels) [{top_prob:.1f}%]"
+            sample_ids_needing_relationship_fetch = sample_ids_set - existing_dna_match_uuids
+            logger.debug(f"Found {len(existing_dna_match_uuids)} existing DNA matches in DB for this page.")
+            logger.debug(f"Will fetch predicted relationships for {len(sample_ids_needing_relationship_fetch)} matches.")
 
-                # Limit labels shown and join them
-                final_labels = labels[:MAX_LABELS_TO_SHOW]
-                relationship_str = " or ".join(map(str, final_labels))
-                return sample_id_upper, f"{relationship_str} [{top_prob:.1f}%]"
+        except SQLAlchemyError as db_err:
+            logger.error(f"Database error checking existing DNA matches for page {current_page}: {db_err}", exc_info=True)
+            # If DB check fails, cautiously fetch for all matches on the page
+            sample_ids_needing_relationship_fetch = sample_ids_set
+            logger.warning("Fetching relationships for all matches due to DB check error.")
+        except Exception as e:
+             logger.error(f"Unexpected error checking existing DNA matches: {e}", exc_info=True)
+             sample_ids_needing_relationship_fetch = sample_ids_set
+             logger.warning("Fetching relationships for all matches due to unexpected error.")
 
-            except requests.exceptions.RequestException as req_e:
-                logger.warning(f"RequestException processing relationship for {sample_id}: {req_e}. Retrying...")
-                raise req_e # Re-raise to trigger retry decorator
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error processing relationship for {sample_id}: {e}",
-                    exc_info=False, # Keep False for less noise, True for deep debug
-                )
-                logger.debug(f"Traceback:", exc_info=True)
-                return sample_id.upper(), "N/A (Error)"
-
-        # Execute relationship processing in parallel
-        predicted_relationships = {} # Re-initialize just before the parallel execution
-        skipped_rel_count = 0
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            future_to_sid = {
-                executor.submit(process_sample, sid): sid.upper() for sid in sample_ids
-            }
-            for future in as_completed(future_to_sid):
-                sid_upper = future_to_sid[future]
+        # Fetch relationships only for those needing it
+        if sample_ids_needing_relationship_fetch:
+            logger.debug("Getting predicted relationships for needed matches...")
+            @retry()
+            def process_sample(sample_id: str) -> tuple[str, str]:
+                """Fetches relationship probability (inner function, unchanged)."""
+                if not session_manager.my_uuid:
+                    logger.error("Cannot process relationship sample: my_uuid missing.")
+                    return sample_id.upper(), "N/A (Error - Missing Own UUID)"
                 try:
-                    _, rel_str = future.result()
-                    predicted_relationships[sid_upper] = rel_str
-                except Exception as exc:
-                    logger.error(
-                        f"Relationship future for {sid_upper} failed after retries: {exc}"
+                    my_uuid_upper = session_manager.my_uuid.upper()
+                    sample_id_upper = sample_id.upper()
+                    rel_url = urljoin(
+                        config_instance.BASE_URL,
+                        f"discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}",
                     )
-                    predicted_relationships[sid_upper] = "N/A (Future Error)"
-                    skipped_rel_count += 1
-        logger.debug(
-            f"Got {len(predicted_relationships)} predicted relationships ({skipped_rel_count} errors)."
-        )
+                    response_rel = _api_req(
+                        url=rel_url,
+                        driver=session_manager.driver,
+                        session_manager=session_manager,
+                        method="POST",
+                        json_data={},
+                        use_csrf_token=True,
+                        api_description="Match Probability API",
+                        referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
+                    )
+                    if response_rel is None:
+                        raise requests.exceptions.RequestException(f"Match Probability API req failed for {sample_id}")
+                    if not isinstance(response_rel, dict) or "matchProbabilityToSampleId" not in response_rel:
+                        logger.warning(f"Invalid data format from Match Probability API for {sample_id_upper}. Resp: {response_rel}")
+                        return sample_id_upper, "N/A (Invalid Data)"
+                    prob_data = response_rel["matchProbabilityToSampleId"]
+                    predictions = prob_data.get("relationships", {}).get("predictions", [])
+                    if not predictions:
+                        logger.debug(f"No relationship predictions found for {sample_id_upper}. Marking as Distant.")
+                        return sample_id_upper, "Distant relationship?"
+                    valid_preds = [p for p in predictions if isinstance(p, dict) and "distributionProbability" in p and "pathsToMatch" in p]
+                    if not valid_preds:
+                        logger.warning(f"No valid prediction paths found for {sample_id_upper}.")
+                        return sample_id_upper, "N/A (No Valid Paths)"
+                    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+                    top_prob = best_pred.get("distributionProbability", 0.0)
+                    paths = best_pred.get("pathsToMatch", [])
+                    labels = [p.get("label") for p in paths if isinstance(p, dict) and p.get("label")]
+                    if not labels:
+                        logger.warning(f"Prediction found for {sample_id_upper}, but no labels in paths.")
+                        return sample_id_upper, f"N/A (No Labels) [{top_prob:.1f}%]"
+                    final_labels = labels[:MAX_LABELS_TO_SHOW]
+                    relationship_str = " or ".join(map(str, final_labels))
+                    return sample_id_upper, f"{relationship_str} [{top_prob:.1f}%]"
+                except requests.exceptions.RequestException as req_e:
+                    logger.warning(f"RequestException processing relationship for {sample_id}: {req_e}. Retrying...")
+                    raise req_e
+                except Exception as e:
+                    logger.error(f"Unexpected error processing relationship for {sample_id}: {e}", exc_info=False)
+                    logger.debug(f"Traceback:", exc_info=True)
+                    return sample_id.upper(), "N/A (Error)"
+            # End inner function process_sample
+
+            skipped_rel_count = 0
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_sid = {
+                    executor.submit(process_sample, sid): sid.upper() for sid in sample_ids_needing_relationship_fetch
+                }
+                for future in as_completed(future_to_sid):
+                    sid_upper = future_to_sid[future]
+                    try:
+                        _, rel_str = future.result()
+                        predicted_relationships[sid_upper] = rel_str
+                    except Exception as exc:
+                        logger.error(f"Relationship future for {sid_upper} failed after retries: {exc}")
+                        predicted_relationships[sid_upper] = "N/A (Future Error)"
+                        skipped_rel_count += 1
+            logger.debug(f"Fetched {len(predicted_relationships)} needed predicted relationships ({skipped_rel_count} errors).")
+        else:
+             logger.debug("No new predicted relationships need fetching for this page (all have existing DNA records).")
+        # --- END MODIFIED Relationship Fetch ---
 
 
-        # --- 4. Compile Final Refined Match Data ---
-        refined_matches: List[Dict[str, Any]] = [] # Ensure type hint
+        # --- Compile Final Refined Match Data ---
+        refined_matches: List[Dict[str, Any]] = []
         skipped_profile_id_count = 0
-        skipped_last_login_count = 0 # Track missing last login
+        # Removed skipped_last_login_count as it's now fetched later
 
         for match in valid_matches_for_processing:
             profile = match.get("matchProfile", {})
@@ -921,37 +1061,11 @@ def get_matches(
             admin_profile_id_hint = match.get("adminId")
             admin_username_hint = match.get("adminName")
 
-            # --- Extract and parse lastLoginDate (from initial match list API) ---
-            last_login_str = match.get("lastLoginDate")
-            last_login_dt = None
-            if last_login_str:
-                try:
-                    # Handle 'Z' for UTC timezone explicitly
-                    if last_login_str.endswith('Z'):
-                         last_login_dt = datetime.fromisoformat(last_login_str.replace('Z', '+00:00'))
-                    else:
-                         # Assume ISO format without timezone or with offset already included
-                         last_login_dt = datetime.fromisoformat(last_login_str)
-                except (ValueError, TypeError) as date_parse_e:
-                    logger.warning(
-                        f"Could not parse lastLoginDate string '{last_login_str}' for {match_username}. Error: {date_parse_e}"
-                    )
-                    skipped_last_login_count += 1
-                except Exception as date_parse_e:
-                    logger.error(
-                        f"Unexpected error parsing lastLoginDate '{last_login_str}' for {match_username}: {date_parse_e}",
-                        exc_info=False,
-                    )
-                    skipped_last_login_count += 1
-            else:
-                # logger.debug(f"lastLoginDate missing for {match_username}.") # Optional debug log
-                skipped_last_login_count += 1
-            # --- END MODIFICATION ---
+            # --- REMOVED lastLoginDate parsing here ---
+            # last_login_dt is now fetched in _get_match_details_and_admin
 
             if not profile_user_id:
-                logger.debug(
-                    f"Match '{match_username}' (UUID: {sample_id_upper}) missing tester 'profile_id' in initial list. Will attempt fetch via details API."
-                )
+                logger.debug(f"Match '{match_username}' (UUID: {sample_id_upper}) missing tester 'profile_id' in initial list. Will attempt fetch via details API.")
                 skipped_profile_id_count += 1
                 profile_user_id_upper = None
             else:
@@ -961,34 +1075,29 @@ def get_matches(
                 config_instance.BASE_URL,
                 f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
             )
-            # message_link is constructed later in _do_match
-
-            # Derive first name
             first_name = match_username.split()[0] if match_username != "Unknown" else None
+
+            # Get predicted relationship (either newly fetched or default 'N/A' if skipped)
+            pred_rel_value = predicted_relationships.get(sample_id_upper, "N/A (DB Exists)")
 
             refined_match_data = {
                 "username": match_username,
                 "first_name": first_name,
                 "initials": profile.get("displayInitials", "??").upper(),
-                "gender": match.get("gender"), # Gender hint (may be overwritten later)
-                "profile_id": profile_user_id_upper, # Might be None initially (THIS IS A HINT ONLY)
+                "gender": match.get("gender"), # Initial hint
+                "profile_id": profile_user_id_upper, # Initial hint
                 "uuid": sample_id_upper,
                 "administrator_profile_id_hint": admin_profile_id_hint,
                 "administrator_username_hint": admin_username_hint,
                 "photoUrl": profile.get("photoUrl", ""),
                 "cM_DNA": int(relationship.get("sharedCentimorgans", 0)),
-                "numSharedSegments": int(relationship.get("numSharedSegments", 0)),
+                "numSharedSegments": int(relationship.get("numSharedSegments", 0)), # Keep original name if needed elsewhere
                 "compare_link": compare_link,
                 "message_link": None, # Set later
-                # --- Ensure lookup uses uppercase UUID ---
-                "predicted_relationship": predicted_relationships.get(
-                    sample_id_upper, "N/A"
-                ),
-                # --- End ensure ---
+                "predicted_relationship": pred_rel_value, # Use fetched or default
                 "in_my_tree": sample_id_upper in in_tree_ids,
                 "createdDate": match.get("createdDate"),
-                # Store the potentially parsed datetime object (or None)
-                "last_logged_in_dt": last_login_dt,
+                # REMOVED: "last_logged_in_dt": last_login_dt,
             }
             refined_matches.append(refined_match_data)
 
@@ -996,443 +1105,234 @@ def get_matches(
         total_valid_uuid = len(valid_matches_for_processing)
         final_count = len(refined_matches)
         logger.debug(
-            f"Processed page {current_page}: Raw={total_raw}, ValidUUID={total_valid_uuid}, Refined={final_count} (MissingTesterProfileID={skipped_profile_id_count}, MissingLastLogin={skipped_last_login_count})"
+            f"Processed page {current_page}: Raw={total_raw}, ValidUUID={total_valid_uuid}, Refined={final_count} (MissingTesterProfileID={skipped_profile_id_count})"
         )
 
-        # --- Added Debugging ---
         logger.debug(f"Refined matches being returned from get_matches (Page {current_page}):")
         for i, rm in enumerate(refined_matches):
              logger.debug(f"  Match {i+1}: User='{rm.get('username')}', PredRel='{rm.get('predicted_relationship')}'")
-        # --- End Added Debugging ---
 
         return refined_matches
 
     except requests.exceptions.RequestException as e:
-        logger.error(
-            f"Network/Request error processing page {current_page}: {e}", exc_info=True
-        )
+        logger.error(f"Network/Request error processing page {current_page}: {e}", exc_info=True)
         return []
     except Exception as e:
-        logger.critical(
-            f"Critical error processing match data for page {current_page}: {e}",
-            exc_info=True,
-        )
+        logger.critical(f"Critical error processing match data for page {current_page}: {e}", exc_info=True)
         return []
 # end get_matches
 
-def _get_tree(session, match: dict, session_manager) -> Optional[dict]:  # Point 8
+
+def _fetch_full_tree_details(
+    session_manager: SessionManager, match_data: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """
-    Fetches details for a DNA match from Ancestry's API, including their first name.
-    Adds detailed logging of the API response and parsed data.
+    V1 REVISED: Fetches tree badge details and then relationship data sequentially.
+    Combines logic of _get_tree and _get_relShip. Handles rate limiting.
+
+    Args:
+        session_manager: The active SessionManager instance.
+        match_data: Dictionary containing match data ('uuid', 'username').
+
+    Returns:
+        A dictionary containing combined tree and relationship data, or None if failed.
+        Keys include: 'their_cfpid', 'their_firstname', 'their_lastname',
+                      'their_birth_year', 'actual_relationship', 'relationship_path'.
     """
+    tree_api_data = None
+    relationship_data = None
+    log_ref_short = f"UUID={match_data.get('uuid')} User='{match_data.get('username', 'Unknown')}' (Full Tree Fetch)"
     my_uuid = session_manager.my_uuid
-    their_uuid = match.get("uuid")
-    username = match.get("username", "Unknown")  # Get username for logging
+    their_uuid = match_data.get("uuid")
+    username = match_data.get("username", "Unknown")
+
     if not their_uuid or not my_uuid:
-        logger.warning(
-            f"_get_tree: Missing their_uuid or my_uuid in match data for {username}: {match}"
-        )
+        logger.warning(f"_fetch_full_tree_details: Missing their_uuid or my_uuid for {username}: {match_data}")
         return None
 
-    badge_url = urljoin(
-        config_instance.BASE_URL,
-        f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{their_uuid}/badgedetails",
-    )
-
-    headers = config_instance.API_CONTEXTUAL_HEADERS.get(
-        "Badge Details API", {"Accept": "application/json"}
-    )
-
     try:
-        api_response = _api_req(
+        # --- 1. Fetch Tree Badge Details ---
+        delay_badge = session_manager.dynamic_rate_limiter.wait()
+        logger.debug(f"Waited {delay_badge:.2f}s before fetching tree badge details for {log_ref_short}")
+
+        badge_url = urljoin(
+            config_instance.BASE_URL,
+            f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{their_uuid}/badgedetails",
+        )
+        badge_api_response = _api_req(
             url=badge_url,
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
-            headers=headers,
             use_csrf_token=False,
             api_description="Badge Details API",
             referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
         )
 
-        # --- Log the raw API response ---
-        logger.debug(
-            f"_get_tree raw API response for {username} (UUID: {their_uuid}):\n{api_response}"
-        )
-        # ---
+        logger.debug(f"Badge Details raw API response for {log_ref_short}:\n{badge_api_response}")
 
-        if api_response and isinstance(api_response, dict):
-            person_badged = api_response.get("personBadged", {})
+        if badge_api_response and isinstance(badge_api_response, dict):
+            person_badged = badge_api_response.get("personBadged", {})
             full_firstname = person_badged.get("firstName", "Unknown")
             words = full_firstname.strip().split()
             their_firstname = words[0] if words else "Unknown"
 
-            tree_data = {
+            tree_api_data = {
                 "their_cfpid": person_badged.get("personId"),
                 "their_firstname": their_firstname,
                 "their_lastname": person_badged.get("lastName", "Unknown"),
                 "their_birth_year": person_badged.get("birthYear"),
             }
-
-            # --- Log the parsed tree_data before returning ---
-            logger.debug(f"_get_tree parsed data for {username}: {tree_data}")
-            # ---
-
-            if not tree_data.get("their_cfpid"):
-                logger.warning(
-                    f"_get_tree: Missing 'personId' (CFPID) in parsed badge details for {username}."
-                )
-                # Still return partial data, let caller handle missing cfpid
-                return tree_data
-
-            return tree_data  # Return the full parsed data if cfpid exists
+            logger.debug(f"Parsed badge data for {log_ref_short}: {tree_api_data}")
         else:
-            logger.warning(
-                f"_get_tree returned non-dict or empty response for {username}. Type: {type(api_response)}"
+            logger.warning(f"Badge Details API returned non-dict or empty response for {log_ref_short}. Type: {type(badge_api_response)}")
+            return None # Cannot proceed without badge details
+
+        # --- 2. Fetch Relationship Ladder Details (if badge details successful) ---
+        their_cfpid = tree_api_data.get("their_cfpid")
+        my_tree_id = session_manager.my_tree_id
+
+        if their_cfpid and my_tree_id:
+            delay_ladder = session_manager.dynamic_rate_limiter.wait()
+            logger.debug(f"Waited {delay_ladder:.2f}s before fetching relationship ladder for {log_ref_short}")
+            logger.debug(f"Fetching relationship details for tree {my_tree_id}, cfpid {their_cfpid}.")
+
+            # Construct API URL and dynamic Referer
+            ladder_api_url = urljoin(
+                config_instance.BASE_URL,
+                f"family-tree/person/tree/{my_tree_id}/person/{their_cfpid}/getladder?callback=jQuery",
             )
-            return None
-
-    except Exception as e:
-        logger.error(
-            f"Failed to fetch/parse tree details for {username}: {str(e)}", exc_info=True
-        )
-        return None
-# End of _get_tree
-
-
-@retry()
-def _get_relShip(
-    session_manager: SessionManager, tree_id: str, cfpid: str
-) -> Optional[Dict[str, Any]]:
-    """
-    Fetches relationship path and actual relationship using the getladder API via
-    the execute_script-based _api_req. Handles JSONP response format and HTML parsing.
-    Corrects casing in relationship path description names.
-    """
-    # 1. Initialisation checks
-    if not session_manager:
-        logger.error("SessionManager not provided to _get_relShip.")
-        return None
-    if not session_manager.driver or not session_manager.is_sess_valid():  # Check driver validity
-        logger.error("WebDriver session invalid in _get_relShip.")
-        return None
-
-    if not tree_id or not cfpid:
-        logger.warning(
-            f"Missing tree_id ({tree_id}) or cfpid ({cfpid}) for relationship API call."
-        )
-        return None
-    logger.debug(
-        f"Fetching relationship details for tree {tree_id}, cfpid {cfpid}."
-    )  # Added tree_id for context
-
-    # 2. Construct API URL and dynamic Referer
-    api_url = urljoin(
-        config_instance.BASE_URL,
-        f"family-tree/person/tree/{tree_id}/person/{cfpid}/getladder?callback=jQuery",  # Added param
-    )
-    dynamic_referer = urljoin(
-        config_instance.BASE_URL, f"family-tree/person/tree/{tree_id}/person/{cfpid}/facts"
-    )
-
-    try:
-        # 3. Make API call using _api_req
-        response_text = _api_req(
-            url=api_url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            method="GET",
-            headers={"Accept": "*/*"},
-            use_csrf_token=False,
-            api_description="Get Ladder API",
-            referer_url=dynamic_referer,
-        )
-
-        # 4. Process the response
-        if response_text is None:
-            logger.error(
-                f"Failed to get relationship data for cfpid {cfpid}: _api_req returned None."
-            )
-            return None
-        if not isinstance(response_text, str):
-            logger.error(
-                f"Unexpected response type from _api_req for cfpid {cfpid}: {type(response_text)}. Expected string."
-            )
-            logger.debug(f"Response data: {response_text}")
-            return None
-
-        # 5. Parse JSONP format
-        match = re.match(r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE)
-        if not match:
-            logger.error(
-                f"Could not parse JSONP response format for cfpid {cfpid}. Regex failed."
-            )
-            logger.debug(f"Full Response Text Snippet: {response_text[:500]}...")
-            return None
-        json_string = match.group(1).strip()
-
-        # 6. Decode JSON and Extract HTML
-        try:
-            ladder_data = json.loads(json_string)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON from getladder for cfpid {cfpid}: {e}.")
-            logger.debug(f"Extracted JSON String Snippet: {json_string[:500]}...")
-            return None
-
-        if not isinstance(ladder_data, dict) or "html" not in ladder_data:
-            logger.warning(
-                f"Unexpected structure in getladder JSON (missing 'html') for cfpid {cfpid}."
-            )
-            logger.debug(f"Ladder Data Received: {ladder_data}")
-            return None
-
-        html_content = ladder_data["html"]
-        if not html_content:
-            logger.warning(
-                f"HTML content in getladder response is empty for cfpid {cfpid}."
-            )
-            return {"actual_relationship": None, "relationship_path": None}
-
-        # 7. Parse HTML for Relationship and Path
-        soup = BeautifulSoup(html_content, "html.parser")
-        actual_relationship = None
-        relationship_path = None
-
-        # Extract Actual Relationship
-        relationship_element = soup.select_one('ul.textCenter > li:first-child > i > b')
-        if relationship_element:
-            raw_relationship = relationship_element.get_text(strip=True)
-            # Apply title casing and ordinal correction
-            actual_relationship = ordinal_case(raw_relationship.title())
-        else:
-            logger.warning(
-                f"Could not extract actual_relationship from HTML for cfpid: {cfpid}"
+            dynamic_referer = urljoin(
+                config_instance.BASE_URL, f"family-tree/person/tree/{my_tree_id}/person/{their_cfpid}/facts"
             )
 
-        # Extract Relationship Path
-        path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
-        relationship_path_list = []
-        num_items = len(path_items)
+            # Make API call using _api_req
+            response_text = _api_req(
+                url=ladder_api_url,
+                driver=session_manager.driver,
+                session_manager=session_manager,
+                method="GET",
+                headers={"Accept": "*/*"},
+                use_csrf_token=False,
+                api_description="Get Ladder API",
+                referer_url=dynamic_referer,
+            )
 
-        for i, item in enumerate(path_items):
-            name_text = ""  # Will hold the formatted name
-            desc_text = ""  # Will hold the formatted description
+            # Process the JSONP response
+            if response_text and isinstance(response_text, str):
+                match_jsonp = re.match(r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE)
+                if match_jsonp:
+                    json_string = match_jsonp.group(1).strip()
+                    try:
+                        ladder_data = json.loads(json_string)
+                        if isinstance(ladder_data, dict) and "html" in ladder_data:
+                            html_content = ladder_data["html"]
+                            if html_content:
+                                soup = BeautifulSoup(html_content, "html.parser")
+                                actual_relationship_text = None
+                                relationship_path_text = None
 
-            # --- Extract Name (apply format_name here) ---
-            raw_name_extracted = ""
-            name_link = item.find("a")
-            name_bold = item.find("b") if not name_link else None
-            if name_link:
-                nested_b = name_link.find("b")
-                raw_name_extracted = (
-                    nested_b.get_text(strip=True)
-                    if nested_b
-                    else name_link.get_text(strip=True)
-                )
-            elif name_bold:
-                raw_name_extracted = name_bold.get_text(strip=True)
-            else:
-                potential_name_parts = item.get_text(separator="\n", strip=True).split(
-                    "\n"
-                )
-                if potential_name_parts:
-                    raw_name_extracted = potential_name_parts[0]
+                                # Extract Actual Relationship
+                                rel_elem = soup.select_one('ul.textCenter > li:first-child > i > b')
+                                if rel_elem:
+                                    raw_relationship = rel_elem.get_text(strip=True)
+                                    actual_relationship_text = ordinal_case(raw_relationship.title())
+                                else:
+                                    logger.warning(f"Could not extract actual_relationship from HTML for cfpid: {their_cfpid}")
 
-            # Clean and format the extracted name
-            if raw_name_extracted:
-                cleaned_name = " ".join(raw_name_extracted.replace('"', "'").split())
-                name_text = format_name(cleaned_name)  # Format the main name
-            else:
-                logger.warning(
-                    f"Could not extract raw name for path item {i+1}, cfpid {cfpid}."
-                )
-            # --- End Extract Name ---
+                                # Extract Relationship Path
+                                path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
+                                path_list = []
+                                num_items = len(path_items)
+                                for i, item in enumerate(path_items):
+                                    name_text = ""
+                                    desc_text = ""
+                                    raw_name_extracted = ""
+                                    name_link = item.find("a")
+                                    name_bold = item.find("b") if not name_link else None
+                                    if name_link:
+                                        nested_b = name_link.find("b")
+                                        raw_name_extracted = (nested_b.get_text(strip=True) if nested_b else name_link.get_text(strip=True))
+                                    elif name_bold: raw_name_extracted = name_bold.get_text(strip=True)
+                                    else:
+                                        parts = item.get_text(separator="\n", strip=True).split("\n")
+                                        if parts: raw_name_extracted = parts[0]
+                                    if raw_name_extracted:
+                                        cleaned_name = " ".join(raw_name_extracted.replace('"', "'").split())
+                                        name_text = format_name(cleaned_name)
+                                    if i > 0:
+                                        desc_element = item.find("i")
+                                        if desc_element:
+                                            raw_desc_full = desc_element.get_text(strip=True)
+                                            cleaned_desc_full = raw_desc_full.replace('"', "'")
+                                            if i == num_items - 1 and cleaned_desc_full.lower().startswith("you are the "):
+                                                relationship_part = cleaned_desc_full[len("You are the ") :].strip()
+                                                desc_text = format_name(relationship_part)
+                                            else:
+                                                match_rel = re.match(r"^(.*?)\s+of\s+(.*)$", cleaned_desc_full, re.IGNORECASE)
+                                                if match_rel:
+                                                    relation_part = match_rel.group(1).strip()
+                                                    name_part = match_rel.group(2).strip()
+                                                    formatted_name_part = format_name(name_part)
+                                                    desc_text = f"{relation_part.capitalize()} of {formatted_name_part}"
+                                                else:
+                                                    desc_text = format_name(cleaned_desc_full)
+                                    if name_text:
+                                        list_item = f"{name_text} ({desc_text})" if desc_text else name_text
+                                        path_list.append(list_item)
+                                if path_list:
+                                    relationship_path_text = "\n↓\n".join(path_list)
+                                else:
+                                    logger.warning(f"Could not construct relationship_path for cfpid {their_cfpid}.")
 
-            # --- Extract and Format Description ---
-            if i > 0:  # Skip first item 'You'
-                desc_element = item.find("i")
-                if desc_element:
-                    raw_desc_full = desc_element.get_text(strip=True)
-                    cleaned_desc_full = raw_desc_full.replace('"', "'")
+                                # Store results
+                                relationship_data = {
+                                    "actual_relationship": actual_relationship_text,
+                                    "relationship_path": relationship_path_text,
+                                }
+                                log_rel = actual_relationship_text if actual_relationship_text else "N/A"
+                                log_path_len = len(relationship_path_text) if relationship_path_text else 0
+                                logger.debug(f"Got relationship details for cfpid {their_cfpid}: Actual='{log_rel}', Path estimated length: {log_path_len}")
 
-                    # Check for "You are the ..." prefix for the last item
-                    if i == num_items - 1 and cleaned_desc_full.lower().startswith(
-                        "you are the "
-                    ):
-                        relationship_part = cleaned_desc_full[len("You are the ") :].strip()
-                        # Apply format_name specifically to this relationship part
-                        desc_text = format_name(relationship_part)
-                    else:
-                        # Attempt to parse names within the description like "Relation of Name Name"
-                        match = re.match(
-                            r"^(.*?)\s+of\s+(.*)$", cleaned_desc_full, re.IGNORECASE
-                        )
-                        if match:
-                            relation_part = match.group(1).strip()
-                            name_part = match.group(2).strip()
-                            # Format the name part and reconstruct the description
-                            formatted_name_part = format_name(name_part)
-                            # Capitalize the relation part (e.g., "Son", "Daughter")
-                            desc_text = f"{relation_part.capitalize()} of {formatted_name_part}"
+                            else:
+                                logger.warning(f"HTML content in getladder response is empty for cfpid {their_cfpid}.")
                         else:
-                            # If regex doesn't match, format the whole description string
-                            desc_text = format_name(cleaned_desc_full)
+                            logger.warning(f"Unexpected structure in getladder JSON (missing 'html') for cfpid {their_cfpid}.")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to decode JSON from getladder for cfpid {their_cfpid}: {e}.")
                 else:
-                    logger.warning(
-                        f"Could not find description (<i> tag) for path item {i+1} for cfpid {cfpid}."
-                    )
-            # --- End Extract Description ---
+                    logger.error(f"Could not parse JSONP response format for cfpid {their_cfpid}. Regex failed.")
+            elif response_text is None:
+                 logger.error(f"Failed to get relationship data for cfpid {their_cfpid}: _api_req returned None.")
+            else:
+                 logger.error(f"Unexpected response type from _api_req for cfpid {their_cfpid}: {type(response_text)}. Expected string.")
 
-            # Build list item string (name_text is already formatted)
-            if name_text:
-                list_item = f"{name_text} ({desc_text})" if desc_text else name_text
-                relationship_path_list.append(list_item)
-            # else: name extraction warning already logged above
+        elif not their_cfpid:
+             logger.warning(f"CFPID missing from badge details result for {log_ref_short}. Cannot fetch relationship.")
+        elif not my_tree_id:
+             logger.warning(f"my_tree_id missing. Cannot fetch relationship for {log_ref_short}.")
 
-        # --- Join path items ---
-        if relationship_path_list:
-            relationship_path = "\n↓\n".join(relationship_path_list)
+        # --- Combine results ---
+        if tree_api_data:
+            if relationship_data:
+                 tree_api_data.update(relationship_data) # Add relationship keys to tree_api_data dict
+            return tree_api_data # Return combined dict
         else:
-            logger.warning(
-                f"Could not construct relationship_path for cfpid {cfpid}."
-            )
-
-        # 8. Return results
-        result_data = {
-            "actual_relationship": actual_relationship,
-            "relationship_path": relationship_path,
-        }
-        # Log slightly differently for debug clarity
-        log_rel = actual_relationship if actual_relationship else "N/A"
-        log_path_len = len(relationship_path) if relationship_path else 0
-        logger.debug(
-            f"Got relationship details for cfpid {cfpid}: Actual='{log_rel}', Path estimated length: {log_path_len}"
-        )
-        return result_data
+            return None # Return None if tree_api_data failed
 
     except Exception as e:
-        logger.error(
-            f"Unexpected error processing relationship details for cfpid {cfpid}: {e}",
-            exc_info=True,
-        )
-        raise  # Re-raise exception for retry decorator
-# End of _get_relShip
+        logger.error(f"Error in _fetch_full_tree_details for {log_ref_short}: {e}", exc_info=True)
+        return None
+# End _fetch_full_tree_details
+
 
 #################################################################################
 # 4. Match Data Processing & Database Integration
 #################################################################################
 
-def need_update(
-    session: SqlAlchemySession, match: Dict[str, Any]
-) -> Tuple[Optional[Person], bool, bool]:
-    """
-    REVISED: Checks if related data needs updating based *only* on UUID lookup.
-    Determines if DNA record needs creation or Tree data needs fetching.
-    Does NOT determine if Person record itself needs update (handled later).
-    Expires object state before comparisons.
 
-    Args:
-        session: The SQLAlchemy session.
-        match: Dictionary containing initial match data including 'uuid', 'username', 'in_my_tree'.
 
-    Returns:
-        Tuple: (existing_person_hint, create_dna_needed, fetch_tree_data)
-               existing_person_hint is the Person object found by UUID (or None).
-    """
-    create_dna_needed = False
-    fetch_tree_data = False
-    existing_person_hint: Optional[Person] = None
 
-    match_uuid = match.get("uuid")
-    match_username = match.get("username", f"Unknown Match UUID {match_uuid or 'N/A'}")
-    match_in_my_tree = match.get("in_my_tree", False)
-
-    log_ref = f"UUID='{match_uuid or 'N/A'}' / User='{match_username}'"
-
-    if not match_uuid:
-        logger.error(f"Cannot process need_update for {match_username}: 'uuid' is missing.")
-        return None, False, False # Cannot proceed without UUID
-
-    try:
-        # --- Lookup primarily by UUID ---
-        # Eager load relationships needed for checks
-        existing_person_hint = (
-            session.query(Person)
-            .options(joinedload(Person.dna_match), joinedload(Person.family_tree)) # Eager load
-            .filter(Person.uuid == match_uuid.upper())
-            .first()
-        )
-
-        # --- Expire state after fetch, before comparison (still useful) ---
-        if existing_person_hint:
-            try:
-                logger.debug(
-                    f"{log_ref}: Expiring state for existing Person ID {existing_person_hint.id} before checks."
-                )
-                session.expire(existing_person_hint, ['dna_match', 'family_tree']) # Expire specific relationships too if needed
-            except Exception as expire_e:
-                logger.warning(
-                    f"Could not expire session state for Person ID {existing_person_hint.id}: {expire_e}"
-                )
-        # --- End Expire ---
-
-        # --- Determine need based on existing record ---
-        if existing_person_hint:
-            # Person found by UUID
-            logger.debug(f"{log_ref}: Found existing Person ID {existing_person_hint.id} by UUID.")
-
-            # Check DnaMatch Need: Needs creation if Person exists but DnaMatch doesn't
-            # Accessing existing_person_hint.dna_match will trigger load if expired/not loaded
-            existing_dna_record = existing_person_hint.dna_match
-            if existing_dna_record is None:
-                logger.debug(f"{log_ref}: Existing Person found, but no DnaMatch record. Needs DNA creation.")
-                create_dna_needed = True
-            else:
-                logger.debug(f"{log_ref}: Existing DnaMatch record found. No DNA creation needed.")
-                create_dna_needed = False
-
-            # Check FamilyTree Need: Needs fetch if status changes to 'in_my_tree'
-            # Accessing existing_person_hint.in_my_tree reloads if needed
-            db_in_my_tree = existing_person_hint.in_my_tree
-            if match_in_my_tree and not db_in_my_tree:
-                logger.debug(
-                    f"{log_ref}: Status changed to 'in_my_tree'. Needs tree data fetch."
-                )
-                fetch_tree_data = True
-            elif db_in_my_tree and not match_in_my_tree:
-                 logger.warning(f"{log_ref}: Status changed FROM 'in_my_tree' to False. Skipping tree fetch, existing tree data might become stale.")
-                 fetch_tree_data = False
-            else:
-                logger.debug(f"{log_ref}: 'in_my_tree' status unchanged ({match_in_my_tree}). No tree data fetch needed based on status change.")
-                fetch_tree_data = False
-
-        # --- Person Not Found by UUID ---
-        else:
-            logger.debug(f"{log_ref}: No existing person found by UUID.")
-            existing_person_hint = None # Ensure it's None
-            # If person doesn't exist, DNA match also doesn't exist
-            create_dna_needed = True
-            # If person doesn't exist, fetch tree data only if the flag is set
-            fetch_tree_data = match_in_my_tree
-
-    except SQLAlchemyError as e:
-         logger.error(f"Database error during need_update check for {log_ref}: {e}", exc_info=True)
-         return None, False, False # Return defaults on error
-    except Exception as e:
-         logger.error(f"Unexpected error during need_update check for {log_ref}: {e}", exc_info=True)
-         return None, False, False
-
-    # --- Final Decision Logging ---
-    actions_needed = []
-    if create_dna_needed: actions_needed.append("Create DNA Match")
-    if fetch_tree_data: actions_needed.append("Fetch/Process Tree Data")
-
-    if not actions_needed: final_decision = "No DNA/Tree actions needed."
-    else: final_decision = " AND ".join(actions_needed)
-    logger.debug(f"{log_ref}: Need Update Check Complete. Actions needed: {final_decision}")
-
-    return existing_person_hint, create_dna_needed, fetch_tree_data
-# End of need_update
 
 #################################################################################
 # 5. 'Create or Update' Database Operations
@@ -1443,341 +1343,7 @@ class PersonProcessingError(Exception):
     pass
 # end of PersonProcessingError class
 
-def _do_person(session: Session, match: Dict[str, Any]) -> Tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
-    """Creates or updates a Person record based primarily on profile_id.
-       Flushes the session after adding a new person to ensure ID is available.
 
-    Args:
-        session: The SQLAlchemy Session.
-        match: Dictionary containing match data including 'profile_id', 'username',
-               'uuid', 'message_link', 'in_my_tree'.
-
-    Returns:
-        A tuple containing the Person object (or None on error) and the status:
-        "new", "updated", "skipped", "error".
-    """
-    profile_id = match.get("profile_id")
-    if profile_id:
-        profile_id = profile_id.upper()  # Ensure consistent case for lookup
-    username = match.get("username")
-    uuid_val = match.get("uuid")
-    if uuid_val:
-        uuid_val = uuid_val.upper()
-    else:
-        # If profile_id exists, log with that, otherwise use generic message
-        log_id = f"profile_id {profile_id}" if profile_id else "unknown profile"
-        logger.error(f"_do_person: UUID is missing in match data for {log_id}. Skipping.")
-        return None, "error"
-
-    if not profile_id:
-        logger.error(f"_do_person: Missing profile_id for match UUID {uuid_val}. Skipping.")
-        return None, "error"
-    if not username:
-        logger.warning(
-            f"_do_person: Missing username for profile_id {profile_id}. Will use 'Unknown'."
-        )
-        username = "Unknown"  # Use a default if missing
-
-    try:
-        # --- MODIFIED LOOKUP: Primarily by profile_id ---
-        person = (
-            session.query(Person).filter(Person.profile_id == profile_id).first()
-        )
-
-        if person:
-            # Person exists, check if update is needed
-            updated = False
-            log_identifier = (
-                f"{person.username} (ID: {person.id}, Profile: {profile_id})"
-            )  # More detailed log identifier
-
-            # Update username if different (case-insensitive comparison)
-            if person.username.lower() != username.lower():
-                logger.debug(
-                    f"Updating username for {log_identifier} from '{person.username}' to '{username}'."
-                )
-                person.username = username
-                updated = True
-
-            # Update UUID if different OR if it was previously None/empty
-            # Check both None and empty string for robustness
-            if person.uuid != uuid_val and (person.uuid or uuid_val):  # Avoid logging if both are None/empty
-                logger.debug(
-                    f"Updating UUID for {log_identifier} from '{person.uuid}' to '{uuid_val}'."
-                )
-                person.uuid = uuid_val
-                updated = True
-
-            # Update message_link if different
-            match_message_link = match.get("message_link")
-            if person.message_link != match_message_link:
-                logger.debug(
-                    f"Updating message_link for {log_identifier} from '{person.message_link}' to '{match_message_link}'."
-                )
-                person.message_link = match_message_link
-                updated = True
-
-            # Update in_my_tree if different
-            match_in_my_tree = bool(match.get("in_my_tree", False))
-            if person.in_my_tree is not match_in_my_tree:  # Correct comparison
-                logger.debug(
-                    f"Updating in_my_tree status to {match_in_my_tree} for {log_identifier}."
-                )
-                person.in_my_tree = match_in_my_tree
-                updated = True
-
-            # Update status if necessary (e.g., ensure it's active)
-            # if person.status != "active":
-            #     logger.debug(f"Updating status to 'active' for {log_identifier}.")
-            #     person.status = "active"
-            #     updated = True
-
-            if updated:
-                # No flush needed here for updates, commit happens in _do_match
-                logger.debug(
-                    f"Updated existing 'people' record for {log_identifier}."
-                )
-                return person, "updated"
-            else:
-                logger.debug(
-                    f"Existing 'people' record for {log_identifier} requires no update."
-                )
-                return person, "skipped"  # Return skipped if no updates were made
-
-        else:
-            # Person does not exist, create new record
-            logger.debug(
-                f"Creating new 'people' record for profile_id {profile_id} (Username: {username})."
-            )
-            new_person = Person(
-                uuid=uuid_val,
-                profile_id=profile_id,
-                username=username,
-                message_link=match.get("message_link"),
-                in_my_tree=bool(match.get("in_my_tree", False)),  # Ensure boolean
-                status="active",
-            )
-            session.add(new_person)
-            session.flush()  # <<< FLUSH TO GET ID
-
-            # --- CRITICAL CHECK: Ensure ID is assigned after flush ---
-            if new_person.id is None:
-                logger.error(
-                    f"Person ID not assigned after flush for {username} (profile_id: {profile_id})! Rolling back this attempt."
-                )
-                raise PersonProcessingError(
-                    f"Person ID not assigned after flush for {username}"
-                )
-
-            logger.debug(
-                f"Created record for {username} (Profile: {profile_id}), assigned ID: {new_person.id}"
-            )
-            return new_person, "new"
-
-    except SQLAlchemyError as e:
-        log_username = (
-            username if "username" in locals() and username else f"profile_id {profile_id}"
-        )
-        logger.error(
-            f"Database error in _do_person for {log_username}: {e}", exc_info=True
-        )
-        # Rollback will be handled by _do_match
-        return None, "error"
-    except PersonProcessingError as e:  # Catch specific error from ID check
-        log_username = (
-            username if "username" in locals() and username else f"profile_id {profile_id}"
-        )
-        logger.error(f"Person processing error in _do_person for {log_username}: {e}")
-        return None, "error"
-    except Exception as e:  # Catch any other unexpected error
-        log_username = (
-            username if "username" in locals() and username else f"profile_id {profile_id}"
-        )
-        logger.critical(
-            f"Unexpected error in _do_person for {log_username}: {e}", exc_info=True
-        )
-        return None, "error"
-# End of _do_person
-
-def _do_DNA(
-    session: Session, person: Person, match: Dict[str, Any]
-) -> Literal["created", "updated", "skipped", "error"]:  # Point 7
-    """
-    Creates a new DNA Match record associated with a Person.
-    Handles new fields. Does NOT update existing records per requirement 3.
-    """
-    if not person or person.id is None:
-        logger.error("_do_DNA called with invalid Person object.")
-        return "error"
-
-    person_id = person.id
-    log_ref = f"PersonID={person_id}, KitUUID={match.get('uuid', 'N/A')}"
-
-    # Validate essential match data
-    required_keys = ("compare_link", "cM_DNA", "predicted_relationship")
-    if not all(key in match and match[key] is not None for key in required_keys):  # Check for None as well
-        logger.error(
-            f"_do_DNA: Missing required non-null DNA data for {log_ref}. Match data: {match}"
-        )
-        return "error"
-
-    try:
-        cm_dna_val = int(match["cM_DNA"])
-        if cm_dna_val < 0:
-            raise ValueError("cM_DNA cannot be negative")
-    except (TypeError, ValueError, KeyError):
-        logger.error(
-            f"_do_DNA: Invalid cM_DNA value '{match.get('cM_DNA')}' for {log_ref}."
-        )
-        return "error"
-    # Validate optional numeric fields
-    def validate_optional_numeric(key, value, allow_float=False):
-        if value is None:
-            return None  # None is valid
-        try:
-            # Handle potential strings like 'N/A' or empty strings before conversion
-            if isinstance(value, str) and not value.replace('.', '', 1).isdigit():
-                logger.warning(
-                    f"_do_DNA: Non-numeric value '{value}' for {key} in {log_ref}. Setting to None."
-                )
-                return None
-            return float(value) if allow_float else int(value)
-        except (TypeError, ValueError):
-            logger.warning(
-                f"_do_DNA: Invalid {key} '{value}' for {log_ref}. Setting to None."
-            )
-            return None
-
-    shared_segments_val = validate_optional_numeric(
-        "shared_segments", match.get("shared_segments")
-    )
-    longest_segment_val = validate_optional_numeric(
-        "longest_shared_segment", match.get("longest_shared_segment"), allow_float=True
-    )
-    meiosis_val = validate_optional_numeric("meiosis", match.get("meiosis"))
-
-    try:
-        # Requirement 3: Only CREATE, never update. Check if exists first.
-        dna_match = session.query(DnaMatch).filter_by(people_id=person_id).first()
-
-        if dna_match:
-            logger.debug(
-                f"Existing 'dna_match' record found for {log_ref}. Skipping update per requirement."
-            )
-            return "skipped"
-        else:
-            # Create new DNA match record including new fields
-            logger.debug(f"Creating new 'dna_match' record for {log_ref}")
-            new_dna_match = DnaMatch(
-                people_id=person_id,
-                compare_link=match["compare_link"],
-                cM_DNA=cm_dna_val,
-                predicted_relationship=match["predicted_relationship"],
-                # --- MODIFIED: Add new fields on creation ---
-                shared_segments=shared_segments_val,
-                longest_shared_segment=longest_segment_val,
-                meiosis=meiosis_val,
-                from_my_fathers_side=bool(match.get("from_my_fathers_side")),  # Ensure boolean
-                from_my_mothers_side=bool(match.get("from_my_mothers_side")),  # Ensure boolean
-                # --- END MODIFICATION ---
-            )
-            session.add(new_dna_match)
-            # Flush might be needed if ID used immediately, but commit in _do_match handles persistence
-            # session.flush()
-            logger.debug(f"Staged new 'dna_match' record for creation: {log_ref}")
-            return "created"  # Commit happens in _do_match
-
-    except IntegrityError as ie:  # Should be rare now due to explicit check
-        session.rollback()
-        logger.error(
-            f"IntegrityError in _do_DNA for {log_ref}: {ie}. Likely concurrent creation.",
-            exc_info=True,
-        )
-        # Check again just in case
-        existing = session.query(DnaMatch).filter_by(people_id=person_id).first()
-        if existing:
-            logger.warning("Found existing DnaMatch after IntegrityError, treating as skipped.")
-            return "skipped"
-        return "error"
-    except SQLAlchemyError as e:
-        logger.error(
-            f"Database error in _do_DNA for {log_ref}: {e}", exc_info=True
-        )
-        return "error"  # Rollback handled by _do_match
-    except Exception as e:  # Catch any other unexpected error
-        logger.error(
-            f"Unexpected error in _do_DNA for {log_ref}: {e}", exc_info=True
-        )
-        return "error"  # Rollback handled by _do_match
-# End of _do_DNA
-
-def _do_tree(session: Session, person: Person, tree_data: Optional[Dict[str, Any]]) -> Literal["created", "updated", "skipped", "error"]:
-    """
-    Creates or updates a FamilyTree record, using person_name_in_tree column.
-    Skips updates for existing records per requirement 3. Adds pre-add logging including cfpid.
-    """
-    if not person or person.id is None:
-        logger.error("_do_tree called with invalid Person object.")
-        return "error"
-
-    if not tree_data:
-        logger.debug(
-            f"_do_tree: No tree data provided for {person.username} (people_id: {person.id}). Skipping DB operation."
-        )
-        return "skipped"
-
-    person_name_from_tree = tree_data.get("person_name_in_tree")
-    facts_link_val = tree_data.get("facts_link")
-    view_link_val = tree_data.get("view_in_tree_link")
-    actual_rel_val = tree_data.get("actual_relationship")
-    rel_path_val = tree_data.get("relationship_path")
-    their_cfpid = tree_data.get("their_cfpid") # Get cfpid from the provided data
-
-    try:
-        family_tree = session.query(FamilyTree).filter_by(people_id=person.id).first()
-
-        if family_tree:
-            # ... (existing tree logic - NO CHANGE) ...
-            return "skipped"
-        else:
-            if not tree_data:
-                # ... (no tree data handling - NO CHANGE) ...
-                return "skipped"
-
-            # --- ADDED: Log data just before creating object - includes CFPID now
-            logger.debug(
-                f"Preparing to create FamilyTree for Person ID {person.id}: "
-                f"CFPID='{their_cfpid}', Name='{person_name_from_tree}', Rel='{actual_rel_val}', " # Added CFPID logging
-                f"FactsLink='{facts_link_val is not None}', "
-                f"ViewLink='{view_link_val is not None}', "
-                f"Path='{rel_path_val is not None}'"
-            )
-            # --- End Log ---
-
-            new_family_tree = FamilyTree(
-                people_id=person.id,
-                cfpid=their_cfpid, # Assign the extracted cfpid
-                person_name_in_tree=person_name_from_tree,
-                facts_link=facts_link_val,
-                view_in_tree_link=view_link_val,
-                actual_relationship=actual_rel_val,
-                relationship_path=rel_path_val,
-            )
-            # ... (rest of FamilyTree object creation and saving - NO CHANGE) ...
-            session.add(new_family_tree)
-            logger.debug(f"Staged new record in 'family_tree' for {person.username}.")
-            return "created"  # Commit happens in _do_match
-
-    except IntegrityError as ie:
-        # ... (IntegrityError handling - NO CHANGE) ...
-        return "error"
-    except SQLAlchemyError as e:
-        # ... (SQLAlchemyError handling - NO CHANGE) ...
-        return "error"
-    except Exception as e:
-        # ... (unexpected error handling - NO CHANGE) ...
-        return "error"
-# End of _do_tree
 
 #################################################################################
 # 6. Utility & Helper Functions

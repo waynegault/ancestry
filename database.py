@@ -846,155 +846,54 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
 # Update
 # ----------------------------------------------------------------------
 
-def check_person_needs(
-    session: Session, match_uuid: str, match_in_my_tree: bool
-) -> Tuple[bool, bool]:
-    """
-    Read-only check to determine if DNA needs creation or Tree data needs fetching
-    for a given UUID, based on the current database state.
-    Does NOT create or modify records.
-
-    Args:
-        session: The SQLAlchemy Session.
-        match_uuid: The UUID of the person to check.
-        match_in_my_tree: The current 'in_my_tree' flag from the source data.
-
-    Returns:
-        Tuple: (create_dna_needed (bool), fetch_tree_data (bool))
-    """
-    create_dna_needed = False
-    fetch_tree_data = False
-    log_ref = f"UUID='{match_uuid}' (CheckNeeds)"
-
-    if not match_uuid:
-        logger.error(f"{log_ref}: Cannot check needs: 'uuid' is missing.")
-        return False, False # Cannot proceed without UUID
-
-    try:
-        # Lookup by UUID, eager load relationships
-        existing_person = (
-            session.query(Person)
-            .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .filter(Person.uuid == match_uuid.upper())
-            .first()
-        )
-
-        if existing_person:
-            # Person Exists: Check related data needs
-            logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id}. Checking related data needs.")
-
-            # Check DnaMatch Need
-            existing_dna_record = existing_person.dna_match
-            if existing_dna_record is None:
-                create_dna_needed = True
-            else:
-                create_dna_needed = False # Already exists
-
-            # Check FamilyTree Need
-            db_in_my_tree = existing_person.in_my_tree
-            existing_tree_record = existing_person.family_tree
-            if match_in_my_tree and not db_in_my_tree:
-                # Status changing False -> True
-                fetch_tree_data = True
-            elif match_in_my_tree and db_in_my_tree and existing_tree_record is None:
-                # Status True, but record missing
-                fetch_tree_data = True
-            else:
-                # Covers: Both False, Status True & record exists, Status True -> False change
-                fetch_tree_data = False
-        else:
-            # Person Does Not Exist: Set default needs
-            logger.debug(f"{log_ref}: No existing person found by UUID.")
-            create_dna_needed = True
-            fetch_tree_data = match_in_my_tree # Fetch only if flag is initially True
-
-    except SQLAlchemyError as e:
-         logger.error(f"Database error during check_person_needs for {log_ref}: {e}", exc_info=True)
-         return False, False # Return defaults on error
-    except Exception as e:
-         logger.error(f"Unexpected error during check_person_needs for {log_ref}: {e}", exc_info=True)
-         return False, False
-
-    logger.debug(f"{log_ref}: Needs Check Complete. DNA Needed: {create_dna_needed}, Tree Fetch Needed: {fetch_tree_data}")
-    return create_dna_needed, fetch_tree_data
-# End check_person_needs
-
-
 def create_or_update_person(
-    session: Session, person_data: Dict[str, Any]
-) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"], bool, bool]:
+    session: Session, person_data: Dict[str, Any], existing_person: Optional[Person] = None
+) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
     """
-    REVISED V8: Creates a new Person or updates an existing one based *primarily* on UUID.
-    Determines if associated DNA or FamilyTree data needs creation/fetching.
-    Updates are restricted (last_logged_in, contactable, in_my_tree[F->T], birth_year[Null->Value]).
+    V9 REVISED: Creates a new Person or updates an existing one based on input data.
+    Assumes caller has already performed the lookup and determined if create/update needed.
+    Handles the DB write/update logic ONLY.
 
     Args:
         session: The SQLAlchemy Session.
-        person_data: Dictionary containing person data. Must include 'uuid'.
-                     Should include 'in_my_tree' for tree logic.
+        person_data: Dictionary containing person data (must include 'uuid', 'username').
+        existing_person: The pre-fetched Person object if it exists, otherwise None.
 
     Returns:
         Tuple: (
-            Person object or None,
-            status ["created", "updated", "skipped", "error"],
-            create_dna_needed (bool),
-            fetch_tree_data (bool)
+            Person object (new or updated) or None on error,
+            status ["created", "updated", "skipped", "error"]
         )
     """
     uuid_val = person_data.get("uuid")
     profile_id_val = person_data.get("profile_id") # For logging/creation
-    username_val = person_data.get("username", "Unknown") # For logging/creation
-    match_in_my_tree = person_data.get("in_my_tree", False) # Get flag from input
+    username_val = person_data.get("username") # Should always be present per checks
 
-    # --- Initialize return flags ---
-    create_dna_needed = False
-    fetch_tree_data = False
-
-    if not uuid_val:
-        logger.error(f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val}': UUID is missing.")
-        return None, "error", False, False
+    if not uuid_val or not username_val:
+        logger.error(f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val or 'N/A'}': UUID or Username missing in input data.")
+        return None, "error"
 
     log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
-    existing_person: Optional[Person] = None
     updated = False # Flag to track if any allowed *Person* field update occurred
-    person_id_for_logging = None
-    person_status: Literal["created", "updated", "skipped", "error"] = "error" # Initialize status
 
     try:
-        # --- Lookup primarily by UUID ---
-        # Eager load relationships needed for checks
-        existing_person = (
-            session.query(Person)
-            .options(joinedload(Person.dna_match), joinedload(Person.family_tree)) # Eager load
-            .filter(Person.uuid == uuid_val.upper())
-            .first()
-        )
-
-        # --- Expire state after fetch, before comparison (still potentially useful) ---
         if existing_person:
+            # --- PERSON EXISTS --- Update logic ---
+            person_id_for_logging = existing_person.id
+            logger.debug(f"{log_ref}: Updating existing Person ID {person_id_for_logging}.")
+
+            # Expire state to ensure fresh data comparison if needed (optional but good practice)
             try:
-                person_id_for_logging = existing_person.id # Get ID early
-                logger.debug(
-                    f"{log_ref}: Expiring state for existing Person ID {person_id_for_logging} before checks."
-                )
-                # Expire the main object and its potentially loaded relationships
-                session.expire(existing_person, ['dna_match', 'family_tree'])
+                logger.debug(f"{log_ref}: Expiring state for existing Person ID {person_id_for_logging} before updates.")
+                session.expire(existing_person)
             except Exception as expire_e:
-                logger.warning(
-                    f"Could not expire session state for Person ID {person_id_for_logging}: {expire_e}"
-                )
-        # --- End Expire ---
+                logger.warning(f"Could not expire session state for Person ID {person_id_for_logging}: {expire_e}")
 
-        if existing_person:
-            # --- PERSON EXISTS ---
-            person_id_for_logging = existing_person.id # Ensure ID is set
-            logger.debug(f"{log_ref}: Found existing Person ID {person_id_for_logging} by UUID. Checking updates and related data needs.")
 
-            # --- Check Restricted Person Fields for Updates (Copied from V7) ---
-            # (Code for checking last_logged_in, contactable, birth_year)
-             # 1. last_logged_in
+            # --- Apply Updates to Restricted Fields ---
+            # 1. last_logged_in
             new_last_logged_in = person_data.get("last_logged_in")
-            current_last_logged_in = getattr(existing_person, "last_logged_in", None)
+            current_last_logged_in = existing_person.last_logged_in
             current_naive = None
             new_naive = None
             # Convert current DB value to naive UTC, truncated to seconds
@@ -1006,141 +905,130 @@ def create_or_update_person(
                     current_naive = current_last_logged_in.replace(microsecond=0)
             # Convert new incoming value to naive UTC, truncated to seconds
             if isinstance(new_last_logged_in, datetime):
-                # Assume new_value is always aware from API parsing
                 new_naive = new_last_logged_in.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
 
             if current_naive != new_naive:
-                logger.debug(f"  Updating last_logged_in: '{current_naive}' -> '{new_naive}'")
-                setattr(existing_person, "last_logged_in", new_last_logged_in) # Store the original aware datetime
+                logger.debug(f"  Updating last_logged_in for {log_ref}: '{current_naive}' -> '{new_naive}'")
+                existing_person.last_logged_in = new_last_logged_in # Store the original aware datetime
                 updated = True
 
             # 2. contactable
-            new_contactable = person_data.get("contactable") # Comes as bool potentially
-            current_contactable = getattr(existing_person, "contactable", None)
-            # Ensure comparison is bool vs bool
+            new_contactable = person_data.get("contactable", False) # Default to False if missing
+            current_contactable = existing_person.contactable
             if bool(current_contactable) != bool(new_contactable):
-                logger.debug(f"  Updating contactable: '{current_contactable}' -> '{new_contactable}'")
-                setattr(existing_person, "contactable", bool(new_contactable))
+                logger.debug(f"  Updating contactable for {log_ref}: '{current_contactable}' -> '{new_contactable}'")
+                existing_person.contactable = bool(new_contactable)
                 updated = True
 
             # 3. birth_year (only update if current is None and new is not None)
-            new_birth_year = person_data.get("birth_year") # Can be str or int from API/parsing
-            current_birth_year = getattr(existing_person, "birth_year", None)
+            new_birth_year = person_data.get("birth_year")
+            current_birth_year = existing_person.birth_year
             if new_birth_year is not None and current_birth_year is None:
                  try:
-                     # Attempt conversion to int if it's a string
                      birth_year_int = int(new_birth_year)
-                     logger.debug(f"  Updating birth_year: '{current_birth_year}' -> '{birth_year_int}'")
-                     setattr(existing_person, "birth_year", birth_year_int)
+                     logger.debug(f"  Updating birth_year for {log_ref}: '{current_birth_year}' -> '{birth_year_int}'")
+                     existing_person.birth_year = birth_year_int
                      updated = True
                  except (ValueError, TypeError):
-                      logger.warning(f"  Skipping birth_year update: New value '{new_birth_year}' is not a valid integer.")
-            elif new_birth_year is not None and current_birth_year is not None:
-                 logger.debug(f"  Skipping birth_year update: Existing value '{current_birth_year}' is not None.")
+                      logger.warning(f"  Skipping birth_year update for {log_ref}: New value '{new_birth_year}' is not a valid integer.")
 
-            # --- Check and Update in_my_tree (Special Logic: False->True only) ---
-            # Get current status *after* potential expiration to force reload if needed
+            # 4. in_my_tree (Update if different, allow False->True and True->False)
+            new_in_my_tree = bool(person_data.get("in_my_tree", False))
             current_in_my_tree = existing_person.in_my_tree
-            if bool(match_in_my_tree) and not bool(current_in_my_tree):
-                logger.debug(f"  Updating in_my_tree: '{current_in_my_tree}' -> '{match_in_my_tree}'")
-                setattr(existing_person, "in_my_tree", True)
-                updated = True # Mark as updated if this changes
-                # Tree data *definitely* needs fetching if status becomes True
-                fetch_tree_data = True
-            # --- END in_my_tree Update Check ---
+            if bool(current_in_my_tree) != new_in_my_tree:
+                 logger.debug(f"  Updating in_my_tree for {log_ref}: '{current_in_my_tree}' -> '{new_in_my_tree}'")
+                 existing_person.in_my_tree = new_in_my_tree
+                 updated = True
+
+            # 5. Gender (Update if current is None and new is not None)
+            new_gender = person_data.get("gender")
+            current_gender = existing_person.gender
+            if new_gender is not None and current_gender is None:
+                if isinstance(new_gender, str) and new_gender.lower() in ('f', 'm'):
+                     logger.debug(f"  Updating gender for {log_ref}: '{current_gender}' -> '{new_gender.lower()}'")
+                     existing_person.gender = new_gender.lower()
+                     updated = True
+                else:
+                     logger.warning(f"  Skipping gender update for {log_ref}: New value '{new_gender}' is not 'f' or 'm'.")
+
+            # 6. Admin Info (Update if changed)
+            new_admin_id = person_data.get("administrator_profile_id")
+            new_admin_user = person_data.get("administrator_username")
+            if existing_person.administrator_profile_id != (new_admin_id.upper() if new_admin_id else None):
+                logger.debug(f"  Updating admin ID for {log_ref}")
+                existing_person.administrator_profile_id = new_admin_id.upper() if new_admin_id else None
+                updated = True
+            if existing_person.administrator_username != new_admin_user:
+                logger.debug(f"  Updating admin username for {log_ref}")
+                existing_person.administrator_username = new_admin_user
+                updated = True
+
+            # 7. Message Link (Update if changed)
+            new_message_link = person_data.get("message_link")
+            if existing_person.message_link != new_message_link:
+                 logger.debug(f"  Updating message link for {log_ref}")
+                 existing_person.message_link = new_message_link
+                 updated = True
 
 
-            # --- Determine Related Data Needs (DNA/Tree) ---
-            # Check DnaMatch Need
-            # Accessing relationship triggers load if expired/not loaded
-            existing_dna_record = existing_person.dna_match
-            if existing_dna_record is None:
-                logger.debug(f"{log_ref}: Existing Person, but no DnaMatch record. Needs DNA creation.")
-                create_dna_needed = True
-            else:
-                logger.debug(f"{log_ref}: Existing DnaMatch record found. No DNA creation needed.")
-                create_dna_needed = False
-
-            # Check FamilyTree Need (More nuanced logic from need_update)
-            # Get potentially updated 'in_my_tree' status from the object
-            db_in_my_tree_after_update = existing_person.in_my_tree
-            # Access relationship again (might be loaded already)
-            existing_tree_record = existing_person.family_tree
-
-            # Condition 1: Status changed False -> True (already set fetch_tree_data = True above)
-            # Condition 2: Status is True, but record is missing
-            if db_in_my_tree_after_update and existing_tree_record is None:
-                 logger.warning(f"{log_ref}: Status 'in_my_tree' is True, but FamilyTree record MISSING. Needs tree data fetch.")
-                 fetch_tree_data = True # Ensure flag is set
-            # Condition 3: Status changed True -> False (no fetch needed)
-            elif not db_in_my_tree_after_update and current_in_my_tree: # Check against original status before update
-                 logger.warning(f"{log_ref}: Status changed FROM 'in_my_tree' to False. Skipping tree fetch.")
-                 fetch_tree_data = False
-            # Condition 4: Status unchanged and True, record exists (no fetch needed)
-            # Condition 5: Status unchanged and False (no fetch needed)
-            # No explicit 'else' needed if fetch_tree_data defaults to False and only set True on conditions 1 & 2
-
-            # --- Determine Final Person Status ---
+            # --- Determine Final Status ---
             if updated:
-                person_status = "updated"
                 existing_person.updated_at = datetime.now() # Update timestamp
-                logger.debug(f"{log_ref}: Person ID {person_id_for_logging} requires update.")
+                logger.debug(f"{log_ref}: Person ID {person_id_for_logging} updated.")
+                return existing_person, "updated"
             else:
-                person_status = "skipped"
                 logger.debug(f"{log_ref}: Person ID {person_id_for_logging} requires no update.")
-
-            # Return existing person record and determined flags/status
-            return existing_person, person_status, create_dna_needed, fetch_tree_data
+                return existing_person, "skipped"
 
         else:
-            # --- PERSON DOES NOT EXIST ---
-            logger.debug(f"{log_ref}: UUID not found. Creating new Person.")
+            # --- PERSON DOES NOT EXIST --- Create new logic ---
+            logger.debug(f"{log_ref}: Creating new Person.")
             # Call create_person helper (which handles the actual insert)
             new_person_id = create_person(session, person_data) # Pass the full data dict
 
             if new_person_id > 0:
                 # Fetch the newly created object to return it
+                # Use session.get which is efficient for primary key lookup
                 new_person_obj = session.get(Person, new_person_id)
                 if new_person_obj:
-                    person_status = "created"
-                    # For a new person:
-                    create_dna_needed = True # Always need DNA for a new person
-                    fetch_tree_data = match_in_my_tree # Fetch tree only if flag is set initially
-                    logger.debug(f"{log_ref}: New Person created (ID: {new_person_id}). DNA needed: {create_dna_needed}, Tree fetch needed: {fetch_tree_data}.")
-                    return new_person_obj, person_status, create_dna_needed, fetch_tree_data
+                    logger.debug(f"{log_ref}: New Person created (ID: {new_person_id}).")
+                    return new_person_obj, "created"
                 else:
-                    logger.error(f"Failed to fetch newly created person with ID {new_person_id} for {log_ref}.")
+                    # This should ideally not happen if create_person succeeded
+                    logger.error(f"Failed to fetch newly created person with ID {new_person_id} for {log_ref} after successful creation.")
                     # Rollback might be needed if create_person didn't handle it on failure
                     if session.is_active: session.rollback()
-                    return None, "error", False, False
+                    return None, "error"
             else:
                 logger.error(f"create_person failed for {log_ref}.")
                 # Rollback should have been handled by create_person on failure
-                return None, "error", False, False
+                return None, "error"
 
-    # --- Exception Handling (Copied from V7, ensures rollback) ---
     except IntegrityError as ie:
+        # Handle potential constraint violations not caught by create_person's pre-check
+        # (e.g., UUID collision if pre-check is removed/fails)
         session.rollback()
         logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
-        return None, "error", False, False
+        return None, "error"
     except SQLAlchemyError as e:
         if session.is_active: session.rollback()
         logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
-        return None, "error", False, False
-    except NameError as ne: # Catch missing 'timezone' import
+        return None, "error"
+    except NameError as ne: # Catch missing 'timezone' import if datetime handling fails
          if session.is_active: session.rollback()
          logger.critical(f"NameError processing person {log_ref}: {ne}. Ensure 'timezone' is imported from datetime.", exc_info=True)
-         return None, "error", False, False
+         return None, "error"
     except TypeError as te:
          if session.is_active: session.rollback()
          logger.critical(f"TypeError during person update comparison for {log_ref}: {te}", exc_info=True)
-         return None, "error", False, False
+         return None, "error"
     except Exception as e:
+        # Catch any other unexpected error
         if session.is_active:
             session.rollback()
         logger.critical(f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True)
-        return None, "error", False, False
-# End create_or_update_person 
+        return None, "error"
+# End create_or_update_person
 
 def update_person(
     session: Session, profile_id: str, username: str, update_data: Dict[str, Any]
