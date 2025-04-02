@@ -1,0 +1,3 @@
+13:16:43 INF [logging_ <module> 310 ] --- Logging After Simulated Clear ---
+13:16:43 INF [logging_ <module> 311 ] This message should be at the top of the cleared log file.
+13:16:43 DEB [logging_ <module> 312 ] Another debug message after clear.

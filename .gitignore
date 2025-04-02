@@ -1,0 +1,14 @@
+/ancestry.db
+/messages.json
+/session_state.json
+/.env
+/__init__.py
+/venv
+/lib
+/Data
+/cache
+/archive
+/.vscode
+/__pycache__
+/logs/ancestry.log
+/logs/ancestry.log.1
