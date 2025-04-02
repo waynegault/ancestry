@@ -972,129 +972,121 @@ def create_or_update_person(
     session: Session, person_data: Dict[str, Any]
 ) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
     """
-    Creates a new Person or updates an existing one based *primarily* on UUID.
-    If UUID not found, attempts creation (will fail safely if profile_id UNIQUE constraint hit).
-    Handles updates for existing records found by UUID, including profile_id changes.
-    Fixes timezone comparison issue for last_logged_in (ignoring microseconds).
-    Prevents overwriting existing birth_year with None.
-    RELIES ON `from datetime import timezone` at top of file.
+    REVISED V7: Creates a new Person or updates an existing one based *primarily* on UUID.
+    Updates are restricted:
+    - `last_logged_in`: Updated if different (tz-aware, microseconds ignored).
+    - `contactable`: Updated if different.
+    - `in_my_tree`: Updated only if changing from False to True.
+    - `birth_year`: Updated only if the DB value is NULL/None and the new value is not None.
+    - No other fields are updated for existing records.
+    If any allowed field update occurs, status is 'updated'. Otherwise 'skipped'.
+
+    Args:
+        session: The SQLAlchemy Session.
+        person_data: Dictionary containing person data. Must include 'uuid'.
+
+    Returns:
+        Tuple: (Person object or None, status ["created", "updated", "skipped", "error"])
     """
     uuid_val = person_data.get("uuid")
-    profile_id_val = person_data.get("profile_id") # Can be None
-    username_val = person_data.get("username", "Unknown")
+    profile_id_val = person_data.get("profile_id") # For logging/creation
+    username_val = person_data.get("username", "Unknown") # For logging/creation
 
     if not uuid_val:
         logger.error(f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val}': UUID is missing.")
         return None, "error"
 
     log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
-    existing_person = None
-    updated = False
+    existing_person: Optional[Person] = None
+    updated = False # Flag to track if any allowed update occurred
     person_id_for_logging = None
 
     try:
-        # --- Revised Lookup Strategy: PRIORITIZE UUID ---
-        existing_person = session.query(Person).filter(Person.uuid == uuid_val.upper()).first()
+        # --- Lookup primarily by UUID ---
+        # Eager load relationships to check integrity later if needed
+        existing_person = (
+            session.query(Person)
+            .options(joinedload(Person.family_tree), joinedload(Person.dna_match)) # Eager load
+            .filter(Person.uuid == uuid_val.upper())
+            .first()
+        )
 
         if existing_person:
-             person_id_for_logging = existing_person.id
-             logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id} by UUID.")
+            person_id_for_logging = existing_person.id
+            logger.debug(f"{log_ref}: Found existing Person ID {person_id_for_logging} by UUID. Checking restricted fields for updates.")
 
-             # --- Update Logic for existing person found by UUID ---
-             logger.debug(f"{log_ref}: Checking for updates on existing Person ID {existing_person.id}.")
-             fields_to_update = {
-                  "username": username_val,
-                  "profile_id": profile_id_val.upper() if profile_id_val else None,
-                  "in_my_tree": person_data.get("in_my_tree"),
-                  "first_name": person_data.get("first_name"),
-                  "last_logged_in": person_data.get("last_logged_in"),
-                  "contactable": person_data.get("contactable"),
-                  "birth_year": person_data.get("birth_year"), # Keep birth_year here
-                  "administrator_profile_id": person_data.get("administrator_profile_id"),
-                  "administrator_username": person_data.get("administrator_username"),
-                  "gender": person_data.get("gender"),
-                  "message_link": person_data.get("message_link"),
-                  "status": "active"
-             }
+            # --- Field-specific update checks ---
 
-             for field, new_value in fields_to_update.items():
-                  # Skip check if new value is None and field doesn't allow None (except booleans and specific nullable fields)
-                  allow_none = field in ["profile_id", "administrator_profile_id", "administrator_username", "message_link", "birth_year", "last_logged_in", "gender"]
-                  is_boolean_field = field in ["in_my_tree", "contactable"]
+            # 1. last_logged_in
+            new_last_logged_in = person_data.get("last_logged_in")
+            current_last_logged_in = getattr(existing_person, "last_logged_in", None)
+            current_naive = None
+            new_naive = None
+            # Convert current DB value to naive UTC, truncated to seconds
+            if isinstance(current_last_logged_in, datetime):
+                db_aware = current_last_logged_in.tzinfo is not None and current_last_logged_in.tzinfo.utcoffset(current_last_logged_in) is not None
+                if db_aware:
+                    current_naive = current_last_logged_in.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+                else: # Assume naive stored is UTC
+                    current_naive = current_last_logged_in.replace(microsecond=0)
+            # Convert new incoming value to naive UTC, truncated to seconds
+            if isinstance(new_last_logged_in, datetime):
+                # Assume new_value is always aware from API parsing
+                new_naive = new_last_logged_in.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
 
-                  # *** MODIFICATION: Prevent overwriting birth_year with None ***
-                  # If the field is birth_year and the new value is None, skip the update
-                  # *unless* the current value is also None (or missing).
-                  if field == "birth_year" and new_value is None:
-                       current_value = getattr(existing_person, field, None)
-                       if current_value is not None: # Don't overwrite an existing birth year with None
-                            logger.debug(f"  Skipping update for {field}: New value is None, but existing value is '{current_value}'.")
-                            continue
-                       # If current_value is also None, proceed to standard comparison below (will result in no change)
-                  # *** END MODIFICATION ***
+            if current_naive != new_naive:
+                logger.debug(f"  Updating last_logged_in: '{current_naive}' -> '{new_naive}'")
+                setattr(existing_person, "last_logged_in", new_last_logged_in) # Store the original aware datetime
+                updated = True
 
-                  # Standard skip check for other non-nullable fields
-                  elif new_value is None and not allow_none and not is_boolean_field:
-                      continue # Skip if new value is None for a field that must have a value
+            # 2. contactable
+            new_contactable = person_data.get("contactable") # Comes as bool potentially
+            current_contactable = getattr(existing_person, "contactable", None)
+            # Ensure comparison is bool vs bool
+            if bool(current_contactable) != bool(new_contactable):
+                logger.debug(f"  Updating contactable: '{current_contactable}' -> '{new_contactable}'")
+                setattr(existing_person, "contactable", bool(new_contactable))
+                updated = True
 
-                  current_value = getattr(existing_person, field, None)
-                  should_update = False
+            # 3. in_my_tree (only update if False -> True)
+            new_in_my_tree = person_data.get("in_my_tree", False) # Default to False if missing
+            current_in_my_tree = getattr(existing_person, "in_my_tree", False)
+            if bool(new_in_my_tree) and not bool(current_in_my_tree):
+                logger.debug(f"  Updating in_my_tree: '{current_in_my_tree}' -> '{new_in_my_tree}'")
+                setattr(existing_person, "in_my_tree", True)
+                updated = True
 
-                  # --- Special handling for last_logged_in comparison ---
-                  if field == "last_logged_in":
-                        current_naive = None
-                        new_naive = None
-                        # Convert current DB value to naive UTC, truncated to seconds
-                        if isinstance(current_value, datetime):
-                             db_aware = current_value.tzinfo is not None and current_value.tzinfo.utcoffset(current_value) is not None
-                             if db_aware:
-                                 current_naive = current_value.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
-                             else: # Assume naive stored is UTC
-                                 current_naive = current_value.replace(microsecond=0)
-                        # Convert new incoming value to naive UTC, truncated to seconds
-                        if isinstance(new_value, datetime):
-                             # Assume new_value is always aware from API parsing
-                             new_naive = new_value.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+            # 4. birth_year (only update if current is None and new is not None)
+            new_birth_year = person_data.get("birth_year") # Can be str or int from API/parsing
+            current_birth_year = getattr(existing_person, "birth_year", None)
+            if new_birth_year is not None and current_birth_year is None:
+                 try:
+                     # Attempt conversion to int if it's a string
+                     birth_year_int = int(new_birth_year)
+                     logger.debug(f"  Updating birth_year: '{current_birth_year}' -> '{birth_year_int}'")
+                     setattr(existing_person, "birth_year", birth_year_int)
+                     updated = True
+                 except (ValueError, TypeError):
+                      logger.warning(f"  Skipping birth_year update: New value '{new_birth_year}' is not a valid integer.")
+            elif new_birth_year is not None and current_birth_year is not None:
+                 logger.debug(f"  Skipping birth_year update: Existing value '{current_birth_year}' is not None.")
+            # No logging needed if new_birth_year is None
 
-                        # Compare naive, truncated values
-                        if current_naive != new_naive:
-                             logger.debug(f"  Comparing {field}: Current Naive (DB): '{current_naive}', New Naive (API): '{new_naive}' -> Difference detected.")
-                             should_update = True
-                        # else: # Add else for clarity if needed
-                        #      logger.debug(f"  Comparing {field}: Current Naive (DB): '{current_naive}', New Naive (API): '{new_naive}' -> No difference detected.")
-
-                  # --- Special handling for username (case-insensitive) ---
-                  elif field == "username":
-                      current_str = str(current_value) if current_value is not None else ""
-                      new_str = str(new_value) if new_value is not None else ""
-                      if current_str.lower() != new_str.lower():
-                           should_update = True
-
-                  # --- Standard comparison for other fields ---
-                  elif current_value != new_value:
-                       should_update = True
-
-                  # --- Perform update if needed ---
-                  if should_update:
-                      logger.debug(f"  Flagging update for {field}: '{current_value}' -> '{new_value}'")
-                      setattr(existing_person, field, new_value)
-                      updated = True # Set flag if *any* field needs update
-
-             # --- Determine final status based on update flag ---
-             if updated:
-                  logger.debug(f"{log_ref}: Person ID {existing_person.id} requires update based on field checks.")
-                  existing_person.updated_at = datetime.now() # Update timestamp if changed
-                  return existing_person, "updated"
-             else:
-                  logger.debug(f"{log_ref}: Person ID {existing_person.id} requires no update based on field checks.")
-                  return existing_person, "skipped"
+            # --- Determine final status based on update flag ---
+            if updated:
+                logger.debug(f"{log_ref}: Person ID {person_id_for_logging} requires update based on restricted field checks.")
+                existing_person.updated_at = datetime.now() # Update timestamp if changed
+                return existing_person, "updated"
+            else:
+                logger.debug(f"{log_ref}: Person ID {person_id_for_logging} requires no update based on restricted field checks.")
+                return existing_person, "skipped"
         else:
             # --- UUID not found, proceed to CREATE ---
             logger.debug(f"{log_ref}: UUID not found. Calling create_person.")
-            # Pass all relevant data collected so far
-            new_person_id = create_person(session, person_data)
+            # create_person handles setting all necessary fields for a new record
+            new_person_id = create_person(session, person_data) # Pass the full data dict
             if new_person_id > 0:
-                 new_person_obj = session.get(Person, new_person_id)
+                 new_person_obj = session.get(Person, new_person_id) # Fetch the created object
                  if new_person_obj:
                       return new_person_obj, "created"
                  else:
@@ -1105,19 +1097,21 @@ def create_or_update_person(
                  return None, "error"
 
     except IntegrityError as ie:
+        # Rollback is crucial here to avoid partial inserts/updates on constraint violation
         session.rollback()
         logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
         return None, "error"
     except SQLAlchemyError as e:
-        session.rollback()
+        # Rollback in case of other DB errors
+        if session.is_active: session.rollback()
         logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
         return None, "error"
-    except NameError as ne: # Catch missing 'timezone'
-         session.rollback()
+    except NameError as ne: # Catch missing 'timezone' import
+         if session.is_active: session.rollback()
          logger.critical(f"NameError processing person {log_ref}: {ne}. Ensure 'timezone' is imported from datetime.", exc_info=True)
          return None, "error"
     except TypeError as te:
-         session.rollback()
+         if session.is_active: session.rollback()
          logger.critical(f"TypeError during person update comparison for {log_ref}: {te}", exc_info=True)
          return None, "error"
     except Exception as e:
