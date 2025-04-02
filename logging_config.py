@@ -165,14 +165,6 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
                     handler.setLevel(numeric_log_level)
                     updated_file = True
                  # --- End Correction ---
-
-        if updated_console or updated_file:
-            # Log only if something actually changed
-            # Use logger directly now as it's initialized
-            logger.info(f"Log levels updated. Console/File set to {log_level_upper}.")
-        else:
-            # Avoid logging if no change occurred on toggle
-            logger.debug(f"Log levels already set to {log_level_upper}. No update needed.")
         return logger # Return the existing logger
 
     # --- First-Time Initialization ---

@@ -846,6 +846,80 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
 # Update
 # ----------------------------------------------------------------------
 
+def check_person_needs(
+    session: Session, match_uuid: str, match_in_my_tree: bool
+) -> Tuple[bool, bool]:
+    """
+    Read-only check to determine if DNA needs creation or Tree data needs fetching
+    for a given UUID, based on the current database state.
+    Does NOT create or modify records.
+
+    Args:
+        session: The SQLAlchemy Session.
+        match_uuid: The UUID of the person to check.
+        match_in_my_tree: The current 'in_my_tree' flag from the source data.
+
+    Returns:
+        Tuple: (create_dna_needed (bool), fetch_tree_data (bool))
+    """
+    create_dna_needed = False
+    fetch_tree_data = False
+    log_ref = f"UUID='{match_uuid}' (CheckNeeds)"
+
+    if not match_uuid:
+        logger.error(f"{log_ref}: Cannot check needs: 'uuid' is missing.")
+        return False, False # Cannot proceed without UUID
+
+    try:
+        # Lookup by UUID, eager load relationships
+        existing_person = (
+            session.query(Person)
+            .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
+            .filter(Person.uuid == match_uuid.upper())
+            .first()
+        )
+
+        if existing_person:
+            # Person Exists: Check related data needs
+            logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id}. Checking related data needs.")
+
+            # Check DnaMatch Need
+            existing_dna_record = existing_person.dna_match
+            if existing_dna_record is None:
+                create_dna_needed = True
+            else:
+                create_dna_needed = False # Already exists
+
+            # Check FamilyTree Need
+            db_in_my_tree = existing_person.in_my_tree
+            existing_tree_record = existing_person.family_tree
+            if match_in_my_tree and not db_in_my_tree:
+                # Status changing False -> True
+                fetch_tree_data = True
+            elif match_in_my_tree and db_in_my_tree and existing_tree_record is None:
+                # Status True, but record missing
+                fetch_tree_data = True
+            else:
+                # Covers: Both False, Status True & record exists, Status True -> False change
+                fetch_tree_data = False
+        else:
+            # Person Does Not Exist: Set default needs
+            logger.debug(f"{log_ref}: No existing person found by UUID.")
+            create_dna_needed = True
+            fetch_tree_data = match_in_my_tree # Fetch only if flag is initially True
+
+    except SQLAlchemyError as e:
+         logger.error(f"Database error during check_person_needs for {log_ref}: {e}", exc_info=True)
+         return False, False # Return defaults on error
+    except Exception as e:
+         logger.error(f"Unexpected error during check_person_needs for {log_ref}: {e}", exc_info=True)
+         return False, False
+
+    logger.debug(f"{log_ref}: Needs Check Complete. DNA Needed: {create_dna_needed}, Tree Fetch Needed: {fetch_tree_data}")
+    return create_dna_needed, fetch_tree_data
+# End check_person_needs
+
+
 def create_or_update_person(
     session: Session, person_data: Dict[str, Any]
 ) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"], bool, bool]:
