@@ -80,9 +80,8 @@ logger = logging.getLogger("logger")
 
 def coord(session_manager: SessionManager, config_instance, start: int = 1) -> bool:
     """
-    Gathers DNA matches and saves data using the API.
-    Calculates total batches accurately before processing. Includes final DB count check.
-    Corrects calculation order for start/last page.
+    Gathers DNA matches and saves data using the API. Processes page-by-page.
+    Includes final DB count check removed.
     """
     # Ensure session and driver are valid
     driver = session_manager.driver
@@ -92,7 +91,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
 
     # Initialise counts
     total_new, total_updated, total_skipped, total_errors = 0, 0, 0, 0
-    total_batches_processed = 0  # Track batches actually processed
+    total_pages_processed = 0  # Track pages actually processed
     my_uuid = session_manager.my_uuid
 
     if not my_uuid:
@@ -111,7 +110,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
         try:
             current_url = driver.current_url
             if not current_url.startswith(target_matches_url_base):
-                logger.debug(f"Navigating to DNA matches page.")
+                logger.debug("Navigating to DNA matches page.")
                 if not nav_to_list(session_manager):
                     logger.error(
                         "Failed to navigate to DNA match list page via nav_to_list(). Exiting coord."
@@ -124,7 +123,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
                             f"nav_to_list reported success but ended on unexpected URL:\n {current_url_after_nav}. Exiting coord."
                         )
                         return False
-                    logger.debug(f"Successfully navigated to DNA matches page.\n")
+                    logger.debug("Successfully navigated to DNA matches page.\n")
             else:
                 logger.debug(
                     f"Already on correct DNA matches page:\n ({current_url}).\n"
@@ -140,21 +139,29 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
         logger.debug("12. Getting page count...")
         total_pages = get_page_count(session_manager, my_uuid)
         if total_pages is None:
-            logger.warning("Failed to retrieve page count from API. Assuming 1 page.")
-            total_pages = 1
+            # Attempt retry if page count fetch fails initially
+            logger.warning("Failed to retrieve page count from API. Retrying once...")
+            time.sleep(5) # Wait before retrying
+            total_pages = get_page_count(session_manager, my_uuid)
+            if total_pages is None:
+                 logger.error("Failed to retrieve page count after retry. Exiting coord.")
+                 return False
+            else:
+                 logger.info(f"Successfully retrieved page count on retry: {total_pages}\n")
         else:
             logger.info(f"Page count: {total_pages}\n")
 
-        # --- CORRECTED: Calculate page range BEFORE the first loop ---
+
         # 13. Determine page range to process
         logger.debug("13. Determining page range to collect...")
         max_pages_config = config_instance.MAX_PAGES
-        pages_to_process = (
+        pages_to_process_config = (
             min(max_pages_config, total_pages) if max_pages_config != 0 else total_pages
         )
         start_page = min(start, total_pages)  # Ensure start page isn't > total_pages
         start_page = max(1, start_page)  # Ensure start_page is at least 1
-        last_page = min(start_page + pages_to_process - 1, total_pages)
+        last_page = min(start_page + pages_to_process_config - 1, total_pages)
+        total_pages_to_process_in_run = last_page - start_page + 1 # Calculate actual number of pages in this run
 
         if start_page > last_page:
             logger.warning(
@@ -169,147 +176,98 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
             logger.debug(f"Processing page {start_page} only.\n")
         else:
             logger.debug(
-                f"Processing {last_page - start_page + 1} pages from {start_page} to {last_page}.\n"
+                f"Processing {total_pages_to_process_in_run} pages from {start_page} to {last_page} (Total pages: {total_pages}).\n"
             )
-        # --- END Page Range Calculation Correction ---
 
-        # 14. Fetch all matches first to get accurate batch count
-        logger.debug(
-            "Fetching match summaries to determine accurate total batches..."
-        )
-        all_matches_across_pages: List[Dict[str, Any]] = []
-        page_fetch_errors = 0
-        # --- This loop now correctly uses the calculated start_page and last_page ---
-        for page in range(start_page, last_page + 1):
-            logger.debug(f"Fetching summary data from page {page} for batch count...")
-            matches_on_page = get_matches(session_manager, page)
-            if matches_on_page:
-                all_matches_across_pages.extend(matches_on_page)
-            else:
+        # --- MODIFIED: Process page by page ---
+        logger.debug("Processing matches page by page...")
+
+        for current_page_num in range(start_page, last_page + 1):
+            logger.info(
+                f"====== Processing Page {current_page_num}/{last_page} (Overall pages: {total_pages}) ======"
+            )
+
+            # 14. Fetch matches for the current page
+            logger.debug(f"Fetching matches from page {current_page_num}...")
+            matches_on_page = get_matches(session_manager, current_page_num)
+
+            if matches_on_page is None or not matches_on_page:
+                # Handle failure to get matches for a page
                 logger.warning(
-                    f"No match data received from page {page} during initial fetch."
+                    f"No matches found or error fetching matches for page {current_page_num}. Skipping page."
                 )
-                page_fetch_errors += 1
-                time.sleep(1)  # Small pause if a page fails
+                # Optionally increase total_errors if skipping a page is considered an error
+                # total_errors += 1 # Decide if this constitutes an error
+                time.sleep(2) # Small pause if a page fetch fails
+                continue # Move to the next page
 
-        if page_fetch_errors > 0:
-            logger.warning(
-                f"Encountered errors fetching summaries for {page_fetch_errors} pages."
-            )
+            num_matches_on_page = len(matches_on_page)
+            logger.info(f"Found {num_matches_on_page} matches on page {current_page_num}.\n")
 
-        total_matches_to_process = len(all_matches_across_pages)
-        if total_matches_to_process == 0:
-            logger.warning("No matches found in the specified page range. Exiting coord.")
-            return True  # Nothing to process
-
-        total_required_batches = (
-            total_matches_to_process + config_instance.BATCH_SIZE - 1
-        ) // config_instance.BATCH_SIZE
-        logger.info(
-            f"Fetched summaries for {total_matches_to_process} matches across {last_page - start_page + 1} pages.\n"
-        )
-        logger.debug(f"Calculated total batches required: {total_required_batches}")
-
-        # 15. Process matches in batches
-        logger.debug("Processing matches in batches...")
-        overall_batch_idx = 0  # Start overall batch index from 0
-
-        for batch_num in range(total_required_batches):
-            start_index = batch_num * config_instance.BATCH_SIZE
-            end_index = start_index + config_instance.BATCH_SIZE
-            batch = all_matches_across_pages[start_index:end_index]
-
-            overall_batch_idx += 1  # Increment for each batch processed
-            logger.debug(
-                f"Processing Overall Batch {overall_batch_idx}/{total_required_batches} ({len(batch)} matches)...\n"
-            )
-
-            # Pass overall index and total to _do_batch
-            batch_new, batch_updated, batch_skipped, batch_errors = _do_batch(
-                session_manager, batch, overall_batch_idx, total_required_batches
+            # 15. Process the batch of matches for the current page
+            # Pass current page number and total pages for logging context
+            page_new, page_updated, page_skipped, page_errors = _do_batch(
+                session_manager, matches_on_page, current_page_num, last_page
             )
 
             # Accumulate totals
-            total_new += batch_new
-            total_updated += batch_updated
-            total_skipped += batch_skipped
-            total_errors += batch_errors
-            total_batches_processed += 1  # Increment count of batches actually done
+            total_new += page_new
+            total_updated += page_updated
+            total_skipped += page_skipped
+            total_errors += page_errors
+            total_pages_processed += 1  # Increment count of pages actually processed
 
-            # Optional: Adjust delay between batches if needed
-            _adjust_delay(
-                session_manager, overall_batch_idx
-            )  # Pass batch index for now
+            # Optional: Adjust delay between pages if needed
+            _adjust_delay(session_manager, current_page_num)
+
+        # --- END PAGE-BY-PAGE PROCESSING ---
 
         # Log final summary
         _log_coord_summary(
-            total_batches_processed, total_new, total_updated, total_skipped, total_errors
+            total_pages_processed, total_new, total_updated, total_skipped, total_errors
         )
 
-        final_session = None
-        try:
-            final_session = session_manager.get_db_conn()
-            if final_session:
-                # Use count() method directly on the query object
-                people_count = final_session.query(Person).count()
-                dna_count = final_session.query(DnaMatch).count()
-                logger.info(
-                    f"Final DB Counts - People: {people_count}, DnaMatch: {dna_count}"
-                )
-                # Compare with expected (total processed without errors)
-                expected_records = total_new + total_updated + total_skipped
-                # Check for exact match now, rely on _do_match verification for individual record issues
-                if people_count != expected_records:
-                    logger.error(
-                        f"DISCREPANCY: Expected exactly {expected_records} people based on processing, found {people_count} in DB!"
-                    )
-                    final_success = False  # Mark run as failed if counts mismatch exactly
-                if dna_count > people_count:  # Sanity check
-                    logger.error(
-                        f"DISCREPANCY: Found more DNA records ({dna_count}) than People records ({people_count})."
-                    )
-                    final_success = False
+        # --- REMOVED: Final DB count verification block ---
 
-            else:
-                logger.error("Could not get final DB session for verification.")
-                final_success = False
-        except Exception as e:
-            logger.error(
-                f"Error during final DB count verification: {e}", exc_info=True
-            )
-            final_success = False
-        finally:
-            if final_session:
-                session_manager.return_session(final_session)
-        # --- END Final Verification ---
+    except KeyboardInterrupt:
+         logger.warning("Keyboard interrupt detected during coord execution. Attempting graceful shutdown...")
+         final_success = False # Mark as failure due to interruption
+         # Perform minimal cleanup if possible (closing session is handled by main finally block)
+         _log_coord_summary(total_pages_processed, total_new, total_updated, total_skipped, total_errors)
+         # Re-raise to allow main loop to catch it
+         raise
 
     except Exception as e:
         logger.error(f"Critical error during coord execution: {e}", exc_info=True)
         final_success = False  # Indicate failure on major exception
+
     return final_success
 # end of coord
 
-def _do_batch(session_manager, batch, overall_batch_idx, total_required_batches):
-    """Processes a batch of matches, handling predicted relationship and details."""
+def _do_batch(session_manager, matches_on_page, current_page, total_pages_to_process):
+    """Processes a batch of matches for a single page, handling relationships and details."""
 
-    # Initialise batch counts
-    batch_new, batch_updated, batch_skipped, batch_errors = 0, 0, 0, 0
+    # Initialise batch (page) counts
+    page_new, page_updated, page_skipped, page_errors = 0, 0, 0, 0
+    num_matches = len(matches_on_page)
 
-    # Use a single session for the entire batch for efficiency
+    # Use a single session for the entire batch (page) for efficiency
     session = session_manager.get_db_conn()
     if not session:
         logger.error(
-            f"Failed to get database session for batch processing (Overall Batch {overall_batch_idx})."
+            f"Failed to get database session for page {current_page} processing."
         )
-        return 0, 0, 0, len(batch)  # Count all as errors
+        # Count all matches on the page as errors if session fails
+        return 0, 0, 0, num_matches
 
     try:
-        for match_index, match in enumerate(batch):
-            # Get username early for logging
+        for match_index, match in enumerate(matches_on_page):
             _case_name = match.get(
-                "username", f"Unknown Match (Index {match_index})"
+                "username", f"Unknown Match (Index {match_index} on Page {current_page})"
             )
-            logger.debug(f"#### {match_index + 1}/{len(batch)} {_case_name} ####")
+            # --- MODIFIED Log Format ---
+            logger.debug(f"#### Page {current_page} - Match {match_index + 1}/{num_matches}: {_case_name} ####")
+            # --- END MODIFICATION ---
 
             try:
                 # Process the single match using the shared session
@@ -318,45 +276,51 @@ def _do_batch(session_manager, batch, overall_batch_idx, total_required_batches)
 
                 # Tally results count
                 if result == "new":
-                    batch_new += 1
+                    page_new += 1
                 elif result == "updated":
-                    batch_updated += 1
+                    page_updated += 1
                 elif result == "skipped":
-                    batch_skipped += 1
+                    page_skipped += 1
                 elif result == "error":
-                    batch_errors += 1
+                    page_errors += 1
 
             except Exception as inner_e:  # Catch errors within the loop for a single match
                 logger.error(
-                    f"Critical error processing match {_case_name} within batch (Overall Batch {overall_batch_idx}): {inner_e}",
+                    f"Critical error processing match {_case_name} on page {current_page}: {inner_e}",
                     exc_info=True,
                 )
-                batch_errors += 1
+                page_errors += 1
 
-        # --- Batch Summary Logging --- Uses corrected parameters ---
-        logger.debug(f"---- Batch {overall_batch_idx}/{total_required_batches} Summary ----")
-        logger.debug(f"  New:     {batch_new}")
-        logger.debug(f"  Updated: {batch_updated}")
-        logger.debug(f"  Skipped: {batch_skipped}")
-        logger.debug(f"  Errors:  {batch_errors}")
+        # --- Page Summary Logging ---
+        # --- MODIFIED Log Format ---
+        logger.debug(f"---- Page {current_page}/{total_pages_to_process} Summary ----")
+        logger.debug(f"  New:     {page_new}")
+        logger.debug(f"  Updated: {page_updated}")
+        logger.debug(f"  Skipped: {page_skipped}")
+        logger.debug(f"  Errors:  {page_errors}")
         logger.debug("-----------------------\n")
-        # --- End Batch Summary Logging ---
+        # --- END MODIFICATION ---
 
-    except Exception as outer_e:  # Catch errors affecting the whole batch loop
+    except Exception as outer_e:  # Catch errors affecting the whole page loop
         logger.error(
-            f"Critical error during batch processing loop (Overall Batch {overall_batch_idx}): {outer_e}",
+            f"Critical error during page {current_page} processing loop: {outer_e}",
             exc_info=True,
         )
         if session.is_active:
-            session.rollback()
-        remaining_count = len(batch) - (batch_new + batch_updated + batch_skipped + batch_errors)
-        batch_errors += remaining_count
+            try:
+                 session.rollback()
+                 logger.debug(f"Rolled back session due to error on page {current_page} loop.")
+            except Exception as rb_err:
+                 logger.error(f"Failed to rollback session after error on page {current_page}: {rb_err}")
+        # Count remaining matches on the page as errors
+        remaining_count = num_matches - (page_new + page_updated + page_skipped + page_errors)
+        page_errors += remaining_count
 
     finally:
         # Always return the session to the pool
         session_manager.return_session(session)
 
-    return batch_new, batch_updated, batch_skipped, batch_errors
+    return page_new, page_updated, page_skipped, page_errors
 # end of _do_batch
 
 
@@ -365,9 +329,10 @@ def _do_match(
     session: Session, match: Dict[str, Any], session_manager: SessionManager
 ) -> Tuple[Literal["skipped", "updated", "new", "error"], Optional[str]]:
     """
-    Processes a single match. Fetches details, determines profile/admin IDs respecting
-    uniqueness constraints, calls create_or_update_person (which handles specific updates),
-    and conditionally creates DNA/Tree records. Performs post-commit integrity checks.
+    Processes a single match. Fetches details, determines profile/admin IDs, calls
+    create_or_update_person (V8 - which now handles need_update logic),
+    and conditionally creates DNA/Tree records based on its return values.
+    Performs post-commit integrity checks.
     """
     person_record: Optional[Person] = None
     person_id_for_verification: Optional[int] = None
@@ -392,9 +357,12 @@ def _do_match(
 
     # --- Initialize status variables ---
     overall_status: Literal["new", "updated", "skipped", "error"] = "error" # Default status
-    person_status: Literal["created", "updated", "skipped", "error"] = "error" # Determined by create_or_update_person
+    # --- REMOVED person_status initialization here, determined by create_or_update_person V8 ---
     dna_status: Literal["created", "skipped", "error"] = "skipped" # Default, set by create_dna_match
     tree_status: Literal["created", "skipped", "error"] = "skipped" # Default, set by create_family_tree
+    # --- Flags now determined by create_or_update_person ---
+    create_dna_needed: bool = False
+    fetch_tree_data: bool = False
 
     # --- Initialize data variables ---
     tree_data_to_process: Optional[Dict[str, Any]] = None
@@ -403,45 +371,8 @@ def _do_match(
     details_fetched: Optional[Dict[str, Any]] = None # Initialize
 
     try:
-        # --- 1. Call REVISED need_update ---
-        # Determines if DNA needs creation and if Tree data fetch is needed
-        existing_person_hint, create_dna_needed, fetch_tree_data = need_update(session, match)
+        # --- 1. Fetch Detailed Match Details (Mandatory) ---
         log_ref_short = f"UUID={match_uuid} User='{match_username}'" # Shorter ref for some logs
-
-        # --- 2. Fetch Tree Data (if needed) ---
-        if fetch_tree_data:
-            delay = session_manager.dynamic_rate_limiter.wait()
-            logger.debug(f"Waited {delay:.2f}s before fetching tree badge details for {log_ref_short}")
-            logger.debug(f"Fetching family tree data for {log_ref_short} (needed: {fetch_tree_data}).")
-            # Fetch tree details (_get_tree, _get_relShip) and populate tree_data_to_process
-            # (Existing logic for fetching tree details remains here - assumed correct)
-            tree_api_data = _get_tree(session, match, session_manager)
-            if tree_api_data:
-                tree_data_to_process = {
-                    "person_name_in_tree": tree_api_data.get("their_firstname", "Unknown"),
-                    "their_cfpid": tree_api_data.get("their_cfpid"),
-                    "their_birth_year": tree_api_data.get("their_birth_year"),
-                    # Other tree fields are derived below
-                }
-                their_cfpid = tree_data_to_process.get("their_cfpid")
-                if their_cfpid and session_manager.my_tree_id:
-                     delay = session_manager.dynamic_rate_limiter.wait()
-                     logger.debug(f"Waited {delay:.2f}s before fetching relationship ladder for {log_ref_short}")
-                     relationship_data = _get_relShip(session_manager, session_manager.my_tree_id, their_cfpid)
-                     base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid}")
-                     tree_data_to_process["view_in_tree_link"] = urljoin(base_tree_url, "family")
-                     tree_data_to_process["facts_link"] = urljoin(base_tree_url, "facts")
-                     if relationship_data:
-                         tree_data_to_process["actual_relationship"] = relationship_data.get("actual_relationship")
-                         tree_data_to_process["relationship_path"] = relationship_data.get("relationship_path")
-                     else: logger.warning(f"Failed to get relationship details for CFPID: {their_cfpid}.")
-                elif not their_cfpid: logger.warning(f"CFPID missing for {log_ref_short}. Cannot fetch relationship or build tree links.")
-                elif not session_manager.my_tree_id: logger.warning("my_tree_id missing. Cannot construct tree links or fetch relationship.")
-            else:
-                logger.warning(f"Failed to fetch tree data (_get_tree returned None) for {log_ref_short}. Resetting fetch_tree_data.")
-                fetch_tree_data = False # Reset flag if fetch failed
-
-        # --- 3. Fetch Detailed Match Details (Mandatory) ---
         delay = session_manager.dynamic_rate_limiter.wait()
         logger.debug(f"Waited {delay:.2f}s before fetching details for {log_ref_short}")
         logger.debug(f"Fetching /details and profile APIs for {log_ref_short} to determine correct profile/admin IDs.")
@@ -450,8 +381,8 @@ def _do_match(
              logger.error(f"CRITICAL: Failed to fetch /details and/or profile API for {log_ref_short}. Aborting match processing.")
              return "error", f"Details API fetch failed for {log_ref_short}"
 
-        # --- 4. Prepare data for Person Create/Update (using V7 logic in create_or_update_person) ---
-        # Determine management status and IDs to save
+        # --- 2. Prepare data for Person Create/Update (using V8 logic in create_or_update_person) ---
+        # Determine management status and IDs to save (Logic remains same as V7)
         tester_profile_id = details_fetched.get("tester_profile_id")
         admin_profile_id = details_fetched.get("admin_profile_id")
         admin_username = details_fetched.get("admin_username")
@@ -460,7 +391,6 @@ def _do_match(
         person_admin_id_to_save = None
         person_admin_username_to_save = None
 
-        # Logic to determine management status (Simplified for brevity, assume correct V5 logic from original)
         if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
             person_profile_id_to_save = tester_profile_id
             person_admin_id_to_save = admin_profile_id
@@ -483,55 +413,108 @@ def _do_match(
             person_admin_id_to_save = admin_profile_id
             person_admin_username_to_save = admin_username
 
-        # Construct message link
+        # Construct message link (Logic remains same as V7)
         message_target_id = admin_profile_id or tester_profile_id
         constructed_message_link = None
         if message_target_id and session_manager.my_uuid:
              constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={message_target_id.upper()}&testguid1={session_manager.my_uuid.upper()}&testguid2={match_uuid.upper()}")
 
         # Consolidate data for save
-        # NOTE: Only fields relevant for CREATION or the ALLOWED update fields should ideally be passed.
-        # However, create_or_update_person_v7 will handle filtering the updates.
-        # Passing the birth_year fetched from tree_api_data IF it was fetched.
-        fetched_birth_year = tree_data_to_process.get("their_birth_year") if tree_data_to_process else None
-
+        # NOTE: create_or_update_person_v8 will handle filtering the updates.
+        # We DO NOT fetch birth_year here anymore, it's passed only if fetched during tree processing later.
         person_data_to_save = {
             "uuid": match_uuid.upper(),
             "username": match_username,
             "profile_id": person_profile_id_to_save.upper() if person_profile_id_to_save else None,
             "administrator_profile_id": person_admin_id_to_save.upper() if person_admin_id_to_save else None,
             "administrator_username": person_admin_username_to_save,
-            "in_my_tree": match.get("in_my_tree", False),
+            "in_my_tree": match.get("in_my_tree", False), # Pass the initial flag from match list
             "first_name": match.get("first_name"),
             "last_logged_in": details_fetched.get("last_logged_in_dt"), # Aware UTC datetime or None
             "contactable": details_fetched.get("contactable", False),
-            "birth_year": fetched_birth_year, # Pass potentially fetched birth year
+            # "birth_year": REMOVED - Only updated if tree data is fetched later
             "gender": details_fetched.get("gender"),
             "message_link": constructed_message_link,
         }
-        logger.debug(f"Data prepared for Person save/update V7: {person_data_to_save}")
+        logger.debug(f"Data prepared for Person save/update V8: {person_data_to_save}")
 
-        # --- 5. Create or Update Person record ---
+        # --- 3. Create or Update Person record (V8) & Get Related Data Needs ---
+        person_status: Literal["created", "updated", "skipped", "error"] # Declare type here
         try:
-            # Call the revised function V7
-            person_record, person_status = create_or_update_person(session, person_data_to_save)
+            # Call the revised function V8 - unpack all 4 return values
+            (
+                person_record,
+                person_status,
+                create_dna_needed, # Flag determined by V8 function
+                fetch_tree_data, # Flag determined by V8 function
+            ) = create_or_update_person(session, person_data_to_save)
+
             if person_record is None or person_status == "error":
-                 logger.error(f"Person create/update V7 returned error for {log_ref_short}.")
+                 logger.error(f"Person create/update V8 returned error for {log_ref_short}.")
                  if session.is_active: session.rollback()
-                 return "error", f"Person create/update V7 failed for {log_ref_short}"
+                 return "error", f"Person create/update V8 failed for {log_ref_short}"
             person_id_for_verification = person_record.id
+            logger.debug(f"Person processed (Status: {person_status}). DNA Needed: {create_dna_needed}, Tree Fetch Needed: {fetch_tree_data}")
+
         except Exception as p_err:
-             logger.error(f"Unexpected error during person create/update V7 for {log_ref_short}: {p_err}", exc_info=True)
+             logger.error(f"Unexpected error during person create/update V8 for {log_ref_short}: {p_err}", exc_info=True)
              if session.is_active: session.rollback()
-             return "error", f"Unexpected person processing error V7 for {log_ref_short}"
+             return "error", f"Unexpected person processing error V8 for {log_ref_short}"
 
         if person_record is None or person_id_for_verification is None:
-             error_msg = f"Person object or ID invalid after create/update V7 for {log_ref_short}. Aborting."
+             error_msg = f"Person object or ID invalid after create/update V8 for {log_ref_short}. Aborting."
              logger.error(error_msg)
              if session.is_active: session.rollback()
              return "error", error_msg
 
-        # --- 6. Create DNA Match Record (if needed) ---
+        # --- 4. Fetch Tree Data (if needed, determined by create_or_update_person) ---
+        if fetch_tree_data:
+            delay = session_manager.dynamic_rate_limiter.wait()
+            logger.debug(f"Waited {delay:.2f}s before fetching tree badge details for {log_ref_short}")
+            logger.debug(f"Fetching family tree data for {log_ref_short} (needed: {fetch_tree_data}).")
+            tree_api_data = _get_tree(session, match, session_manager) # match has uuid/username needed
+            if tree_api_data:
+                tree_data_to_process = {
+                    "person_name_in_tree": tree_api_data.get("their_firstname", "Unknown"),
+                    "their_cfpid": tree_api_data.get("their_cfpid"),
+                    "their_birth_year": tree_api_data.get("their_birth_year"), # Get birth year here
+                }
+                their_cfpid = tree_data_to_process.get("their_cfpid")
+                if their_cfpid and session_manager.my_tree_id:
+                     delay = session_manager.dynamic_rate_limiter.wait()
+                     logger.debug(f"Waited {delay:.2f}s before fetching relationship ladder for {log_ref_short}")
+                     relationship_data = _get_relShip(session_manager, session_manager.my_tree_id, their_cfpid)
+                     base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid}")
+                     tree_data_to_process["view_in_tree_link"] = urljoin(base_tree_url, "family")
+                     tree_data_to_process["facts_link"] = urljoin(base_tree_url, "facts")
+                     if relationship_data:
+                         tree_data_to_process["actual_relationship"] = relationship_data.get("actual_relationship")
+                         tree_data_to_process["relationship_path"] = relationship_data.get("relationship_path")
+                     else: logger.warning(f"Failed to get relationship details for CFPID: {their_cfpid}.")
+
+                     # --- Potentially update Person birth_year if fetched and needed ---
+                     fetched_birth_year = tree_data_to_process.get("their_birth_year")
+                     current_person_birth_year = getattr(person_record, "birth_year", None) # Get current from DB object
+                     if fetched_birth_year is not None and current_person_birth_year is None:
+                          try:
+                              birth_year_int = int(fetched_birth_year)
+                              logger.debug(f"  Updating Person birth_year from Tree data: '{current_person_birth_year}' -> '{birth_year_int}'")
+                              setattr(person_record, "birth_year", birth_year_int)
+                              # If person status was 'skipped', promote it to 'updated' because we changed birth year
+                              if person_status == "skipped":
+                                   person_status = "updated"
+                                   logger.debug("  Person status promoted to 'updated' due to birth year addition.")
+                          except (ValueError, TypeError):
+                              logger.warning(f"  Skipping birth_year update from Tree: New value '{fetched_birth_year}' is not valid integer.")
+                     # --- End birth year update ---
+
+                elif not their_cfpid: logger.warning(f"CFPID missing for {log_ref_short}. Cannot fetch relationship or build tree links.")
+                elif not session_manager.my_tree_id: logger.warning("my_tree_id missing. Cannot construct tree links or fetch relationship.")
+            else:
+                logger.warning(f"Failed to fetch tree data (_get_tree returned None) for {log_ref_short}. Resetting fetch_tree_data.")
+                fetch_tree_data = False # Reset flag if fetch failed
+
+        # --- 5. Create DNA Match Record (if needed, determined by create_or_update_person) ---
         dna_status = "skipped"
         if create_dna_needed:
             logger.debug(f"Proceeding with DNA Match creation for {log_ref_short} (needed: {create_dna_needed}).")
@@ -554,9 +537,9 @@ def _do_match(
         else:
             logger.debug(f"Skipping DNA Match creation for {log_ref_short} (create_dna_needed=False).")
 
-        # --- 7. Create Family Tree Record (if needed) ---
+        # --- 6. Create Family Tree Record (if needed AND tree data was successfully fetched) ---
         tree_status = "skipped"
-        # Condition: Tree fetch was attempted AND succeeded AND resulted in data
+        # Condition: Tree fetch was attempted (fetch_tree_data was True) AND succeeded AND resulted in data
         if fetch_tree_data and tree_data_to_process:
              logger.debug(f"Processing fetched family tree data for {log_ref_short} (Person ID: {person_record.id}).")
              # Prepare args using the fetched tree_data_to_process
@@ -575,10 +558,11 @@ def _do_match(
              elif tree_status == "skipped": logger.warning(f"Family tree processing needed but skipped for {log_ref_short}.")
         elif fetch_tree_data and not tree_data_to_process:
              logger.warning(f"Skipping Family Tree creation for {log_ref_short} as initial fetch failed or yielded no data.")
-        else: # fetch_tree_data was False
+        else: # fetch_tree_data was False initially
              logger.debug(f"Skipping Family Tree fetch/creation for {log_ref_short} (fetch_tree_data=False).")
 
-        # --- 8. Determine Overall Status and Commit/Rollback ---
+        # --- 7. Determine Overall Status and Commit/Rollback ---
+        # Use the potentially updated person_status (from birth year update)
         any_errors = (person_status == "error" or dna_status == "error" or tree_status == "error")
         if any_errors:
             overall_status = "error"
@@ -591,21 +575,19 @@ def _do_match(
         needs_commit = session.new or session.dirty or session.deleted
         if not needs_commit:
             logger.debug(f"Session is clean for {log_ref_short}. Final status determination based on function returns.")
-            # If person was created, it should have been committed internally or requires commit now
+            # If person was created/updated, session should be dirty unless flush/commit happened internally
             if person_status == "created":
                  logger.warning(f"Person status was 'created' but session clean for {log_ref_short}? Setting overall to 'new'.")
-                 overall_status = "new" # Should ideally not happen if create_or_update handles flush/commit correctly
-                 # If create_or_update doesn't commit internally, we MUST commit here if status is 'created'
-                 needs_commit = True
+                 overall_status = "new"
+                 needs_commit = True # Assume commit is needed if status is created
             elif person_status == "updated":
                  logger.warning(f"Person status was 'updated' but session clean for {log_ref_short}? Setting overall to 'updated'.")
-                 overall_status = "updated" # Again, likely indicates commit needed
-                 needs_commit = True
+                 overall_status = "updated"
+                 needs_commit = True # Assume commit is needed if status is updated
             else: # person_status is 'skipped'
                  overall_status = "skipped"
                  logger.debug(f"No DB changes detected and person status is '{person_status}'. Overall status: '{overall_status}' for {log_ref_short}.")
                  return overall_status, None # No commit needed, return skipped
-
 
         # Proceed with commit if needed
         if needs_commit:
@@ -621,34 +603,28 @@ def _do_match(
                 elif person_status == "updated" or dna_status == "created" or tree_status == "created":
                     # If person was updated OR if DNA/Tree was newly created, overall is 'updated'
                     overall_status = "updated"
-                else: # person_status == 'skipped' and dna/tree were also skipped/error (error handled above)
-                    overall_status = "skipped" # Only skipped if person skipped AND no new DNA/Tree
-                    logger.debug(f"Commit occurred for {commit_log_ref} (likely only DNA/Tree updates? P:'{person_status}', D:'{dna_status}', T:'{tree_status}'). Overall status: '{overall_status}'.")
+                else: # person_status == 'skipped' and dna/tree were also skipped
+                    overall_status = "skipped"
+                    logger.debug(f"Commit occurred for {commit_log_ref} but final status determination is 'skipped' (P:'{person_status}', D:'{dna_status}', T:'{tree_status}').")
 
             except (IntegrityError, SQLAlchemyError) as commit_e:
-                # Catch DB errors during commit
                 error_msg = f"Database Commit FAILED for {log_ref_short}"
                 logger.error(f"{error_msg}: {commit_e}", exc_info=True)
                 if session.is_active: session.rollback()
-                # Log data that might have caused issue
                 dna_data_log = dna_data_to_save if dna_data_to_save else 'N/A'
                 tree_args_log = family_tree_args if family_tree_args else tree_data_to_process
                 logger.error(f"Data state before failed commit: Person={person_data_to_save}, DNA={dna_data_log}, Tree={tree_args_log}")
                 return "error", error_msg
             except Exception as E:
-                # Catch other unexpected commit errors
                 error_msg = f"Unexpected commit error for {log_ref_short}"
                 logger.error(f"{error_msg}: {E}", exc_info=True)
                 if session.is_active: session.rollback()
                 return "error", error_msg
-        # else: # Handled above - if no commit needed, status was determined and returned
 
-
-        # --- 9. Post-commit Verification (Integrity Checks) ---
-        # Only verify if a person record was involved (created or updated and committed)
+        # --- 8. Post-commit Verification (Integrity Checks) ---
+        # Logic remains the same as V7, using person_status and other statuses
         if person_id_for_verification and (person_status == "created" or person_status == "updated"):
             try:
-                # Refresh the person object and its relationships from the DB
                 logger.debug(f"Performing post-commit verification for {log_ref_short} (Person ID: {person_id_for_verification}).")
                 session.expire(person_record) # Expire first to force reload
                 session.refresh(person_record, ['dna_match', 'family_tree']) # Refresh relationships too
@@ -656,8 +632,7 @@ def _do_match(
 
                 if not verify_person:
                     logger.error(f"CRITICAL Post-commit verification FAILED for Person ID {person_id_for_verification}! Record MISSING after refresh.")
-                    # This indicates a serious problem, maybe return error?
-                    overall_status = "error" # Mark as error if verification fails
+                    overall_status = "error"
                 else:
                     logger.debug(f"Post-commit Person verification OK for {log_ref_short}.")
 
@@ -671,7 +646,6 @@ def _do_match(
                          else: logger.debug(f"Post-commit DNA verification OK for {log_ref_short}.")
 
                     # Check Tree integrity if Tree was expected to be created OR if person is marked 'in_my_tree'
-                    # Use the refreshed person's 'in_my_tree' status
                     if verify_person.in_my_tree:
                          verify_tree = verify_person.family_tree
                          if not verify_tree:
@@ -681,17 +655,17 @@ def _do_match(
                                    logger.error(f"Post-commit Tree FAILED: CFPID mismatch! DB='{verify_tree.cfpid}', Expected='{family_tree_args.get('cfpid')}' for {log_ref_short}.")
                               else: logger.debug(f"Post-commit Tree verification OK for {log_ref_short} (CFPID='{verify_tree.cfpid}').")
                          else: # Tree exists, but wasn't created this run
-                              logger.debug(f"Post-commit Tree verification OK (existing record found) for {log_ref_short} (CFPID='{verify_tree.cfpid}').")
+                              logger.debug(f"Post-commit Tree verification OK (existing record found) for {log_ref_short} (CFPID='{verify_tree.cfpid if verify_tree else 'N/A'}').")
 
             except Exception as verify_e:
                 logger.error(f"Exception during post-commit verification for {log_ref_short}: {verify_e}", exc_info=True)
-                # Optionally change overall_status to error here
 
-        # --- 10. Return final determined status ---
+        # --- 9. Return final determined status ---
         logger.debug(f"Final overall status for {log_ref_short}: {overall_status}")
         return overall_status, None
 
-    # --- 11. Handle Broad Exceptions ---
+    # --- 10. Handle Broad Exceptions ---
+    # Logic remains the same as V7
     except (requests.exceptions.RequestException, WebDriverException) as net_e:
         error_msg = f"Network/WebDriver error processing match {log_ref}: {net_e}"
         logger.warning(error_msg, exc_info=False) # Less verbose logging for network errors
@@ -708,8 +682,7 @@ def _do_match(
             try: session.rollback(); logger.debug(f"Rolled back session due to unexpected error for {log_ref}.")
             except Exception as rb_err: logger.error(f"Error rolling back session after unexpected error for {log_ref}: {rb_err}")
         return "error", f"Unexpected error processing {log_ref}: {e}"
-
-# End of _do_match
+# End of _do_match 
 
 def _log_page_summary(page, page_new, page_updated, page_skipped, page_errors):
     """Logs a summary of processed matches for a single page."""
@@ -721,10 +694,12 @@ def _log_page_summary(page, page_new, page_updated, page_skipped, page_errors):
     logger.debug("-----------------------\n")
 # end of _log_page_summary
 
-def _log_coord_summary(total_batches_processed, total_new, total_updated, total_skipped, total_errors): # Renamed arg
+def _log_coord_summary(total_pages_processed, total_new, total_updated, total_skipped, total_errors): # Renamed arg
     """Logs the final summary of the coord's execution."""
     logger.info("---- Final Summary ----")
-    logger.info(f"  Total Batches Processed: {total_batches_processed}") # Updated label
+    # --- MODIFIED Label ---
+    logger.info(f"  Total Pages Processed: {total_pages_processed}")
+    # --- END MODIFICATION ---
     logger.info(f"  Total New:       {total_new}")
     logger.info(f"  Total Updated:   {total_updated}")
     logger.info(f"  Total Skipped:   {total_skipped}")
