@@ -359,15 +359,16 @@ def _do_batch(session_manager, batch, overall_batch_idx, total_required_batches)
     return batch_new, batch_updated, batch_skipped, batch_errors
 # end of _do_batch
 
+
 @retry()
 def _do_match(
     session: Session, match: Dict[str, Any], session_manager: SessionManager
 ) -> Tuple[Literal["skipped", "updated", "new", "error"], Optional[str]]:
     """
     Processes a single match. Fetches details, determines profile/admin IDs respecting
-    uniqueness constraints, calls create_or_update_person, and conditionally
-    creates DNA/Tree records. Overall status is "updated" ONLY if DNA/Tree created
-    or message link generated.
+    uniqueness constraints, calls create_or_update_person (which handles message link),
+    and conditionally creates DNA/Tree records. Overall status is "updated" ONLY if DNA/Tree created
+    or significant Person field changed. Corrected E.C./Tanej case logic.
     """
     person_record: Optional[Person] = None
     person_id_for_verification: Optional[int] = None
@@ -394,7 +395,6 @@ def _do_match(
     person_status: Literal["created", "updated", "skipped", "error"] = "error" # Determined by create_or_update_person
     dna_status: Literal["created", "skipped", "error"] = "skipped" # Default, set by create_dna_match
     tree_status: Literal["created", "skipped", "error"] = "skipped" # Default, set by create_family_tree
-    message_link_changed = False # Track if message link was generated/updated
 
     tree_data_to_process: Optional[Dict[str, Any]] = None
     dna_data_to_save: Optional[Dict[str, Any]] = None # Initialize
@@ -450,7 +450,7 @@ def _do_match(
              logger.error(f"Cannot fetch /details API for {log_ref}: match UUID is missing.")
              return "error", f"UUID missing, cannot fetch details for {log_ref}"
 
-        # --- 4. Prepare data for Person Create/Update (REVISED LOGIC V2) ---
+        # --- 4. Prepare data for Person Create/Update (REVISED LOGIC V5) ---
         person_profile_id_to_save = None
         person_admin_id_to_save = None
         person_admin_username_to_save = None
@@ -459,38 +459,69 @@ def _do_match(
         admin_profile_id = details_fetched.get("admin_profile_id")
         admin_username = details_fetched.get("admin_username")
 
-        # Determine IDs based on relationships and names
-        if admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
-            # IDs match
+        # Determine ID for message link generation *before* preparing person data
+        message_target_profile_id_for_link = None
+        if admin_profile_id:
+            message_target_profile_id_for_link = admin_profile_id # Prioritize admin
+        elif tester_profile_id:
+            message_target_profile_id_for_link = tester_profile_id # Fallback to tester
+        else:
+             logger.warning(f"Cannot determine target profile ID for message link construction: Admin='{admin_profile_id}', Tester='{tester_profile_id}'")
+
+        # Construct the potential message link
+        constructed_message_link = None
+        if message_target_profile_id_for_link:
+            my_uuid_upper = (session_manager.my_uuid.upper() if session_manager.my_uuid else "")
+            match_uuid_upper = match_uuid.upper()
+            target_profile_id_upper = message_target_profile_id_for_link.upper()
+            if my_uuid_upper:
+                constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={target_profile_id_upper}&testguid1={my_uuid_upper}&testguid2={match_uuid_upper}")
+                logger.debug(f"Constructed potential message link: {constructed_message_link}")
+            else:
+                logger.warning(f"Cannot construct full message link for {log_ref}: Missing own UUID.")
+        # --- End Link Construction ---
+
+        # --- Determine profile/admin IDs to save (Revised Logic V5) ---
+        # Case 1: Managed Kit (Admin ID exists and is different from Tester ID, OR Tester ID is actually None)
+        if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
+            logger.debug(f"{log_ref}: Managed kit detected (Admin ID '{admin_profile_id}' differs from Tester ID '{tester_profile_id}' or Tester ID missing). Storing tester profile ID ({tester_profile_id}) and admin details.")
+            person_profile_id_to_save = tester_profile_id # Store E.C.'s ID (which is often None)
+            person_admin_id_to_save = admin_profile_id    # Store Tanej's ID
+            person_admin_username_to_save = admin_username # Store Tanej's username
+
+        # Case 2: IDs Match (API reports admin ID == tester ID)
+        elif admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
             match_name_lower = match_username.lower()
             admin_name_lower = admin_username.lower() if admin_username else ""
-            if admin_name_lower == match_name_lower or not admin_username:
-                # Case 1: Self-managed, names consistent or admin name missing.
-                logger.debug(f"{log_ref}: Self-managed kit detected (IDs match, names consistent). Storing profile_id ({tester_profile_id}), clearing admin fields.")
-                person_profile_id_to_save = tester_profile_id
-                person_admin_id_to_save = None
-                person_admin_username_to_save = None
+            # Subcase 2a: Names Differ (Indicates managed kit despite matching API IDs - e.g., E.C./Tanej)
+            if admin_name_lower != match_name_lower and admin_username:
+                 logger.warning(f"{log_ref}: API IDs match, but names differ (Match='{match_username}', Admin='{admin_username}'). Likely managed kit. Setting profile_id=NULL, storing admin details.")
+                 person_profile_id_to_save = None # Avoid conflict
+                 person_admin_id_to_save = admin_profile_id # Store the admin ID
+                 person_admin_username_to_save = admin_username # Store the admin name
+            # Subcase 2b: Names Consistent (Truly self-managed)
             else:
-                # Case 2: Self-managed, but API admin name differs from match list name (like Tanej/E.C.)
-                # Set profile_id to NULL to avoid unique constraint violation if Tanej's primary record exists.
-                logger.warning(f"{log_ref}: Self-managed kit detected (IDs match), but names differ (Match='{match_username}', Admin='{admin_username}'). Setting profile_id=NULL, storing admin details.")
-                person_profile_id_to_save = None # Key change: Avoid conflict
-                person_admin_id_to_save = admin_profile_id # Store the admin ID
-                person_admin_username_to_save = admin_username # Store the admin name
-        elif admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
-            # Case 3: Managed by a different profile ID. Store tester_id as profile_id.
-            logger.debug(f"{log_ref}: Managed kit detected (Admin ID '{admin_profile_id}' differs from Tester ID '{tester_profile_id}' or Tester ID missing). Storing tester profile ID and admin details.")
-            person_profile_id_to_save = tester_profile_id # Store the actual tester's ID (can be None)
-            person_admin_id_to_save = admin_profile_id
-            person_admin_username_to_save = admin_username
-        else: # admin_profile_id is None (or only tester_id present and matches admin_id implicitly)
-            # Case 4: Self-managed (no admin info from API). Store tester_id, clear admin.
-            logger.debug(f"{log_ref}: Self-managed kit detected (no Admin ID from API or IDs matched implicitly). Storing profile_id ({tester_profile_id}), clearing admin fields.")
-            person_profile_id_to_save = tester_profile_id # Store tester's ID (can be None)
-            person_admin_id_to_save = None
-            person_admin_username_to_save = None
+                 logger.debug(f"{log_ref}: Self-managed kit detected (IDs match, names consistent). Storing profile_id ({tester_profile_id}), clearing admin fields.")
+                 person_profile_id_to_save = tester_profile_id
+                 person_admin_id_to_save = None
+                 person_admin_username_to_save = None
 
-        # Consolidate data for save
+        # Case 3: Only Tester ID is present (or Admin ID was None) - Self-Managed default
+        elif tester_profile_id and not admin_profile_id:
+             logger.debug(f"{log_ref}: Self-managed kit detected (Tester ID present, no Admin ID). Storing profile_id ({tester_profile_id}), clearing admin fields.")
+             person_profile_id_to_save = tester_profile_id
+             person_admin_id_to_save = None
+             person_admin_username_to_save = None
+
+        # Case 4: Fallback/Error case - Neither ID meaningfully present
+        else:
+             logger.error(f"{log_ref}: Could not reliably determine management status. TesterID='{tester_profile_id}', AdminID='{admin_profile_id}'. Setting profile_id=NULL and storing admin details if available.")
+             person_profile_id_to_save = None # Safest default
+             person_admin_id_to_save = admin_profile_id
+             person_admin_username_to_save = admin_username
+
+
+        # Consolidate data for save, including the generated message link
         person_data_to_save = {
             "uuid": match_uuid.upper(),
             "username": match_username,
@@ -503,17 +534,19 @@ def _do_match(
             "contactable": details_fetched.get("contactable", False),
             "birth_year": tree_data_to_process.get("their_birth_year") if tree_data_to_process else None,
             "gender": details_fetched.get("gender"),
-            "message_link": None,
+            "message_link": constructed_message_link, # Pass the generated link
         }
         logger.debug(f"Data prepared for Person save: {person_data_to_save}")
-        # --- END REVISED LOGIC V2 ---
+        # --- END REVISED LOGIC V5 ---
 
 
         # --- 5. Create or Update Person record ---
         try:
+            # This function now handles comparing/updating the message_link as well
             person_record, person_status = create_or_update_person(session, person_data_to_save)
             if person_record is None or person_status == "error":
                  logger.error(f"Person create/update returned error for {log_ref}. Data attempted: {person_data_to_save}")
+                 if session.is_active: session.rollback()
                  return "error", f"Person create/update failed for {log_ref}"
             person_id_for_verification = person_record.id
         except Exception as p_err:
@@ -527,37 +560,7 @@ def _do_match(
              if session.is_active: session.rollback()
              return "error", error_msg
 
-        # --- 6. Construct and Update Message Link ---
-        message_target_profile_id = None
-        # Prioritize admin ID for messaging link if it exists
-        if person_record.administrator_profile_id:
-             message_target_profile_id = person_record.administrator_profile_id
-             logger.debug(f"Using administrator_profile_id ({message_target_profile_id}) for message link.")
-        elif person_record.profile_id:
-             message_target_profile_id = person_record.profile_id
-             logger.debug(f"Using profile_id ({message_target_profile_id}) for message link.")
-        else:
-            # This might happen for the case where profile_id was set to NULL to avoid conflict
-            logger.warning(f"Cannot construct message link for {log_ref}: No profile_id or administrator_profile_id available on Person record ID {person_record.id}.")
-
-        new_message_link = None
-        if message_target_profile_id:
-            my_uuid_upper = (session_manager.my_uuid.upper() if session_manager.my_uuid else "")
-            match_uuid_upper = match_uuid.upper()
-            target_profile_id_upper = message_target_profile_id.upper()
-            if my_uuid_upper:
-                new_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={target_profile_id_upper}&testguid1={my_uuid_upper}&testguid2={match_uuid_upper}")
-                logger.debug(f"Constructed message link: {new_message_link}")
-            else:
-                logger.warning(f"Cannot construct full message link for {log_ref}: Missing own UUID.")
-
-        message_link_changed = False
-        if person_record.message_link != new_message_link:
-            logger.debug(f"Updating message_link for Person ID {person_record.id}.")
-            person_record.message_link = new_message_link
-            message_link_changed = True
-            if person_status == 'skipped':
-                 person_record.updated_at = datetime.now()
+        # --- 6. Message Link Update Block REMOVED ---
 
         # --- 7. Create DNA Match Record (if needed) ---
         dna_status = "skipped"
@@ -605,7 +608,7 @@ def _do_match(
         else:
              logger.debug(f"Skipping Family Tree fetch/update for {log_ref} (fetch_tree_data=False).")
 
-        # --- 9. Determine Overall Status and Commit/Rollback (REVISED) ---
+        # --- 9. Determine Overall Status and Commit/Rollback (REVISED V4 - Based on session state) ---
         any_errors = (person_status == "error" or dna_status == "error" or tree_status == "error")
         if any_errors:
             overall_status = "error"
@@ -615,31 +618,29 @@ def _do_match(
             person_id_for_verification = None
             return overall_status, error_msg
 
-        # Check for significant changes (creation of Person/DNA/Tree or link update)
-        significant_db_changes = (
-             person_status == "created" or
-             dna_status == "created" or
-             tree_status == "created" or
-             message_link_changed
-        )
+        needs_commit = session.new or session.dirty or session.deleted
+        if needs_commit:
+             new_log = f"New:{[(o.__class__.__name__, getattr(o, 'id', 'N/A')) for o in session.new]}" if session.new else ""
+             mod_log = f"Mod:{[(o.__class__.__name__, getattr(o, 'id', 'N/A')) for o in session.dirty if o is not None]}" if session.dirty else ""
+             del_log = f"Del:{[(o.__class__.__name__, getattr(o, 'id', 'N/A')) for o in session.deleted]}" if session.deleted else ""
+             logger.debug(f"Session is dirty for {log_ref}. Changes detected: {new_log} {mod_log} {del_log}")
+        else:
+             logger.debug(f"Session is clean for {log_ref}. No commit needed based on session state.")
 
-        if significant_db_changes:
+        if needs_commit:
             try:
-                logger.debug(f"Attempting commit for {log_ref} (Person ID: {person_id_for_verification}) with significant changes: Person={person_status}, DNA={dna_status}, Tree={tree_status}, LinkChanged={message_link_changed}")
+                logger.debug(f"Attempting commit for {log_ref} (Person ID: {person_id_for_verification}) due to detected session changes.")
                 session.commit()
                 logger.debug(f"Commit successful for {log_ref} (Person ID: {person_id_for_verification}).")
 
-                # --- REVISED Overall Status Logic ---
+                # Determine status *after* successful commit based on original function returns
                 if person_status == "created":
-                    overall_status = "new" # Prioritize "new"
-                elif dna_status == "created" or tree_status == "created" or message_link_changed:
-                    overall_status = "updated" # Updated if DNA/Tree created or link changed
+                    overall_status = "new"
+                elif person_status == "updated" or dna_status == "created" or tree_status == "created":
+                    overall_status = "updated"
                 else:
-                    # This case means person_status was 'updated' internally, but no significant changes occurred.
-                    # We now explicitly want to call this 'skipped' based on user feedback.
-                    logger.debug(f"Internal Person update occurred for {log_ref}, but no significant changes. Setting overall status to 'skipped'.")
+                    logger.debug(f"Commit occurred for {log_ref}, but primary statuses were P:'{person_status}', D:'{dna_status}', T:'{tree_status}'. Setting overall status to 'skipped'.")
                     overall_status = "skipped"
-                # --- END REVISED Overall Status Logic ---
 
             except IntegrityError as commit_ie:
                 error_msg = f"Integrity Constraint Violation during commit for {log_ref}"
@@ -662,77 +663,61 @@ def _do_match(
                 if session.is_active: session.rollback()
                 person_id_for_verification = None
                 return "error", error_msg
-        else: # No significant DB changes
-            if person_status == "updated":
-                logger.debug(f"Person record updated internally for {log_ref}, but no significant changes (DNA/Tree/Link). Setting overall status to 'skipped'.")
+        else: # No commit needed
+            logger.debug(f"No session changes detected for {log_ref}. Final status determination.")
+            if person_status == "created":
+                 logger.warning(f"Person status was 'created' but no commit needed for {log_ref}? Setting overall to 'new'.")
+                 overall_status = "new"
             else:
-                logger.debug(f"No significant database changes for {log_ref} (P:{person_status}, D:{dna_status}, T:{tree_status}, Link:{message_link_changed}). Setting overall status to 'skipped'.")
-            overall_status = "skipped"
-            if session.dirty:
-                logger.warning(f"Session unexpectedly dirty for {log_ref} when skipping, rolling back.")
-                if session.is_active: session.rollback()
+                 overall_status = "skipped"
             person_id_for_verification = None
             return overall_status, None
 
-        # --- 10. Post-commit Verification (remains the same) ---
+        # --- 10. Post-commit Verification ---
         if person_id_for_verification:
             try:
-                session.expire_all()
-                verify_person = session.get(Person, person_id_for_verification)
+                session.expire(person_record)
+                session.refresh(person_record, ['dna_match', 'family_tree']) # Refresh relationships too
+                verify_person = person_record
+
                 if not verify_person:
-                    logger.error(f"CRITICAL Post-commit verification FAILED for Person ID {person_id_for_verification}! Record MISSING.")
-                    return "error", f"Post-commit verification failed for {log_ref} - Person missing"
+                    logger.error(f"CRITICAL Post-commit verification FAILED for Person ID {person_id_for_verification}! Record MISSING after refresh.")
                 else:
                     logger.debug(f"Post-commit Person verification OK for {log_ref}.")
                     if dna_status == "created" and dna_data_to_save:
-                         session.refresh(verify_person, ['dna_match'])
                          verify_dna = verify_person.dna_match
                          if not verify_dna: logger.error(f"Post-commit DNA FAILED: No DNA record found for {log_ref}.")
-                         elif verify_dna.shared_segments != dna_data_to_save.get('shared_segments'): logger.error(f"Post-commit DNA FAILED: shared_segments mismatch! DB={verify_dna.shared_segments}, Expected={dna_data_to_save.get('shared_segments')} for {log_ref}.")
-                         elif verify_dna.longest_shared_segment != dna_data_to_save.get('longest_shared_segment'): logger.error(f"Post-commit DNA FAILED: longest_shared_segment mismatch! DB={verify_dna.longest_shared_segment}, Expected={dna_data_to_save.get('longest_shared_segment')} for {log_ref}.")
-                         elif verify_dna.from_my_fathers_side != dna_data_to_save.get('from_my_fathers_side', False): logger.error(f"Post-commit DNA FAILED: from_my_fathers_side mismatch! DB={verify_dna.from_my_fathers_side}, Expected={dna_data_to_save.get('from_my_fathers_side', False)} for {log_ref}.")
-                         elif verify_dna.from_my_mothers_side != dna_data_to_save.get('from_my_mothers_side', False): logger.error(f"Post-commit DNA FAILED: from_my_mothers_side mismatch! DB={verify_dna.from_my_mothers_side}, Expected={dna_data_to_save.get('from_my_mothers_side', False)} for {log_ref}.")
                          elif verify_dna.cM_DNA != dna_data_to_save.get("cM_DNA"): logger.error(f"Post-commit DNA FAILED: cM mismatch! DB={verify_dna.cM_DNA}, Expected={dna_data_to_save.get('cM_DNA')} for {log_ref}.")
                          else: logger.debug(f"Post-commit DNA verification OK for {log_ref}.")
 
                     if tree_status == "created" and family_tree_args:
-                        session.refresh(verify_person, ['family_tree'])
                         verify_tree = verify_person.family_tree
-                        expected_name = family_tree_args.get("person_name_in_tree")
-                        expected_rel = family_tree_args.get("actual_relationship")
-                        expected_cfpid = family_tree_args.get("cfpid")
                         if not verify_tree: logger.error(f"Post-commit Tree FAILED: No Tree record found for {log_ref}.")
-                        elif verify_tree.person_name_in_tree != expected_name: logger.error(f"Post-commit Tree FAILED: Name mismatch! DB='{verify_tree.person_name_in_tree}', Expected='{expected_name}' for {log_ref}.")
-                        elif verify_tree.actual_relationship != expected_rel: logger.error(f"Post-commit Tree FAILED: Relationship mismatch! DB='{verify_tree.actual_relationship}', Expected='{expected_rel}' for {log_ref}.")
-                        elif verify_tree.cfpid != expected_cfpid: logger.error(f"Post-commit Tree FAILED: CFPID mismatch! DB='{verify_tree.cfpid}', Expected='{expected_cfpid}' for {log_ref}.")
-                        else: logger.debug(f"Post-commit Tree verification OK for {log_ref} (Name='{verify_tree.person_name_in_tree}', Rel='{verify_tree.actual_relationship}', CFPID='{verify_tree.cfpid}').")
+                        elif verify_tree.cfpid != family_tree_args.get("cfpid"): logger.error(f"Post-commit Tree FAILED: CFPID mismatch! DB='{verify_tree.cfpid}', Expected='{family_tree_args.get('cfpid')}' for {log_ref}.")
+                        else: logger.debug(f"Post-commit Tree verification OK for {log_ref} (CFPID='{verify_tree.cfpid}').")
             except Exception as verify_e:
                 logger.error(f"Exception during post-commit verification for {log_ref}: {verify_e}", exc_info=True)
 
         # --- 11. Return final determined status ---
+        logger.debug(f"Final overall status for {log_ref}: {overall_status}")
         return overall_status, None
 
-    # --- 12. Handle Broad Exceptions (remains the same) ---
+    # --- 12. Handle Broad Exceptions ---
     except (requests.exceptions.RequestException, WebDriverException) as net_e:
         error_msg = f"Network/WebDriver error processing match {log_ref}: {net_e}"
         logger.warning(error_msg, exc_info=False)
         logger.debug("Traceback:", exc_info=True)
         if session and session.is_active:
-            try:
-                session.rollback()
-                logger.debug(f"Rolled back session due to Network/WebDriver error for {log_ref}.")
-            except Exception as rb_err:
-                logger.error(f"Error rolling back session after Network/WebDriver error for {log_ref}: {rb_err}")
-        raise net_e
+            try: session.rollback(); logger.debug(f"Rolled back session due to Network/WebDriver error for {log_ref}.")
+            except Exception as rb_err: logger.error(f"Error rolling back session after Network/WebDriver error for {log_ref}: {rb_err}")
+        return "error", error_msg
+
     except Exception as e:
         error_msg = f"Unexpected error in _do_match for {log_ref}: {e}."
         logger.error(error_msg, exc_info=True)
         if session and session.is_active:
-            try:
-                session.rollback()
-                logger.debug(f"Rolled back session due to unexpected error for {log_ref}.")
-            except Exception as rb_err:
-                logger.error(f"Error rolling back session after unexpected error for {log_ref}: {rb_err}")
+            try: session.rollback(); logger.debug(f"Rolled back session due to unexpected error for {log_ref}.")
+            except Exception as rb_err: logger.error(f"Error rolling back session after unexpected error for {log_ref}: {rb_err}")
         return "error", f"Unexpected error processing {log_ref}: {e}"
 # End of _do_match
 

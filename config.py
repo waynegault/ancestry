@@ -270,6 +270,7 @@ class Config_Class(BaseConfig):
     MAX_DELAY: float = 90.0
     LOG_LEVEL: str = "DEBUG" # Default log level if not set otherwise
     RETRY_STATUS_CODES: Tuple[int, ...] = (429, 500, 502, 503, 504) # Use tuple for immutability
+    DB_POOL_SIZE = 25
 
     # --- Feature Flags ---
     CHECK_JS_ERRORS_ACTN_6: bool = False
@@ -354,7 +355,7 @@ class Config_Class(BaseConfig):
         self.BATCH_SIZE: int = self._get_int_env("BATCH_SIZE", 5) # Reduced batch size
 
         # === Database ===
-        self.DB_POOL_SIZE: int = self._get_int_env("DB_POOL_SIZE", 5)
+        self.DB_POOL_SIZE: int = self._get_int_env("DB_POOL_SIZE", 20)
 
         # === Caching ===
         self.CACHE_TIMEOUT: int = self._get_int_env("CACHE_TIMEOUT", 3600)
