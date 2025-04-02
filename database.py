@@ -7,7 +7,7 @@ import os
 import shutil
 from typing import List, Dict, Optional, Tuple, Any, Type, Literal
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone 
 import time
 import gc
 from config import config_instance
@@ -29,7 +29,7 @@ from sqlalchemy import (
     func,
     Float
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship, Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError # Added IntegrityError
 import logging
 import re
@@ -55,7 +55,7 @@ class InboxStatus(Base):
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String, nullable=True)
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
-    my_role = Column(Enum(RoleType), nullable=False, name='my_role') 
+    my_role = Column(Enum(RoleType), nullable=False, name='my_role')
     last_message = Column(String, nullable=True)
     last_message_timestamp = Column(DateTime, nullable=True, index=True) # Add index=True
     created_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -128,8 +128,10 @@ class FamilyTree(Base): # Point 8 Refinement
 class Person(Base):
     __tablename__ = "people"
     id = Column(Integer, primary_key=True)
-    uuid = Column(String, nullable=True, unique=True, index=True)
+    uuid = Column(String, nullable=True, unique=True, index=True) # Keep UUID unique
+    # --- RE-ADD unique=True to profile_id ---
     profile_id = Column(String,  unique=True, nullable=True, index=True)
+    # --- END RE-ADD ---
     username = Column(String,  unique=False, nullable=False)
     first_name = Column(String, nullable=True)
     gender = Column(String(1), nullable=True) # Store 'f', 'm', or None
@@ -137,7 +139,7 @@ class Person(Base):
     message_link = Column(String, unique=False, nullable=True)
     in_my_tree = Column(Boolean, default=False)
     contactable =  Column(Boolean, default=False)
-    last_logged_in = Column(DateTime, nullable=True, index=True)
+    last_logged_in = Column(DateTime, nullable=True, index=True) # Store as naive UTC
     administrator_profile_id = Column(String, nullable=True, index=True)
     administrator_username = Column(String, nullable=True)
     status = Column(String, default="active", nullable=False)
@@ -146,15 +148,19 @@ class Person(Base):
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
 
-    # Relationships
+    # Relationships (remain the same)
     family_tree = relationship("FamilyTree", back_populates="person", uselist=False, cascade="all, delete, delete-orphan")
     dna_match = relationship("DnaMatch", back_populates="person", uselist=False, cascade="all, delete, delete-orphan")
     inbox_status = relationship("InboxStatus", back_populates="person", uselist=False, cascade="all, delete, delete-orphan", foreign_keys="InboxStatus.people_id") # Corrected foreign_keys usage
     message_history = relationship("MessageHistory", back_populates="person", cascade="all, delete, delete-orphan")
 
-    __table_args__ = (
-        UniqueConstraint('profile_id', 'username', name='uq_people_profile_id_username'),
-    )
+   
+    # If you prefer SQLAlchemy checks, uncomment this, otherwise DB unique handles it
+    # __table_args__ = (
+    #     UniqueConstraint('profile_id', name='uq_people_profile_id'),
+    #     UniqueConstraint('uuid', name='uq_people_uuid') # Ensure UUID constraint name if needed
+    # )
+    
 # End of class Person
 
 # ----------------------------------------------------------------------
@@ -383,155 +389,208 @@ def db_transn(session: Session):
 # Create/ Insert
 # ----------------------------------------------------------------------
 
-def create_person(session: Session, match_data: Dict[str, Any]) -> int:
-    """Creates a new person record in the database.
+def create_person(session: Session, person_data: Dict[str, Any]) -> int:
+    """
+    Creates a new person record in the database.
+    Checks for existing profile_id before insertion to prevent UNIQUE constraint errors.
+    Assumes UUID uniqueness is checked by the caller or DB constraint.
 
     Args:
         session: The SQLAlchemy Session.
-        match_data: A dictionary containing the person's data. Must include:
-                    'profile_id', 'username'.
-        Can optionally include: 'message_link', 'administrator_profile_id', 'administrator_username', 'uuid', 'in_my_tree'.
+        person_data: A dictionary containing the person's data. Must include 'uuid', 'username'.
+                    Should also include 'profile_id' (can be None).
 
     Returns:
         The ID of the newly created person, or 0 if creation failed.
     """
+    required_keys = ("username", "uuid")
+    if not all(key in person_data and person_data[key] is not None for key in required_keys):
+         logger.warning(f"Missing required non-null data for person creation: Needs username and uuid. Data: {person_data}")
+         return 0
+
+    profile_id = person_data.get("profile_id") # Can be None
+    username = person_data["username"]
+    uuid = person_data["uuid"]
+    log_ref = f"UUID={uuid} / ProfileID={profile_id or 'NULL'} / User='{username}'"
+
     try:
-        # --- Enhanced Validation ---
-        required_keys = ("profile_id", "username")
-        if not all(key in match_data and match_data[key] is not None for key in required_keys):
-            logger.warning(f"Missing required non-null data for person creation: Needs profile_id and username. Data: {match_data}")
-            return 0
+        # --- Explicit Check for Profile ID Conflict BEFORE insert ---
+        if profile_id:
+            existing_by_profile = session.query(Person).filter(Person.profile_id == profile_id.upper()).first()
+            if existing_by_profile:
+                # Log the conflict and prevent insertion attempt
+                logger.error(f"create_person FAILED for {log_ref}: Profile ID '{profile_id}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id.")
+                return 0 # Fail creation due to profile_id uniqueness requirement
+        # --- End Profile ID Check ---
 
-        profile_id = match_data["profile_id"]
-        username = match_data["username"]
-
-        # Check if person already exists based on profile_id AND username
-        existing_person = (
-            session.query(Person)
-            .filter_by(profile_id=profile_id, username=username)
-            .first()
-        )
-        if existing_person:
-            logger.info(f"Person with profile_id {profile_id} and username {username} already exists (ID: {existing_person.id}). Skipping creation.")
-            return int(existing_person.id) if existing_person.id is not None else 0
-
-        # Create a new Person object using the provided data.
+        # Proceed with creation if profile_id is NULL or not conflicting
+        logger.debug(f"Proceeding with Person creation for {log_ref}.")
         new_person = Person(
-            uuid=match_data.get("uuid"), # Add uuid if available
-            profile_id=profile_id,
+            uuid=uuid.upper(),
+            profile_id=profile_id.upper() if profile_id else None,
             username=username,
-            administrator_profile_id=match_data.get("administrator_profile_id"), # Add admin id
-            administrator_username=match_data.get("administrator_username"), # Add admin name
-            message_link=match_data.get("message_link"),
-            in_my_tree=bool(match_data.get("in_my_tree", False)), # Add in_my_tree
+            administrator_profile_id=person_data.get("administrator_profile_id"),
+            administrator_username=person_data.get("administrator_username"),
+            message_link=person_data.get("message_link"),
+            in_my_tree=bool(person_data.get("in_my_tree", False)),
             status="active",
+            first_name=person_data.get("first_name"),
+            gender=person_data.get("gender"),
+            birth_year=person_data.get("birth_year"),
+            contactable=person_data.get("contactable", True),
+            last_logged_in=person_data.get("last_logged_in"), # Store as naive UTC from details_fetched
         )
 
         session.add(new_person)
-        session.flush() # Flush to get the ID and check constraints
+        session.flush() # Flush to get the ID and check constraints (like UUID UNIQUE)
 
         if new_person.id is None:
-            logger.error( # Use ERROR for critical failure
-                f"ID not assigned after flush for person {username} (profile_id: {profile_id})! Data: {match_data}"
-            )
-            session.rollback() # Rollback if ID assignment failed
+            logger.error(f"ID not assigned after flush for person {log_ref}! Data: {person_data}")
+            session.rollback()
             return 0
 
-        logger.debug(f"Created Person record ID {new_person.id} for {username}.")
+        logger.debug(f"Created Person record ID {new_person.id} for {log_ref}.")
         return int(new_person.id)
 
     except IntegrityError as ie:
-         # Handles potential unique constraint violations if flush() detects them
+         # Handles potential unique constraint violations (primarily UUID now)
          session.rollback()
-         logger.error(f"IntegrityError creating person {match_data.get('username')}: {ie}. ProfileID/Username likely exists.", exc_info=True)
+         logger.error(f"IntegrityError creating person {log_ref}: {ie}. UUID likely exists.", exc_info=False)
          return 0
     except SQLAlchemyError as e:
-        logger.error(f"Database error creating person {match_data.get('username')}: {e}", exc_info=True)
-        session.rollback()
+        logger.error(f"Database error creating person {log_ref}: {e}", exc_info=True)
+        if session.is_active: session.rollback() # Ensure rollback on general DB error
         return 0
     except Exception as e: # Catch any other unexpected error
-         logger.critical(f"Unexpected error in create_person for {match_data.get('username')}: {e}", exc_info=True)
+         logger.critical(f"Unexpected error in create_person for {log_ref}: {e}", exc_info=True)
          if session.is_active: session.rollback()
          return 0
 # End of create_person
 
 
-def create_dna_match(session: Session, match_data: Dict[str, Any]) -> int:
-    """Creates a new DNA match record, handling existing entries and validation.
+def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["created", "skipped", "error"]:
+    """
+    Creates a new DNA Match record associated with a Person ID.
+    Handles validation and inclusion of ALL relevant fields.
+    Skips creation if a record for the people_id already exists.
 
     Args:
         session: The SQLAlchemy Session.
-        match_data: Dictionary with 'compare_link', 'cM_DNA',
-                    'predicted_relationship', and 'people_id'.
+        match_data: Dictionary containing DNA match details. Must include 'people_id'.
+                    Should include 'compare_link', 'cM_DNA', 'predicted_relationship'.
+                    Can include 'shared_segments', 'longest_shared_segment', 'meiosis',
+                    'from_my_fathers_side', 'from_my_mothers_side'.
 
     Returns:
-        The ID of the created/existing DNA match, or 0 on failure.
+        "created" if a new record was added.
+        "skipped" if a record already existed.
+        "error" if any validation or database error occurred.
     """
-    # 1. Data Validation (BEFORE any database interaction)
-    required_keys = ("compare_link", "cM_DNA", "predicted_relationship", "people_id")
-    if not all(key in match_data for key in required_keys):
-        logger.warning(f"create_dna_match: Missing required data: {match_data}")
-        return 0
     people_id = match_data.get("people_id")
-    if not isinstance(people_id, int) or people_id <= 0:
-         logger.warning(f"create_dna_match: Invalid people_id: {people_id}")
-         return 0
+    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}" # Add UUID for context if available
+
+    # --- 1. Basic Validation ---
+    if not people_id or not isinstance(people_id, int) or people_id <= 0:
+        logger.error(f"create_dna_match: Invalid or missing people_id for {log_ref}.")
+        return "error"
+
+    required_keys = ("compare_link", "cM_DNA", "predicted_relationship")
+    if not all(key in match_data and match_data[key] is not None for key in required_keys):
+        logger.error(
+            f"create_dna_match: Missing required non-null core DNA data for {log_ref}. Match data: {match_data}"
+        )
+        return "error"
+
+    # --- 2. Detailed Field Validation (Copy logic from old _do_DNA) ---
     try:
         cm_dna_val = int(match_data["cM_DNA"])
-        if cm_dna_val < 0: raise ValueError("cM_DNA cannot be negative")
-    except (TypeError, ValueError):
-        logger.warning(f"create_dna_match: Invalid cM_DNA value: {match_data.get('cM_DNA')}")
-        return 0
+        if cm_dna_val < 0:
+            raise ValueError("cM_DNA cannot be negative")
+    except (TypeError, ValueError, KeyError):
+        logger.error(
+            f"create_dna_match: Invalid cM_DNA value '{match_data.get('cM_DNA')}' for {log_ref}."
+        )
+        return "error"
 
-    # 2. Check for Existing Entry (using people_id which should be unique now)
+    # Validate optional numeric fields (helper function)
+    def validate_optional_numeric(key, value, allow_float=False):
+        if value is None:
+            return None # None is valid
+        try:
+            if isinstance(value, str) and not value.replace('.', '', 1).isdigit():
+                logger.warning(
+                    f"create_dna_match: Non-numeric value '{value}' for {key} in {log_ref}. Setting to None."
+                )
+                return None
+            return float(value) if allow_float else int(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"create_dna_match: Invalid {key} '{value}' for {log_ref}. Setting to None."
+            )
+            return None
+
+    shared_segments_val = validate_optional_numeric(
+        "shared_segments", match_data.get("shared_segments")
+    )
+    longest_segment_val = validate_optional_numeric(
+        "longest_shared_segment", match_data.get("longest_shared_segment"), allow_float=True
+    )
+    meiosis_val = validate_optional_numeric("meiosis", match_data.get("meiosis"))
+
+    # --- 3. Check Existence & Create ---
     try:
-        existing_dna_match = (
-            session.query(DnaMatch)
-            .filter_by(people_id=people_id) # Filter by the unique people_id
-            .first()
-        )
-        if existing_dna_match:
-            logger.info(
-                f"DNA match exists for people_id {people_id} (ID: {existing_dna_match.id}). Skipping creation."
+        # Check if a record already exists for this person_id
+        dna_match = session.query(DnaMatch).filter_by(people_id=people_id).first()
+
+        if dna_match:
+            logger.debug(
+                f"Existing 'dna_match' record found for {log_ref}. Skipping creation."
             )
-            # Optionally update existing record here if needed, or just return ID
-            return int(existing_dna_match.id) if existing_dna_match.id is not None and isinstance(existing_dna_match.id, int) else 0
-
-        # 3. Create and Add New Entry
-        new_dna_match = DnaMatch(
-            people_id=people_id, # Use validated people_id
-            compare_link=match_data["compare_link"],
-            cM_DNA=cm_dna_val, # Use validated cM value
-            predicted_relationship=match_data["predicted_relationship"],
-        )
-
-        session.add(new_dna_match)
-        session.flush()  # Get the ID and check constraints
-
-        # --- CRITICAL CHECK: Ensure ID is assigned after flush ---
-        if new_dna_match.id is None:
-            logger.error( # Use ERROR
-                f"ID not assigned after flush for DNA Match (people_id: {people_id})! Data: {match_data}"
+            return "skipped"
+        else:
+            # Create new DNA match record including ALL fields
+            logger.debug(f"Creating new 'dna_match' record for {log_ref}")
+            new_dna_match = DnaMatch(
+                people_id=people_id,
+                compare_link=match_data["compare_link"],
+                cM_DNA=cm_dna_val, # Use validated int value
+                predicted_relationship=match_data["predicted_relationship"],
+                # --- INCLUDE ALL OTHER FIELDS ---
+                shared_segments=shared_segments_val,
+                longest_shared_segment=longest_segment_val,
+                meiosis=meiosis_val,
+                from_my_fathers_side=bool(match_data.get("from_my_fathers_side", False)), # Ensure boolean
+                from_my_mothers_side=bool(match_data.get("from_my_mothers_side", False)), # Ensure boolean
+                # created_at/updated_at have defaults
             )
-            session.rollback()
-            return 0
+            session.add(new_dna_match)
+            # No flush here, commit happens in the calling function (_do_match)
+            logger.debug(f"Staged new 'dna_match' record for creation: {log_ref}")
+            return "created"
 
-        logger.debug(f"Created new DNA match (ID: {new_dna_match.id}) for people_id {people_id}.")
-        return int(new_dna_match.id) if new_dna_match.id is not None and isinstance(new_dna_match.id, int) else 0
-
-    except IntegrityError as ie:
-         # This could happen if somehow a duplicate people_id is attempted despite the check
-         session.rollback()
-         logger.error(f"IntegrityError creating DNA match for people_id {people_id}: {ie}.", exc_info=True)
-         return 0
+    except IntegrityError as ie: # Should be rare now due to explicit check
+        session.rollback() # Rollback immediately on integrity error
+        logger.error(
+            f"IntegrityError in create_dna_match for {log_ref}: {ie}. Likely concurrent creation.",
+            exc_info=False, # Less verbose for integrity error
+        )
+        # Double-check existence after rollback, in case of race condition
+        existing = session.query(DnaMatch).filter_by(people_id=people_id).first()
+        if existing:
+            logger.warning(f"Found existing DnaMatch for {log_ref} after IntegrityError, returning 'skipped'.")
+            return "skipped"
+        return "error" # Return error if still not found after rollback
     except SQLAlchemyError as e:
-        logger.error(f"Database error creating DNA match for people_id {people_id}: {e}", exc_info=True)
-        session.rollback()
-        return 0
+        # Don't rollback here; let the calling transaction handle it
+        logger.error(
+            f"Database error in create_dna_match for {log_ref}: {e}", exc_info=True
+        )
+        return "error"
     except Exception as e: # Catch any other unexpected error
-         logger.critical(f"Unexpected error in create_dna_match for people_id {people_id}: {e}", exc_info=True)
-         if session.is_active: session.rollback()
-         return 0
+        logger.error(
+            f"Unexpected error in create_dna_match for {log_ref}: {e}", exc_info=True
+        )
+        return "error"
 # End of create_dna_match
 
 
@@ -577,21 +636,21 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
         return "created"
 
     except TypeError as te:
-         session.rollback()
+         # Rollback handled by caller (_do_match)
          # This log now clearly indicates an issue with the constructor call itself
          logger.critical(f"TypeError creating FamilyTree object for {log_ref}: {te}. Check arguments passed to FamilyTree().", exc_info=True)
          logger.error(f"Data keys attempted: {list(tree_data.keys())}") # Log keys that were available
          return "error"
     except IntegrityError as ie:
-        session.rollback()
+        # Rollback handled by caller (_do_match)
         logger.error(f"IntegrityError creating FamilyTree for {log_ref}: {ie}", exc_info=False)
         return "error"
     except SQLAlchemyError as e:
-        session.rollback()
+        # Rollback handled by caller (_do_match)
         logger.error(f"SQLAlchemyError creating FamilyTree for {log_ref}: {e}", exc_info=True)
         return "error"
     except Exception as e:
-        session.rollback()
+        # Rollback handled by caller (_do_match)
         logger.critical(f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True)
         return "error"
 # End create_family_tree
@@ -771,8 +830,9 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
         # Optionally eager load related data if often needed after getting by uuid
         person = (
              session.query(Person)
-             # .options(joinedload(Person.dna_match), joinedload(Person.family_tree)) # Example - Use joinedload from sqlalchemy.orm
+             # --- MODIFICATION: Eager load family_tree as well ---
              .options(relationship(Person.dna_match), relationship(Person.family_tree)) # Use relationship() for options
+             # --- END MODIFICATION ---
              .filter(Person.uuid == uuid_upper)
              .first()
         )
@@ -786,20 +846,141 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
 # Update
 # ----------------------------------------------------------------------
 
+# --- Function Modified ---
+def need_update(
+    session: Session, match: Dict[str, Any]
+) -> Tuple[Optional[Person], bool, bool]:
+    """
+    REVISED: Checks if related data needs updating based *only* on UUID lookup.
+    Determines if DNA record needs creation or Tree data needs fetching.
+    Tree data is needed if flag changes False->True OR if flag is True but record missing.
+    Does NOT determine if Person record itself needs update (handled later).
+    Expires object state before comparisons.
+
+    Args:
+        session: The SQLAlchemy session.
+        match: Dictionary containing initial match data including 'uuid', 'username', 'in_my_tree'.
+
+    Returns:
+        Tuple: (existing_person_hint, create_dna_needed, fetch_tree_data)
+               existing_person_hint is the Person object found by UUID (or None).
+    """
+    create_dna_needed = False
+    fetch_tree_data = False
+    existing_person_hint: Optional[Person] = None
+
+    match_uuid = match.get("uuid")
+    match_username = match.get("username", f"Unknown Match UUID {match_uuid or 'N/A'}")
+    match_in_my_tree = match.get("in_my_tree", False)
+
+    log_ref = f"UUID='{match_uuid or 'N/A'}' / User='{match_username}'"
+
+    if not match_uuid:
+        logger.error(f"Cannot process need_update for {match_username}: 'uuid' is missing.")
+        return None, False, False # Cannot proceed without UUID
+
+    try:
+        # --- Lookup primarily by UUID ---
+        # Eager load relationships needed for checks
+        existing_person_hint = (
+            session.query(Person)
+            .options(joinedload(Person.dna_match), joinedload(Person.family_tree)) # Eager load
+            .filter(Person.uuid == match_uuid.upper())
+            .first()
+        )
+
+        # --- Expire state after fetch, before comparison (still useful) ---
+        if existing_person_hint:
+            try:
+                logger.debug(
+                    f"{log_ref}: Expiring state for existing Person ID {existing_person_hint.id} before checks."
+                )
+                session.expire(existing_person_hint, ['dna_match', 'family_tree']) # Expire specific relationships too if needed
+            except Exception as expire_e:
+                logger.warning(
+                    f"Could not expire session state for Person ID {existing_person_hint.id}: {expire_e}"
+                )
+        # --- End Expire ---
+
+        # --- Determine need based on existing record ---
+        if existing_person_hint:
+            # Person found by UUID
+            logger.debug(f"{log_ref}: Found existing Person ID {existing_person_hint.id} by UUID.")
+
+            # Check DnaMatch Need: Needs creation if Person exists but DnaMatch doesn't
+            # Accessing existing_person_hint.dna_match will trigger load if expired/not loaded
+            existing_dna_record = existing_person_hint.dna_match
+            if existing_dna_record is None:
+                logger.debug(f"{log_ref}: Existing Person found, but no DnaMatch record. Needs DNA creation.")
+                create_dna_needed = True
+            else:
+                logger.debug(f"{log_ref}: Existing DnaMatch record found. No DNA creation needed.")
+                create_dna_needed = False
+
+            # --- MODIFIED FamilyTree Need Check ---
+            db_in_my_tree = existing_person_hint.in_my_tree
+            existing_tree_record = existing_person_hint.family_tree # Access relationship
+
+            if match_in_my_tree and not db_in_my_tree:
+                logger.debug(
+                    f"{log_ref}: Status changed to 'in_my_tree'. Needs tree data fetch."
+                )
+                fetch_tree_data = True
+            elif db_in_my_tree and not match_in_my_tree:
+                 logger.warning(f"{log_ref}: Status changed FROM 'in_my_tree' to False. Skipping tree fetch, existing tree data might become stale.")
+                 fetch_tree_data = False
+            elif match_in_my_tree and db_in_my_tree and existing_tree_record is None:
+                 # NEW Condition: Flag is True, but record is missing (inconsistency)
+                 logger.warning(f"{log_ref}: Status 'in_my_tree' is True, but FamilyTree record is MISSING. Needs tree data fetch to fix.")
+                 fetch_tree_data = True
+            else:
+                # Covers: Both False, or Both True and record exists.
+                logger.debug(f"{log_ref}: 'in_my_tree' status unchanged ({match_in_my_tree}) or no tree creation needed. No tree data fetch triggered.")
+                fetch_tree_data = False
+            # --- END MODIFIED ---
+
+        # --- Person Not Found by UUID ---
+        else:
+            logger.debug(f"{log_ref}: No existing person found by UUID.")
+            existing_person_hint = None # Ensure it's None
+            # If person doesn't exist, DNA match also doesn't exist
+            create_dna_needed = True
+            # If person doesn't exist, fetch tree data only if the flag is set
+            fetch_tree_data = match_in_my_tree
+
+    except SQLAlchemyError as e:
+         logger.error(f"Database error during need_update check for {log_ref}: {e}", exc_info=True)
+         return None, False, False # Return defaults on error
+    except Exception as e:
+         logger.error(f"Unexpected error during need_update check for {log_ref}: {e}", exc_info=True)
+         return None, False, False
+
+    # --- Final Decision Logging ---
+    actions_needed = []
+    if create_dna_needed: actions_needed.append("Create DNA Match")
+    if fetch_tree_data: actions_needed.append("Fetch/Process Tree Data")
+
+    if not actions_needed: final_decision = "No DNA/Tree actions needed."
+    else: final_decision = " AND ".join(actions_needed)
+    logger.debug(f"{log_ref}: Need Update Check Complete. Actions needed: {final_decision}")
+
+    return existing_person_hint, create_dna_needed, fetch_tree_data
+# --- End Modified Function ---
+
+
 def create_or_update_person(
     session: Session, person_data: Dict[str, Any]
 ) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
     """
-    Creates a new Person or updates an existing one based on UUID and Profile ID.
-    Handles potential conflicts where a profile ID might be associated with multiple UUIDs.
-    Prioritizes updating based on profile_id if found. If profile_id is None in input,
-    attempts lookup via UUID. Handles UUID/ProfileID mismatches during update.
+    Creates a new Person or updates an existing one based *primarily* on UUID.
+    If UUID not found, attempts creation (will fail safely if profile_id UNIQUE constraint hit).
+    Handles updates for existing records found by UUID, including profile_id changes.
+    Fixes timezone comparison issue for last_logged_in.
     """
     uuid_val = person_data.get("uuid")
-    profile_id_val = person_data.get("profile_id") # Can be None for managed kits
+    profile_id_val = person_data.get("profile_id") # Can be None
     username_val = person_data.get("username", "Unknown")
 
-    # UUID is essential for linking DNA matches, Profile ID less so if managed
     if not uuid_val:
         logger.error(f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val}': UUID is missing.")
         return None, "error"
@@ -810,57 +991,19 @@ def create_or_update_person(
     person_id_for_logging = None
 
     try:
-        # --- Revised Lookup Strategy ---
-        # 1. Prioritize lookup by UUID, as it's guaranteed from the match list.
+        # --- Revised Lookup Strategy: PRIORITIZE UUID ---
         existing_person = session.query(Person).filter(Person.uuid == uuid_val.upper()).first()
 
         if existing_person:
-            person_id_for_logging = existing_person.id
-            logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id} by UUID.")
+             person_id_for_logging = existing_person.id
+             logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id} by UUID.")
 
-            # Check for Profile ID consistency
-            # Case A: Input has profile_id, DB also has one, but they differ.
-            if profile_id_val and existing_person.profile_id and existing_person.profile_id.upper() != profile_id_val.upper():
-                 logger.warning(f"{log_ref}: UUID matches existing Person ID {existing_person.id}, but Profile IDs differ (Existing='{existing_person.profile_id}', New='{profile_id_val}'). Updating Profile ID.")
-                 existing_person.profile_id = profile_id_val.upper()
-                 updated = True
-            # Case B: Input has profile_id, DB does NOT have one. Add it.
-            elif profile_id_val and not existing_person.profile_id:
-                 logger.debug(f"{log_ref}: UUID matches existing Person ID {existing_person.id}. Adding missing Profile ID '{profile_id_val}'.")
-                 existing_person.profile_id = profile_id_val.upper()
-                 updated = True
-            # Case C: Input has NO profile_id (managed kit), DB *does* have one. Set DB to NULL.
-            elif not profile_id_val and existing_person.profile_id:
-                 logger.warning(f"{log_ref}: UUID matches existing Person ID {existing_person.id}. Input indicates managed kit (ProfileID=NULL), but DB has ProfileID '{existing_person.profile_id}'. Setting DB ProfileID to NULL.")
-                 existing_person.profile_id = None
-                 updated = True
-            # Case D: Both input and DB have profile_id and they match, or both are None. No change needed for profile_id itself.
-
-        # 2. If not found by UUID, check if the input profile_id exists (potential conflict/reattach)
-        elif profile_id_val:
-             person_by_profile = session.query(Person).filter(Person.profile_id == profile_id_val.upper()).first()
-             if person_by_profile:
-                  # Found by profile_id, but not by the current UUID. This implies the profile_id
-                  # might be associated with a *different* UUID (or the UUID was missing previously).
-                  person_id_for_logging = person_by_profile.id
-                  logger.warning(f"{log_ref}: Found Person ID {person_by_profile.id} by Profile ID, but UUID mismatch (Existing UUID='{person_by_profile.uuid or 'NULL'}'). Updating existing record with new UUID '{uuid_val}'.")
-                  existing_person = person_by_profile # Target this existing record for update
-                  existing_person.uuid = uuid_val.upper() # Update the UUID
-                  updated = True
-             # else: No existing record by UUID or Profile ID, proceed to create.
-
-        # --- END Revised Lookup Strategy ---
-
-
-        # 3. Decide: Update Existing or Create New
-        if existing_person:
-             # --- Update Logic ---
-             logger.debug(f"{log_ref}: Updating existing Person ID {existing_person.id}.")
-             # Define fields available for update
+             # --- Update Logic for existing person found by UUID ---
+             logger.debug(f"{log_ref}: Checking for updates on existing Person ID {existing_person.id}.")
              fields_to_update = {
                   "username": username_val,
-                  "profile_id": profile_id_val.upper() if profile_id_val else None, # Reflects input accurately now
-                  "uuid": uuid_val.upper(), # Already updated if necessary above
+                  "profile_id": profile_id_val.upper() if profile_id_val else None,
+                  # UUID check/update is implicitly handled by the lookup, no need here
                   "in_my_tree": person_data.get("in_my_tree"),
                   "first_name": person_data.get("first_name"),
                   "last_logged_in": person_data.get("last_logged_in"),
@@ -870,30 +1013,56 @@ def create_or_update_person(
                   "administrator_username": person_data.get("administrator_username"),
                   "gender": person_data.get("gender"),
                   "message_link": person_data.get("message_link"),
-                  "status": "active" # Ensure status is active on update
+                  "status": "active"
              }
 
              for field, new_value in fields_to_update.items():
-                  current_value = getattr(existing_person, field, None)
-                  # Check if update is needed (value differs and new value is not None)
-                  # For boolean fields (in_my_tree, contactable), allow update even if new_value is False
+                  allow_none = field in ["profile_id", "administrator_profile_id", "administrator_username", "message_link", "birth_year"]
                   is_boolean_field = field in ["in_my_tree", "contactable"]
+
+                  if new_value is None and not allow_none and not is_boolean_field:
+                        continue
+
+                  current_value = getattr(existing_person, field, None)
                   should_update = False
 
-                  if field == "username": # Case-insensitive compare for username
+                  if field == "last_logged_in":
+                        # --- FIX: Timezone Comparison ---
+                        # Make both naive UTC for comparison if DB stores naive
+                        # Assumes incoming new_value is UTC aware
+                        current_naive = None
+                        new_naive = None
+                        if isinstance(current_value, datetime):
+                             # If DB value is aware, convert to naive UTC
+                             if current_value.tzinfo is not None:
+                                 # --- MODIFICATION: Use timezone.utc ---
+                                 current_naive = current_value.astimezone(timezone.utc).replace(tzinfo=None)
+                                 # --- END MODIFICATION ---
+                             else: # DB value is already naive (assume UTC)
+                                 current_naive = current_value
+                        if isinstance(new_value, datetime):
+                             # Convert incoming aware value to naive UTC
+                             # --- MODIFICATION: Use timezone.utc ---
+                             new_naive = new_value.astimezone(timezone.utc).replace(tzinfo=None)
+                             # --- END MODIFICATION ---
+
+                        if current_naive != new_naive:
+                             # Only log/update if the naive representations differ significantly
+                             # (Optional: add tolerance check here if needed)
+                             # logger.debug(f"  Updating {field} (naive compare): '{current_naive}' -> '{new_naive}'")
+                             should_update = True
+                        # --- END FIX ---
+                  elif field == "username":
                       if isinstance(current_value, str) and isinstance(new_value, str):
-                          if current_value.lower() != new_value.lower():
-                               should_update = True
-                      elif current_value != new_value: # Handle None comparison
-                           should_update = True
+                          if current_value.lower() != new_value.lower(): should_update = True
+                      elif current_value != new_value: should_update = True
                   elif current_value != new_value:
                        should_update = True
 
-                  # Apply the update if needed and allowed
-                  if should_update and (new_value is not None or is_boolean_field):
-                      # logger.debug(f"  Updating {field}: '{current_value}' -> '{new_value}'")
+                  if should_update:
+                      logger.debug(f"  Updating {field}: '{current_value}' -> '{new_value}'")
                       setattr(existing_person, field, new_value)
-                      updated = True # Mark that an update occurred
+                      updated = True
 
              if updated:
                   logger.debug(f"{log_ref}: Person ID {existing_person.id} flagged for update.")
@@ -902,52 +1071,40 @@ def create_or_update_person(
                   logger.debug(f"{log_ref}: Person ID {existing_person.id} requires no update.")
                   return existing_person, "skipped"
         else:
-             # --- Create New Logic ---
-             logger.debug(f"{log_ref}: Creating new person record.")
-             new_person = Person(
-                  uuid=uuid_val.upper(), # UUID is guaranteed present here
-                  profile_id=profile_id_val.upper() if profile_id_val else None, # Can be None
-                  username=username_val,
-                  first_name=person_data.get("first_name"),
-                  gender=person_data.get("gender"),
-                  birth_year=person_data.get("birth_year"),
-                  message_link=person_data.get("message_link"),
-                  in_my_tree=person_data.get("in_my_tree", False),
-                  contactable=person_data.get("contactable", True),
-                  last_logged_in=person_data.get("last_logged_in"),
-                  administrator_profile_id=person_data.get("administrator_profile_id"),
-                  administrator_username=person_data.get("administrator_username"),
-                  status="active",
-             )
-             session.add(new_person)
-             session.flush() # Flush to get the new ID for logging
-             person_id_for_logging = new_person.id
-             logger.debug(f"{log_ref}: Created new Person record ID {person_id_for_logging}.")
-             return new_person, "created"
+            # --- UUID not found, proceed to CREATE ---
+            logger.debug(f"{log_ref}: UUID not found. Calling create_person.")
+            # Pass all relevant data collected so far
+            new_person_id = create_person(session, person_data)
+            if new_person_id > 0:
+                 new_person_obj = session.get(Person, new_person_id)
+                 if new_person_obj:
+                      return new_person_obj, "created"
+                 else:
+                      logger.error(f"Failed to fetch newly created person with ID {new_person_id} for {log_ref}.")
+                      return None, "error"
+            else:
+                 # create_person handles logging the reason for failure (e.g., IntegrityError on profile_id)
+                 logger.error(f"create_person failed for {log_ref}.")
+                 return None, "error"
 
     except IntegrityError as ie:
+        # This catch block might be less likely to be hit directly now,
+        # as create_person handles its own IntegrityErrors, but keep for safety.
         session.rollback()
         logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
-        # Try to find which constraint failed and log the existing record
-        existing_by_profile = None
-        existing_by_uuid = None
-        if profile_id_val: existing_by_profile = session.query(Person).filter(Person.profile_id == profile_id_val.upper()).first()
-        if uuid_val: existing_by_uuid = session.query(Person).filter(Person.uuid == uuid_val.upper()).first()
-
-        if "people.profile_id" in str(ie) and existing_by_profile:
-             logger.warning(f"  UNIQUE constraint failed on profile_id. Existing record: ID={existing_by_profile.id}, UUID={existing_by_profile.uuid}, User={existing_by_profile.username}")
-        elif "people.uuid" in str(ie) and existing_by_uuid:
-             logger.warning(f"  UNIQUE constraint failed on uuid. Existing record: ID={existing_by_uuid.id}, ProfileID={existing_by_uuid.profile_id}, User={existing_by_uuid.username}")
-        else:
-             logger.error(f"  IntegrityError details: {ie.orig}")
-        logger.error(f"  Attempted Data: {person_data}")
         return None, "error"
     except SQLAlchemyError as e:
         session.rollback()
         logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
         return None, "error"
+    except TypeError as te: # Catch the specific TypeError during comparison
+         session.rollback()
+         logger.critical(f"TypeError during person update comparison for {log_ref}: {te}", exc_info=True)
+         return None, "error"
     except Exception as e:
-        session.rollback()
+        # It's crucial to rollback in case of any unexpected error during update logic
+        if session.is_active:
+            session.rollback()
         logger.critical(f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True)
         return None, "error"
 # End create_or_update_person

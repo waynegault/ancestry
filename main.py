@@ -89,7 +89,7 @@ def menu():
     # else: # Logger not ready and config not available yet
     #     level_name remains "UNKNOWN"
 
-    print(f"(Console: {level_name} | File: DEBUG)\n") # Show console and fixed file level
+    print(f"(Log Level: {level_name})\n") # Show console and fixed file level
     print("1. Run Actions 6, 7, and 8 Sequentially")
     print("2. Reset Database")
     print("3. Backup Database")
@@ -466,8 +466,8 @@ def reset_db_actn(*args):
             success = False # Mark failure
         # --- End explicit commit/rollback block ---
 
-        if success: logger.info("Database reset successfully.")
-        else: logger.error("Database reset successful, but seeding failed.")
+        if success: logger.info("Database reset successfully.\n")
+        else: logger.error("Database reset successful, but seeding failed.\n")
 
 
     except Exception as e:

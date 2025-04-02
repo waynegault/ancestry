@@ -127,57 +127,64 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     Configures logging with console and standard file handlers.
 
     Uses AlignedMessageFormatter for multi-line alignment.
-    Console log level can be changed dynamically.
+    Both console and file log levels are set dynamically based on the log_level parameter.
     The logger's base level is always DEBUG; handlers control output.
-    The file handler always logs at DEBUG level.
 
     Args:
         log_file (str): The name of the log file (relative to LOG_DIRECTORY).
-        log_level (str): The desired minimum level for console output (e.g., "INFO", "DEBUG").
-                         Defaults to "INFO".
+        log_level (str): The desired minimum level for console AND file output
+                         (e.g., "INFO", "DEBUG"). Defaults to "INFO".
 
     Returns:
         logging.Logger: The configured application logger instance.
     """
-    global _logging_initialized, logger, LOG_DIRECTORY, logger_for_setup # Use setup logger for setup messages
+    global _logging_initialized, logger, LOG_DIRECTORY, logger_for_setup
 
     # --- Validate and Determine Log Level ---
-    # Uses the log_level parameter, which defaults to "INFO" if not provided.
     log_level_upper = log_level.upper()
     numeric_log_level = getattr(logging, log_level_upper, None)
-    # If the provided log_level is invalid, it explicitly falls back to INFO.
     if numeric_log_level is None:
         logger_for_setup.warning(f"Invalid log level '{log_level}'. Using default level INFO.")
         log_level_upper = "INFO"
         numeric_log_level = logging.INFO
 
-    # --- Update Console Level if Already Initialized ---
+    # --- Update Handler Levels if Already Initialized ---
     if _logging_initialized:
-        updated = False
+        updated_console = False
+        updated_file = False
         for handler in logger.handlers:
+            # Find Console Handler
             if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stderr:
-                # Update the existing console handler to the validated numeric_log_level
                 if handler.level != numeric_log_level:
                     handler.setLevel(numeric_log_level)
-                    logger_for_setup.info(f"Console log level updated to {log_level_upper}.") # Log level change
-                    updated = True
-                break
-        # If only updating, return the existing logger
-        return logger
+                    updated_console = True
+            # Find File Handler
+            elif isinstance(handler, logging.FileHandler):
+                if handler.level != numeric_log_level:
+                    handler.setLevel(numeric_log_level)
+                    updated_file = True
+
+        if updated_console or updated_file:
+            # Log only if something actually changed
+            logger_for_setup.info(f"Log levels updated. Console/File set to {log_level_upper}.")
+        else:
+            # Avoid logging if no change occurred on toggle
+            logger_for_setup.debug(f"Log levels already set to {log_level_upper}. No update needed.")
+        return logger # Return the existing logger
 
     # --- First-Time Initialization ---
     logger_for_setup.debug("Performing first-time logging setup...")
 
     # Ensure log directory exists
     try:
-        logs_dir = LOG_DIRECTORY.resolve() # Ensure absolute path
+        logs_dir = LOG_DIRECTORY.resolve()
         logs_dir.mkdir(parents=True, exist_ok=True)
         logger_for_setup.debug(f"Log directory ensured: {logs_dir}")
     except OSError as e:
         logger_for_setup.critical(f"Failed to create log directory '{logs_dir}': {e}", exc_info=True)
         # Continue setup, console logging might still work
 
-    log_file_path = Path(logs_dir) / Path(log_file).name
+    log_file_path = logs_dir / Path(log_file).name
     log_file_for_handler = str(log_file_path)
 
     # Clear any handlers potentially added by basicConfig or previous runs
@@ -200,17 +207,18 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     logger_for_setup.debug(f"Formatter created: fmt='{LOG_FORMAT}', datefmt='{DATE_FORMAT}'")
 
     # --- Configure Handlers ---
-    # File Handler (always DEBUG level, uses standard FileHandler)
+    # File Handler (level set by parameter or default INFO)
     try:
         # Ensure directory exists (redundant with check above, but safe)
         os.makedirs(os.path.dirname(log_file_for_handler), exist_ok=True)
         # Use standard FileHandler, mode='a' for append between clears
         file_handler = logging.FileHandler(log_file_for_handler, mode='a', encoding="utf-8")
         file_handler.setFormatter(formatter)
-        # File handler level is hardcoded to DEBUG
-        file_handler.setLevel(logging.DEBUG)
+        # >>> MODIFICATION: Set file handler level dynamically <<<
+        file_handler.setLevel(numeric_log_level)
         logger.addHandler(file_handler)
-        logger_for_setup.debug(f"Added standard FileHandler for: {log_file_for_handler} (Level: DEBUG)")
+        # Log the actual level being used
+        logger_for_setup.debug(f"Added standard FileHandler for: {log_file_for_handler} (Level: {log_level_upper})")
     except Exception as e:
         logger_for_setup.critical(f"Failed to create/add file handler for '{log_file_for_handler}': {e}", exc_info=True)
 
@@ -225,8 +233,8 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
         console_handler.addFilter(RemoteConnectionFilter())
         console_handler.addFilter(NameFilter(excluded_names=["selenium", "undetected_chromedriver", "urllib3", "websockets"]))
         logger.addHandler(console_handler)
-        # Log the actual level being used for the console
-        logger_for_setup.debug(f"Added StreamHandler for console at level {log_level_upper}")
+        # Log the actual level being used
+        logger_for_setup.debug(f"Added StreamHandler for console (Level: {log_level_upper})")
     except Exception as e:
         logger_for_setup.critical(f"Failed to create/add console handler: {e}", exc_info=True)
 
@@ -253,63 +261,44 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
         logger_for_setup.error(f"Error setting library log levels: {e}", exc_info=True)
 
     _logging_initialized = True
-    logger_for_setup.info(f"Logging setup complete. Logger '{logger.name}' configured. Console Level: {log_level_upper}, File Level: DEBUG")
+    # >>> MODIFICATION: Update final log message <<<
+    logger_for_setup.info(f"Logging setup complete. Logger '{logger.name}' configured. Console/File Level: {log_level_upper}")
 
     # Redirect setup messages to the main logger now if desired, or keep separate
     # (Optional: Remove setup logger's handlers if you want setup messages only during init)
     # logger_for_setup.handlers.clear()
 
     return logger
-
+# end setup_logging
 
 # --- Standalone Test Block ---
 if __name__ == "__main__":
     print(f"\n--- Running {__file__} standalone test ---")
     print(f"Using Log Directory: {LOG_DIRECTORY}")
     # Test with INFO level first
-    main_logger = setup_logging(log_level="INFO", log_file="test_logging_config_standard_handler.log")
+    main_logger = setup_logging(log_level="INFO", log_file="test_logging_config_sync_handler.log")
 
-    main_logger.info("--- Standalone Test Start ---")
-    main_logger.debug("This is a DEBUG test log (should appear in file only).")
-    main_logger.info("This is an INFO test log.")
-    main_logger.warning("This is a WARNING test log.")
+    main_logger.info("--- Standalone Test Start (INFO level) ---")
+    main_logger.debug("This is a DEBUG test log (should NOT appear anywhere).")
+    main_logger.info("This is an INFO test log (should appear in console and file).")
+    main_logger.warning("This is a WARNING test log (should appear in console and file).")
 
-    print("\n--- Simulating Log Clear (Manual for Test) ---")
-    # Manually clear for demonstration in standalone test
-    log_file_path_test = LOG_DIRECTORY / "test_logging_config_standard_handler.log"
-    try:
-        # Find the file handler to close it before clearing
-        file_handler_instance = None
-        for h in main_logger.handlers:
-            if isinstance(h, logging.FileHandler):
-                 file_handler_instance = h
-                 break
-        if file_handler_instance:
-             print(f"Closing handler for {file_handler_instance.baseFilename}")
-             file_handler_instance.close() # Close the handler
-             main_logger.removeHandler(file_handler_instance) # Remove it to allow file overwrite
+    # Test toggling to DEBUG
+    print("\n--- Toggling Log Level to DEBUG ---")
+    main_logger = setup_logging(log_level="DEBUG") # Call again to update levels
+    main_logger.info("--- Logging After Toggle to DEBUG ---")
+    main_logger.debug("This is a DEBUG test log (should NOW appear in console and file).")
+    main_logger.info("This is another INFO test log.")
 
-        print(f"Clearing log file: {log_file_path_test}")
-        with open(log_file_path_test, 'w', encoding='utf-8') as f:
-            f.write("") # Truncate the file
+    # Test toggling back to INFO
+    print("\n--- Toggling Log Level back to INFO ---")
+    main_logger = setup_logging(log_level="INFO") # Call again to update levels
+    main_logger.info("--- Logging After Toggle back to INFO ---")
+    main_logger.debug("This is a DEBUG test log (should NOT appear anywhere again).")
+    main_logger.info("This is a final INFO test log.")
 
-        # Re-add a file handler (simulates what would happen on next log emit)
-        # In real app, the next log message would reopen the stream automatically
-        # but here we add it back explicitly for the test continuation.
-        new_file_handler = logging.FileHandler(str(log_file_path_test), mode='a', encoding='utf-8')
-        formatter = main_logger.handlers[0].formatter # Get formatter from console handler
-        new_file_handler.setFormatter(formatter)
-        new_file_handler.setLevel(logging.DEBUG)
-        main_logger.addHandler(new_file_handler)
-        print("Log file cleared and handler stream effectively reset for test.")
-
-    except Exception as e:
-        print(f"Error clearing log for test: {e}")
-
-
-    main_logger.info("--- Logging After Simulated Clear ---")
-    main_logger.info("This message should be at the top of the cleared log file.")
-    main_logger.debug("Another debug message after clear.")
 
     print("\n--- Standalone Test Complete ---")
+    log_file_path_test = LOG_DIRECTORY / "test_logging_config_sync_handler.log"
     print(f"Check log file '{log_file_path_test.name}' content.")
+    print("Expected file content: INFO/WARN logs from start, then DEBUG/INFO, then final INFO logs.")
