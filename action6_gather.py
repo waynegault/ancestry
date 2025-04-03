@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 # Third-party imports (alphabetical by package)
 import requests
+from requests.adapters import HTTPAdapter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup, Tag
 from requests.exceptions import RequestException
@@ -246,8 +247,6 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
 
     return final_success
 # end of coord
-
-
 
 def _do_batch(session_manager, matches_on_page, current_page, last_page_in_run, max_labels_to_show: int):
     """
@@ -930,7 +929,6 @@ def get_matches(
         return [], None # Return None for total_pages on error
 # end get_matches
 
-
 #################################################################################
 # 5. 'Create or Update' Database Operations
 #################################################################################
@@ -939,7 +937,6 @@ class PersonProcessingError(Exception):
     """Custom exception for errors during Person creation/update."""
     pass
 # end of PersonProcessingError class
-
 
 
 #################################################################################
@@ -984,10 +981,6 @@ def nav_to_list(session_manager) -> bool:
     return success
 # end nav_to_list
 
-
-
-
-# Helper functions for batch API fetching ---
 
 @retry_api(max_retries=3, initial_delay=1, backoff_factor=2) # Use decorator
 def _fetch_combined_details(session_manager: SessionManager, match_uuid: str) -> Optional[Dict[str, Any]]:

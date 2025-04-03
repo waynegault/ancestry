@@ -205,6 +205,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-infobars")
+        options.add_argument("--disable-dev-shm-usage") 
         if not config.HEADLESS_MODE:
             options.add_argument("--start-maximized")
             # options.add_experimental_option('useAutomationExtension', False) # REMOVED - Caused Error
