@@ -1565,11 +1565,13 @@ def _api_req(
     headers: Optional[Dict] = None,
     referer_url: Optional[str] = None,
     api_description: str = "API Call",
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    force_requests: bool = False # Added flag to force requests path
 ) -> Optional[Any]:
     """
-    V13 REVISED: Makes an HTTP request using Python requests library with retry logic.
+    V13.1 REVISED: Makes an HTTP request using Python requests library with retry logic.
     Handles headers, CSRF, cookies, and rate limiting interaction.
+    Includes enhanced error logging.
     """
     if not session_manager:
         logger.error(f"{api_description}: Aborting - SessionManager instance is required.")
@@ -1607,6 +1609,9 @@ def _api_req(
          ube_header = make_ube(driver)
          if ube_header: final_headers['ancestry-context-ube'] = ube_header
          else: logger.warning(f"{api_description}: Failed to generate UBE header.")
+    # Add ancestry-userid if needed and available
+    if 'ancestry-userid' in contextual_headers and session_manager.my_profile_id:
+        final_headers['ancestry-userid'] = session_manager.my_profile_id.upper()
 
     # --- Set Timeout for requests ---
     request_timeout = timeout if timeout is not None else selenium_config.API_TIMEOUT
@@ -1619,6 +1624,7 @@ def _api_req(
 
     while retries_left > 0:
         attempt = max_retries - retries_left + 1
+        response = None # Initialize response to None for error handling scope
         try:
             # --- Sync cookies before each attempt ---
             try:
@@ -1647,7 +1653,9 @@ def _api_req(
                 retries_left -= 1
                 last_exception = HTTPError(f"{status} Server Error: {response.reason}", response=response)
                 if retries_left == 0:
-                    logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}).")
+                    # --- Idea 8: Enhanced Logging ---
+                    logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Response Snippet: {response.text[:500] if response else 'N/A'}")
+                    # --- End Idea 8 ---
                     if status == 429 and session_manager.dynamic_rate_limiter:
                          session_manager.dynamic_rate_limiter.increase_delay()
                     # Do not raise here, return None to indicate failure to caller
@@ -1691,8 +1699,9 @@ def _api_req(
 
             # Handle non-retryable client/server errors (>= 400 and not in retry_status_codes)
             else:
-                 logger.error(f"{api_description}: Non-retryable error status: {status} {response.reason}")
-                 logger.debug(f"Error Response Body Snippet: {response.text[:500]}")
+                 # --- Idea 8: Enhanced Logging ---
+                 logger.error(f"{api_description}: Non-retryable error status: {status} {response.reason}. Response Snippet: {response.text[:500]}")
+                 # --- End Idea 8 ---
                  if status in [401, 403]:
                      logger.warning(f"{api_description}: Authentication/Authorization error ({status}) received.")
                      session_manager.api_login_verified = False
@@ -1704,7 +1713,9 @@ def _api_req(
             retries_left -= 1
             last_exception = e
             if retries_left == 0:
-                 logger.error(f"{api_description}: Network/Timeout error failed after {max_retries} attempts. Final Error: {e}", exc_info=False)
+                 # --- Idea 8: Enhanced Logging ---
+                 logger.error(f"{api_description}: Network/Timeout error failed after {max_retries} attempts. Final Error: {e}. Status Code (if available): {response.status_code if response else 'N/A'}", exc_info=False)
+                 # --- End Idea 8 ---
                  # Do not raise here, return None
                  return None
             else:

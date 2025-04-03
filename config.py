@@ -1,3 +1,5 @@
+# File: config.py
+
 #!/usr/bin/env python3
 
 # config.py
@@ -146,6 +148,8 @@ class Config_Class(BaseConfig):
     LOG_LEVEL: str = "INFO" # Default log level if not set otherwise
     RETRY_STATUS_CODES: Tuple[int, ...] = (429, 500, 502, 503, 504) # Use tuple for immutability
     DB_POOL_SIZE = 20
+    # >>> ADDED Constant <<<
+    MESSAGE_TRUNCATION_LENGTH: int = 100
 
     # --- Feature Flags ---
     CHECK_JS_ERRORS_ACTN_6: bool = False # Keep default as False unless needed
@@ -362,11 +366,15 @@ class Config_Class(BaseConfig):
         logger.debug(f"Alternative API URL: '{self.ALTERNATIVE_API_URL or 'Not Set'}'")
         logger.debug(f"Max Pages to Process: {self.MAX_PAGES if self.MAX_PAGES > 0 else 'All'}")
         logger.debug(f"Batch Size (if used): {self.BATCH_SIZE}")
+        # >>> ADDED Log <<<
+        logger.debug(f"Message Truncation Length: {self.MESSAGE_TRUNCATION_LENGTH}")
 
         logger.debug("Config settings loading complete.\n")
     # end _load_values
 #
 # End of Config_Class
+
+# ... (rest of config.py, including SeleniumConfig and instances, remains the same) ...
 
 class SeleniumConfig(BaseConfig):
     """
