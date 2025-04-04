@@ -1029,9 +1029,6 @@ def main():
                         # Re-run setup_logging to apply the new level globally (including console)
                         # Ensure logger instance is reassigned if setup_logging potentially returns a new one
                         logger = setup_logging(log_level=new_level_name)
-                        logger.info(
-                            f"Console log level toggled to: {new_level_name}"
-                        )  # Log the change
                     else:
                         logger.warning(
                             "Could not find console handler to toggle level."
