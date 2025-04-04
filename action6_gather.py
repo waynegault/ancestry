@@ -1047,7 +1047,7 @@ def get_matches(
         return [], None  # Return None for total_pages on error
 # end get_matches
 
-@retry_api(max_retries=3, initial_delay=1, backoff_factor=2)  # Use decorator
+@retry_api()
 def _fetch_combined_details(
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[Dict[str, Any]]:
@@ -1221,7 +1221,7 @@ def _fetch_combined_details(
     return combined_data if "tester_profile_id" in combined_data else None
 # end _fetch_combined_details
 
-@retry_api(max_retries=3, initial_delay=1, backoff_factor=2)
+@retry_api()
 def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[Dict[str, Any]]:
@@ -1273,9 +1273,7 @@ def _fetch_batch_badge_details(
         return None
 # end _fetch_batch_badge_details
 
-@retry_api(
-    max_retries=3, initial_delay=1, backoff_factor=2
-)  # Slightly longer delay maybe
+@retry_api() 
 def _fetch_batch_ladder(
     session_manager: SessionManager, cfpid: str, tree_id: str
 ) -> Optional[Dict[str, Any]]:
@@ -1442,7 +1440,7 @@ def _fetch_batch_ladder(
         return None
 # end _fetch_batch_ladder
 
-@retry_api(max_retries=3, initial_delay=1, backoff_factor=2)
+@retry_api()
 def _fetch_batch_relationship_prob(
     session_manager: SessionManager, match_uuid: str, max_labels_param: int
 ) -> Optional[str]:

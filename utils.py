@@ -1268,6 +1268,7 @@ class SessionManager:
         logger.debug("CSRF token cache reset.")  # DEBUG log - CSRF cache reset
     # End of cls_db_conn
 
+    @retry_api()
     def get_my_profileId(self) -> Optional[str]:
         """
         Retrieves the user ID (ucdmid) from the Ancestry API.
@@ -1317,7 +1318,7 @@ class SessionManager:
             return None
     # end get_my_profileId
 
-    @retry()
+    @retry_api()
     def get_my_uuid(self):
         """Retrieves the test uuid (sampleId) from the header/dna API endpoint"""
         # Check cache first (UUID rarely changes)
@@ -1358,6 +1359,7 @@ class SessionManager:
             return None
     # end of get_my_uuid
 
+    @retry_api()
     def get_my_tree_id(self) -> Optional[str]:
         """
         Retrieves the tree ID based on TREE_NAME from config, using the header/trees API.
@@ -1439,6 +1441,7 @@ class SessionManager:
             return None
     # End of get_my_tree_id
 
+    @retry_api()
     def get_tree_owner(self, tree_id: str) -> Optional[str]:
         """
         Retrieves the tree owner's display name from the Ancestry API using _api_req.

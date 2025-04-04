@@ -193,7 +193,7 @@ class Config_Class(BaseConfig):
         503,
         504,
     )  # Use tuple for immutability
-    DB_POOL_SIZE = 30
+    DB_POOL_SIZE = 100
     MESSAGE_TRUNCATION_LENGTH: int = 100
 
     # --- Feature Flags ---
