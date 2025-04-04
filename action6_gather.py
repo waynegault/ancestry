@@ -229,7 +229,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
                     )
                 else:
                     logger.info(
-                        f"Processing {total_pages_to_process_in_run} pages from {start_page} to {last_page} (Total pages: {total_pages}).\n"
+                        f"Processing {total_pages_to_process_in_run} pages from {start_page} to {last_page}.\n"
                     )
             else:
                 # Total pages known, check limit
@@ -585,7 +585,6 @@ def _do_batch(
     return page_statuses["new"], page_statuses["updated"], page_statuses["skipped"], page_statuses["error"]
 # end of _do_batch (V14.2)
 
-@retry()
 def _do_match(
     session: Session,
     match: Dict[str, Any],

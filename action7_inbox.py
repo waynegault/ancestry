@@ -41,7 +41,7 @@ from database import (
     db_transn,
     get_person_by_profile_id_and_username,
 )
-from utils import _api_req, DynamicRateLimiter, SessionManager, retry, time_wait
+from utils import _api_req, DynamicRateLimiter, SessionManager, retry, time_wait, retry_api
 
 # Initialize logging
 logger = logging.getLogger("logger")
@@ -62,7 +62,7 @@ class InboxProcessor:
         self.batch_size = config_instance.BATCH_SIZE
     # end of __init__
 
-    @retry()
+    @retry_api()
     def _get_all_conversations_api(
         self, session_manager: SessionManager, cursor: Optional[str] = None
     ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:

@@ -1,5 +1,3 @@
-# File: main.py
-
 #!/usr/bin/env python3
 
 # main.py
@@ -42,7 +40,6 @@ from config import config_instance, selenium_config
 from database import (
     backup_database,
     Base,
-    ConnectionPool,
     db_transn,
     delete_database,
     InboxStatus,
@@ -63,10 +60,6 @@ from utils import (
     nav_to_page,
     retry,
 )
-
-
-# --- Function Definitions (menu, exec_actn, action functions) ---
-
 
 def menu():
     """Display the main menu and return the user's choice."""
@@ -125,7 +118,6 @@ def menu():
     return choice
 # End of menu
 
-
 def clear_log_file():
     """Finds the FileHandler, closes it, clears the log file."""
     global logger
@@ -180,7 +172,6 @@ def clear_log_file():
 
     return cleared, log_path
 # End of clear_log_file
-
 
 def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     """
@@ -344,9 +335,6 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info("--------------------------------------\n")
 # End of exec_actn
 
-# --- Action function definitions ---
-
-
 # Action 0
 def test_url_speed_action(session_manager, *args):
     """Action to test the loading speed of two URLs and compare them."""
@@ -428,9 +416,7 @@ def test_url_speed_action(session_manager, *args):
         return False
 # End of test_url_speed_action
 
-
 # Action 1
-@retry()
 def run_actions_6_7_8_action(session_manager, *args):
     """Action to run actions 6, 7, and 8 sequentially."""
     if (
@@ -513,7 +499,6 @@ def run_actions_6_7_8_action(session_manager, *args):
         return False
 # End Action 1
 
-
 # Action 2
 def reset_db_actn(session_manager, *args):
     """
@@ -525,10 +510,12 @@ def reset_db_actn(session_manager, *args):
     original_session_closed_here = False
 
     # --- STEP 1: Ensure main session manager connections are closed ---
-    if session_manager and session_manager._db_conn_pool:  # Check if pool exists
+    # --- MODIFIED: Check for engine instead of _db_conn_pool ---
+    if session_manager and session_manager.engine:  # Check if engine exists
         logger.warning(
-            "Main session manager has an active DB pool. Closing connections before reset attempt..."
+            "Main session manager has an active DB engine. Closing connections before reset attempt..."
         )
+        # --- END MODIFICATION ---
         try:
             session_manager.cls_db_conn()  # Close pool and dispose engine
             original_session_closed_here = True
@@ -544,7 +531,7 @@ def reset_db_actn(session_manager, *args):
             # Proceed with caution, deletion might still fail
     elif session_manager:
         logger.debug(
-            "Main session manager DB pool already seems closed or uninitialized."
+            "Main session manager DB engine already seems closed or uninitialized."
         )
     else:
         logger.warning("No main session manager provided to reset_db_actn.")
@@ -579,10 +566,7 @@ def reset_db_actn(session_manager, *args):
                     cursor.close()
 
             recreation_manager.Session = sessionmaker(bind=recreation_manager.engine)
-            # Use string path for ConnectionPool
-            recreation_manager._db_conn_pool = ConnectionPool(
-                str(db_path), pool_size=config_instance.DB_POOL_SIZE
-            )
+            # --- REMOVED Pool initialization, rely on engine ---
 
             logger.debug("Creating tables...")
             Base.metadata.create_all(recreation_manager.engine)
@@ -700,7 +684,6 @@ def reset_db_actn(session_manager, *args):
     return reset_successful
 # end of Action 2
 
-
 # Action 3
 def backup_db_actn(session_manager, *args):
     """Action to backup the database."""
@@ -713,7 +696,6 @@ def backup_db_actn(session_manager, *args):
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
 # end of Action 3
-
 
 # Action 4
 def restore_db_actn(session_manager, *args):
@@ -748,7 +730,6 @@ def restore_db_actn(session_manager, *args):
     return success
 # end of Action 4
 
-
 # Action 5
 def check_login_actn(session_manager, *args):
     """Action to verify session start and login capability."""
@@ -780,7 +761,6 @@ def check_login_actn(session_manager, *args):
     return login_ok
 # End Action 5
 
-
 # Action 6
 # Define coord_action wrapper that accepts config_instance and start_page from exec_actn args
 def coord_action(session_manager, config_instance, start_page=1):
@@ -808,7 +788,6 @@ def coord_action(session_manager, config_instance, start_page=1):
         return False
 # End of coord_action6
 
-
 # Action 7
 def srch_inbox_actn(session_manager, *args):
     """Action to search the inbox for messages using the API."""
@@ -829,7 +808,6 @@ def srch_inbox_actn(session_manager, *args):
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
 # End of srch_inbox_actn
-
 
 # Action 8
 def send_messages_action(session_manager, *args):
@@ -862,7 +840,6 @@ def send_messages_action(session_manager, *args):
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
 # End of send_messages_action
-
 
 # Action 9
 def all_but_first_actn(session_manager, *args):
@@ -907,7 +884,6 @@ def all_but_first_actn(session_manager, *args):
         logger.debug("Delete action finished.")
     return success
 # end of Action 9
-
 
 def main():
     # Import inspect locally within main if needed (renamed due to conflict)
@@ -1089,3 +1065,5 @@ def main():
 # --- Entry Point ---
 if __name__ == "__main__":
     main()
+
+# end of main.py

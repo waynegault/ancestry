@@ -55,7 +55,7 @@ Base = declarative_base()
 class RoleType(enum.Enum):
     AUTHOR = "AUTHOR"
     RECIPIENT = "RECIPIENT"
-
+# end of class RoleType
 
 class InboxStatus(Base):
     __tablename__ = "inbox_status"
@@ -77,8 +77,6 @@ class InboxStatus(Base):
             "ix_inbox_status_people_id_timestamp", "people_id", "last_message_timestamp"
         ),
     )
-
-
 # End of class InboxStatus
 
 
@@ -91,8 +89,6 @@ class MessageType(Base):  # Add MessageType
         back_populates="message_type",
         cascade="all, delete, delete-orphan",
     )
-
-
 # End of class MessageType
 
 
@@ -106,8 +102,6 @@ class MessageHistory(Base):
     sent_at = Column(DateTime, default=datetime.now, nullable=False)
     person = relationship("Person", back_populates="message_history")
     message_type = relationship("MessageType", back_populates="messages")
-
-
 # End of class messagehistory
 
 
@@ -130,8 +124,6 @@ class DnaMatch(Base):
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="dna_match")
-
-
 # End of class DnaMatch
 
 
@@ -152,8 +144,6 @@ class FamilyTree(Base):  # Point 8 Refinement
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="family_tree")
-
-
 # End of class family tree
 
 
@@ -209,231 +199,8 @@ class Person(Base):
     #     UniqueConstraint('profile_id', name='uq_people_profile_id'),
     #     UniqueConstraint('uuid', name='uq_people_uuid') # Ensure UUID constraint name if needed
     # )
-
-
 # End of class Person
 
-# ----------------------------------------------------------------------
-# COnnection Pooling
-# ----------------------------------------------------------------------
-
-
-class ConnectionPool:
-    """
-    Manages a pool of SQLAlchemy Session objects for SQLite database connections.
-    Includes configuration for foreign key support.
-    """
-
-    def __init__(self, db_path: str, pool_size: int):  # Expects string path from config
-        """
-        Initializes the connection pool.
-
-        Args:
-            db_path (str): The string path to the SQLite database file.
-            pool_size (int): The maximum number of sessions to keep in the pool.
-        """
-        self.db_path_str = db_path  # Store the string path used
-
-        # --- Log Absolute Path ---
-        try:
-            # Convert to Path object and resolve for absolute path logging
-            abs_path = Path(db_path).resolve()
-            logger.debug(f"ConnectionPool initializing for DB:\n{abs_path}")
-        except Exception as path_e:
-            logger.error(f"Error resolving absolute path for DB '{db_path}': {path_e}")
-            # Continue using the provided db_path string even if resolving fails
-        # --- End Path Logging ---
-
-        # Create SQLAlchemy engine using the string path for the URI
-        try:
-            # echo=False is standard, set to True for verbose SQL logging if needed
-            self.engine = create_engine(f"sqlite:///{self.db_path_str}", echo=False)
-            logger.debug(f"SQLAlchemy engine created for:\n{self.db_path_str}")
-        except Exception as engine_e:
-            logger.critical(
-                f"Failed to create SQLAlchemy engine: {engine_e}", exc_info=True
-            )
-            raise  # Re-raise critical error
-
-        # --- SQLite Specific Event Listener for Foreign Keys ---
-        @event.listens_for(self.engine, "connect")
-        def enable_foreign_keys(dbapi_connection, connection_record):
-            """Enable foreign key support for SQLite on each connection."""
-            cursor = None  # Initialize cursor to None
-            try:
-                cursor = dbapi_connection.cursor()
-                cursor.execute("PRAGMA foreign_keys=ON")
-            except Exception as pragma_e:
-                logger.error(f"Failed to execute PRAGMA foreign_keys=ON: {pragma_e}")
-            finally:
-                if cursor:
-                    cursor.close()  # Ensure cursor is closed
-
-        # --- End Foreign Key Listener ---
-
-        # Create a configured "Session" class
-        self.Session = sessionmaker(
-            bind=self.engine,
-            expire_on_commit=False,  # Recommended for managing sessions manually
-        )
-
-        # Initialize the pool list and size
-        self._pool: List[Session] = []
-        self.pool_size = pool_size
-
-        # Optionally pre-fill the pool, or fill on demand
-        # self._fill_pool()
-        logger.debug(
-            f"ConnectionPool initialized with target pool size {self.pool_size}."
-        )
-
-    # end __init__
-
-    def _create_session(self) -> Optional[Session]:
-        """Creates a new SQLAlchemy session instance."""
-        try:
-            new_session = self.Session()
-            return new_session
-        except SQLAlchemyError as e:
-            logger.error(f"Error creating new SQLAlchemy session: {e}", exc_info=True)
-            return None
-
-    # end _create_session
-
-    def _fill_pool(self):
-        """Fills the connection pool up to the desired size."""
-        logger.debug(
-            f"Attempting to fill pool (current size: {len(self._pool)}, target: {self.pool_size})."
-        )
-        while len(self._pool) < self.pool_size:
-            session = self._create_session()
-            if session:
-                self._pool.append(session)
-            else:
-                logger.warning("Failed to create session during pool filling.")
-                break  # Stop filling if session creation fails
-        logger.debug(f"Pool filling finished. Pool size: {len(self._pool)}.")
-
-    # end _fill_pool
-
-    def get_session(self) -> Optional[Session]:
-        """
-        Gets a Session from the pool or creates a new one if pool is empty.
-        Returns None if session creation fails.
-        """
-        if not self._pool:
-            session = self._create_session()
-            if not session:
-                logger.error(
-                    "Failed to get db session: Pool empty and creation failed."
-                )
-                return None
-            # Optionally fill pool if it was empty
-            # self._fill_pool() # Or just return the single created session
-            return session
-        else:
-            session = self._pool.pop()
-            logger.debug(
-                f"Retrieved session {id(session)} from pool. Pool size now: {len(self._pool)}"
-            )
-            # Check if session is still active (optional, adds overhead)
-            # if not session.is_active:
-            #    logger.warning(f"Session {id(session)} retrieved from pool was inactive. Creating new one.")
-            #    session.close() # Close inactive session
-            #    return self.get_session() # Recursively get another one
-            return session
-
-    #  end get_session
-
-    def return_session(self, session: Session):
-        """Returns a Session to the pool if space is available, otherwise closes it."""
-        if not session:
-            logger.warning("Attempted to return a None session to the pool.")
-            return
-
-        session_id = id(session)  # Get ID for logging before potential close
-
-        # Rollback any pending changes before returning/closing
-        # This prevents returning a session with an open transaction.
-        try:
-            if session.is_active and session.dirty:
-                logger.warning(f"Session {session_id} returned dirty. Rolling back...")
-                session.rollback()
-        except Exception as rb_err:
-            logger.error(
-                f"Error rolling back dirty session {session_id} on return: {rb_err}"
-            )
-            # Proceed to close/discard the session if rollback fails
-            try:
-                session.close()
-            except:
-                pass
-            return
-
-        # Check if pool has space
-        if len(self._pool) < self.pool_size:
-            self._pool.append(session)
-            logger.debug(
-                f"Returned session {session_id} to pool. Pool size now: {len(self._pool)}"
-            )
-        else:
-            # Pool is full, close the session instead of adding it back
-            logger.debug(
-                f"Pool full ({len(self._pool)}/{self.pool_size}). Closing returned session {session_id}."
-            )
-            try:
-                session.close()
-                logger.debug(f"Session {session_id} closed.")
-            except SQLAlchemyError as e:
-                logger.error(
-                    f"Error closing session {session_id} when returning to full pool: {e}"
-                )
-
-    # end return_session
-
-    def clse_all_sess(self):
-        """Closes all sessions currently held in the pool and clears the pool."""
-        if not self._pool and not self.engine:
-            logger.debug("clse_all_sess called, but no pool or engine exists.")
-            return
-
-        closed_count = 0
-        pool_size_before = len(self._pool)
-        logger.debug(f"Closing all {pool_size_before} sessions in the pool...")
-        # Iterate over a copy of the list to allow removal
-        for session in list(self._pool):
-            session_id = id(session)
-            try:
-                if session.is_active:
-                    session.rollback()  # Rollback before closing
-                session.close()
-                closed_count += 1
-                logger.debug(f"Closed pooled session {session_id}.")
-            except SQLAlchemyError as e:
-                logger.error(f"Error closing pooled session {session_id}: {e}")
-            # Ensure removal from pool even if closing fails
-            if session in self._pool:
-                self._pool.remove(session)
-
-        self._pool = []  # Explicitly clear the pool list
-        logger.debug(
-            f"Closed {closed_count}/{pool_size_before} sessions. Pool cleared."
-        )
-
-        # Also dispose the engine associated with this pool
-        if self.engine:
-            try:
-                logger.debug("Disposing SQLAlchemy engine...")
-                self.engine.dispose()
-                self.engine = None  # Mark as disposed
-                logger.debug("SQLAlchemy engine disposed.")
-            except Exception as e:
-                logger.error(f"Error disposing SQLAlchemy engine: {e}")
-
-    # end clse_all_sess
-
-
-# end connectionpool class
 
 # ----------------------------------------------------------------------
 # Context Manager
@@ -464,8 +231,6 @@ def db_transn(session: Session):
         # Re-raise the original exception after rollback attempt
         raise
     finally:
-        # Optional: Session closure/return logic could be added here if needed,
-        # but typically managed by ConnectionPool.return_session outside the transaction.
         pass
 
 
@@ -576,8 +341,6 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         if session.is_active:
             session.rollback()
         return 0
-
-
 # End of create_person
 
 
@@ -716,8 +479,6 @@ def create_dna_match(
             f"Unexpected error in create_dna_match for {log_ref}: {e}", exc_info=True
         )
         return "error"
-
-
 # End of create_dna_match
 
 
@@ -816,8 +577,6 @@ def create_family_tree(
             f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True
         )
         return "error"
-
-
 # End create_family_tree
 
 # ----------------------------------------------------------------------
@@ -837,7 +596,7 @@ def get_person_by_profile_id_and_username(
     try:
         return (
             session.query(Person)
-            .filter_by(profile_id=profile_id, username=username)
+            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase comparison
             .first()
         )
     except Exception as e:
@@ -845,8 +604,6 @@ def get_person_by_profile_id_and_username(
             f"Error retrieving person by profile_id/username: {e}", exc_info=True
         )
         return None
-
-
 # end get_person_by_profile_id_and_username
 
 
@@ -866,15 +623,13 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
         return None
 
     try:
-        person = session.query(Person).filter_by(profile_id=profile_id).first()
+        person = session.query(Person).filter_by(profile_id=profile_id.upper()).first() # Ensure uppercase comparison
         return person
     except Exception as e:
         logger.error(
             f"Error retrieving person by profile_id '{profile_id}': {e}", exc_info=True
         )
         return None
-
-
 # end of get_person_by_profile_id
 
 
@@ -906,9 +661,9 @@ def get_person_and_dna_match(
         person = (
             session.query(Person)
             .options(
-                relationship(Person.dna_match)
-            )  # Use relationship() for eager load option
-            .filter_by(profile_id=profile_id, username=username)
+                joinedload(Person.dna_match) # Use joinedload directly
+            )
+            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase comparison
             .first()
         )
         if person:
@@ -923,8 +678,6 @@ def get_person_and_dna_match(
             exc_info=True,
         )
         return None, None  # Return None tuple on error
-
-
 # end of get_person_and_dna_match
 
 
@@ -1040,8 +793,6 @@ def find_existing_person(
 
     # Return the found person (which might be None if not found/identified)
     return person
-
-
 # end of find_existing_person
 
 
@@ -1057,8 +808,8 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
             session.query(Person)
             # --- MODIFICATION: Eager load family_tree as well ---
             .options(
-                relationship(Person.dna_match), relationship(Person.family_tree)
-            )  # Use relationship() for options
+                joinedload(Person.dna_match), joinedload(Person.family_tree) # Use joinedload
+            )
             # --- END MODIFICATION ---
             .filter(Person.uuid == uuid_upper).first()
         )
@@ -1066,8 +817,6 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
     except Exception as e:
         logger.error(f"Error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
-
-
 # end of get_person_by_uuid
 
 # ----------------------------------------------------------------------
@@ -1119,9 +868,7 @@ def create_or_update_person(
 
             # Expire state to ensure fresh data comparison if needed (optional but good practice)
             try:
-                logger.debug(
-                    f"{log_ref}: Expiring state for existing Person ID {person_id_for_logging} before updates."
-                )
+                # logger.debug(f"{log_ref}: Expiring state for existing Person ID {person_id_for_logging} before updates.") # Less verbose
                 session.expire(existing_person)
             except Exception as expire_e:
                 logger.warning(
@@ -1218,23 +965,24 @@ def create_or_update_person(
             # 6. Admin Info (Update if changed)
             new_admin_id = person_data.get("administrator_profile_id")
             new_admin_user = person_data.get("administrator_username")
-            if existing_person.administrator_profile_id != (
-                new_admin_id.upper() if new_admin_id else None
-            ):
-                logger.debug(f"  Updating admin ID for {log_ref}")
-                existing_person.administrator_profile_id = (
-                    new_admin_id.upper() if new_admin_id else None
-                )
+            current_admin_id = existing_person.administrator_profile_id
+            current_admin_user = existing_person.administrator_username
+            new_admin_id_upper = new_admin_id.upper() if new_admin_id else None
+
+            if current_admin_id != new_admin_id_upper:
+                logger.debug(f"  Updating admin ID for {log_ref}: '{current_admin_id}' -> '{new_admin_id_upper}'")
+                existing_person.administrator_profile_id = new_admin_id_upper
                 updated = True
-            if existing_person.administrator_username != new_admin_user:
-                logger.debug(f"  Updating admin username for {log_ref}")
+            if current_admin_user != new_admin_user:
+                logger.debug(f"  Updating admin username for {log_ref}: '{current_admin_user}' -> '{new_admin_user}'")
                 existing_person.administrator_username = new_admin_user
                 updated = True
 
             # 7. Message Link (Update if changed)
             new_message_link = person_data.get("message_link")
-            if existing_person.message_link != new_message_link:
-                logger.debug(f"  Updating message link for {log_ref}")
+            current_message_link = existing_person.message_link
+            if current_message_link != new_message_link:
+                logger.debug(f"  Updating message link for {log_ref}: '{current_message_link}' -> '{new_message_link}'")
                 existing_person.message_link = new_message_link
                 updated = True
 
@@ -1320,8 +1068,6 @@ def create_or_update_person(
             f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
         )
         return None, "error"
-
-
 # End create_or_update_person
 
 
@@ -1339,10 +1085,13 @@ def update_person(
     Returns:
         True if the update was successful, False otherwise.
     """
+    if not profile_id or not username:
+         logger.warning("update_person: profile_id and username required.")
+         return False
     try:
         person = (
             session.query(Person)
-            .filter_by(profile_id=profile_id, username=username)
+            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase lookup
             .first()
         )
         if not person:
@@ -1355,20 +1104,30 @@ def update_person(
         updated = False  # Track if any changes are made
         allowed_fields = [
             "uuid",
-            "profile_id",
+            "profile_id", # Allow updating profile_id if needed (e.g., placeholder)
             "username",
             "administrator_profile_id",
             "administrator_username",
             "message_link",
             "in_my_tree",
             "status",
-        ]  # Define mutable fields
+            "first_name",
+            "gender",
+            "birth_year",
+            "contactable",
+            "last_logged_in",
+        ]  # Expanded allowed fields based on create_or_update logic
         for key, value in update_data.items():
             if key in allowed_fields and hasattr(person, key):
                 current_value = getattr(person, key)
-                if current_value != value:  # Only update if value changed
-                    setattr(person, key, value)
-                    logger.debug(f"Updating {key} for Person ID {person.id} to {value}")
+                # Handle potential case differences for IDs
+                value_to_compare = value
+                if key in ('profile_id', 'administrator_profile_id', 'uuid') and value:
+                     value_to_compare = value.upper()
+
+                if current_value != value_to_compare:  # Only update if value changed
+                    setattr(person, key, value_to_compare) # Store corrected case if ID
+                    logger.debug(f"Updating {key} for Person ID {person.id} to {value_to_compare}")
                     updated = True
             elif key not in allowed_fields:
                 logger.warning(
@@ -1392,7 +1151,7 @@ def update_person(
         session.rollback()
         logger.error(
             f"IntegrityError updating person {profile_id}/{username}: {ie}.",
-            exc_info=True,
+            exc_info=False, # Less verbose for integrity
         )
         return False
     except SQLAlchemyError as e:
@@ -1410,8 +1169,6 @@ def update_person(
         if session.is_active:
             session.rollback()
         return False
-
-
 # End of update_person
 
 # ----------------------------------------------------------------------
@@ -1431,10 +1188,13 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
     Returns:
         True if the deletion was successful, False otherwise.
     """
+    if not profile_id or not username:
+         logger.warning("delete_person: profile_id and username required.")
+         return False
     try:
         person = (
             session.query(Person)
-            .filter_by(profile_id=profile_id, username=username)
+            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase lookup
             .first()
         )
         if not person:
@@ -1466,8 +1226,6 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         if session.is_active:
             session.rollback()
         return False
-
-
 # End of delete_person
 
 
@@ -1527,7 +1285,7 @@ def delete_database(
                     )
                     # Continue to retry logic below
             else:
-                logger.debug(
+                logger.info(
                     f"Database '{db_path}' does not exist (or already deleted)."
                 )
                 return  # SUCCESS (already gone)
@@ -1579,8 +1337,6 @@ def delete_database(
 
     # Should not be reached if max_attempts > 0
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")
-
-
 # End of delete_database
 
 # ----------------------------------------------------------------------
@@ -1619,8 +1375,6 @@ def backup_database(
         )
         # Re-raise the exception if backup failure should halt execution
         # raise
-
-
 # End of backup_database
 
 # ----------------------------------------------------------------------
@@ -1628,86 +1382,93 @@ def backup_database(
 #################################################################################
 
 
-def main():
-    """
-    Main function for standalone database setup and testing.
-    Uses Path object from config_instance for database file.
-    """
-    # Local import for standalone use
-    # from logging_config import setup_logging # Commented out - already handled globally if imported
-    from config import config_instance
+if __name__ == "__main__":
+    # Import sys here for the forced logging stream
+    import sys
+    import json # Needed for seeding
 
-    # --- Setup Logging (Assume logger is already configured if imported) ---
-    # setup_logging might be called elsewhere, ensure logger exists
-    global logger
-    if "logger" not in globals():
-        # Fallback basic config if run truly standalone without main.py setup
-        logging.basicConfig(level=logging.DEBUG)
-        logger = logging.getLogger(__name__)  # Use module name logger
+    # --- Force basic logging config for standalone execution ---
+    logging.basicConfig(
+        level=logging.DEBUG, # Set to DEBUG for detailed output during test
+        format='%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s', # Simplified format
+        datefmt='%H:%M:%S',
+        stream=sys.stderr # Force output to stderr for visibility
+    )
+    # Get the logger again *after* basicConfig is set
+    standalone_logger = logging.getLogger("db_standalone") # Use a specific name
+    standalone_logger.info("--- Starting database.py standalone test ---")
 
-    print("")
-    logger.info("Starting database.py in standalone DEBUG mode.")
+    # --- Get DB Path ---
+    try:
+        db_path_obj = config_instance.DATABASE_FILE
+        db_path_str = str(db_path_obj.resolve()) # Resolve for absolute path
+        standalone_logger.info(f"Using database file: {db_path_str}")
+    except Exception as config_err:
+        standalone_logger.critical(f"CRITICAL: Error getting database path from config: {config_err}. Cannot proceed.")
+        sys.exit(1) # Exit if config is broken
 
-    db_path_obj = config_instance.DATABASE_FILE  # Get Path object
-    db_path_str = str(db_path_obj)  # Convert to string for SQLAlchemy create_engine URI
-
-    logger.info(f"Using database file: {db_path_str}")
-    engine = None  # Initialize engine to None
-    conn_pool = None  # Initialize conn_pool to None
+    engine = None
+    conn_pool = None
 
     try:
-        # Use string path for the connection URI
+        # --- Create Engine ---
+        standalone_logger.debug("Creating SQLAlchemy engine...")
         engine = create_engine(f"sqlite:///{db_path_str}", echo=False)
 
         # --- Add PRAGMA foreign_keys=ON listener ---
         @event.listens_for(engine, "connect")
-        def connect(dbapi_connection, connection_record):
+        def enable_foreign_keys(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
-            try:
-                cursor.execute("PRAGMA foreign_keys=ON")
-            finally:
-                cursor.close()
+            try: cursor.execute("PRAGMA foreign_keys=ON")
+            except Exception as pragma_e: standalone_logger.error(f"Failed PRAGMA: {pragma_e}")
+            finally: cursor.close()
+        standalone_logger.debug("Foreign key listener attached.")
 
-        # --- End Listener ---
+        # --- Create Tables ---
+        standalone_logger.debug("Creating/Verifying database tables...")
+        Base.metadata.create_all(engine)
+        standalone_logger.info(f"Database tables OK: {db_path_str}")
 
-        Base.metadata.create_all(engine)  # Create tables if they don't exist
-        logger.info(f"Database tables created/verified in: {db_path_str}")
-
-        # --- Test Connection Pool ---
-        # Pass string path to ConnectionPool
-        pool_size = config_instance.DB_POOL_SIZE
-        conn_pool = ConnectionPool(db_path_str, pool_size=pool_size)
-        session = conn_pool.get_session()
-        if session:
-            logger.info("Connection pool session obtained successfully.")
-            # Perform a simple query to test
-            try:
-                result = session.query(func.count(Person.id)).scalar()
-                logger.info(f"Test query successful (found {result} people).")
-            except Exception as test_e:
-                logger.error(f"Test query failed: {test_e}", exc_info=True)
-            finally:
-                conn_pool.return_session(session)
-        else:
-            logger.error("Failed to obtain connection pool session.")
+        # --- Seed Message Types (Essential for FK constraints) ---
+        standalone_logger.info("Seeding MessageType table...")
+        SessionSeed = sessionmaker(bind=engine)
+        seed_session = None # Initialize
+        try:
+            seed_session = SessionSeed()
+            script_dir = Path(__file__).resolve().parent
+            messages_file = script_dir / "messages.json"
+            if messages_file.exists():
+                with messages_file.open("r", encoding="utf-8") as f: messages_data = json.load(f)
+                if isinstance(messages_data, dict):
+                    with db_transn(seed_session) as sess: # Use context manager
+                        types_to_add = []
+                        for name in messages_data:
+                            exists = sess.query(MessageType).filter_by(type_name=name).first()
+                            if not exists: types_to_add.append(MessageType(type_name=name))
+                        if types_to_add:
+                            standalone_logger.debug(f"Adding {len(types_to_add)} message types...")
+                            sess.add_all(types_to_add)
+                        else: standalone_logger.debug("Message types already exist.")
+                    count = seed_session.query(func.count(MessageType.id)).scalar() or 0
+                    standalone_logger.info(f"MessageType seeding OK. Total types: {count}")
+                else: standalone_logger.error("'messages.json' has incorrect format.")
+            else: standalone_logger.warning(f"'messages.json' not found at '{messages_file}', skipping seeding.")
+        except Exception as seed_err:
+            standalone_logger.error(f"Error seeding MessageType table: {seed_err}", exc_info=True)
+        finally:
+            if seed_session: seed_session.close()
 
     except SQLAlchemyError as db_e:
-        logger.critical(f"Database setup/connection error: {db_e}", exc_info=True)
+        standalone_logger.critical(f"Database setup/connection error: {db_e}", exc_info=True)
     except Exception as e:
-        logger.critical(f"Unexpected error in database.py main: {e}", exc_info=True)
+        standalone_logger.critical(f"Unexpected error during standalone test: {e}", exc_info=True)
     finally:
-        # Cleanly close pool and dispose engine if they exist
-        if conn_pool:  # Check if conn_pool was successfully created
-            conn_pool.clse_all_sess()
-        # Check if engine was successfully created before disposing
-        elif engine:  # If pool failed but engine exists
+        # --- Final Cleanup ---
+        standalone_logger.debug("Performing final cleanup...")
+        if conn_pool:
+            conn_pool.clse_all_sess() # Closes pool and disposes engine
+        elif engine:
             engine.dispose()
-            logger.debug("SQLAlchemy engine disposed (pool cleanup skipped/failed).")
+            standalone_logger.debug("SQLAlchemy engine disposed (pool cleanup skipped/failed).")
 
-        logger.info("Database setup and test completed.")
-
-
-# End of main
-
-if __name__ == "__main__":
-    main()
+        standalone_logger.info("--- Database.py standalone test finished ---")
