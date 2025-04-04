@@ -7,7 +7,7 @@ import os
 import shutil
 from typing import List, Dict, Optional, Tuple, Any, Type, Literal
 from pathlib import Path
-from datetime import datetime, timezone 
+from datetime import datetime, timezone
 import time
 import gc
 from config import config_instance
@@ -27,10 +27,16 @@ from sqlalchemy import (
     Enum,
     Index,
     func,
-    Float
+    Float,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship, Session, joinedload
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError # Added IntegrityError
+from sqlalchemy.orm import (
+    declarative_base,
+    sessionmaker,
+    relationship,
+    Session,
+    joinedload,
+)
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError  # Added IntegrityError
 import logging
 import re
 import inspect
@@ -47,22 +53,34 @@ Base = declarative_base()
 
 
 class RoleType(enum.Enum):
-    AUTHOR = 'AUTHOR'
-    RECIPIENT = 'RECIPIENT'
+    AUTHOR = "AUTHOR"
+    RECIPIENT = "RECIPIENT"
+
 
 class InboxStatus(Base):
     __tablename__ = "inbox_status"
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String, nullable=True)
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
-    my_role = Column(Enum(RoleType), nullable=False, name='my_role')
+    my_role = Column(Enum(RoleType), nullable=False, name="my_role")
     last_message = Column(String, nullable=True)
-    last_message_timestamp = Column(DateTime, nullable=True, index=True) # Add index=True
+    last_message_timestamp = Column(
+        DateTime, nullable=True, index=True
+    )  # Add index=True
     created_at = Column(DateTime, default=datetime.now, nullable=False)
-    last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    last_updated = Column(
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    )
     person = relationship("Person", back_populates="inbox_status")
-    __table_args__ = (Index('ix_inbox_status_people_id_timestamp', 'people_id', 'last_message_timestamp'),)
+    __table_args__ = (
+        Index(
+            "ix_inbox_status_people_id_timestamp", "people_id", "last_message_timestamp"
+        ),
+    )
+
+
 # End of class InboxStatus
+
 
 class MessageType(Base):  # Add MessageType
     __tablename__ = "message_types"
@@ -73,21 +91,25 @@ class MessageType(Base):  # Add MessageType
         back_populates="message_type",
         cascade="all, delete, delete-orphan",
     )
+
+
 # End of class MessageType
+
 
 class MessageHistory(Base):
     __tablename__ = "message_history"
     id = Column(Integer, primary_key=True)
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False)
-    message_type_id = Column(
-        Integer, ForeignKey("message_types.id"), nullable=False
-    )
+    message_type_id = Column(Integer, ForeignKey("message_types.id"), nullable=False)
     message_text = Column(String, nullable=False)
     status = Column(String, default="none", nullable=False)
     sent_at = Column(DateTime, default=datetime.now, nullable=False)
     person = relationship("Person", back_populates="message_history")
     message_type = relationship("MessageType", back_populates="messages")
+
+
 # End of class messagehistory
+
 
 class DnaMatch(Base):
     __tablename__ = "dna_match"
@@ -95,7 +117,9 @@ class DnaMatch(Base):
     compare_link = Column(String, nullable=False)
     cM_DNA = Column(Integer, nullable=False)
     predicted_relationship = Column(String, nullable=False)
-    people_id = Column(Integer, ForeignKey("people.id"), unique=True, nullable=False, index=True)
+    people_id = Column(
+        Integer, ForeignKey("people.id"), unique=True, nullable=False, index=True
+    )
     shared_segments = Column(Integer, nullable=True)
     longest_shared_segment = Column(Float, nullable=True)
     meiosis = Column(Integer, nullable=True)
@@ -106,13 +130,18 @@ class DnaMatch(Base):
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="dna_match")
+
+
 # End of class DnaMatch
 
-class FamilyTree(Base): # Point 8 Refinement
+
+class FamilyTree(Base):  # Point 8 Refinement
     __tablename__ = "family_tree"
     id = Column(Integer, primary_key=True)
-    people_id = Column(Integer, ForeignKey("people.id"), unique=True, nullable=False, index=True)
-    cfpid = Column(String,  unique=True, nullable=True)
+    people_id = Column(
+        Integer, ForeignKey("people.id"), unique=True, nullable=False, index=True
+    )
+    cfpid = Column(String, unique=True, nullable=True)
     person_name_in_tree = Column(String, nullable=True)
     facts_link = Column(String, nullable=True)
     view_in_tree_link = Column(String, nullable=True)
@@ -123,23 +152,26 @@ class FamilyTree(Base): # Point 8 Refinement
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="family_tree")
+
+
 # End of class family tree
+
 
 class Person(Base):
     __tablename__ = "people"
     id = Column(Integer, primary_key=True)
-    uuid = Column(String, nullable=True, unique=True, index=True) # Keep UUID unique
+    uuid = Column(String, nullable=True, unique=True, index=True)  # Keep UUID unique
     # --- RE-ADD unique=True to profile_id ---
-    profile_id = Column(String,  unique=True, nullable=True, index=True)
+    profile_id = Column(String, unique=True, nullable=True, index=True)
     # --- END RE-ADD ---
-    username = Column(String,  unique=False, nullable=False)
+    username = Column(String, unique=False, nullable=False)
     first_name = Column(String, nullable=True)
-    gender = Column(String(1), nullable=True) # Store 'f', 'm', or None
+    gender = Column(String(1), nullable=True)  # Store 'f', 'm', or None
     birth_year = Column(Integer, nullable=True)
     message_link = Column(String, unique=False, nullable=True)
     in_my_tree = Column(Boolean, default=False)
-    contactable =  Column(Boolean, default=False)
-    last_logged_in = Column(DateTime, nullable=True, index=True) # Store as naive UTC
+    contactable = Column(Boolean, default=False)
+    last_logged_in = Column(DateTime, nullable=True, index=True)  # Store as naive UTC
     administrator_profile_id = Column(String, nullable=True, index=True)
     administrator_username = Column(String, nullable=True)
     status = Column(String, default="active", nullable=False)
@@ -149,23 +181,42 @@ class Person(Base):
     )
 
     # Relationships (remain the same)
-    family_tree = relationship("FamilyTree", back_populates="person", uselist=False, cascade="all, delete, delete-orphan")
-    dna_match = relationship("DnaMatch", back_populates="person", uselist=False, cascade="all, delete, delete-orphan")
-    inbox_status = relationship("InboxStatus", back_populates="person", uselist=False, cascade="all, delete, delete-orphan", foreign_keys="InboxStatus.people_id") # Corrected foreign_keys usage
-    message_history = relationship("MessageHistory", back_populates="person", cascade="all, delete, delete-orphan")
+    family_tree = relationship(
+        "FamilyTree",
+        back_populates="person",
+        uselist=False,
+        cascade="all, delete, delete-orphan",
+    )
+    dna_match = relationship(
+        "DnaMatch",
+        back_populates="person",
+        uselist=False,
+        cascade="all, delete, delete-orphan",
+    )
+    inbox_status = relationship(
+        "InboxStatus",
+        back_populates="person",
+        uselist=False,
+        cascade="all, delete, delete-orphan",
+        foreign_keys="InboxStatus.people_id",
+    )  # Corrected foreign_keys usage
+    message_history = relationship(
+        "MessageHistory", back_populates="person", cascade="all, delete, delete-orphan"
+    )
 
-   
     # If you prefer SQLAlchemy checks, uncomment this, otherwise DB unique handles it
     # __table_args__ = (
     #     UniqueConstraint('profile_id', name='uq_people_profile_id'),
     #     UniqueConstraint('uuid', name='uq_people_uuid') # Ensure UUID constraint name if needed
     # )
-    
+
+
 # End of class Person
 
 # ----------------------------------------------------------------------
 # COnnection Pooling
 # ----------------------------------------------------------------------
+
 
 class ConnectionPool:
     """
@@ -173,7 +224,7 @@ class ConnectionPool:
     Includes configuration for foreign key support.
     """
 
-    def __init__(self, db_path: str, pool_size: int): # Expects string path from config
+    def __init__(self, db_path: str, pool_size: int):  # Expects string path from config
         """
         Initializes the connection pool.
 
@@ -181,7 +232,7 @@ class ConnectionPool:
             db_path (str): The string path to the SQLite database file.
             pool_size (int): The maximum number of sessions to keep in the pool.
         """
-        self.db_path_str = db_path # Store the string path used
+        self.db_path_str = db_path  # Store the string path used
 
         # --- Log Absolute Path ---
         try:
@@ -199,27 +250,31 @@ class ConnectionPool:
             self.engine = create_engine(f"sqlite:///{self.db_path_str}", echo=False)
             logger.debug(f"SQLAlchemy engine created for:\n{self.db_path_str}")
         except Exception as engine_e:
-            logger.critical(f"Failed to create SQLAlchemy engine: {engine_e}", exc_info=True)
-            raise # Re-raise critical error
-         # --- SQLite Specific Event Listener for Foreign Keys ---
+            logger.critical(
+                f"Failed to create SQLAlchemy engine: {engine_e}", exc_info=True
+            )
+            raise  # Re-raise critical error
+
+        # --- SQLite Specific Event Listener for Foreign Keys ---
         @event.listens_for(self.engine, "connect")
         def enable_foreign_keys(dbapi_connection, connection_record):
             """Enable foreign key support for SQLite on each connection."""
-            cursor = None # Initialize cursor to None
+            cursor = None  # Initialize cursor to None
             try:
                 cursor = dbapi_connection.cursor()
                 cursor.execute("PRAGMA foreign_keys=ON")
             except Exception as pragma_e:
-                 logger.error(f"Failed to execute PRAGMA foreign_keys=ON: {pragma_e}")
+                logger.error(f"Failed to execute PRAGMA foreign_keys=ON: {pragma_e}")
             finally:
-                 if cursor:
-                      cursor.close() # Ensure cursor is closed
+                if cursor:
+                    cursor.close()  # Ensure cursor is closed
+
         # --- End Foreign Key Listener ---
 
         # Create a configured "Session" class
         self.Session = sessionmaker(
             bind=self.engine,
-            expire_on_commit=False # Recommended for managing sessions manually
+            expire_on_commit=False,  # Recommended for managing sessions manually
         )
 
         # Initialize the pool list and size
@@ -228,7 +283,10 @@ class ConnectionPool:
 
         # Optionally pre-fill the pool, or fill on demand
         # self._fill_pool()
-        logger.debug(f"ConnectionPool initialized with target pool size {self.pool_size}.")
+        logger.debug(
+            f"ConnectionPool initialized with target pool size {self.pool_size}."
+        )
+
     # end __init__
 
     def _create_session(self) -> Optional[Session]:
@@ -239,19 +297,23 @@ class ConnectionPool:
         except SQLAlchemyError as e:
             logger.error(f"Error creating new SQLAlchemy session: {e}", exc_info=True)
             return None
+
     # end _create_session
 
     def _fill_pool(self):
         """Fills the connection pool up to the desired size."""
-        logger.debug(f"Attempting to fill pool (current size: {len(self._pool)}, target: {self.pool_size}).")
+        logger.debug(
+            f"Attempting to fill pool (current size: {len(self._pool)}, target: {self.pool_size})."
+        )
         while len(self._pool) < self.pool_size:
             session = self._create_session()
             if session:
                 self._pool.append(session)
             else:
                 logger.warning("Failed to create session during pool filling.")
-                break # Stop filling if session creation fails
+                break  # Stop filling if session creation fails
         logger.debug(f"Pool filling finished. Pool size: {len(self._pool)}.")
+
     # end _fill_pool
 
     def get_session(self) -> Optional[Session]:
@@ -262,20 +324,25 @@ class ConnectionPool:
         if not self._pool:
             session = self._create_session()
             if not session:
-                 logger.error("Failed to get db session: Pool empty and creation failed.")
-                 return None
+                logger.error(
+                    "Failed to get db session: Pool empty and creation failed."
+                )
+                return None
             # Optionally fill pool if it was empty
             # self._fill_pool() # Or just return the single created session
             return session
         else:
-             session = self._pool.pop()
-             logger.debug(f"Retrieved session {id(session)} from pool. Pool size now: {len(self._pool)}")
-             # Check if session is still active (optional, adds overhead)
-             # if not session.is_active:
-             #    logger.warning(f"Session {id(session)} retrieved from pool was inactive. Creating new one.")
-             #    session.close() # Close inactive session
-             #    return self.get_session() # Recursively get another one
-             return session
+            session = self._pool.pop()
+            logger.debug(
+                f"Retrieved session {id(session)} from pool. Pool size now: {len(self._pool)}"
+            )
+            # Check if session is still active (optional, adds overhead)
+            # if not session.is_active:
+            #    logger.warning(f"Session {id(session)} retrieved from pool was inactive. Creating new one.")
+            #    session.close() # Close inactive session
+            #    return self.get_session() # Recursively get another one
+            return session
+
     #  end get_session
 
     def return_session(self, session: Session):
@@ -284,40 +351,51 @@ class ConnectionPool:
             logger.warning("Attempted to return a None session to the pool.")
             return
 
-        session_id = id(session) # Get ID for logging before potential close
+        session_id = id(session)  # Get ID for logging before potential close
 
         # Rollback any pending changes before returning/closing
         # This prevents returning a session with an open transaction.
         try:
             if session.is_active and session.dirty:
-                 logger.warning(f"Session {session_id} returned dirty. Rolling back...")
-                 session.rollback()
+                logger.warning(f"Session {session_id} returned dirty. Rolling back...")
+                session.rollback()
         except Exception as rb_err:
-             logger.error(f"Error rolling back dirty session {session_id} on return: {rb_err}")
-             # Proceed to close/discard the session if rollback fails
-             try: session.close()
-             except: pass
-             return
+            logger.error(
+                f"Error rolling back dirty session {session_id} on return: {rb_err}"
+            )
+            # Proceed to close/discard the session if rollback fails
+            try:
+                session.close()
+            except:
+                pass
+            return
 
         # Check if pool has space
         if len(self._pool) < self.pool_size:
             self._pool.append(session)
-            logger.debug(f"Returned session {session_id} to pool. Pool size now: {len(self._pool)}")
+            logger.debug(
+                f"Returned session {session_id} to pool. Pool size now: {len(self._pool)}"
+            )
         else:
             # Pool is full, close the session instead of adding it back
-            logger.debug(f"Pool full ({len(self._pool)}/{self.pool_size}). Closing returned session {session_id}.")
+            logger.debug(
+                f"Pool full ({len(self._pool)}/{self.pool_size}). Closing returned session {session_id}."
+            )
             try:
                 session.close()
                 logger.debug(f"Session {session_id} closed.")
             except SQLAlchemyError as e:
-                logger.error(f"Error closing session {session_id} when returning to full pool: {e}")
+                logger.error(
+                    f"Error closing session {session_id} when returning to full pool: {e}"
+                )
+
     # end return_session
 
     def clse_all_sess(self):
         """Closes all sessions currently held in the pool and clears the pool."""
         if not self._pool and not self.engine:
-             logger.debug("clse_all_sess called, but no pool or engine exists.")
-             return
+            logger.debug("clse_all_sess called, but no pool or engine exists.")
+            return
 
         closed_count = 0
         pool_size_before = len(self._pool)
@@ -326,7 +404,8 @@ class ConnectionPool:
         for session in list(self._pool):
             session_id = id(session)
             try:
-                if session.is_active: session.rollback() # Rollback before closing
+                if session.is_active:
+                    session.rollback()  # Rollback before closing
                 session.close()
                 closed_count += 1
                 logger.debug(f"Closed pooled session {session_id}.")
@@ -334,26 +413,32 @@ class ConnectionPool:
                 logger.error(f"Error closing pooled session {session_id}: {e}")
             # Ensure removal from pool even if closing fails
             if session in self._pool:
-                 self._pool.remove(session)
+                self._pool.remove(session)
 
-        self._pool = [] # Explicitly clear the pool list
-        logger.debug(f"Closed {closed_count}/{pool_size_before} sessions. Pool cleared.")
+        self._pool = []  # Explicitly clear the pool list
+        logger.debug(
+            f"Closed {closed_count}/{pool_size_before} sessions. Pool cleared."
+        )
 
         # Also dispose the engine associated with this pool
         if self.engine:
-             try:
-                  logger.debug("Disposing SQLAlchemy engine...")
-                  self.engine.dispose()
-                  self.engine = None # Mark as disposed
-                  logger.debug("SQLAlchemy engine disposed.")
-             except Exception as e:
-                  logger.error(f"Error disposing SQLAlchemy engine: {e}")
+            try:
+                logger.debug("Disposing SQLAlchemy engine...")
+                self.engine.dispose()
+                self.engine = None  # Mark as disposed
+                logger.debug("SQLAlchemy engine disposed.")
+            except Exception as e:
+                logger.error(f"Error disposing SQLAlchemy engine: {e}")
+
     # end clse_all_sess
+
+
 # end connectionpool class
 
 # ----------------------------------------------------------------------
 # Context Manager
 # ----------------------------------------------------------------------
+
 
 @contextlib.contextmanager
 def db_transn(session: Session):
@@ -368,18 +453,22 @@ def db_transn(session: Session):
         yield session
         # Attempt commit only if session is still active after the 'yield' block
         if session.is_active:
-             session.commit()
+            session.commit()
     except Exception as e:
-        logger.error(f"Exception within db_transn block: {e}. Rolling back.", exc_info=True)
+        logger.error(
+            f"Exception within db_transn block: {e}. Rolling back.", exc_info=True
+        )
         # Attempt rollback only if session is still active
         if session and session.is_active:
-             session.rollback()
+            session.rollback()
         # Re-raise the original exception after rollback attempt
         raise
     finally:
         # Optional: Session closure/return logic could be added here if needed,
         # but typically managed by ConnectionPool.return_session outside the transaction.
         pass
+
+
 # end db_transn
 
 # ==================== CRUD OPERATIONS ====================
@@ -388,6 +477,7 @@ def db_transn(session: Session):
 # ----------------------------------------------------------------------
 # Create/ Insert
 # ----------------------------------------------------------------------
+
 
 def create_person(session: Session, person_data: Dict[str, Any]) -> int:
     """
@@ -404,11 +494,15 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         The ID of the newly created person, or 0 if creation failed.
     """
     required_keys = ("username", "uuid")
-    if not all(key in person_data and person_data[key] is not None for key in required_keys):
-         logger.warning(f"Missing required non-null data for person creation: Needs username and uuid. Data: {person_data}")
-         return 0
+    if not all(
+        key in person_data and person_data[key] is not None for key in required_keys
+    ):
+        logger.warning(
+            f"Missing required non-null data for person creation: Needs username and uuid. Data: {person_data}"
+        )
+        return 0
 
-    profile_id = person_data.get("profile_id") # Can be None
+    profile_id = person_data.get("profile_id")  # Can be None
     username = person_data["username"]
     uuid = person_data["uuid"]
     log_ref = f"UUID={uuid} / ProfileID={profile_id or 'NULL'} / User='{username}'"
@@ -416,11 +510,17 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
     try:
         # --- Explicit Check for Profile ID Conflict BEFORE insert ---
         if profile_id:
-            existing_by_profile = session.query(Person).filter(Person.profile_id == profile_id.upper()).first()
+            existing_by_profile = (
+                session.query(Person)
+                .filter(Person.profile_id == profile_id.upper())
+                .first()
+            )
             if existing_by_profile:
                 # Log the conflict and prevent insertion attempt
-                logger.error(f"create_person FAILED for {log_ref}: Profile ID '{profile_id}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id.")
-                return 0 # Fail creation due to profile_id uniqueness requirement
+                logger.error(
+                    f"create_person FAILED for {log_ref}: Profile ID '{profile_id}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id."
+                )
+                return 0  # Fail creation due to profile_id uniqueness requirement
         # --- End Profile ID Check ---
 
         # Proceed with creation if profile_id is NULL or not conflicting
@@ -438,14 +538,18 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
             gender=person_data.get("gender"),
             birth_year=person_data.get("birth_year"),
             contactable=person_data.get("contactable", True),
-            last_logged_in=person_data.get("last_logged_in"), # Store as naive UTC from details_fetched
+            last_logged_in=person_data.get(
+                "last_logged_in"
+            ),  # Store as naive UTC from details_fetched
         )
 
         session.add(new_person)
-        session.flush() # Flush to get the ID and check constraints (like UUID UNIQUE)
+        session.flush()  # Flush to get the ID and check constraints (like UUID UNIQUE)
 
         if new_person.id is None:
-            logger.error(f"ID not assigned after flush for person {log_ref}! Data: {person_data}")
+            logger.error(
+                f"ID not assigned after flush for person {log_ref}! Data: {person_data}"
+            )
             session.rollback()
             return 0
 
@@ -453,22 +557,33 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         return int(new_person.id)
 
     except IntegrityError as ie:
-         # Handles potential unique constraint violations (primarily UUID now)
-         session.rollback()
-         logger.error(f"IntegrityError creating person {log_ref}: {ie}. UUID likely exists.", exc_info=False)
-         return 0
+        # Handles potential unique constraint violations (primarily UUID now)
+        session.rollback()
+        logger.error(
+            f"IntegrityError creating person {log_ref}: {ie}. UUID likely exists.",
+            exc_info=False,
+        )
+        return 0
     except SQLAlchemyError as e:
         logger.error(f"Database error creating person {log_ref}: {e}", exc_info=True)
-        if session.is_active: session.rollback() # Ensure rollback on general DB error
+        if session.is_active:
+            session.rollback()  # Ensure rollback on general DB error
         return 0
-    except Exception as e: # Catch any other unexpected error
-         logger.critical(f"Unexpected error in create_person for {log_ref}: {e}", exc_info=True)
-         if session.is_active: session.rollback()
-         return 0
+    except Exception as e:  # Catch any other unexpected error
+        logger.critical(
+            f"Unexpected error in create_person for {log_ref}: {e}", exc_info=True
+        )
+        if session.is_active:
+            session.rollback()
+        return 0
+
+
 # End of create_person
 
 
-def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["created", "skipped", "error"]:
+def create_dna_match(
+    session: Session, match_data: Dict[str, Any]
+) -> Literal["created", "skipped", "error"]:
     """
     Creates a new DNA Match record associated with a Person ID.
     Handles validation and inclusion of ALL relevant fields.
@@ -487,7 +602,7 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
         "error" if any validation or database error occurred.
     """
     people_id = match_data.get("people_id")
-    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}" # Add UUID for context if available
+    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}"  # Add UUID for context if available
 
     # --- 1. Basic Validation ---
     if not people_id or not isinstance(people_id, int) or people_id <= 0:
@@ -495,7 +610,9 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
         return "error"
 
     required_keys = ("compare_link", "cM_DNA", "predicted_relationship")
-    if not all(key in match_data and match_data[key] is not None for key in required_keys):
+    if not all(
+        key in match_data and match_data[key] is not None for key in required_keys
+    ):
         logger.error(
             f"create_dna_match: Missing required non-null core DNA data for {log_ref}. Match data: {match_data}"
         )
@@ -515,9 +632,9 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
     # Validate optional numeric fields (helper function)
     def validate_optional_numeric(key, value, allow_float=False):
         if value is None:
-            return None # None is valid
+            return None  # None is valid
         try:
-            if isinstance(value, str) and not value.replace('.', '', 1).isdigit():
+            if isinstance(value, str) and not value.replace(".", "", 1).isdigit():
                 logger.warning(
                     f"create_dna_match: Non-numeric value '{value}' for {key} in {log_ref}. Setting to None."
                 )
@@ -533,7 +650,9 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
         "shared_segments", match_data.get("shared_segments")
     )
     longest_segment_val = validate_optional_numeric(
-        "longest_shared_segment", match_data.get("longest_shared_segment"), allow_float=True
+        "longest_shared_segment",
+        match_data.get("longest_shared_segment"),
+        allow_float=True,
     )
     meiosis_val = validate_optional_numeric("meiosis", match_data.get("meiosis"))
 
@@ -553,14 +672,18 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
             new_dna_match = DnaMatch(
                 people_id=people_id,
                 compare_link=match_data["compare_link"],
-                cM_DNA=cm_dna_val, # Use validated int value
+                cM_DNA=cm_dna_val,  # Use validated int value
                 predicted_relationship=match_data["predicted_relationship"],
                 # --- INCLUDE ALL OTHER FIELDS ---
                 shared_segments=shared_segments_val,
                 longest_shared_segment=longest_segment_val,
                 meiosis=meiosis_val,
-                from_my_fathers_side=bool(match_data.get("from_my_fathers_side", False)), # Ensure boolean
-                from_my_mothers_side=bool(match_data.get("from_my_mothers_side", False)), # Ensure boolean
+                from_my_fathers_side=bool(
+                    match_data.get("from_my_fathers_side", False)
+                ),  # Ensure boolean
+                from_my_mothers_side=bool(
+                    match_data.get("from_my_mothers_side", False)
+                ),  # Ensure boolean
                 # created_at/updated_at have defaults
             )
             session.add(new_dna_match)
@@ -568,33 +691,39 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
             logger.debug(f"Staged new 'dna_match' record for creation: {log_ref}")
             return "created"
 
-    except IntegrityError as ie: # Should be rare now due to explicit check
-        session.rollback() # Rollback immediately on integrity error
+    except IntegrityError as ie:  # Should be rare now due to explicit check
+        session.rollback()  # Rollback immediately on integrity error
         logger.error(
             f"IntegrityError in create_dna_match for {log_ref}: {ie}. Likely concurrent creation.",
-            exc_info=False, # Less verbose for integrity error
+            exc_info=False,  # Less verbose for integrity error
         )
         # Double-check existence after rollback, in case of race condition
         existing = session.query(DnaMatch).filter_by(people_id=people_id).first()
         if existing:
-            logger.warning(f"Found existing DnaMatch for {log_ref} after IntegrityError, returning 'skipped'.")
+            logger.warning(
+                f"Found existing DnaMatch for {log_ref} after IntegrityError, returning 'skipped'."
+            )
             return "skipped"
-        return "error" # Return error if still not found after rollback
+        return "error"  # Return error if still not found after rollback
     except SQLAlchemyError as e:
         # Don't rollback here; let the calling transaction handle it
         logger.error(
             f"Database error in create_dna_match for {log_ref}: {e}", exc_info=True
         )
         return "error"
-    except Exception as e: # Catch any other unexpected error
+    except Exception as e:  # Catch any other unexpected error
         logger.error(
             f"Unexpected error in create_dna_match for {log_ref}: {e}", exc_info=True
         )
         return "error"
+
+
 # End of create_dna_match
 
 
-def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["created", "updated", "skipped", "error"]:
+def create_family_tree(
+    session: Session, tree_data: Dict[str, Any]
+) -> Literal["created", "updated", "skipped", "error"]:
     """
     V13 REVISED: Creates or updates a FamilyTree record.
     - If record exists, checks if key fields have changed before updating.
@@ -605,9 +734,9 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
         logger.error("Cannot create/update FamilyTree: 'people_id' missing.")
         return "error"
 
-    cfpid_val = tree_data.get("cfpid") # Can be None
+    cfpid_val = tree_data.get("cfpid")  # Can be None
     log_ref = f"PersonID={people_id}, CFPID={cfpid_val or 'N/A'}"
-    updated = False # Flag for updates
+    updated = False  # Flag for updates
 
     try:
         existing_tree = session.query(FamilyTree).filter_by(people_id=people_id).first()
@@ -625,26 +754,36 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
         # Remove keys with None values if desired, although SQLAlchemy handles them
         # valid_tree_args = {k: v for k, v in valid_tree_args.items() if v is not None}
 
-
         if existing_tree:
             logger.debug(f"Checking for updates to existing FamilyTree for {log_ref}")
             # Compare key fields to see if an update is needed
-            fields_to_check = ["cfpid", "person_name_in_tree", "facts_link", "view_in_tree_link", "actual_relationship", "relationship_path"]
+            fields_to_check = [
+                "cfpid",
+                "person_name_in_tree",
+                "facts_link",
+                "view_in_tree_link",
+                "actual_relationship",
+                "relationship_path",
+            ]
             for field in fields_to_check:
                 new_value = valid_tree_args.get(field)
                 old_value = getattr(existing_tree, field, None)
                 if new_value != old_value:
-                    logger.debug(f"  Updating FamilyTree field '{field}' for {log_ref}: '{old_value}' -> '{new_value}'")
+                    logger.debug(
+                        f"  Updating FamilyTree field '{field}' for {log_ref}: '{old_value}' -> '{new_value}'"
+                    )
                     setattr(existing_tree, field, new_value)
                     updated = True
 
             if updated:
-                 existing_tree.updated_at = datetime.now()
-                 logger.debug(f"Staged update for FamilyTree record {log_ref}")
-                 return "updated"
+                existing_tree.updated_at = datetime.now()
+                logger.debug(f"Staged update for FamilyTree record {log_ref}")
+                return "updated"
             else:
-                 logger.debug(f"No update needed for existing FamilyTree record {log_ref}")
-                 return "skipped"
+                logger.debug(
+                    f"No update needed for existing FamilyTree record {log_ref}"
+                )
+                return "skipped"
         else:
             # Create new record
             logger.debug(f"Creating new FamilyTree record for {log_ref}")
@@ -654,35 +793,62 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
             return "created"
 
     except TypeError as te:
-         logger.critical(f"TypeError creating/updating FamilyTree for {log_ref}: {te}.", exc_info=True)
-         logger.error(f"Data keys provided: {list(tree_data.keys())}")
-         return "error"
+        logger.critical(
+            f"TypeError creating/updating FamilyTree for {log_ref}: {te}.",
+            exc_info=True,
+        )
+        logger.error(f"Data keys provided: {list(tree_data.keys())}")
+        return "error"
     except IntegrityError as ie:
-        logger.error(f"IntegrityError creating/updating FamilyTree for {log_ref}: {ie}", exc_info=False)
+        logger.error(
+            f"IntegrityError creating/updating FamilyTree for {log_ref}: {ie}",
+            exc_info=False,
+        )
         return "error"
     except SQLAlchemyError as e:
-        logger.error(f"SQLAlchemyError creating/updating FamilyTree for {log_ref}: {e}", exc_info=True)
+        logger.error(
+            f"SQLAlchemyError creating/updating FamilyTree for {log_ref}: {e}",
+            exc_info=True,
+        )
         return "error"
     except Exception as e:
-        logger.critical(f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True)
+        logger.critical(
+            f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True
+        )
         return "error"
+
+
 # End create_family_tree
 
 # ----------------------------------------------------------------------
 # Retrieve
 # ----------------------------------------------------------------------
 
-def get_person_by_profile_id_and_username(session: Session, profile_id: str, username: str) -> Optional[Person]:
+
+def get_person_by_profile_id_and_username(
+    session: Session, profile_id: str, username: str
+) -> Optional[Person]:
     """Retrieves a Person by profile_id AND username."""
     if not profile_id or not username:
-        logger.warning("get_person_by_profile_id_and_username: profile_id and username are required.")
+        logger.warning(
+            "get_person_by_profile_id_and_username: profile_id and username are required."
+        )
         return None
     try:
-        return session.query(Person).filter_by(profile_id=profile_id, username=username).first()
+        return (
+            session.query(Person)
+            .filter_by(profile_id=profile_id, username=username)
+            .first()
+        )
     except Exception as e:
-        logger.error(f"Error retrieving person by profile_id/username: {e}", exc_info=True)
+        logger.error(
+            f"Error retrieving person by profile_id/username: {e}", exc_info=True
+        )
         return None
+
+
 # end get_person_by_profile_id_and_username
+
 
 def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Person]:
     """
@@ -703,9 +869,14 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
         person = session.query(Person).filter_by(profile_id=profile_id).first()
         return person
     except Exception as e:
-        logger.error(f"Error retrieving person by profile_id '{profile_id}': {e}", exc_info=True)
+        logger.error(
+            f"Error retrieving person by profile_id '{profile_id}': {e}", exc_info=True
+        )
         return None
+
+
 # end of get_person_by_profile_id
+
 
 def get_person_and_dna_match(
     session: Session, match_data: Dict[str, Any]
@@ -725,29 +896,41 @@ def get_person_and_dna_match(
     username = match_data.get("username")
 
     if not profile_id or not username:
-        logger.warning("get_person_and_dna_match: profile_id and username are required.")
-        return None, None # Return None tuple if input is invalid
+        logger.warning(
+            "get_person_and_dna_match: profile_id and username are required."
+        )
+        return None, None  # Return None tuple if input is invalid
 
     try:
         # Eager load dna_match to avoid separate query
         person = (
-             session.query(Person)
-             .options(relationship(Person.dna_match)) # Use relationship() for eager load option
-             .filter_by(profile_id=profile_id, username=username)
-             .first()
+            session.query(Person)
+            .options(
+                relationship(Person.dna_match)
+            )  # Use relationship() for eager load option
+            .filter_by(profile_id=profile_id, username=username)
+            .first()
         )
         if person:
             # dna_match is already loaded due to options() if it exists
             dna_match = person.dna_match
             return person, dna_match
         else:
-            return None, None # Person not found
+            return None, None  # Person not found
     except Exception as e:
-        logger.error(f"Error retrieving person/DNA match for profile {profile_id}/{username}: {e}", exc_info=True)
-        return None, None # Return None tuple on error
+        logger.error(
+            f"Error retrieving person/DNA match for profile {profile_id}/{username}: {e}",
+            exc_info=True,
+        )
+        return None, None  # Return None tuple on error
+
+
 # end of get_person_and_dna_match
 
-def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> Optional[Person]:
+
+def find_existing_person(
+    session: Session, identifier_data: Dict[str, Any]
+) -> Optional[Person]:
     """
     Finds an existing person based on available unique identifiers (uuid or profile_id).
     Prioritizes UUID. If multiple matches on profile_id, uses username for disambiguation.
@@ -755,14 +938,17 @@ def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> O
     """
     person_uuid = identifier_data.get("uuid")
     person_profile_id = identifier_data.get("profile_id")
-    person_username = identifier_data.get("username") # Get username for disambiguation
+    person_username = identifier_data.get("username")  # Get username for disambiguation
 
     person = None
     # Create a more informative log reference
     log_parts = []
-    if person_uuid: log_parts.append(f"UUID='{person_uuid}'")
-    if person_profile_id: log_parts.append(f"ProfileID='{person_profile_id}'")
-    if person_username: log_parts.append(f"User='{person_username}'")
+    if person_uuid:
+        log_parts.append(f"UUID='{person_uuid}'")
+    if person_profile_id:
+        log_parts.append(f"ProfileID='{person_profile_id}'")
+    if person_username:
+        log_parts.append(f"User='{person_username}'")
     log_ref = " / ".join(log_parts)
 
     try:
@@ -772,7 +958,9 @@ def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> O
             # Query using the Person model and filter
             person = session.query(Person).filter(Person.uuid == uuid_upper).first()
             if person:
-                logger.debug(f"Found existing person by UUID: {uuid_upper} (ID: {person.id})")
+                logger.debug(
+                    f"Found existing person by UUID: {uuid_upper} (ID: {person.id})"
+                )
                 return person
 
         # 2. Fallback to Profile ID
@@ -780,7 +968,11 @@ def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> O
         if person is None and person_profile_id:
             profile_id_upper = str(person_profile_id).upper()
             # Query using the Person model and filter, get all potential matches
-            potential_matches = session.query(Person).filter(Person.profile_id == profile_id_upper).all()
+            potential_matches = (
+                session.query(Person)
+                .filter(Person.profile_id == profile_id_upper)
+                .all()
+            )
 
             if not potential_matches:
                 logger.debug(f"No person found by Profile ID: {profile_id_upper}.")
@@ -788,11 +980,15 @@ def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> O
 
             elif len(potential_matches) == 1:
                 person = potential_matches[0]
-                logger.debug(f"Found unique person by Profile ID: {profile_id_upper} (ID: {person.id})")
-                return person # Return the single match
+                logger.debug(
+                    f"Found unique person by Profile ID: {profile_id_upper} (ID: {person.id})"
+                )
+                return person  # Return the single match
 
-            else: # Multiple matches found for the same profile_id
-                logger.warning(f"Multiple people found ({len(potential_matches)}) for Profile ID: {profile_id_upper}. Attempting disambiguation by username.")
+            else:  # Multiple matches found for the same profile_id
+                logger.warning(
+                    f"Multiple people found ({len(potential_matches)}) for Profile ID: {profile_id_upper}. Attempting disambiguation by username."
+                )
                 if person_username:
                     username_lower = person_username.lower()
                     found_by_username = None
@@ -801,21 +997,29 @@ def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> O
                         if p.username and p.username.lower() == username_lower:
                             # Check if we already found one (shouldn't happen with unique constraint, but safety check)
                             if found_by_username is not None:
-                                 logger.error(f"CRITICAL: Found multiple people matching BOTH Profile ID {profile_id_upper} AND Username '{person_username}' (IDs: {found_by_username.id}, {p.id}). Cannot reliably identify.")
-                                 return None # Cannot reliably identify
+                                logger.error(
+                                    f"CRITICAL: Found multiple people matching BOTH Profile ID {profile_id_upper} AND Username '{person_username}' (IDs: {found_by_username.id}, {p.id}). Cannot reliably identify."
+                                )
+                                return None  # Cannot reliably identify
                             found_by_username = p
 
                     if found_by_username:
-                        logger.debug(f"Disambiguated by username: Found Person ID {found_by_username.id} ('{found_by_username.username}') matching Profile ID {profile_id_upper}.")
+                        logger.debug(
+                            f"Disambiguated by username: Found Person ID {found_by_username.id} ('{found_by_username.username}') matching Profile ID {profile_id_upper}."
+                        )
                         return found_by_username
                     else:
                         # If username provided but none matched among the profile_id matches
-                        logger.warning(f"Multiple matches for Profile ID {profile_id_upper}, but none matched username '{person_username}'. Cannot reliably identify.")
-                        return None # Return None to prevent updating the wrong record
+                        logger.warning(
+                            f"Multiple matches for Profile ID {profile_id_upper}, but none matched username '{person_username}'. Cannot reliably identify."
+                        )
+                        return None  # Return None to prevent updating the wrong record
                 else:
                     # Multiple matches, but no username provided for disambiguation
-                    logger.warning(f"Multiple matches for Profile ID {profile_id_upper}, but no username provided for disambiguation. Cannot reliably identify.")
-                    return None # Return None to prevent updating the wrong record
+                    logger.warning(
+                        f"Multiple matches for Profile ID {profile_id_upper}, but no username provided for disambiguation. Cannot reliably identify."
+                    )
+                    return None  # Return None to prevent updating the wrong record
 
         # If not found by UUID and either not found by Profile ID or disambiguation failed
         # This check ensures the final log message is accurate
@@ -823,15 +1027,23 @@ def find_existing_person(session: Session, identifier_data: Dict[str, Any]) -> O
             logger.debug(f"No existing person reliably identified for {log_ref}.")
 
     except SQLAlchemyError as e:
-         logger.error(f"Database error in find_existing_person for {log_ref}: {e}", exc_info=True)
-         return None # Return None on DB error
+        logger.error(
+            f"Database error in find_existing_person for {log_ref}: {e}", exc_info=True
+        )
+        return None  # Return None on DB error
     except Exception as e:
-         logger.error(f"Unexpected error in find_existing_person for {log_ref}: {e}", exc_info=True)
-         return None
+        logger.error(
+            f"Unexpected error in find_existing_person for {log_ref}: {e}",
+            exc_info=True,
+        )
+        return None
 
     # Return the found person (which might be None if not found/identified)
     return person
+
+
 # end of find_existing_person
+
 
 def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
     """Retrieves a Person record based on their UUID (DNA sampleId)."""
@@ -842,25 +1054,31 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
         uuid_upper = str(uuid).upper()
         # Optionally eager load related data if often needed after getting by uuid
         person = (
-             session.query(Person)
-             # --- MODIFICATION: Eager load family_tree as well ---
-             .options(relationship(Person.dna_match), relationship(Person.family_tree)) # Use relationship() for options
-             # --- END MODIFICATION ---
-             .filter(Person.uuid == uuid_upper)
-             .first()
+            session.query(Person)
+            # --- MODIFICATION: Eager load family_tree as well ---
+            .options(
+                relationship(Person.dna_match), relationship(Person.family_tree)
+            )  # Use relationship() for options
+            # --- END MODIFICATION ---
+            .filter(Person.uuid == uuid_upper).first()
         )
         return person
     except Exception as e:
         logger.error(f"Error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
+
+
 # end of get_person_by_uuid
 
 # ----------------------------------------------------------------------
 # Update
 # ----------------------------------------------------------------------
 
+
 def create_or_update_person(
-    session: Session, person_data: Dict[str, Any], existing_person: Optional[Person] = None
+    session: Session,
+    person_data: Dict[str, Any],
+    existing_person: Optional[Person] = None,
 ) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
     """
     V9 REVISED: Creates a new Person or updates an existing one based on input data.
@@ -879,29 +1097,36 @@ def create_or_update_person(
         )
     """
     uuid_val = person_data.get("uuid")
-    profile_id_val = person_data.get("profile_id") # For logging/creation
-    username_val = person_data.get("username") # Should always be present per checks
+    profile_id_val = person_data.get("profile_id")  # For logging/creation
+    username_val = person_data.get("username")  # Should always be present per checks
 
     if not uuid_val or not username_val:
-        logger.error(f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val or 'N/A'}': UUID or Username missing in input data.")
+        logger.error(
+            f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val or 'N/A'}': UUID or Username missing in input data."
+        )
         return None, "error"
 
     log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
-    updated = False # Flag to track if any allowed *Person* field update occurred
+    updated = False  # Flag to track if any allowed *Person* field update occurred
 
     try:
         if existing_person:
             # --- PERSON EXISTS --- Update logic ---
             person_id_for_logging = existing_person.id
-            logger.debug(f"{log_ref}: Updating existing Person ID {person_id_for_logging}.")
+            logger.debug(
+                f"{log_ref}: Updating existing Person ID {person_id_for_logging}."
+            )
 
             # Expire state to ensure fresh data comparison if needed (optional but good practice)
             try:
-                logger.debug(f"{log_ref}: Expiring state for existing Person ID {person_id_for_logging} before updates.")
+                logger.debug(
+                    f"{log_ref}: Expiring state for existing Person ID {person_id_for_logging} before updates."
+                )
                 session.expire(existing_person)
             except Exception as expire_e:
-                logger.warning(f"Could not expire session state for Person ID {person_id_for_logging}: {expire_e}")
-
+                logger.warning(
+                    f"Could not expire session state for Person ID {person_id_for_logging}: {expire_e}"
+                )
 
             # --- Apply Updates to Restricted Fields ---
             # 1. last_logged_in
@@ -911,25 +1136,41 @@ def create_or_update_person(
             new_naive = None
             # Convert current DB value to naive UTC, truncated to seconds
             if isinstance(current_last_logged_in, datetime):
-                db_aware = current_last_logged_in.tzinfo is not None and current_last_logged_in.tzinfo.utcoffset(current_last_logged_in) is not None
+                db_aware = (
+                    current_last_logged_in.tzinfo is not None
+                    and current_last_logged_in.tzinfo.utcoffset(current_last_logged_in)
+                    is not None
+                )
                 if db_aware:
-                    current_naive = current_last_logged_in.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
-                else: # Assume naive stored is UTC
+                    current_naive = current_last_logged_in.astimezone(
+                        timezone.utc
+                    ).replace(tzinfo=None, microsecond=0)
+                else:  # Assume naive stored is UTC
                     current_naive = current_last_logged_in.replace(microsecond=0)
             # Convert new incoming value to naive UTC, truncated to seconds
             if isinstance(new_last_logged_in, datetime):
-                new_naive = new_last_logged_in.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+                new_naive = new_last_logged_in.astimezone(timezone.utc).replace(
+                    tzinfo=None, microsecond=0
+                )
 
             if current_naive != new_naive:
-                logger.debug(f"  Updating last_logged_in for {log_ref}: '{current_naive}' -> '{new_naive}'")
-                existing_person.last_logged_in = new_last_logged_in # Store the original aware datetime
+                logger.debug(
+                    f"  Updating last_logged_in for {log_ref}: '{current_naive}' -> '{new_naive}'"
+                )
+                existing_person.last_logged_in = (
+                    new_last_logged_in  # Store the original aware datetime
+                )
                 updated = True
 
             # 2. contactable
-            new_contactable = person_data.get("contactable", False) # Default to False if missing
+            new_contactable = person_data.get(
+                "contactable", False
+            )  # Default to False if missing
             current_contactable = existing_person.contactable
             if bool(current_contactable) != bool(new_contactable):
-                logger.debug(f"  Updating contactable for {log_ref}: '{current_contactable}' -> '{new_contactable}'")
+                logger.debug(
+                    f"  Updating contactable for {log_ref}: '{current_contactable}' -> '{new_contactable}'"
+                )
                 existing_person.contactable = bool(new_contactable)
                 updated = True
 
@@ -937,39 +1178,53 @@ def create_or_update_person(
             new_birth_year = person_data.get("birth_year")
             current_birth_year = existing_person.birth_year
             if new_birth_year is not None and current_birth_year is None:
-                 try:
-                     birth_year_int = int(new_birth_year)
-                     logger.debug(f"  Updating birth_year for {log_ref}: '{current_birth_year}' -> '{birth_year_int}'")
-                     existing_person.birth_year = birth_year_int
-                     updated = True
-                 except (ValueError, TypeError):
-                      logger.warning(f"  Skipping birth_year update for {log_ref}: New value '{new_birth_year}' is not a valid integer.")
+                try:
+                    birth_year_int = int(new_birth_year)
+                    logger.debug(
+                        f"  Updating birth_year for {log_ref}: '{current_birth_year}' -> '{birth_year_int}'"
+                    )
+                    existing_person.birth_year = birth_year_int
+                    updated = True
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"  Skipping birth_year update for {log_ref}: New value '{new_birth_year}' is not a valid integer."
+                    )
 
             # 4. in_my_tree (Update if different, allow False->True and True->False)
             new_in_my_tree = bool(person_data.get("in_my_tree", False))
             current_in_my_tree = existing_person.in_my_tree
             if bool(current_in_my_tree) != new_in_my_tree:
-                 logger.debug(f"  Updating in_my_tree for {log_ref}: '{current_in_my_tree}' -> '{new_in_my_tree}'")
-                 existing_person.in_my_tree = new_in_my_tree
-                 updated = True
+                logger.debug(
+                    f"  Updating in_my_tree for {log_ref}: '{current_in_my_tree}' -> '{new_in_my_tree}'"
+                )
+                existing_person.in_my_tree = new_in_my_tree
+                updated = True
 
             # 5. Gender (Update if current is None and new is not None)
             new_gender = person_data.get("gender")
             current_gender = existing_person.gender
             if new_gender is not None and current_gender is None:
-                if isinstance(new_gender, str) and new_gender.lower() in ('f', 'm'):
-                     logger.debug(f"  Updating gender for {log_ref}: '{current_gender}' -> '{new_gender.lower()}'")
-                     existing_person.gender = new_gender.lower()
-                     updated = True
+                if isinstance(new_gender, str) and new_gender.lower() in ("f", "m"):
+                    logger.debug(
+                        f"  Updating gender for {log_ref}: '{current_gender}' -> '{new_gender.lower()}'"
+                    )
+                    existing_person.gender = new_gender.lower()
+                    updated = True
                 else:
-                     logger.warning(f"  Skipping gender update for {log_ref}: New value '{new_gender}' is not 'f' or 'm'.")
+                    logger.warning(
+                        f"  Skipping gender update for {log_ref}: New value '{new_gender}' is not 'f' or 'm'."
+                    )
 
             # 6. Admin Info (Update if changed)
             new_admin_id = person_data.get("administrator_profile_id")
             new_admin_user = person_data.get("administrator_username")
-            if existing_person.administrator_profile_id != (new_admin_id.upper() if new_admin_id else None):
+            if existing_person.administrator_profile_id != (
+                new_admin_id.upper() if new_admin_id else None
+            ):
                 logger.debug(f"  Updating admin ID for {log_ref}")
-                existing_person.administrator_profile_id = new_admin_id.upper() if new_admin_id else None
+                existing_person.administrator_profile_id = (
+                    new_admin_id.upper() if new_admin_id else None
+                )
                 updated = True
             if existing_person.administrator_username != new_admin_user:
                 logger.debug(f"  Updating admin username for {log_ref}")
@@ -979,38 +1234,46 @@ def create_or_update_person(
             # 7. Message Link (Update if changed)
             new_message_link = person_data.get("message_link")
             if existing_person.message_link != new_message_link:
-                 logger.debug(f"  Updating message link for {log_ref}")
-                 existing_person.message_link = new_message_link
-                 updated = True
-
+                logger.debug(f"  Updating message link for {log_ref}")
+                existing_person.message_link = new_message_link
+                updated = True
 
             # --- Determine Final Status ---
             if updated:
-                existing_person.updated_at = datetime.now() # Update timestamp
+                existing_person.updated_at = datetime.now()  # Update timestamp
                 logger.debug(f"{log_ref}: Person ID {person_id_for_logging} updated.")
                 return existing_person, "updated"
             else:
-                logger.debug(f"{log_ref}: Person ID {person_id_for_logging} requires no update.")
+                logger.debug(
+                    f"{log_ref}: Person ID {person_id_for_logging} requires no update."
+                )
                 return existing_person, "skipped"
 
         else:
             # --- PERSON DOES NOT EXIST --- Create new logic ---
             logger.debug(f"{log_ref}: Creating new Person.")
             # Call create_person helper (which handles the actual insert)
-            new_person_id = create_person(session, person_data) # Pass the full data dict
+            new_person_id = create_person(
+                session, person_data
+            )  # Pass the full data dict
 
             if new_person_id > 0:
                 # Fetch the newly created object to return it
                 # Use session.get which is efficient for primary key lookup
                 new_person_obj = session.get(Person, new_person_id)
                 if new_person_obj:
-                    logger.debug(f"{log_ref}: New Person created (ID: {new_person_id}).")
+                    logger.debug(
+                        f"{log_ref}: New Person created (ID: {new_person_id})."
+                    )
                     return new_person_obj, "created"
                 else:
                     # This should ideally not happen if create_person succeeded
-                    logger.error(f"Failed to fetch newly created person with ID {new_person_id} for {log_ref} after successful creation.")
+                    logger.error(
+                        f"Failed to fetch newly created person with ID {new_person_id} for {log_ref} after successful creation."
+                    )
                     # Rollback might be needed if create_person didn't handle it on failure
-                    if session.is_active: session.rollback()
+                    if session.is_active:
+                        session.rollback()
                     return None, "error"
             else:
                 logger.error(f"create_person failed for {log_ref}.")
@@ -1021,27 +1284,46 @@ def create_or_update_person(
         # Handle potential constraint violations not caught by create_person's pre-check
         # (e.g., UUID collision if pre-check is removed/fails)
         session.rollback()
-        logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
+        logger.error(
+            f"IntegrityError processing person {log_ref}: {ie}. Rolling back.",
+            exc_info=False,
+        )
         return None, "error"
     except SQLAlchemyError as e:
-        if session.is_active: session.rollback()
+        if session.is_active:
+            session.rollback()
         logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
         return None, "error"
-    except NameError as ne: # Catch missing 'timezone' import if datetime handling fails
-         if session.is_active: session.rollback()
-         logger.critical(f"NameError processing person {log_ref}: {ne}. Ensure 'timezone' is imported from datetime.", exc_info=True)
-         return None, "error"
+    except (
+        NameError
+    ) as ne:  # Catch missing 'timezone' import if datetime handling fails
+        if session.is_active:
+            session.rollback()
+        logger.critical(
+            f"NameError processing person {log_ref}: {ne}. Ensure 'timezone' is imported from datetime.",
+            exc_info=True,
+        )
+        return None, "error"
     except TypeError as te:
-         if session.is_active: session.rollback()
-         logger.critical(f"TypeError during person update comparison for {log_ref}: {te}", exc_info=True)
-         return None, "error"
+        if session.is_active:
+            session.rollback()
+        logger.critical(
+            f"TypeError during person update comparison for {log_ref}: {te}",
+            exc_info=True,
+        )
+        return None, "error"
     except Exception as e:
         # Catch any other unexpected error
         if session.is_active:
             session.rollback()
-        logger.critical(f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True)
+        logger.critical(
+            f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
+        )
         return None, "error"
+
+
 # End create_or_update_person
+
 
 def update_person(
     session: Session, profile_id: str, username: str, update_data: Dict[str, Any]
@@ -1058,55 +1340,84 @@ def update_person(
         True if the update was successful, False otherwise.
     """
     try:
-        person = session.query(Person).filter_by(profile_id=profile_id, username=username).first()
+        person = (
+            session.query(Person)
+            .filter_by(profile_id=profile_id, username=username)
+            .first()
+        )
         if not person:
-            logger.warning(f"update_person: Person with profile_id {profile_id} and username {username} not found.")
+            logger.warning(
+                f"update_person: Person with profile_id {profile_id} and username {username} not found."
+            )
             return False
 
         # Update fields (whitelist approach for safety)
-        updated = False # Track if any changes are made
+        updated = False  # Track if any changes are made
         allowed_fields = [
-             "uuid", "profile_id", "username", "administrator_profile_id",
-             "administrator_username", "message_link", "in_my_tree", "status"
-        ] # Define mutable fields
+            "uuid",
+            "profile_id",
+            "username",
+            "administrator_profile_id",
+            "administrator_username",
+            "message_link",
+            "in_my_tree",
+            "status",
+        ]  # Define mutable fields
         for key, value in update_data.items():
             if key in allowed_fields and hasattr(person, key):
                 current_value = getattr(person, key)
-                if current_value != value: # Only update if value changed
-                     setattr(person, key, value)
-                     logger.debug(f"Updating {key} for Person ID {person.id} to {value}")
-                     updated = True
+                if current_value != value:  # Only update if value changed
+                    setattr(person, key, value)
+                    logger.debug(f"Updating {key} for Person ID {person.id} to {value}")
+                    updated = True
             elif key not in allowed_fields:
                 logger.warning(
                     f"Attempted to update non-allowed attribute '{key}' on Person ID {person.id}."
                 )
 
         if updated:
-             person.updated_at = datetime.now() # Update timestamp if changed
-             session.flush() # Stage the update
-             logger.info(f"Updated person with profile_id {profile_id} and username {username} (ID: {person.id}).")
-             return True
+            person.updated_at = datetime.now()  # Update timestamp if changed
+            session.flush()  # Stage the update
+            logger.info(
+                f"Updated person with profile_id {profile_id} and username {username} (ID: {person.id})."
+            )
+            return True
         else:
-             logger.debug(f"No update needed for person profile_id {profile_id} / username {username}.")
-             return True # Return True even if no changes needed, as the record exists
+            logger.debug(
+                f"No update needed for person profile_id {profile_id} / username {username}."
+            )
+            return True  # Return True even if no changes needed, as the record exists
 
     except IntegrityError as ie:
-         session.rollback()
-         logger.error(f"IntegrityError updating person {profile_id}/{username}: {ie}.", exc_info=True)
-         return False
+        session.rollback()
+        logger.error(
+            f"IntegrityError updating person {profile_id}/{username}: {ie}.",
+            exc_info=True,
+        )
+        return False
     except SQLAlchemyError as e:
-        logger.error(f"Database error updating person {profile_id}/{username}: {e}", exc_info=True)
+        logger.error(
+            f"Database error updating person {profile_id}/{username}: {e}",
+            exc_info=True,
+        )
         session.rollback()
         return False
-    except Exception as e: # Catch any other unexpected error
-         logger.critical(f"Unexpected error in update_person for {profile_id}/{username}: {e}", exc_info=True)
-         if session.is_active: session.rollback()
-         return False
+    except Exception as e:  # Catch any other unexpected error
+        logger.critical(
+            f"Unexpected error in update_person for {profile_id}/{username}: {e}",
+            exc_info=True,
+        )
+        if session.is_active:
+            session.rollback()
+        return False
+
+
 # End of update_person
 
 # ----------------------------------------------------------------------
 # Delete
 # ----------------------------------------------------------------------
+
 
 def delete_person(session: Session, profile_id: str, username: str) -> bool:
     """Deletes a person and associated records (using cascading deletes). Uses profile_id and username.
@@ -1121,28 +1432,48 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         True if the deletion was successful, False otherwise.
     """
     try:
-        person = session.query(Person).filter_by(profile_id=profile_id, username=username).first()
+        person = (
+            session.query(Person)
+            .filter_by(profile_id=profile_id, username=username)
+            .first()
+        )
         if not person:
-            logger.warning(f"delete_person: Person with profile_id {profile_id} and username {username} not found.")
+            logger.warning(
+                f"delete_person: Person with profile_id {profile_id} and username {username} not found."
+            )
             return False
 
-        person_id = person.id # Get ID for logging before delete
+        person_id = person.id  # Get ID for logging before delete
         session.delete(person)  # Cascading delete will handle related records
-        session.flush() # Execute delete in DB
-        logger.info(f"Deleted person ID {person_id} (profile_id {profile_id}, username {username}) and related records.")
+        session.flush()  # Execute delete in DB
+        logger.info(
+            f"Deleted person ID {person_id} (profile_id {profile_id}, username {username}) and related records."
+        )
         return True
 
     except SQLAlchemyError as e:
-        logger.error(f"Database error deleting person {profile_id}/{username}: {e}", exc_info=True)
+        logger.error(
+            f"Database error deleting person {profile_id}/{username}: {e}",
+            exc_info=True,
+        )
         session.rollback()
         return False
-    except Exception as e: # Catch any other unexpected error
-         logger.critical(f"Unexpected error in delete_person for {profile_id}/{username}: {e}", exc_info=True)
-         if session.is_active: session.rollback()
-         return False
+    except Exception as e:  # Catch any other unexpected error
+        logger.critical(
+            f"Unexpected error in delete_person for {profile_id}/{username}: {e}",
+            exc_info=True,
+        )
+        if session.is_active:
+            session.rollback()
+        return False
+
+
 # End of delete_person
 
-def delete_database(session_manager, db_path: Path, max_attempts=5): # Increased max_attempts to 5
+
+def delete_database(
+    session_manager, db_path: Path, max_attempts=5
+):  # Increased max_attempts to 5
     """
     Delete the database file (Path object) with retry and exponential backoff.
     More aggressive cleanup and error handling for file locks.
@@ -1150,13 +1481,15 @@ def delete_database(session_manager, db_path: Path, max_attempts=5): # Increased
     if not isinstance(db_path, Path):
         try:
             db_path = Path(db_path)
-            logger.warning("Converted db_path string to Path object in delete_database.")
+            logger.warning(
+                "Converted db_path string to Path object in delete_database."
+            )
         except TypeError:
-             logger.error(f"Cannot convert db_path {db_path} to Path object.")
-             return # Cannot proceed
+            logger.error(f"Cannot convert db_path {db_path} to Path object.")
+            return  # Cannot proceed
 
     logger.debug(f"Attempting to delete database file: {db_path}")
-    last_error = None # Store last error
+    last_error = None  # Store last error
 
     for attempt in range(max_attempts):
         logger.debug(f"Delete attempt {attempt + 1}/{max_attempts}...")
@@ -1164,80 +1497,105 @@ def delete_database(session_manager, db_path: Path, max_attempts=5): # Increased
             # 1. Aggressive Cleanup: Close connections, dispose engine, garbage collect
             logger.debug("Closing DB connections and disposing engine...")
             if session_manager:
-                 session_manager.cls_db_conn() # Should dispose engine
+                session_manager.cls_db_conn()  # Should dispose engine
             else:
-                 logger.warning("No session_manager provided to delete_database.")
+                logger.warning("No session_manager provided to delete_database.")
 
             # Multiple GC calls and longer sleep
             gc.collect()
-            time.sleep(0.5) # Short sleep
+            time.sleep(0.5)  # Short sleep
             gc.collect()
-            time.sleep(1.0 + attempt) # Increase sleep slightly with attempts
+            time.sleep(1.0 + attempt)  # Increase sleep slightly with attempts
 
             # 2. Check existence and attempt deletion
             if db_path.exists():
                 logger.debug(f"Attempting os.remove on {db_path}...")
                 os.remove(db_path)
                 # Verify deletion
-                time.sleep(0.1) # Tiny pause before checking again
+                time.sleep(0.1)  # Tiny pause before checking again
                 if not db_path.exists():
-                    logger.debug(f"'{db_path}' deleted successfully.") # Use INFO for success
+                    logger.debug(
+                        f"'{db_path}' deleted successfully."
+                    )  # Use INFO for success
                     return  # SUCCESS
                 else:
-                     logger.warning(f"os.remove called, but file '{db_path}' still exists. Retrying.")
-                     last_error = OSError(f"File still exists after os.remove attempt {attempt + 1}")
-                     # Continue to retry logic below
+                    logger.warning(
+                        f"os.remove called, but file '{db_path}' still exists. Retrying."
+                    )
+                    last_error = OSError(
+                        f"File still exists after os.remove attempt {attempt + 1}"
+                    )
+                    # Continue to retry logic below
             else:
-                logger.debug(f"Database '{db_path}' does not exist (or already deleted).")
+                logger.debug(
+                    f"Database '{db_path}' does not exist (or already deleted)."
+                )
                 return  # SUCCESS (already gone)
 
         # Catch specific permission errors likely related to file locks
         except PermissionError as e:
-             logger.warning(f"PermissionError deleting '{db_path}' (Attempt {attempt + 1}): {e}. File likely locked.")
-             last_error = e
-             # Continue to retry logic below
+            logger.warning(
+                f"PermissionError deleting '{db_path}' (Attempt {attempt + 1}): {e}. File likely locked."
+            )
+            last_error = e
+            # Continue to retry logic below
         except OSError as e:
             # Catch other OS errors, check for WinError 32 specifically
-            if hasattr(e, 'winerror') and e.winerror == 32:
-                 logger.warning(f"OSError (WinError 32) deleting '{db_path}' (Attempt {attempt + 1}): {e}. File likely locked.")
+            if hasattr(e, "winerror") and e.winerror == 32:
+                logger.warning(
+                    f"OSError (WinError 32) deleting '{db_path}' (Attempt {attempt + 1}): {e}. File likely locked."
+                )
             else:
-                 logger.error(f"OSError deleting '{db_path}' (Attempt {attempt + 1}): {e}", exc_info=True)
+                logger.error(
+                    f"OSError deleting '{db_path}' (Attempt {attempt + 1}): {e}",
+                    exc_info=True,
+                )
             last_error = e
             # Continue to retry logic below
         except Exception as e:
-             # Catch any other unexpected errors
-             logger.critical(f"Unexpected error during delete attempt {attempt + 1} for '{db_path}': {e}", exc_info=True)
-             last_error = e
-             # Continue to retry logic below
+            # Catch any other unexpected errors
+            logger.critical(
+                f"Unexpected error during delete attempt {attempt + 1} for '{db_path}': {e}",
+                exc_info=True,
+            )
+            last_error = e
+            # Continue to retry logic below
 
         # --- Retry Logic ---
         if attempt < max_attempts - 1:
-            wait_time = 2 ** attempt # Exponential backoff
+            wait_time = 2**attempt  # Exponential backoff
             logger.info(f"Waiting {wait_time} seconds before next delete attempt...")
             time.sleep(wait_time)
         else:
             # Last attempt failed
-            logger.critical(f"Failed to delete database '{db_path}' after {max_attempts} attempts. Last error: {last_error or 'Unknown Error'}")
+            logger.critical(
+                f"Failed to delete database '{db_path}' after {max_attempts} attempts. Last error: {last_error or 'Unknown Error'}"
+            )
             # Re-raise the last caught exception to signal failure to caller
             if last_error:
-                 raise last_error
+                raise last_error
             else:
-                 raise OSError(f"Failed to delete {db_path} after max attempts.")
+                raise OSError(f"Failed to delete {db_path} after max attempts.")
 
     # Should not be reached if max_attempts > 0
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")
+
+
 # End of delete_database
 
 # ----------------------------------------------------------------------
 # Backup and Recovery
 #################################################################################
 
+
 def backup_database(
-    session_manager=None, # Keep session_manager arg for potential future use or remove if definitely unused
+    session_manager=None,  # Keep session_manager arg for potential future use or remove if definitely unused
 ):
     """Backs up the database file specified in config_instance to the 'Data' folder."""
     db_path = config_instance.DATABASE_FILE  # This is now a Path object
-    backup_dir = config_instance.DATA_DIR # Use DATA_DIR from config, also a Path object
+    backup_dir = (
+        config_instance.DATA_DIR
+    )  # Use DATA_DIR from config, also a Path object
     # backup_dir = Path("Data") # Or define directly if DATA_DIR isn't in config_instance
 
     # Ensure backup directory exists (makedirs works with Path)
@@ -1251,18 +1609,24 @@ def backup_database(
         if db_path.exists():
             # shutil.copy2 works with Path objects
             shutil.copy2(db_path, backup_path)
-            logger.info(f"Backed up to '{backup_path}' OK.\n") # Use INFO for success
+            logger.info(f"Backed up to '{backup_path}' OK.\n")  # Use INFO for success
         else:
             logger.warning(f"Database file '{db_path}' not found. No backup created.\n")
     except Exception as e:
-        logger.error(f"Error backing up database from '{db_path}' to '{backup_path}': {e}\n", exc_info=True)
+        logger.error(
+            f"Error backing up database from '{db_path}' to '{backup_path}': {e}\n",
+            exc_info=True,
+        )
         # Re-raise the exception if backup failure should halt execution
         # raise
+
+
 # End of backup_database
 
 # ----------------------------------------------------------------------
 # Standalone execution (for testing database setup)
 #################################################################################
+
 
 def main():
     """
@@ -1276,24 +1640,24 @@ def main():
     # --- Setup Logging (Assume logger is already configured if imported) ---
     # setup_logging might be called elsewhere, ensure logger exists
     global logger
-    if 'logger' not in globals():
-         # Fallback basic config if run truly standalone without main.py setup
-         logging.basicConfig(level=logging.DEBUG)
-         logger = logging.getLogger(__name__) # Use module name logger
+    if "logger" not in globals():
+        # Fallback basic config if run truly standalone without main.py setup
+        logging.basicConfig(level=logging.DEBUG)
+        logger = logging.getLogger(__name__)  # Use module name logger
 
     print("")
     logger.info("Starting database.py in standalone DEBUG mode.")
 
-    db_path_obj = config_instance.DATABASE_FILE # Get Path object
-    db_path_str = str(db_path_obj) # Convert to string for SQLAlchemy create_engine URI
+    db_path_obj = config_instance.DATABASE_FILE  # Get Path object
+    db_path_str = str(db_path_obj)  # Convert to string for SQLAlchemy create_engine URI
 
     logger.info(f"Using database file: {db_path_str}")
-    engine = None # Initialize engine to None
-    conn_pool = None # Initialize conn_pool to None
+    engine = None  # Initialize engine to None
+    conn_pool = None  # Initialize conn_pool to None
 
     try:
         # Use string path for the connection URI
-        engine = create_engine(f'sqlite:///{db_path_str}', echo=False)
+        engine = create_engine(f"sqlite:///{db_path_str}", echo=False)
 
         # --- Add PRAGMA foreign_keys=ON listener ---
         @event.listens_for(engine, "connect")
@@ -1302,10 +1666,11 @@ def main():
             try:
                 cursor.execute("PRAGMA foreign_keys=ON")
             finally:
-                 cursor.close()
+                cursor.close()
+
         # --- End Listener ---
 
-        Base.metadata.create_all(engine) # Create tables if they don't exist
+        Base.metadata.create_all(engine)  # Create tables if they don't exist
         logger.info(f"Database tables created/verified in: {db_path_str}")
 
         # --- Test Connection Pool ---
@@ -1317,29 +1682,31 @@ def main():
             logger.info("Connection pool session obtained successfully.")
             # Perform a simple query to test
             try:
-                 result = session.query(func.count(Person.id)).scalar()
-                 logger.info(f"Test query successful (found {result} people).")
+                result = session.query(func.count(Person.id)).scalar()
+                logger.info(f"Test query successful (found {result} people).")
             except Exception as test_e:
-                 logger.error(f"Test query failed: {test_e}", exc_info=True)
+                logger.error(f"Test query failed: {test_e}", exc_info=True)
             finally:
-                 conn_pool.return_session(session)
+                conn_pool.return_session(session)
         else:
             logger.error("Failed to obtain connection pool session.")
 
     except SQLAlchemyError as db_e:
-         logger.critical(f"Database setup/connection error: {db_e}", exc_info=True)
+        logger.critical(f"Database setup/connection error: {db_e}", exc_info=True)
     except Exception as e:
-         logger.critical(f"Unexpected error in database.py main: {e}", exc_info=True)
+        logger.critical(f"Unexpected error in database.py main: {e}", exc_info=True)
     finally:
         # Cleanly close pool and dispose engine if they exist
-        if conn_pool: # Check if conn_pool was successfully created
-             conn_pool.clse_all_sess()
+        if conn_pool:  # Check if conn_pool was successfully created
+            conn_pool.clse_all_sess()
         # Check if engine was successfully created before disposing
-        elif engine: # If pool failed but engine exists
-             engine.dispose()
-             logger.debug("SQLAlchemy engine disposed (pool cleanup skipped/failed).")
+        elif engine:  # If pool failed but engine exists
+            engine.dispose()
+            logger.debug("SQLAlchemy engine disposed (pool cleanup skipped/failed).")
 
         logger.info("Database setup and test completed.")
+
+
 # End of main
 
 if __name__ == "__main__":

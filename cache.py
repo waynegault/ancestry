@@ -14,13 +14,13 @@ import logging
 from functools import wraps
 from typing import Callable, Any
 from diskcache import Cache
-from config import config_instance 
+from config import config_instance
 
 # Initialize logging
 logger = logging.getLogger("logger")
 
 # Define the cache directory
-CACHE_DIR = config_instance.CACHE_DIR 
+CACHE_DIR = config_instance.CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Initialize the diskcache
