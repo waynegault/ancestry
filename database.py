@@ -24,7 +24,7 @@ from sqlalchemy import (
     event,
     Boolean,
     UniqueConstraint,
-    Enum,
+    Enum as SQLEnum, 
     Index,
     func,
     Float,
@@ -62,11 +62,11 @@ class InboxStatus(Base):
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String, nullable=True)
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
-    my_role = Column(Enum(RoleType), nullable=False, name="my_role")
+    my_role = Column(SQLEnum(RoleType), nullable=False, name="my_role") # Use SQLEnum here
     last_message = Column(String, nullable=True)
     last_message_timestamp = Column(
         DateTime, nullable=True, index=True
-    )  # Add index=True
+    ) # Add index=True
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     last_updated = Column(
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
@@ -246,17 +246,9 @@ def db_transn(session: Session):
 
 def create_person(session: Session, person_data: Dict[str, Any]) -> int:
     """
-    Creates a new person record in the database.
-    Checks for existing profile_id before insertion to prevent UNIQUE constraint errors.
-    Assumes UUID uniqueness is checked by the caller or DB constraint.
-
-    Args:
-        session: The SQLAlchemy Session.
-        person_data: A dictionary containing the person's data. Must include 'uuid', 'username'.
-                    Should also include 'profile_id' (can be None).
-
-    Returns:
-        The ID of the newly created person, or 0 if creation failed.
+    V1.1 REVISED: Creates a new person record in the database.
+    - Checks for existing profile_id (case-insensitive) before insertion.
+    - Ensures profile_id and uuid are stored uppercase.
     """
     required_keys = ("username", "uuid")
     if not all(
@@ -267,34 +259,37 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         )
         return 0
 
-    profile_id = person_data.get("profile_id")  # Can be None
+    profile_id_raw = person_data.get("profile_id") # Can be None
+    # --- Convert to uppercase EARLY for check and insert ---
+    profile_id_upper = profile_id_raw.upper() if profile_id_raw else None
+    uuid_upper = str(person_data["uuid"]).upper() if person_data.get("uuid") else None
+    # --- End Uppercase Conversion ---
+
     username = person_data["username"]
-    uuid = person_data["uuid"]
-    log_ref = f"UUID={uuid} / ProfileID={profile_id or 'NULL'} / User='{username}'"
+    log_ref = f"UUID={uuid_upper or 'NULL'} / ProfileID={profile_id_upper or 'NULL'} / User='{username}'"
 
     try:
         # --- Explicit Check for Profile ID Conflict BEFORE insert ---
-        if profile_id:
+        if profile_id_upper: # Check using the uppercased version
             existing_by_profile = (
                 session.query(Person)
-                .filter(Person.profile_id == profile_id.upper())
+                .filter(Person.profile_id == profile_id_upper)
                 .first()
             )
             if existing_by_profile:
-                # Log the conflict and prevent insertion attempt
                 logger.error(
-                    f"create_person FAILED for {log_ref}: Profile ID '{profile_id}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id."
+                    f"create_person FAILED for {log_ref}: Profile ID '{profile_id_upper}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id."
                 )
-                return 0  # Fail creation due to profile_id uniqueness requirement
+                return 0 # Fail creation due to profile_id uniqueness requirement
         # --- End Profile ID Check ---
 
         # Proceed with creation if profile_id is NULL or not conflicting
         logger.debug(f"Proceeding with Person creation for {log_ref}.")
         new_person = Person(
-            uuid=uuid.upper(),
-            profile_id=profile_id.upper() if profile_id else None,
+            uuid=uuid_upper, # Store uppercase UUID
+            profile_id=profile_id_upper, # Store uppercase Profile ID or None
             username=username,
-            administrator_profile_id=person_data.get("administrator_profile_id"),
+            administrator_profile_id=(person_data.get("administrator_profile_id").upper() if person_data.get("administrator_profile_id") else None), # Uppercase Admin ID
             administrator_username=person_data.get("administrator_username"),
             message_link=person_data.get("message_link"),
             in_my_tree=bool(person_data.get("in_my_tree", False)),
@@ -303,13 +298,11 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
             gender=person_data.get("gender"),
             birth_year=person_data.get("birth_year"),
             contactable=person_data.get("contactable", True),
-            last_logged_in=person_data.get(
-                "last_logged_in"
-            ),  # Store as naive UTC from details_fetched
+            last_logged_in=person_data.get("last_logged_in"),
         )
 
         session.add(new_person)
-        session.flush()  # Flush to get the ID and check constraints (like UUID UNIQUE)
+        session.flush() # Flush to get the ID and check constraints (like UUID UNIQUE)
 
         if new_person.id is None:
             logger.error(
@@ -322,7 +315,6 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         return int(new_person.id)
 
     except IntegrityError as ie:
-        # Handles potential unique constraint violations (primarily UUID now)
         session.rollback()
         logger.error(
             f"IntegrityError creating person {log_ref}: {ie}. UUID likely exists.",
@@ -332,9 +324,9 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
     except SQLAlchemyError as e:
         logger.error(f"Database error creating person {log_ref}: {e}", exc_info=True)
         if session.is_active:
-            session.rollback()  # Ensure rollback on general DB error
+            session.rollback()
         return 0
-    except Exception as e:  # Catch any other unexpected error
+    except Exception as e:
         logger.critical(
             f"Unexpected error in create_person for {log_ref}: {e}", exc_info=True
         )

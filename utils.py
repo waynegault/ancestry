@@ -28,6 +28,7 @@ from functools import wraps, lru_cache
 import contextlib
 from datetime import datetime, timezone # Added timezone back for naive conversion
 from typing import Optional, Tuple, List, Dict, Any, Generator
+from pathlib import Path
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -50,12 +51,11 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from requests import Response, Request # Removed RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from sqlalchemy import create_engine, event, text, pool as sqlalchemy_pool
 from requests.exceptions import RequestException, HTTPError
 from my_selectors import *
 from config import config_instance, selenium_config
-# --- REMOVED 'ConnectionPool' import ---
 from database import Base, MessageType
-from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from logging_config import setup_logging, logger
@@ -324,9 +324,7 @@ def retry(MAX_RETRIES=None, BACKOFF_FACTOR=None, MAX_DELAY=None):
             # Return None or raise a custom exception if preferred after all retries.
             logger.error(f"Function '{func.__name__}' failed after all retries.")
             return None # Or raise MaxRetriesExceededError("...")
-
         return wrapper
-
     return decorator
 # end retry
 
@@ -526,7 +524,6 @@ class DynamicRateLimiter:
         self.last_throttled = False
         # Log initial values
         # logger.debug(f"RateLimiter init: Initial={self.initial_delay:.2f}, Max={self.MAX_DELAY:.2f}, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}")
-
     # end of __int__
 
     def wait(self):
@@ -537,7 +534,6 @@ class DynamicRateLimiter:
         effective_delay = max(0.01, effective_delay)
         time.sleep(effective_delay)
         return effective_delay
-
     # End of wait
 
     def reset_delay(self):
@@ -545,7 +541,6 @@ class DynamicRateLimiter:
         if self.current_delay != self.initial_delay: # Only log if changed
              self.current_delay = self.initial_delay
              logger.info(f"Rate limiter delay reset to initial value: {self.initial_delay:.2f}s")
-
     # End of reset_delay
 
     def decrease_delay(self):
@@ -561,7 +556,6 @@ class DynamicRateLimiter:
                     f"No rate limit detected. Decreased delay to {self.current_delay:.2f} seconds."
                 )
         self.last_throttled = False # Reset flag after decrease attempt
-
     # End of decrease_delay
 
     def increase_delay(self):
@@ -576,13 +570,11 @@ class DynamicRateLimiter:
             )
             self.last_throttled = True
         # else: logger.debug("Already throttled, delay remains high.")
-
     # End of increase_delay
 
     def is_throttled(self):
         """Returns True if the rate limiter is currently in a throttled state."""
         return self.last_throttled
-
     # End of is_throttled
 # end of class DynamicRateLimiter
 
@@ -602,7 +594,6 @@ class SessionManager:
         self.ancestry_username: str = config_instance.ANCESTRY_USERNAME # Ensure string type
         self.ancestry_password: str = config_instance.ANCESTRY_PASSWORD # Ensure string type
         self.debug_port: int = self.selenium_config.DEBUG_PORT
-        # Ensure path object or None
         self.chrome_user_data_dir: Optional[Path] = self.selenium_config.CHROME_USER_DATA_DIR
         self.profile_dir: str = self.selenium_config.PROFILE_DIR # Ensure string type
         self.chrome_driver_path: Optional[Path] = self.selenium_config.CHROME_DRIVER_PATH
@@ -612,9 +603,10 @@ class SessionManager:
         self.headless_mode: bool = self.selenium_config.HEADLESS_MODE
         self.session_active: bool = False
         self.cache_dir: Path = config_instance.CACHE_DIR # Ensure Path type
-        self.db_path: str = str(config_instance.DATABASE_FILE.resolve())
-        self.engine = None # Type will be Engine, assigned later
-        self.Session = None # Type will be sessionmaker, assigned later
+        self.engine = None
+        self.Session = None
+        self._db_init_attempted = False
+        logger.debug(f"SessionManager instance created: ID={id(self)}")
         self.last_js_error_check: datetime = datetime.now()
         self.dynamic_rate_limiter: DynamicRateLimiter = DynamicRateLimiter()
         self.csrf_token: Optional[str] = None
@@ -624,21 +616,23 @@ class SessionManager:
         self.my_tree_id: Optional[str] = None
         self.tree_owner_name: Optional[str] = None
         self.session_start_time: Optional[float] = None
-        # --- Configure requests.Session ---
+        self._profile_id_logged = False
+        self._uuid_logged = False
+        self._tree_id_logged = False
+        self._owner_logged = False
         self._requests_session = requests.Session()
         adapter = HTTPAdapter(
-            pool_connections=20, # Keep increased pool size
+            pool_connections=20,
             pool_maxsize=50,
             max_retries=Retry(
                 total=3,
                 backoff_factor=0.5,
-                status_forcelist=[429, 500, 502, 503, 504], # Add 429 for retry
+                status_forcelist=[429, 500, 502, 503, 504],
             ),
         )
         self._requests_session.mount("http://", adapter)
         self._requests_session.mount("https://", adapter)
         logger.debug("Configured requests.Session with HTTPAdapter.")
-        # --- Instantiate Cache ---
         self.cache = self.Cache()
     # end of __init__
 
@@ -818,62 +812,111 @@ class SessionManager:
 
     def _initialize_db_engine_and_session(self):
         """Initializes the SQLAlchemy engine and session factory with pooling."""
-        try:
-            logger.debug(f"Initializing SQLAlchemy Engine for: {self.db_path}")
-            pool_size = config_instance.DB_POOL_SIZE # e.g., 10
-            # max_overflow relates to how many extra connections can be temporarily created
-            # beyond pool_size if the pool is busy. 0 means strict limit.
-            # A small overflow might be okay, e.g., 5 or 10. Test what works.
-            # Let's start with a small overflow.
-            max_overflow = 10 # Allow up to 10 extra connections temporarily
-            pool_timeout = 30 # Seconds to wait for a connection before timing out
+        # Log which SessionManager instance is doing the init
+        logger.debug(f"SessionManager ID={id(self)} attempting DB initialization...")
+        self._db_init_attempted = True # Mark that we tried
 
-            self.engine = create_engine(
-                f"sqlite:///{self.db_path}",
-                echo=False, # Set to True for SQL logging if needed
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=pool_timeout,
-                # SQLite specific: Check same thread False needed for multithreading
-                connect_args={"check_same_thread": False}
-            )
-            logger.debug(f"SQLAlchemy engine created with pool_size={pool_size}, max_overflow={max_overflow}")
-
-            # --- Add PRAGMA foreign_keys=ON listener ---
-            @event.listens_for(self.engine, "connect")
-            def enable_foreign_keys(dbapi_connection, connection_record):
-                # logger.debug("Setting PRAGMA foreign_keys=ON for new connection.") # Can be noisy
-                cursor = dbapi_connection.cursor()
-                try:
-                    cursor.execute("PRAGMA foreign_keys=ON")
-                except Exception as pragma_e:
-                    logger.error(f"Failed PRAGMA foreign_keys=ON: {pragma_e}")
-                finally:
-                    cursor.close()
-
-            # Create a configured "Session" class
-            self.Session = sessionmaker(
-                bind=self.engine,
-                expire_on_commit=False, # Keep this False
-            )
-            logger.debug("SQLAlchemy Session factory created.")
-
-            # Optional: Test connection during init
-            # try:
-            #     with self.engine.connect() as connection:
-            #         logger.debug("Engine connection test successful.")
-            # except Exception as conn_test_e:
-            #     logger.error(f"Engine connection test failed: {conn_test_e}")
-            #     # Handle failure?
-
-        except Exception as e:
-            logger.critical(f"Failed to initialize SQLAlchemy engine/session factory: {e}", exc_info=True)
+        # --- If an engine already exists, dispose it first ---
+        # This handles potential re-initialization scenarios more cleanly
+        if self.engine:
+            logger.debug(f"SessionManager ID={id(self)} found existing engine (ID={id(self.engine)}). Disposing before re-initializing.")
+            try:
+                self.engine.dispose()
+            except Exception as dispose_e:
+                 logger.error(f"Error disposing existing engine: {dispose_e}")
             self.engine = None
             self.Session = None
-            # Handle critical failure (e.g., raise exception, exit)
-    # end _initialize_db_engine_and_session
+        # --- End Dispose ---
 
-    # --- REMOVED _initialize_db_pool method ---
+        try:
+            logger.debug(f"Initializing SQLAlchemy Engine for: {self.db_path}")
+
+            # === POOL SIZE LOGIC V4 (kept from previous attempt) ===
+            pool_size_env_str = os.getenv('DB_POOL_SIZE')
+            pool_size_config = getattr(config_instance, 'DB_POOL_SIZE', None)
+            logger.debug(f"Pool Size Check: Env='{pool_size_env_str}', Config='{pool_size_config}'")
+
+            pool_size_str_to_parse = None
+            if pool_size_env_str is not None:
+                pool_size_str_to_parse = pool_size_env_str
+                logger.debug(f"Pool Size Priority: Using Env value '{pool_size_str_to_parse}' for parsing.")
+            elif pool_size_config is not None:
+                try:
+                     pool_size_str_to_parse = str(int(pool_size_config))
+                     logger.debug(f"Pool Size Priority: Using Config value '{pool_size_str_to_parse}' for parsing.")
+                except (ValueError, TypeError):
+                     logger.warning(f"Pool Size Priority: Config value ('{pool_size_config}') invalid, falling back.")
+                     pool_size_str_to_parse = '50'
+            else:
+                 logger.debug("Pool Size Priority: Neither Env nor Config found, using fallback '50'.")
+                 pool_size_str_to_parse = '50'
+
+            pool_size = 20
+            try:
+                parsed_val = int(pool_size_str_to_parse)
+                if parsed_val <= 0:
+                    logger.warning(f"DB_POOL_SIZE value '{parsed_val}' invalid (<=0). Using default {pool_size}.")
+                elif parsed_val == 1:
+                     logger.warning(f"DB_POOL_SIZE value '1' detected. Overriding to minimum default {pool_size} for safety.")
+                else:
+                    pool_size = min(parsed_val, 100)
+                    logger.debug(f"Successfully parsed pool size: {pool_size}")
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse DB_POOL_SIZE value '{pool_size_str_to_parse}' as integer. Using default {pool_size}.")
+
+            max_overflow = max(5, int(pool_size * 0.2))
+            pool_timeout = 30
+            pool_class = sqlalchemy_pool.QueuePool
+            # === END POOL SIZE LOGIC ===
+
+            # --- ABSOLUTE FINAL CHECK LOGGING ---
+            final_params_log = f"FINAL PARAMS for create_engine: pool_size={pool_size}, max_overflow={max_overflow}, pool_timeout={pool_timeout}"
+            logger.debug(f"*** SessionManager ID={id(self)} {final_params_log} ***") # Include SM ID
+            # --- END FINAL CHECK ---
+
+            # Create Engine
+            self.engine = create_engine(
+                f"sqlite:///{self.db_path}", echo=False,
+                pool_size=pool_size, max_overflow=max_overflow,
+                pool_timeout=pool_timeout, poolclass=pool_class,
+                connect_args={"check_same_thread": False}
+            )
+            # Log the new engine ID
+            logger.debug(f"SessionManager ID={id(self)} created NEW engine: ID={id(self.engine)}")
+
+            try:
+                actual_pool_size = getattr(self.engine.pool, '_size', 'N/A')
+                logger.debug(f"Engine ID={id(self.engine)} pool size reported (internal): {actual_pool_size}")
+            except Exception: logger.debug("Could not retrieve detailed engine pool status.")
+
+            # --- PRAGMA listener ---
+            @event.listens_for(self.engine, "connect")
+            def enable_foreign_keys(dbapi_connection, connection_record):
+                 cursor = dbapi_connection.cursor()
+                 try:
+                      cursor.execute("PRAGMA journal_mode=WAL;")
+                      cursor.execute("PRAGMA foreign_keys=ON;")
+                 except Exception as pragma_e: logger.error(f"Failed setting PRAGMA: {pragma_e}")
+                 finally: cursor.close()
+
+            # --- Session factory ---
+            self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
+            logger.debug(f"SessionManager ID={id(self)} created Session factory for Engine ID={id(self.engine)}")
+
+            # --- Create tables ---
+            try: Base.metadata.create_all(self.engine); logger.debug("DB tables checked/created.")
+            except Exception as table_create_e: logger.error(f"Error creating DB tables: {table_create_e}", exc_info=True); raise table_create_e
+
+        except Exception as e:
+            logger.critical(f"SessionManager ID={id(self)} FAILED to initialize SQLAlchemy: {e}", exc_info=True)
+            # Ensure state is clean on failure
+            if self.engine:
+                try: self.engine.dispose()
+                except Exception: pass
+            self.engine = None
+            self.Session = None
+            raise e # Re-raise
+    #  end _initialize_db_engine_and_session
 
     def _check_and_handle_url(self) -> bool:
         """Checks current URL and navigates to base URL if necessary."""
@@ -922,42 +965,72 @@ class SessionManager:
     # end _check_and_handle_url
 
     def _retrieve_identifiers(self) -> bool:
-        """Helper to retrieve profile ID, UUID, and Tree ID."""
+        """
+        Helper to retrieve profile ID, UUID, and Tree ID.
+        Logs identifiers at INFO level only the first time they are retrieved.
+        """
         all_ok = True
-        self.my_profile_id = self.get_my_profileId()
-        if not self.my_profile_id:
-            logger.error("Failed to retrieve profile ID (ucdmid).")
-            all_ok = False
-        else:
-             logger.info(f"My profile id: {self.my_profile_id}")
+        # Profile ID
+        if not self.my_profile_id: # Only fetch if not already set
+            self.my_profile_id = self.get_my_profileId()
+            if not self.my_profile_id:
+                logger.error("Failed to retrieve profile ID (ucdmid).")
+                all_ok = False
+            elif not self._profile_id_logged: # Log only first time
+                 logger.info(f"My profile id: {self.my_profile_id}")
+                 self._profile_id_logged = True
+        elif not self._profile_id_logged: # Log if already set but not logged
+            logger.info(f"My profile id: {self.my_profile_id}")
+            self._profile_id_logged = True
 
-        self.my_uuid = self.get_my_uuid()
+        # UUID
         if not self.my_uuid:
-            logger.error("Failed to retrieve UUID (testId).")
-            all_ok = False
-        else:
-             logger.info(f"My uuid: {self.my_uuid}")
+            self.my_uuid = self.get_my_uuid()
+            if not self.my_uuid:
+                logger.error("Failed to retrieve UUID (testId).")
+                all_ok = False
+            elif not self._uuid_logged:
+                 logger.info(f"My uuid: {self.my_uuid}")
+                 self._uuid_logged = True
+        elif not self._uuid_logged:
+            logger.info(f"My uuid: {self.my_uuid}")
+            self._uuid_logged = True
 
-        self.my_tree_id = self.get_my_tree_id()
-        if config_instance.TREE_NAME and not self.my_tree_id:
-            logger.error(f"TREE_NAME '{config_instance.TREE_NAME}' configured, but failed to get corresponding tree ID.")
-            all_ok = False # Treat as error only if TREE_NAME is set
-        elif self.my_tree_id:
+        # Tree ID
+        if config_instance.TREE_NAME and not self.my_tree_id: # Only fetch if needed and not set
+            self.my_tree_id = self.get_my_tree_id()
+            if not self.my_tree_id:
+                logger.error(f"TREE_NAME '{config_instance.TREE_NAME}' configured, but failed to get corresponding tree ID.")
+                all_ok = False # Treat as error only if TREE_NAME is set
+            elif not self._tree_id_logged:
+                logger.info(f"My tree id: {self.my_tree_id}")
+                self._tree_id_logged = True
+        elif self.my_tree_id and not self._tree_id_logged: # Log if already set but not logged
             logger.info(f"My tree id: {self.my_tree_id}")
-        else:
-            logger.debug("No TREE_NAME configured or Tree ID not found.")
+            self._tree_id_logged = True
+        elif not config_instance.TREE_NAME:
+             logger.debug("No TREE_NAME configured, skipping tree ID retrieval/logging.")
+
+
         return all_ok
     # end _retrieve_identifiers
 
     def _retrieve_tree_owner(self):
-         """Helper to retrieve tree owner name."""
-         if self.my_tree_id:
+         """
+         Helper to retrieve tree owner name.
+         Logs owner name at INFO level only the first time it's retrieved.
+         """
+         if self.my_tree_id and not self.tree_owner_name: # Fetch only if tree ID exists and owner not yet known
               self.tree_owner_name = self.get_tree_owner(self.my_tree_id)
-              if self.tree_owner_name:
+              if self.tree_owner_name and not self._owner_logged:
                    logger.info(f"Tree Owner Name: {self.tree_owner_name}\n")
-              else:
+                   self._owner_logged = True
+              elif not self.tree_owner_name:
                    logger.warning("Failed to retrieve tree owner name.\n")
-         else:
+         elif self.tree_owner_name and not self._owner_logged: # Log if already known but not logged
+              logger.info(f"Tree Owner Name: {self.tree_owner_name}\n")
+              self._owner_logged = True
+         elif not self.my_tree_id:
               logger.debug("Skipping tree owner retrieval (no tree ID).\n")
     # end _retrieve_tree_owner
 
@@ -1144,20 +1217,40 @@ class SessionManager:
     # end return_session
 
     def get_db_conn(self) -> Optional[Session]:
-        """Gets a session from the SQLAlchemy session factory."""
-        if not self.Session:
-            logger.error("DB Session factory not initialized. Cannot get connection.")
-            # Attempt re-initialization?
-            self._initialize_db_engine_and_session()
-            if not self.Session: return None # Still failed
+        """Gets a session from the SQLAlchemy session factory. Initializes if needed."""
+        # Log which SM instance and engine is involved
+        engine_id = id(self.engine) if self.engine else 'None'
+        logger.debug(f"SessionManager ID={id(self)} get_db_conn called. Current Engine ID: {engine_id}")
 
+        # --- Check if initialization is needed ---
+        # Initialize if never attempted OR if engine/Session became None after previous attempt
+        if not self._db_init_attempted or not self.engine or not self.Session:
+            logger.debug(f"SessionManager ID={id(self)}: Engine/Session factory not ready. Triggering initialization...")
+            try:
+                self._initialize_db_engine_and_session()
+                # Check again after initialization attempt
+                if not self.Session:
+                    logger.error(f"SessionManager ID={id(self)}: Initialization failed, cannot get DB connection.")
+                    return None
+            except Exception as init_e:
+                 logger.error(f"SessionManager ID={id(self)}: Exception during lazy initialization in get_db_conn: {init_e}")
+                 return None
+
+        # --- Attempt to get session from factory ---
         try:
-            # Creating a session here draws one from the engine's pool
+            # self.Session should now be valid if initialization succeeded
             session = self.Session()
-            # logger.debug(f"Obtained DB session {id(session)} via session factory.") # Less verbose
+            logger.debug(f"SessionManager ID={id(self)} obtained DB session {id(session)} from Engine ID={id(self.engine)}")
             return session
         except Exception as e:
-            logger.error(f"Error getting DB session from factory: {e}", exc_info=True)
+            logger.error(f"SessionManager ID={id(self)} Error getting DB session from factory: {e}", exc_info=True)
+            # If getting session fails, maybe the engine died? Clear it to force re-init next time.
+            if self.engine:
+                try: self.engine.dispose()
+                except Exception: pass
+            self.engine = None
+            self.Session = None
+            self._db_init_attempted = False # Allow re-init attempt
             return None
     # End of get_db_conn
 
@@ -1193,18 +1286,20 @@ class SessionManager:
 
     def cls_db_conn(self):
         """Disposes the SQLAlchemy engine, closing all pooled connections."""
+        engine_id = id(self.engine) if self.engine else 'None'
+        logger.debug(f"SessionManager ID={id(self)} cls_db_conn called. Disposing Engine ID: {engine_id}")
         if self.engine:
             try:
-                logger.debug("Disposing SQLAlchemy engine (closes pooled connections)...")
                 self.engine.dispose()
-                logger.debug("SQLAlchemy engine disposed.")
+                logger.debug(f"Engine ID={engine_id} disposed.")
             except Exception as e:
-                logger.error(f"Error disposing SQLAlchemy engine: {e}", exc_info=True)
+                logger.error(f"Error disposing SQLAlchemy engine ID={engine_id}: {e}", exc_info=True)
             finally:
-                self.engine = None
-                self.Session = None # Reset factory too
+                self.engine = None # Set engine to None
+                self.Session = None # Set Session factory to None
+                self._db_init_attempted = False # Reset flag
         else:
-            logger.debug("No active SQLAlchemy engine to dispose.")
+            logger.debug(f"SessionManager ID={id(self)}: No active SQLAlchemy engine to dispose.")
     # End of cls_db_conn
 
     @retry_api() # Add retry decorator

@@ -1,0 +1,8 @@
+17:25:33 INF [logging_ <module> 249 ] --- Standalone Test Start (INFO level) ---
+17:25:33 INF [logging_ <module> 251 ] This is an INFO test log (should appear in console and file).
+17:25:33 WAR [logging_ <module> 252 ] This is a WARNING test log (should appear in console and file).
+17:25:33 INF [logging_ <module> 259 ] --- Logging After Toggle to DEBUG ---
+17:25:33 DEB [logging_ <module> 260 ] This is a DEBUG test log (should NOW appear in console and file).
+17:25:33 INF [logging_ <module> 263 ] This is another INFO test log.
+17:25:33 INF [logging_ <module> 268 ] --- Logging After Toggle back to INFO ---
+17:25:33 INF [logging_ <module> 270 ] This is a final INFO test log.

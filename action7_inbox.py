@@ -11,12 +11,15 @@ import os
 import random
 import time
 import traceback
+import sys
+import tqdm
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 from urllib.parse import urljoin
 
 # Third-party imports
 import requests
+from tqdm.contrib.logging import logging_redirect_tqdm
 from sqlalchemy import (
     Boolean,
     Column,
@@ -60,6 +63,7 @@ class InboxProcessor:
         self.dynamic_rate_limiter = DynamicRateLimiter()
         self.max_inbox_limit = config_instance.MAX_INBOX
         self.batch_size = config_instance.BATCH_SIZE
+        self.progress_bar = None # Initialize progress bar attribute
     # end of __init__
 
     @retry_api()
@@ -165,6 +169,7 @@ class InboxProcessor:
             return None, None  # Indicate failure
     # end of _get_all_conversations_api
 
+
     def _extract_conversation_info(
         self, conv_data: Dict[str, Any], my_profile_id: str
     ) -> Optional[Dict[str, Any]]:
@@ -199,7 +204,6 @@ class InboxProcessor:
         if isinstance(last_message_timestamp_unix, (int, float)):
             try:
                 # Ensure timestamp is within valid range for utcfromtimestamp
-                # Check against common limits (e.g., year 1970 to ~3000)
                 min_ts = 0
                 max_ts = 32503680000  # Approx year 3000
                 if min_ts <= last_message_timestamp_unix <= max_ts:
@@ -283,22 +287,19 @@ class InboxProcessor:
 
     def search_inbox(self) -> bool:
         """
-        Searches inbox using cursor pagination and batch processing via API.
-        Defers DB lookups until after checks. Stops processing immediately when
-        the comparator message is found or the MAX_INBOX limit (based on items
-        checked) is reached. Provides clearer final summary logging.
+        V1.1 REVISED: Searches inbox using cursor pagination and batch processing via API.
+        - Uses logging_redirect_tqdm to prevent log messages from breaking the progress bar.
         """
         # --- Initialize counters ---
         known_conversation_found = False
         new_records_saved = 0
         updated_records_saved = 0
-        total_processed_api_items = 0  # How many items the API returned in total
-        items_processed_before_stop = 0  # How many items were checked before stopping
+        total_processed_api_items = 0
+        items_processed_before_stop = 0
         stop_reason = ""
         # --- API/Loop variables ---
         next_cursor: Optional[str] = None
         current_batch_num = 0
-        # Removed: total_batches, total_count, is_first_batch
 
         # --- Pre-checks ---
         if not self.session_manager:
@@ -315,274 +316,183 @@ class InboxProcessor:
         try:
             with self.session_manager.get_db_conn_context() as db_conn_comp:
                 if db_conn_comp:
-                    # _create_comparator now returns profile_id as well
                     most_recent_message = self._create_comparator(db_conn_comp)
                 else:
-                    logger.error(
-                        "Failed to get DB connection for comparator. Aborting."
-                    )
+                    logger.error("Failed to get DB connection for comparator. Aborting.")
                     return False
         except Exception as comp_e:
-            logger.error(
-                f"Error getting DB connection or creating comparator: {comp_e}",
-                exc_info=True,
-            )
+            logger.error(f"Error getting DB connection or creating comparator: {comp_e}", exc_info=True)
             return False
 
-        # --- Main DB Session and Loop ---
+        # --- Progress Bar Initialization (BEFORE context manager) ---
+        total_for_pbar = self.max_inbox_limit if self.max_inbox_limit > 0 else None
+        pbar_desc = "Searching Inbox"
+        if total_for_pbar:
+             pbar_desc = f"Searching Inbox (Limit: {total_for_pbar})"
+        self.progress_bar = tqdm.tqdm(
+             total=total_for_pbar,
+             desc=pbar_desc,
+             unit=" item",
+             ncols=100,
+             file=sys.stdout,
+             ascii=True
+        )
+        self.progress_bar.refresh() # Force initial display
+
+        # --- Main DB Session and Loop (Wrapped in context manager) ---
         try:
-            with self.session_manager.get_db_conn_context() as session:
-                if not session:
-                    logger.error(
-                        "Failed to get DB connection for search loop. Aborting."
-                    )
-                    return False
-
-                while True:  # Outer loop for fetching batches
-                    # --- Check termination conditions BEFORE fetching next batch ---
-                    if known_conversation_found:
-                        logger.debug(
-                            f"Terminating inbox search loop PRE-FETCH. Reason: {stop_reason}"
-                        )
-                        break  # Exit outer while loop
-
-                    # --- Fetch API Batch ---
-                    all_conversations_batch, next_cursor_from_api = (
-                        self._get_all_conversations_api(
-                            self.session_manager, cursor=next_cursor
-                        )
-                    )
-
-                    if all_conversations_batch is None:
-                        logger.error(
-                            "API call failed (_get_all_conversations_api returned None). Aborting inbox search."
-                        )
+            # Wrap the DB context and the loop with logging_redirect_tqdm
+            with logging_redirect_tqdm():
+                with self.session_manager.get_db_conn_context() as session:
+                    if not session:
+                        # Log error outside the redirect context if possible, or use print
+                        print("ERROR: Failed to get DB connection for search loop. Aborting.", file=sys.stderr)
+                        # Can't use logger here reliably as context might not be fully active
+                        if self.progress_bar: self.progress_bar.close()
                         return False
 
-                    batch_api_item_count = len(all_conversations_batch)
-                    total_processed_api_items += batch_api_item_count
-                    wait_duration = self.dynamic_rate_limiter.wait()
-                    logger.debug(f"Dynamic rate limit wait: {wait_duration:.2f}s")
-
-                    # --- REMOVED: Total Count API Call Block ---
-
-                    # --- Handle Empty API Batch ---
-                    if not all_conversations_batch:
-                        logger.debug("Received empty batch from API.")
-                        if not next_cursor_from_api:
-                            logger.info(
-                                "Empty batch and no next cursor. Finishing inbox search."
-                            )
+                    while True:  # Outer loop for fetching batches
+                        # --- Check termination conditions BEFORE fetching next batch ---
+                        if known_conversation_found:
+                            logger.debug(f"Terminating inbox search loop PRE-FETCH. Reason: {stop_reason}")
                             break
-                        else:
-                            logger.debug(
-                                "Empty batch but next cursor exists. Proceeding."
+
+                        # --- Fetch API Batch ---
+                        all_conversations_batch, next_cursor_from_api = (
+                            self._get_all_conversations_api(
+                                self.session_manager, cursor=next_cursor
                             )
-                            next_cursor = next_cursor_from_api
-                            continue
-
-                    # --- Process Batch Items ---
-                    current_batch_num += 1
-                    batch_data_to_save = []
-                    items_processed_this_batch = 0
-                    logger.debug(
-                        f"Processing batch {current_batch_num} ({batch_api_item_count} items from API)..."
-                    )
-
-                    # Inner loop iterates through fetched API conversations
-                    for conversation_info in all_conversations_batch:
-                        items_processed_this_batch += 1
-                        current_item_overall_index = (
-                            items_processed_before_stop + 1
-                        )  # Index of the item being checked
-
-                        # --- Process individual conversation data extraction ---
-                        conversation_id = conversation_info.get("conversation_id")
-                        profile_id = conversation_info.get("profile_id")
-                        username = conversation_info.get(
-                            "username", "Username Not Available"
-                        )
-                        last_message_timestamp = conversation_info.get(
-                            "last_message_timestamp"
-                        )  # datetime or None
-
-                        if profile_id is None or profile_id == "UNKNOWN":
-                            logger.warning(
-                                f"Profile ID is missing/unknown for conv ID: {conversation_id}. Skipping item {items_processed_this_batch}."
-                            )
-                            continue
-
-                        # === OPTIMIZATION: Moved checks BEFORE DB Lookup ===
-
-                        # --- Comparator Check FIRST (using profile_id) ---
-                        if most_recent_message:
-                            # comparator_people_id removed, use profile_id
-                            comparator_profile_id = most_recent_message.get(
-                                "profile_id"
-                            )  # From modified _create_comparator
-                            comparator_username = most_recent_message.get("username")
-                            comparator_timestamp = most_recent_message.get(
-                                "last_message_timestamp"
-                            )
-
-                            # Use case-insensitive profile ID comparison
-                            profile_id_match = (
-                                comparator_profile_id
-                                and profile_id
-                                and comparator_profile_id.lower() == profile_id.lower()
-                            )
-                            username_match = comparator_username == username
-                            timestamps_match = False
-                            if isinstance(
-                                comparator_timestamp, datetime
-                            ) and isinstance(last_message_timestamp, datetime):
-                                # Compare timestamps precisely, avoid floating point issues with total_seconds() if possible
-                                # Ensure both are naive UTC for comparison
-                                comp_ts_naive = (
-                                    comparator_timestamp.replace(tzinfo=None)
-                                    if comparator_timestamp.tzinfo
-                                    else comparator_timestamp
-                                )
-                                item_ts_naive = (
-                                    last_message_timestamp.replace(tzinfo=None)
-                                    if last_message_timestamp.tzinfo
-                                    else last_message_timestamp
-                                )
-                                # Allow a small tolerance (e.g., < 1 second) due to potential precision differences
-                                time_diff = abs(
-                                    (comp_ts_naive - item_ts_naive).total_seconds()
-                                )
-                                timestamps_match = time_diff < 1
-                            elif (
-                                comparator_timestamp is None
-                                and last_message_timestamp is None
-                            ):
-                                timestamps_match = True
-
-                            if profile_id_match and username_match and timestamps_match:
-                                logger.info(
-                                    f"Comparator matched ({username}). Stopping further processing.\n"
-                                )
-                                known_conversation_found = True
-                                stop_reason = "Comparator Match"
-                                items_processed_before_stop += (
-                                    1  # Count the matched item itself as checked
-                                )
-                                break  # Exit inner for loop
-
-                        # --- Limit Check SECOND (based on items *checked*) ---
-                        # Check if the number of items *checked* exceeds the limit
-                        if (
-                            self.max_inbox_limit != 0
-                            and items_processed_before_stop >= self.max_inbox_limit
-                        ):
-                            logger.info(
-                                f"Inbox limit ({self.max_inbox_limit} checked items) reached before processing item {current_item_overall_index}. Stopping."
-                            )
-                            known_conversation_found = True
-                            stop_reason = (
-                                f"Inbox Limit ({self.max_inbox_limit} checked)"
-                            )
-                            # Do NOT increment items_processed_before_stop here, as the check itself stops processing
-                            break  # Exit inner for loop
-
-                        # --- If neither stop condition met, increment counter & proceed ---
-                        items_processed_before_stop += (
-                            1  # Increment for items passing checks
                         )
 
-                        # === OPTIMIZATION: Defer Person Lookup/Create ===
-                        # Lookup/Create Person only if the item passed checks and needs saving
-                        person, person_status = self._lookup_or_create_person(
-                            session, profile_id, username, conversation_id
-                        )
-                        if not person or person.id is None:
-                            # Log error but continue loop, just skip adding this item to save batch
-                            logger.error(
-                                f"Failed create/get Person/ID for {profile_id} in conv {conversation_id} (item {current_item_overall_index}). Skipping save for this item."
-                            )
-                            continue
-                        people_id = person.id  # Get the ID needed for saving
+                        if all_conversations_batch is None:
+                            logger.error("API call failed (_get_all_conversations_api returned None). Aborting inbox search.")
+                            if self.progress_bar: self.progress_bar.close()
+                            # Returning False here might not log correctly if redirect active
+                            # Consider raising an exception instead? For now, keep return.
+                            return False # This error might get swallowed visually
 
-                        # --- Add item to save list ---
-                        last_message_content = conversation_info.get(
-                            "last_message_content", ""
-                        )
-                        last_message_content_truncated = (
-                            (last_message_content[:97] + "...")
-                            if len(last_message_content) > 100
-                            else last_message_content
-                        )
-                        my_role_enum_value = conversation_info.get("my_role")
+                        batch_api_item_count = len(all_conversations_batch)
+                        total_processed_api_items += batch_api_item_count
+                        wait_duration = self.dynamic_rate_limiter.wait()
 
-                        processed_item = {
-                            "conversation_id": conversation_id,
-                            "people_id": people_id,  # Use the ID obtained above
-                            "my_role": my_role_enum_value,
-                            "last_message_content": last_message_content_truncated,
-                            "last_message_timestamp": last_message_timestamp,
-                        }
-                        batch_data_to_save.append(processed_item)
+                        # --- Handle Empty API Batch ---
+                        if not all_conversations_batch:
+                            logger.debug("Received empty batch from API.")
+                            if not next_cursor_from_api:
+                                logger.info("Empty batch and no next cursor. Finishing inbox search.")
+                                break
+                            else:
+                                next_cursor = next_cursor_from_api
+                                continue
 
-                    # --- End of inner for loop ---
+                        # --- Process Batch Items ---
+                        current_batch_num += 1
+                        batch_data_to_save = []
+                        items_processed_this_batch = 0
 
-                    # --- Save Batch ---
-                    total_saved_or_updated_in_batch = 0  # Track saves for logging
-                    if not known_conversation_found and batch_data_to_save:
-                        new_in_batch, updated_in_batch = self._save_batch(
-                            session, batch_data_to_save
-                        )
-                        new_records_saved += new_in_batch
-                        updated_records_saved += updated_in_batch
-                        total_saved_or_updated_in_batch = (
-                            new_in_batch + updated_in_batch
-                        )
-                        logger.debug(
-                            f"Batch {current_batch_num} saved ({new_in_batch} new, {updated_in_batch} updated). Items processed this batch: {items_processed_this_batch}. Total saved/updated overall: {new_records_saved + updated_records_saved}\n"
-                        )
-                    elif known_conversation_found:
-                        logger.debug(
-                            f"Stop condition '{stop_reason}' met during batch {current_batch_num}. Skipping save for this batch."
-                        )
-                    else:  # No data added to save
-                        logger.debug(
-                            f"No items collected in batch {current_batch_num} to save. Items processed this batch: {items_processed_this_batch}."
-                        )
+                        for conversation_info in all_conversations_batch:
+                            items_processed_this_batch += 1
+                            current_item_overall_index = items_processed_before_stop + 1
 
-                    # --- Update Cursor and Check Outer Loop ---
-                    next_cursor = next_cursor_from_api
+                            # ... (rest of inner loop processing: comparator check, limit check) ...
+                            conversation_id = conversation_info.get("conversation_id")
+                            profile_id = conversation_info.get("profile_id")
+                            username = conversation_info.get("username", "Username Not Available")
+                            last_message_timestamp = conversation_info.get("last_message_timestamp")
 
-                    if known_conversation_found:
-                        logger.debug(
-                            f"Outer loop termination check: Stop condition '{stop_reason}' met."
-                        )
-                        break  # Exit outer while loop
+                            if profile_id is None or profile_id == "UNKNOWN":
+                                logger.warning(f"Profile ID is missing/unknown for conv ID: {conversation_id}. Skipping item {items_processed_this_batch}.")
+                                continue
 
-                    # Limit check based on items checked (redundant if inner check is robust, but safe)
-                    if (
-                        self.max_inbox_limit != 0
-                        and items_processed_before_stop >= self.max_inbox_limit
-                    ):
-                        logger.debug(
-                            f"Inbox limit ({self.max_inbox_limit} checked) reached after batch {current_batch_num}. Terminating search."
-                        )
-                        stop_reason = f"Inbox Limit ({self.max_inbox_limit} checked)"  # Ensure reason is set if hit here
-                        known_conversation_found = True  # Set flag
-                        break
+                            if most_recent_message:
+                                # ... (comparator logic) ...
+                                comparator_profile_id = most_recent_message.get("profile_id")
+                                comparator_username = most_recent_message.get("username")
+                                comparator_timestamp = most_recent_message.get("last_message_timestamp")
+                                profile_id_match = (comparator_profile_id and profile_id and comparator_profile_id.lower() == profile_id.lower())
+                                username_match = comparator_username == username
+                                timestamps_match = False
+                                if isinstance(comparator_timestamp, datetime) and isinstance(last_message_timestamp, datetime):
+                                    comp_ts_naive = comparator_timestamp.replace(tzinfo=None) if comparator_timestamp.tzinfo else comparator_timestamp
+                                    item_ts_naive = last_message_timestamp.replace(tzinfo=None) if last_message_timestamp.tzinfo else last_message_timestamp
+                                    time_diff = abs((comp_ts_naive - item_ts_naive).total_seconds())
+                                    timestamps_match = time_diff < 1
+                                elif comparator_timestamp is None and last_message_timestamp is None:
+                                    timestamps_match = True
+                                if profile_id_match and username_match and timestamps_match:
+                                    logger.info(f"Comparator matched ({username}). Stopping further processing.\n")
+                                    known_conversation_found = True; stop_reason = "Comparator Match"; break
 
-                    if not next_cursor:
-                        logger.debug(
-                            "No next cursor provided by API. Finishing search."
-                        )
-                        break
-                # --- End of main while loop ---
+                            if (self.max_inbox_limit != 0 and items_processed_before_stop >= self.max_inbox_limit):
+                                logger.info(f"Inbox limit ({self.max_inbox_limit} checked items) reached before processing item {current_item_overall_index}. Stopping.")
+                                known_conversation_found = True; stop_reason = f"Inbox Limit ({self.max_inbox_limit} checked)"; break
+
+                            items_processed_before_stop += 1
+                            if self.progress_bar:
+                                current_postfix = f"New:{new_records_saved}, Upd:{updated_records_saved}"
+                                self.progress_bar.set_postfix_str(current_postfix, refresh=False)
+                                self.progress_bar.update(1)
+
+                            person, person_status = self._lookup_or_create_person(session, profile_id, username, conversation_id)
+                            if not person or person.id is None:
+                                logger.error(f"Failed create/get Person/ID for {profile_id} in conv {conversation_id} (item {current_item_overall_index}). Skipping save for this item.")
+                                continue
+                            people_id = person.id
+
+                            last_message_content = conversation_info.get("last_message_content", "")
+                            last_message_content_truncated = ((last_message_content[:97] + "...") if len(last_message_content) > 100 else last_message_content)
+                            my_role_enum_value = conversation_info.get("my_role")
+
+                            processed_item = {
+                                "conversation_id": conversation_id, "people_id": people_id,
+                                "my_role": my_role_enum_value, "last_message_content": last_message_content_truncated,
+                                "last_message_timestamp": last_message_timestamp,
+                            }
+                            batch_data_to_save.append(processed_item)
+                        # --- End of inner for loop ---
+
+                        # --- Save Batch ---
+                        if not known_conversation_found and batch_data_to_save:
+                            new_in_batch, updated_in_batch = self._save_batch(session, batch_data_to_save)
+                            new_records_saved += new_in_batch
+                            updated_records_saved += updated_in_batch
+                            if self.progress_bar:
+                                 self.progress_bar.set_postfix_str(f"New:{new_records_saved}, Upd:{updated_records_saved}", refresh=True)
+                        elif known_conversation_found: pass
+                        else: pass
+
+                        # --- Update Cursor and Check Outer Loop ---
+                        next_cursor = next_cursor_from_api
+                        if known_conversation_found: break
+                        if (self.max_inbox_limit != 0 and items_processed_before_stop >= self.max_inbox_limit):
+                            stop_reason = f"Inbox Limit ({self.max_inbox_limit} checked)"; known_conversation_found = True; break
+                        if not next_cursor: break
+                    # --- End of main while loop ---
+                # --- End of DB context manager ---
+            # --- End of logging redirect context manager ---
 
         except Exception as e:
-            logger.error(f"Inbox search failed within main loop: {e}", exc_info=True)
-            return False  # Rollback handled by context manager
+            # Log error outside redirect context if possible
+            print(f"ERROR: Inbox search failed within main loop: {e}", file=sys.stderr)
+            # traceback.print_exc(file=sys.stderr) # Optional: print traceback too
+            if self.progress_bar: self.progress_bar.close()
+            return False
         finally:
-            # --- MODIFIED Final Summary Logging ---
-            # Call the new summary function with collected stats
+            if self.progress_bar:
+                 # Final updates and closing logic (same as before)
+                if stop_reason:
+                    final_desc = f"Stopped: {stop_reason}"
+                    if "Limit" in stop_reason and total_for_pbar:
+                         self.progress_bar.total = items_processed_before_stop
+                    self.progress_bar.set_description_str(final_desc)
+                    self.progress_bar.set_postfix_str(f"New:{new_records_saved}, Upd:{updated_records_saved}", refresh=False)
+                elif total_for_pbar is not None and items_processed_before_stop < total_for_pbar:
+                     self.progress_bar.set_description_str("Finished: End Reached")
+                elif total_for_pbar is None:
+                     self.progress_bar.set_description_str("Finished: End Reached")
+                self.progress_bar.close()
+
+            # Log summary (INFO level is fine here, bar is closed)
             _log_inbox_summary(
                 total_api_items=total_processed_api_items,
                 items_processed=items_processed_before_stop,
@@ -591,9 +501,8 @@ class InboxProcessor:
                 stop_reason=stop_reason,
                 max_inbox_limit=self.max_inbox_limit,
             )
-            # --- END MODIFICATION ---
 
-        return True # Indicate successful completion if no exceptions occurred
+        return True
     # end of search_inbox
 
     def _create_comparator(self, session: Session) -> Optional[Dict[str, Any]]:
@@ -773,9 +682,7 @@ class InboxProcessor:
                     logger.debug(f"{log_prefix}: Record staged for update.")
                     return person, "updated"
                 else:
-                    logger.debug(
-                        f"{log_prefix}: Found in 'people' table, no update needed."
-                    )
+                    # logger.debug(f"{log_prefix}: Found in 'people' table, no update needed.") # Less verbose
                     return person, "skipped"
 
             else:
@@ -891,9 +798,7 @@ class InboxProcessor:
                         "last_message_timestamp": item.get("last_message_timestamp"),
                     }
                     new_items.append(new_item_data)
-                    logger.debug(
-                        f"Prepared NEW item for people_id {people_id}: my_role={new_item_data['my_role']}"
-                    )
+                    # logger.debug(f"Prepared NEW item for people_id {people_id}: my_role={new_item_data['my_role']}") # Less verbose
 
                 else:
                     # Existing record found, check if update is needed
@@ -906,9 +811,7 @@ class InboxProcessor:
                     item_ts = item.get("last_message_timestamp")
                     if db_ts != item_ts:
                         needs_update = True
-                        logger.debug(
-                            f"InboxStatus update needed for people_id {people_id}: Timestamp differs ('{db_ts}' vs '{item_ts}')."
-                        )
+                        # logger.debug(f"InboxStatus update needed for people_id {people_id}: Timestamp differs ('{db_ts}' vs '{item_ts}').") # Less verbose
 
                     # Compare last_message_content if timestamp matches or is None
                     if not needs_update:
@@ -916,9 +819,7 @@ class InboxProcessor:
                         item_msg = item.get("last_message_content", "")
                         if db_msg != item_msg:
                             needs_update = True
-                            logger.debug(
-                                f"InboxStatus update needed for people_id {people_id}: Message differs."
-                            )
+                            # logger.debug(f"InboxStatus update needed for people_id {people_id}: Message differs.") # Less verbose
 
                     # Compare my_role if still no difference found
                     if not needs_update:
@@ -927,9 +828,7 @@ class InboxProcessor:
                         )  # Should be RoleType enum
                         if db_role != my_role_enum_value:
                             needs_update = True
-                            logger.debug(
-                                f"InboxStatus update needed for people_id {people_id}: Role differs ('{db_role}' vs '{my_role_enum_value}')."
-                            )
+                            # logger.debug(f"InboxStatus update needed for people_id {people_id}: Role differs ('{db_role}' vs '{my_role_enum_value}').") # Less verbose
 
                     # Compare conversation_id if still no difference found
                     if not needs_update:
@@ -937,9 +836,7 @@ class InboxProcessor:
                         item_conv_id = item.get("conversation_id")
                         if db_conv_id != item_conv_id:
                             needs_update = True
-                            logger.debug(
-                                f"InboxStatus update needed for people_id {people_id}: Conversation ID differs."
-                            )
+                            # logger.debug(f"InboxStatus update needed for people_id {people_id}: Conversation ID differs.") # Less verbose
 
                     if needs_update:
                         # Ensure the existing status object has an ID before adding to update list
@@ -956,16 +853,14 @@ class InboxProcessor:
                                 # last_updated is handled by onupdate=datetime.now
                             }
                             update_items.append(update_item_data)
-                            logger.debug(
-                                f"Prepared UPDATE item for people_id {people_id} (InboxStatus.id: {update_item_data['id']}): my_role={update_item_data['my_role']}"
-                            )
+                            # logger.debug(f"Prepared UPDATE item for people_id {people_id} (InboxStatus.id: {update_item_data['id']}): my_role={update_item_data['my_role']}") # Less verbose
                         else:
                             # This case should ideally not happen if records are fetched correctly
                             logger.warning(
                                 f"Skipping update for people_id {people_id}: Existing InboxStatus found but has no ID (maybe not flushed/committed yet?)."
                             )
                     # else:
-                    #    logger.debug(f"No update needed for InboxStatus for people_id {people_id}.")
+                    #    logger.debug(f"No update needed for InboxStatus for people_id {people_id}.") # Less verbose
 
             # Perform bulk operations if there are items
             if new_items:
@@ -1017,6 +912,7 @@ def _log_inbox_summary(
     if stop_reason:
          logger.info(f"  Processing Stopped Due To: {stop_reason}")
     elif max_inbox_limit == 0 or items_processed < max_inbox_limit :
+         # If no stop reason AND (limit is 0 OR we processed fewer than the limit), we reached the end
          logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
     total_saved = new_records + updated_records
     logger.info("----------------------------\n")
