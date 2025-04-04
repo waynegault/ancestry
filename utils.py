@@ -1958,6 +1958,7 @@ def _api_req(
     # --- Use Python Requests Library ---
     logger.debug(f"Executing API call via Python requests: {method.upper()} \n{url}")
     req_session = session_manager._requests_session
+    logger.debug(f"{api_description}: Using requests.Session object ID: {id(req_session)}")
     retries_left = max_retries
     last_exception = None
 

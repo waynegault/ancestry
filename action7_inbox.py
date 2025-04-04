@@ -60,7 +60,6 @@ class InboxProcessor:
         self.dynamic_rate_limiter = DynamicRateLimiter()
         self.max_inbox_limit = config_instance.MAX_INBOX
         self.batch_size = config_instance.BATCH_SIZE
-
     # end of __init__
 
     @retry()
@@ -164,7 +163,6 @@ class InboxProcessor:
                 f"Unexpected error in _get_all_conversations_api: {e}", exc_info=True
             )
             return None, None  # Indicate failure
-
     # end of _get_all_conversations_api
 
     def _extract_conversation_info(
@@ -281,7 +279,6 @@ class InboxProcessor:
             "my_role": my_role_value,  # My role relative to the last message
         }
         return conversation_info
-
     # end of _extract_conversation_info
 
     def search_inbox(self) -> bool:
@@ -464,7 +461,7 @@ class InboxProcessor:
 
                             if profile_id_match and username_match and timestamps_match:
                                 logger.info(
-                                    f"Comparator matched {username} (Profile: {profile_id}). Stopping further processing."
+                                    f"Comparator matched ({username}). Stopping further processing.\n"
                                 )
                                 known_conversation_found = True
                                 stop_reason = "Comparator Match"
@@ -584,92 +581,19 @@ class InboxProcessor:
             logger.error(f"Inbox search failed within main loop: {e}", exc_info=True)
             return False  # Rollback handled by context manager
         finally:
-            # --- Refined Final Summary Logging ---
-            log_msg_parts = [f"Inbox search finished."]
-            total_saved_or_updated = (
-                new_records_saved + updated_records_saved
-            )  # Calculate total here for logging
+            # --- MODIFIED Final Summary Logging ---
+            # Call the new summary function with collected stats
+            _log_inbox_summary(
+                total_api_items=total_processed_api_items,
+                items_processed=items_processed_before_stop,
+                new_records=new_records_saved,
+                updated_records=updated_records_saved,
+                stop_reason=stop_reason,
+                max_inbox_limit=self.max_inbox_limit,
+            )
+            # --- END MODIFICATION ---
 
-            # Report API items only if > 0 batches were fetched
-            if current_batch_num > 0:
-                log_msg_parts.append(
-                    f"Total API items processed: {total_processed_api_items}."
-                )
-
-            # Report stop reason and items checked before stop
-            if stop_reason:
-                log_msg_parts.append(
-                    f"Stopped due to: {stop_reason} after checking {items_processed_before_stop} conversations."
-                )
-            # If not stopped early and batches were processed, report completion
-            elif current_batch_num > 0:
-                log_msg_parts.append(
-                    f"Completed checking {items_processed_before_stop} conversations (end of inbox reached)."
-                )
-            elif total_processed_api_items == 0 and current_batch_num == 0:
-                log_msg_parts.append(
-                    "No batches processed (likely immediate comparator match or zero inbox)."
-                )
-
-            # Report saving results
-            if total_saved_or_updated > 0:
-                log_msg_parts.append(
-                    f"Saved {new_records_saved} new, {updated_records_saved} updated statuses (Total: {total_saved_or_updated})."
-                )
-            # Specific messages for common "zero saved" scenarios
-            elif (
-                stop_reason == "Comparator Match" and items_processed_before_stop == 1
-            ):  # Comparator matched the very first item checked
-                log_msg_parts.append(
-                    "No new/updated conversations saved as comparator matched the first item checked."
-                )
-            elif (
-                stop_reason.startswith("Inbox Limit")
-                and items_processed_before_stop <= self.max_inbox_limit
-            ):  # Limit reached
-                # Adjusted message for clarity when limit is reached
-                save_msg = (
-                    "No new/updated conversations saved"
-                    if total_saved_or_updated == 0
-                    else f"Processing stopped, {total_saved_or_updated} conversations saved"
-                )
-                log_msg_parts.append(
-                    f"{save_msg} as limit ({self.max_inbox_limit} checked) was reached."
-                )
-            # Removed check for total_count == 0, as it's no longer fetched
-            elif (
-                total_processed_api_items > 0
-                and total_saved_or_updated == 0
-                and not stop_reason
-            ):
-                log_msg_parts.append(
-                    f"No new/updated conversations found needing DB update among the {items_processed_before_stop} checked."
-                )
-            elif (
-                total_processed_api_items == 0 and current_batch_num > 0
-            ):  # Should not happen if API returns empty list correctly
-                log_msg_parts.append(
-                    "Warning: No items received from API despite processing batches."
-                )
-            elif (
-                total_saved_or_updated == 0 and stop_reason
-            ):  # Handles cases where limit/comparator hit but nothing happened to be saveable yet
-                pass  # Stop reason already covers it
-            elif (
-                total_saved_or_updated == 0
-                and total_processed_api_items == 0
-                and current_batch_num == 0
-            ):
-                log_msg_parts.append(
-                    "No items received from API and no conversations saved (empty inbox or immediate stop)."
-                )
-            else:  # Fallback for any other zero-save scenario
-                log_msg_parts.append("No new/updated conversations saved.")
-
-            logger.info(" ".join(log_msg_parts))
-
-        return True  # Indicate successful completion if no exceptions occurred
-
+        return True # Indicate successful completion if no exceptions occurred
     # end of search_inbox
 
     def _create_comparator(self, session: Session) -> Optional[Dict[str, Any]]:
@@ -722,7 +646,7 @@ class InboxProcessor:
                         ts_str = str(timestamp_val)
 
                     # Log comparator details at INFO level for better visibility
-                    logger.info(
+                    logger.debug(
                         f"Comparator created: {most_recent_message.get('username', 'N/A')} (Profile: {most_recent_message.get('profile_id')})"
                     )  # Added profile_id to log
                 elif comparator_person and comparator_person.profile_id is None:
@@ -739,7 +663,7 @@ class InboxProcessor:
                     )
 
             else:
-                logger.info("No messages in database. Comparator not needed.")
+                logger.info("No messages in database. Comparator not needed.\n")
 
         except SQLAlchemyError as e:
             logger.error(f"Database error creating comparator: {e}", exc_info=True)
@@ -749,7 +673,6 @@ class InboxProcessor:
             return None
 
         return most_recent_message
-
     # end of _create_comparator
 
     def _lookup_or_create_person(
@@ -898,7 +821,6 @@ class InboxProcessor:
                 exc_info=True,
             )
             return None, "error"
-
     # end of _lookup_or_create_person
 
     def _save_batch(
@@ -1076,8 +998,28 @@ class InboxProcessor:
         except Exception as e:
             logger.error(f"Unexpected error in _save_batch: {e}", exc_info=True)
             raise  # Re-raise to trigger rollback in the context manager
-
     # end of _save_batch
 
+def _log_inbox_summary(
+    total_api_items: int,
+    items_processed: int,
+    new_records: int,
+    updated_records: int,
+    stop_reason: Optional[str],
+    max_inbox_limit: int,
+):
+    """Logs the final summary of the inbox search action."""
+    logger.info("---- Inbox Search Summary ----")
+    logger.info(f"  Total API Items Fetched: {total_api_items}")
+    logger.info(f"  Items Processed:         {items_processed}")
+    logger.info(f"  New Statuses Saved:      {new_records}")
+    logger.info(f"  Updated Statuses Saved:  {updated_records}")
+    if stop_reason:
+         logger.info(f"  Processing Stopped Due To: {stop_reason}")
+    elif max_inbox_limit == 0 or items_processed < max_inbox_limit :
+         logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
+    total_saved = new_records + updated_records
+    logger.info("----------------------------\n")
+# End of _log_inbox_summary
 
 # End of action7_inbox.py

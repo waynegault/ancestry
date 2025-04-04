@@ -64,64 +64,6 @@ from utils import (
     retry,
 )
 
-# +++ START urllib3 PoolManager Scheme Patch (Risky - Use with Caution) +++
-try:
-    import urllib3
-    import urllib3.poolmanager
-
-    print(
-        "INFO: Preparing to patch urllib3.poolmanager.PoolManager.pool_classes_by_scheme default maxsize (Risky).",
-        file=sys.stderr,
-    )
-
-    # Get the pool class used for HTTP
-    http_pool_cls = urllib3.poolmanager.PoolManager.pool_classes_by_scheme.get("http")
-
-    if http_pool_cls:
-        # Modify the default arguments stored or used by this class if possible
-        # This is highly dependent on urllib3 internal structure
-        # Option A: Modify if it uses connection_pool_kw like PoolManager itself (less likely)
-        # if hasattr(http_pool_cls, 'connection_pool_kw') and isinstance(http_pool_cls.connection_pool_kw, dict):
-        #    http_pool_cls.connection_pool_kw['maxsize'] = 10
-
-        # Option B: Modify default maxsize if it's a direct attribute (less likely)
-        # if hasattr(http_pool_cls, 'default_maxsize'):
-        #    http_pool_cls.default_maxsize = 10
-
-        # Option C: If the class itself is stored, we might patch its __init__ (similar to previous failed attempt but more targeted)
-        # This seems most plausible if the scheme lookup returns the class type
-        if isinstance(http_pool_cls, type) and issubclass(
-            http_pool_cls, urllib3.connectionpool.HTTPConnectionPool
-        ):
-            original_init = http_pool_cls.__init__
-
-            def patched_http_init(self, *args, **kwargs):
-                pool_maxsize = kwargs.get("maxsize")
-                if pool_maxsize is None or pool_maxsize == 1:
-                    # print(f"INFO: Patching {http_pool_cls.__name__} maxsize from {pool_maxsize or 'default (1)'} to 10.", file=sys.stderr) # Less verbose
-                    kwargs["maxsize"] = 10
-                original_init(self, *args, **kwargs)
-
-            http_pool_cls.__init__ = patched_http_init
-            print(
-                f"INFO: Applied __init__ patch to {http_pool_cls.__name__} found via pool_classes_by_scheme.",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                "WARNING: Could not determine how to patch the HTTP pool class found via scheme.",
-                file=sys.stderr,
-            )
-
-    else:
-        print(
-            "WARNING: Could not find 'http' scheme in urllib3.poolmanager.PoolManager.pool_classes_by_scheme.",
-            file=sys.stderr,
-        )
-
-except Exception as patch_e:
-    print(f"ERROR: Failed to apply urllib3 scheme patch: {patch_e}", file=sys.stderr)
-# +++ END urllib3 PoolManager Scheme Patch +++
 
 # --- Function Definitions (menu, exec_actn, action functions) ---
 
@@ -921,7 +863,7 @@ def send_messages_action(session_manager, *args):
     ):
         logger.error("Cannot send messages: Session not active.")
         return False
-    logger.info("Starting message sending...\n")
+    logger.debug("Starting message sending...\n")
     try:
         if not nav_to_page(
             session_manager.driver,

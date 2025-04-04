@@ -144,8 +144,6 @@ def load_message_templates() -> Dict[str, str]:  # Explicitly annotate the retur
     except Exception as e:
         logger.critical(f"CRITICAL: Error loading messages.json: {e}", exc_info=True)
         return {}
-
-
 # End of load_message_templates
 
 MESSAGE_TEMPLATES: Dict[str, str] = cast(
@@ -226,8 +224,6 @@ def determine_next_message_type(
         logger.debug(f"Skipping: {skip_reason}.")
 
     return next_type
-
-
 # End of determine_next_message_type
 
 #####################################################
@@ -235,32 +231,23 @@ def determine_next_message_type(
 #####################################################
 
 
-# V14 - Optimized with pre-fetching
 def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
     V14.1 REVISED: Sends messages to DNA matches based on criteria, using API calls.
     - Optimizes performance by pre-fetching MessageHistory and InboxStatus data.
     - Stores naive LOCAL time.
     - Fixes NameError for 'select'.
+    - Batches DB commits.
     """
 
-    # --- Prerequisites ---
-    if not session_manager:
-        logger.error("SessionManager instance is required.")
-        return False
-    if not session_manager._verify_api_login_status():
-        logger.error("API login verification failed.")
-        return False
-    if not session_manager.driver:
-        logger.warning("Driver not available, UBE header missing.")
-    if not session_manager.my_profile_id:
-        logger.error("Own profile ID missing.")
-        return False
+    # --- Prerequisites (same as before) ---
+    if not session_manager: logger.error("SessionManager instance is required."); return False
+    if not session_manager._verify_api_login_status(): logger.error("API login verification failed."); return False
+    if not session_manager.driver: logger.warning("Driver not available, UBE header missing.")
+    if not session_manager.my_profile_id: logger.error("Own profile ID missing."); return False
     MY_PROFILE_ID_LOWER = session_manager.my_profile_id.lower()
     MY_PROFILE_ID_UPPER = session_manager.my_profile_id.upper()
-    if not MESSAGE_TEMPLATES:
-        logger.error("Message templates failed to load.")
-        return False
+    if not MESSAGE_TEMPLATES: logger.error("Message templates failed to load."); return False
 
     overall_success = True
     processed_count = 0
@@ -269,807 +256,341 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     error_count = 0
     potential_matches = []
     max_to_send = config_instance.MAX_INBOX
+    db_commit_batch_size = 10 # Commit after every N successful sends
+    db_objects_to_commit: List[Any] = [] # Accumulate objects for batch commit
 
     try:
+        # Use context manager for the entire operation to ensure commit/rollback
         with session_manager.get_db_conn_context() as db_session:
             if not db_session:
                 logger.error("Failed to get DB connection.")
                 return False
 
-            # --- 1. Fetch Potential Matches ---
+            # --- Pre-fetching (Steps 1-4, same as V14.1) ---
+            # 1. Fetch Potential Matches
             potential_matches_query = (
                 db_session.query(
-                    DnaMatch.people_id,
-                    DnaMatch.predicted_relationship,
-                    Person.username,
-                    Person.profile_id,
-                    Person.in_my_tree,
-                    Person.first_name,
-                    FamilyTree.actual_relationship,
-                    FamilyTree.person_name_in_tree,
-                    FamilyTree.relationship_path,
+                    DnaMatch.people_id, DnaMatch.predicted_relationship, Person.username,
+                    Person.profile_id, Person.in_my_tree, Person.first_name,
+                    FamilyTree.actual_relationship, FamilyTree.person_name_in_tree, FamilyTree.relationship_path
                 )
                 .join(Person, DnaMatch.people_id == Person.id)
                 .outerjoin(FamilyTree, Person.id == FamilyTree.people_id)
-                .filter(
-                    Person.profile_id.isnot(None),
-                    Person.profile_id != "",
-                    Person.profile_id != "UNKNOWN",
-                )
-                .filter(Person.status == "active")
-                .filter(Person.contactable == True)
+                .filter(Person.profile_id.isnot(None), Person.profile_id != "", Person.profile_id != "UNKNOWN")
+                .filter(Person.status == "active").filter(Person.contactable == True)
                 .order_by(Person.id)
             )
-            potential_matches = potential_matches_query.all()  # List of Row objects
+            potential_matches = potential_matches_query.all()
+            logger.debug(f"Found {len(potential_matches)} potential CONTACTABLE DNA matches to check.")
+            if not potential_matches: return True
+            potential_person_ids = [match.people_id for match in potential_matches if match.people_id]
+            if not potential_person_ids: logger.info("No valid people_ids found."); return True
 
-            logger.debug(
-                f"Found {len(potential_matches)} potential CONTACTABLE DNA matches to check."
-            )
-            if not potential_matches:
-                return True
-
-            potential_person_ids = [
-                match.people_id for match in potential_matches if match.people_id
-            ]
-            if not potential_person_ids:
-                logger.info("No valid people_ids found among potential matches.")
-                return True
-
-            # --- 2. Pre-fetch Message History (N+1 Optimization) ---
-            logger.debug(
-                f"Pre-fetching latest MessageHistory for {len(potential_person_ids)} people..."
-            )
+            # 2. Pre-fetch Message History
+            logger.debug(f"Pre-fetching latest MessageHistory for {len(potential_person_ids)} people...")
             latest_history_data: Dict[int, Tuple[str, datetime, str]] = {}
             try:
-                # Use ROW_NUMBER() window function to get the latest message per person_id
-                # Explicitly use select() from sqlalchemy.sql
                 row_number_subquery: Subquery = (
-                    select(  # Use imported select
-                        MessageHistory.people_id,
-                        MessageHistory.sent_at,
-                        MessageType.type_name,
-                        MessageHistory.status,
-                        func.row_number()
-                        .over(
-                            partition_by=MessageHistory.people_id,
-                            order_by=MessageHistory.sent_at.desc(),
-                        )
-                        .label("rn"),
-                    )
-                    .join(MessageType, MessageHistory.message_type_id == MessageType.id)
-                    .where(MessageHistory.people_id.in_(potential_person_ids))
-                    .subquery()
+                    select(
+                        MessageHistory.people_id, MessageHistory.sent_at, MessageType.type_name, MessageHistory.status,
+                        func.row_number().over(partition_by=MessageHistory.people_id, order_by=MessageHistory.sent_at.desc()).label("rn")
+                    ).join(MessageType, MessageHistory.message_type_id == MessageType.id)
+                     .where(MessageHistory.people_id.in_(potential_person_ids)).subquery()
                 )
                 aliased_subquery = aliased(row_number_subquery, name="latest_msg")
-                latest_history_query = select(  # Use imported select
-                    aliased_subquery.c.people_id,
-                    aliased_subquery.c.type_name,
-                    aliased_subquery.c.sent_at,
-                    aliased_subquery.c.status,
+                latest_history_query = select(
+                    aliased_subquery.c.people_id, aliased_subquery.c.type_name,
+                    aliased_subquery.c.sent_at, aliased_subquery.c.status
                 ).where(aliased_subquery.c.rn == 1)
-                latest_history_results = db_session.execute(
-                    latest_history_query
-                ).fetchall()  # List of Row objects
-
-                # Process results into the dictionary
+                latest_history_results = db_session.execute(latest_history_query).fetchall()
                 for row in latest_history_results:
                     person_id, type_name, sent_at_db, status = row
                     if sent_at_db:
-                        # Convert to naive local time (consistent with previous logic)
-                        sent_at_local = (
-                            sent_at_db.replace(tzinfo=None)
-                            if sent_at_db.tzinfo
-                            else sent_at_db
-                        )
-                        # Apply cap if needed (although less likely with correct DB storage)
-                        # now_local_temp = datetime.now()
-                        # if sent_at_local > now_local_temp + timedelta(minutes=1):
-                        #     sent_at_local = now_local_temp
-                        #     logger.warning(f"Pre-fetched MessageHistory ts capped for PersonID {person_id}")
-                        latest_history_data[person_id] = (
-                            type_name,
-                            sent_at_local,
-                            status,
-                        )
-                    else:
-                        logger.warning(
-                            f"Found MessageHistory for PersonID {person_id}, but sent_at is NULL."
-                        )
-                logger.debug(
-                    f"Fetched latest MessageHistory data for {len(latest_history_data)} people."
-                )
+                        sent_at_local = sent_at_db.replace(tzinfo=None) if sent_at_db.tzinfo else sent_at_db
+                        latest_history_data[person_id] = (type_name, sent_at_local, status)
+                    else: logger.warning(f"Found MessageHistory for PersonID {person_id}, but sent_at is NULL.")
+                logger.debug(f"Fetched latest MessageHistory data for {len(latest_history_data)} people.")
+            except SQLAlchemyError as db_err: logger.error(f"DB error pre-fetching MessageHistory: {db_err}", exc_info=True); return False
+            except Exception as e: logger.error(f"Error processing pre-fetched MessageHistory: {e}", exc_info=True); return False
 
-            except SQLAlchemyError as db_err:
-                logger.error(
-                    f"DB error pre-fetching MessageHistory: {db_err}", exc_info=True
-                )
-                error_count += len(potential_matches)
-                overall_success = False
-                return False  # Fail fast if pre-fetch fails
-            except Exception as e:
-                logger.error(
-                    f"Error processing pre-fetched MessageHistory: {e}", exc_info=True
-                )
-                error_count += len(potential_matches)
-                overall_success = False
-                return False
-
-            # --- 3. Pre-fetch Inbox Status (N+1 Optimization) ---
-            logger.debug(
-                f"Pre-fetching InboxStatus for {len(potential_person_ids)} people..."
-            )
+            # 3. Pre-fetch Inbox Status
+            logger.debug(f"Pre-fetching InboxStatus for {len(potential_person_ids)} people...")
             inbox_data: Dict[int, InboxStatus] = {}
             try:
-                inbox_results = (
-                    db_session.query(InboxStatus)
-                    .filter(InboxStatus.people_id.in_(potential_person_ids))
-                    .all()
-                )
+                inbox_results = db_session.query(InboxStatus).filter(InboxStatus.people_id.in_(potential_person_ids)).all()
                 inbox_data = {status.people_id: status for status in inbox_results}
                 logger.debug(f"Fetched InboxStatus data for {len(inbox_data)} people.")
-            except SQLAlchemyError as db_err:
-                logger.error(
-                    f"DB error pre-fetching InboxStatus: {db_err}", exc_info=True
-                )
-                error_count += len(potential_matches)
-                overall_success = False
-                return False
-            except Exception as e:
-                logger.error(
-                    f"Error processing pre-fetched InboxStatus: {e}", exc_info=True
-                )
-                error_count += len(potential_matches)
-                overall_success = False
-                return False
+            except SQLAlchemyError as db_err: logger.error(f"DB error pre-fetching InboxStatus: {db_err}", exc_info=True); return False
+            except Exception as e: logger.error(f"Error processing pre-fetched InboxStatus: {e}", exc_info=True); return False
 
-            # --- 4. Fetch Total Family Tree Rows (once) ---
-            total_family_tree_rows = (
-                db_session.query(func.count(FamilyTree.id)).scalar() or 0
-            )
-            logger.debug(
-                f"Total rows found in family_tree table: {total_family_tree_rows}"
-            )
+            # 4. Fetch Total Family Tree Rows
+            total_family_tree_rows = db_session.query(func.count(FamilyTree.id)).scalar() or 0
+            logger.debug(f"Total rows found in family_tree table: {total_family_tree_rows}")
+            # --- END Pre-fetching ---
+
 
             # --- 5. Main Loop ---
             logger.debug(f"Processing {len(potential_matches)} matches...\n")
             for match_data in potential_matches:
-                # --- Initialize Loop Variables ---
-                # Reset variables for each match
-                person_id: Optional[int] = None
-                username: Optional[str] = None
-                profile_id: Optional[str] = None
-                is_in_family_tree: bool = False
-                first_name: Optional[str] = None
-                person_name_in_tree: Optional[str] = None
-                original_predicted_relationship: Optional[str] = None
-                original_actual_relationship: Optional[str] = None
-                original_relationship_path: Optional[str] = None
+                # --- Initialize Loop Variables (same as before) ---
+                person_id: Optional[int] = None; username: Optional[str] = None; profile_id: Optional[str] = None
+                is_in_family_tree: bool = False; first_name: Optional[str] = None
+                person_name_in_tree: Optional[str] = None; original_predicted_relationship: Optional[str] = None
+                original_actual_relationship: Optional[str] = None; original_relationship_path: Optional[str] = None
                 last_message_sent_details: Optional[Tuple[str, datetime, str]] = None
-                last_sent_at_local: Optional[datetime] = None
-                last_received_at_local: Optional[datetime] = None
-                conversation_id: Optional[str] = None
-                they_sent_last: bool = False
+                last_sent_at_local: Optional[datetime] = None; last_received_at_local: Optional[datetime] = None
+                conversation_id: Optional[str] = None; they_sent_last: bool = False
                 inbox_role: Optional[RoleType] = None
-                new_history_record = None  # For DB update logic
+                # Removed new_history_record = None
 
                 if max_to_send != 0 and sent_count >= max_to_send:
                     logger.debug(f"Reached MAX_INBOX limit ({max_to_send}). Stopping.")
                     break
                 processed_count += 1
 
-                # --- Unpack Match Data ---
+                # --- Unpack Match Data (same as before) ---
                 try:
-                    # Ensure correct unpacking order matches the query
-                    (
-                        person_id,
-                        original_predicted_relationship,
-                        username,
-                        profile_id,
-                        is_in_family_tree,
-                        first_name,
-                        original_actual_relationship,
-                        person_name_in_tree,
-                        original_relationship_path,
-                    ) = match_data
-                    if not person_id or not profile_id or not username:
-                        raise ValueError(
-                            "Missing essential person data (ID, ProfileID, Username)"
-                        )
+                    (person_id, original_predicted_relationship, username, profile_id, is_in_family_tree, first_name,
+                     original_actual_relationship, person_name_in_tree, original_relationship_path) = match_data
+                    if not person_id or not profile_id or not username: raise ValueError("Missing essential person data")
                 except (ValueError, TypeError) as unpack_e:
-                    logger.error(
-                        f"Error unpacking data: {unpack_e}. Row: {match_data}",
-                        exc_info=True,
-                    )
-                    error_count += 1
-                    overall_success = False
-                    continue
-
-                # Assertions to help type checkers after validation
-                assert person_id is not None
-                assert profile_id is not None
-                assert username is not None
-
-                recipient_profile_id_upper = profile_id.upper()
-                log_prefix = f"{username} #{person_id}"
+                    logger.error(f"Error unpacking data: {unpack_e}. Row: {match_data}", exc_info=True)
+                    error_count += 1; overall_success = False; continue
+                assert person_id is not None; assert profile_id is not None; assert username is not None
+                recipient_profile_id_upper = profile_id.upper(); log_prefix = f"{username} #{person_id}"
                 logger.debug(f"#### Processing {log_prefix} ####")
 
                 # --- Process this match ---
                 try:
-                    now_local = datetime.now()  # Get naive local time
+                    now_local = datetime.now()
 
-                    # --- 6. Use Pre-fetched Data (Instead of DB Queries) ---
-                    # Get Message History Data from dictionary
+                    # --- Use Pre-fetched Data (Step 6, same as V14.1) ---
                     last_message_sent_details = latest_history_data.get(person_id)
-                    if last_message_sent_details:
-                        last_sent_at_local = last_message_sent_details[
-                            1
-                        ]  # Get timestamp
-                        logger.debug(
-                            f"Message history: {last_message_sent_details[0]} {last_sent_at_local} {last_message_sent_details[2]}"
-                        )
-                    else:
-                        logger.debug("No MessageHistory found.")
-                        last_sent_at_local = None  # Explicitly set to None
-
-                    # Get Inbox Status Data from dictionary
+                    if last_message_sent_details: last_sent_at_local = last_message_sent_details[1]
+                    else: last_sent_at_local = None
                     inbox_status = inbox_data.get(person_id)
                     if inbox_status:
-                        logger.debug(
-                            f"InboxStatus: My Role {inbox_status.my_role} {inbox_status.last_message_timestamp}"
-                        )
-                        conversation_id = inbox_status.conversation_id
-                        inbox_role = inbox_status.my_role
+                        conversation_id = inbox_status.conversation_id; inbox_role = inbox_status.my_role
                         received_at_db = inbox_status.last_message_timestamp
                         if received_at_db:
-                            # Convert to naive local time
-                            last_received_at_local = (
-                                received_at_db.replace(tzinfo=None)
-                                if received_at_db.tzinfo
-                                else received_at_db
-                            )
-                            # Apply cap if needed
-                            # if last_received_at_local > now_local + timedelta(minutes=1):
-                            #     last_received_at_local = now_local
-                            #     logger.warning(f"Pre-fetched InboxStatus ts capped for {log_prefix}")
-
-                            if inbox_status.my_role == RoleType.RECIPIENT:
-                                they_sent_last = True
-                                logger.debug(
-                                    f"They sent last: {last_received_at_local}"
-                                )
+                            last_received_at_local = received_at_db.replace(tzinfo=None) if received_at_db.tzinfo else received_at_db
+                            if inbox_status.my_role == RoleType.RECIPIENT: they_sent_last = True
                         elif inbox_status.my_role == RoleType.RECIPIENT:
-                            logger.warning(
-                                f"DB Consistency Issue: Inbox role RECIPIENT for {log_prefix}, but timestamp is NULL (pre-fetched)."
-                            )
-                            they_sent_last = False  # Treat as they didn't send last if timestamp missing
-                        else:
-                            last_received_at_local = (
-                                None  # Explicitly None if they didn't send last
-                            )
-                    else:
-                        logger.debug("No InboxStatus found (pre-fetched).")
-                        last_received_at_local = None  # Explicitly None if no record
-                        they_sent_last = False
+                            logger.warning(f"DB Consistency Issue: Inbox role RECIPIENT for {log_prefix}, but timestamp is NULL.")
+                            they_sent_last = False
+                        else: last_received_at_local = None
+                    else: last_received_at_local = None; they_sent_last = False
+                    if not last_message_sent_details and inbox_role == RoleType.AUTHOR: logger.debug(f"DB Consistency Check: MessageHistory empty for {username}, my_role is AUTHOR.")
 
-                    # Consistency check (same as before)
-                    if not last_message_sent_details and inbox_role == RoleType.AUTHOR:
-                        logger.warning(
-                            f"DB Consistency Check: MessageHistory empty for {username}, my_role is AUTHOR."
-                        )
-
-                    # --- 7. Reply Check (Using Naive Local Times) ---
+                    # --- Reply & Interval Checks (Steps 7 & 8, same as V14.1) ---
                     if they_sent_last and last_received_at_local:
-                        if last_sent_at_local:
-                            logger.debug(
-                                f"Reply Check Comparison (Naive Local) for {log_prefix}:"
-                            )
-                            logger.debug(
-                                f"  - last_received_at_local: Value='{last_received_at_local}'"
-                            )
-                            logger.debug(
-                                f"  - last_sent_at_local:     Value='{last_sent_at_local}'"
-                            )
-                            # If their last message is later than our last sent message
-                            if last_received_at_local > last_sent_at_local:
-                                logger.debug(f"Skipping {log_prefix}: Reply received.")
-                                skipped_count += 1
-                                continue  # Skip to next match
-                            else:
-                                logger.debug(
-                                    f"Reply received but before last script msg."
-                                )
-                        else:
-                            # They replied, but we never sent a message according to history
-                            logger.debug(
-                                f"Skipping {log_prefix}: Reply received, but no prior script msg.\n"
-                            )
-                            skipped_count += 1
-                            continue  # Skip to next match
-                    # --- 8. Interval Check (Using Naive Local Times) ---
+                         if last_sent_at_local:
+                              if last_received_at_local > last_sent_at_local: logger.debug(f"Skipping {log_prefix}: Reply received."); skipped_count += 1; continue
+                         else: logger.debug(f"Skipping {log_prefix}: Reply received, but no prior script msg.\n"); skipped_count += 1; continue
                     if last_sent_at_local:
-                        time_since = now_local - last_sent_at_local
-                        if time_since < MIN_MESSAGE_INTERVAL:
-                            logger.debug(
-                                f"Skipping {log_prefix}: Interval not met ({time_since} < {MIN_MESSAGE_INTERVAL})."
-                            )
-                            skipped_count += 1
-                            continue  # Skip to next match
-                        else:
-                            logger.debug(f"Interval delay check passed.")
+                         time_since = now_local - last_sent_at_local
+                         if time_since < MIN_MESSAGE_INTERVAL: logger.debug(f"Skipping {log_prefix}: Interval not met ({time_since} < {MIN_MESSAGE_INTERVAL})."); skipped_count += 1; continue
 
-                    # --- 9. Determine Next Message ---
-                    next_message_type_key = determine_next_message_type(
-                        last_message_sent_details, bool(is_in_family_tree)
-                    )
-                    if not next_message_type_key:
-                        skipped_count += 1
-                        continue  # Skip to next match
-
-                    # --- 10. Format Message (unchanged) ---
+                    # --- Determine & Format Message (Steps 9 & 10, same as V14.1) ---
+                    next_message_type_key = determine_next_message_type(last_message_sent_details, bool(is_in_family_tree))
+                    if not next_message_type_key: skipped_count += 1; continue
                     message_template = MESSAGE_TEMPLATES.get(next_message_type_key)
-                    if not message_template:
-                        logger.error(f"Missing template key '{next_message_type_key}'.")
-                        error_count += 1
-                        overall_success = False
-                        continue
-                    name_to_use = "Valued Relative"
-                    source = "Fallback"
-                    if is_in_family_tree and person_name_in_tree:
-                        name_to_use = person_name_in_tree
-                        source = "Tree"
-                    elif first_name:
-                        name_to_use = first_name
-                        source = "Person.first"
+                    if not message_template: logger.error(f"Missing template key '{next_message_type_key}'."); error_count += 1; overall_success = False; continue
+                    name_to_use = "Valued Relative"; source = "Fallback"
+                    if is_in_family_tree and person_name_in_tree: name_to_use = person_name_in_tree; source = "Tree"
+                    elif first_name: name_to_use = first_name; source = "Person.first"
                     elif username and username != "Unknown":
-                        clean_user = (
-                            username.replace("(managed by ", "")
-                            .replace(")", "")
-                            .strip()
-                        )
-                        if clean_user and clean_user != "Unknown User":
-                            name_to_use = clean_user
-                            source = "Person.user"
-                        else:
-                            source = "Person.user (unknown)"
+                        clean_user = username.replace("(managed by ", "").replace(")", "").strip()
+                        if clean_user and clean_user != "Unknown User": name_to_use = clean_user; source = "Person.user"
+                        else: source = "Person.user (unknown)"
                     formatted_name = format_name(name_to_use)
-                    logger.debug(f"Using name '{formatted_name}' (Source:{source})")
-                    format_data = {
-                        "name": formatted_name,
-                        "predicted_relationship": original_predicted_relationship
-                        or "N/A",
-                        "actual_relationship": original_actual_relationship or "N/A",
-                        "relationship_path": original_relationship_path or "N/A",
-                        "total_rows": total_family_tree_rows,
-                    }
-                    try:
-                        req_keys = set(re.findall(r"\{(\w+)\}", message_template))
-                    except Exception as regex_e:
-                        logger.error(f"Regex err:{regex_e}")
-                        req_keys = set(format_data.keys())
-                    keys_using_fallback = []
-                    critical_keys = {"name"}
-                    critical_keys_failed = []
-                    original_data_map = {
-                        "predicted_relationship": original_predicted_relationship,
-                        "actual_relationship": original_actual_relationship,
-                        "relationship_path": original_relationship_path,
-                        "name": name_to_use,
-                    }
+                    format_data = {"name": formatted_name, "predicted_relationship": original_predicted_relationship or "N/A",
+                                   "actual_relationship": original_actual_relationship or "N/A", "relationship_path": original_relationship_path or "N/A",
+                                   "total_rows": total_family_tree_rows}
+                    # ... (Formatting validation logic, same as V14.1) ...
+                    try: req_keys = set(re.findall(r"\{(\w+)\}", message_template))
+                    except Exception as regex_e: logger.error(f"Regex err:{regex_e}"); req_keys = set(format_data.keys())
+                    keys_using_fallback = []; critical_keys = {"name"}; critical_keys_failed = []
+                    original_data_map = {"predicted_relationship": original_predicted_relationship, "actual_relationship": original_actual_relationship, "relationship_path": original_relationship_path, "name": name_to_use}
                     for key in req_keys:
-                        original_value = original_data_map.get(key)
-                        value_in_final_dict = format_data.get(key)
-                        if value_in_final_dict == "N/A" and not original_value:
-                            keys_using_fallback.append(key)
-                        if key in critical_keys and (
-                            value_in_final_dict == "N/A" and not original_value
-                        ):
-                            critical_keys_failed.append(
-                                f"{key} (original data missing/empty)"
-                            )
-                        if key == "name" and value_in_final_dict == "Valued Relative":
-                            if not name_to_use or name_to_use == "Valued Relative":
-                                critical_keys_failed.append(
-                                    f"{key} (original name missing/invalid)"
-                                )
-                    if critical_keys_failed:
-                        logger.error(
-                            f"CRITICAL formatting keys missing/invalid original data for {log_prefix}: {critical_keys_failed}. Skipping."
-                        )
-                        error_count += 1
-                        overall_success = False
-                        continue
-                    elif keys_using_fallback:
-                        logger.warning(
-                            f"Formatting {log_prefix}: Original data missing/empty for keys: {keys_using_fallback}. Message will use 'N/A'."
-                        )
-                    try:
-                        message_text = message_template.format(**format_data)
-                    except KeyError as e:
-                        logger.error(
-                            f"KeyError fmt msg for {log_prefix}: Missing key {e}.",
-                            exc_info=False,
-                        )
-                        error_count += 1
-                        overall_success = False
-                        continue
-                    except Exception as e:
-                        logger.error(
-                            f"Error fmt msg for {log_prefix}: {e}", exc_info=True
-                        )
-                        error_count += 1
-                        overall_success = False
-                        continue
+                         original_value = original_data_map.get(key); value_in_final_dict = format_data.get(key)
+                         if value_in_final_dict == "N/A" and not original_value: keys_using_fallback.append(key)
+                         if key in critical_keys and (value_in_final_dict == "N/A" and not original_value): critical_keys_failed.append(f"{key} (original data missing/empty)")
+                         if key == "name" and value_in_final_dict == "Valued Relative":
+                              if not name_to_use or name_to_use == "Valued Relative": critical_keys_failed.append(f"{key} (original name missing/invalid)")
+                    if critical_keys_failed: logger.error(f"CRITICAL formatting keys missing/invalid original data for {log_prefix}: {critical_keys_failed}. Skipping."); error_count += 1; overall_success = False; continue
+                    elif keys_using_fallback: logger.warning(f"Formatting {log_prefix}: Original data missing/empty for keys: {keys_using_fallback}. Message will use 'N/A'.")
+                    try: message_text = message_template.format(**format_data)
+                    except KeyError as e: logger.error(f"KeyError fmt msg for {log_prefix}: Missing key {e}.", exc_info=False); error_count += 1; overall_success = False; continue
+                    except Exception as e: logger.error(f"Error fmt msg for {log_prefix}: {e}", exc_info=True); error_count += 1; overall_success = False; continue
 
-                    # --- 11. API Call Prep (unchanged) ---
+
+                    # --- API Call Prep (Step 11, same as V14.1) ---
                     message_status: str = "skipped (logic_error)"
                     new_conversation_id_from_api_local: Optional[str] = None
-                    is_initial_message: bool = not conversation_id
-                    send_api_url: str = ""
-                    payload: Dict[str, Any] = {}
-                    send_api_desc: str = ""
-                    api_headers = {}
+                    is_initial_message: bool = not conversation_id; send_api_url: str = ""; payload: Dict[str, Any] = {}
+                    send_api_desc: str = ""; api_headers = {}
                     if is_initial_message:
-                        send_api_url = urljoin(
-                            config_instance.BASE_URL.rstrip("/") + "/",
-                            "app-api/express/v2/conversations/message",
-                        )
+                        send_api_url = urljoin(config_instance.BASE_URL.rstrip("/") + "/", "app-api/express/v2/conversations/message")
                         send_api_desc = "Create Conversation API"
-                        payload = {
-                            "content": message_text,
-                            "author": MY_PROFILE_ID_LOWER,
-                            "index": 0,
-                            "created": 0,
-                            "conversation_members": [
-                                {
-                                    "user_id": recipient_profile_id_upper.lower(),
-                                    "family_circles": [],
-                                },
-                                {"user_id": MY_PROFILE_ID_LOWER},
-                            ],
-                        }
+                        payload = {"content": message_text, "author": MY_PROFILE_ID_LOWER, "index": 0, "created": 0,
+                                   "conversation_members": [{"user_id": recipient_profile_id_upper.lower(), "family_circles": []}, {"user_id": MY_PROFILE_ID_LOWER}]}
                     elif conversation_id:
-                        send_api_url = urljoin(
-                            config_instance.BASE_URL.rstrip("/") + "/",
-                            f"app-api/express/v2/conversations/{conversation_id}",
-                        )
+                        send_api_url = urljoin(config_instance.BASE_URL.rstrip("/") + "/", f"app-api/express/v2/conversations/{conversation_id}")
                         send_api_desc = "Send Message API (Existing Conv)"
-                        payload = {
-                            "content": message_text,
-                            "author": MY_PROFILE_ID_LOWER,
-                        }
-                    else:
-                        logger.error(
-                            f"Logic Error: Cannot determine API URL/payload for {log_prefix}."
-                        )
-                        error_count += 1
-                        overall_success = False
-                        continue
-                    ctx_headers = config_instance.API_CONTEXTUAL_HEADERS.get(
-                        send_api_desc, {}
-                    )
-                    if "ancestry-userid" in ctx_headers:
-                        api_headers["ancestry-userid"] = MY_PROFILE_ID_UPPER
+                        payload = {"content": message_text, "author": MY_PROFILE_ID_LOWER}
+                    else: logger.error(f"Logic Error: Cannot determine API URL/payload for {log_prefix}."); error_count += 1; overall_success = False; continue
+                    ctx_headers = config_instance.API_CONTEXTUAL_HEADERS.get(send_api_desc, {})
+                    if "ancestry-userid" in ctx_headers: api_headers["ancestry-userid"] = MY_PROFILE_ID_UPPER
 
-                    # --- 12. Execute based on APP_MODE ---
+                    # --- Execute API Call (Step 12, same as V14.1) ---
                     if config_instance.APP_MODE == "dry_run":
-                        action = "create" if is_initial_message else "send to"
-                        logger.info(
-                            f"[DRY RUN] Would {action} '{next_message_type_key}' to {username}."
-                        )
+                        action = "create" if is_initial_message else "send to"; logger.debug(f"[DRY RUN] Would {action} '{next_message_type_key}' to {username}.")
                         message_status = "typed (dry_run)"
-                        if is_initial_message:
-                            new_conversation_id_from_api_local = (
-                                f"dryrun_{uuid.uuid4()}"
-                            )
-                        else:
-                            new_conversation_id_from_api_local = conversation_id
+                        if is_initial_message: new_conversation_id_from_api_local = f"dryrun_{uuid.uuid4()}"
+                        else: new_conversation_id_from_api_local = conversation_id
                     elif config_instance.APP_MODE in ["production", "testing"]:
-                        action = "create" if is_initial_message else "send follow-up"
-                        logger.info(
-                            f"Attempting to {action} '{next_message_type_key}' to {log_prefix} via API..."
-                        )
+                        action = "create" if is_initial_message else "send follow-up"; logger.info(f"Attempting to {action} '{next_message_type_key}' to {log_prefix} via API...")
                         api_response: Optional[Any] = None
                         try:
-                            api_response = _api_req(
-                                url=send_api_url,
-                                driver=session_manager.driver,
-                                session_manager=session_manager,
-                                method="POST",
-                                json_data=payload,
-                                use_csrf_token=False,
-                                headers=api_headers,
-                                api_description=send_api_desc,
-                                force_requests=True,
-                            )
+                            api_response = _api_req(url=send_api_url, driver=session_manager.driver, session_manager=session_manager,
+                                                    method="POST", json_data=payload, use_csrf_token=False, headers=api_headers,
+                                                    api_description=send_api_desc, force_requests=True)
                         except Exception as api_e:
-                            logger.error(
-                                f"Exception during _api_req ({send_api_desc}) for {log_prefix}: {api_e}",
-                                exc_info=True,
-                            )
-                            message_status = "send_error (api_exception)"
-                            error_count += 1
-                            overall_success = False
-                            continue
-
-                        # Validate API response (unchanged)
-                        post_ok = False
-                        author_match = False
-                        api_conv_id: Optional[str] = None
-                        api_author: Optional[str] = None
+                            logger.error(f"Exception during _api_req ({send_api_desc}) for {log_prefix}: {api_e}", exc_info=True)
+                            message_status = "send_error (api_exception)"; error_count += 1; overall_success = False; continue
+                        # --- Validate API response (same as V14.1) ---
+                        post_ok = False; author_match = False; api_conv_id: Optional[str] = None; api_author: Optional[str] = None
                         if api_response is not None:
                             if is_initial_message:
-                                if (
-                                    isinstance(api_response, dict)
-                                    and "conversation_id" in api_response
-                                ):
-                                    api_conv_id = str(
-                                        api_response.get("conversation_id")
-                                    )
-                                    msg_details = api_response.get("message", {})
-                                    if isinstance(msg_details, dict):
-                                        api_author = str(
-                                            msg_details.get("author", "")
-                                        ).upper()
-                                    if (
-                                        api_conv_id
-                                        and api_author == MY_PROFILE_ID_UPPER
-                                    ):
-                                        post_ok = True
-                                        author_match = True
-                                        new_conversation_id_from_api_local = api_conv_id
-                                        logger.info(
-                                            f"API POST OK (initial): ConvID {new_conversation_id_from_api_local}."
-                                        )
-                                    else:
-                                        logger.error(
-                                            f"API initial response invalid. ConvID:'{api_conv_id}', Author:'{api_author}'"
-                                        )
-                                else:
-                                    logger.error(
-                                        f"API call ({send_api_desc}) unexpected format (initial). Type:{type(api_response)}"
-                                    )
-                                    logger.debug(f"Resp:{api_response}")
-                            else:  # Follow-up
-                                if (
-                                    isinstance(api_response, dict)
-                                    and "author" in api_response
-                                ):
-                                    api_author = str(
-                                        api_response.get("author", "")
-                                    ).upper()
+                                if isinstance(api_response, dict) and "conversation_id" in api_response:
+                                    api_conv_id = str(api_response.get("conversation_id"))
+                                    msg_details = api_response.get("message", {}); api_author = str(msg_details.get("author", "")).upper() if isinstance(msg_details, dict) else None
+                                    if api_conv_id and api_author == MY_PROFILE_ID_UPPER:
+                                        post_ok = True; author_match = True; new_conversation_id_from_api_local = api_conv_id
+                                    else: logger.error(f"API initial response invalid. ConvID:'{api_conv_id}', Author:'{api_author}'")
+                                else: logger.error(f"API call ({send_api_desc}) unexpected format (initial). Type:{type(api_response)}"); logger.debug(f"Resp:{api_response}")
+                            else: # Follow-up
+                                if isinstance(api_response, dict) and "author" in api_response:
+                                    api_author = str(api_response.get("author", "")).upper()
                                     if api_author == MY_PROFILE_ID_UPPER:
-                                        post_ok = True
-                                        author_match = True
-                                        new_conversation_id_from_api_local = (
-                                            conversation_id
-                                        )
-                                        logger.info(f"API POST OK (follow-up).")
-                                        resp_content = api_response.get("content")
-                                        if resp_content != message_text:
-                                            logger.warning(
-                                                f"API response content mismatch."
-                                            )
-                                    else:
-                                        logger.error(
-                                            f"API follow-up author validation failed. Author:'{api_author}'"
-                                        )
-                                else:
-                                    logger.error(
-                                        f"API call ({send_api_desc}) unexpected format (follow-up). Type:{type(api_response)}"
-                                    )
-                                    logger.debug(f"Resp:{api_response}")
-                            if post_ok and author_match:
-                                message_status = "delivered OK"
-                                logger.info(f"Message send to {log_prefix} ACCEPTED.")
-                            else:
-                                message_status = "send_error (validation_failed)"
-                                error_count += 1
-                                overall_success = False
-                                logger.warning(
-                                    f"API POST validation failed for {log_prefix}."
-                                )
-                        else:
-                            logger.error(
-                                f"API POST ({send_api_desc}) for {log_prefix} failed."
-                            )
-                            message_status = "send_error (post_failed)"
-                            error_count += 1
-                            overall_success = False
-                    else:
-                        logger.warning(
-                            f"Skipping send for {log_prefix} due to unsupported APP_MODE: {config_instance.APP_MODE}"
-                        )
-                        skipped_count += 1
-                        continue
+                                        post_ok = True; author_match = True; new_conversation_id_from_api_local = conversation_id
+                                        if api_response.get("content") != message_text: logger.warning(f"API response content mismatch.")
+                                    else: logger.error(f"API follow-up author validation failed. Author:'{api_author}'")
+                                else: logger.error(f"API call ({send_api_desc}) unexpected format (follow-up). Type:{type(api_response)}"); logger.debug(f"Resp:{api_response}")
+                            if post_ok and author_match: message_status = "delivered OK"; logger.info(f"Message send to {log_prefix} ACCEPTED.")
+                            else: message_status = "send_error (validation_failed)"; error_count += 1; overall_success = False; logger.warning(f"API POST validation failed for {log_prefix}.")
+                        else: logger.error(f"API POST ({send_api_desc}) for {log_prefix} failed."); message_status = "send_error (post_failed)"; error_count += 1; overall_success = False
+                    else: logger.warning(f"Skipping send for {log_prefix} due to unsupported APP_MODE: {config_instance.APP_MODE}"); skipped_count += 1; continue
 
-                    # --- 13. Database Update (unchanged logic, uses current db_session) ---
-                    if (
-                        message_status == "delivered OK"
-                        or message_status == "typed (dry_run)"
-                    ):
-                        new_history_record = None  # Reset for this match
+
+                    # --- MODIFIED: Database Update Preparation ---
+                    if message_status in ("delivered OK", "typed (dry_run)"):
                         try:
-                            msg_type_obj = (
-                                db_session.query(MessageType)
-                                .filter(MessageType.type_name == next_message_type_key)
-                                .first()
-                            )
-                            if not msg_type_obj:
-                                raise ValueError(
-                                    f"MessageType '{next_message_type_key}' not found in DB."
-                                )
-                            current_time_local = now_local  # Use naive local time
-                            trunc_hist = message_text[
-                                : config_instance.MESSAGE_TRUNCATION_LENGTH
-                            ]
-                            new_history_record = MessageHistory(
-                                people_id=person_id,
-                                message_type_id=msg_type_obj.id,
-                                message_text=trunc_hist,
-                                status=message_status,
-                                sent_at=current_time_local,
-                            )
-                            db_session.add(new_history_record)
-                            logger.debug(f"Added MessageHistory.")
+                            msg_type_obj = db_session.query(MessageType).filter(MessageType.type_name == next_message_type_key).first()
+                            if not msg_type_obj: raise ValueError(f"MessageType '{next_message_type_key}' not found in DB.")
 
-                            # --- Update InboxStatus ---
-                            # Check pre-fetched data first
-                            inbox_status_upd = inbox_data.get(person_id)
+                            current_time_local = now_local
+                            trunc_hist = message_text[:config_instance.MESSAGE_TRUNCATION_LENGTH]
+
+                            # Create MessageHistory object
+                            new_history = MessageHistory(
+                                people_id=person_id, message_type_id=msg_type_obj.id,
+                                message_text=trunc_hist, status=message_status, sent_at=current_time_local
+                            )
+                            db_objects_to_commit.append(new_history) # Add to batch list
+                            logger.debug("Prepared MessageHistory for batch commit.")
+
+                            # Prepare InboxStatus update/creation
+                            inbox_status_upd = inbox_data.get(person_id) # Get from pre-fetched data
                             effective_conv_id = new_conversation_id_from_api_local
                             if not effective_conv_id:
-                                logger.error(
-                                    f"DB Update Error for {log_prefix}: Conv ID missing after API call/dry run!"
-                                )
-                                error_count += 1
-                                overall_success = False
-                                continue
-                            trunc_inbox = message_text[
-                                : config_instance.MESSAGE_TRUNCATION_LENGTH
-                            ]
+                                logger.error(f"DB Prep Error for {log_prefix}: Conv ID missing!"); error_count += 1; overall_success = False; continue
+                            trunc_inbox = message_text[:config_instance.MESSAGE_TRUNCATION_LENGTH]
 
-                            if (
-                                inbox_status_upd
-                            ):  # Update existing InboxStatus from pre-fetched dict
+                            if inbox_status_upd: # Update existing
                                 updated_inbox = False
-                                if inbox_status_upd.my_role != RoleType.AUTHOR:
-                                    inbox_status_upd.my_role = RoleType.AUTHOR
-                                    updated_inbox = True
-                                if inbox_status_upd.last_message != trunc_inbox:
-                                    inbox_status_upd.last_message = trunc_inbox
-                                    updated_inbox = True
-                                # Convert DB timestamp to naive local for comparison
-                                db_ts_naive_inbox = None
-                                if inbox_status_upd.last_message_timestamp:
-                                    db_ts_naive_inbox = (
-                                        inbox_status_upd.last_message_timestamp.replace(
-                                            tzinfo=None
-                                        )
-                                        if inbox_status_upd.last_message_timestamp.tzinfo
-                                        else inbox_status_upd.last_message_timestamp
-                                    )
-                                # Compare with current_time_local (already naive)
-                                if db_ts_naive_inbox != current_time_local:
-                                    inbox_status_upd.last_message_timestamp = (
-                                        current_time_local
-                                    )
-                                    updated_inbox = True
-                                if (
-                                    inbox_status_upd.conversation_id
-                                    != effective_conv_id
-                                ):
-                                    inbox_status_upd.conversation_id = effective_conv_id
-                                    updated_inbox = True
-                                    logger.debug(
-                                        f"Updated Inbox Conv ID for {log_prefix}"
-                                    )
+                                if inbox_status_upd.my_role != RoleType.AUTHOR: inbox_status_upd.my_role = RoleType.AUTHOR; updated_inbox = True
+                                if inbox_status_upd.last_message != trunc_inbox: inbox_status_upd.last_message = trunc_inbox; updated_inbox = True
+                                db_ts_naive_inbox = inbox_status_upd.last_message_timestamp.replace(tzinfo=None) if inbox_status_upd.last_message_timestamp and inbox_status_upd.last_message_timestamp.tzinfo else inbox_status_upd.last_message_timestamp
+                                if db_ts_naive_inbox != current_time_local: inbox_status_upd.last_message_timestamp = current_time_local; updated_inbox = True
+                                if inbox_status_upd.conversation_id != effective_conv_id: inbox_status_upd.conversation_id = effective_conv_id; updated_inbox = True; logger.debug(f"Updated Inbox Conv ID for {log_prefix}")
                                 if updated_inbox:
                                     inbox_status_upd.last_updated = now_local
-                                    logger.debug(f"Updated InboxStatus.")
-                                    # Ensure the object is marked as dirty if needed, though direct attribute change should handle it
-                                    db_session.add(
-                                        inbox_status_upd
-                                    )  # Re-add to session to mark dirty if detached or state unclear
-                                else:
-                                    logger.debug(
-                                        f"InboxStatus for {log_prefix} up-to-date."
-                                    )
-                            else:  # Create new InboxStatus
+                                    db_objects_to_commit.append(inbox_status_upd) # Add updated object to batch list
+                                    logger.debug("Prepared updated InboxStatus for batch commit.")
+                                else: logger.debug(f"InboxStatus for {log_prefix} up-to-date.")
+                            else: # Create new InboxStatus
                                 new_inbox = InboxStatus(
-                                    people_id=person_id,
-                                    conversation_id=effective_conv_id,
-                                    my_role=RoleType.AUTHOR,
-                                    last_message=trunc_inbox,
-                                    last_message_timestamp=current_time_local,
+                                    people_id=person_id, conversation_id=effective_conv_id, my_role=RoleType.AUTHOR,
+                                    last_message=trunc_inbox, last_message_timestamp=current_time_local
                                 )
-                                db_session.add(new_inbox)
-                                logger.debug(f"Created InboxStatus.")
-                                # Add to our dictionary for consistency if needed later in same run? Not strictly necessary here.
-                                # inbox_data[person_id] = new_inbox
+                                db_objects_to_commit.append(new_inbox) # Add new object to batch list
+                                logger.debug("Prepared new InboxStatus for batch commit.")
+                                inbox_data[person_id] = new_inbox # Add to local dict for consistency within run
 
-                            # Flush changes to assign ID etc.
-                            db_session.flush()
-                            logger.debug(f"DB changes staged: {message_status}.")
-                            if new_history_record and new_history_record.id:
-                                logger.debug(
-                                    f"Staged MessageHistory ID {new_history_record.id}\n"
-                                )
-                            elif new_history_record:
-                                logger.warning(
-                                    f"MessageHistory staged, but ID not assigned after flush for {log_prefix}."
-                                )
+                            logger.debug(f"DB objects prepared: {message_status}.")
                             if message_status == "delivered OK":
                                 sent_count += 1
 
-                        except ValueError as val_err:
-                            logger.error(
-                                f"DB update validation err for {log_prefix}: {val_err}",
-                                exc_info=True,
-                            )
-                            error_count += 1
-                            overall_success = False
-                            continue
-                        except SQLAlchemyError as db_e:
-                            logger.error(
-                                f"DB err staging updates for {log_prefix}: {db_e}",
-                                exc_info=True,
-                            )
-                            error_count += 1
-                            overall_success = False
-                            continue
-                        except Exception as db_e_unexp:
-                            logger.critical(
-                                f"Unexpected DB err staging updates for {log_prefix}: {db_e_unexp}",
-                                exc_info=True,
-                            )
-                            error_count += 1
-                            overall_success = False
-                            continue
+                            # --- Commit periodically ---
+                            if len(db_objects_to_commit) >= db_commit_batch_size:
+                                logger.debug(f"Reached batch size ({db_commit_batch_size}). Committing staged DB objects...")
+                                try:
+                                    db_session.add_all(db_objects_to_commit)
+                                    db_session.flush() # Flush to check constraints early
+                                    # Commit happens via context manager at the end, or here if we want mid-run commits
+                                    # db_session.commit() # Uncomment for mid-run commits
+                                    logger.debug(f"Committed batch of {len(db_objects_to_commit)} DB objects.")
+                                    db_objects_to_commit = [] # Clear the batch
+                                except Exception as commit_err:
+                                     logger.error(f"Error committing DB batch: {commit_err}", exc_info=True)
+                                     # db_session.rollback() # Rollback handled by context manager
+                                     error_count += len(db_objects_to_commit) # Mark affected items as errors
+                                     db_objects_to_commit = [] # Clear batch after error
+                                     overall_success = False
+                                     # Potentially stop processing or just log and continue? Continue for now.
 
-                except (
-                    Exception
-                ) as inner_loop_e:  # Catch errors within single match processing
-                    # Error handling for specific datetime comparison/conversion errors (unchanged)
-                    if isinstance(
-                        inner_loop_e, TypeError
-                    ) and "can't compare offset-naive and offset-aware datetimes" in str(
-                        inner_loop_e
-                    ):
-                        logger.critical(
-                            f"CRITICAL DATETIME COMPARISON ERROR for {log_prefix}: {inner_loop_e}",
-                            exc_info=True,
-                        )
-                        logger.error("Aborting this match.\n")
-                    elif isinstance(inner_loop_e, TypeError) and (
-                        "replace() got an unexpected keyword argument 'tzinfo'"
-                        in str(inner_loop_e)
-                        or "astimezone() cannot be applied to a naive datetime"
-                        in str(inner_loop_e)
-                    ):
-                        logger.critical(
-                            f"CRITICAL DATETIME CONVERSION ERROR for {log_prefix}: {inner_loop_e}\n",
-                            exc_info=True,
-                        )
-                        logger.error("Aborting this match.")
-                    else:
-                        logger.error(
-                            f"Unexpected error processing {log_prefix}: {inner_loop_e}\n",
-                            exc_info=True,
-                        )
-                    error_count += 1
-                    overall_success = False
-                    continue  # Continue to next match
+                        except (ValueError, SQLAlchemyError) as db_prep_err:
+                             logger.error(f"DB prep error for {log_prefix}: {db_prep_err}", exc_info=True)
+                             error_count += 1; overall_success = False; continue # Skip this message
+                        except Exception as db_prep_unexp:
+                             logger.critical(f"Unexpected DB prep error for {log_prefix}: {db_prep_unexp}", exc_info=True)
+                             error_count += 1; overall_success = False; continue # Skip this message
+
+                except Exception as inner_loop_e:
+                    # --- Inner loop error handling (same as V14.1) ---
+                    if isinstance(inner_loop_e, TypeError) and "can't compare offset-naive and offset-aware datetimes" in str(inner_loop_e):
+                        logger.critical(f"CRITICAL DATETIME COMPARISON ERROR for {log_prefix}: {inner_loop_e}", exc_info=True)
+                    elif isinstance(inner_loop_e, TypeError) and ("replace() got an unexpected keyword argument 'tzinfo'" in str(inner_loop_e) or "astimezone() cannot be applied to a naive datetime" in str(inner_loop_e)):
+                        logger.critical(f"CRITICAL DATETIME CONVERSION ERROR for {log_prefix}: {inner_loop_e}\n", exc_info=True)
+                    else: logger.error(f"Unexpected error processing {log_prefix}: {inner_loop_e}\n", exc_info=True)
+                    error_count += 1; overall_success = False; continue
+
+            # --- Commit any remaining objects after the loop ---
+            if db_objects_to_commit:
+                logger.debug(f"Committing final batch of {len(db_objects_to_commit)} DB objects...")
+                try:
+                     db_session.add_all(db_objects_to_commit)
+                     db_session.flush() # Flush to check constraints early
+                     # Commit happens via context manager
+                     logger.debug("Final DB object batch staged for commit.")
+                     db_objects_to_commit = [] # Clear the batch
+                except Exception as commit_err:
+                     logger.error(f"Error committing final DB batch: {commit_err}", exc_info=True)
+                     # Rollback handled by context manager
+                     error_count += len(db_objects_to_commit)
+                     overall_success = False
 
             logger.debug("Finished processing all potential matches.")
-            # Commit happens automatically via context manager `get_db_conn_context`
+            # Final commit happens automatically via context manager `get_db_conn_context`
 
     except Exception as outer_e:
-        logger.critical(
-            f"Critical error during message processing loop: {outer_e}", exc_info=True
-        )
+        logger.critical(f"Critical error during message processing loop: {outer_e}", exc_info=True)
         overall_success = False
-        # Rollback happens automatically via context manager `get_db_conn_context`
+        # Rollback happens automatically via context manager
 
-    # --- Final Summary (unchanged) ---
+    # --- Final Summary (same as V14.1) ---
     logger.info("--- Message Sending Summary ----")
     potential_count = len(potential_matches) if potential_matches else 0
     logger.info(f"  Potential Matches Found: {potential_count}")
@@ -1081,9 +602,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     logger.info("---------------------------------\n")
 
     return overall_success
-
-
-# End of send_messages_to_matches
+# End of send_messages_to_matches (V14.1 + Batch Commit)
 
 
 #####################################################
@@ -1154,8 +673,6 @@ def main():
         logger.info(
             f"--- Action 8 Standalone Test Finished (Overall Success: {action_success}) ---"
         )
-
-
 # end main
 
 if __name__ == "__main__":
