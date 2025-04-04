@@ -596,17 +596,18 @@ def _do_match(
     Optional[Dict[str, Any]], Literal["new", "updated", "skipped", "error"], Optional[str]
 ]:
     """
-    V14.3 REVISED: Processes match data, compares with existing DB record (if any),
+    V14.5 REVISED: Processes match data, compares with existing DB record (if any),
     and returns prepared data dictionary containing ONLY the fields needing creation or update.
     - Determines 'new', 'updated', or 'skipped' status based on actual changes.
-    - Corrected second NameError for existing tree record ID during update prep.
+    - Uses format_name consistently.
+    - Only updates username/message_link if the existing value is None/empty.
     """
     existing_person: Optional[Person] = None
     dna_match_record: Optional[DnaMatch] = None
     family_tree_record: Optional[FamilyTree] = None # Correct variable for existing tree
 
     match_uuid = match.get("uuid")
-    match_username = match.get("username")
+    match_username = match.get("username") # Already formatted from get_matches
     predicted_relationship = match.get("predicted_relationship", "N/A")
     match_in_my_tree = match.get("in_my_tree", False)
     log_ref = f"UUID={match_uuid or 'N/A'} User='{match_username or 'Unknown'}'"
@@ -622,7 +623,7 @@ def _do_match(
         logger.error(error_msg); return None, "error", error_msg
 
     try:
-        # Step 1: DB Lookup (Loads related objects including family_tree_record)
+        # Step 1: DB Lookup (Same as V14.4)
         logger.debug(f"{log_ref}: Performing initial DB lookup by UUID...")
         try:
             existing_person = (
@@ -635,7 +636,6 @@ def _do_match(
                 logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id}.")
                 dna_match_record = existing_person.dna_match
                 family_tree_record = existing_person.family_tree # Assign here
-                session.expire(existing_person, ["dna_match", "family_tree"])
             else: logger.debug(f"{log_ref}: No existing person found by UUID.")
         except SQLAlchemyError as db_lookup_err:
             logger.error(f"Initial DB lookup failed for {log_ref_short}: {db_lookup_err}", exc_info=True)
@@ -646,33 +646,47 @@ def _do_match(
 
         is_new_person = existing_person is None
 
-        # Step 2: Prepare Incoming Data (Same as V14.2)
-        # --- Prepare Person Data ---
+        # Step 2: Prepare Incoming Data (Same as V14.4 - uses format_name for names)
         details_part = prefetched_combined_details or {}; profile_part = prefetched_combined_details or {}
         tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
         admin_profile_id = details_part.get("admin_profile_id") or match.get("administrator_profile_id_hint")
-        admin_username = details_part.get("admin_username") or match.get("administrator_username_hint")
+        raw_admin_username = details_part.get("admin_username") or match.get("administrator_username_hint")
+        admin_username = format_name(raw_admin_username) # Format consistently
         person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (None, None, None)
-        if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()): person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (tester_profile_id, admin_profile_id, admin_username)
+        if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
+             person_profile_id_to_save = tester_profile_id
+             person_admin_id_to_save = admin_profile_id
+             person_admin_username_to_save = admin_username
         elif admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
-            if admin_username and match_username and match_username.lower() != admin_username.lower(): person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (None, admin_profile_id, admin_username)
-            else: person_profile_id_to_save = tester_profile_id
-        elif tester_profile_id and not admin_profile_id: person_profile_id_to_save = tester_profile_id
-        else: person_admin_id_to_save, person_admin_username_to_save = (admin_profile_id, admin_username)
+             if admin_username and match_username and match_username.lower() != admin_username.lower():
+                  person_profile_id_to_save = None
+                  person_admin_id_to_save = admin_profile_id
+                  person_admin_username_to_save = admin_username
+             else:
+                  person_profile_id_to_save = tester_profile_id
+        elif tester_profile_id and not admin_profile_id:
+             person_profile_id_to_save = tester_profile_id
+        else:
+             person_admin_id_to_save = admin_profile_id
+             person_admin_username_to_save = admin_username
         message_target_id = person_admin_id_to_save or person_profile_id_to_save; constructed_message_link = None
-        if message_target_id and session_manager.my_uuid: constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={message_target_id.upper()}&testguid1={session_manager.my_uuid.upper()}&testguid2={match_uuid.upper()}")
+        if message_target_id and session_manager.my_uuid:
+             target_upper = message_target_id.upper(); my_uuid_upper = session_manager.my_uuid.upper(); match_uuid_upper = match_uuid.upper()
+             constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={target_upper}&testguid1={my_uuid_upper}&testguid2={match_uuid_upper}")
         birth_year_val = None
         if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
             try: birth_year_val = int(prefetched_tree_data["their_birth_year"])
             except (ValueError, TypeError): pass
         incoming_person_data = {
             "uuid": match_uuid.upper(), "profile_id": (person_profile_id_to_save.upper() if person_profile_id_to_save else None),
-            "username": match_username, "administrator_profile_id": (person_admin_id_to_save.upper() if person_admin_id_to_save else None),
-            "administrator_username": person_admin_username_to_save, "in_my_tree": match_in_my_tree, "first_name": match.get("first_name"),
+            "username": match_username, # Already formatted
+            "administrator_profile_id": (person_admin_id_to_save.upper() if person_admin_id_to_save else None),
+            "administrator_username": person_admin_username_to_save, # Already formatted
+            "in_my_tree": match_in_my_tree,
+            "first_name": match.get("first_name"), # Already formatted from get_matches
             "last_logged_in": profile_part.get("last_logged_in_dt"), "contactable": profile_part.get("contactable", False),
             "gender": details_part.get("gender"), "message_link": constructed_message_link, "birth_year": birth_year_val,
         }
-        # --- Prepare DNA Data ---
         incoming_dna_data = None
         if dna_match_record is None and prefetched_combined_details is not None:
             incoming_dna_data = {
@@ -683,7 +697,6 @@ def _do_match(
                 "_operation": "create"
             }
         elif dna_match_record is None and prefetched_combined_details is None: logger.warning(f"{log_ref}: DNA Match should be created, but no details were fetched.")
-        # --- Prepare Tree Data ---
         incoming_tree_data = None
         should_have_tree = match_in_my_tree and prefetched_tree_data is not None
         if should_have_tree:
@@ -692,17 +705,20 @@ def _do_match(
             if their_cfpid_final and session_manager.my_tree_id:
                 base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}")
                 view_in_tree_link = urljoin(base_tree_url, "family"); facts_link = urljoin(base_tree_url, "facts")
+            tree_person_name = prefetched_tree_data.get("their_firstname", "Unknown") # Already formatted from _fetch_batch_badge_details
             incoming_tree_data = {
-                "uuid": match_uuid.upper(), "cfpid": their_cfpid_final, "person_name_in_tree": prefetched_tree_data.get("their_firstname", "Unknown"),
+                "uuid": match_uuid.upper(), "cfpid": their_cfpid_final,
+                "person_name_in_tree": tree_person_name, # Use formatted name
                 "facts_link": facts_link, "view_in_tree_link": view_in_tree_link, "actual_relationship": prefetched_tree_data.get("actual_relationship"),
                 "relationship_path": prefetched_tree_data.get("relationship_path"), "_operation": "create" if family_tree_record is None else "update",
                 "_existing_tree_id": family_tree_record.id if family_tree_record else None
             }
         elif not match_in_my_tree and family_tree_record is not None: logger.debug(f"{log_ref}: Should not have tree record, but one exists. No tree data prepared.")
 
+
         # Step 3: Compare and Build Bulk Data Dictionary
         if is_new_person:
-            # --- NEW PERSON --- (Same as V14.2)
+            # --- NEW PERSON --- (Same logic as V14.4)
             logger.debug(f"{log_ref}: Preparing data for NEW Person.")
             person_data_for_bulk = incoming_person_data.copy(); person_data_for_bulk["_operation"] = "create"
             prepared_data_for_bulk["person"] = person_data_for_bulk
@@ -713,23 +729,54 @@ def _do_match(
             # --- EXISTING PERSON --- Compare fields ---
             person_data_for_update = {"_operation": "update", "_existing_person_id": existing_person.id, "uuid": match_uuid.upper()}
             person_update_needed = False
-            # --- Comparisons (Same as V14.2) ---
+
+            # --- Comparisons with revised logic for username/message_link ---
+            # last_logged_in (same logic)
             new_dt = incoming_person_data.get("last_logged_in"); old_dt = existing_person.last_logged_in; new_naive_ts = None; old_naive_ts = None
             if isinstance(new_dt, datetime): new_naive_ts = new_dt.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
             if isinstance(old_dt, datetime): old_naive_ts = old_dt.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0) if old_dt.tzinfo else old_dt.replace(microsecond=0)
             if new_naive_ts != old_naive_ts: logger.debug(f"  -> Change detected for last_logged_in: {old_naive_ts} -> {new_naive_ts}"); person_data_for_update["last_logged_in"] = new_dt; person_update_needed = True
+
+            # contactable (same logic)
             if bool(existing_person.contactable) != bool(incoming_person_data.get("contactable", False)): logger.debug(f"  -> Change detected for contactable"); person_data_for_update["contactable"] = bool(incoming_person_data.get("contactable", False)); person_update_needed = True
-            if incoming_person_data.get("birth_year") is not None and existing_person.birth_year is None:
-                 try: birth_year_int = int(incoming_person_data["birth_year"]); logger.debug(f"  -> Change detected for birth_year (adding)"); person_data_for_update["birth_year"] = birth_year_int; person_update_needed = True
-                 except (ValueError, TypeError): pass
+
+            # birth_year (same logic - only update if currently None)
+            new_birth_year = incoming_person_data.get("birth_year")
+            if new_birth_year is not None and existing_person.birth_year is None:
+                 try: birth_year_int = int(new_birth_year); logger.debug(f"  -> Change detected for birth_year (adding)"); person_data_for_update["birth_year"] = birth_year_int; person_update_needed = True
+                 except (ValueError, TypeError): logger.warning(f"  Skipping birth_year update for {log_ref}: New value '{new_birth_year}' not valid int.")
+
+            # in_my_tree (same logic - update if different)
             if bool(existing_person.in_my_tree) != bool(incoming_person_data.get("in_my_tree", False)): logger.debug(f"  -> Change detected for in_my_tree"); person_data_for_update["in_my_tree"] = bool(incoming_person_data.get("in_my_tree", False)); person_update_needed = True
+
+            # gender (same logic - only update if currently None)
             new_gender = incoming_person_data.get("gender")
             if new_gender is not None and existing_person.gender is None and isinstance(new_gender, str) and new_gender.lower() in ('f','m'): logger.debug(f"  -> Change detected for gender (adding)"); person_data_for_update["gender"] = new_gender.lower(); person_update_needed = True
-            new_admin_id = incoming_person_data.get("administrator_profile_id"); new_admin_user = incoming_person_data.get("administrator_username")
+
+            # admin info (same logic - update if different)
+            new_admin_id = incoming_person_data.get("administrator_profile_id"); new_admin_user = incoming_person_data.get("administrator_username") # Already formatted
             if existing_person.administrator_profile_id != new_admin_id: logger.debug(f"  -> Change detected for administrator_profile_id"); person_data_for_update["administrator_profile_id"] = new_admin_id; person_update_needed = True
             if existing_person.administrator_username != new_admin_user: logger.debug(f"  -> Change detected for administrator_username"); person_data_for_update["administrator_username"] = new_admin_user; person_update_needed = True
-            if existing_person.message_link != incoming_person_data.get("message_link"): logger.debug(f"  -> Change detected for message_link"); person_data_for_update["message_link"] = incoming_person_data.get("message_link"); person_update_needed = True
-            if existing_person.username != incoming_person_data.get("username"): logger.debug(f"  -> Change detected for username"); person_data_for_update["username"] = incoming_person_data.get("username"); person_update_needed = True
+
+            # --- REVISED: message link (only update if existing is empty/None) ---
+            new_message_link = incoming_person_data.get("message_link")
+            if not existing_person.message_link and new_message_link:
+                 logger.debug(f"  -> Adding missing message_link for {log_ref}")
+                 person_data_for_update["message_link"] = new_message_link
+                 person_update_needed = True
+            elif existing_person.message_link and new_message_link and existing_person.message_link != new_message_link:
+                 logger.debug(f"  -> Skipping message_link update for {log_ref} (existing value present)")
+            # --- END REVISED ---
+
+            # --- REVISED: username (only update if existing is empty/None) ---
+            new_username = incoming_person_data.get("username") # Already formatted
+            if not existing_person.username and new_username:
+                 logger.debug(f"  -> Adding missing username for {log_ref}")
+                 person_data_for_update["username"] = new_username
+                 person_update_needed = True
+            elif existing_person.username and new_username and existing_person.username != new_username:
+                 logger.debug(f"  -> Skipping username update for {log_ref} (existing value present and different: '{existing_person.username}' vs '{new_username}')")
+            # --- END REVISED ---
 
             # --- Prepare Person data only if changes detected ---
             if person_update_needed: prepared_data_for_bulk["person"] = person_data_for_update; logger.debug(f"{log_ref}: Person data prepared for bulk update (changes found).")
@@ -738,24 +785,16 @@ def _do_match(
             # --- Prepare DNA data (only if creating) ---
             if incoming_dna_data: prepared_data_for_bulk["dna_match"] = incoming_dna_data; logger.debug(f"{log_ref}: Preparing data for NEW DnaMatch.")
 
-            # --- Prepare Tree data (check for updates) ---
+            # --- Prepare Tree data (check for updates - same logic as V14.4) ---
             if incoming_tree_data and incoming_tree_data["_operation"] == "create":
                  prepared_data_for_bulk["family_tree"] = incoming_tree_data; logger.debug(f"{log_ref}: Preparing data for NEW FamilyTree.")
             elif incoming_tree_data and incoming_tree_data["_operation"] == "update":
-                 tree_data_for_update = {
-                      "_operation": "update",
-                      # --- CORRECTED VARIABLE NAME ---
-                      "_existing_tree_id": family_tree_record.id,
-                      # --- END CORRECTION ---
-                      "uuid": match_uuid.upper()
-                 }
+                 tree_data_for_update = {"_operation": "update", "_existing_tree_id": family_tree_record.id, "uuid": match_uuid.upper()}
                  tree_update_needed = False
                  fields_to_check = ["cfpid", "person_name_in_tree", "facts_link", "view_in_tree_link", "actual_relationship", "relationship_path"]
                  for field in fields_to_check:
                       new_value = incoming_tree_data.get(field)
-                      # --- Ensure family_tree_record is not None before accessing attributes ---
                       old_value = getattr(family_tree_record, field, None) if family_tree_record else None
-                      # --- End Check ---
                       if new_value != old_value:
                            logger.debug(f"  -> Tree Change detected for {field}: '{old_value}' -> '{new_value}'")
                            tree_data_for_update[field] = new_value; tree_update_needed = True
@@ -777,7 +816,7 @@ def _do_match(
         logger.error(error_msg, exc_info=True)
         # Ensure we return the correct tuple format on error
         return None, "error", error_msg # Return None for data, status 'error', and the message
-# End of _do_match (V14.3)
+# End of _do_match (V14.5)
 
 #################################################################################
 # 3. API Data Acquisition
@@ -787,11 +826,12 @@ def get_matches(
     session_manager: SessionManager, db_session: Session, current_page: int = 1
 ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
     """
-    V13 REVISED: Fetches and processes match list data for a SINGLE page.
+    V13.1 REVISED: Fetches and processes match list data for a SINGLE page.
     - Returns (match_list, total_pages).
     - Removes predicted relationship fetching (moved to _do_batch).
     - Still fetches in-tree status.
     - Uses requests library via _api_req (Idea 5 applied).
+    - Uses format_name for consistent username/first name formatting.
     """
     total_pages: Optional[int] = None  # Initialize total_pages
 
@@ -937,7 +977,12 @@ def get_matches(
             relationship = match.get("relationship", {})
             sample_id_upper = match["sampleId"].upper()
             profile_user_id = profile.get("userId")
-            match_username = profile.get("displayName", "Unknown").title()
+
+            # --- Use format_name for consistency ---
+            raw_display_name = profile.get("displayName")
+            match_username = format_name(raw_display_name) # Use format_name instead of .title()
+            # --- End format_name change ---
+
             admin_profile_id_hint = match.get("adminId")
             admin_username_hint = match.get("adminName")
 
@@ -954,14 +999,16 @@ def get_matches(
                 config_instance.BASE_URL,
                 f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
             )
-            first_name = (
-                match_username.split()[0] if match_username != "Unknown" else None
-            )
+            # --- Use format_name for first_name too ---
+            # Extract first name from the formatted username
+            first_name = match_username.split()[0] if match_username != "Valued Relative" else None
+            # --- End format_name change ---
+
 
             # Predicted relationship will be added later in _do_batch
             refined_match_data = {
-                "username": match_username,
-                "first_name": first_name,
+                "username": match_username, # Already formatted
+                "first_name": first_name, # Already formatted
                 "initials": profile.get("displayInitials", "??").upper(),
                 "gender": match.get("gender"),
                 "profile_id": profile_user_id_upper,  # Store hint
@@ -1178,7 +1225,10 @@ def _fetch_combined_details(
 def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[Dict[str, Any]]:
-    """Fetches /badgedetails for a single match UUID."""
+    """
+    Fetches /badgedetails for a single match UUID.
+    Uses format_name for consistency.
+    """
     if not session_manager.my_uuid or not match_uuid:
         logger.warning("Missing my_uuid or match_uuid for badge details fetch.")
         return None
@@ -1200,14 +1250,15 @@ def _fetch_batch_badge_details(
 
         if badge_response and isinstance(badge_response, dict):
             person_badged = badge_response.get("personBadged", {})
-            full_firstname = person_badged.get("firstName", "Unknown")
-            words = full_firstname.strip().split()
-            their_firstname = words[0] if words else "Unknown"
+            # --- Use format_name ---
+            raw_firstname = person_badged.get("firstName")
+            their_firstname_formatted = format_name(raw_firstname).split()[0] if raw_firstname else "Unknown"
+            # --- End format_name ---
 
             return {  # Return only the needed fields
                 "their_cfpid": person_badged.get("personId"),
-                "their_firstname": their_firstname,
-                "their_lastname": person_badged.get("lastName", "Unknown"),
+                "their_firstname": their_firstname_formatted, # Use formatted name
+                "their_lastname": person_badged.get("lastName", "Unknown"), # Keep as is for now, format_name focuses on first/full names
                 "their_birth_year": person_badged.get("birthYear"),
             }
         else:
@@ -1223,7 +1274,7 @@ def _fetch_batch_badge_details(
 # end _fetch_batch_badge_details
 
 @retry_api(
-    max_retries=3, initial_delay=1.5, backoff_factor=2
+    max_retries=3, initial_delay=1, backoff_factor=2
 )  # Slightly longer delay maybe
 def _fetch_batch_ladder(
     session_manager: SessionManager, cfpid: str, tree_id: str

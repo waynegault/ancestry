@@ -340,7 +340,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info("--------------------------------------")
         logger.info(f"Action {choice} ({action_name}) finished.")
         logger.info(f"Duration: {formatted_duration}")
-        logger.info(f"Memory used by action: {mem_used:.1f} MB")
+        logger.info(f"Memory used: {mem_used:.1f} MB")
         logger.info("--------------------------------------\n")
 # End of exec_actn
 
