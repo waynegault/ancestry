@@ -74,10 +74,10 @@ from utils import (
 # Initialize logging
 logger = logging.getLogger("logger")
 
+
 #################################################################################
 # 2. Core Orchestration
 #################################################################################
-
 
 def coord(session_manager: SessionManager, config_instance, start: int = 1) -> bool:
     """
@@ -336,7 +336,6 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
     return final_success
 # end of coord
 
-
 def _do_batch(
     session_manager,
     matches_on_page,
@@ -345,86 +344,56 @@ def _do_batch(
     max_labels_to_show: int,
 ):
     """
-    V14.0 REVISED: Processes a batch of matches for a single page.
+    V14.2 REVISED: Processes a batch of matches for a single page.
     - Pre-fetches API data.
-    - Calls revised _do_match to get prepared data.
-    - Performs bulk database operations at the end.
+    - Calls revised _do_match V14.1 to get prepared data with only changed fields.
+    - Performs bulk database operations using simplified update logic.
+    - Corrected SyntaxError from previous version.
     """
+    # --- Initialization & API Pre-fetching (Same as V14.1) ---
     page_new, page_updated, page_skipped, page_errors = 0, 0, 0, 0
     num_matches = len(matches_on_page)
     my_uuid = session_manager.my_uuid
     my_tree_id = session_manager.my_tree_id
-
-    if not my_uuid:
-        logger.error(
-            f"My UUID missing in _do_batch for page {current_page}. Cannot process."
-        )
-        return 0, 0, 0, num_matches
-
-    # --- API Pre-fetching (same as V13.5) ---
-    logger.debug(
-        f"--- Starting Batch Pre-fetch for Page {current_page} ({num_matches} matches) ---"
-    )
-    # ... (Keep the entire API pre-fetching block from V13.5) ...
+    if not my_uuid: return 0, 0, 0, num_matches
+    logger.debug(f"--- Starting Batch Pre-fetch for Page {current_page} ({num_matches} matches) ---")
+    # ... (Keep the entire API pre-fetching block from V14.1) ...
     uuids_on_page = [m["uuid"] for m in matches_on_page if m.get("uuid")]
     uuids_for_tree_badge = [m["uuid"] for m in matches_on_page if m.get("uuid") and m.get("in_my_tree")]
     uuids_for_combined_details = uuids_on_page
     uuids_for_relationships = uuids_on_page
-    batch_combined_details = {}
-    batch_badge_data = {}
-    batch_ladder_data = {}
-    batch_relationship_prob_data = {}
-    futures = {}
-    fetch_start_time = time.time()
+    batch_combined_details = {}; batch_badge_data = {}; batch_ladder_data = {}; batch_relationship_prob_data = {}
+    futures = {}; fetch_start_time = time.time()
     with ThreadPoolExecutor(max_workers=10) as executor:
-        for uuid_val in uuids_for_combined_details:
-            delay = session_manager.dynamic_rate_limiter.wait()
-            future = executor.submit(_fetch_combined_details, session_manager, uuid_val)
-            futures[future] = ("combined_details", uuid_val)
-        for uuid_val in uuids_for_tree_badge:
-            delay = session_manager.dynamic_rate_limiter.wait()
-            future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
-            futures[future] = ("badge_details", uuid_val)
-        for uuid_val in uuids_for_relationships:
-            delay = session_manager.dynamic_rate_limiter.wait()
-            future = executor.submit(_fetch_batch_relationship_prob, session_manager, uuid_val, max_labels_to_show)
-            futures[future] = ("relationship_prob", uuid_val)
+        # ... (Executor submits same as V14.1) ...
+        for uuid_val in uuids_for_combined_details: delay = session_manager.dynamic_rate_limiter.wait(); future = executor.submit(_fetch_combined_details, session_manager, uuid_val); futures[future] = ("combined_details", uuid_val)
+        for uuid_val in uuids_for_tree_badge: delay = session_manager.dynamic_rate_limiter.wait(); future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val); futures[future] = ("badge_details", uuid_val)
+        for uuid_val in uuids_for_relationships: delay = session_manager.dynamic_rate_limiter.wait(); future = executor.submit(_fetch_batch_relationship_prob, session_manager, uuid_val, max_labels_to_show); futures[future] = ("relationship_prob", uuid_val)
         temp_badge_results = {}
         for future in as_completed(futures):
-            task_type, identifier = futures[future]
-            try:
-                result = future.result()
-                if result is not None:
-                    if task_type == "combined_details":
-                        batch_combined_details[identifier] = result
-                    elif task_type == "badge_details":
-                        temp_badge_results[identifier] = result
-                    elif task_type == "relationship_prob":
-                        batch_relationship_prob_data[identifier] = result
-            except Exception as exc:
-                logger.error(f"Exception in pre-fetch task '{task_type}' for {identifier}: {exc}", exc_info=False)
-        cfpid_to_uuid_map = {}
-        ladder_futures = {}
+             task_type, identifier = futures[future]
+             try:
+                  result = future.result()
+                  if result is not None:
+                       if task_type == "combined_details": batch_combined_details[identifier] = result
+                       elif task_type == "badge_details": temp_badge_results[identifier] = result
+                       elif task_type == "relationship_prob": batch_relationship_prob_data[identifier] = result
+             except Exception as exc: logger.error(f"Exception in pre-fetch task '{task_type}' for {identifier}: {exc}", exc_info=False)
+        cfpid_to_uuid_map = {}; ladder_futures = {}
         if my_tree_id:
-            for uuid_val, badge_result in temp_badge_results.items():
-                cfpid = badge_result.get("their_cfpid")
-                if cfpid:
-                    cfpid_to_uuid_map[cfpid] = uuid_val
-                    delay = session_manager.dynamic_rate_limiter.wait()
-                    future = executor.submit(_fetch_batch_ladder, session_manager, cfpid, my_tree_id)
-                    ladder_futures[future] = ("ladder", cfpid)
-        else:
-            logger.debug("My tree ID not available, skipping ladder pre-fetch.")
+             for uuid_val, badge_result in temp_badge_results.items():
+                  cfpid = badge_result.get("their_cfpid")
+                  if cfpid: cfpid_to_uuid_map[cfpid] = uuid_val; delay = session_manager.dynamic_rate_limiter.wait(); future = executor.submit(_fetch_batch_ladder, session_manager, cfpid, my_tree_id); ladder_futures[future] = ("ladder", cfpid)
+        else: logger.debug("My tree ID not available, skipping ladder pre-fetch.")
         for future in as_completed(ladder_futures):
-            task_type, cfpid = ladder_futures[future]
-            try:
-                result = future.result()
-                if result is not None:
-                    batch_ladder_data[cfpid] = result
-            except Exception as exc:
-                logger.error(f"Exception in pre-fetch task 'ladder' for CFPID {cfpid}: {exc}", exc_info=False)
+             task_type, cfpid = ladder_futures[future]
+             try:
+                  result = future.result()
+                  if result is not None: batch_ladder_data[cfpid] = result
+             except Exception as exc: logger.error(f"Exception in pre-fetch task 'ladder' for CFPID {cfpid}: {exc}", exc_info=False)
     fetch_duration = time.time() - fetch_start_time
     logger.debug(f"--- Finished Batch Pre-fetch for Page {current_page}. Duration: {fetch_duration:.2f}s ---")
+    # ... (Logging of pre-fetch results same as V14.1) ...
     logger.debug(f"  Combined Details: {len(batch_combined_details)}/{len(uuids_for_combined_details)}")
     logger.debug(f"  Badge Details: {len(temp_badge_results)}/{len(uuids_for_tree_badge)}")
     logger.debug(f"  Relationship Probs: {len(batch_relationship_prob_data)}/{len(uuids_for_relationships)}")
@@ -433,75 +402,50 @@ def _do_batch(
     for uuid_val, badge_result in temp_badge_results.items():
         combined_tree_info = badge_result.copy()
         cfpid = badge_result.get("their_cfpid")
-        if cfpid and cfpid in batch_ladder_data:
-            combined_tree_info.update(batch_ladder_data[cfpid])
+        if cfpid and cfpid in batch_ladder_data: combined_tree_info.update(batch_ladder_data[cfpid])
         batch_tree_data[uuid_val] = combined_tree_info
     # --- END API Pre-fetching block ---
 
-    # --- NEW: Process Matches and Collect Data ---
+    # --- Process Matches and Collect Data ---
     prepared_bulk_data: List[Dict[str, Any]] = []
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
-
     session = session_manager.get_db_conn()
-    if not session:
-        logger.error(
-            f"Failed to get database session for page {current_page} processing."
-        )
-        return 0, 0, 0, num_matches
-
+    if not session: return 0, 0, 0, num_matches
     try:
         for match_index, match in enumerate(matches_on_page):
             _case_name = match.get("username", f"Unknown Match {match_index+1}")
-            logger.debug(
-                f"#### Page {current_page} #{match_index + 1}/{num_matches}: {_case_name} ####"
-            )
+            logger.debug(f"#### Page {current_page} - Prep Match {match_index + 1}/{num_matches}: {_case_name} ####")
+
+            # --- CORRECTED SYNTAX ---
             uuid_val = match.get("uuid")
             if not uuid_val:
-                logger.warning(
-                    f"Skipping prep for match {match_index+1} on page {current_page}: Missing UUID."
-                )
+                logger.warning(f"Skipping prep for match {match_index+1} on page {current_page}: Missing UUID.")
                 page_statuses["error"] += 1
                 continue
+            # --- END CORRECTION ---
 
             prefetched_combined = batch_combined_details.get(uuid_val)
             prefetched_tree = batch_tree_data.get(uuid_val)
             prefetched_rel_prob = batch_relationship_prob_data.get(uuid_val)
-            match["predicted_relationship"] = (
-                prefetched_rel_prob or "N/A (Fetch Failed)"
-            )
-
+            match["predicted_relationship"] = (prefetched_rel_prob or "N/A (Fetch Failed)")
             try:
-                # Call revised _do_match to get prepared data
+                # Call revised _do_match V14.1 to get prepared data (only changed fields)
                 prepared_data, status, error_msg = _do_match(
-                    session=session, # Pass session for lookups inside _do_match
-                    match=match,
-                    session_manager=session_manager,
-                    prefetched_combined_details=prefetched_combined,
-                    prefetched_tree_data=prefetched_tree,
+                    session=session, match=match, session_manager=session_manager,
+                    prefetched_combined_details=prefetched_combined, prefetched_tree_data=prefetched_tree,
                 )
-
                 logger.debug(f"Match {_case_name}: _do_match returned status '{status}'")
                 page_statuses[status] += 1
                 logger.debug(f"  -> Tallying '{status}'. Count: {page_statuses[status]}")
-
                 if status != "error" and prepared_data:
-                    # Add the prepared data dictionary to the list for bulk processing
-                    prepared_bulk_data.append(prepared_data)
-                elif status == "error":
-                    logger.error(f"  -> Error preparing data for {_case_name}: {error_msg}")
-                # No 'else' needed for skipped, data is just not added
-
+                    prepared_bulk_data.append(prepared_data) # Add dict with prepared person/dna/tree data
+                elif status == "error": logger.error(f"  -> Error preparing data for {_case_name}: {error_msg}")
                 logger.debug(f"Finished {_case_name} data preparation.\n")
-
             except Exception as inner_e:
-                logger.error(
-                    f"Critical error preparing data for match {_case_name} on page {current_page}: {inner_e}",
-                    exc_info=True,
-                )
-                page_statuses["error"] += 1
-                logger.debug(f"  -> Tallying 'error' due to exception. Count: {page_statuses['error']}")
+                logger.error(f"Critical error preparing data for match {_case_name} on page {current_page}: {inner_e}", exc_info=True)
+                page_statuses["error"] += 1; logger.debug(f"  -> Tallying 'error' due to exception. Count: {page_statuses['error']}")
 
-        # --- NEW: Perform Bulk Database Operations ---
+        # --- Perform Bulk Database Operations (Same as V14.1, includes simplified updates) ---
         if prepared_bulk_data:
             logger.debug(f"--- Starting Bulk DB Operations for Page {current_page} ({len(prepared_bulk_data)} items) ---")
             bulk_start_time = time.time()
@@ -509,147 +453,115 @@ def _do_batch(
                 # Separate data by type and operation
                 person_creates = [d["person"] for d in prepared_bulk_data if d.get("person") and d["person"]["_operation"] == "create"]
                 person_updates = [d["person"] for d in prepared_bulk_data if d.get("person") and d["person"]["_operation"] == "update"]
-                dna_match_creates = [d["dna_match"] for d in prepared_bulk_data if d.get("dna_match") and d["dna_match"]["_operation"] == "create"]
+                dna_match_creates = [d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")] # Always create
                 family_tree_creates = [d["family_tree"] for d in prepared_bulk_data if d.get("family_tree") and d["family_tree"]["_operation"] == "create"]
                 family_tree_updates = [d["family_tree"] for d in prepared_bulk_data if d.get("family_tree") and d["family_tree"]["_operation"] == "update"]
 
-                # --- Bulk Person Operations ---
-                # 1. Bulk Create Persons
-                created_person_map = {} # Map UUID to newly created Person ID
+                # --- Bulk Person Create ---
+                created_person_map = {}
                 if person_creates:
+                    # ... (same as V14.1) ...
                     logger.debug(f"Bulk inserting {len(person_creates)} new Person records...")
-                    # Remove internal keys before bulk insert
                     insert_data = [{k: v for k, v in p.items() if not k.startswith('_')} for p in person_creates]
                     session.bulk_insert_mappings(Person, insert_data, return_defaults=True)
-                    session.flush() # Flush to get IDs
-                    # Create mapping after flush
-                    for p_data in insert_data: # Use the data that was inserted and got defaults
-                         if p_data.get('id') and p_data.get('uuid'):
-                              created_person_map[p_data['uuid']] = p_data['id']
+                    session.flush()
+                    for p_data in insert_data:
+                         if p_data.get('id') and p_data.get('uuid'): created_person_map[p_data['uuid']] = p_data['id']
                     logger.debug(f"Bulk inserted {len(created_person_map)} persons.")
 
 
-                # 2. Bulk Update Persons (More complex, need to handle potential None values carefully)
+                # --- Simplified Bulk Person Update ---
                 if person_updates:
+                    # ... (same simplified logic as V14.1) ...
                     update_mappings = []
                     for p_data in person_updates:
                          existing_id = p_data.get("_existing_person_id")
-                         if not existing_id:
-                             logger.warning(f"Skipping person update for UUID {p_data.get('uuid')}: Missing existing ID.")
-                             continue
-                         update_dict = {"id": existing_id, "updated_at": datetime.now()} # Map by primary key
-                         # Add fields to update (only if they changed compared to DB state in _do_match is complex)
-                         # Simpler: update the allowed fields if present in p_data
-                         allowed_update_fields = ["last_logged_in", "contactable", "birth_year", "in_my_tree", "gender", "administrator_profile_id", "administrator_username", "message_link"]
-                         for field in allowed_update_fields:
-                              if field in p_data: # Update if key exists in prepared data
-                                  update_dict[field] = p_data[field]
-                         update_mappings.append(update_dict)
-
+                         if not existing_id: logger.warning(f"Skipping person update for UUID {p_data.get('uuid')}: Missing existing ID."); continue
+                         update_dict = {k: v for k, v in p_data.items() if not k.startswith('_') and k != 'uuid'}
+                         if update_dict:
+                              update_dict["id"] = existing_id; update_dict["updated_at"] = datetime.now()
+                              update_mappings.append(update_dict)
+                         else: logger.debug(f"Skipping person update mapping for ID {existing_id} (no changed fields provided by _do_match).")
                     if update_mappings:
                          logger.debug(f"Bulk updating {len(update_mappings)} existing Person records...")
-                         session.bulk_update_mappings(Person, update_mappings)
-                         logger.debug("Bulk updated persons.")
+                         session.bulk_update_mappings(Person, update_mappings); logger.debug("Bulk updated persons.")
+                    else: logger.debug("No Person records needed bulk updating this batch.")
 
 
-                # --- Fetch ALL relevant Person IDs (newly created + existing updated) ---
+                # --- Fetch ALL relevant Person IDs ---
                 all_person_ids_map = created_person_map.copy()
                 for p_update_data in person_updates:
-                    if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
-                        all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+                     if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
+                          all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
 
 
                 # --- Bulk DNA Match Create ---
                 if dna_match_creates:
+                    # ... (same as V14.1) ...
                     dna_insert_data = []
                     for dna_data in dna_match_creates:
-                        person_uuid = dna_data.get("uuid")
-                        person_id = all_person_ids_map.get(person_uuid)
+                        person_uuid = dna_data.get("uuid"); person_id = all_person_ids_map.get(person_uuid)
                         if person_id:
-                             # Remove internal keys and add people_id
                              insert_dict = {k: v for k, v in dna_data.items() if not k.startswith('_')}
-                             insert_dict["people_id"] = person_id
-                             dna_insert_data.append(insert_dict)
-                        else:
-                            logger.warning(f"Skipping DNA Match create for UUID {person_uuid}: Corresponding Person ID not found.")
+                             insert_dict["people_id"] = person_id; dna_insert_data.append(insert_dict)
+                        else: logger.warning(f"Skipping DNA Match create for UUID {person_uuid}: Corresponding Person ID not found.")
                     if dna_insert_data:
                          logger.debug(f"Bulk inserting {len(dna_insert_data)} DnaMatch records...")
-                         session.bulk_insert_mappings(DnaMatch, dna_insert_data)
-                         logger.debug("Bulk inserted DnaMatches.")
+                         session.bulk_insert_mappings(DnaMatch, dna_insert_data); logger.debug("Bulk inserted DnaMatches.")
+
 
                 # --- Bulk Family Tree Create ---
                 if family_tree_creates:
+                    # ... (same as V14.1) ...
                     tree_insert_data = []
                     for tree_data in family_tree_creates:
-                        person_uuid = tree_data.get("uuid")
-                        person_id = all_person_ids_map.get(person_uuid)
-                        if person_id:
-                            insert_dict = {k: v for k, v in tree_data.items() if not k.startswith('_')}
-                            insert_dict["people_id"] = person_id
-                            tree_insert_data.append(insert_dict)
-                        else:
-                             logger.warning(f"Skipping FamilyTree create for UUID {person_uuid}: Corresponding Person ID not found.")
+                         person_uuid = tree_data.get("uuid"); person_id = all_person_ids_map.get(person_uuid)
+                         if person_id:
+                             insert_dict = {k: v for k, v in tree_data.items() if not k.startswith('_')}
+                             insert_dict["people_id"] = person_id; tree_insert_data.append(insert_dict)
+                         else: logger.warning(f"Skipping FamilyTree create for UUID {person_uuid}: Corresponding Person ID not found.")
                     if tree_insert_data:
-                        logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
-                        session.bulk_insert_mappings(FamilyTree, tree_insert_data)
-                        logger.debug("Bulk inserted FamilyTrees.")
+                         logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
+                         session.bulk_insert_mappings(FamilyTree, tree_insert_data); logger.debug("Bulk inserted FamilyTrees.")
 
 
-                # --- Bulk Family Tree Update ---
+                # --- Simplified Bulk Family Tree Update ---
                 if family_tree_updates:
+                    # ... (same simplified logic as V14.1) ...
                     tree_update_mappings = []
                     for tree_data in family_tree_updates:
                         existing_id = tree_data.get("_existing_tree_id")
-                        person_uuid = tree_data.get("uuid")
-                        person_id = all_person_ids_map.get(person_uuid) # Needed? ID should be enough
-
-                        if not existing_id:
-                            logger.warning(f"Skipping FamilyTree update for UUID {person_uuid}: Missing existing ID.")
-                            continue
-
-                        update_dict = {"id": existing_id, "updated_at": datetime.now()} # Map by primary key
-                        # Update all relevant fields if present in tree_data
-                        allowed_tree_fields = ["cfpid", "person_name_in_tree", "facts_link", "view_in_tree_link", "actual_relationship", "relationship_path"]
-                        for field in allowed_tree_fields:
-                             if field in tree_data:
-                                  update_dict[field] = tree_data[field]
-                        # Ensure people_id is correct if necessary (shouldn't change, but safety)
-                        if person_id: update_dict["people_id"] = person_id
-                        tree_update_mappings.append(update_dict)
-
+                        if not existing_id: logger.warning(f"Skipping FamilyTree update for UUID {tree_data.get('uuid')}: Missing existing ID."); continue
+                        update_dict = {k: v for k, v in tree_data.items() if not k.startswith('_') and k != 'uuid'}
+                        if update_dict:
+                             update_dict["id"] = existing_id; update_dict["updated_at"] = datetime.now()
+                             person_id = all_person_ids_map.get(tree_data.get("uuid"))
+                             if person_id and "people_id" not in update_dict: update_dict["people_id"] = person_id
+                             tree_update_mappings.append(update_dict)
+                        else: logger.debug(f"Skipping tree update mapping for ID {existing_id} (no changed fields provided by _do_match).")
                     if tree_update_mappings:
                         logger.debug(f"Bulk updating {len(tree_update_mappings)} FamilyTree records...")
-                        session.bulk_update_mappings(FamilyTree, tree_update_mappings)
-                        logger.debug("Bulk updated FamilyTrees.")
+                        session.bulk_update_mappings(FamilyTree, tree_update_mappings); logger.debug("Bulk updated FamilyTrees.")
+                    else: logger.debug("No FamilyTree records needed bulk updating this batch.")
 
 
                 # --- Final Commit for the Page ---
                 logger.debug(f"Attempting final commit for page {current_page}...")
                 session.commit()
                 bulk_duration = time.time() - bulk_start_time
-                logger.debug(f"Commit successful for page {current_page}. Bulk operations duration: {bulk_duration:.2f}s.\n")
+                logger.debug(f"Commit successful for page {current_page}. Bulk operations duration: {bulk_duration:.2f}s.")
 
+            # --- Bulk Error Handling ---
             except (IntegrityError, SQLAlchemyError) as bulk_err:
-                logger.error(
-                    f"Bulk DB operation FAILED for page {current_page}: {bulk_err}\n",
-                    exc_info=True
-                )
-                if session.is_active: session.rollback()
-                # Mark all non-skipped items as errors for this page
-                page_statuses["error"] += len(prepared_bulk_data)
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
+                 logger.error(f"Bulk DB operation FAILED for page {current_page}: {bulk_err}", exc_info=True)
+                 if session.is_active: session.rollback()
+                 page_statuses["error"] += len(prepared_bulk_data); page_statuses["new"] = 0; page_statuses["updated"] = 0
             except Exception as bulk_e_unexp:
-                logger.critical(
-                    f"Unexpected Bulk DB Error for page {current_page}: {bulk_e_unexp}\n",
-                    exc_info=True
-                )
-                if session.is_active: session.rollback()
-                page_statuses["error"] += len(prepared_bulk_data)
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
+                 logger.critical(f"Unexpected Bulk DB Error for page {current_page}: {bulk_e_unexp}", exc_info=True)
+                 if session.is_active: session.rollback()
+                 page_statuses["error"] += len(prepared_bulk_data); page_statuses["new"] = 0; page_statuses["updated"] = 0
         else:
-            logger.debug(f"No data prepared for bulk DB operations on page {current_page}.\n")
+            logger.debug(f"No data prepared for bulk DB operations on page {current_page}.")
 
         # --- Log Page Summary ---
         logger.debug(f"---- Page {current_page}/{last_page_in_run} Summary ----")
@@ -659,28 +571,19 @@ def _do_batch(
         logger.debug(f"  Errors:  {page_statuses['error']}")
         logger.debug("-----------------------\n")
 
+    # --- Outer Error Handling & Finally Block ---
     except Exception as outer_e:
-        logger.error(
-            f"Critical error during page {current_page} processing loop: {outer_e}",
-            exc_info=True,
-        )
+        logger.error(f"Critical error during page {current_page} processing loop: {outer_e}", exc_info=True)
         if session.is_active:
-            try:
-                session.rollback()
-                logger.debug(f"Rolled back session.")
-            except Exception as rb_err:
-                logger.error(f"Failed rollback: {rb_err}")
-        # Estimate remaining as errors if loop failed mid-way
-        processed_count = sum(page_statuses.values())
-        remaining_count = num_matches - processed_count
+            try: session.rollback(); logger.debug(f"Rolled back session.")
+            except Exception as rb_err: logger.error(f"Failed rollback: {rb_err}")
+        processed_count = sum(page_statuses.values()); remaining_count = num_matches - processed_count
         page_statuses["error"] += remaining_count
-
     finally:
         session_manager.return_session(session)
 
     return page_statuses["new"], page_statuses["updated"], page_statuses["skipped"], page_statuses["error"]
-# end of _do_batch (V14.0)
-
+# end of _do_batch (V14.2)
 
 @retry()
 def _do_match(
@@ -693,37 +596,33 @@ def _do_match(
     Optional[Dict[str, Any]], Literal["new", "updated", "skipped", "error"], Optional[str]
 ]:
     """
-    V14.0 REVISED: Processes a match using pre-fetched data and returns prepared DB data.
-    - No DB writes are performed here.
-    - Returns a dictionary containing data for Person, DnaMatch, FamilyTree updates,
-      the overall status, and an error message if applicable.
+    V14.3 REVISED: Processes match data, compares with existing DB record (if any),
+    and returns prepared data dictionary containing ONLY the fields needing creation or update.
+    - Determines 'new', 'updated', or 'skipped' status based on actual changes.
+    - Corrected second NameError for existing tree record ID during update prep.
     """
     existing_person: Optional[Person] = None
     dna_match_record: Optional[DnaMatch] = None
-    family_tree_record: Optional[FamilyTree] = None
+    family_tree_record: Optional[FamilyTree] = None # Correct variable for existing tree
 
     match_uuid = match.get("uuid")
     match_username = match.get("username")
     predicted_relationship = match.get("predicted_relationship", "N/A")
     match_in_my_tree = match.get("in_my_tree", False)
-    log_ref = f"{match_username or 'Unknown'}"
+    log_ref = f"UUID={match_uuid or 'N/A'} User='{match_username or 'Unknown'}'"
     log_ref_short = f"UUID={match_uuid} User='{match_username}'"
 
-    prepared_data_for_bulk: Dict[str, Any] = {
-        "person": None,
-        "dna_match": None,
-        "family_tree": None,
-        "person_status": "skipped", # To track if person was new or updated conceptually
-    }
-    overall_status: Literal["new", "updated", "skipped", "error"] = "error" # Final status determined later
+    prepared_data_for_bulk: Dict[str, Any] = {"person": None, "dna_match": None, "family_tree": None}
+    person_update_needed: bool = False
+    tree_update_needed: bool = False
+    overall_status: Literal["new", "updated", "skipped", "error"] = "error"
 
     if not match_uuid:
         error_msg = f"Pre-check failed: Missing 'uuid' in match data: {match}"
-        logger.error(error_msg)
-        return None, "error", error_msg
+        logger.error(error_msg); return None, "error", error_msg
 
     try:
-        # Step 1: DB Lookup (remains the same)
+        # Step 1: DB Lookup (Loads related objects including family_tree_record)
         logger.debug(f"{log_ref}: Performing initial DB lookup by UUID...")
         try:
             existing_person = (
@@ -733,237 +632,156 @@ def _do_match(
                 .first()
             )
             if existing_person:
-                logger.debug(
-                    f"{log_ref}: Found existing Person ID {existing_person.id}."
-                )
+                logger.debug(f"{log_ref}: Found existing Person ID {existing_person.id}.")
                 dna_match_record = existing_person.dna_match
-                family_tree_record = existing_person.family_tree
-                # Detach from session to avoid accidental updates? Maybe not needed if just reading.
-                # session.expunge(existing_person) # Careful with this
-            else:
-                logger.debug(f"{log_ref}: No existing person found by UUID.")
+                family_tree_record = existing_person.family_tree # Assign here
+                session.expire(existing_person, ["dna_match", "family_tree"])
+            else: logger.debug(f"{log_ref}: No existing person found by UUID.")
         except SQLAlchemyError as db_lookup_err:
-            logger.error(
-                f"Initial DB lookup failed for {log_ref_short}: {db_lookup_err}",
-                exc_info=True,
-            )
+            logger.error(f"Initial DB lookup failed for {log_ref_short}: {db_lookup_err}", exc_info=True)
             return None, "error", f"Initial DB lookup failed for {log_ref_short}"
         except Exception as lookup_err:
-            logger.error(
-                f"Unexpected error during initial DB lookup for {log_ref_short}: {lookup_err}",
-                exc_info=True,
-            )
+            logger.error(f"Unexpected error during initial DB lookup for {log_ref_short}: {lookup_err}", exc_info=True)
             return None, "error", f"Unexpected DB lookup error for {log_ref_short}"
 
         is_new_person = existing_person is None
 
-        # Step 2: Determine Needs (Conceptually, what *would* we do?)
-        # No actual create flags needed, just determine if data should be prepared
-        person_update_needed = not is_new_person
-        prepare_dna_data = (
-             dna_match_record is None and prefetched_combined_details is not None
-        ) or (is_new_person and prefetched_combined_details is not None)
-
-        prepare_tree_data = False
-        if match_in_my_tree and prefetched_tree_data is not None:
-             prepare_tree_data = True # Prepare if flag is set and data exists
-        elif not match_in_my_tree and family_tree_record is not None:
-             # Potential future: prepare a 'delete' action for tree record
-             logger.debug(f"{log_ref}: Tree flag is False, but record exists. No tree data prepared for bulk.")
-             prepare_tree_data = False
-
-
-        logger.debug(
-            f"{log_ref}: Needs Analysis: NewPerson={is_new_person}, PrepareDNA={prepare_dna_data}, PrepareTree={prepare_tree_data}"
-        )
-
-        # Step 3: Prepare Person Data (if new or update potentially needed)
-        if is_new_person or person_update_needed:
-            # --- Data Preparation Logic (same as before) ---
-            details_part = prefetched_combined_details or {}
-            profile_part = prefetched_combined_details or {}
-            tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
-            admin_profile_id = details_part.get("admin_profile_id") or match.get("administrator_profile_id_hint")
-            admin_username = details_part.get("admin_username") or match.get("administrator_username_hint")
-            # ... (rest of the logic to determine profile IDs, message link, birth year)
-            person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (None, None, None)
-            if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()):
-                person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (tester_profile_id, admin_profile_id, admin_username)
-            elif admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
-                if admin_username and match_username and match_username.lower() != admin_username.lower():
-                    person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (None, admin_profile_id, admin_username)
-                else:
-                    person_profile_id_to_save = tester_profile_id
-            elif tester_profile_id and not admin_profile_id:
-                person_profile_id_to_save = tester_profile_id
-            else:
-                person_admin_id_to_save, person_admin_username_to_save = (admin_profile_id, admin_username)
-            message_target_id = person_admin_id_to_save or person_profile_id_to_save
-            constructed_message_link = None
-            if message_target_id and session_manager.my_uuid:
-                constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={message_target_id.upper()}&testguid1={session_manager.my_uuid.upper()}&testguid2={match_uuid.upper()}")
-            birth_year_val = None
-            if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
-                try:
-                    birth_year_val = int(prefetched_tree_data["their_birth_year"])
-                except (ValueError, TypeError):
-                    pass
-
-            full_person_data_to_save = {
-                # Key identifiers used for matching/update mapping
-                "uuid": match_uuid.upper(),
-                "profile_id": (person_profile_id_to_save.upper() if person_profile_id_to_save else None),
-                # Other fields to potentially create/update
-                "username": match_username,
-                "administrator_profile_id": (person_admin_id_to_save.upper() if person_admin_id_to_save else None),
-                "administrator_username": person_admin_username_to_save,
-                "in_my_tree": match_in_my_tree,
-                "first_name": match.get("first_name"),
-                "last_logged_in": profile_part.get("last_logged_in_dt"), # Store original aware datetime
-                "contactable": profile_part.get("contactable", False),
-                "gender": details_part.get("gender"),
-                "message_link": constructed_message_link,
-                "birth_year": birth_year_val,
-                # Add a field to indicate if it's intended as new or update
-                "_operation": "create" if is_new_person else "update",
-                # Add existing ID if updating for bulk update mapping
-                "_existing_person_id": existing_person.id if existing_person else None
+        # Step 2: Prepare Incoming Data (Same as V14.2)
+        # --- Prepare Person Data ---
+        details_part = prefetched_combined_details or {}; profile_part = prefetched_combined_details or {}
+        tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
+        admin_profile_id = details_part.get("admin_profile_id") or match.get("administrator_profile_id_hint")
+        admin_username = details_part.get("admin_username") or match.get("administrator_username_hint")
+        person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (None, None, None)
+        if admin_profile_id and (not tester_profile_id or admin_profile_id.upper() != tester_profile_id.upper()): person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (tester_profile_id, admin_profile_id, admin_username)
+        elif admin_profile_id and tester_profile_id and admin_profile_id.upper() == tester_profile_id.upper():
+            if admin_username and match_username and match_username.lower() != admin_username.lower(): person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (None, admin_profile_id, admin_username)
+            else: person_profile_id_to_save = tester_profile_id
+        elif tester_profile_id and not admin_profile_id: person_profile_id_to_save = tester_profile_id
+        else: person_admin_id_to_save, person_admin_username_to_save = (admin_profile_id, admin_username)
+        message_target_id = person_admin_id_to_save or person_profile_id_to_save; constructed_message_link = None
+        if message_target_id and session_manager.my_uuid: constructed_message_link = urljoin(config_instance.BASE_URL, f"/messaging/?p={message_target_id.upper()}&testguid1={session_manager.my_uuid.upper()}&testguid2={match_uuid.upper()}")
+        birth_year_val = None
+        if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
+            try: birth_year_val = int(prefetched_tree_data["their_birth_year"])
+            except (ValueError, TypeError): pass
+        incoming_person_data = {
+            "uuid": match_uuid.upper(), "profile_id": (person_profile_id_to_save.upper() if person_profile_id_to_save else None),
+            "username": match_username, "administrator_profile_id": (person_admin_id_to_save.upper() if person_admin_id_to_save else None),
+            "administrator_username": person_admin_username_to_save, "in_my_tree": match_in_my_tree, "first_name": match.get("first_name"),
+            "last_logged_in": profile_part.get("last_logged_in_dt"), "contactable": profile_part.get("contactable", False),
+            "gender": details_part.get("gender"), "message_link": constructed_message_link, "birth_year": birth_year_val,
+        }
+        # --- Prepare DNA Data ---
+        incoming_dna_data = None
+        if dna_match_record is None and prefetched_combined_details is not None:
+            incoming_dna_data = {
+                "uuid": match_uuid.upper(), "compare_link": match.get("compare_link"), "cM_DNA": match.get("cM_DNA"),
+                "predicted_relationship": predicted_relationship, "shared_segments": prefetched_combined_details.get("shared_segments"),
+                "longest_shared_segment": prefetched_combined_details.get("longest_shared_segment"), "meiosis": prefetched_combined_details.get("meiosis"),
+                "from_my_fathers_side": prefetched_combined_details.get("from_my_fathers_side", False), "from_my_mothers_side": prefetched_combined_details.get("from_my_mothers_side", False),
+                "_operation": "create"
             }
-            prepared_data_for_bulk["person"] = full_person_data_to_save
-            prepared_data_for_bulk["person_status"] = "created" if is_new_person else "updated" # Conceptual status
-            logger.debug(f"{log_ref}: Person data prepared for bulk operation '{prepared_data_for_bulk['person']['_operation']}'.")
-        else:
-            logger.debug(f"{log_ref}: No person creation or update data prepared.")
-            prepared_data_for_bulk["person_status"] = "skipped"
+        elif dna_match_record is None and prefetched_combined_details is None: logger.warning(f"{log_ref}: DNA Match should be created, but no details were fetched.")
+        # --- Prepare Tree Data ---
+        incoming_tree_data = None
+        should_have_tree = match_in_my_tree and prefetched_tree_data is not None
+        if should_have_tree:
+            view_in_tree_link, facts_link = None, None
+            their_cfpid_final = prefetched_tree_data.get("their_cfpid")
+            if their_cfpid_final and session_manager.my_tree_id:
+                base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}")
+                view_in_tree_link = urljoin(base_tree_url, "family"); facts_link = urljoin(base_tree_url, "facts")
+            incoming_tree_data = {
+                "uuid": match_uuid.upper(), "cfpid": their_cfpid_final, "person_name_in_tree": prefetched_tree_data.get("their_firstname", "Unknown"),
+                "facts_link": facts_link, "view_in_tree_link": view_in_tree_link, "actual_relationship": prefetched_tree_data.get("actual_relationship"),
+                "relationship_path": prefetched_tree_data.get("relationship_path"), "_operation": "create" if family_tree_record is None else "update",
+                "_existing_tree_id": family_tree_record.id if family_tree_record else None
+            }
+        elif not match_in_my_tree and family_tree_record is not None: logger.debug(f"{log_ref}: Should not have tree record, but one exists. No tree data prepared.")
 
-        # Step 4: Prepare DNA Match Data (if needed)
-        if prepare_dna_data:
-            if not prefetched_combined_details:
-                logger.error(f"{log_ref}: Cannot prepare DNA Match data - details missing.")
-                # Do not return error immediately, but flag it; overall status depends on other parts
-            else:
-                dna_data_to_save = {
-                    # Key identifiers
-                    "uuid": match_uuid.upper(), # Match to Person.uuid
-                    # Other fields
-                    "compare_link": match.get("compare_link"),
-                    "cM_DNA": match.get("cM_DNA"),
-                    "predicted_relationship": predicted_relationship,
-                    "shared_segments": prefetched_combined_details.get("shared_segments"),
-                    "longest_shared_segment": prefetched_combined_details.get("longest_shared_segment"),
-                    "meiosis": prefetched_combined_details.get("meiosis"),
-                    "from_my_fathers_side": prefetched_combined_details.get("from_my_fathers_side", False),
-                    "from_my_mothers_side": prefetched_combined_details.get("from_my_mothers_side", False),
-                    "_operation": "create" # DNA Match is only created, not updated by this logic
-                }
-                prepared_data_for_bulk["dna_match"] = dna_data_to_save
-                logger.debug(f"{log_ref}: DNA Match data prepared for bulk create.")
-        else:
-            logger.debug(f"{log_ref}: DNA Match data preparation skipped.")
-
-
-        # Step 5: Prepare Family Tree Data (if needed)
-        if prepare_tree_data:
-            if not prefetched_tree_data:
-                logger.warning(f"{log_ref}: Skipping Family Tree data prep - data missing.")
-            else:
-                view_in_tree_link, facts_link = None, None
-                their_cfpid_final = prefetched_tree_data.get("their_cfpid")
-                if their_cfpid_final and session_manager.my_tree_id:
-                    base_tree_url = urljoin(config_instance.BASE_URL, f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}")
-                    view_in_tree_link = urljoin(base_tree_url, "family")
-                    facts_link = urljoin(base_tree_url, "facts")
-
-                tree_data_to_save = {
-                    # Key identifiers
-                    "uuid": match_uuid.upper(), # Match to Person.uuid
-                    "cfpid": their_cfpid_final, # Also potentially used for matching existing
-                    # Other fields
-                    "person_name_in_tree": prefetched_tree_data.get("their_firstname", "Unknown"),
-                    "facts_link": facts_link,
-                    "view_in_tree_link": view_in_tree_link,
-                    "actual_relationship": prefetched_tree_data.get("actual_relationship"),
-                    "relationship_path": prefetched_tree_data.get("relationship_path"),
-                    # Determine operation based on if a tree record existed
-                    "_operation": "create" if family_tree_record is None else "update",
-                    # Add existing ID if updating for bulk update mapping
-                    "_existing_tree_id": family_tree_record.id if family_tree_record else None
-                }
-                prepared_data_for_bulk["family_tree"] = tree_data_to_save
-                logger.debug(f"{log_ref}: Family Tree data prepared for bulk operation '{prepared_data_for_bulk['family_tree']['_operation']}'.")
-        else:
-            logger.debug(f"{log_ref}: Family Tree data preparation skipped.")
-
-
-        # Step 6: Determine Overall Status (Based on prepared data)
-        person_op = prepared_data_for_bulk["person"]["_operation"] if prepared_data_for_bulk["person"] else "skip"
-        dna_op = prepared_data_for_bulk["dna_match"]["_operation"] if prepared_data_for_bulk["dna_match"] else "skip"
-        tree_op = prepared_data_for_bulk["family_tree"]["_operation"] if prepared_data_for_bulk["family_tree"] else "skip"
-
-        if person_op == "create":
+        # Step 3: Compare and Build Bulk Data Dictionary
+        if is_new_person:
+            # --- NEW PERSON --- (Same as V14.2)
+            logger.debug(f"{log_ref}: Preparing data for NEW Person.")
+            person_data_for_bulk = incoming_person_data.copy(); person_data_for_bulk["_operation"] = "create"
+            prepared_data_for_bulk["person"] = person_data_for_bulk
+            if incoming_dna_data: prepared_data_for_bulk["dna_match"] = incoming_dna_data; logger.debug(f"{log_ref}: Preparing data for NEW DnaMatch.")
+            if incoming_tree_data: prepared_data_for_bulk["family_tree"] = incoming_tree_data; logger.debug(f"{log_ref}: Preparing data for NEW FamilyTree.")
             overall_status = "new"
-        elif person_op == "update" or dna_op == "create" or tree_op == "create" or tree_op == "update":
-            overall_status = "updated"
         else:
-            overall_status = "skipped"
+            # --- EXISTING PERSON --- Compare fields ---
+            person_data_for_update = {"_operation": "update", "_existing_person_id": existing_person.id, "uuid": match_uuid.upper()}
+            person_update_needed = False
+            # --- Comparisons (Same as V14.2) ---
+            new_dt = incoming_person_data.get("last_logged_in"); old_dt = existing_person.last_logged_in; new_naive_ts = None; old_naive_ts = None
+            if isinstance(new_dt, datetime): new_naive_ts = new_dt.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+            if isinstance(old_dt, datetime): old_naive_ts = old_dt.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0) if old_dt.tzinfo else old_dt.replace(microsecond=0)
+            if new_naive_ts != old_naive_ts: logger.debug(f"  -> Change detected for last_logged_in: {old_naive_ts} -> {new_naive_ts}"); person_data_for_update["last_logged_in"] = new_dt; person_update_needed = True
+            if bool(existing_person.contactable) != bool(incoming_person_data.get("contactable", False)): logger.debug(f"  -> Change detected for contactable"); person_data_for_update["contactable"] = bool(incoming_person_data.get("contactable", False)); person_update_needed = True
+            if incoming_person_data.get("birth_year") is not None and existing_person.birth_year is None:
+                 try: birth_year_int = int(incoming_person_data["birth_year"]); logger.debug(f"  -> Change detected for birth_year (adding)"); person_data_for_update["birth_year"] = birth_year_int; person_update_needed = True
+                 except (ValueError, TypeError): pass
+            if bool(existing_person.in_my_tree) != bool(incoming_person_data.get("in_my_tree", False)): logger.debug(f"  -> Change detected for in_my_tree"); person_data_for_update["in_my_tree"] = bool(incoming_person_data.get("in_my_tree", False)); person_update_needed = True
+            new_gender = incoming_person_data.get("gender")
+            if new_gender is not None and existing_person.gender is None and isinstance(new_gender, str) and new_gender.lower() in ('f','m'): logger.debug(f"  -> Change detected for gender (adding)"); person_data_for_update["gender"] = new_gender.lower(); person_update_needed = True
+            new_admin_id = incoming_person_data.get("administrator_profile_id"); new_admin_user = incoming_person_data.get("administrator_username")
+            if existing_person.administrator_profile_id != new_admin_id: logger.debug(f"  -> Change detected for administrator_profile_id"); person_data_for_update["administrator_profile_id"] = new_admin_id; person_update_needed = True
+            if existing_person.administrator_username != new_admin_user: logger.debug(f"  -> Change detected for administrator_username"); person_data_for_update["administrator_username"] = new_admin_user; person_update_needed = True
+            if existing_person.message_link != incoming_person_data.get("message_link"): logger.debug(f"  -> Change detected for message_link"); person_data_for_update["message_link"] = incoming_person_data.get("message_link"); person_update_needed = True
+            if existing_person.username != incoming_person_data.get("username"): logger.debug(f"  -> Change detected for username"); person_data_for_update["username"] = incoming_person_data.get("username"); person_update_needed = True
 
+            # --- Prepare Person data only if changes detected ---
+            if person_update_needed: prepared_data_for_bulk["person"] = person_data_for_update; logger.debug(f"{log_ref}: Person data prepared for bulk update (changes found).")
+            else: logger.debug(f"{log_ref}: No changes detected for Person.")
+
+            # --- Prepare DNA data (only if creating) ---
+            if incoming_dna_data: prepared_data_for_bulk["dna_match"] = incoming_dna_data; logger.debug(f"{log_ref}: Preparing data for NEW DnaMatch.")
+
+            # --- Prepare Tree data (check for updates) ---
+            if incoming_tree_data and incoming_tree_data["_operation"] == "create":
+                 prepared_data_for_bulk["family_tree"] = incoming_tree_data; logger.debug(f"{log_ref}: Preparing data for NEW FamilyTree.")
+            elif incoming_tree_data and incoming_tree_data["_operation"] == "update":
+                 tree_data_for_update = {
+                      "_operation": "update",
+                      # --- CORRECTED VARIABLE NAME ---
+                      "_existing_tree_id": family_tree_record.id,
+                      # --- END CORRECTION ---
+                      "uuid": match_uuid.upper()
+                 }
+                 tree_update_needed = False
+                 fields_to_check = ["cfpid", "person_name_in_tree", "facts_link", "view_in_tree_link", "actual_relationship", "relationship_path"]
+                 for field in fields_to_check:
+                      new_value = incoming_tree_data.get(field)
+                      # --- Ensure family_tree_record is not None before accessing attributes ---
+                      old_value = getattr(family_tree_record, field, None) if family_tree_record else None
+                      # --- End Check ---
+                      if new_value != old_value:
+                           logger.debug(f"  -> Tree Change detected for {field}: '{old_value}' -> '{new_value}'")
+                           tree_data_for_update[field] = new_value; tree_update_needed = True
+                 if tree_update_needed: prepared_data_for_bulk["family_tree"] = tree_data_for_update; logger.debug(f"{log_ref}: FamilyTree data prepared for bulk update (changes found).")
+                 else: logger.debug(f"{log_ref}: No changes detected for FamilyTree.")
+
+            # --- Determine overall status ---
+            if person_update_needed or incoming_dna_data or tree_update_needed or (incoming_tree_data and incoming_tree_data["_operation"] == "create"):
+                 overall_status = "updated"
+            else: overall_status = "skipped"
+
+        # Step 4: Final Return
         logger.debug(f"Final overall status determination for {log_ref_short}: {overall_status}")
-        return prepared_data_for_bulk, overall_status, None
+        data_to_return = prepared_data_for_bulk if overall_status != "skipped" else None
+        return data_to_return, overall_status, None
 
     except Exception as e:
         error_msg = f"Unexpected critical error in _do_match data preparation for {log_ref}: {e}."
         logger.error(error_msg, exc_info=True)
-        # Rollback is not needed as no writes were performed
-        return None, "error", f"Unexpected error preparing data for {log_ref}: {e}"
-# End of _do_match (V14.0)
-
-
-def _log_page_summary(page, page_new, page_updated, page_skipped, page_errors):
-    """Logs a summary of processed matches for a single page."""
-    logger.debug(f"---- Page {page} Summary ----")
-    logger.debug(f"  New matches:     {page_new}")
-    logger.debug(f"  Updated matches: {page_updated}")
-    logger.debug(f"  Skipped matches: {page_skipped}")
-    logger.debug(f"  Error matches:   {page_errors}")
-    logger.debug("-----------------------\n")
-# end of _log_page_summary
-
-
-def _log_coord_summary(
-    total_pages_processed, total_new, total_updated, total_skipped, total_errors
-):  # Renamed arg
-    """Logs the final summary of the coord's execution."""
-    logger.info("---- Final Summary ----")
-    # --- MODIFIED Label ---
-    logger.info(f"  Total Pages Processed: {total_pages_processed}")
-    # --- END MODIFICATION ---
-    logger.info(f"  Total New:       {total_new}")
-    logger.info(f"  Total Updated:   {total_updated}")
-    logger.info(f"  Total Skipped:   {total_skipped}")
-    logger.info(f"  Total Errors:    {total_errors}")
-    logger.info("-----------------------\n")
-# end of _log_coord_summary
-
-
-def _adjust_delay(session_manager, page):
-    """Adjusts the dynamic rate limiter delay after processing a page."""
-    if session_manager.dynamic_rate_limiter.is_throttled():
-        logger.debug(f"Rate limiter was throttled during processing of page {page}.")
-    else:
-        session_manager.dynamic_rate_limiter.decrease_delay()
-        if (
-            session_manager.dynamic_rate_limiter.current_delay
-            > config_instance.INITIAL_DELAY
-        ):
-            logger.debug(
-                f"Decreased delay for next page to {session_manager.dynamic_rate_limiter.current_delay:.2f} seconds."
-            )
-# End of _adjust_delay
+        # Ensure we return the correct tuple format on error
+        return None, "error", error_msg # Return None for data, status 'error', and the message
+# End of _do_match (V14.3)
 
 #################################################################################
 # 3. API Data Acquisition
 #################################################################################
-
 
 def get_matches(
     session_manager: SessionManager, db_session: Session, current_page: int = 1
@@ -1182,64 +1000,6 @@ def get_matches(
         return [], None  # Return None for total_pages on error
 # end get_matches
 
-#################################################################################
-# 5. 'Create or Update' Database Operations
-#################################################################################
-
-
-class PersonProcessingError(Exception):
-    """Custom exception for errors during Person creation/update."""
-
-    pass
-# end of PersonProcessingError class
-
-
-#################################################################################
-# 6. Utility & Helper Functions
-#################################################################################
-
-
-def nav_to_list(session_manager) -> bool:
-    """Navigates directly to the user's specific DNA matches list page using their UUID."""
-    # Ensure session is valid and UUID is available
-    if not session_manager.is_sess_valid() or not session_manager.my_uuid:
-        logger.error(
-            "Session invalid or user UUID missing. Cannot navigate to matches list."
-        )
-        return False
-
-    # --- CHANGE: Construct the URL with the user's UUID ---
-    matches_url_with_uuid = urljoin(
-        config_instance.BASE_URL, f"discoveryui-matches/list/{session_manager.my_uuid}"
-    )
-    # --- END CHANGE ---
-
-    # Call nav_to_page with the CORRECT target URL
-    success = nav_to_page(
-        session_manager.driver,
-        matches_url_with_uuid,  # Pass the UUID-specific URL
-        selector=MATCH_ENTRY_SELECTOR,  # Wait for a match entry
-        session_manager=session_manager,
-    )
-
-    if success:
-        # Add extra verification if needed
-        try:
-            current_url = session_manager.driver.current_url
-            if not current_url.startswith(matches_url_with_uuid):
-                logger.warning(
-                    f"Navigation reported success, but final URL is unexpected: {current_url}"
-                )
-                # return False # Optionally treat unexpected URL as failure
-        except Exception as e:
-            logger.warning(f"Could not verify final URL after nav_to_list: {e}")
-    else:
-        logger.error("Failed to navigate to specific matches list page.")
-
-    return success
-# end nav_to_list
-
-
 @retry_api(max_retries=3, initial_delay=1, backoff_factor=2)  # Use decorator
 def _fetch_combined_details(
     session_manager: SessionManager, match_uuid: str
@@ -1414,7 +1174,6 @@ def _fetch_combined_details(
     return combined_data if "tester_profile_id" in combined_data else None
 # end _fetch_combined_details
 
-
 @retry_api(max_retries=3, initial_delay=1, backoff_factor=2)
 def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
@@ -1462,7 +1221,6 @@ def _fetch_batch_badge_details(
             raise
         return None
 # end _fetch_batch_badge_details
-
 
 @retry_api(
     max_retries=3, initial_delay=1.5, backoff_factor=2
@@ -1633,7 +1391,6 @@ def _fetch_batch_ladder(
         return None
 # end _fetch_batch_ladder
 
-
 @retry_api(max_retries=3, initial_delay=1, backoff_factor=2)
 def _fetch_batch_relationship_prob(
     session_manager: SessionManager, match_uuid: str, max_labels_param: int
@@ -1737,5 +1494,101 @@ def _fetch_batch_relationship_prob(
             raise
         return "N/A (Fetch Error)"
 # end _fetch_batch_relationship_prob
+
+
+#################################################################################
+# 5. 'Create or Update' Database Operations
+#################################################################################
+
+class PersonProcessingError(Exception):
+    """Custom exception for errors during Person creation/update."""
+
+    pass
+# end of PersonProcessingError class
+
+
+#################################################################################
+# 6. Utility & Helper Functions
+#################################################################################
+
+def _log_page_summary(page, page_new, page_updated, page_skipped, page_errors):
+    """Logs a summary of processed matches for a single page."""
+    logger.debug(f"---- Page {page} Summary ----")
+    logger.debug(f"  New matches:     {page_new}")
+    logger.debug(f"  Updated matches: {page_updated}")
+    logger.debug(f"  Skipped matches: {page_skipped}")
+    logger.debug(f"  Error matches:   {page_errors}")
+    logger.debug("-----------------------\n")
+# end of _log_page_summary
+
+def _log_coord_summary(
+    total_pages_processed, total_new, total_updated, total_skipped, total_errors
+):  # Renamed arg
+    """Logs the final summary of the coord's execution."""
+    logger.info("---- Final Summary ----")
+    # --- MODIFIED Label ---
+    logger.info(f"  Total Pages Processed: {total_pages_processed}")
+    # --- END MODIFICATION ---
+    logger.info(f"  Total New:       {total_new}")
+    logger.info(f"  Total Updated:   {total_updated}")
+    logger.info(f"  Total Skipped:   {total_skipped}")
+    logger.info(f"  Total Errors:    {total_errors}")
+    logger.info("-----------------------\n")
+# end of _log_coord_summary
+
+def _adjust_delay(session_manager, page):
+    """Adjusts the dynamic rate limiter delay after processing a page."""
+    if session_manager.dynamic_rate_limiter.is_throttled():
+        logger.debug(f"Rate limiter was throttled during processing of page {page}.")
+    else:
+        session_manager.dynamic_rate_limiter.decrease_delay()
+        if (
+            session_manager.dynamic_rate_limiter.current_delay
+            > config_instance.INITIAL_DELAY
+        ):
+            logger.debug(
+                f"Decreased delay for next page to {session_manager.dynamic_rate_limiter.current_delay:.2f} seconds."
+            )
+# End of _adjust_delay
+
+def nav_to_list(session_manager) -> bool:
+    """Navigates directly to the user's specific DNA matches list page using their UUID."""
+    # Ensure session is valid and UUID is available
+    if not session_manager.is_sess_valid() or not session_manager.my_uuid:
+        logger.error(
+            "Session invalid or user UUID missing. Cannot navigate to matches list."
+        )
+        return False
+
+    # --- CHANGE: Construct the URL with the user's UUID ---
+    matches_url_with_uuid = urljoin(
+        config_instance.BASE_URL, f"discoveryui-matches/list/{session_manager.my_uuid}"
+    )
+    # --- END CHANGE ---
+
+    # Call nav_to_page with the CORRECT target URL
+    success = nav_to_page(
+        session_manager.driver,
+        matches_url_with_uuid,  # Pass the UUID-specific URL
+        selector=MATCH_ENTRY_SELECTOR,  # Wait for a match entry
+        session_manager=session_manager,
+    )
+
+    if success:
+        # Add extra verification if needed
+        try:
+            current_url = session_manager.driver.current_url
+            if not current_url.startswith(matches_url_with_uuid):
+                logger.warning(
+                    f"Navigation reported success, but final URL is unexpected: {current_url}"
+                )
+                # return False # Optionally treat unexpected URL as failure
+        except Exception as e:
+            logger.warning(f"Could not verify final URL after nav_to_list: {e}")
+    else:
+        logger.error("Failed to navigate to specific matches list page.")
+
+    return success
+# end nav_to_list
 
 # end of action6_gather.py
