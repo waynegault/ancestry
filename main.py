@@ -1,3 +1,6 @@
+# File: main.py
+# V1.2: Corrected argument name from start_page to start when calling coord_action_func.
+
 #!/usr/bin/env python3
 
 # main.py
@@ -109,7 +112,6 @@ def menu():
     print("7. Search Inbox")
     print("8. Send Messages")
     print("9. Delete all rows except the first")
-    print("0. Test URL Speed")
     print("")
     print("t. Toggle Console Log Level (INFO/DEBUG)")  # Clarify it's console level
     print("c. Clear Screen")
@@ -175,8 +177,8 @@ def clear_log_file():
 
 def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     """
-    V3 REVISED: Executes an action function, managing session start/stop
-    and logging performance. Passes config_instance explicitly if needed.
+    V3.1 REVISED: Executes an action function, managing session start/stop
+    and logging performance. Correctly handles 'start' argument for coord_action.
     """
     import inspect  # Local import for signature check
 
@@ -205,7 +207,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             session_manager
             and not session_manager.session_active
             and action_name not in browserless_actions
-            and action_name != "check_login_actn"
+            and action_name != "check_login_actn" # check_login starts its own
         ):
 
             logger.debug(f"Starting browser session for action: {action_name}\n")
@@ -221,6 +223,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             )
         elif (
             session_manager
+            and session_manager.session_active # Check if already active
             and action_name not in browserless_actions
             and action_name != "check_login_actn"
         ):
@@ -229,9 +232,12 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             logger.debug(
                 f"Action '{action_name}' does not require browser start via exec_actn."
             )
+        elif action_name == "check_login_actn":
+            logger.debug(
+                f"Action '{action_name}' handles its own session start/stop."
+            )
 
         # Execute the action function
-        # --- Pass config_instance if needed by the action function signature ---
         func_sig = inspect.signature(action_func)
         action_args_to_pass = list(
             args
@@ -239,36 +245,28 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         pass_config = False
         if "config_instance" in func_sig.parameters:
             pass_config = True
-            # Prepend config_instance if it's not already the first arg in *args
-            # This assumes config_instance is expected AFTER session_manager
-            # If the wrapped function expects config_instance first, adjust logic
             if not action_args_to_pass or action_args_to_pass[0] != config_instance:
                 action_args_to_pass.insert(0, config_instance)
 
-        # Check if start_page needs to be passed (specific to coord_action)
-        if action_name == "coord_action" and "start_page" in func_sig.parameters:
-            # Assume start_page is the last argument if passed via *args
+        # --- CORRECTED: Check if 'start' needs to be passed (for coord_action) ---
+        if action_name == "coord_action" and "start" in func_sig.parameters:
+            start_val = 1 # Default
             if len(args) > 0 and isinstance(args[-1], int):
-                start_page_val = args[-1]
-                if pass_config:
-                    # config is already inserted at [0], start_page is at [1]
-                    action_result = action_func(
-                        session_manager,
-                        action_args_to_pass[0],
-                        start_page=start_page_val,
-                    )
-                else:
-                    # No config, start_page is the first arg in *args
-                    action_result = action_func(
-                        session_manager, start_page=start_page_val
-                    )
-            else:  # Default start page if not passed
-                if pass_config:
-                    action_result = action_func(
-                        session_manager, action_args_to_pass[0], start_page=1
-                    )
-                else:
-                    action_result = action_func(session_manager, start_page=1)
+                start_val = args[-1]
+            # Prepare keyword arguments dictionary
+            kwargs_for_action = {'start': start_val}
+            if pass_config:
+                # Pass session_manager, config_instance, and start=...
+                action_result = action_func(
+                    session_manager,
+                    action_args_to_pass[0], # config_instance
+                    **kwargs_for_action
+                )
+            else:
+                # Pass session_manager and start=...
+                action_result = action_func(
+                    session_manager, **kwargs_for_action
+                )
         else:
             # General case for other actions
             if pass_config:
@@ -276,7 +274,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             else:
                 action_result = action_func(
                     session_manager, *args
-                )  # Pass original args
+                )
 
     except Exception as e:
         logger.error(f"Exception during action {action_name}: {e}", exc_info=True)
@@ -297,8 +295,10 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             logger.debug("Browser session closed.")
         elif session_manager and session_manager.session_active:
             if action_name == "check_login_actn":
+                # Check login should have closed its own session
+                # Log if it's still active unexpectedly
                 logger.warning(
-                    f"Session remains active after {action_name}, which should close it."
+                    f"Session remains active after {action_name}, which should normally close it."
                 )
             elif not close_sess:
                 logger.debug(
@@ -335,90 +335,14 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info("--------------------------------------\n")
 # End of exec_actn
 
-# Action 0
-def test_url_speed_action(session_manager, *args):
-    """Action to test the loading speed of two URLs and compare them."""
-    if not session_manager or not session_manager.driver:
-        logger.error("Cannot test URL speed: Session/Driver not available.")
-        return False
-
-    def test_url_speed(driver, url, target_selector):
-        start_time = time.time()
-        success = False
-        try:
-            if not nav_to_page(
-                driver, url, selector="body", session_manager=session_manager
-            ):
-                logger.error(f"Initial navigation to {url} failed.")
-                return time.time() - start_time, False
-            wait_timeout = 60
-            wait = selenium_config.default_wait(driver, timeout=wait_timeout)
-            logger.debug(
-                f"Waiting up to {wait_timeout}s for selector '{target_selector}' at {url}"
-            )
-            wait.until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, target_selector))
-            )
-            success = True
-            logger.debug(f"Target element '{target_selector}' found at {url}.")
-            return time.time() - start_time, success
-        except TimeoutException:
-            logger.warning(
-                f"Timeout waiting for target element '{target_selector}' at {url}."
-            )
-            return time.time() - start_time, False
-        except Exception as e:
-            logger.error(f"Error loading/verifying {url}: {e}", exc_info=True)
-            return time.time() - start_time, False
-
-    url1 = "https://www.ancestry.co.uk/messaging/?p=0725C8FC-0006-0000-0000-000000000000&testguid1=FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7&testguid2=795155EB-3345-4079-8BBD-65ED4C79CF4D"
-    url2 = (
-        "https://www.ancestry.co.uk/messaging/?p=0725C8FC-0006-0000-0000-000000000000"
-    )
-    target_text_selector = "#message-box"
-
-    try:
-        logger.info(f"Testing URL 1: {url1}")
-        time1, success1 = test_url_speed(
-            session_manager.driver, url1, target_text_selector
-        )
-        logger.log(
-            logging.INFO if success1 else logging.WARNING,
-            f"URL 1 {'loaded' if success1 else 'failed'} in {time1:.2f}s.",
-        )
-
-        logger.info(f"\nTesting URL 2: {url2}")
-        time2, success2 = test_url_speed(
-            session_manager.driver, url2, target_text_selector
-        )
-        logger.log(
-            logging.INFO if success2 else logging.WARNING,
-            f"URL 2 {'loaded' if success2 else 'failed'} in {time2:.2f}s.",
-        )
-
-        logger.info("\n--- Comparison ---")
-        logger.info(f"URL 1 Load Time: {time1:.2f}s (Success: {success1})")
-        logger.info(f"URL 2 Load Time: {time2:.2f}s (Success: {success2})")
-
-        if success1 and success2:
-            diff = abs(time1 - time2)
-            if diff < 0.5:
-                logger.info("Both URLs loaded in approx same time.")
-            elif time1 < time2:
-                logger.info(f"URL 1 faster by {diff:.2f}s.")
-            else:
-                logger.info(f"URL 2 faster by {diff:.2f}s.")
-        else:
-            logger.warning("URL failure; comparison unreliable.")
-        return True
-    except Exception as e:
-        logger.error(f"Error during URL speed test: {e}", exc_info=True)
-        return False
-# End of test_url_speed_action
 
 # Action 1
 def run_actions_6_7_8_action(session_manager, *args):
-    """Action to run actions 6, 7, and 8 sequentially."""
+    """
+    Action to run actions 6, 7, and 8 sequentially with stricter checks.
+    Stops execution if any action fails or its prerequisite navigation fails.
+    V1.1: Uses correct 'start' argument for coord_action_func.
+    """
     if (
         not session_manager
         or not session_manager.driver
@@ -427,53 +351,49 @@ def run_actions_6_7_8_action(session_manager, *args):
         logger.error("Cannot run sequential actions: Session not active.")
         return False
 
-    all_successful = True
+    all_successful = True # Assume success initially
+
     try:
+        # --- Action 6 ---
         logger.info("--- Starting Action 6: Gather Matches ---")
-        # Ensure navigation is attempted, but proceed cautiously if it fails initially
-        if not nav_to_list(session_manager):  # nav_to_list is from action6_gather
-            logger.warning(
-                "Initial navigation to match list failed in sequential run. Action 6 will attempt navigation again."
-            )
-            # Don't return False here, let coord_action_func handle its own navigation needs
-        # Call coord_action_func directly, passing config_instance
+        # --- CORRECTED: Pass 'start' argument ---
         gather_result = coord_action_func(
-            session_manager, config_instance
-        )  # Use renamed imported function
+            session_manager, config_instance, start=1 # Use 'start' keyword argument
+        )
         if gather_result is False:
-            logger.error("Action 6 reported failure.")
-            all_successful = False
+            logger.error("Action 6 (Gather Matches) FAILED. Stopping sequence.")
+            return False # Stop sequence on failure
         else:
-            logger.info("Action 6 completed.")
+            logger.info("Action 6 completed successfully.")
 
-        # Optional early exit if critical step fails
-        # if not all_successful: logger.warning("Skipping Actions 7 & 8 due to failure in Action 6."); return False
-
+        # --- Action 7 ---
         logger.info("--- Starting Action 7: Search Inbox ---")
         inbox_url = urljoin(
             config_instance.BASE_URL, "connect/messagecenter/folder/inbox"
         )
+        logger.debug("Navigating to Inbox page for Action 7...")
+        # Use strict navigation check
         if not nav_to_page(
             session_manager.driver, inbox_url, INBOX_CONTAINER_SELECTOR, session_manager
         ):
             logger.error(
-                "Action 7 prerequisite failed: Cannot navigate to inbox. Skipping Action 7."
+                "Action 7 prerequisite FAILED: Cannot navigate to inbox. Stopping sequence."
             )
-            all_successful = False  # Mark failure but continue to Action 8 if needed
+            return False # Stop sequence on navigation failure
+
+        logger.debug("Navigation to Inbox successful. Running search...")
+        inbox_processor = InboxProcessor(session_manager=session_manager)
+        search_result = inbox_processor.search_inbox()
+        if search_result is False:
+            logger.error("Action 7 (Search Inbox) FAILED. Stopping sequence.")
+            return False # Stop sequence on action failure
         else:
-            inbox_processor = InboxProcessor(session_manager=session_manager)
-            search_result = inbox_processor.search_inbox()
-            if search_result is False:
-                logger.error("Action 7 reported failure.")
-                all_successful = False
-            else:
-                logger.info("Action 7 completed.")
+            logger.info("Action 7 completed successfully.")
 
-        # Optional early exit
-        # if not all_successful: logger.warning("Skipping Action 8 due to failure in Action 7."); return False
-
+        # --- Action 8 ---
         logger.info("--- Starting Action 8: Send Messages ---")
         # Navigate to a neutral page before starting messaging
+        logger.debug("Navigating to Base URL for Action 8...")
         if not nav_to_page(
             session_manager.driver,
             config_instance.BASE_URL,
@@ -481,21 +401,24 @@ def run_actions_6_7_8_action(session_manager, *args):
             session_manager,
         ):
             logger.error(
-                "Action 8 prerequisite failed: Cannot navigate to base URL. Skipping Action 8."
+                "Action 8 prerequisite FAILED: Cannot navigate to base URL. Stopping sequence."
             )
-            all_successful = False
-        else:
-            send_result = send_messages_to_matches(session_manager)
-            if send_result is False:
-                logger.error("Action 8 reported failure.")
-                all_successful = False
-            else:
-                logger.info("Action 8 completed.")
+            return False # Stop sequence on navigation failure
 
-        logger.info("Sequential Actions 6-7-8 finished.")
-        return all_successful
+        logger.debug("Navigation to Base URL successful. Sending messages...")
+        send_result = send_messages_to_matches(session_manager)
+        if send_result is False:
+            logger.error("Action 8 (Send Messages) FAILED. Stopping sequence.")
+            return False # Stop sequence on action failure
+        else:
+            logger.info("Action 8 completed successfully.")
+
+        # If we reach here, all actions passed
+        logger.info("Sequential Actions 6-7-8 finished successfully.")
+        return True
+
     except Exception as e:
-        logger.error(f"Error during sequential actions 6-7-8: {e}", exc_info=True)
+        logger.error(f"Critical error during sequential actions 6-7-8: {e}", exc_info=True)
         return False
 # End Action 1
 
@@ -762,9 +685,9 @@ def check_login_actn(session_manager, *args):
 # End Action 5
 
 # Action 6
-# Define coord_action wrapper that accepts config_instance and start_page from exec_actn args
-def coord_action(session_manager, config_instance, start_page=1):
-    """Action wrapper for gathering matches (coord), correctly receiving config_instance and start_page."""
+# --- CORRECTED: Define coord_action wrapper to accept 'start' ---
+def coord_action(session_manager, config_instance, start=1):
+    """Action wrapper for gathering matches (coord), using 'start' argument."""
     if (
         not session_manager
         or not session_manager.driver
@@ -772,11 +695,10 @@ def coord_action(session_manager, config_instance, start_page=1):
     ):
         logger.error("Cannot gather: Session not active.")
         return False
-    logger.debug(f"Gathering DNA Matches from page {start_page}...\n\n")
+    logger.debug(f"Gathering DNA Matches from page {start}...\n\n")
     try:
-        # Call the imported and renamed coord_action_func directly
-        # It already expects session_manager, config_instance, and start_page
-        result = coord_action_func(session_manager, config_instance, start_page)
+        # Call the imported coord_action_func with the 'start' argument
+        result = coord_action_func(session_manager, config_instance, start=start)
         if result is False:
             logger.error("Match gathering reported failure.")
             return False
@@ -926,14 +848,12 @@ def main():
             print("")  # Spacer
 
             # --- Action Dispatching ---
-            if choice == "0":
-                exec_actn(
-                    test_url_speed_action, session_manager, choice, close_sess=True
-                )
-            elif choice == "1":
+            if choice == "1":
+                # NOTE: This keeps the session open *after* the sequence completes.
+                # If you want it closed, change close_sess=True
                 exec_actn(
                     run_actions_6_7_8_action, session_manager, choice, close_sess=False
-                )  # Keep session open after sequence
+                )
             elif choice == "2":
                 exec_actn(
                     reset_db_actn, session_manager, choice, close_sess=False
@@ -952,20 +872,21 @@ def main():
                 )  # Check login should close its own session
             elif choice.startswith("6"):
                 parts = choice.split()
-                start_page = 1
+                # --- CORRECTED: Use 'start' variable name ---
+                start_val = 1
                 if len(parts) > 1:
                     try:
-                        start_page_arg = int(parts[1])  # Convert
-                        if start_page_arg <= 0:
+                        start_arg = int(parts[1])  # Convert
+                        if start_arg <= 0:
                             raise ValueError("Start page must be positive")
-                        start_page = start_page_arg  # Assign only if valid
+                        start_val = start_arg  # Assign only if valid
                     except ValueError as e:
                         print(f"Invalid start page: {e}. Using page 1.")
-                        start_page = 1
-                # Pass start_page using *args mechanism correctly handled by exec_actn
+                        start_val = 1
+                # Pass start_val using *args mechanism correctly handled by exec_actn
                 exec_actn(
-                    coord_action, session_manager, "6", True, start_page
-                )  # Pass start_page as the last positional arg
+                    coord_action, session_manager, "6", True, start_val
+                )  # Pass start_val as the last positional arg
 
             elif choice == "7":
                 exec_actn(
