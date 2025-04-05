@@ -77,32 +77,30 @@ from utils import (
 # Initialize logging
 logger = logging.getLogger("logger")
 
+# estimated matches per page for progress bar
+MATCHES_PER_PAGE = 20
 
 #################################################################################
 # 2. Core Orchestration
 #################################################################################
 
-# --- Use the exact number of matches per page ---
-MATCHES_PER_PAGE = 20
-# --- End Use ---
-
 def coord(session_manager: SessionManager, config_instance, start: int = 1) -> bool:
     """
-    V13.23 REVISED: Gathers DNA matches, processing page-by-page.
-    - Uses logging_redirect_tqdm.
-    - Progress bar updates per MATCH via _do_batch.
-    - Minimal bar format: |{bar}|.
-    - Uses tqdm.auto.
-    - Relies on _do_batch for updates/sleep.
+    V14.15 REVISED: Gathers DNA matches, processing page-by-page.
+    - Progress bar initialized inside logging_redirect_tqdm.
+    - Uses stderr for progress bar.
+    - Uses improved bar format with description and postfix.
+    - Updates postfix with cumulative stats after each page batch.
+    - Relies on _do_batch for per-match updates.
+    - Removed bulk updates on page-level errors in this loop.
     """
-    # ... (Initializations, start_page validation, navigation, total page fetch as before) ...
     driver = session_manager.driver
     if not driver or not session_manager.session_active:
         logger.error("WebDriver not initialized or session not active. Exiting coord.")
         return False
     total_new, total_updated, total_skipped, total_errors = 0, 0, 0, 0
     total_pages_processed = 0
-    progress_bar = None
+    progress_bar = None # Define here for finally block scope
     final_success = True
     my_uuid = session_manager.my_uuid
     if not my_uuid:
@@ -114,6 +112,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
     total_pages_to_process_in_run = 0
     matches_on_page : List[Dict[str, Any]] = []
     total_matches_estimate = 0
+
     try:
         if not isinstance(start, int) or start <= 0:
             logger.warning(f"Invalid start parameter '{start}'. Using default start page 1.")
@@ -159,18 +158,19 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
         total_matches_estimate = total_pages_to_process_in_run * MATCHES_PER_PAGE
         logger.info(f"Processing {total_pages_to_process_in_run} pages (approx. {total_matches_estimate} matches) from {start_page} to {last_page}.\n")
 
-        # --- Initialize progress bar ---
-        progress_bar = tqdm( # Use tqdm directly (will use auto implementation)
-            total=total_matches_estimate,
-            bar_format="Progress bar: |{bar}|",
-            unit="match",
-            initial=0,
-            ncols=80,
-            file=sys.stdout,
-            # Removed ascii=True - let auto handle
-        )
 
         with logging_redirect_tqdm():
+            progress_bar = tqdm(
+                total=total_matches_estimate,
+                desc="Gathering Matches", # Added description
+                unit=" match",
+                ncols=100, # Adjusted width
+                # Improved bar format
+                bar_format="{percentage:3.0f}%|{bar}|",
+                file=sys.stderr, # Use stderr
+                leave=True # Keep bar after finish
+            )
+
             logger.debug("Processing matches page by page inside redirect context...")
             current_page_num = start_page
             while True:
@@ -180,20 +180,18 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
                     db_session_for_page = session_manager.get_db_conn()
                     if not db_session_for_page:
                         logger.error(f"Could not get DB session for page {current_page_num}. Skipping page.")
-                        total_errors += MATCHES_PER_PAGE; time.sleep(2); current_page_num += 1
+                        # Error counter reflects approximate missed matches for summary
+                        total_errors += MATCHES_PER_PAGE
+                        # --- REMOVED bulk progress bar update on DB error ---
                         if total_errors > (3 * MATCHES_PER_PAGE): logger.critical("Aborting run due to persistent DB connection failures."); final_success = False; break
-                        if progress_bar:
-                             try: progress_bar.update(MATCHES_PER_PAGE)
-                             except Exception as pbar_e: logger.warning(f"Error updating progress bar for skipped page: {pbar_e}")
-                        continue
+                        time.sleep(2); current_page_num += 1
+                        continue # Skip to next page iteration
                     try: matches_on_page, _ = get_matches(session_manager, db_session_for_page, current_page_num)
                     finally: session_manager.return_session(db_session_for_page)
 
                 if matches_on_page is None or not matches_on_page:
                     logger.warning(f"No matches/error fetching for page {current_page_num}. Skipping page processing.")
-                    if progress_bar:
-                         try: progress_bar.update(MATCHES_PER_PAGE)
-                         except Exception as pbar_e: logger.warning(f"Error updating progress bar for skipped page: {pbar_e}")
+                    # --- REMOVED bulk progress bar update on empty page ---
                     time.sleep(2); current_page_num += 1; matches_on_page = []; continue
 
                 page_new, page_updated, page_skipped, page_errors = _do_batch(
@@ -205,20 +203,27 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
                     progress_bar=progress_bar # Pass the bar object
                 )
 
+                # Update cumulative totals
                 total_new += page_new; total_updated += page_updated; total_skipped += page_skipped; total_errors += page_errors
                 total_pages_processed += 1
 
-                # Updates are handled in _do_batch
+                # --- Update postfix with cumulative totals ---
+                if progress_bar:
+                    progress_bar.set_postfix(
+                        New=total_new, Upd=total_updated, Skip=total_skipped, Err=total_errors, refresh=True # Use cumulative totals, refresh needed here
+                    )
 
                 _adjust_delay(session_manager, current_page_num)
                 current_page_num += 1
-                matches_on_page = []
+                matches_on_page = [] # Clear for next iteration
 
     except KeyboardInterrupt: logger.warning("Keyboard interrupt..."); final_success = False; _log_coord_summary(total_pages_processed, total_new, total_updated, total_skipped, total_errors); raise
     except Exception as e: logger.error(f"Critical error during coord execution: {e}", exc_info=True); final_success = False
     finally:
         logger.debug("Entering finally block in coord...")
-        if progress_bar: progress_bar.close(); print()
+        if progress_bar:
+            progress_bar.close()
+            print(file=sys.stderr) # Use stderr for newline
         _log_coord_summary(total_pages_processed, total_new, total_updated, total_skipped, total_errors)
         logger.debug("Exiting finally block in coord.")
 
@@ -234,10 +239,12 @@ def _do_batch(
     progress_bar: Optional[tqdm] = None, # Use tqdm hint from auto import
 ) -> Tuple[int, int, int, int]:
     """
-    V14.11 (Reverted): Processes a batch of matches for a single page using pre-fetching.
-    - Updates progress bar per match AFTER processing.
-    - Adds tiny sleep after update.
-    - Progress bar output to stderr.
+    V14.15 (Revised): Processes a batch of matches using pre-fetching.
+    - Updates progress bar per match in a finally block for robustness.
+    - Removed tiny sleep after update.
+    - Progress bar update handled within finally block of each match loop iteration.
+    - Removed bulk update on initial DB error.
+    - Kept update in outer finally for remaining items if critical error occurs mid-loop.
     """
     page_new, page_updated, page_skipped, page_errors = 0, 0, 0, 0
     num_matches = len(matches_on_page)
@@ -245,30 +252,25 @@ def _do_batch(
     my_tree_id = session_manager.my_tree_id
     if not my_uuid:
         logger.error(f"_do_batch Page {current_page}: Missing my_uuid. Cannot process.")
-        if progress_bar:
-            try: progress_bar.update(num_matches) # Still update for skipped
-            except Exception as pbar_e: logger.warning(f"Error updating progress bar during error state: {pbar_e}")
-        return 0, 0, 0, num_matches
+        # --- REMOVED bulk progress bar update on UUID error ---
+        return 0, 0, 0, num_matches # Return errors equal to expected matches
 
     # --- Pre-fetch Details Concurrently ---
     logger.debug(f"--- Starting Batch Pre-fetch for Page {current_page} ({num_matches} matches) ---")
     uuids_on_page = [m["uuid"] for m in matches_on_page if m.get("uuid")]
-    # Identify UUIDs needing specific fetches
     uuids_for_tree_badge = [m["uuid"] for m in matches_on_page if m.get("uuid") and m.get("in_my_tree")]
-    uuids_for_combined_details = uuids_on_page # Fetch combined details for all
-    uuids_for_relationships = uuids_on_page # Fetch relationship for all
+    uuids_for_combined_details = uuids_on_page
+    uuids_for_relationships = uuids_on_page
 
-    # Dictionaries to store prefetched data
     batch_combined_details: Dict[str, Optional[Dict[str, Any]]] = {}
     batch_badge_data: Dict[str, Optional[Dict[str, Any]]] = {}
     batch_ladder_data: Dict[str, Optional[Dict[str, Any]]] = {}
-    batch_relationship_prob_data: Dict[str, Optional[str]] = {} # Store rel string
+    batch_relationship_prob_data: Dict[str, Optional[str]] = {}
 
     futures = {}
     fetch_start_time = time.time()
 
     # Use ThreadPoolExecutor for concurrent fetching
-    # Adjust max_workers as needed based on system resources and API limits
     with ThreadPoolExecutor(max_workers=10) as executor:
         # Submit tasks for combined details
         for uuid_val in uuids_for_combined_details:
@@ -358,37 +360,38 @@ def _do_batch(
     prepared_bulk_data: List[Dict[str, Any]] = []
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     session = session_manager.get_db_conn()
+    processed_count_in_loop = 0 # Track how many items actually entered the loop processing stage
+
     if not session:
         logger.error(f"_do_batch Page {current_page}: Failed to get DB session.")
-        if progress_bar:
-            try: progress_bar.update(num_matches)
-            except Exception as pbar_e: logger.warning(f"Error updating progress bar during DB error state: {pbar_e}")
-        return 0, 0, 0, num_matches
+        # --- REMOVED bulk progress bar update on DB error ---
+        return 0, 0, 0, num_matches # Return errors equal to expected matches
+
     try:
+        # --- REVISED LOOP with finally for progress bar update ---
         for match_index, match in enumerate(matches_on_page):
-            _case_name = match.get("username", f"Unknown Match {match_index+1}")
-            logger.debug(f"#### Page {current_page} - Prep Match {match_index + 1}/{num_matches}: {_case_name} ####")
-
-            uuid_val = match.get("uuid")
-            if not uuid_val:
-                logger.warning(f"Skipping prep for match {match_index+1} on page {current_page}: Missing UUID.")
-                page_statuses["error"] += 1
-                # Update bar even for skipped/errored items
-                if progress_bar:
-                    try: progress_bar.update(1); time.sleep(0.01)
-                    except Exception as pbar_e: logger.warning(f"Error updating pbar for skipped (no UUID): {pbar_e}")
-                continue
-
-            # Retrieve prefetched data for this UUID
-            prefetched_combined = batch_combined_details.get(uuid_val)
-            prefetched_tree = batch_tree_data.get(uuid_val) # Already combined badge+ladder
-            prefetched_rel_prob = batch_relationship_prob_data.get(uuid_val)
-
-            # Assign predicted relationship to match dict (used by _do_match)
-            match["predicted_relationship"] = (prefetched_rel_prob or "N/A (Fetch Failed)")
-
-            # Process the match using prefetched data
+            status_for_item: Literal["new", "updated", "skipped", "error", "unknown"] = "unknown"
             try:
+                processed_count_in_loop += 1 # Increment counter as we start processing an item
+                _case_name = match.get("username", f"Unknown Match {match_index+1}")
+                logger.debug(f"#### Page {current_page} - Prep Match {match_index + 1}/{num_matches}: {_case_name} ####")
+
+                uuid_val = match.get("uuid")
+                if not uuid_val:
+                    logger.warning(f"Skipping prep for match {match_index+1} on page {current_page}: Missing UUID.")
+                    page_statuses["error"] += 1
+                    status_for_item = "error"
+                    continue # Skip to finally block for this item
+
+                # Retrieve prefetched data for this UUID
+                prefetched_combined = batch_combined_details.get(uuid_val)
+                prefetched_tree = batch_tree_data.get(uuid_val) # Already combined badge+ladder
+                prefetched_rel_prob = batch_relationship_prob_data.get(uuid_val)
+
+                # Assign predicted relationship to match dict (used by _do_match)
+                match["predicted_relationship"] = (prefetched_rel_prob or "N/A (Fetch Failed)")
+
+                # Process the match using prefetched data
                 prepared_data, status, error_msg = _do_match(
                     session=session,
                     match=match,
@@ -396,6 +399,7 @@ def _do_batch(
                     prefetched_combined_details=prefetched_combined,
                     prefetched_tree_data=prefetched_tree
                 )
+                status_for_item = status # Update status for use in finally (though not strictly needed now)
                 logger.debug(f"  -> Match {_case_name}: _do_match status '{status}'. Tallying.")
                 page_statuses[status] += 1
                 if status != "error" and prepared_data:
@@ -407,23 +411,25 @@ def _do_batch(
 
             except Exception as inner_e:
                 logger.error(f"Critical error preparing data for match {_case_name} on page {current_page}: {inner_e}", exc_info=True)
-                page_statuses["error"] += 1;
+                if status_for_item != "error": # Avoid double counting if _do_match already flagged error
+                     page_statuses["error"] += 1
+                status_for_item = "error"
                 logger.debug(f"  -> Tallying 'error' due to exception.")
-
-            # --- Update bar and add tiny sleep AFTER processing this match ---
-            if progress_bar:
-                try:
-                    progress_bar.update(1)
-                    time.sleep(0.01) # Tiny sleep after update
-                except Exception as pbar_e:
-                    logger.warning(f"Error updating progress bar for match: {pbar_e}")
-            # --- End Update and sleep ---
-
+            finally:
+                # --- Update bar in finally to ensure it always happens ---
+                if progress_bar:
+                    try:
+                        progress_bar.update(1)
+                        # --- REMOVED time.sleep(0.01) ---
+                    except Exception as pbar_e:
+                        logger.warning(f"Error updating progress bar for match: {pbar_e}")
+                # --- End Update ---
         # --- End of loop for matches_on_page ---
 
         # --- Bulk Database Operations (outside the match loop) ---
         if prepared_bulk_data:
             logger.debug(f"--- Starting Bulk DB Operations for Page {current_page} ({len(prepared_bulk_data)} items) ---")
+            # ... (bulk operations remain the same as before) ...
             bulk_start_time = time.time()
             try:
                 # --- Extract data for bulk operations ---
@@ -453,25 +459,17 @@ def _do_batch(
                     if d.get("family_tree") and d["family_tree"]["_operation"] == "update"
                 ]
 
-                # Map to store created Person IDs by UUID
                 created_person_map: Dict[str, int] = {}
 
                 # --- 1. Bulk Insert Persons ---
                 if person_creates:
                     logger.debug(f"Bulk inserting {len(person_creates)} new Person records...")
-                    insert_data = [
-                        {k: v for k, v in p.items() if not k.startswith("_")}
-                        for p in person_creates
-                    ]
-                    # Use return_defaults=True to get IDs back
+                    insert_data = [{k: v for k, v in p.items() if not k.startswith("_")} for p in person_creates]
                     result = session.bulk_insert_mappings(Person, insert_data, return_defaults=True)
-                    session.flush() # Flush to ensure IDs are populated and constraints checked
-                    # Populate map after flush
+                    session.flush()
                     for p_data in insert_data:
-                        if p_data.get("id") and p_data.get("uuid"):
-                            created_person_map[p_data["uuid"]] = p_data["id"]
-                        else:
-                             logger.error(f"Person ID or UUID missing after bulk insert/flush for: {p_data.get('username')}")
+                        if p_data.get("id") and p_data.get("uuid"): created_person_map[p_data["uuid"]] = p_data["id"]
+                        else: logger.error(f"Person ID or UUID missing after bulk insert/flush for: {p_data.get('username')}")
                     logger.debug(f"Bulk inserted {len(created_person_map)} persons.")
 
                 # --- 2. Bulk Update Persons ---
@@ -479,47 +477,34 @@ def _do_batch(
                     update_mappings = []
                     for p_data in person_updates:
                         existing_id = p_data.get("_existing_person_id")
-                        if not existing_id:
-                            logger.warning(f"Skipping person update for UUID {p_data.get('uuid')}: Missing existing ID.")
-                            continue
-                        update_dict = {
-                            k: v
-                            for k, v in p_data.items()
-                            if not k.startswith("_") and k != "uuid"
-                        }
-                        if update_dict: # Only add if there are fields to update
-                            update_dict["id"] = existing_id
-                            update_dict["updated_at"] = datetime.now()
+                        if not existing_id: logger.warning(f"Skipping person update for UUID {p_data.get('uuid')}: Missing existing ID."); continue
+                        update_dict = { k: v for k, v in p_data.items() if not k.startswith("_") and k != "uuid" }
+                        if update_dict:
+                            update_dict["id"] = existing_id; update_dict["updated_at"] = datetime.now()
                             update_mappings.append(update_dict)
                     if update_mappings:
                         logger.debug(f"Bulk updating {len(update_mappings)} existing Person records...")
                         session.bulk_update_mappings(Person, update_mappings)
                         logger.debug("Bulk updated persons.")
-                    else:
-                        logger.debug("No Person records needed bulk updating this batch.")
+                    else: logger.debug("No Person records needed bulk updating this batch.")
 
                 # --- 3. Prepare map of ALL relevant Person IDs ---
                 all_person_ids_map = created_person_map.copy()
                 for p_update_data in person_updates:
-                    if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
-                        all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+                    if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"): all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
 
                 # --- 4. Bulk Insert DNA Matches ---
                 if dna_match_creates:
                     dna_insert_data = []
                     for dna_data in dna_match_creates:
-                        person_uuid = dna_data.get("uuid")
-                        person_id = all_person_ids_map.get(person_uuid)
+                        person_uuid = dna_data.get("uuid"); person_id = all_person_ids_map.get(person_uuid)
                         if person_id:
                             insert_dict = {k: v for k, v in dna_data.items() if not k.startswith("_")}
-                            insert_dict["people_id"] = person_id
-                            dna_insert_data.append(insert_dict)
-                        else:
-                            logger.warning(f"Skipping DNA Match create for UUID {person_uuid}: Corresponding Person ID not found.")
+                            insert_dict["people_id"] = person_id; dna_insert_data.append(insert_dict)
+                        else: logger.warning(f"Skipping DNA Match create for UUID {person_uuid}: Corresponding Person ID not found.")
                     if dna_insert_data:
                         logger.debug(f"Bulk inserting {len(dna_insert_data)} DnaMatch records...")
-                        session.bulk_insert_mappings(DnaMatch, dna_insert_data)
-                        logger.debug("Bulk inserted DnaMatches.")
+                        session.bulk_insert_mappings(DnaMatch, dna_insert_data); logger.debug("Bulk inserted DnaMatches.")
 
                 # --- 5. Bulk Insert Family Trees ---
                 if family_tree_creates:
@@ -528,13 +513,11 @@ def _do_batch(
                          person_uuid = tree_data.get("uuid"); person_id = all_person_ids_map.get(person_uuid)
                          if person_id:
                               insert_dict = {k: v for k, v in tree_data.items() if not k.startswith('_')}
-                              insert_dict["people_id"] = person_id
-                              tree_insert_data.append(insert_dict)
+                              insert_dict["people_id"] = person_id; tree_insert_data.append(insert_dict)
                          else: logger.warning(f"Skipping FamilyTree create for UUID {person_uuid}: Corresponding Person ID not found.")
                     if tree_insert_data:
                         logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
-                        session.bulk_insert_mappings(FamilyTree, tree_insert_data)
-                        logger.debug("Bulk inserted FamilyTrees.")
+                        session.bulk_insert_mappings(FamilyTree, tree_insert_data); logger.debug("Bulk inserted FamilyTrees.")
 
                 # --- 6. Bulk Update Family Trees ---
                 if family_tree_updates:
@@ -550,8 +533,7 @@ def _do_batch(
                              tree_update_mappings.append(update_dict)
                     if tree_update_mappings:
                         logger.debug(f"Bulk updating {len(tree_update_mappings)} FamilyTree records...")
-                        session.bulk_update_mappings(FamilyTree, tree_update_mappings)
-                        logger.debug("Bulk updated FamilyTrees.")
+                        session.bulk_update_mappings(FamilyTree, tree_update_mappings); logger.debug("Bulk updated FamilyTrees.")
                     else: logger.debug("No FamilyTree records needed bulk updating this batch.")
 
                 # --- Final Commit ---
@@ -562,12 +544,12 @@ def _do_batch(
             except (IntegrityError, SQLAlchemyError) as bulk_err:
                  logger.error(f"Bulk DB operation FAILED for page {current_page}: {bulk_err}", exc_info=True);
                  if session and session.is_active: session.rollback()
-                 page_statuses["error"] += len(prepared_bulk_data); page_statuses["new"] = 0; page_statuses["updated"] = 0
+                 page_statuses["error"] += len(prepared_bulk_data); page_statuses["new"] = 0; page_statuses["updated"] = 0 # Mark all prepared items as errors
                  logger.warning(f"Page {current_page} counts adjusted due to bulk error: {page_statuses}")
             except Exception as bulk_e_unexp:
                  logger.critical(f"Unexpected Bulk DB Error for page {current_page}: {bulk_e_unexp}", exc_info=True);
                  if session and session.is_active: session.rollback()
-                 page_statuses["error"] += len(prepared_bulk_data); page_statuses["new"] = 0; page_statuses["updated"] = 0
+                 page_statuses["error"] += len(prepared_bulk_data); page_statuses["new"] = 0; page_statuses["updated"] = 0 # Mark all prepared items as errors
                  logger.warning(f"Page {current_page} counts adjusted due to unexpected bulk error: {page_statuses}")
         else:
             logger.debug(f"No data prepared for bulk DB operations on page {current_page}.")
@@ -581,12 +563,13 @@ def _do_batch(
             try: session.rollback(); logger.debug(f"Rolled back session.")
             except Exception as rb_err: logger.error(f"Failed rollback: {rb_err}")
         # Estimate errors for matches not processed in the loop due to outer error
-        processed_count = sum(page_statuses.values()); remaining_count = num_matches - processed_count
-        page_statuses["error"] += remaining_count
-        if progress_bar:
+        # Calculate remaining based on how many entered the processing loop
+        remaining_count = num_matches - processed_count_in_loop
+        page_statuses["error"] += remaining_count # Add remaining unprocessed as errors
+        if progress_bar and remaining_count > 0:
+            logger.warning(f"Updating progress bar by {remaining_count} for items skipped due to outer error.")
             try:
                 progress_bar.update(remaining_count) # Update bar for unprocessed items
-                # time.sleep(0.01) # No sleep needed here probably
             except Exception as pbar_e: logger.warning(f"Error updating progress bar during outer error: {pbar_e}")
 
     finally:
