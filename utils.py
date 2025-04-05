@@ -48,6 +48,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     ElementClickInterceptedException,
 )
+from requests.cookies import RequestsCookieJar # Import RequestsCookieJar
 from selenium.webdriver.remote.webdriver import WebDriver
 from requests import Response, Request # Removed RequestsCookieJar
 from requests.adapters import HTTPAdapter
@@ -1776,8 +1777,8 @@ class SessionManager:
 
 def _api_req(
     url: str,
-    driver: Optional[WebDriver], # Keep driver optional for UBE header etc.
-    session_manager: SessionManager, # Now required
+    driver: Optional[WebDriver],
+    session_manager: SessionManager,
     method: str = "GET",
     data: Optional[Dict] = None,
     json_data: Optional[Dict] = None,
@@ -1786,11 +1787,12 @@ def _api_req(
     referer_url: Optional[str] = None,
     api_description: str = "API Call",
     timeout: Optional[int] = None,
-    force_requests: bool = False, # Keep flag
+    force_requests: bool = False,
+    cookie_jar: Optional[RequestsCookieJar] = None # Added cookie_jar parameter
 ) -> Optional[Any]:
     """
-    V13.4 REVISED: Makes HTTP request. Reduces log severity for expected 401/403 errors.
-    Adds stricter JSON handling based on Content-Type.
+    V13.11 REVISED: Makes HTTP request. Allows passing a specific cookie jar.
+    Corrected NameError by ensuring RequestsCookieJar is imported.
     """
     if not session_manager:
         logger.error(f"{api_description}: Aborting - SessionManager instance is required.")
@@ -1807,12 +1809,16 @@ def _api_req(
     max_delay = config_instance.MAX_DELAY
     retry_status_codes = config_instance.RETRY_STATUS_CODES
 
+    # --- Header Assembly ---
     final_headers = {}
+    # 1. Contextual Headers from Config
     contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {})
     final_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
+    # 2. Headers passed as arguments (COPY FIRST)
     if headers:
         final_headers.update({k: v for k, v in headers.items() if v is not None})
 
+    # 3. User-Agent (PRIORITIZE header arg)
     if "User-Agent" not in final_headers:
         ua = None
         if driver and session_manager.is_sess_valid():
@@ -1820,29 +1826,54 @@ def _api_req(
             except Exception: pass
         if not ua: ua = random.choice(config_instance.USER_AGENTS)
         final_headers["User-Agent"] = ua
+    elif "User-Agent" in final_headers:
+         logger.debug(f"{api_description}: Using User-Agent provided explicitly in headers.")
 
+    # 4. Referer (if not already set)
     if referer_url and "Referer" not in final_headers:
         final_headers["Referer"] = referer_url
 
-    if use_csrf_token:
-        csrf = session_manager.csrf_token
-        if csrf: final_headers["X-CSRF-Token"] = csrf
+    # 5. CSRF Token (Conditional - PRIORITIZE header arg)
+    if use_csrf_token and "X-CSRF-Token" not in final_headers:
+        csrf_from_manager = session_manager.csrf_token
+        if csrf_from_manager:
+            final_headers["X-CSRF-Token"] = csrf_from_manager
         else:
-             logger.error(f"{api_description}: CSRF token required but not found in SessionManager.")
+             logger.error(f"{api_description}: CSRF token required but not found in SessionManager and not provided in headers.")
              return None
+    elif use_csrf_token and "X-CSRF-Token" in final_headers:
+         logger.debug(f"{api_description}: Using X-CSRF-Token provided explicitly in headers.")
 
+    # 6. UBE Header (if not already set)
     if driver and session_manager.is_sess_valid() and "ancestry-context-ube" not in final_headers:
-        ube_header = make_ube(driver)
+        ube_header = make_ube(driver) # Use revised make_ube
         if ube_header: final_headers["ancestry-context-ube"] = ube_header
         else: logger.warning(f"{api_description}: Failed to generate UBE header.")
 
+    # 7. Ancestry UserID (if needed by context and available)
     if "ancestry-userid" in contextual_headers and session_manager.my_profile_id:
         final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
 
-    request_timeout = timeout if timeout is not None else selenium_config.API_TIMEOUT
+    # 8. NewRelic/Trace Headers (Generate fresh each time, if not set)
+    if "newrelic" not in final_headers: final_headers["newrelic"] = make_newrelic(driver)
+    if "traceparent" not in final_headers: final_headers["traceparent"] = make_traceparent(driver)
+    if "tracestate" not in final_headers: final_headers["tracestate"] = make_tracestate(driver)
 
+    # 9. Specific Cache Headers (conditionally)
+    if api_description == "Match List API":
+        if "Cache-Control" not in final_headers: final_headers["Cache-Control"] = "no-cache"
+        if "Pragma" not in final_headers: final_headers["Pragma"] = "no-cache"
+
+    # --- End Header Assembly ---
+
+    request_timeout = timeout if timeout is not None else selenium_config.API_TIMEOUT
     logger.debug(f"API Req: {method.upper()} {url}")
+    # *** Use passed cookie_jar if provided, otherwise use session's ***
     req_session = session_manager._requests_session
+    effective_cookies = cookie_jar if cookie_jar is not None else req_session.cookies
+    if cookie_jar is not None:
+        logger.debug(f"Using explicitly provided cookie jar for '{api_description}'.")
+    # *** END CHANGE ***
 
     retries_left = max_retries
     last_exception = None
@@ -1851,27 +1882,84 @@ def _api_req(
     while retries_left > 0:
         attempt = max_retries - retries_left + 1
         response = None
-
         try:
-            if driver and session_manager.is_sess_valid():
+            # --- Cookie Syncing (Only if NOT using explicit jar) ---
+            if cookie_jar is None and driver and session_manager.is_sess_valid():
                 try: session_manager._sync_cookies()
                 except Exception as sync_err:
                     logger.warning(f"{api_description}: Error syncing cookies (Attempt {attempt}): {sync_err}")
+            # --- End Conditional Sync ---
 
-            # Use allow_redirects=True (default) for requests
+            # --- Detailed Logging ---
+            logger.debug(f"--- Request Attempt {attempt}/{max_retries} ---")
+            logger.debug(f"  URL: {method.upper()} {url}")
+            logger.debug("  Headers:")
+            for key, value in final_headers.items():
+                log_value = value
+                if key.lower() == 'x-csrf-token' and value and len(value) > 20:
+                    log_value = f"{value[:10]}...{value[-5:]}"
+                elif key.lower() == 'ancestry-context-ube' and value and len(value) > 50:
+                    log_value = f"{value[:20]}...{value[-10:]}"
+                elif key.lower() == 'newrelic' and value and len(value) > 50:
+                    log_value = f"{value[:20]}...{value[-10:]}"
+                logger.debug(f"    {key}: {log_value}")
+            logger.debug("  Cookies (Effective for this call):")
+            # Log the *effective* cookies
+            if effective_cookies:
+                 if isinstance(effective_cookies, RequestsCookieJar):
+                      for cookie in effective_cookies:
+                           log_value = cookie.value
+                           if cookie.name.upper() in ["ANCSESSIONID", "SECUREATT", "ATT", "ANCATT", "RMEATT"] and cookie.value and len(cookie.value)>20:
+                               log_value = f"{cookie.value[:10]}...{cookie.value[-5:]}"
+                           elif cookie.name == '_dnamatches-matchlistui-x-csrf-token' and cookie.value and len(cookie.value) > 20:
+                               log_value = f"{cookie.value[:10]}...{cookie.value[-5:]}"
+                           logger.debug(f"    (Jar) {cookie.name}={log_value}; domain={cookie.domain}; path={cookie.path}")
+                 elif hasattr(effective_cookies, 'items'): # Check if it's dict-like (session cookies)
+                      for name, value in effective_cookies.items(): # Iterate items
+                           log_value = value
+                           if name.upper() in ["ANCSESSIONID", "SECUREATT", "ATT", "ANCATT", "RMEATT"] and value and len(value)>20:
+                               log_value = f"{value[:10]}...{value[-5:]}"
+                           elif name == '_dnamatches-matchlistui-x-csrf-token' and value and len(value) > 20:
+                               log_value = f"{value[:10]}...{value[-5:]}"
+                           logger.debug(f"    (Session) '{name}': '{log_value}'")
+                 else:
+                      logger.warning("    Could not determine how to log effective cookies (unknown type).")
+            else:
+                 logger.debug("    (No effective cookies)")
+            if data: logger.debug(f"  Data Payload: {data}")
+            if json_data: logger.debug(f"  JSON Payload: {json.dumps(json_data)}")
+            logger.debug("-------------------------------")
+
+            # Make Request - Pass the *effective* cookies
             response = req_session.request(
                 method=method.upper(), url=url, headers=final_headers,
                 data=data, json=json_data, timeout=request_timeout, verify=True,
-                allow_redirects=True # Explicitly True (default behavior)
+                allow_redirects=True,
+                cookies=effective_cookies # Pass effective_cookies here
             )
             status = response.status_code
 
-            # 1. Check for Retryable Status Codes
+            # Log Response
+            logger.debug(f"<-- Response Status: {status} {response.reason}")
+            logger.debug("  Response Headers:")
+            location_header = None
+            for key, value in response.headers.items():
+                 logger.debug(f"    {key}: {value}")
+                 if key.lower() == 'location': location_header = value
+            if response.history:
+                logger.debug(f"  Redirect History ({len(response.history)} hops):")
+                for i, resp_hist in enumerate(response.history):
+                    logger.debug(f"    Hop {i+1}: {resp_hist.status_code} {resp_hist.url}")
+            if not response.ok or "application/json" not in response.headers.get("content-type", "").lower():
+                 try: logger.debug(f"  Response Body (Preview): {response.text[:500]}")
+                 except Exception: logger.debug("  Response Body: (Could not decode preview)")
+
+            # --- Response Handling ---
             if status in retry_status_codes:
                 retries_left -= 1
-                last_exception = requests.exceptions.HTTPError(f"{status} Server Error: {response.reason}", response=response)
+                last_exception = HTTPError(f"{status} Server Error: {response.reason}", response=response)
                 if retries_left <= 0:
-                    logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Resp: {response.text[:200] if response else 'N/A'}")
+                    logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}).")
                     if status == 429 and session_manager.dynamic_rate_limiter: session_manager.dynamic_rate_limiter.increase_delay()
                     return None
                 else:
@@ -1880,69 +1968,63 @@ def _api_req(
                          if status == 429: session_manager.dynamic_rate_limiter.increase_delay()
                          sleep_time = delay * (backoff_factor ** (attempt - 1))
                          jitter = random.uniform(-0.1, 0.1) * delay
-                         sleep_time = min(sleep_time + jitter, max_delay)
-                         sleep_time = max(0.1, sleep_time)
+                         sleep_time = min(sleep_time + jitter, max_delay); sleep_time = max(0.1, sleep_time)
                     else:
                          sleep_time = delay * (backoff_factor ** (attempt - 1))
-                         sleep_time = min(sleep_time, max_delay)
-                         sleep_time = max(0.1, sleep_time)
+                         sleep_time = min(sleep_time, max_delay); sleep_time = max(0.1, sleep_time)
                     logger.warning(f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s...")
                     time.sleep(sleep_time)
                     delay *= backoff_factor
                     continue
 
-            # 2. Check for Success (2xx)
+            elif 300 <= status < 400:
+                 logger.warning(f"{api_description}: Received redirect status {status} {response.reason}.")
+                 if location_header: logger.warning(f"  Redirect Location: {location_header}")
+                 logger.error(f"{api_description}: Unexpected final status {status}. Treating as failure.")
+                 return None
+
             elif response.ok:
                 if session_manager.dynamic_rate_limiter: session_manager.dynamic_rate_limiter.decrease_delay()
                 content_type = response.headers.get("content-type", "").lower()
-                # *** CHANGE: Stricter JSON handling ***
                 if "application/json" in content_type:
-                    try:
-                        return response.json()
+                    try: return response.json()
                     except json.JSONDecodeError as json_err:
                         logger.error(f"{api_description}: OK ({status}), Content-Type is JSON, but JSON decode FAILED: {json_err}")
                         logger.debug(f"Response text causing decode error: {response.text[:500]}")
-                        return None # Treat decode failure as error
+                        return None
                 else:
-                    # Handle specific non-JSON success cases if needed
                     if api_description == "Get Ladder API (Batch)" and isinstance(response.text, str):
                         logger.debug(f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning TEXT as expected.")
-                        return response.text # Expected text for this specific API
+                        return response.text
                     elif api_description == "CSRF Token API" and "text/plain" in content_type:
                          logger.debug(f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning TEXT as expected.")
                          csrf_text = response.text.strip()
-                         return csrf_text if csrf_text else None # Return None if empty string
+                         return csrf_text if csrf_text else None
                     else:
-                        # Log warning for unexpected content types on successful requests
-                        logger.warning(f"{api_description}: Request OK ({status}), but received unexpected Content-Type '{content_type}'. Returning None instead of text.")
-                        logger.debug(f"Response text (first 500 chars): {response.text[:500]}")
-                        return None # Return None for unexpected non-JSON success
-                # *** END CHANGE ***
+                        logger.warning(f"{api_description}: Request OK ({status}), but received unexpected Content-Type '{content_type}'. Returning TEXT.")
+                        return response.text # Return text for unexpected types
 
-            # 3. Handle Non-Retryable Errors (>= 400 and not in retry_codes)
-            else:
+            else: # Non-retryable error >= 400
                 if status in [401, 403]:
-                    logger.debug(f"{api_description}: API call failed with status {status} {response.reason}. Likely not logged in or session expired.")
+                    logger.warning(f"{api_description}: API call failed with status {status} {response.reason}. Likely not logged in or session expired.")
                     session_manager.api_login_verified = False
                 else:
-                    logger.error(f"{api_description}: Non-retryable error: {status} {response.reason}. Resp: {response.text[:500]}")
+                    logger.error(f"{api_description}: Non-retryable error: {status} {response.reason}.")
                 return None # Indicate failure
 
+        # --- Exception Handling ---
         except requests.exceptions.RequestException as e:
-            retries_left -= 1
-            last_exception = e
+            retries_left -= 1; last_exception = e;
             if retries_left <= 0:
                 logger.error(f"{api_description}: RequestException failed after {max_retries} attempts. Final Error: {e}", exc_info=False)
                 return None
             else:
                 sleep_time = delay * (backoff_factor ** (attempt - 1))
-                sleep_time = min(sleep_time, max_delay)
-                sleep_time = max(0.1, sleep_time)
+                sleep_time = min(sleep_time, max_delay); sleep_time = max(0.1, sleep_time)
                 logger.warning(f"{api_description}: RequestException (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}")
                 time.sleep(sleep_time)
                 delay *= backoff_factor
                 continue
-
         except Exception as e:
             logger.critical(f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}", exc_info=True)
             return None
@@ -1951,56 +2033,82 @@ def _api_req(
     return None
 # End of _api_req
 
-def make_ube(driver: Optional[WebDriver]) -> Optional[str]: # Type hint driver
-    """Generates the UBE header value. Requires an active WebDriver session."""
+def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
+    """
+    REVISED V13.8: Generates UBE header. Ensures correlatedSessionId matches ANCSESSIONID cookie.
+    Uses static null eventId from cURL example.
+    """
     if not driver:
         logger.debug("Cannot generate UBE header: WebDriver is None.")
         return None
     try:
-        # Ensure session is valid before getting cookies
-        # Temporarily create a SessionManager to call is_sess_valid. This is not ideal.
-        # A better approach would be to pass SessionManager instance if available.
+        # Temporarily create SessionManager for session check - not ideal but avoids major refactor now
         temp_sm = SessionManager() # Create temporary manager
         temp_sm.driver = driver # Assign driver
         if not temp_sm.is_sess_valid():
              logger.warning("Cannot generate UBE header: Session invalid.")
              return None
 
-        cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
-        ancsessionid = cookies.get("ANCSESSIONID")
-        if not ancsessionid:
-            logger.warning("ANCSESSIONID cookie not found for UBE header.")
-            # Optionally try to fetch it again? For now, return None.
-            return None
+        # *** CHANGE: Read ANCSESSIONID cookie *here* ***
+        ancsessionid = None
+        try:
+            cookie_obj = driver.get_cookie("ANCSESSIONID")
+            if cookie_obj and 'value' in cookie_obj:
+                ancsessionid = cookie_obj['value']
+            else: # Fallback if get_cookie fails for some reason
+                 cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
+                 ancsessionid = cookies.get("ANCSESSIONID")
 
-        # Generate unique IDs for the event
-        event_id = str(uuid.uuid4())
-        correlated_id = str(uuid.uuid4())
+            if not ancsessionid:
+                logger.warning("ANCSESSIONID cookie not found for UBE header.")
+                return None
+            # logger.debug(f"Using ANCSESSIONID '{ancsessionid}' for UBE correlatedSessionId.") # Optional log
+
+        except NoSuchCookieException:
+             logger.warning("ANCSESSIONID cookie not found via get_cookie for UBE header.")
+             return None
+        except WebDriverException as cookie_e:
+             logger.warning(f"WebDriver error getting ANCSESSIONID cookie for UBE: {cookie_e}")
+             return None
+        # *** END CHANGE ***
+
+
+        event_id = "00000000-0000-0000-0000-000000000000" # Static null ID from cURL
+        correlated_id = str(uuid.uuid4()) # Keep this dynamic
+
+        screen_name_standard = "ancestry : uk : en : dna-matches-ui : match-list : 1"
+        screen_name_legacy = "ancestry uk : dnamatches-matchlistui : list"
 
         ube_data = {
             "eventId": event_id,
             "correlatedScreenViewedId": correlated_id,
+            # *** CHANGE: Use the fetched ancsessionid ***
             "correlatedSessionId": ancsessionid,
-            "userConsent": "necessary|preference|performance|analytics1st|analytics3rd|advertising1st|advertising3rd|attribution3rd", # Standard consent string
-            "vendors": "adobemc", # Standard vendor string
-            "vendorConfigurations": "{}", # Empty JSON object as string
+            # *** END CHANGE ***
+            "screenNameStandard": screen_name_standard,
+            "screenNameLegacy": screen_name_legacy,
+            "userConsent": "necessary|preference|performance|analytics1st|analytics3rd|advertising1st|advertising3rd|attribution3rd",
+            "vendors": "adobemc",
+            "vendorConfigurations": "{}",
         }
-        # Use standard base64 encoding
+
+        logger.debug(f"UBE JSON Payload before encoding: {json.dumps(ube_data)}")
+
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode('utf-8')
         encoded_payload = base64.b64encode(json_payload).decode('utf-8')
         return encoded_payload
 
     except WebDriverException as e:
          logger.error(f"WebDriverException generating UBE header: {e}")
-         temp_sm = SessionManager() # Create temporary manager again
+         temp_sm = SessionManager()
          temp_sm.driver = driver
-         if not temp_sm.is_sess_valid(): # Check again
+         if not temp_sm.is_sess_valid():
               logger.error("Session invalid after WebDriverException during UBE generation.")
          return None
     except Exception as e:
         logger.error(f"Unexpected error generating UBE Header: {e}", exc_info=True)
         return None
-# End of make_ube
+# End of make_ube 
 
 def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]: # Type hint driver
     """Generates the newrelic header value."""
@@ -2097,7 +2205,7 @@ def get_driver_cookies(driver: WebDriver) -> Dict[str, str]: # Type hint driver 
 # Login
 # ----------------------------------------------------------------------------
 
-# Login 5 (Ensure this function exists and uses correct selectors)
+# Login 5 
 @time_wait("Handle 2FA Page")
 def handle_twoFA(session_manager: SessionManager) -> bool:
     """
@@ -2644,7 +2752,7 @@ def log_in(session_manager: 'SessionManager') -> str: # Return specific status s
         return "LOGIN_FAILED_UNEXPECTED"
 # End of log_in
 
-# Login 1 - REVISED: Prioritize API Check
+# Login 1 
 @retry(MAX_RETRIES=2)
 def login_status(session_manager: SessionManager) -> Optional[bool]:
     """

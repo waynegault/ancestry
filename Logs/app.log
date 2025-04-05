@@ -1,0 +1,290 @@
+19:23:50 DEB [chromedr init_web 178 ] WebDriver initialization attempt 1/3...
+19:23:50 DEB [chromedr init_web 197 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:23:50 DEB [chromedr init_web 201 ] Using profile directory: Default
+19:23:50 DEB [chromedr init_web 209 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:23:50 DEB [chromedr init_web 231 ] Setting User-Agent:
+                                      Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36
+19:23:50 DEB [chromedr init_web 245 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:23:52 DEB [chromedr init_web 260 ] WebDriver instance created successfully (attempt 1).
+19:23:52 DEB [chromedr init_web 269 ] User-Agent override applied via CDP.
+19:23:52 INF [chromedr main     389 ] WebDriver initialized successfully.
+19:35:03 DEB [chromedr init_web 134 ] Initialization attempt 1/3
+19:35:05 ERR [chromedr init_web 199 ] Attempt 1 failed: Message: invalid argument: cannot parse capability: goog:chromeOptions
+                                      from invalid argument: unrecognized chrome option: excludeSwitches
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00315413+60691]
+                                      GetHandleVerifier [0x00315454+60756]
+                                      (No symbol) [0x00140693]
+                                      (No symbol) [0x001679EE]
+                                      (No symbol) [0x001692D0]
+                                      (No symbol) [0x0016445D]
+                                      (No symbol) [0x001B77B2]
+                                      (No symbol) [0x001B71D2]
+                                      (No symbol) [0x001B89F7]
+                                      (No symbol) [0x001B87AA]
+                                      (No symbol) [0x001ACE56]
+                                      (No symbol) [0x0017C5F3]
+                                      (No symbol) [0x0017D444]
+                                      GetHandleVerifier [0x0055BBC3+2446531]
+                                      GetHandleVerifier [0x00557198+2427544]
+                                      GetHandleVerifier [0x00572D5E+2541150]
+                                      GetHandleVerifier [0x0032C3C5+154821]
+                                      GetHandleVerifier [0x00332BED+181485]
+                                      GetHandleVerifier [0x0031CC48+91464]
+                                      GetHandleVerifier [0x0031CDF0+91888]
+                                      GetHandleVerifier [0x00307980+4736]
+                                      BaseThreadInitThunk [0x76875D49+25]
+                                      RtlInitializeExceptionChain [0x7753CF0B+107]
+                                      RtlGetAppContainerNamedObjectPath [0x7753CE91+561]
+                                      (No symbol) [0x00000000]
+                                      
+19:35:10 DEB [chromedr init_web 134 ] Initialization attempt 2/3
+19:35:11 ERR [chromedr init_web 199 ] Attempt 2 failed: Message: invalid argument: cannot parse capability: goog:chromeOptions
+                                      from invalid argument: unrecognized chrome option: excludeSwitches
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00EC5413+60691]
+                                      GetHandleVerifier [0x00EC5454+60756]
+                                      (No symbol) [0x00CF0693]
+                                      (No symbol) [0x00D179EE]
+                                      (No symbol) [0x00D192D0]
+                                      (No symbol) [0x00D1445D]
+                                      (No symbol) [0x00D677B2]
+                                      (No symbol) [0x00D671D2]
+                                      (No symbol) [0x00D689F7]
+                                      (No symbol) [0x00D687AA]
+                                      (No symbol) [0x00D5CE56]
+                                      (No symbol) [0x00D2C5F3]
+                                      (No symbol) [0x00D2D444]
+                                      GetHandleVerifier [0x0110BBC3+2446531]
+                                      GetHandleVerifier [0x01107198+2427544]
+                                      GetHandleVerifier [0x01122D5E+2541150]
+                                      GetHandleVerifier [0x00EDC3C5+154821]
+                                      GetHandleVerifier [0x00EE2BED+181485]
+                                      GetHandleVerifier [0x00ECCC48+91464]
+                                      GetHandleVerifier [0x00ECCDF0+91888]
+                                      GetHandleVerifier [0x00EB7980+4736]
+                                      BaseThreadInitThunk [0x76875D49+25]
+                                      RtlInitializeExceptionChain [0x7753CF0B+107]
+                                      RtlGetAppContainerNamedObjectPath [0x7753CE91+561]
+                                      
+19:35:16 DEB [chromedr init_web 134 ] Initialization attempt 3/3
+19:35:18 ERR [chromedr init_web 199 ] Attempt 3 failed: Message: invalid argument: cannot parse capability: goog:chromeOptions
+                                      from invalid argument: unrecognized chrome option: excludeSwitches
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00A75413+60691]
+                                      GetHandleVerifier [0x00A75454+60756]
+                                      (No symbol) [0x008A0693]
+                                      (No symbol) [0x008C79EE]
+                                      (No symbol) [0x008C92D0]
+                                      (No symbol) [0x008C445D]
+                                      (No symbol) [0x009177B2]
+                                      (No symbol) [0x009171D2]
+                                      (No symbol) [0x009189F7]
+                                      (No symbol) [0x009187AA]
+                                      (No symbol) [0x0090CE56]
+                                      (No symbol) [0x008DC5F3]
+                                      (No symbol) [0x008DD444]
+                                      GetHandleVerifier [0x00CBBBC3+2446531]
+                                      GetHandleVerifier [0x00CB7198+2427544]
+                                      GetHandleVerifier [0x00CD2D5E+2541150]
+                                      GetHandleVerifier [0x00A8C3C5+154821]
+                                      GetHandleVerifier [0x00A92BED+181485]
+                                      GetHandleVerifier [0x00A7CC48+91464]
+                                      GetHandleVerifier [0x00A7CDF0+91888]
+                                      GetHandleVerifier [0x00A67980+4736]
+                                      BaseThreadInitThunk [0x76875D49+25]
+                                      RtlInitializeExceptionChain [0x7753CF0B+107]
+                                      RtlGetAppContainerNamedObjectPath [0x7753CE91+561]
+                                      
+19:35:18 CRI [chromedr init_web 205 ] All initialization attempts failed.
+19:36:04 DEB [chromedr init_web 178 ] WebDriver initialization attempt 1/3...
+19:36:04 DEB [chromedr init_web 197 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:36:04 DEB [chromedr init_web 201 ] Using profile directory: Default
+19:36:04 DEB [chromedr init_web 209 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:36:04 DEB [chromedr init_web 231 ] Setting User-Agent:
+                                      Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36
+19:36:04 DEB [chromedr init_web 245 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:36:06 DEB [chromedr init_web 260 ] WebDriver instance created successfully (attempt 1).
+19:36:06 DEB [chromedr init_web 269 ] User-Agent override applied via CDP.
+19:36:07 INF [chromedr main     389 ] WebDriver initialized successfully.
+19:37:42 DEB [chromedr init_web 178 ] WebDriver initialization attempt 1/3...
+19:37:42 DEB [chromedr init_web 197 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:37:42 DEB [chromedr init_web 201 ] Using profile directory: Default
+19:37:42 DEB [chromedr init_web 209 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:37:42 DEB [chromedr init_web 231 ] Setting User-Agent:
+                                      Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+19:37:42 DEB [chromedr init_web 245 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:37:44 DEB [chromedr init_web 260 ] WebDriver instance created successfully (attempt 1).
+19:37:44 DEB [chromedr init_web 269 ] User-Agent override applied via CDP.
+19:37:45 INF [chromedr main     389 ] WebDriver initialized successfully.
+19:38:38 ERR [chromedr cleanup_ 100 ] Cleanup error: [WinError 2] The system cannot find the file specified
+19:38:38 DEB [chromedr init_web 44  ] Attempt 1/3
+19:38:41 ERR [chromedr init_web 88  ] Attempt 1 failed: Message: invalid argument: Invalid parameters
+19:38:46 DEB [chromedr init_web 44  ] Attempt 2/3
+19:39:04 ERR [chromedr init_web 88  ] Attempt 2 failed: ('Connection aborted.', ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None))
+19:40:31 DEB [chromedr init_web 67  ] WebDriver initialization attempt 1/3
+19:40:32 ERR [chromedr init_web 131 ] Attempt 1 failed: Message: session not created: cannot connect to chrome at 127.0.0.1:10620
+                                      from session not created: This version of ChromeDriver only supports Chrome version 133
+                                      Current browser version is 135.0.7049.42
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00007FF7B4C66EE5+28773]
+                                      (No symbol) [0x00007FF7B4BD25D0]
+                                      (No symbol) [0x00007FF7B4A68FAA]
+                                      (No symbol) [0x00007FF7B4AACE2B]
+                                      (No symbol) [0x00007FF7B4AABE6B]
+                                      (No symbol) [0x00007FF7B4AA0CBE]
+                                      (No symbol) [0x00007FF7B4AF547B]
+                                      (No symbol) [0x00007FF7B4AF4A50]
+                                      (No symbol) [0x00007FF7B4AE7023]
+                                      (No symbol) [0x00007FF7B4AAFF5E]
+                                      (No symbol) [0x00007FF7B4AB11E3]
+                                      GetHandleVerifier [0x00007FF7B4FB422D+3490733]
+                                      GetHandleVerifier [0x00007FF7B4FCBA13+3586963]
+                                      GetHandleVerifier [0x00007FF7B4FC144D+3544525]
+                                      GetHandleVerifier [0x00007FF7B4D2C9AA+838442]
+                                      (No symbol) [0x00007FF7B4BDD01F]
+                                      (No symbol) [0x00007FF7B4BD95E4]
+                                      (No symbol) [0x00007FF7B4BD9786]
+                                      (No symbol) [0x00007FF7B4BC8CB9]
+                                      BaseThreadInitThunk [0x00007FFA65A9E8D7+23]
+                                      RtlUserThreadStart [0x00007FFA65C714FC+44]
+                                      
+19:40:37 DEB [chromedr init_web 67  ] WebDriver initialization attempt 2/3
+19:40:37 ERR [chromedr init_web 131 ] Attempt 2 failed: Message: session not created: cannot connect to chrome at 127.0.0.1:10631
+                                      from session not created: This version of ChromeDriver only supports Chrome version 133
+                                      Current browser version is 135.0.7049.42
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00007FF7B4C66EE5+28773]
+                                      (No symbol) [0x00007FF7B4BD25D0]
+                                      (No symbol) [0x00007FF7B4A68FAA]
+                                      (No symbol) [0x00007FF7B4AACE2B]
+                                      (No symbol) [0x00007FF7B4AABE6B]
+                                      (No symbol) [0x00007FF7B4AA0CBE]
+                                      (No symbol) [0x00007FF7B4AF547B]
+                                      (No symbol) [0x00007FF7B4AF4A50]
+                                      (No symbol) [0x00007FF7B4AE7023]
+                                      (No symbol) [0x00007FF7B4AAFF5E]
+                                      (No symbol) [0x00007FF7B4AB11E3]
+                                      GetHandleVerifier [0x00007FF7B4FB422D+3490733]
+                                      GetHandleVerifier [0x00007FF7B4FCBA13+3586963]
+                                      GetHandleVerifier [0x00007FF7B4FC144D+3544525]
+                                      GetHandleVerifier [0x00007FF7B4D2C9AA+838442]
+                                      (No symbol) [0x00007FF7B4BDD01F]
+                                      (No symbol) [0x00007FF7B4BD95E4]
+                                      (No symbol) [0x00007FF7B4BD9786]
+                                      (No symbol) [0x00007FF7B4BC8CB9]
+                                      BaseThreadInitThunk [0x00007FFA65A9E8D7+23]
+                                      RtlUserThreadStart [0x00007FFA65C714FC+44]
+                                      
+19:40:42 DEB [chromedr init_web 67  ] WebDriver initialization attempt 3/3
+19:40:43 ERR [chromedr init_web 131 ] Attempt 3 failed: Message: session not created: cannot connect to chrome at 127.0.0.1:10643
+                                      from session not created: This version of ChromeDriver only supports Chrome version 133
+                                      Current browser version is 135.0.7049.42
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00007FF7B4C66EE5+28773]
+                                      (No symbol) [0x00007FF7B4BD25D0]
+                                      (No symbol) [0x00007FF7B4A68FAA]
+                                      (No symbol) [0x00007FF7B4AACE2B]
+                                      (No symbol) [0x00007FF7B4AABE6B]
+                                      (No symbol) [0x00007FF7B4AA0CBE]
+                                      (No symbol) [0x00007FF7B4AF547B]
+                                      (No symbol) [0x00007FF7B4AF4A50]
+                                      (No symbol) [0x00007FF7B4AE7023]
+                                      (No symbol) [0x00007FF7B4AAFF5E]
+                                      (No symbol) [0x00007FF7B4AB11E3]
+                                      GetHandleVerifier [0x00007FF7B4FB422D+3490733]
+                                      GetHandleVerifier [0x00007FF7B4FCBA13+3586963]
+                                      GetHandleVerifier [0x00007FF7B4FC144D+3544525]
+                                      GetHandleVerifier [0x00007FF7B4D2C9AA+838442]
+                                      (No symbol) [0x00007FF7B4BDD01F]
+                                      (No symbol) [0x00007FF7B4BD95E4]
+                                      (No symbol) [0x00007FF7B4BD9786]
+                                      (No symbol) [0x00007FF7B4BC8CB9]
+                                      BaseThreadInitThunk [0x00007FFA65A9E8D7+23]
+                                      RtlUserThreadStart [0x00007FFA65C714FC+44]
+                                      
+19:40:48 CRI [chromedr init_web 136 ] All initialization attempts failed
+19:41:00 DEB [chromedr init_web 178 ] WebDriver initialization attempt 1/3...
+19:41:00 DEB [chromedr init_web 197 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:41:00 DEB [chromedr init_web 201 ] Using profile directory: Default
+19:41:00 DEB [chromedr init_web 209 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:41:00 DEB [chromedr init_web 231 ] Setting User-Agent:
+                                      Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+19:41:00 DEB [chromedr init_web 245 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:41:02 DEB [chromedr init_web 260 ] WebDriver instance created successfully (attempt 1).
+19:41:02 DEB [chromedr init_web 269 ] User-Agent override applied via CDP.
+19:41:02 INF [chromedr main     389 ] WebDriver initialized successfully.
+19:43:41 DEB [test     init_web 46  ] WebDriver initialization attempt 1/3
+19:43:43 DEB [test     init_web 85  ] WebDriver instance created successfully
+19:43:43 INF [test     <module> 123 ] WebDriver initialized successfully
+19:45:10 DEB [test     init_web 44  ] Initialization attempt 1/3
+19:45:12 DEB [test     init_web 82  ] WebDriver instance created successfully
+19:45:12 INF [test     <module> 120 ] WebDriver initialized successfully
+19:48:47 DEB [test     init_web 128 ] WebDriver initialization attempt 1/3...
+19:48:48 ERR [test     init_web 201 ] Attempt 1 failed: Message: session not created: cannot connect to chrome at 127.0.0.1:10577
+                                      from session not created: This version of ChromeDriver only supports Chrome version 133
+                                      Current browser version is 135.0.7049.42
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00007FF7B4C66EE5+28773]
+                                      (No symbol) [0x00007FF7B4BD25D0]
+                                      (No symbol) [0x00007FF7B4A68FAA]
+                                      (No symbol) [0x00007FF7B4AACE2B]
+                                      (No symbol) [0x00007FF7B4AABE6B]
+                                      (No symbol) [0x00007FF7B4AA0CBE]
+                                      (No symbol) [0x00007FF7B4AF547B]
+                                      (No symbol) [0x00007FF7B4AF4A50]
+                                      (No symbol) [0x00007FF7B4AE7023]
+                                      (No symbol) [0x00007FF7B4AAFF5E]
+                                      (No symbol) [0x00007FF7B4AB11E3]
+                                      GetHandleVerifier [0x00007FF7B4FB422D+3490733]
+                                      GetHandleVerifier [0x00007FF7B4FCBA13+3586963]
+                                      GetHandleVerifier [0x00007FF7B4FC144D+3544525]
+                                      GetHandleVerifier [0x00007FF7B4D2C9AA+838442]
+                                      (No symbol) [0x00007FF7B4BDD01F]
+                                      (No symbol) [0x00007FF7B4BD95E4]
+                                      (No symbol) [0x00007FF7B4BD9786]
+                                      (No symbol) [0x00007FF7B4BC8CB9]
+                                      BaseThreadInitThunk [0x00007FFA65A9E8D7+23]
+                                      RtlUserThreadStart [0x00007FFA65C714FC+44]
+                                      
+19:48:53 DEB [test     init_web 128 ] WebDriver initialization attempt 2/3...
+19:48:53 ERR [test     init_web 201 ] Attempt 2 failed: Message: session not created: cannot connect to chrome at 127.0.0.1:10593
+                                      from session not created: This version of ChromeDriver only supports Chrome version 133
+                                      Current browser version is 135.0.7049.42
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00007FF7B4C66EE5+28773]
+                                      (No symbol) [0x00007FF7B4BD25D0]
+                                      (No symbol) [0x00007FF7B4A68FAA]
+                                      (No symbol) [0x00007FF7B4AACE2B]
+                                      (No symbol) [0x00007FF7B4AABE6B]
+                                      (No symbol) [0x00007FF7B4AA0CBE]
+                                      (No symbol) [0x00007FF7B4AF547B]
+                                      (No symbol) [0x00007FF7B4AF4A50]
+                                      (No symbol) [0x00007FF7B4AE7023]
+                                      (No symbol) [0x00007FF7B4AAFF5E]
+                                      (No symbol) [0x00007FF7B4AB11E3]
+                                      GetHandleVerifier [0x00007FF7B4FB422D+3490733]
+                                      GetHandleVerifier [0x00007FF7B4FCBA13+3586963]
+                                      GetHandleVerifier [0x00007FF7B4FC144D+3544525]
+                                      GetHandleVerifier [0x00007FF7B4D2C9AA+838442]
+                                      (No symbol) [0x00007FF7B4BDD01F]
+                                      (No symbol) [0x00007FF7B4BD95E4]
+                                      (No symbol) [0x00007FF7B4BD9786]
+                                      (No symbol) [0x00007FF7B4BC8CB9]
+                                      BaseThreadInitThunk [0x00007FFA65A9E8D7+23]
+                                      RtlUserThreadStart [0x00007FFA65C714FC+44]
+                                      
+19:51:43 DEB [test     init_web 128 ] WebDriver initialization attempt 1/3...
+19:51:45 INF [test     main     241 ] WebDriver initialized successfully.

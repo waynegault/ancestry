@@ -27,6 +27,7 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     TimeoutException,
     WebDriverException,
+    NoSuchCookieException,
 )
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -52,7 +53,7 @@ from database import (
     get_person_by_profile_id,
     find_existing_person,
 )
-from my_selectors import MATCH_ENTRY_SELECTOR
+from my_selectors import *
 from utils import (
     DynamicRateLimiter,
     SessionManager,
@@ -68,6 +69,7 @@ from utils import (
     time_wait,
     get_driver_cookies,
     format_name,
+    urljoin
 )
 
 #################################################################################
@@ -816,239 +818,187 @@ def _do_match(
 #################################################################################
 
 def get_matches(
-    session_manager: SessionManager, db_session: Session, current_page: int = 1
+    session_manager: SessionManager, db_session: SqlAlchemySession, current_page: int = 1
 ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
     """
-    V13.3 REVISED: Fetches and processes match list data for a SINGLE page.
-    - Adds 'accept: application/json' header.
-    - Re-enables CSRF token sending (use_csrf_token=True).
-    - Returns (match_list, total_pages).
-    - Removes predicted relationship fetching (moved to _do_batch).
-    - Still fetches in-tree status.
-    - Uses requests library via _api_req.
-    - Uses format_name for consistent username/first name formatting.
+    V13.10 REVISED: Fetches and processes match list data for a SINGLE page.
+    - Reads CSRF token from cookie *after* navigation.
+    - Passes specific CSRF token in header to _api_req.
+    - Adds Content-Type, dnt, Sec-CH-UA, and priority headers based on cURL.
+    - **Corrected IndentationError in fallback cookie reading.**
     """
-    total_pages: Optional[int] = None  # Initialize total_pages
+    total_pages: Optional[int] = None
 
     if not isinstance(session_manager, SessionManager):
         logger.error("Invalid SessionManager passed to get_matches.")
         return [], None
-    if not session_manager.driver or not session_manager.is_sess_valid():
+
+    driver = session_manager.driver
+    if not driver or not session_manager.is_sess_valid():
         logger.error("WebDriver session is not valid in get_matches.")
         return [], None
+
     if not session_manager.my_uuid:
         logger.error("SessionManager my_uuid is not initialized in get_matches.")
         return [], None
 
     my_uuid = session_manager.my_uuid
+    csrf_token_cookie_name = "_dnamatches-matchlistui-x-csrf-token"
 
     try:
-        # --- 1. Fetch Match List Data ---
+        # --- Get CSRF Token from Cookie ---
+        logger.debug(f"Attempting to read CSRF cookie '{csrf_token_cookie_name}' from browser...")
+        specific_csrf_token = None
+        try:
+            cookie_obj = driver.get_cookie(csrf_token_cookie_name)
+            if cookie_obj and isinstance(cookie_obj, dict) and 'value' in cookie_obj:
+                specific_csrf_token = cookie_obj['value']
+                logger.info(f"Successfully read CSRF token from cookie: {specific_csrf_token[:10]}...")
+            else:
+                logger.warning(f"Could not find or parse '{csrf_token_cookie_name}' cookie object via get_cookie.")
+                all_cookies = get_driver_cookies(driver)
+                # *** CORRECTED INDENTATION START ***
+                if csrf_token_cookie_name in all_cookies:
+                    specific_csrf_token = all_cookies[csrf_token_cookie_name]
+                    logger.info(f"Successfully read CSRF token via fallback get_driver_cookies: {specific_csrf_token[:10]}...")
+                else:
+                    logger.warning(f"'{csrf_token_cookie_name}' not found in fallback either.")
+                # *** CORRECTED INDENTATION END ***
+        except NoSuchCookieException:
+            logger.error(f"CSRF cookie '{csrf_token_cookie_name}' not found in browser!")
+            return [], None
+        except WebDriverException as cookie_e:
+            logger.error(f"WebDriver error getting CSRF cookie: {cookie_e}")
+            return [], None
+        except Exception as e:
+            logger.error(f"Unexpected error getting CSRF cookie: {e}", exc_info=True)
+            return [], None
+
+        if not specific_csrf_token:
+             logger.error(f"Failed to obtain the specific CSRF token from cookie '{csrf_token_cookie_name}'. Cannot call Match List API.")
+             return [], None
+        # --- End CSRF Token Reading ---
+
+        # --- Fetch Match List Data ---
         match_list_url = urljoin(
             config_instance.BASE_URL,
             f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
         )
         logger.debug(f"Fetching match list for page {current_page} using requests...")
 
-        # *** CHANGE: Add explicit 'accept' header and re-enable CSRF ***
+        # --- Define headers ---
+        curl_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+        curl_sec_ch_ua = '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"'
+
         match_list_headers = {
-            "accept": "application/json"
+            "accept": "application/json",
+            "accept-language": "en-GB,en;q=0.9",
+            "X-CSRF-Token": specific_csrf_token,
+            "Content-Type": "application/json",
+            "dnt": "1",
+            "sec-ch-ua": curl_sec_ch_ua,
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "User-Agent": curl_user_agent,
+            "priority": "u=1, i",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
         }
+
         api_response = _api_req(
             url=match_list_url,
-            driver=session_manager.driver,
+            driver=driver,
             session_manager=session_manager,
             method="GET",
-            headers=match_list_headers, # Pass the accept header
-            use_csrf_token=True,      # Changed back to True
+            headers=match_list_headers,
+            use_csrf_token=True,
             api_description="Match List API",
             referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
         )
-        # *** END CHANGE ***
 
+        # --- Handle API Response (remains the same) ---
         if api_response is None:
-            # Log added in V13.4 _api_req handles None case logging now
-            # logger.warning(f"No response from match list API for page {current_page}.")
+            logger.warning(f"No response or error from match list API for page {current_page}.")
             return [], None
+
         if not isinstance(api_response, dict):
-            # Log improved in V13.4 _api_req should prevent non-JSON dicts now
-            logger.warning(
+            logger.error(
                 f"Match List API call did not return a dictionary (received {type(api_response)}). Aborting page {current_page}."
             )
-            logger.debug(f"Response data: {api_response}")
+            if isinstance(api_response, str): logger.debug(f"Received text content: {api_response[:1000]}")
+            else: logger.debug(f"Received non-dict/non-str data: {api_response}")
             return [], None
 
-        # --- Extract total_pages (Idea 1) ---
-        total_pages_raw = api_response.get("totalPages")
+        # --- Process the Dictionary Response (remains the same) ---
+        total_pages_raw = api_response.get("totalPages"); total_pages = None
         if total_pages_raw is not None:
-            try:
-                total_pages = int(total_pages_raw)
-            except (ValueError, TypeError):
-                logger.warning(
-                    f"Could not parse totalPages '{total_pages_raw}' to int."
-                )
-                total_pages = None  # Mark as unknown if parsing fails
-        else:
-            logger.warning("totalPages key missing from Match List API response.")
-            total_pages = None
+            try: total_pages = int(total_pages_raw)
+            except (ValueError, TypeError): logger.warning(f"Could not parse totalPages '{total_pages_raw}' to int.")
+        else: logger.warning("totalPages key missing from Match List API response.")
 
         match_data_list = api_response.get("matchList", [])
         if not match_data_list:
             logger.info(f"No matches found in 'matchList' for page {current_page}.")
-            return (
-                [],
-                total_pages,
-            )  # Return empty list but potentially known total_pages
-        logger.debug(
-            f"Got {len(match_data_list)} raw matches from API on page {current_page}."
-        )
+            return [], total_pages
+
+        logger.debug(f"Got {len(match_data_list)} raw matches from API on page {current_page}.")
 
         valid_matches_for_processing: List[Dict[str, Any]] = []
         skipped_sampleid_count = 0
         for m in match_data_list:
-            if isinstance(m, dict) and m.get("sampleId"):
-                valid_matches_for_processing.append(m)
-            else:
-                skipped_sampleid_count += 1
-                logger.warning(
-                    f"Skipping raw match due to missing 'sampleId' on page {current_page}. Data: {m}"
-                )
-        if skipped_sampleid_count > 0:
-            logger.warning(
-                f"Skipped {skipped_sampleid_count} matches on page {current_page} (missing 'sampleId')."
-            )
-        if not valid_matches_for_processing:
-            logger.warning(
-                f"No matches with valid 'sampleId' found on page {current_page}."
-            )
-            return [], total_pages
+            if isinstance(m, dict) and m.get("sampleId"): valid_matches_for_processing.append(m)
+            else: skipped_sampleid_count += 1; logger.warning(f"Skipping raw match due to missing 'sampleId' on page {current_page}. Data: {m}")
+        if skipped_sampleid_count > 0: logger.warning(f"Skipped {skipped_sampleid_count} matches on page {current_page} (missing 'sampleId').")
+        if not valid_matches_for_processing: logger.warning(f"No matches with valid 'sampleId' found on page {current_page}."); return [], total_pages
 
-        sample_ids_on_page = [
-            match["sampleId"].upper() for match in valid_matches_for_processing
-        ]
+        sample_ids_on_page = [match["sampleId"].upper() for match in valid_matches_for_processing]
 
-        # --- In-Tree Status Check (Remains here, relatively lightweight) ---
+        # --- In-Tree Status Check (remains the same, ensure CSRF uses specific token) ---
         in_tree_ids: Set[str] = set()
         cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
         cached_in_tree = session_manager.cache.get(cache_key_tree)
         if cached_in_tree is not None and isinstance(cached_in_tree, set):
             in_tree_ids = cached_in_tree
-            logger.debug(
-                f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
-            )
+            logger.debug(f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}.")
         else:
-            in_tree_url = urljoin(
-                config_instance.BASE_URL,
-                f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
-            )
+            in_tree_url = urljoin(config_instance.BASE_URL, f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}")
             logger.debug(f"Fetching in-tree status for page {current_page}...")
-            # POST requests usually DO need CSRF
+            in_tree_headers = {"X-CSRF-Token": specific_csrf_token, "Content-Type": "application/json"}
             response_in_tree = _api_req(
-                url=in_tree_url,
-                driver=session_manager.driver,
-                session_manager=session_manager,
-                method="POST",
-                json_data={"sampleIds": sample_ids_on_page},
+                url=in_tree_url, driver=driver, session_manager=session_manager,
+                method="POST", json_data={"sampleIds": sample_ids_on_page},
+                headers=in_tree_headers,
                 use_csrf_token=True,
-                api_description="In-Tree Status Check",
-                referer_url=urljoin(
-                    config_instance.BASE_URL, "/discoveryui-matches/list/"
-                ),
-            )
+                api_description="In-Tree Status Check", referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"))
             if isinstance(response_in_tree, list):
-                in_tree_ids = {
-                    item.upper() for item in response_in_tree if isinstance(item, str)
-                }
-                session_manager.cache.set(
-                    cache_key_tree, in_tree_ids, timeout=config_instance.CACHE_TIMEOUT
-                )
-                logger.debug(
-                    f"Fetched/cached {len(in_tree_ids)} in-tree IDs for page {current_page}."
-                )
-            else:
-                logger.warning(
-                    f"In-Tree Status Check API failed or returned unexpected format for page {current_page}."
-                )
+                in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
+                session_manager.cache.set(cache_key_tree, in_tree_ids, timeout=config_instance.CACHE_TIMEOUT)
+                logger.debug(f"Fetched/cached {len(in_tree_ids)} in-tree IDs for page {current_page}.")
+            else: logger.warning(f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.")
 
-        # --- REMOVED: Conditional Predicted Relationship Processing (Moved to _do_batch) ---
-
-        # --- Compile Final Refined Match Data ---
+        # --- Compile Final Refined Match Data (remains the same) ---
         refined_matches: List[Dict[str, Any]] = []
         skipped_profile_id_count = 0
-
         for match in valid_matches_for_processing:
-            profile = match.get("matchProfile", {})
-            relationship = match.get("relationship", {})
-            sample_id_upper = match["sampleId"].upper()
-            profile_user_id = profile.get("userId")
+             profile = match.get("matchProfile", {}); relationship = match.get("relationship", {})
+             sample_id_upper = match["sampleId"].upper(); profile_user_id = profile.get("userId")
+             raw_display_name = profile.get("displayName"); match_username = format_name(raw_display_name)
+             first_name = match_username.split()[0] if match_username != "Valued Relative" else None
+             admin_profile_id_hint = match.get("adminId"); admin_username_hint = match.get("adminName")
+             if not profile_user_id: logger.debug(f"Match '{match_username}' (UUID: {sample_id_upper}) missing tester 'profile_id'."); skipped_profile_id_count += 1; profile_user_id_upper = None
+             else: profile_user_id_upper = str(profile_user_id).upper()
+             compare_link = urljoin(config_instance.BASE_URL, f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}")
+             refined_match_data = { "username": match_username, "first_name": first_name, "initials": profile.get("displayInitials", "??").upper(), "gender": match.get("gender"), "profile_id": profile_user_id_upper, "uuid": sample_id_upper, "administrator_profile_id_hint": admin_profile_id_hint, "administrator_username_hint": admin_username_hint, "photoUrl": profile.get("photoUrl", ""), "cM_DNA": int(relationship.get("sharedCentimorgans", 0)), "numSharedSegments": int(relationship.get("numSharedSegments", 0)), "compare_link": compare_link, "message_link": None, "in_my_tree": sample_id_upper in in_tree_ids, "createdDate": match.get("createdDate"), }
+             refined_matches.append(refined_match_data)
 
-            # --- Use format_name for consistency ---
-            raw_display_name = profile.get("displayName")
-            match_username = format_name(raw_display_name) # Use format_name instead of .title()
-            # --- End format_name change ---
-
-            admin_profile_id_hint = match.get("adminId")
-            admin_username_hint = match.get("adminName")
-
-            if not profile_user_id:
-                logger.debug(
-                    f"Match '{match_username}' (UUID: {sample_id_upper}) missing tester 'profile_id'."
-                )
-                skipped_profile_id_count += 1
-                profile_user_id_upper = None
-            else:
-                profile_user_id_upper = str(profile_user_id).upper()
-
-            compare_link = urljoin(
-                config_instance.BASE_URL,
-                f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
-            )
-            # --- Use format_name for first_name too ---
-            # Extract first name from the formatted username
-            first_name = match_username.split()[0] if match_username != "Valued Relative" else None
-            # --- End format_name change ---
-
-
-            # Predicted relationship will be added later in _do_batch
-            refined_match_data = {
-                "username": match_username, # Already formatted
-                "first_name": first_name, # Already formatted
-                "initials": profile.get("displayInitials", "??").upper(),
-                "gender": match.get("gender"),
-                "profile_id": profile_user_id_upper,  # Store hint
-                "uuid": sample_id_upper,
-                "administrator_profile_id_hint": admin_profile_id_hint,
-                "administrator_username_hint": admin_username_hint,
-                "photoUrl": profile.get("photoUrl", ""),
-                "cM_DNA": int(relationship.get("sharedCentimorgans", 0)),
-                "numSharedSegments": int(relationship.get("numSharedSegments", 0)),
-                "compare_link": compare_link,
-                "message_link": None,  # Set later in _do_match
-                # "predicted_relationship": "N/A", # Placeholder - Set in _do_batch
-                "in_my_tree": sample_id_upper in in_tree_ids,
-                "createdDate": match.get("createdDate"),
-            }
-            refined_matches.append(refined_match_data)
-
-        logger.debug(
-            f"Processed page {current_page}: Raw={len(match_data_list)}, Refined={len(refined_matches)}"
-        )
-        # Removed logging of individual matches here for brevity
-
-        # --- Return refined matches AND total_pages ---
+        logger.debug(f"Processed page {current_page}: Raw={len(match_data_list)}, Refined={len(refined_matches)}")
         return refined_matches, total_pages
 
-    except requests.exceptions.RequestException as e:
-        logger.error(
-            f"Network/Request error processing page {current_page}: {e}", exc_info=True
-        )
-        return [], None  # Return None for total_pages on error
-    except Exception as e:
-        logger.critical(
-            f"Critical error processing match data for page {current_page}: {e}",
-            exc_info=True,
-        )
-        return [], None  # Return None for total_pages on error
+    # --- Exception Handling (remains same) ---
+    except requests.exceptions.RequestException as e: logger.error(f"Network/Request error processing page {current_page}: {e}", exc_info=True); return [], None
+    except NoSuchCookieException as e: logger.critical(f"Critical error in get_matches: Could not find required CSRF cookie. {e}", exc_info=True); return [], None
+    except Exception as e: logger.critical(f"Critical error processing match data for page {current_page}: {e}", exc_info=True); return [], None
 # end get_matches
 
 @retry_api()

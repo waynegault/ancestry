@@ -720,7 +720,7 @@ def coord_action(session_manager, config_instance, start=1):
         # Call the imported coord_action_func with the 'start' argument
         result = coord_action_func(session_manager, config_instance, start=start)
         if result is False:
-            logger.error("Match gathering reported failure.")
+            logger.debug("Match gathering reported failure.")
             return False
         else:
             logger.debug("Gathering matches OK.")
