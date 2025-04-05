@@ -819,11 +819,13 @@ def get_matches(
     session_manager: SessionManager, db_session: Session, current_page: int = 1
 ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
     """
-    V13.1 REVISED: Fetches and processes match list data for a SINGLE page.
+    V13.3 REVISED: Fetches and processes match list data for a SINGLE page.
+    - Adds 'accept: application/json' header.
+    - Re-enables CSRF token sending (use_csrf_token=True).
     - Returns (match_list, total_pages).
     - Removes predicted relationship fetching (moved to _do_batch).
     - Still fetches in-tree status.
-    - Uses requests library via _api_req (Idea 5 applied).
+    - Uses requests library via _api_req.
     - Uses format_name for consistent username/first name formatting.
     """
     total_pages: Optional[int] = None  # Initialize total_pages
@@ -847,23 +849,31 @@ def get_matches(
             f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
         )
         logger.debug(f"Fetching match list for page {current_page} using requests...")
-        # Idea 5: _api_req defaults to requests, no force_requests needed
+
+        # *** CHANGE: Add explicit 'accept' header and re-enable CSRF ***
+        match_list_headers = {
+            "accept": "application/json"
+        }
         api_response = _api_req(
             url=match_list_url,
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
-            use_csrf_token=True,  # Required for this endpoint
+            headers=match_list_headers, # Pass the accept header
+            use_csrf_token=True,      # Changed back to True
             api_description="Match List API",
             referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
         )
+        # *** END CHANGE ***
 
         if api_response is None:
-            logger.warning(f"No response from match list API for page {current_page}.")
+            # Log added in V13.4 _api_req handles None case logging now
+            # logger.warning(f"No response from match list API for page {current_page}.")
             return [], None
         if not isinstance(api_response, dict):
+            # Log improved in V13.4 _api_req should prevent non-JSON dicts now
             logger.warning(
-                f"Unexpected response type from match list API page {current_page}. Type: {type(api_response)}."
+                f"Match List API call did not return a dictionary (received {type(api_response)}). Aborting page {current_page}."
             )
             logger.debug(f"Response data: {api_response}")
             return [], None
@@ -932,6 +942,7 @@ def get_matches(
                 f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
             )
             logger.debug(f"Fetching in-tree status for page {current_page}...")
+            # POST requests usually DO need CSRF
             response_in_tree = _api_req(
                 url=in_tree_url,
                 driver=session_manager.driver,

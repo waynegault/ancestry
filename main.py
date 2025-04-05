@@ -1,6 +1,3 @@
-# File: main.py
-# V1.2: Corrected argument name from start_page to start when calling coord_action_func.
-
 #!/usr/bin/env python3
 
 # main.py
@@ -18,6 +15,7 @@ import traceback
 import warnings
 from pathlib import Path
 from urllib.parse import urljoin
+from typing import Optional
 
 # --- Third-party imports  ---
 from selenium.webdriver.remote.remote_connection import RemoteConnection
@@ -297,7 +295,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             if action_name == "check_login_actn":
                 # Check login should have closed its own session
                 # Log if it's still active unexpectedly
-                logger.warning(
+                logger.debug(
                     f"Session remains active after {action_name}, which should normally close it."
                 )
             elif not close_sess:
@@ -341,7 +339,7 @@ def run_actions_6_7_8_action(session_manager, *args):
     """
     Action to run actions 6, 7, and 8 sequentially with stricter checks.
     Stops execution if any action fails or its prerequisite navigation fails.
-    V1.1: Uses correct 'start' argument for coord_action_func.
+    V1.3: Updates Action 7 navigation URL.
     """
     if (
         not session_manager
@@ -355,10 +353,9 @@ def run_actions_6_7_8_action(session_manager, *args):
 
     try:
         # --- Action 6 ---
-        logger.info("--- Starting Action 6: Gather Matches ---")
-        # --- CORRECTED: Pass 'start' argument ---
+        logger.info("--- Starting Action 6: Gather Matches (Always from page 1) ---")
         gather_result = coord_action_func(
-            session_manager, config_instance, start=1 # Use 'start' keyword argument
+            session_manager, config_instance, start=1 # Always start from page 1
         )
         if gather_result is False:
             logger.error("Action 6 (Gather Matches) FAILED. Stopping sequence.")
@@ -368,20 +365,22 @@ def run_actions_6_7_8_action(session_manager, *args):
 
         # --- Action 7 ---
         logger.info("--- Starting Action 7: Search Inbox ---")
+        # --- MODIFIED: Use the new messaging URL base ---
         inbox_url = urljoin(
-            config_instance.BASE_URL, "connect/messagecenter/folder/inbox"
+            config_instance.BASE_URL, "/messaging/" # Use the URL observed in logs
         )
-        logger.debug("Navigating to Inbox page for Action 7...")
+        logger.debug(f"Navigating to Inbox/Messaging page ({inbox_url}) for Action 7...")
         # Use strict navigation check
         if not nav_to_page(
-            session_manager.driver, inbox_url, INBOX_CONTAINER_SELECTOR, session_manager
+            # Wait for a selector that exists on the /messaging/ page, e.g., conversation list
+            session_manager.driver, inbox_url, "div[data-testid='conversation-list-item']", session_manager
         ):
             logger.error(
-                "Action 7 prerequisite FAILED: Cannot navigate to inbox. Stopping sequence."
+                "Action 7 prerequisite FAILED: Cannot navigate to inbox/messaging page. Stopping sequence."
             )
             return False # Stop sequence on navigation failure
 
-        logger.debug("Navigation to Inbox successful. Running search...")
+        logger.debug("Navigation to Inbox/Messaging successful. Running search...")
         inbox_processor = InboxProcessor(session_manager=session_manager)
         search_result = inbox_processor.search_inbox()
         if search_result is False:
@@ -397,7 +396,7 @@ def run_actions_6_7_8_action(session_manager, *args):
         if not nav_to_page(
             session_manager.driver,
             config_instance.BASE_URL,
-            WAIT_FOR_PAGE_SELECTOR,
+            WAIT_FOR_PAGE_SELECTOR, # Wait for main page element
             session_manager,
         ):
             logger.error(
@@ -653,39 +652,60 @@ def restore_db_actn(session_manager, *args):
     return success
 # end of Action 4
 
-# Action 5
-def check_login_actn(session_manager, *args):
-    """Action to verify session start and login capability."""
+# Action 5 
+def check_login_actn(session_manager: SessionManager, *args) -> bool:
+    """
+    REVISED: Action to verify login status. If not logged in (or no session),
+    it attempts to start the session and log in using session_manager.start_sess().
+    Relies on the caller (exec_actn) to keep the session open afterwards.
+    """
     if not session_manager:
-        logger.error("SessionManager required.")
+        logger.error("SessionManager required for check_login_actn.")
         return False
-    logger.debug("Verifying login capability...")
-    login_ok = False
+
+    logger.debug("Verifying login status...")
+
+    # --- Initial Check ---
+    # Check the status WITHOUT forcing a session start yet
+    initial_status: Optional[bool] = login_status(session_manager)
+
+    if initial_status is True:
+        logger.info("Already logged in.\n")
+        return True
+    elif initial_status is False:
+        logger.info("Not logged in.\n")
+        # Proceed to call start_sess below
+    else: # initial_status is None (critical error during check)
+         logger.warning("Initial login status check failed critically. Attempting full session start/login...")
+         # Proceed to call start_sess below
+
+    # --- Attempt Login / Session Start ---
+    # If initial check failed or indicated not logged in, call start_sess
+    # start_sess contains the logic to initialize WebDriver, navigate, and log in.
     try:
         start_ok, _ = session_manager.start_sess(
-            action_name="Login Verification (Action 5)"
+            action_name="Login Verification (Action 5 - Start/Login Attempt)"
         )
         if start_ok:
-            logger.info("Login verification successful.\n")
-            login_ok = True
+            # Re-verify status after start_sess claims success
+            final_status = login_status(session_manager)
+            if final_status is True:
+                 logger.info("Login verification successful (Login process completed).\n")
+                 return True
+            else:
+                 logger.error("Session start/login reported success, but final status check failed.\n")
+                 return False
         else:
-            logger.error("Login verification failed.\n")
-            login_ok = False
+            logger.error("Login verification failed (start_sess reported failure).\n")
+            return False
     except Exception as e:
-        logger.error(f"Error during login verification: {e}\n", exc_info=True)
-        login_ok = False
-    finally:
-        if session_manager and session_manager.driver:
-            logger.debug("Closing session after check.")
-            session_manager.close_sess()
-        elif session_manager:
-            session_manager.session_active = False
-        logger.debug("Login check action finished.")
-    return login_ok
-# End Action 5
+        logger.error(f"Error during login verification (exception in start_sess): {e}\n", exc_info=True)
+        return False
+
+    # Note: Session closing is handled by exec_actn based on close_sess flag (which is False for Action 5)
+# End Action 5 
 
 # Action 6
-# --- CORRECTED: Define coord_action wrapper to accept 'start' ---
 def coord_action(session_manager, config_instance, start=1):
     """Action wrapper for gathering matches (coord), using 'start' argument."""
     if (
@@ -868,8 +888,8 @@ def main():
                 )  # DB actions don't need browser closed
             elif choice == "5":
                 exec_actn(
-                    check_login_actn, session_manager, choice, close_sess=True
-                )  # Check login should close its own session
+                    check_login_actn, session_manager, choice, close_sess=False
+                )
             elif choice.startswith("6"):
                 parts = choice.split()
                 # --- CORRECTED: Use 'start' variable name ---

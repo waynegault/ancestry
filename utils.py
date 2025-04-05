@@ -33,6 +33,7 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
 from urllib.parse import urlparse, urljoin
 from selenium.webdriver import ChromeOptions
 from dataclasses import dataclass, field
@@ -672,7 +673,6 @@ class SessionManager:
         while retry_count < max_retries and not session_start_success:
             retry_count += 1
             logger.debug(f"Attempting session start: {retry_count}/{max_retries}\n\n")
-
             try:
                 # --- 2. Initialize WebDriver ---
                 logger.debug("2. Initializing WebDriver instance.")
@@ -706,13 +706,13 @@ class SessionManager:
                 if login_stat is True:
                     logger.debug("User is logged in.")
                 elif login_stat is False:
-                    logger.info("User not logged in. Attempting login process.") # Use INFO
+                    logger.info("Attempting login process...") # Use INFO
                     login_result = log_in(self)
                     if login_result != "LOGIN_SUCCEEDED":
                         logger.critical(f"Login failed ({login_result}). Aborting session start.") # Use CRITICAL
                         self.close_sess()
                         return False, None # Fail permanently on login failure
-                    logger.info("Login process successful.") # Use INFO
+                    logger.debug("Login successful.") # Use INFO
                     # Re-verify after login attempt
                     if not login_status(self): # Check again
                         logger.critical("Login status verification failed even after successful login attempt reported.") # Use CRITICAL
@@ -921,6 +921,9 @@ class SessionManager:
     def _check_and_handle_url(self) -> bool:
         """Checks current URL and navigates to base URL if necessary."""
         try:
+            if self.driver is None:
+                logger.error("Driver is not initialized. Cannot retrieve current URL.")
+                return False
             current_url = self.driver.current_url
             logger.debug(f"Current URL for check: {current_url}")
             base_url_norm = config_instance.BASE_URL.rstrip("/") + "/"
@@ -1023,7 +1026,7 @@ class SessionManager:
          if self.my_tree_id and not self.tree_owner_name: # Fetch only if tree ID exists and owner not yet known
               self.tree_owner_name = self.get_tree_owner(self.my_tree_id)
               if self.tree_owner_name and not self._owner_logged:
-                   logger.info(f"Tree Owner Name: {self.tree_owner_name}.")
+                   logger.info(f"Tree Owner Name: {self.tree_owner_name}.\n")
                    self._owner_logged = True
               elif not self.tree_owner_name:
                    logger.warning("Failed to retrieve tree owner name.\n")
@@ -1098,7 +1101,18 @@ class SessionManager:
                     logger.warning("Session became invalid while waiting for cookies.")
                     return False
 
-                cookies = self.driver.get_cookies()
+                if self.driver is None:
+                    logger.error("Driver is not initialized. Cannot retrieve cookies.")
+                    return False
+                if self.driver is not None:
+                    if self.driver is not None:
+                        cookies = self.driver.get_cookies()
+                    else:
+                        logger.error("Driver is not initialized. Cannot retrieve cookies.")
+                        cookies = {}
+                else:
+                    logger.error("Driver is not initialized. Cannot retrieve cookies.")
+                    cookies = {}
                 current_cookies_lower = {c["name"].lower() for c in cookies}
                 missing_lower = required_lower - current_cookies_lower
 
@@ -1140,7 +1154,11 @@ class SessionManager:
             return
 
         try:
-            cookies = self.driver.get_cookies()
+            if self.driver is not None:
+                cookies = self.driver.get_cookies()
+            else:
+                logger.error("Driver is not initialized. Cannot retrieve cookies.")
+                cookies = {}
             # Clear existing cookies in requests session before syncing
             self._requests_session.cookies.clear()
             synced_count = 0
@@ -1482,13 +1500,10 @@ class SessionManager:
 
     def _verify_api_login_status(self) -> bool:
         """
-        Checks login status by making a request to a known secure API endpoint using requests.
-        Assumes cookies have already been synced to self._requests_session.
-        Uses header/dna endpoint. Returns True if API call succeeds (implies login), False otherwise.
-        Handles the fact that _api_req returns parsed data on success, None on failure.
+        REVISED: Checks login status via API. Logs concisely if API call fails (likely 401).
         """
         if self.api_login_verified:
-            # logger.debug("API login already verified this session (cached).") # Less verbose
+            # logger.debug("API login already verified this session (cached).")
             return True
 
         logger.debug("Verifying login status via header/dna API endpoint...")
@@ -1496,32 +1511,38 @@ class SessionManager:
         api_description = "API Login Verification (header/dna)"
 
         try:
+            # Pass self (SessionManager instance) correctly
             response_data = _api_req(
                 url=url,
                 driver=self.driver,
-                session_manager=self,
+                session_manager=self, # Pass the instance itself
                 method="GET",
                 use_csrf_token=False,
                 api_description=api_description,
-                force_requests=True, # Use requests library path
+                force_requests=True,
             )
 
             if response_data is not None:
+                # Check for expected data in response
                 if isinstance(response_data, dict) and "testId" in response_data:
                     logger.debug(f"API login check successful via {api_description}.")
-                    self.api_login_verified = True # Set cache flag on success
+                    self.api_login_verified = True
                     return True
                 else:
+                    # Succeeded (2xx) but unexpected format - still treat as logged in?
                     logger.warning(f"API login check via {api_description} succeeded (2xx), but response format unexpected: {response_data}")
-                    self.api_login_verified = True # Cautiously set True
+                    self.api_login_verified = True # Cautiously set True as API didn't return error
                     return True
             else:
-                logger.warning(f"API login check failed: {api_description} call returned None (likely HTTP error or timeout).")
+                # --- Log failure more concisely (likely 401/403 handled quietly in _api_req) ---
+                logger.debug(f"API login check indicates user is not logged in ({api_description} failed).")
+                # --- End Logging Change ---
                 self.api_login_verified = False
                 return False
 
         except Exception as e:
-            logger.error(f"Unexpected error during API login status check ({api_description}): {e}", exc_info=True) # Log full traceback
+            # Catch unexpected errors during the verification process itself
+            logger.error(f"Unexpected error during API login status check ({api_description}): {e}", exc_info=True)
             self.api_login_verified = False
             return False
     # end _verify_api_login_status
@@ -1557,7 +1578,11 @@ class SessionManager:
              logger.warning("Cannot validate cookies: Session invalid.")
              return False
         try:
-            cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
+            if self.driver is not None:
+                cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
+            else:
+                logger.error("Driver is not initialized. Cannot retrieve cookies.")
+                cookies = {}
             return all(cookie in cookies for cookie in required_cookies)
         except WebDriverException as e:
              logger.error(f"WebDriverException during cookie validation: {e}")
@@ -1650,6 +1675,9 @@ class SessionManager:
         """Create a new tab and return its handle id"""
         driver = self.driver # Assume decorator ensures driver exists
         try:
+            if driver is None:
+                logger.error("Driver is not initialized. Cannot retrieve window handles.")
+                return None
             tab_list_before = driver.window_handles
             # logger.debug(f"Initial window handles: {tab_list_before}")
             driver.switch_to.new_window("tab")
@@ -1663,11 +1691,17 @@ class SessionManager:
             return new_tab_handle
         except TimeoutException:
             logger.error("Timeout waiting for new tab handle to appear.")
-            logger.debug(f"Window handles during timeout: {driver.window_handles}")
+            if driver is not None:
+                logger.debug(f"Window handles during timeout: {driver.window_handles}")
+            else:
+                logger.error("Driver is None while attempting to log window handles during timeout.")
             return None
         except (IndexError, WebDriverException) as e: # Catch potential errors finding handle
              logger.error(f"Error identifying new tab handle: {e}")
-             logger.debug(f"Window handles during error: {driver.window_handles}")
+             if driver is not None:
+                 logger.debug(f"Window handles during error: {driver.window_handles}")
+             else:
+                 logger.error("Driver is None while attempting to log window handles during error.")
              return None
         except Exception as e:
             logger.error(f"An unexpected error occurred in make_tab: {e}", exc_info=True)
@@ -1682,7 +1716,11 @@ class SessionManager:
 
         try:
             # Check if get_log is supported (might not be in headless/certain configs)
-            log_types = self.driver.log_types
+            if self.driver is not None:
+                log_types = self.driver.log_types
+            else:
+                logger.warning("Driver is not initialized. Skipping log type check.")
+                return
             if 'browser' not in log_types:
                  # logger.debug("Browser log type not supported by this WebDriver instance.") # Less verbose
                  return
@@ -1751,188 +1789,164 @@ def _api_req(
     force_requests: bool = False, # Keep flag
 ) -> Optional[Any]:
     """
-    V13.2 REVISED: Makes an HTTP request using Python requests library with retry logic.
-    Handles headers, CSRF, cookies, and rate limiting interaction.
-    Relies on SessionManager for session state. Ensures session is valid.
+    V13.4 REVISED: Makes HTTP request. Reduces log severity for expected 401/403 errors.
+    Adds stricter JSON handling based on Content-Type.
     """
     if not session_manager:
         logger.error(f"{api_description}: Aborting - SessionManager instance is required.")
         return None
 
-    # --- Session Validity Check (Crucial!) ---
-    # Check if we need an active browser session (e.g., for UBE or if not forcing requests)
-    # If forcing requests, we might not strictly need the browser, but need cookies synced.
-    # Let's check API verification status - if not verified, browser needed for login/cookie sync.
     browser_needed = not force_requests or not session_manager.api_login_verified
     if browser_needed and not session_manager.is_sess_valid():
          logger.error(f"{api_description}: Aborting - Browser session is invalid or closed.")
          return None
 
-    # --- Retry Configuration ---
     max_retries = config_instance.MAX_RETRIES
-    initial_delay = config_instance.INITIAL_DELAY # Use initial delay from config
+    initial_delay = config_instance.INITIAL_DELAY
     backoff_factor = config_instance.BACKOFF_FACTOR
     max_delay = config_instance.MAX_DELAY
     retry_status_codes = config_instance.RETRY_STATUS_CODES
 
-    # --- Prepare Headers ---
     final_headers = {}
-    # Start with contextual headers from config
     contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {})
     final_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
-    # Override/add with function-specific headers
     if headers:
         final_headers.update({k: v for k, v in headers.items() if v is not None})
 
-    # Ensure User-Agent
     if "User-Agent" not in final_headers:
         ua = None
-        if driver and session_manager.is_sess_valid(): # Check validity
+        if driver and session_manager.is_sess_valid():
             try: ua = driver.execute_script("return navigator.userAgent;")
-            except Exception: pass # Ignore errors getting UA from driver
+            except Exception: pass
         if not ua: ua = random.choice(config_instance.USER_AGENTS)
         final_headers["User-Agent"] = ua
 
-    # Ensure Referer if provided and not already set
     if referer_url and "Referer" not in final_headers:
         final_headers["Referer"] = referer_url
 
-    # Add CSRF Token if required
     if use_csrf_token:
-        csrf = session_manager.csrf_token # Get from manager attribute
+        csrf = session_manager.csrf_token
         if csrf: final_headers["X-CSRF-Token"] = csrf
         else:
-             # Attempt to fetch CSRF if missing? Or just fail? Fail for now.
              logger.error(f"{api_description}: CSRF token required but not found in SessionManager.")
-             return None # Fail if CSRF needed but missing
+             return None
 
-    # Add UBE Header if driver available
     if driver and session_manager.is_sess_valid() and "ancestry-context-ube" not in final_headers:
         ube_header = make_ube(driver)
         if ube_header: final_headers["ancestry-context-ube"] = ube_header
         else: logger.warning(f"{api_description}: Failed to generate UBE header.")
 
-    # Add ancestry-userid if needed and available
     if "ancestry-userid" in contextual_headers and session_manager.my_profile_id:
         final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
 
-    # --- Set Timeout ---
     request_timeout = timeout if timeout is not None else selenium_config.API_TIMEOUT
 
-    # --- Use Python Requests Library ---
     logger.debug(f"API Req: {method.upper()} {url}")
     req_session = session_manager._requests_session
-    # logger.debug(f"{api_description}: Using requests.Session {id(req_session)}") # Less verbose
 
     retries_left = max_retries
     last_exception = None
-    delay = initial_delay # Initialize delay for retry calculation
+    delay = initial_delay
 
     while retries_left > 0:
         attempt = max_retries - retries_left + 1
         response = None
 
         try:
-            # --- Sync cookies BEFORE each request attempt ---
-            # Only sync if driver is available and session seems valid
             if driver and session_manager.is_sess_valid():
                 try: session_manager._sync_cookies()
                 except Exception as sync_err:
                     logger.warning(f"{api_description}: Error syncing cookies (Attempt {attempt}): {sync_err}")
-                    # Proceed, but request might fail due to stale cookies
 
-            # --- Make Request ---
+            # Use allow_redirects=True (default) for requests
             response = req_session.request(
                 method=method.upper(), url=url, headers=final_headers,
                 data=data, json=json_data, timeout=request_timeout, verify=True,
+                allow_redirects=True # Explicitly True (default behavior)
             )
             status = response.status_code
-            # logger.debug(f"{api_description}: Attempt {attempt}/{max_retries}. Status: {status}") # Less verbose
 
-            # --- Handle Response ---
             # 1. Check for Retryable Status Codes
             if status in retry_status_codes:
                 retries_left -= 1
-                last_exception = HTTPError(f"{status} Server Error: {response.reason}", response=response)
+                last_exception = requests.exceptions.HTTPError(f"{status} Server Error: {response.reason}", response=response)
                 if retries_left <= 0:
                     logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Resp: {response.text[:200] if response else 'N/A'}")
                     if status == 429 and session_manager.dynamic_rate_limiter: session_manager.dynamic_rate_limiter.increase_delay()
-                    return None # Indicate failure
+                    return None
                 else:
-                    # Calculate delay using session manager's rate limiter logic if possible
-                    sleep_time = initial_delay # Start with base delay
+                    sleep_time = initial_delay
                     if session_manager.dynamic_rate_limiter:
                          if status == 429: session_manager.dynamic_rate_limiter.increase_delay()
-                         # Use current delay from limiter for backoff calc? Or just fixed backoff? Fixed for now.
-                         sleep_time = delay * (backoff_factor ** (attempt - 1)) # Use current delay value
-                         jitter = random.uniform(-0.1, 0.1) * delay # Use current delay value
+                         sleep_time = delay * (backoff_factor ** (attempt - 1))
+                         jitter = random.uniform(-0.1, 0.1) * delay
                          sleep_time = min(sleep_time + jitter, max_delay)
                          sleep_time = max(0.1, sleep_time)
-                    else: # Fallback if no rate limiter
+                    else:
                          sleep_time = delay * (backoff_factor ** (attempt - 1))
                          sleep_time = min(sleep_time, max_delay)
                          sleep_time = max(0.1, sleep_time)
-
                     logger.warning(f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s...")
                     time.sleep(sleep_time)
-                    delay *= backoff_factor # Increase delay for next potential retry
-                    continue # Try again
+                    delay *= backoff_factor
+                    continue
 
             # 2. Check for Success (2xx)
             elif response.ok:
                 if session_manager.dynamic_rate_limiter: session_manager.dynamic_rate_limiter.decrease_delay()
-
-                # Handle specific text parsing needs
-                force_text_parsing = api_description == "Get Ladder API (Batch)"
-                if force_text_parsing: return response.text
-
-                # Standard JSON / Text Handling
                 content_type = response.headers.get("content-type", "").lower()
+                # *** CHANGE: Stricter JSON handling ***
                 if "application/json" in content_type:
-                    try: return response.json()
-                    except json.JSONDecodeError:
-                        logger.warning(f"{api_description}: OK ({status}), but failed JSON decode. Returning text.")
-                        logger.debug(f"Response text: {response.text[:500]}")
-                        return response.text
+                    try:
+                        return response.json()
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"{api_description}: OK ({status}), Content-Type is JSON, but JSON decode FAILED: {json_err}")
+                        logger.debug(f"Response text causing decode error: {response.text[:500]}")
+                        return None # Treat decode failure as error
                 else:
-                    # Handle plain text CSRF specifically
-                    if api_description == "CSRF Token API" and "text/plain" in content_type:
-                        csrf_text = response.text.strip()
-                        return csrf_text if csrf_text else None # Return None if empty string
-                    return response.text # Return text for other types
+                    # Handle specific non-JSON success cases if needed
+                    if api_description == "Get Ladder API (Batch)" and isinstance(response.text, str):
+                        logger.debug(f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning TEXT as expected.")
+                        return response.text # Expected text for this specific API
+                    elif api_description == "CSRF Token API" and "text/plain" in content_type:
+                         logger.debug(f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning TEXT as expected.")
+                         csrf_text = response.text.strip()
+                         return csrf_text if csrf_text else None # Return None if empty string
+                    else:
+                        # Log warning for unexpected content types on successful requests
+                        logger.warning(f"{api_description}: Request OK ({status}), but received unexpected Content-Type '{content_type}'. Returning None instead of text.")
+                        logger.debug(f"Response text (first 500 chars): {response.text[:500]}")
+                        return None # Return None for unexpected non-JSON success
+                # *** END CHANGE ***
 
             # 3. Handle Non-Retryable Errors (>= 400 and not in retry_codes)
             else:
-                logger.error(f"{api_description}: Non-retryable error: {status} {response.reason}. Resp: {response.text[:500]}")
-                if status in [401, 403]: # Unauthorized/Forbidden
-                    logger.warning(f"{api_description}: Authentication/Authorization error ({status}). Marking API login as unverified.")
+                if status in [401, 403]:
+                    logger.debug(f"{api_description}: API call failed with status {status} {response.reason}. Likely not logged in or session expired.")
                     session_manager.api_login_verified = False
-                    # Maybe attempt session restart? For now, just fail.
+                else:
+                    logger.error(f"{api_description}: Non-retryable error: {status} {response.reason}. Resp: {response.text[:500]}")
                 return None # Indicate failure
 
-        # --- Handle Network/Timeout Errors ---
         except requests.exceptions.RequestException as e:
             retries_left -= 1
             last_exception = e
             if retries_left <= 0:
                 logger.error(f"{api_description}: RequestException failed after {max_retries} attempts. Final Error: {e}", exc_info=False)
-                return None # Indicate failure
+                return None
             else:
-                # Calculate delay
-                sleep_time = delay * (backoff_factor ** (attempt - 1)) # Use current delay
+                sleep_time = delay * (backoff_factor ** (attempt - 1))
                 sleep_time = min(sleep_time, max_delay)
                 sleep_time = max(0.1, sleep_time)
                 logger.warning(f"{api_description}: RequestException (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}")
                 time.sleep(sleep_time)
-                delay *= backoff_factor # Increase delay for next attempt
-                continue # Try again
+                delay *= backoff_factor
+                continue
 
-        # --- Handle Other Unexpected Errors ---
         except Exception as e:
             logger.critical(f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}", exc_info=True)
-            raise e # Re-raise critical unexpected errors
+            return None
 
-    # Should only be reached if all retries failed
     logger.error(f"{api_description}: Exited retry loop after {max_retries} failed attempts. Last Exception: {last_exception}. Returning None.")
     return None
 # End of _api_req
@@ -2083,33 +2097,44 @@ def get_driver_cookies(driver: WebDriver) -> Dict[str, str]: # Type hint driver 
 # Login
 # ----------------------------------------------------------------------------
 
-# Login 5
+# Login 5 (Ensure this function exists and uses correct selectors)
 @time_wait("Handle 2FA Page")
 def handle_twoFA(session_manager: SessionManager) -> bool:
-    """Handles the two-step verification page, choosing SMS method and waiting for user input."""
-    driver = session_manager.driver
-    if not driver:
-        logger.error("2FA handling failed: WebDriver is not available.")
+    """
+    REFINED: Handles the two-step verification page. Waits for user input by checking
+    for the disappearance of the 2FA page elements, reducing log noise from repeated API checks.
+    """
+    if session_manager.driver is None:
+        logger.error("SessionManager driver is None. Cannot proceed.")
         return False
+    else:
+           if session_manager.driver is not None:
+               if session_manager.driver is None:
+                   raise ValueError("SessionManager driver is None.")
+               if session_manager.driver is not None:
+                   driver = session_manager.driver
+               else:
+                   logger.error("SessionManager driver is None. Cannot proceed.")
+                   return False
+           else:
+               logger.error("SessionManager driver is None. 2FA handling failed.")
+               return False
 
-    # Use wait factory methods from selenium_config
-    element_wait = selenium_config.element_wait(driver) # Default wait for elements
-    page_wait = selenium_config.page_wait(driver) # Page load wait
-    short_wait = selenium_config.short_wait(driver) # Short wait for quick checks
-    # long_wait = selenium_config.long_wait(driver) # Not used directly here, timeout value used instead
+    element_wait = selenium_config.element_wait(driver)
+    page_wait = selenium_config.page_wait(driver)
+    short_wait = selenium_config.short_wait(driver)
 
     try:
         logger.debug("Handling Two-Factor Authentication (2FA)...")
 
         # 1. Wait for 2FA page indicator to be present
         try:
-            logger.debug("Waiting for 2FA page header...")
+            logger.debug("Waiting for 2FA page header using selector: '{}'".format(TWO_STEP_VERIFICATION_HEADER_SELECTOR))
             element_wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)))
             logger.debug("2FA page detected.")
         except TimeoutException:
             logger.debug("Did not detect 2FA page header within timeout.")
-            # Check if already logged in despite missing header (e.g., race condition)
-            if login_status(session_manager):
+            if login_status(session_manager): # Check final status if header not found
                 logger.info("User appears logged in after checking for 2FA page. Proceeding.")
                 return True
             logger.warning("Assuming 2FA not required or page didn't load correctly.")
@@ -2117,22 +2142,25 @@ def handle_twoFA(session_manager: SessionManager) -> bool:
 
         # 2. Wait for SMS button and click it
         try:
-            logger.debug("Waiting for 2FA 'Send Code' (SMS) button...")
-            # Wait for presence first
-            sms_button_present = element_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, TWO_FA_SMS_SELECTOR)))
-            # Then wait briefly for clickability
+            logger.debug("Waiting for 2FA 'Send Code' (SMS) button using selector: '{}'".format(TWO_FA_SMS_SELECTOR))
             sms_button_clickable = short_wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, TWO_FA_SMS_SELECTOR)))
 
             if sms_button_clickable:
                 logger.debug("Attempting to click 'Send Code' button using JavaScript...")
                 driver.execute_script("arguments[0].click();", sms_button_clickable)
                 logger.debug("'Send Code' button clicked.")
-                # Optional: Wait briefly for code input field to appear after click
+                # Wait for code input field to appear
                 try:
-                    short_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, TWO_FA_CODE_INPUT_SELECTOR)))
+                    logger.debug("Waiting for 2FA code input field using selector: '{}'".format(TWO_FA_CODE_INPUT_SELECTOR))
+                    # Wait for visibility, as it might be present but hidden initially
+                    WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_FA_CODE_INPUT_SELECTOR)))
                     logger.debug("Code input field appeared after clicking 'Send Code'.")
                 except TimeoutException:
-                    logger.warning("Code input field did not appear quickly after clicking 'Send Code'.")
+                    logger.warning("Code input field did not appear or become visible after clicking 'Send Code'.")
+                    # Might still work if user enters code quickly, but log warning.
+                except Exception as e_input:
+                    logger.error(f"Error waiting for 2FA code input field: {e_input}. Check selector: {TWO_FA_CODE_INPUT_SELECTOR}")
+                    return False
             else:
                 logger.error("'Send Code' button found but not clickable.")
                 return False
@@ -2147,219 +2175,407 @@ def handle_twoFA(session_manager: SessionManager) -> bool:
             logger.error(f"Error clicking 2FA 'Send Code' button: {e}", exc_info=True)
             return False
 
-        # 3. Wait for user to enter 2FA code manually
+        # 3. Wait for user action by checking for disappearance of 2FA elements
         code_entry_timeout_value = selenium_config.TWO_FA_CODE_ENTRY_TIMEOUT
         logger.warning(f"Waiting up to {code_entry_timeout_value}s for user to manually enter 2FA code and submit...")
 
         start_time = time.time()
-        logged_in = False
+        user_action_detected = False
         while time.time() - start_time < code_entry_timeout_value:
-            current_status = login_status(session_manager)
-            if current_status is True:
-                logged_in = True
-                logger.info("User completed 2FA successfully (login confirmed).")
-                break
-            elif current_status is None: # Critical error during status check
-                 logger.error("Critical error checking login status during 2FA wait.")
-                 return False
-
-            # Check if 2FA page is still present
+            # --- Check if 2FA page elements are STILL present ---
             try:
-                 # Use short wait to check if header still exists
-                 WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)))
+                 # Use a very short wait to check if header is still visible
+                 WebDriverWait(driver, 0.5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)))
                  # Still on 2FA page, continue waiting
+                 time.sleep(2) # Poll every 2 seconds
             except TimeoutException:
-                 # 2FA page disappeared
-                 logger.warning("2FA page disappeared, re-checking login status immediately...")
-                 if login_status(session_manager): # Check immediately after page change
-                      logged_in = True
-                      logger.info("User completed 2FA successfully (login confirmed after page change).")
-                      break
-                 else:
-                      logger.error("2FA page disappeared, but login still not confirmed.")
-                      return False
+                 # 2FA header (or other key element) DISAPPEARED! User likely submitted code.
+                 logger.info("2FA page elements disappeared, assuming user submitted code.")
+                 user_action_detected = True
+                 break # Exit the loop
             except WebDriverException as e:
-                 logger.error(f"WebDriver error checking for 2FA header: {e}")
-                 # Potentially session died, fail
-                 return False
+                 logger.error(f"WebDriver error checking for 2FA header during wait: {e}")
+                 # Session might be dead, exit loop and check status below
+                 break
+            except Exception as e:
+                 logger.error(f"Unexpected error checking for 2FA header during wait: {e}")
+                 break # Exit loop on unexpected error
 
-            time.sleep(2) # Poll every 2 seconds
-
-        if not logged_in:
-            logger.error(f"Timed out ({code_entry_timeout_value}s) waiting for user 2FA code entry.")
+        # --- 4. Final Verification after loop ---
+        if user_action_detected:
+            logger.info("Re-checking login status after 2FA page disappearance...")
+            time.sleep(1) # Short pause for page transition to settle
+            final_status = login_status(session_manager)
+            if final_status is True:
+                logger.info("User completed 2FA successfully (login confirmed after page change).")
+                return True
+            else:
+                logger.error("2FA page disappeared, but final login status check failed or returned False.")
+                return False
+        else: # Loop timed out
+            logger.error(f"Timed out ({code_entry_timeout_value}s) waiting for user 2FA action (2FA page elements did not disappear).")
+            # Optional: Check status one last time even on timeout
+            # final_status = login_status(session_manager)
+            # if final_status is True:
+            #     logger.warning("Timed out waiting, but final login status check PASSED unexpectedly.")
+            #     return True
             return False
-
-        return True
 
     except WebDriverException as e:
          logger.error(f"WebDriverException during 2FA handling: {e}")
-         if not session_manager.is_sess_valid(): # Check if session died
+         if session_manager and not is_browser_open(driver): # Check if session died
               logger.error("Session invalid after WebDriverException during 2FA.")
          return False
     except Exception as e:
         logger.error(f"Unexpected error during 2FA handling: {e}", exc_info=True)
         return False
-# End of handle_twoFA
+# End of handle_twoFA 
 
 # Login 4
 def enter_creds(driver: WebDriver) -> bool: # Type hint driver and return
-    """Enters username and password into the login form."""
+    """REFINED: Enters username/password, attempts to click Sign In button robustly."""
     element_wait = selenium_config.element_wait(driver)
+    short_wait = selenium_config.short_wait(driver) # Use shorter wait for button perhaps
+
+    # Add a small initial delay before interacting with the form
+    time.sleep(random.uniform(0.5, 1.0))
+
     try:
         logger.debug("Entering Credentials and Signing In...")
 
         # --- Username ---
         logger.debug("Waiting for username input field...")
-        username_input = element_wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))) # Use visibility
+        username_input = element_wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR)))
         logger.debug("Username input field found.")
-        username_input.click() # Click first
-        username_input.clear() # Then clear
+        try:
+             username_input.click()
+             time.sleep(0.2) # Short pause after click
+             username_input.clear()
+             time.sleep(0.2) # Short pause after clear
+        except Exception as e:
+             logger.warning(f"Issue clicking/clearing username field: {e}. Attempting JS clear.")
+             try:
+                  driver.execute_script("arguments[0].value = '';", username_input)
+             except Exception as js_e:
+                  logger.error(f"Failed to clear username field via JS: {js_e}")
+                  return False # Fail if cannot clear
 
         ancestry_username = config_instance.ANCESTRY_USERNAME
-        if not ancestry_username: # Check if empty or None
+        if not ancestry_username:
             raise ValueError("ANCESTRY_USERNAME configuration is missing or empty.")
         logger.debug(f"Entering username: {ancestry_username}")
         username_input.send_keys(ancestry_username)
         logger.debug("Username entered.")
+        time.sleep(0.3) # Pause after entering username
 
         # --- Password ---
         logger.debug("Waiting for password input field...")
-        password_input = element_wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))) # Use visibility
+        password_input = element_wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR)))
         logger.debug("Password input field found.")
-        password_input.click()
-        password_input.clear()
+        try:
+             password_input.click()
+             time.sleep(0.2)
+             password_input.clear()
+             time.sleep(0.2)
+        except Exception as e:
+             logger.warning(f"Issue clicking/clearing password field: {e}. Attempting JS clear.")
+             try:
+                  driver.execute_script("arguments[0].value = '';", password_input)
+             except Exception as js_e:
+                  logger.error(f"Failed to clear password field via JS: {js_e}")
+                  return False
 
         ancestry_password = config_instance.ANCESTRY_PASSWORD
         if not ancestry_password:
              raise ValueError("ANCESTRY_PASSWORD configuration is missing or empty.")
-        logger.debug("Entering password: ***") # Avoid logging password
+        logger.debug("Entering password: ***")
         password_input.send_keys(ancestry_password)
         logger.debug("Password entered.")
+        time.sleep(0.5) # Pause after entering password, before finding button
 
         # --- Sign In Button ---
-        logger.debug("Waiting for sign in button to be clickable...")
-        sign_in_button = element_wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR)))
-        logger.debug("Clicking 'Sign in' button...")
+        sign_in_button = None
         try:
-             sign_in_button.click()
-             logger.debug("Sign in button clicked.")
-             return True
-        except ElementClickInterceptedException:
-             logger.warning("Sign in button click intercepted, trying JS click...")
-             driver.execute_script("arguments[0].click();", sign_in_button)
-             logger.debug("Sign in button clicked via JS.")
-             return True
-        except Exception as click_e:
-             logger.error(f"Failed to click sign in button: {click_e}", exc_info=True)
+            # Wait for button to be present first
+            logger.debug("Waiting for sign in button presence...")
+            WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR)))
+            # Then specifically wait for clickability
+            logger.debug("Waiting for sign in button to be clickable...")
+            sign_in_button = short_wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR)))
+            logger.debug("Sign in button located and deemed clickable.")
+
+        except TimeoutException:
+             logger.error("Sign in button not found or not clickable within timeout.")
+             # As a fallback, try submitting via Enter key on password field
+             logger.warning("Attempting fallback: Sending RETURN key to password field.")
+             try:
+                  password_input.send_keys(Keys.RETURN)
+                  logger.info("Fallback RETURN key sent to password field.")
+                  return True # Assume submission initiated
+             except Exception as key_e:
+                  logger.error(f"Failed to send RETURN key: {key_e}")
+                  return False # Both button click and key press failed
+        except Exception as find_e:
+             logger.error(f"Unexpected error finding sign in button: {find_e}")
              return False
 
-    except TimeoutException:
-        logger.error("Username or password input field not found or visible within timeout.")
+        # --- Attempt Click Actions ---
+        click_successful = False
+        if sign_in_button:
+            # Attempt 1: Standard Click
+            try:
+                sign_in_button.click()
+                logger.debug("Standard click executed on sign in button.")
+                click_successful = True # Mark as successful
+            except ElementClickInterceptedException:
+                logger.warning("Standard click intercepted for sign in button.")
+                # Proceed to JS click attempt
+            except ElementNotInteractableException as eni_e:
+                 logger.warning(f"Sign in button not interactable for standard click: {eni_e}")
+                 # Proceed to JS click attempt
+            except Exception as click_e:
+                 logger.error(f"Error during standard click on sign in button: {click_e}")
+                 # Proceed to JS click attempt (unless it was a fatal error?)
+
+            # Attempt 2: JavaScript Click (if standard click failed or was intercepted/uninteractable)
+            if not click_successful:
+                try:
+                    logger.warning("Attempting JavaScript click on sign in button...")
+                    driver.execute_script("arguments[0].click();", sign_in_button)
+                    logger.info("JavaScript click executed on sign in button.")
+                    click_successful = True # Mark successful
+                except Exception as js_click_e:
+                    logger.error(f"Error during JavaScript click on sign in button: {js_click_e}")
+
+            # Attempt 3: Send Enter Key (If both clicks failed)
+            if not click_successful:
+                 logger.warning("Both standard and JS clicks failed or were problematic. Attempting fallback: Sending RETURN key to password field.")
+                 try:
+                      password_input.send_keys(Keys.RETURN)
+                      logger.info("Fallback RETURN key sent to password field.")
+                      click_successful = True # Assume submission initiated
+                 except Exception as key_e:
+                      logger.error(f"Failed to send RETURN key as final fallback: {key_e}")
+
+        return click_successful # Return True only if some click/submit action was successfully executed
+
+    except TimeoutException as e: # Catch timeout finding user/pass fields
+        logger.error(f"Timeout finding username or password input field: {e}")
         return False
-    except NoSuchElementException: # Should be caught by Wait, but safety check
-        logger.error("Username or password input field not found (NoSuchElement).")
+    except NoSuchElementException as e: # Should be caught by Wait, but safety check
+        logger.error(f"Username or password input field not found (NoSuchElement): {e}")
         return False
     except ValueError as ve: # Catch missing config error
-         logger.critical(f"Configuration Error: {ve}") # Use CRITICAL
+         logger.critical(f"Configuration Error: {ve}")
          return False
     except WebDriverException as e: # Catch general WebDriver errors
          logger.error(f"WebDriver error entering credentials: {e}")
-         temp_sm = SessionManager() # Create temporary manager
-         temp_sm.driver = driver
-         if not temp_sm.is_sess_valid(): # Check session validity
+         if not is_browser_open(driver): # Check session validity
               logger.error("Session invalid during credential entry.")
          return False
     except Exception as e:
         logger.error(f"Unexpected error entering credentials: {e}", exc_info=True)
         return False
-# End of enter_creds
+# End of enter_creds 
 
 # Login 3
 @retry(MAX_RETRIES=2, BACKOFF_FACTOR=1, MAX_DELAY=3) # Add retry for consent handling
 def consent(driver: WebDriver) -> bool: # Type hint driver and return
-    """Handles cookie consent modal by removing it if present, with enhanced logging and retry."""
-    try:
-        logger.debug("Checking for cookie consent overlay")
-        # Use a short wait to find the element
-        overlay = WebDriverWait(driver, 3).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))
-        )
-        # If found, attempt removal
-        logger.debug("Cookie consent overlay DETECTED.")
-        logger.debug("Attempting to remove cookie consent overlay using Javascript...")
-        driver.execute_script("arguments[0].remove();", overlay)
-        # Optional: Verify removal - check if element is gone after short pause
-        time.sleep(0.5)
-        try:
-            driver.find_element(By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)
-            logger.warning("Consent overlay still present after JS removal attempt.")
-            # Could try clicking an accept button here as fallback if JS fails
-            # Example: driver.find_element(By.CSS_SELECTOR, ACCEPT_BUTTON_SELECTOR).click()
-            return False # Indicate potential failure if still present
-        except NoSuchElementException:
-             logger.debug("Cookie consent overlay REMOVED successfully via Javascript.")
-             return True # Successfully removed
+    """Handles cookie consent modal by removing it or clicking the specific accept button."""
+    if not driver:
+        return False  # Added safety check
 
-    except TimeoutException: # Element not found within the short wait
-        logger.debug("Cookie consent overlay not found. Assuming no consent needed.")
-        return True
-    except NoSuchElementException: # Should be caught by Wait, but safety check
-        logger.debug("Cookie consent overlay not found (NoSuchElement).")
-        return True
+    try:
+        logger.debug("Checking for cookie consent overlay using selector: '{}'".format(COOKIE_BANNER_SELECTOR))
+        overlay_element = None
+        try:
+            # Use a short wait to find the banner element
+            overlay_element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))
+            )
+            logger.debug("Cookie consent overlay DETECTED.")
+        except TimeoutException:
+            logger.debug("Cookie consent overlay not found. Assuming no consent needed.")
+            return True
+
+        # Attempt 1: Remove overlay with JavaScript
+        removed_via_js = False
+        if overlay_element:
+            try:
+                logger.debug("Attempting to remove cookie consent overlay using Javascript...")
+                driver.execute_script("arguments[0].remove();", overlay_element)
+                # Verify removal - check if element is gone after short pause
+                time.sleep(0.5)
+                try:
+                    driver.find_element(By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)
+                    logger.warning("Consent overlay still present after JS removal attempt.")
+                except NoSuchElementException:
+                    logger.debug("Cookie consent overlay REMOVED successfully via Javascript.")
+                    removed_via_js = True
+                    return True  # Successfully removed
+            except WebDriverException as js_err:
+                logger.warning(f"Error removing consent overlay via JS: {js_err}")
+            except Exception as e:
+                logger.warning(f"Unexpected error during JS removal of consent: {e}")
+
+        # Attempt 2: Click the specific "Accept" button (if JS removal failed)
+        if not removed_via_js:
+            logger.debug(
+                "Attempting to find and click the specific 'Accept' button using selector: '{}'".format(
+                    consent_ACCEPT_BUTTON_SELECTOR
+                )
+            )
+            try:
+                # Use the specific selector provided
+                accept_button = WebDriverWait(driver, 2).until(  # Short wait for specific button
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, consent_ACCEPT_BUTTON_SELECTOR))
+                )
+                if accept_button:
+                    logger.info("Found specific clickable accept button.")
+                    try:
+                        accept_button.click()
+                        logger.info("Clicked accept button successfully.")
+                        # Optional: Wait a moment for banner to disappear after click
+                        time.sleep(1)
+                        # Verify removal again
+                        try:
+                            driver.find_element(By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)
+                            logger.warning("Consent overlay still present after clicking accept button.")
+                            return False  # Explicitly fail if banner persists after click
+                        except NoSuchElementException:
+                            logger.debug("Consent overlay gone after clicking accept button.")
+                        return True  # Success
+                    except ElementClickInterceptedException:
+                        logger.warning("Click intercepted for accept button, trying JS click...")
+                        try:
+                            driver.execute_script("arguments[0].click();", accept_button)
+                            logger.info("Clicked accept button via JS successfully.")
+                            time.sleep(1)
+                            # Verify removal again
+                            try:
+                                driver.find_element(By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)
+                                logger.warning("Consent overlay still present after JS clicking accept button.")
+                                return False
+                            except NoSuchElementException:
+                                logger.debug("Consent overlay gone after JS clicking accept button.")
+                            return True  # Assume success
+                        except Exception as js_click_err:
+                            logger.error(f"Failed JS click for accept button: {js_click_err}")
+                    except Exception as click_err:
+                        logger.error(f"Error clicking accept button: {click_err}")
+            except TimeoutException:
+                logger.warning(
+                    "Specific accept button '{}' not found or not clickable.".format(consent_ACCEPT_BUTTON_SELECTOR)
+                )
+                # Fallback: Maybe try generic selectors again? Or just fail? Let's fail for now.
+            except Exception as find_err:
+                logger.error(f"Error finding/clicking specific accept button: {find_err}")
+
+            logger.warning("Could not remove consent overlay via JS or clicking the specific accept button.")
+            return False  # Failed to handle consent
+
     except WebDriverException as e:
-         logger.error(f"WebDriver error handling cookie consent: {e}")
-         temp_sm = SessionManager() # Create temporary manager
-         temp_sm.driver = driver
-         if not temp_sm.is_sess_valid():
-              logger.error("Session invalid during consent handling.")
-         return False # Fail on WebDriver errors during consent
+        logger.error(f"WebDriver error handling cookie consent: {e}")
+        try:
+            if not is_browser_open(driver):
+                logger.error("Session invalid during consent handling.")
+        except Exception:
+            pass
+        return False
     except Exception as e:
         logger.error(f"Unexpected error handling cookie consent overlay: {e}", exc_info=True)
-        return False # Fail on other errors
+        return False
+
+    # Ensure a return value for all code paths
+    return False
 # End of consent
 
 # Login 2
-def log_in(session_manager: SessionManager) -> str: # Return specific status strings
-    """Logs in to Ancestry.com, handling 2-step verification if needed. Returns status string."""
+def log_in(session_manager: 'SessionManager') -> str: # Return specific status strings
+    """REVISED: Logs in to Ancestry.com, uses specific selectors and revised nav_to_page."""
+    # Ensure SessionManager type hint works if defined later
+    from utils import SessionManager, nav_to_page, consent, enter_creds, is_elem_there, handle_twoFA, login_status, urljoin, config_instance, selenium_config, USERNAME_INPUT_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR, FAILED_LOGIN_SELECTOR, is_browser_open
+
     driver = session_manager.driver
     if not driver:
          logger.error("Login failed: WebDriver not available.")
          return "LOGIN_ERROR_NO_DRIVER"
 
     page_wait = selenium_config.page_wait(driver)
+    signin_url = urljoin(config_instance.BASE_URL, "account/signin")
 
     try:
-        # 1. Navigate to signin page
-        signin_url = urljoin(config_instance.BASE_URL, "account/signin")
-        logger.debug(f"Navigating to signin page: {signin_url}")
-        # Use nav_to_page for robustness
+        # 1. Navigate to signin page (using revised nav_to_page)
+        logger.info(f"Navigating to signin page: {signin_url}")
+        # Wait for the username input as confirmation the page loaded.
         if not nav_to_page(driver, signin_url, USERNAME_INPUT_SELECTOR, session_manager):
-            logger.error("Failed to navigate to or load the login page.")
+            if login_status(session_manager):
+                 logger.warning("Navigation to signin page failed, but login status is now TRUE. Assuming already logged in.")
+                 return "LOGIN_SUCCEEDED"
+            logger.error("Failed to navigate to or load the login page properly.")
             return "LOGIN_FAILED_NAVIGATION"
+        logger.debug("Successfully navigated to signin page.")
 
         # 2. Handle cookie consent (banner overlay) - if present
         if not consent(driver):
              logger.warning("Failed to handle consent banner, login might be impacted.")
-             # Continue cautiously
 
-        # 3. Enter login credentials and submit
+        # 3. Enter login credentials and submit using specific selectors
         if not enter_creds(driver):
              logger.error("Failed to enter login credentials.")
-             return "LOGIN_FAILED_CREDS_ENTRY" # More specific error
+             # Check for the specific invalid credentials alert
+             try:
+                 # Use presence check for the specific error div
+                 WebDriverWait(driver, 1).until(
+                      EC.presence_of_element_located((By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR))
+                 )
+                 logger.error("Login failed: Specific 'Invalid Credentials' alert found.")
+                 return "LOGIN_FAILED_BAD_CREDS"
+             except TimeoutException:
+                 # Specific alert not found, check for generic ones
+                 generic_alert_selector = "div.alert[role='alert']"
+                 try:
+                     alert_element = WebDriverWait(driver, 0.5).until(
+                          EC.presence_of_element_located((By.CSS_SELECTOR, generic_alert_selector))
+                     )
+                     logger.error(f"Login failed: Generic alert found: '{alert_element.text if alert_element else 'Unknown'}'.")
+                     return "LOGIN_FAILED_ERROR_DISPLAYED"
+                 except TimeoutException:
+                     logger.error("Login failed: Credential entry failed, but no specific or generic alert found.")
+                     return "LOGIN_FAILED_CREDS_ENTRY" # Return entry failure if no alert
+             except Exception as e:
+                 logger.warning(f"Error checking for login error message after cred entry failed: {e}")
+                 return "LOGIN_FAILED_CREDS_ENTRY"
 
         logger.debug("Credentials submitted. Waiting for potential page change...")
-        # Wait briefly for redirection or 2FA page to appear
-        time.sleep(random.uniform(2.0, 4.0)) # Random pause
+        time.sleep(random.uniform(3.0, 5.0))
 
-        # 4. Check for 2-step verification AFTER submitting credentials
-        # Use a slightly longer wait here as the page might take time to load
-        two_fa_present = is_elem_there(driver, By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR, wait=5)
+        # --- Refresh current URL after submit ---
+        try:
+             current_url_after_submit = driver.current_url
+             logger.debug(f"URL after credential submission: {current_url_after_submit}")
+        except WebDriverException as e:
+             logger.warning(f"Could not get URL immediately after login submit: {e}")
+             current_url_after_submit = ""
+
+        # 4. Check for 2-step verification using specific selector
+        two_fa_present = False
+        try:
+             WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)))
+             two_fa_present = True
+        except TimeoutException:
+             two_fa_present = False
+        except WebDriverException as e:
+             logger.error(f"WebDriver error checking for 2FA page: {e}")
+             status = login_status(session_manager)
+             if status is True: return "LOGIN_SUCCEEDED"
+             if status is False: return "LOGIN_FAILED_UNKNOWN"
+             return "LOGIN_FAILED_WEBDRIVER"
 
         if two_fa_present:
             logger.info("Two-step verification page detected.")
-            if handle_twoFA(session_manager):
+            if handle_twoFA(session_manager): # handle_twoFA uses specific selectors now
                 logger.info("Two-step verification handled successfully.")
-                # Final verification after 2FA
                 if login_status(session_manager):
                      return "LOGIN_SUCCEEDED"
                 else:
@@ -2372,38 +2588,55 @@ def log_in(session_manager: SessionManager) -> str: # Return specific status str
         # 5. If no 2-step verification, check for successful login directly
         else:
              logger.debug("Two-step verification page not detected. Checking login status directly.")
-             login_check_result = login_status(session_manager)
+             login_check_result = login_status(session_manager) # Uses specific selectors internally now
              if login_check_result is True:
-                 logger.info("Login successful (no 2FA required).")
+                 logger.debug("No 2FA required.")
                  return "LOGIN_SUCCEEDED"
              elif login_check_result is False:
-                 # Check for specific login error messages on the page
-                 # Use a generic selector for alerts, as FAILED_LOGIN_SELECTOR might be too specific
-                 login_error_alert_selector = "div.alert[role='alert']" # More generic alert selector
+                 # Check again for specific error messages
                  try:
-                      if is_elem_there(driver, By.CSS_SELECTOR, login_error_alert_selector, wait=1):
-                           error_msg_element = driver.find_element(By.CSS_SELECTOR, login_error_alert_selector)
-                           error_msg = error_msg_element.text if error_msg_element else "Unknown error message"
-                           logger.error(f"Login failed. Error message found: '{error_msg}'")
-                           # Check if it looks like invalid credentials
-                           if "invalid credentials" in error_msg.lower() or "username or password invalid" in error_msg.lower():
-                                return "LOGIN_FAILED_BAD_CREDS" # Specific error for bad credentials
-                           else:
-                                return "LOGIN_FAILED_ERROR_DISPLAYED" # Other error displayed
-                 except Exception:
-                      pass # Ignore errors checking for specific message
-                 logger.error("Login failed: Login status check returned False (no 2FA, no specific error msg found).")
-                 return "LOGIN_FAILED_UNKNOWN" # Generic failure
+                      WebDriverWait(driver, 1).until(
+                           EC.presence_of_element_located((By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR))
+                      )
+                      logger.error("Login failed: Specific 'Invalid Credentials' alert found (post-check).")
+                      return "LOGIN_FAILED_BAD_CREDS"
+                 except TimeoutException:
+                      # Specific alert not found, check generic
+                      generic_alert_selector = "div.alert[role='alert']"
+                      try:
+                           alert_element = WebDriverWait(driver, 0.5).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, generic_alert_selector))
+                           )
+                           logger.error(f"Login failed: Generic alert found (post-check): '{alert_element.text if alert_element else 'Unknown'}'.")
+                           return "LOGIN_FAILED_ERROR_DISPLAYED"
+                      except TimeoutException:
+                           # No error alert found, check if still on login page
+                           try:
+                               if driver.current_url.startswith(signin_url):
+                                    logger.error("Login failed: Still on login page (post-check), no specific error message found.")
+                                    return "LOGIN_FAILED_STUCK_ON_LOGIN"
+                               else:
+                                    logger.error("Login failed: Login status is False, no 2FA, no specific error msg found, not on login page.")
+                                    return "LOGIN_FAILED_UNKNOWN"
+                           except WebDriverException:
+                                logger.error("Login failed: Login status False, WebDriverException getting URL.")
+                                return "LOGIN_FAILED_WEBDRIVER"
+                      except Exception as e:
+                           logger.error(f"Login failed: Error checking for generic alert (post-check): {e}")
+                           return "LOGIN_FAILED_UNKNOWN"
+                 except Exception as e:
+                      logger.error(f"Login failed: Error checking for specific alert (post-check): {e}")
+                      return "LOGIN_FAILED_UNKNOWN"
              else: # login_status returned None (critical error)
                  logger.error("Login failed: Critical error during final login status check.")
                  return "LOGIN_FAILED_STATUS_CHECK_ERROR"
 
     except TimeoutException as e:
-        logger.error(f"Timeout during login process: {e}")
+        logger.error(f"Timeout during login process: {e}", exc_info=False)
         return "LOGIN_FAILED_TIMEOUT"
     except WebDriverException as e:
-         logger.error(f"WebDriverException during login: {e}")
-         if not session_manager.is_sess_valid():
+         logger.error(f"WebDriverException during login: {e}", exc_info=False)
+         if session_manager and not is_browser_open(driver):
               logger.error("Session became invalid during login attempt.")
          return "LOGIN_FAILED_WEBDRIVER"
     except Exception as e:
@@ -2415,11 +2648,10 @@ def log_in(session_manager: SessionManager) -> str: # Return specific status str
 @retry(MAX_RETRIES=2)
 def login_status(session_manager: SessionManager) -> Optional[bool]:
     """
-    REVISED: Checks if the user appears logged in. Prioritizes API verification,
-    falls back to UI element check if API fails.
-    Returns True if likely logged in, False if likely not, None if critical error occurs.
+    REVISED: Checks login status using API and specific UI selectors as fallback.
+    Returns True if likely logged in, False if likely not, None if critical error.
     """
-    # logger.debug("Checking login status (API prioritized)...") # Less verbose
+    # logger.debug("Checking login status (API prioritized)...")
     api_check_result: Optional[bool] = None
     ui_check_result: Optional[bool] = None
 
@@ -2429,86 +2661,86 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:
             return None
 
         # --- 1. Basic WebDriver Session Check ---
-        if not session_manager.is_sess_valid():
-            # logger.debug("Login status: Session invalid or browser closed.") # Less verbose
-            return False # Session definitely not valid/logged in
+        if not session_manager.is_sess_valid(): # Uses the more robust check from SessionManager
+            # logger.debug("Login status: Session invalid or browser closed.")
+            return False
 
-        driver = session_manager.driver # Assume driver exists if session is valid
+        driver = session_manager.driver
 
         # --- 2. API-Based Login Verification (PRIORITY) ---
-        # logger.debug("Attempting API login verification...") # Less verbose
-        api_check_result = session_manager._verify_api_login_status() # Handles its own logging
+        # logger.debug("Attempting API login verification...")
+        api_check_result = session_manager._verify_api_login_status()
 
         if api_check_result is True:
-            # logger.debug("Login status confirmed via API check.") # Less verbose
-            # Optional safety check: Quickly ensure UI isn't showing explicit logout state
+            # logger.debug("Login status confirmed via API check.")
+            # Optional safety check: Ensure UI isn't showing explicit logout state
             try:
+                 # Use specific Log In button selector
                  if is_elem_there(driver, By.CSS_SELECTOR, LOG_IN_BUTTON_SELECTOR, wait=1):
-                      logger.warning("API login check passed, but UI shows 'Log In' button. State mismatch?")
-                      # Trust API but warn.
-                 # else: Pass # API ok, UI doesn't show login button -> Good state
-                 return True # Return True based on API success
+                      logger.warning("API login check passed, but UI shows specific 'Log In' button. State mismatch?")
+                 return True # Trust API but warn
             except Exception as ui_safety_check_e:
                  logger.warning(f"Error during UI safety check after successful API check: {ui_safety_check_e}")
-                 return True # Proceed based on API check
+                 return True
 
         elif api_check_result is False:
             logger.debug("API login verification failed. Falling back to UI check.")
-            # Proceed to UI check below
-        # else: # Should not happen if _verify_api_login_status returns True/False
-        #    logger.error("API login verification returned unexpected value. Falling back to UI check.")
-        # Proceed to UI check below
+        # else: pass # API check returned None (error occurred, logged in _verify_api_login_status) - proceed to UI check
 
         # --- 3. UI-Based Login Verification (FALLBACK) ---
         logger.debug("Performing fallback UI login check...")
 
         # --- 3a. Handle Consent Overlay ---
-        # Use short wait, fail silently if error occurs during consent check
-        try: consent(driver)
-        except Exception: pass
+        if driver is not None:
+            try: 
+                consent(driver) # Use revised consent with specific selectors
+            except Exception: pass
 
-        # --- 3b. Check for Logged-In UI Element ---
+        # --- 3b. Check for Logged-In UI Element (Specific Selector) ---
+        # Use the specific selector provided by user
         logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR
-        # logger.debug(f"Attempting UI verification using selector: '{logged_in_selector}'") # Less verbose
-        ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=5) # Use configured wait
+        logger.debug(f"Attempting UI verification using logged-in selector: '{logged_in_selector}'")
+        ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=5)
 
         if ui_element_present:
-            logger.debug("Login status confirmed via fallback UI check.")
+            logger.debug("Login status confirmed via fallback UI check (specific logged-in element found).")
             session_manager.api_login_verified = True # Update flag based on UI success
             return True
         else:
-            # logger.debug("Login confirmation UI element not found in fallback check.") # Less verbose
-            # --- 3c. Check for Logged-Out UI Element ---
+            logger.debug("Login confirmation UI element ('{}') not found in fallback check.".format(logged_in_selector))
+            # --- 3c. Check for Logged-Out UI Element (Specific Selector) ---
             login_button_selector = LOG_IN_BUTTON_SELECTOR
             login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=1)
 
             if login_button_present:
-                 # logger.debug("Login status confirmed NOT logged in via fallback UI check ('Log In' button found).") # Less verbose
+                 logger.debug("Login status confirmed NOT logged in via fallback UI check (specific 'Log In' button found).")
                  session_manager.api_login_verified = False
                  return False
             else:
                  # --- 3d. Handle Ambiguity ---
-                 logger.warning("Login status ambiguous: API failed and neither confirmation nor login UI elements found.")
-                 # Try getting current URL as context clue
+                 logger.warning("Login status ambiguous: API failed and neither specific confirmation nor specific login UI elements found.")
                  current_url_context = "Unknown"
-                 try: current_url_context = driver.current_url
-                 except Exception: pass
+                 if driver is not None:
+                     try: current_url_context = driver.current_url
+                     except Exception: pass
+                 else:
+                     logger.warning("Driver is None, unable to retrieve current URL.")
+                     current_url_context = "Unknown"
                  logger.debug(f"Ambiguous login state at URL: {current_url_context}")
-                 # Defaulting to False in ambiguous state after API failure seems safest
                  session_manager.api_login_verified = False
-                 return False
+                 return False # Defaulting to False in ambiguous state
 
     # --- Handle Exceptions ---
     except WebDriverException as e:
          logger.error(f"WebDriverException during login_status check: {e}")
-         if session_manager and not session_manager.is_sess_valid():
+         if session_manager and not is_browser_open(driver): # Use basic check here
               logger.error("Session became invalid during login_status check.")
-              session_manager.close_sess() # Ensure cleanup if session died
-         return None # Return None for critical errors
+              session_manager.close_sess()
+         return None
     except Exception as e:
         logger.critical(f"CRITICAL Unexpected error during login_status check: {e}", exc_info=True)
-        return None # Return None for critical errors
-# End of login_status
+        return None
+# End of login_status 
 
 
 # ------------------------------------------------------------------------------------
@@ -2793,12 +3025,11 @@ def nav_to_page(
     driver: WebDriver,
     url: str, # url defaults removed, must be provided
     selector: str = "body", # Default selector changed to body
-    session_manager: Optional[SessionManager] = None,
+    session_manager: Optional['SessionManager'] = None, # Use forward reference
 ) -> bool:
     """
-    Navigates to a URL, handles temporary unavailability, login redirection,
-    and verifies successful navigation by checking URL and waiting for a selector.
-    Requires SessionManager for potential relogin.
+    REVISED: Navigates, handles redirects (using specific selectors for login/MFA pages),
+    verifies successful navigation.
     """
     if not driver:
         logger.error("Navigation failed: WebDriver instance is None.")
@@ -2807,137 +3038,160 @@ def nav_to_page(
          logger.error("Navigation failed: Target URL is required.")
          return False
 
-    # Use configured retry and timeout values
+    from utils import SessionManager, is_browser_open, log_in, login_status, urljoin, config_instance, selenium_config, USERNAME_INPUT_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR, TEMP_UNAVAILABLE_SELECTOR, PAGE_NO_LONGER_AVAILABLE_SELECTOR, _check_for_unavailability # Add necessary imports
+
     max_attempts = config_instance.MAX_RETRIES
+    page_timeout = selenium_config.PAGE_TIMEOUT
     element_timeout = selenium_config.ELEMENT_TIMEOUT
 
-    # Normalize target URL base for comparison
     target_url_parsed = urlparse(url)
     target_url_base = f"{target_url_parsed.scheme}://{target_url_parsed.netloc}{target_url_parsed.path}".rstrip('/')
+    signin_page_url_base = urljoin(config_instance.BASE_URL, "account/signin").rstrip('/') # Normalize
+    mfa_page_url_base = urljoin(config_instance.BASE_URL, "account/signin/mfa/").rstrip('/') # Normalize
 
-    # Define selectors/messages indicating page unavailability or errors
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),
         PAGE_NO_LONGER_AVAILABLE_SELECTOR: ("skip", 0),
-        # Add other known error patterns if needed
     }
 
     for attempt in range(1, max_attempts + 1):
         logger.debug(f"Nav Attempt {attempt}/{max_attempts} to: {url}")
-        is_blocked = False
+        landed_url = ""
 
         try:
-            # --- 1. Pre-Navigation Checks (Login/MFA/Current URL) ---
-            if not _pre_navigation_checks(driver, session_manager):
-                 # _pre_navigation_checks logs errors, attempt restart or fail
+            # --- 1. Check WebDriver session validity ---
+            if not is_browser_open(driver):
+                 logger.error(f"Navigation failed (Attempt {attempt}): Browser session is not valid.")
                  if session_manager:
-                      logger.warning("Pre-navigation check failed. Attempting session restart...")
+                      logger.warning("Session invalid before navigation. Attempting restart...")
                       if session_manager.restart_sess():
-                           logger.info("Session restarted. Retrying navigation from scratch...")
-                           driver = session_manager.driver # Get new driver instance
-                           if not driver: return False # Restart failed badly
-                           continue # Restart loop with new driver
-                      else:
-                           logger.error("Session restart failed. Aborting navigation.")
-                           return False
-                 else: # No session manager to restart
-                      return False # Fail if pre-checks fail without restart capability
+                           logger.info("Session restarted. Retrying navigation...")
+                           driver = session_manager.driver
+                           if not driver: return False
+                           continue
+                      else: logger.error("Session restart failed."); return False
+                 else: return False
 
             # --- 2. Perform Navigation ---
+            logger.debug(f"Executing driver.get('{url}')...")
             driver.get(url)
+            WebDriverWait(driver, page_timeout).until(
+                 lambda d: d.execute_script("return document.readyState") in ["complete", "interactive"]
+            )
+            time.sleep(random.uniform(0.5, 1.5)) # Wait for JS redirects
 
             # --- 3. Post-Navigation Verification ---
-            # Wait briefly for initial loading/redirects
-            time.sleep(random.uniform(0.5, 1.5))
-
-            # Verify URL after navigation attempt
-            post_nav_url = "" # Initialize
             try:
-                post_nav_url = driver.current_url
-                post_nav_url_parsed = urlparse(post_nav_url)
-                post_nav_url_base = f"{post_nav_url_parsed.scheme}://{post_nav_url_parsed.netloc}{post_nav_url_parsed.path}".rstrip('/')
-                # logger.debug(f"Nav Attempt {attempt} landed on: {post_nav_url}") # Less verbose
+                landed_url = driver.current_url
+                landed_url_parsed = urlparse(landed_url)
+                landed_url_base = f"{landed_url_parsed.scheme}://{landed_url_parsed.netloc}{landed_url_parsed.path}".rstrip('/')
+                logger.debug(f"Nav Attempt {attempt} landed on URL base: {landed_url_base}")
             except WebDriverException as e:
                 logger.error(f"Failed to get URL after get() (Attempt {attempt}): {e}. Retrying.")
-                continue # Retry the whole navigation attempt
+                continue
 
-            # Re-check for login/mfa immediately
-            if _check_post_nav_redirects(post_nav_url):
-                 continue # Redirected, loop will retry pre-checks
+            # --- 3a. Check for Unexpected Login/MFA Redirects ---
+            # Check if landed on MFA page by checking for its specific header
+            is_on_mfa_page = False
+            try:
+                WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)))
+                is_on_mfa_page = True
+            except TimeoutException:
+                is_on_mfa_page = False
+            except WebDriverException as e:
+                 logger.warning(f"WebDriverException checking for MFA header: {e}") # Continue cautiously
 
-            # Check if landed on the target URL (handle variations)
-            if post_nav_url_base != target_url_base:
-                 logger.warning(f"Navigation landed on unexpected URL base: '{post_nav_url_base}' (Expected: '{target_url_base}')")
-                 # Check for error messages on the unexpected page
+            if is_on_mfa_page:
+                 logger.warning("Landed on MFA page unexpectedly during navigation.")
+                 # Fail navigation as the target page wasn't reached and MFA needs intervention.
+                 return False
+
+            # Check if landed on Login page by checking for username input
+            is_on_login_page = False
+            # Only check if the landed URL base looks like the signin page OR if target wasn't signin page
+            if landed_url_base == signin_page_url_base or target_url_base != signin_page_url_base:
+                try:
+                    WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR)))
+                    is_on_login_page = True
+                except TimeoutException:
+                    is_on_login_page = False
+                except WebDriverException as e:
+                    logger.warning(f"WebDriverException checking for Login username input: {e}") # Continue cautiously
+
+            # If landed on login page AND target wasn't login page
+            if is_on_login_page and target_url_base != signin_page_url_base:
+                 logger.warning("Landed on Login page unexpectedly.")
+                 if session_manager:
+                      logger.info("Attempting re-login...")
+                      login_stat = login_status(session_manager)
+                      if login_stat is True:
+                           logger.info("Login status confirmed OK after landing on login page. Retrying navigation.")
+                           continue
+                      else:
+                           login_result = log_in(session_manager)
+                           if login_result == "LOGIN_SUCCEEDED":
+                                logger.info("Re-login successful. Retrying original navigation...")
+                                continue
+                           else: logger.error(f"Re-login failed ({login_result})."); return False
+                 else: logger.error("Landed on login page, no SessionManager for re-login."); return False
+
+            # --- 3b. Check if landed on the target URL base ---
+            if landed_url_base != target_url_base:
+                 logger.warning(f"Navigation landed on unexpected URL base: '{landed_url_base}' (Expected: '{target_url_base}')")
                  action, wait_time = _check_for_unavailability(driver, unavailability_selectors)
-                 if action == "skip": return False # Permanent failure
-                 elif action == "refresh":
-                      logger.warning(f"Waiting {wait_time}s due to unavailability message on wrong URL.")
-                      time.sleep(wait_time)
-                      continue # Retry navigation attempt
-                 else: # No specific message, but wrong URL
-                      logger.warning("Wrong URL and no specific error message. Retrying navigation.")
-                      continue
+                 if action == "skip": return False
+                 elif action == "refresh": time.sleep(wait_time); continue
+                 else: logger.warning("Wrong URL, no specific message. Retrying."); continue
 
             # --- 4. Wait for Target Selector ---
-            wait_selector = selector if selector else "body" # Default to body
-            # logger.debug(f"Waiting up to {element_timeout}s for selector: '{wait_selector}'") # Less verbose
+            wait_selector = selector if selector else "body"
+            logger.debug(f"On correct URL base. Waiting up to {element_timeout}s for selector: '{wait_selector}'")
             try:
                 WebDriverWait(driver, element_timeout).until(
                     EC.visibility_of_element_located((By.CSS_SELECTOR, wait_selector))
                 )
-                logger.debug(f"Navigation to '{url}' successful (Selector '{wait_selector}' found).")
+                logger.debug(f"Navigation successful:\n{url}")
                 return True # SUCCESS!
 
             except TimeoutException:
-                # Timeout waiting for selector
-                current_url_on_timeout = "N/A"
-                try: current_url_on_timeout = driver.current_url
-                except Exception: pass
-                logger.warning(f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout}.")
-
-                # Check for unavailability messages AFTER timeout
+                current_url_on_timeout = landed_url # Use already fetched URL
+                logger.warning(f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout} (URL base was correct).")
                 action, wait_time = _check_for_unavailability(driver, unavailability_selectors)
-                if action == "skip": return False # Permanent failure
-                elif action == "refresh":
-                    logger.warning(f"Page unavailable after timeout. Waiting {wait_time}s before retry.")
-                    time.sleep(wait_time)
-                    continue # Retry navigation attempt
-                else: # Generic timeout, no specific message
-                    logger.warning(f"Timeout waiting for selector '{wait_selector}', no unavailability message found. Retrying navigation.")
-                    continue # Retry navigation attempt
+                if action == "skip": return False
+                elif action == "refresh": time.sleep(wait_time); continue
+                else: logger.warning("Timeout, no unavailability message. Retrying."); continue
 
         # --- Handle Exceptions During the Attempt ---
         except UnexpectedAlertPresentException as alert_e:
             logger.warning(f"Unexpected alert (Attempt {attempt}): {alert_e.alert_text}")
             try: driver.switch_to.alert.accept() ; logger.info("Alert accepted.")
             except Exception as accept_e: logger.error(f"Failed to accept alert: {accept_e}") ; return False
-            continue # Retry navigation
+            continue
 
         except WebDriverException as wd_e:
-            logger.error(f"WebDriverException (Attempt {attempt}): {wd_e}", exc_info=True) # Log full traceback for WebDriverException
-            if session_manager and not session_manager.is_sess_valid():
-                logger.error("WebDriver session appears invalid. Attempting restart...")
+            logger.error(f"WebDriverException during navigation (Attempt {attempt}): {wd_e}", exc_info=False)
+            if session_manager and not is_browser_open(driver):
+                logger.error("WebDriver session invalid after exception. Attempting restart...")
                 if session_manager.restart_sess():
                     logger.info("Session restarted. Retrying navigation...")
-                    driver = session_manager.driver # Update driver reference
-                    if not driver: return False
+                    if not session_manager.driver: 
+                        return False
+                    driver = session_manager.driver
                     continue
                 else: logger.error("Session restart failed.") ; return False
-            else: logger.warning("WebDriverException, session seems valid. Waiting before retry.") ; time.sleep(3) ; continue
+            else: logger.warning("WebDriverException occurred, session seems valid/no restart. Waiting before retry.") ; time.sleep(random.uniform(2, 4)); continue
 
         except Exception as e:
-            logger.error(f"Unexpected error (Attempt {attempt}): {e}", exc_info=True)
-            time.sleep(3)
-            continue # Retry the attempt
+            logger.error(f"Unexpected error during navigation (Attempt {attempt}): {e}", exc_info=True)
+            time.sleep(random.uniform(2, 4))
+            continue
 
     # --- End of Retry Loop ---
     logger.critical(f"Navigation to '{url}' failed permanently after {max_attempts} attempts.")
     try: logger.error(f"Final URL after failure: {driver.current_url}")
     except Exception: logger.error("Could not retrieve final URL after failure.")
     return False
-
-# --- Helper functions for nav_to_page ---
+# End of nav_to_page
 
 def _pre_navigation_checks(driver: WebDriver, session_manager: Optional[SessionManager]) -> bool:
      """Performs pre-navigation checks for login status and MFA."""
@@ -3054,7 +3308,10 @@ def main():
                 logger.debug(f" UUID: {session_manager.my_uuid}")
                 logger.debug(f" Tree ID: {session_manager.my_tree_id or 'N/A'}")
                 logger.debug(f" Tree Owner: {session_manager.tree_owner_name or 'N/A'}")
-                logger.debug(f" CSRF Token: {session_manager.csrf_token[:10]}...")
+                if session_manager.csrf_token:
+                    logger.debug(f" CSRF Token: {session_manager.csrf_token[:10]}...")
+                else:
+                    logger.debug(" CSRF Token: None")
 
             # --- Test Navigation ---
             logger.info("--- Testing Navigation (nav_to_page to BASE_URL) ---")
