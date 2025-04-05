@@ -671,7 +671,7 @@ class SessionManager:
         # --- Retry Loop for Session Initialization ---
         while retry_count < max_retries and not session_start_success:
             retry_count += 1
-            logger.debug(f"Attempting session start: {retry_count}/{max_retries}\n")
+            logger.debug(f"Attempting session start: {retry_count}/{max_retries}\n\n")
 
             try:
                 # --- 2. Initialize WebDriver ---
@@ -698,7 +698,7 @@ class SessionManager:
                     else:
                          return False, None # Fail permanently if base nav fails repeatedly
 
-                logger.debug("Initial navigation to Base URL successful.\n")
+                logger.debug("Initial navigation to Base URL successful.\n\n")
 
                 # --- 3. Check Login Status & Log In If Needed ---
                 logger.debug("3. Checking login status.")
@@ -723,7 +723,7 @@ class SessionManager:
                     logger.critical(f"Login status check failed critically. Aborting session start.") # Use CRITICAL
                     self.close_sess()
                     return False, None
-                logger.debug("Login status confirmed.\n")
+                logger.debug("Login status confirmed.\n\n")
 
                 # --- 4. URL Check & Navigation to Base URL (Refined Logic) ---
                 # This check might be less critical now that login_status is robust, but keep as safety net
@@ -732,7 +732,7 @@ class SessionManager:
                      logger.error("URL check/handling failed. Aborting session start.")
                      self.close_sess()
                      return False, None
-                logger.debug("URL re-check completed.\n")
+                logger.debug("URL re-check completed.\\n")
 
                 # --- 5. Verify Essential Cookies ---
                 logger.debug("5. Verifying essential cookies (ANCSESSIONID, SecureATT).")
@@ -741,12 +741,12 @@ class SessionManager:
                     logger.error(f"Essential cookies {essential_cookies} not found. Aborting session start.")
                     self.close_sess()
                     return False, None
-                logger.debug("Essential cookies verified.\n")
+                logger.debug("Essential cookies verified.\n\n")
 
                 # --- 6. Synchronize Cookies to requests.Session ---
                 logger.debug("6. Syncing cookies from WebDriver to requests session.")
                 self._sync_cookies()
-                logger.debug("Cookies synced.\n")
+                logger.debug("Cookies synced.\n\n")
 
                 # --- 7. Retrieve and Store CSRF Token ---
                 logger.debug("7. Retrieving CSRF token.")
@@ -755,7 +755,7 @@ class SessionManager:
                     logger.error("Failed to retrieve CSRF token. Aborting session start.")
                     self.close_sess()
                     return False, None
-                logger.debug(f"CSRF token retrieved: {self.csrf_token[:10]}...\n")
+                logger.debug(f"CSRF token retrieved: {self.csrf_token[:10]}...\n\n")
 
                 # --- 8. Retrieve User Identifiers ---
                 logger.debug("8. Retrieving user identifiers.")
@@ -763,12 +763,12 @@ class SessionManager:
                      logger.error("Failed to retrieve essential user identifiers. Aborting session start.")
                      self.close_sess()
                      return False, None
-                logger.debug("Finished retrieving user identifiers.\n")
+                logger.debug("Finished retrieving user identifiers.\n\n")
 
                 # --- 9. Retrieve Tree Owner Name ---
                 logger.debug("9. Retrieving tree owner name.")
                 self._retrieve_tree_owner() # Log internally
-                logger.debug("Finished retrieving tree owner name.\n")
+                logger.debug("Finished retrieving tree owner name.\n\n")
 
 
                 # --- 10. Session Start Successful ---
@@ -1023,7 +1023,7 @@ class SessionManager:
          if self.my_tree_id and not self.tree_owner_name: # Fetch only if tree ID exists and owner not yet known
               self.tree_owner_name = self.get_tree_owner(self.my_tree_id)
               if self.tree_owner_name and not self._owner_logged:
-                   logger.info(f"Tree Owner Name: {self.tree_owner_name}\n")
+                   logger.info(f"Tree Owner Name: {self.tree_owner_name}.")
                    self._owner_logged = True
               elif not self.tree_owner_name:
                    logger.warning("Failed to retrieve tree owner name.\n")

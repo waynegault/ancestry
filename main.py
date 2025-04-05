@@ -772,7 +772,7 @@ def coord_action(session_manager, config_instance, start_page=1):
     ):
         logger.error("Cannot gather: Session not active.")
         return False
-    logger.debug(f"Gathering DNA Matches from page {start_page}...\n")
+    logger.debug(f"Gathering DNA Matches from page {start_page}...\n\n")
     try:
         # Call the imported and renamed coord_action_func directly
         # It already expects session_manager, config_instance, and start_page
@@ -794,7 +794,7 @@ def srch_inbox_actn(session_manager, *args):
     if not session_manager or not session_manager.is_sess_valid():
         logger.error("Cannot search inbox: Session invalid.")
         return False
-    logger.debug("Starting inbox search (API)...")
+    logger.debug("Starting inbox search...\n\n")
     try:
         processor = InboxProcessor(session_manager=session_manager)
         result = processor.search_inbox()
@@ -819,7 +819,7 @@ def send_messages_action(session_manager, *args):
     ):
         logger.error("Cannot send messages: Session not active.")
         return False
-    logger.debug("Starting message sending...\n")
+    logger.debug("Starting message sending...\n\n")
     try:
         if not nav_to_page(
             session_manager.driver,
@@ -850,7 +850,7 @@ def all_but_first_actn(session_manager, *args):
     session = None
     success = False
     try:
-        logger.info("Deleting all but first person record...")
+        logger.info("Deleting all but first person record...\n\n")
         session = session_manager.get_db_conn()
         if session is None:
             raise Exception("Failed to get DB session.")
