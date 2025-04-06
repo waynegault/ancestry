@@ -1352,7 +1352,7 @@ def get_matches(
                     if raw_value:
                         specific_csrf_token = unquote(raw_value).split("|")[0]
                         found_token_name = cookie_name
-                        logger.info(
+                        logger.debug(
                             f"Successfully read CSRF token from cookie '{found_token_name}': {specific_csrf_token[:10]}..."
                         )
                         break

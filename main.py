@@ -115,8 +115,6 @@ def menu():
     print("q. Exit")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
-
-
 # End of menu
 
 
@@ -173,8 +171,6 @@ def clear_log_file():
         traceback.print_exc(file=sys.stderr)  # Print traceback for unexpected errors
 
     return cleared, log_path
-
-
 # End of clear_log_file
 
 
@@ -330,8 +326,6 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info(f"Duration: {formatted_duration}")
         logger.info(f"Memory used: {mem_used:.1f} MB")
         logger.info("--------------------------------------\n")
-
-
 # End of exec_actn
 
 
@@ -427,8 +421,6 @@ def run_actions_6_7_8_action(session_manager, *args):
             f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
         )
         return False
-
-
 # End Action 1
 
 
@@ -615,8 +607,6 @@ def reset_db_actn(session_manager, *args):
         logger.debug("Reset DB action finished.")
 
     return reset_successful
-
-
 # end of Action 2
 
 
@@ -631,8 +621,6 @@ def backup_db_actn(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
-
-
 # end of Action 3
 
 
@@ -667,8 +655,6 @@ def restore_db_actn(session_manager, *args):
     finally:
         logger.debug("DB restore action finished.")
     return success
-
-
 # end of Action 4
 
 
@@ -732,8 +718,6 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
         return False
 
     # Note: Session closing is handled by exec_actn based on close_sess flag (which is False for Action 5)
-
-
 # End Action 5
 
 
@@ -760,8 +744,6 @@ def coord_action(session_manager, config_instance, start=1):
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
-
-
 # End of coord_action6
 
 
@@ -784,8 +766,6 @@ def srch_inbox_actn(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
-
-
 # End of srch_inbox_actn
 
 
@@ -819,8 +799,6 @@ def send_messages_action(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
-
-
 # End of send_messages_action
 
 
@@ -866,8 +844,6 @@ def all_but_first_actn(session_manager, *args):
             session_manager.return_session(session)
         logger.debug("Delete action finished.")
     return success
-
-
 # end of Action 9
 
 
@@ -1043,12 +1019,13 @@ def main():
                 file=sys.stderr,
             )
         print("\nExecution finished.")
-
-
 # end main
 
 # --- Entry Point ---
 if __name__ == "__main__":
     main()
+
+
+
 
 # end of main.py
