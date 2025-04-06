@@ -1191,32 +1191,41 @@ def _do_match(
                 person_update_needed = True
 
             new_message_link = incoming_person_data.get("message_link")
-            if existing_person.message_link.is_(None) and new_message_link:
+            # --- Corrected Message Link Check ---
+            # Check if the existing message link is None or empty ('falsy') AND a new one exists
+            if existing_person.message_link is None and new_message_link:
                 logger.debug(f"  -> Adding missing message_link for {log_ref}")
                 person_data_for_update["message_link"] = new_message_link
                 person_update_needed = True
+            # Check if an existing message link exists AND a new one exists AND they are different
             elif (
-                existing_person.message_link.is_not(None)
+                existing_person.message_link # Checks if not None and not empty
                 and new_message_link
                 and existing_person.message_link != new_message_link
             ):
                 logger.debug(
                     f"  -> Skipping message_link update for {log_ref} (existing value present)"
                 )
+            # --- End Corrected Message Link Check ---
 
-            new_username = incoming_person_data.get("username")
-            if existing_person.username.is_(None) and new_username:
+
+            # --- Corrected Username Check ---
+            new_username = incoming_person_data.get("username") # Already formatted
+            # Check if the existing username is None or empty ('falsy') AND a new one exists
+            if existing_person.username is None and new_username:
                 logger.debug(f"  -> Adding missing username for {log_ref}")
                 person_data_for_update["username"] = new_username
                 person_update_needed = True
+            # Check if an existing username exists AND a new one exists AND they are different
             elif (
-                existing_person.username.is_not(None)
+                existing_person.username # Checks if not None and not empty
                 and new_username
                 and existing_person.username != new_username
             ):
                 logger.debug(
                     f"  -> Skipping username update for {log_ref} (existing value present and different: '{existing_person.username}' vs '{new_username}')"
                 )
+            # --- End Corrected Username Check ---
 
             # V14.21: profile_id is NOT updated here anymore to prevent constraint errors
 
@@ -1284,9 +1293,18 @@ def _do_match(
         data_to_return = prepared_data_for_bulk if overall_status != "skipped" else None
         return data_to_return, overall_status, None
     except Exception as e:
-        error_msg = f"Unexpected critical error in _do_match data preparation for {log_ref}: {e}."
-        logger.error(error_msg, exc_info=True)
-        return None, "error", error_msg
+        # Log the specific error type and message safely
+        error_type = type(e).__name__
+        error_details = str(e) # Explicitly convert exception to string
+        error_msg_for_log = (
+            f"Unexpected critical error ({error_type}) in _do_match data preparation for {log_ref}. Details: {error_details}"
+        )
+        # Log the constructed message AND the full traceback for debugging
+        logger.error(error_msg_for_log, exc_info=True)
+        # Return a simpler, safe error message string
+        # Avoid returning the complex error_msg_for_log which might still have issues if log_ref was complex (though unlikely here)
+        error_msg_return = f"Unexpected {error_type} during data prep for {log_ref_short}" # Use shorter ref for return
+        return None, "error", error_msg_return
 # End of _do_match (V14.21)
 
 
