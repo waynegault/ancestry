@@ -1481,11 +1481,7 @@ def _fetch_batch_relationship_prob(
     if not session_manager.my_uuid or not match_uuid:
         logger.warning("Missing my_uuid or match_uuid for relationship probability fetch.")
         return "N/A (Error - Missing IDs)"
-    if not session_manager.csrf_token:
-        # Try fetching CSRF again if missing? Or rely on driver cookies below?
-        # For now, assume SessionManager has it or driver cookies will provide.
-        logger.warning("CSRF token missing in session_manager, relying on driver cookies.")
-        # If using cloudscraper, the CSRF might be handled differently or be in cookies anyway.
+    # Removed redundant CSRF check here, rely on getting it fresh below
 
     if not driver or not session_manager.is_sess_valid():
          logger.error("Driver not available or session invalid for fetching relationship probability.")
@@ -1514,7 +1510,7 @@ def _fetch_batch_relationship_prob(
         "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
         "Cache-Control": "no-cache", # Add from cURL
         "Content-Type": "application/json",
-        # "X-CSRF-Token": session_manager.csrf_token, # Let cloudscraper/cookies handle? Or get fresh below?
+        # CSRF Token added below after fetching fresh
         "Origin": config_instance.BASE_URL.rstrip('/'),
         "Pragma": "no-cache", # Add from cURL
         "Priority": "u=1, i", # Add from cURL (optional)
@@ -1526,55 +1522,63 @@ def _fetch_batch_relationship_prob(
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-origin",
         "User-Agent": user_agent,
-        # "dnt": "1", # Can omit if needed
-        # UBE/NewRelic/Trace headers - cloudscraper might not easily replicate these.
-        # Let's try *without* them first, as Cloudflare might be the main issue.
     }
 
     # --- Get CSRF Token from WebDriver cookies just before call ---
     csrf_token_val = None
     csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
-        driver_cookies_dict = {c['name']: c['value'] for c in driver.get_cookies()}
-        for name in csrf_cookie_names:
-             if name in driver_cookies_dict and driver_cookies_dict[name]:
-                  csrf_token_val = unquote(driver_cookies_dict[name]).split('|')[0]
-                  rel_headers["X-CSRF-Token"] = csrf_token_val # Add specific token to header
-                  logger.debug(f"Using fresh CSRF token '{name}' from driver cookies for rel prob.")
-                  break
+        # Use a temporary dict to avoid modifying SessionManager state if get_cookies fails
+        driver_cookies_list = driver.get_cookies()
+        if driver_cookies_list:
+             driver_cookies_dict = {c['name']: c['value'] for c in driver_cookies_list if 'name' in c and 'value' in c}
+             for name in csrf_cookie_names:
+                  if name in driver_cookies_dict and driver_cookies_dict[name]:
+                       csrf_token_val = unquote(driver_cookies_dict[name]).split('|')[0]
+                       rel_headers["X-CSRF-Token"] = csrf_token_val # Add specific token to header
+                       logger.debug(f"Using fresh CSRF token '{name}' from driver cookies for rel prob.")
+                       break
+        else:
+             logger.warning("driver.get_cookies() returned None or empty list.")
+
+    except WebDriverException as csrf_wd_e:
+         logger.warning(f"WebDriverException getting cookies for CSRF token: {csrf_wd_e}")
     except Exception as csrf_e:
         logger.warning(f"Could not get fresh CSRF token from driver cookies: {csrf_e}")
 
     if "X-CSRF-Token" not in rel_headers:
-         logger.error("Failed to add CSRF token to headers for cloudscraper request.")
-         return "N/A (Error - Missing CSRF)"
+         # Fallback: Try using the SessionManager's token if fresh failed
+         if session_manager.csrf_token:
+              logger.warning("Using potentially stale CSRF token from SessionManager as fallback.")
+              rel_headers["X-CSRF-Token"] = session_manager.csrf_token
+         else:
+              logger.error("Failed to add CSRF token to headers for cloudscraper request (fresh and fallback failed).")
+              return "N/A (Error - Missing CSRF)"
 
     api_description = "Match Probability API (Cloudscraper)"
 
     try:
         # --- Create scraper instance ---
-        # browser={'custom': user_agent} might not be needed if UA is in header
-        scraper = cloudscraper.create_scraper(delay=5) # Shorter delay?
+        scraper = cloudscraper.create_scraper(delay=5)
 
         # --- Set cookies from WebDriver ---
         try:
-            driver_cookies = driver.get_cookies()
+            driver_cookies = driver.get_cookies() # Get cookies again for scraper
             if not driver_cookies:
                 logger.warning(f"{api_description}: WebDriver returned no cookies to set in scraper.")
             else:
                 logger.debug(f"{api_description}: Populating scraper cookie jar with {len(driver_cookies)} cookies from WebDriver...")
                 for cookie in driver_cookies:
                     if 'name' in cookie and 'value' in cookie and 'domain' in cookie:
+                        # Use scraper's internal cookie handling
                         scraper.cookies.set(
                             cookie['name'],
                             cookie['value'],
                             domain=cookie.get('domain'),
                             path=cookie.get('path', '/')
-                            # Scraper handles secure/expiry/httpOnly implicitly based on session
                         )
         except WebDriverException as cookie_err:
             logger.error(f"{api_description}: WebDriverException getting cookies for scraper: {cookie_err}")
-            # Proceeding without fresh cookies, scraper might handle it.
         except Exception as e:
             logger.error(f"{api_description}: Unexpected error setting cookies for scraper: {e}", exc_info=True)
 
@@ -1584,40 +1588,37 @@ def _fetch_batch_relationship_prob(
             rel_url,
             headers=rel_headers,
             json={}, # Send empty JSON body
-            allow_redirects=False, # Explicitly prevent redirects
-            timeout=selenium_config.API_TIMEOUT # Use configured timeout
+            allow_redirects=False,
+            timeout=selenium_config.API_TIMEOUT
         )
         # --- End request ---
 
         logger.debug(f"<-- {api_description} Response Status: {response_rel.status_code} {response_rel.reason}")
 
         # --- Handle Response ---
-        if not response_rel.ok: # Check status code (e.g., != 200)
+        if not response_rel.ok:
              status_code = response_rel.status_code
              logger.warning(
                  f"{api_description} failed for {sample_id_upper}. Status: {status_code}, Reason: {response_rel.reason}"
              )
-             # Log response body if helpful
              try: logger.debug(f"  Response Body: {response_rel.text[:500]}")
              except Exception: pass
-             # Check for redirect specifically
              if 300 <= status_code < 400:
                   logger.warning(f"  -> Redirect detected (Loc: {response_rel.headers.get('Location')}). Check headers/cookies.")
              return "N/A (API Error/Redirect)"
 
         # --- Process successful (2xx) response ---
         try:
-            # Check for empty response before decoding
             if not response_rel.content:
                 logger.warning(f"{api_description}: OK ({response_rel.status_code}), but response body is EMPTY. Returning None.")
                 return "N/A (Empty Response)"
 
-            data = response_rel.json() # Try decoding JSON
+            data = response_rel.json()
 
+            # --- Relationship parsing logic (remains the same) ---
             if "matchProbabilityToSampleId" not in data:
                 logger.warning(f"Invalid data structure from {api_description} for {sample_id_upper}. Resp: {data}")
                 return "N/A (Invalid Data Structure)"
-
             prob_data = data["matchProbabilityToSampleId"]
             predictions = prob_data.get("relationships", {}).get("predictions", [])
             if not predictions:
@@ -1637,6 +1638,7 @@ def _fetch_batch_relationship_prob(
             final_labels = labels[:max_labels_param]
             relationship_str = " or ".join(map(str, final_labels))
             return f"{relationship_str} [{top_prob:.1f}%]"
+            # --- End relationship parsing ---
 
         except json.JSONDecodeError as json_err:
             logger.error(f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}")
@@ -1649,15 +1651,12 @@ def _fetch_batch_relationship_prob(
     # --- Handle Exceptions during scraper request ---
     except cloudscraper.exceptions.CloudflareException as cf_e:
          logger.error(f"{api_description}: Cloudflare challenge failed for {sample_id_upper}: {cf_e}")
-         # This indicates cloudscraper couldn't solve the protection
          raise cf_e # Re-raise for retry_api decorator
     except requests.exceptions.RequestException as req_e:
         logger.error(f"{api_description}: RequestException for {sample_id_upper}: {req_e}")
         raise req_e # Re-raise for retry_api decorator
     except Exception as e:
-        # Log other unexpected errors
         logger.error(f"{api_description}: Unexpected error for {sample_id_upper}: {type(e).__name__} - {e}", exc_info=True)
-        # Don't re-raise non-retryable exceptions here, let retry_api handle based on its config
         return "N/A (Fetch Error)"
 # end _fetch_batch_relationship_prob
 
