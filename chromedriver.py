@@ -56,7 +56,7 @@ from logging_config import setup_logging, logger
 logger = logging.getLogger("logger")
 
 # Define constants dependent on the CHROME_CONFIG values
-CHROME_USER_DATA_DIR = selenium_config.CHROME_USER_DATA_DIR # Use selenium_config
+CHROME_USER_DATA_DIR = selenium_config.CHROME_USER_DATA_DIR  # Use selenium_config
 DEFAULT_PROFILE_PATH = os.path.join(CHROME_USER_DATA_DIR, "Default")
 PREFERENCES_FILE = os.path.join(DEFAULT_PROFILE_PATH, "Preferences")
 
@@ -111,6 +111,8 @@ def reset_preferences_file():
     except Exception as e:
         logger.error(f"Unexpected error in reset_preferences_file: {e}", exc_info=True)
         raise
+
+
 # End of reset_preferences_file
 
 
@@ -134,6 +136,8 @@ def set_win_size(driver):
         )
     except Exception as e:
         logger.error(f"Failed to set window size and position: {e}", exc_info=True)
+
+
 # End of set_win_size
 
 
@@ -152,6 +156,8 @@ def close_tabs(driver):
         logger.warning("Attempted to close or switch to a tab that no longer exists.")
     except Exception as e:
         logger.error(f"Error in close_tabs: {e}", exc_info=True)
+
+
 # end close_tabs
 
 
@@ -163,11 +169,11 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
     - Removed incompatible experimental options.
     - Removed redundant error check for 'useAutomationExtension'.
     """
-    config = selenium_config # Use selenium_config instance
+    config = selenium_config  # Use selenium_config instance
 
     # --- 1. Pre-Initialization Cleanup ---
-    cleanup_webdrv() # Kill existing processes
-    reset_preferences_file() # Reset Chrome preferences
+    cleanup_webdrv()  # Kill existing processes
+    reset_preferences_file()  # Reset Chrome preferences
 
     # --- Retry Loop ---
     max_init_retries = config.CHROME_MAX_RETRIES
@@ -221,7 +227,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-infobars")
-        options.add_argument("--disable-dev-shm-usage") # Duplicate, keep one
+        options.add_argument("--disable-dev-shm-usage")  # Duplicate, keep one
         if not config.HEADLESS_MODE:
             options.add_argument("--start-maximized")
 
@@ -235,7 +241,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
         # --- Attempt Driver Initialization ---
         try:
-            chrome_kwargs = {"options": options} # Pass the fresh options object
+            chrome_kwargs = {"options": options}  # Pass the fresh options object
 
             # Handle ChromeDriver Path
             driver_path_obj = config.CHROME_DRIVER_PATH
@@ -276,7 +282,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                         f"Multiple tabs ({len(driver.window_handles)}) detected after init. Closing extras."
                     )
                     close_tabs(driver)
-                return driver # SUCCESS!
+                return driver  # SUCCESS!
 
             except WebDriverException as post_init_err:
                 logger.error(
@@ -343,6 +349,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
     logger.error("Exited WebDriver initialization loop unexpectedly.")
     return None
+
+
 # End of init_webdvr
 
 
@@ -373,12 +381,15 @@ def cleanup_webdrv():
 
     except Exception as e:
         logger.error(f"Error during cleanup: {e}", exc_info=True)
+
+
 # end of cleanup_webdr
 
 
 # ------------------------------------------------------------------------------------
 # main
 # ------------------------------------------------------------------------------------
+
 
 def main():
     """Main function for standalone use (debugging)."""
@@ -392,6 +403,8 @@ def main():
             driver.quit()
     except Exception as e:
         print(f"An error occurred: {e}")
+
+
 # end main
 
 if __name__ == "__main__":

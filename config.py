@@ -8,10 +8,7 @@ import os
 import logging
 from typing import Optional, Dict, Any, Tuple, List  # Added List
 from dotenv import load_dotenv  # Keep import here
-from selenium.webdriver.support.ui import WebDriverWait
-
-# Assuming logger is configured in logging_config.py, get it AFTER setup usually
-# from logging_config import logger
+from selenium.webdriver.support.wait import WebDriverWait
 import json
 from pathlib import Path
 from urllib.parse import urljoin, urlparse

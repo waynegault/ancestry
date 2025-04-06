@@ -24,7 +24,7 @@ from sqlalchemy import (
     event,
     Boolean,
     UniqueConstraint,
-    Enum as SQLEnum, 
+    Enum as SQLEnum,
     Index,
     func,
     Float,
@@ -55,18 +55,23 @@ Base = declarative_base()
 class RoleType(enum.Enum):
     AUTHOR = "AUTHOR"
     RECIPIENT = "RECIPIENT"
+
+
 # end of class RoleType
+
 
 class InboxStatus(Base):
     __tablename__ = "inbox_status"
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String, nullable=True)
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
-    my_role = Column(SQLEnum(RoleType), nullable=False, name="my_role") # Use SQLEnum here
+    my_role = Column(
+        SQLEnum(RoleType), nullable=False, name="my_role"
+    )  # Use SQLEnum here
     last_message = Column(String, nullable=True)
     last_message_timestamp = Column(
         DateTime, nullable=True, index=True
-    ) # Add index=True
+    )  # Add index=True
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     last_updated = Column(
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
@@ -77,6 +82,8 @@ class InboxStatus(Base):
             "ix_inbox_status_people_id_timestamp", "people_id", "last_message_timestamp"
         ),
     )
+
+
 # End of class InboxStatus
 
 
@@ -89,6 +96,8 @@ class MessageType(Base):  # Add MessageType
         back_populates="message_type",
         cascade="all, delete, delete-orphan",
     )
+
+
 # End of class MessageType
 
 
@@ -102,6 +111,8 @@ class MessageHistory(Base):
     sent_at = Column(DateTime, default=datetime.now, nullable=False)
     person = relationship("Person", back_populates="message_history")
     message_type = relationship("MessageType", back_populates="messages")
+
+
 # End of class messagehistory
 
 
@@ -124,6 +135,8 @@ class DnaMatch(Base):
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="dna_match")
+
+
 # End of class DnaMatch
 
 
@@ -144,6 +157,8 @@ class FamilyTree(Base):  # Point 8 Refinement
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="family_tree")
+
+
 # End of class family tree
 
 
@@ -199,6 +214,8 @@ class Person(Base):
     #     UniqueConstraint('profile_id', name='uq_people_profile_id'),
     #     UniqueConstraint('uuid', name='uq_people_uuid') # Ensure UUID constraint name if needed
     # )
+
+
 # End of class Person
 
 
@@ -259,7 +276,7 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         )
         return 0
 
-    profile_id_raw = person_data.get("profile_id") # Can be None
+    profile_id_raw = person_data.get("profile_id")  # Can be None
     # --- Convert to uppercase EARLY for check and insert ---
     profile_id_upper = profile_id_raw.upper() if profile_id_raw else None
     uuid_upper = str(person_data["uuid"]).upper() if person_data.get("uuid") else None
@@ -270,7 +287,7 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
 
     try:
         # --- Explicit Check for Profile ID Conflict BEFORE insert ---
-        if profile_id_upper: # Check using the uppercased version
+        if profile_id_upper:  # Check using the uppercased version
             existing_by_profile = (
                 session.query(Person)
                 .filter(Person.profile_id == profile_id_upper)
@@ -280,16 +297,20 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
                 logger.error(
                     f"create_person FAILED for {log_ref}: Profile ID '{profile_id_upper}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id."
                 )
-                return 0 # Fail creation due to profile_id uniqueness requirement
+                return 0  # Fail creation due to profile_id uniqueness requirement
         # --- End Profile ID Check ---
 
         # Proceed with creation if profile_id is NULL or not conflicting
         logger.debug(f"Proceeding with Person creation for {log_ref}.")
         new_person = Person(
-            uuid=uuid_upper, # Store uppercase UUID
-            profile_id=profile_id_upper, # Store uppercase Profile ID or None
+            uuid=uuid_upper,  # Store uppercase UUID
+            profile_id=profile_id_upper,  # Store uppercase Profile ID or None
             username=username,
-            administrator_profile_id=(person_data.get("administrator_profile_id").upper() if person_data.get("administrator_profile_id") else None), # Uppercase Admin ID
+            administrator_profile_id=(
+                person_data.get("administrator_profile_id").upper()
+                if person_data.get("administrator_profile_id")
+                else None
+            ),  # Uppercase Admin ID
             administrator_username=person_data.get("administrator_username"),
             message_link=person_data.get("message_link"),
             in_my_tree=bool(person_data.get("in_my_tree", False)),
@@ -302,7 +323,7 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         )
 
         session.add(new_person)
-        session.flush() # Flush to get the ID and check constraints (like UUID UNIQUE)
+        session.flush()  # Flush to get the ID and check constraints (like UUID UNIQUE)
 
         if new_person.id is None:
             logger.error(
@@ -333,6 +354,8 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         if session.is_active:
             session.rollback()
         return 0
+
+
 # End of create_person
 
 
@@ -471,6 +494,8 @@ def create_dna_match(
             f"Unexpected error in create_dna_match for {log_ref}: {e}", exc_info=True
         )
         return "error"
+
+
 # End of create_dna_match
 
 
@@ -569,6 +594,8 @@ def create_family_tree(
             f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True
         )
         return "error"
+
+
 # End create_family_tree
 
 # ----------------------------------------------------------------------
@@ -588,7 +615,9 @@ def get_person_by_profile_id_and_username(
     try:
         return (
             session.query(Person)
-            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase comparison
+            .filter_by(
+                profile_id=profile_id.upper(), username=username
+            )  # Ensure uppercase comparison
             .first()
         )
     except Exception as e:
@@ -596,6 +625,8 @@ def get_person_by_profile_id_and_username(
             f"Error retrieving person by profile_id/username: {e}", exc_info=True
         )
         return None
+
+
 # end get_person_by_profile_id_and_username
 
 
@@ -615,13 +646,17 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
         return None
 
     try:
-        person = session.query(Person).filter_by(profile_id=profile_id.upper()).first() # Ensure uppercase comparison
+        person = (
+            session.query(Person).filter_by(profile_id=profile_id.upper()).first()
+        )  # Ensure uppercase comparison
         return person
     except Exception as e:
         logger.error(
             f"Error retrieving person by profile_id '{profile_id}': {e}", exc_info=True
         )
         return None
+
+
 # end of get_person_by_profile_id
 
 
@@ -652,10 +687,10 @@ def get_person_and_dna_match(
         # Eager load dna_match to avoid separate query
         person = (
             session.query(Person)
-            .options(
-                joinedload(Person.dna_match) # Use joinedload directly
-            )
-            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase comparison
+            .options(joinedload(Person.dna_match))  # Use joinedload directly
+            .filter_by(
+                profile_id=profile_id.upper(), username=username
+            )  # Ensure uppercase comparison
             .first()
         )
         if person:
@@ -670,6 +705,8 @@ def get_person_and_dna_match(
             exc_info=True,
         )
         return None, None  # Return None tuple on error
+
+
 # end of get_person_and_dna_match
 
 
@@ -785,6 +822,8 @@ def find_existing_person(
 
     # Return the found person (which might be None if not found/identified)
     return person
+
+
 # end of find_existing_person
 
 
@@ -800,7 +839,8 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
             session.query(Person)
             # --- MODIFICATION: Eager load family_tree as well ---
             .options(
-                joinedload(Person.dna_match), joinedload(Person.family_tree) # Use joinedload
+                joinedload(Person.dna_match),
+                joinedload(Person.family_tree),  # Use joinedload
             )
             # --- END MODIFICATION ---
             .filter(Person.uuid == uuid_upper).first()
@@ -809,6 +849,8 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
     except Exception as e:
         logger.error(f"Error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
+
+
 # end of get_person_by_uuid
 
 # ----------------------------------------------------------------------
@@ -962,11 +1004,15 @@ def create_or_update_person(
             new_admin_id_upper = new_admin_id.upper() if new_admin_id else None
 
             if current_admin_id != new_admin_id_upper:
-                logger.debug(f"  Updating admin ID for {log_ref}: '{current_admin_id}' -> '{new_admin_id_upper}'")
+                logger.debug(
+                    f"  Updating admin ID for {log_ref}: '{current_admin_id}' -> '{new_admin_id_upper}'"
+                )
                 existing_person.administrator_profile_id = new_admin_id_upper
                 updated = True
             if current_admin_user != new_admin_user:
-                logger.debug(f"  Updating admin username for {log_ref}: '{current_admin_user}' -> '{new_admin_user}'")
+                logger.debug(
+                    f"  Updating admin username for {log_ref}: '{current_admin_user}' -> '{new_admin_user}'"
+                )
                 existing_person.administrator_username = new_admin_user
                 updated = True
 
@@ -974,7 +1020,9 @@ def create_or_update_person(
             new_message_link = person_data.get("message_link")
             current_message_link = existing_person.message_link
             if current_message_link != new_message_link:
-                logger.debug(f"  Updating message link for {log_ref}: '{current_message_link}' -> '{new_message_link}'")
+                logger.debug(
+                    f"  Updating message link for {log_ref}: '{current_message_link}' -> '{new_message_link}'"
+                )
                 existing_person.message_link = new_message_link
                 updated = True
 
@@ -1060,6 +1108,8 @@ def create_or_update_person(
             f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
         )
         return None, "error"
+
+
 # End create_or_update_person
 
 
@@ -1078,12 +1128,14 @@ def update_person(
         True if the update was successful, False otherwise.
     """
     if not profile_id or not username:
-         logger.warning("update_person: profile_id and username required.")
-         return False
+        logger.warning("update_person: profile_id and username required.")
+        return False
     try:
         person = (
             session.query(Person)
-            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase lookup
+            .filter_by(
+                profile_id=profile_id.upper(), username=username
+            )  # Ensure uppercase lookup
             .first()
         )
         if not person:
@@ -1096,7 +1148,7 @@ def update_person(
         updated = False  # Track if any changes are made
         allowed_fields = [
             "uuid",
-            "profile_id", # Allow updating profile_id if needed (e.g., placeholder)
+            "profile_id",  # Allow updating profile_id if needed (e.g., placeholder)
             "username",
             "administrator_profile_id",
             "administrator_username",
@@ -1114,12 +1166,14 @@ def update_person(
                 current_value = getattr(person, key)
                 # Handle potential case differences for IDs
                 value_to_compare = value
-                if key in ('profile_id', 'administrator_profile_id', 'uuid') and value:
-                     value_to_compare = value.upper()
+                if key in ("profile_id", "administrator_profile_id", "uuid") and value:
+                    value_to_compare = value.upper()
 
                 if current_value != value_to_compare:  # Only update if value changed
-                    setattr(person, key, value_to_compare) # Store corrected case if ID
-                    logger.debug(f"Updating {key} for Person ID {person.id} to {value_to_compare}")
+                    setattr(person, key, value_to_compare)  # Store corrected case if ID
+                    logger.debug(
+                        f"Updating {key} for Person ID {person.id} to {value_to_compare}"
+                    )
                     updated = True
             elif key not in allowed_fields:
                 logger.warning(
@@ -1143,7 +1197,7 @@ def update_person(
         session.rollback()
         logger.error(
             f"IntegrityError updating person {profile_id}/{username}: {ie}.",
-            exc_info=False, # Less verbose for integrity
+            exc_info=False,  # Less verbose for integrity
         )
         return False
     except SQLAlchemyError as e:
@@ -1161,6 +1215,8 @@ def update_person(
         if session.is_active:
             session.rollback()
         return False
+
+
 # End of update_person
 
 # ----------------------------------------------------------------------
@@ -1181,12 +1237,14 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         True if the deletion was successful, False otherwise.
     """
     if not profile_id or not username:
-         logger.warning("delete_person: profile_id and username required.")
-         return False
+        logger.warning("delete_person: profile_id and username required.")
+        return False
     try:
         person = (
             session.query(Person)
-            .filter_by(profile_id=profile_id.upper(), username=username) # Ensure uppercase lookup
+            .filter_by(
+                profile_id=profile_id.upper(), username=username
+            )  # Ensure uppercase lookup
             .first()
         )
         if not person:
@@ -1218,6 +1276,8 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         if session.is_active:
             session.rollback()
         return False
+
+
 # End of delete_person
 
 
@@ -1329,6 +1389,8 @@ def delete_database(
 
     # Should not be reached if max_attempts > 0
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")
+
+
 # End of delete_database
 
 # ----------------------------------------------------------------------
@@ -1367,6 +1429,8 @@ def backup_database(
         )
         # Re-raise the exception if backup failure should halt execution
         # raise
+
+
 # End of backup_database
 
 # ----------------------------------------------------------------------
@@ -1377,27 +1441,29 @@ def backup_database(
 if __name__ == "__main__":
     # Import sys here for the forced logging stream
     import sys
-    import json # Needed for seeding
+    import json  # Needed for seeding
 
     # --- Force basic logging config for standalone execution ---
     logging.basicConfig(
-        level=logging.DEBUG, # Set to DEBUG for detailed output during test
-        format='%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s', # Simplified format
-        datefmt='%H:%M:%S',
-        stream=sys.stderr # Force output to stderr for visibility
+        level=logging.DEBUG,  # Set to DEBUG for detailed output during test
+        format="%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s",  # Simplified format
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,  # Force output to stderr for visibility
     )
     # Get the logger again *after* basicConfig is set
-    standalone_logger = logging.getLogger("db_standalone") # Use a specific name
+    standalone_logger = logging.getLogger("db_standalone")  # Use a specific name
     standalone_logger.info("--- Starting database.py standalone test ---")
 
     # --- Get DB Path ---
     try:
         db_path_obj = config_instance.DATABASE_FILE
-        db_path_str = str(db_path_obj.resolve()) # Resolve for absolute path
+        db_path_str = str(db_path_obj.resolve())  # Resolve for absolute path
         standalone_logger.info(f"Using database file: {db_path_str}")
     except Exception as config_err:
-        standalone_logger.critical(f"CRITICAL: Error getting database path from config: {config_err}. Cannot proceed.")
-        sys.exit(1) # Exit if config is broken
+        standalone_logger.critical(
+            f"CRITICAL: Error getting database path from config: {config_err}. Cannot proceed."
+        )
+        sys.exit(1)  # Exit if config is broken
 
     engine = None
     conn_pool = None
@@ -1411,9 +1477,13 @@ if __name__ == "__main__":
         @event.listens_for(engine, "connect")
         def enable_foreign_keys(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
-            try: cursor.execute("PRAGMA foreign_keys=ON")
-            except Exception as pragma_e: standalone_logger.error(f"Failed PRAGMA: {pragma_e}")
-            finally: cursor.close()
+            try:
+                cursor.execute("PRAGMA foreign_keys=ON")
+            except Exception as pragma_e:
+                standalone_logger.error(f"Failed PRAGMA: {pragma_e}")
+            finally:
+                cursor.close()
+
         standalone_logger.debug("Foreign key listener attached.")
 
         # --- Create Tables ---
@@ -1424,43 +1494,67 @@ if __name__ == "__main__":
         # --- Seed Message Types (Essential for FK constraints) ---
         standalone_logger.info("Seeding MessageType table...")
         SessionSeed = sessionmaker(bind=engine)
-        seed_session = None # Initialize
+        seed_session = None  # Initialize
         try:
             seed_session = SessionSeed()
             script_dir = Path(__file__).resolve().parent
             messages_file = script_dir / "messages.json"
             if messages_file.exists():
-                with messages_file.open("r", encoding="utf-8") as f: messages_data = json.load(f)
+                with messages_file.open("r", encoding="utf-8") as f:
+                    messages_data = json.load(f)
                 if isinstance(messages_data, dict):
-                    with db_transn(seed_session) as sess: # Use context manager
+                    with db_transn(seed_session) as sess:  # Use context manager
                         types_to_add = []
                         for name in messages_data:
-                            exists = sess.query(MessageType).filter_by(type_name=name).first()
-                            if not exists: types_to_add.append(MessageType(type_name=name))
+                            exists = (
+                                sess.query(MessageType)
+                                .filter_by(type_name=name)
+                                .first()
+                            )
+                            if not exists:
+                                types_to_add.append(MessageType(type_name=name))
                         if types_to_add:
-                            standalone_logger.debug(f"Adding {len(types_to_add)} message types...")
+                            standalone_logger.debug(
+                                f"Adding {len(types_to_add)} message types..."
+                            )
                             sess.add_all(types_to_add)
-                        else: standalone_logger.debug("Message types already exist.")
+                        else:
+                            standalone_logger.debug("Message types already exist.")
                     count = seed_session.query(func.count(MessageType.id)).scalar() or 0
-                    standalone_logger.info(f"MessageType seeding OK. Total types: {count}")
-                else: standalone_logger.error("'messages.json' has incorrect format.")
-            else: standalone_logger.warning(f"'messages.json' not found at '{messages_file}', skipping seeding.")
+                    standalone_logger.info(
+                        f"MessageType seeding OK. Total types: {count}"
+                    )
+                else:
+                    standalone_logger.error("'messages.json' has incorrect format.")
+            else:
+                standalone_logger.warning(
+                    f"'messages.json' not found at '{messages_file}', skipping seeding."
+                )
         except Exception as seed_err:
-            standalone_logger.error(f"Error seeding MessageType table: {seed_err}", exc_info=True)
+            standalone_logger.error(
+                f"Error seeding MessageType table: {seed_err}", exc_info=True
+            )
         finally:
-            if seed_session: seed_session.close()
+            if seed_session:
+                seed_session.close()
 
     except SQLAlchemyError as db_e:
-        standalone_logger.critical(f"Database setup/connection error: {db_e}", exc_info=True)
+        standalone_logger.critical(
+            f"Database setup/connection error: {db_e}", exc_info=True
+        )
     except Exception as e:
-        standalone_logger.critical(f"Unexpected error during standalone test: {e}", exc_info=True)
+        standalone_logger.critical(
+            f"Unexpected error during standalone test: {e}", exc_info=True
+        )
     finally:
         # --- Final Cleanup ---
         standalone_logger.debug("Performing final cleanup...")
         if conn_pool:
-            conn_pool.clse_all_sess() # Closes pool and disposes engine
+            conn_pool.clse_all_sess()  # Closes pool and disposes engine
         elif engine:
             engine.dispose()
-            standalone_logger.debug("SQLAlchemy engine disposed (pool cleanup skipped/failed).")
+            standalone_logger.debug(
+                "SQLAlchemy engine disposed (pool cleanup skipped/failed)."
+            )
 
         standalone_logger.info("--- Database.py standalone test finished ---")
