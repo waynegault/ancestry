@@ -12,16 +12,17 @@ import time
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
-from urllib.parse import parse_qs, urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, unquote
 
 # Third-party imports (alphabetical by package)
 import requests
+import cloudscraper
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 from requests.adapters import HTTPAdapter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup, Tag
-from requests.exceptions import RequestException
+from requests.exceptions import RequestException, HTTPError
 from selenium.common.exceptions import (
     NoSuchElementException,
     StaleElementReferenceException,
@@ -30,6 +31,7 @@ from selenium.common.exceptions import (
     NoSuchCookieException,
 )
 from selenium.webdriver.common.by import By
+from requests.cookies import RequestsCookieJar
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -821,11 +823,11 @@ def get_matches(
     session_manager: SessionManager, db_session: SqlAlchemySession, current_page: int = 1
 ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
     """
-    V13.10 REVISED: Fetches and processes match list data for a SINGLE page.
-    - Reads CSRF token from cookie *after* navigation.
-    - Passes specific CSRF token in header to _api_req.
-    - Adds Content-Type, dnt, Sec-CH-UA, and priority headers based on cURL.
-    - **Corrected IndentationError in fallback cookie reading.**
+    V14.16 REVISED: Fetches and processes match list data for a SINGLE page.
+    - Uses specific headers similar to test2.py.
+    - Sets allow_redirects=False for the Match List API call.
+    - Retrieves CSRF token robustly.
+    - Uses specific User-Agent and Sec-CH-UA headers.
     """
     total_pages: Optional[int] = None
 
@@ -844,38 +846,55 @@ def get_matches(
 
     my_uuid = session_manager.my_uuid
     csrf_token_cookie_name = "_dnamatches-matchlistui-x-csrf-token"
+    fallback_csrf_cookie_name = "_csrf" # Added fallback
 
     try:
         # --- Get CSRF Token from Cookie ---
-        logger.debug(f"Attempting to read CSRF cookie '{csrf_token_cookie_name}' from browser...")
+        logger.debug(f"Attempting to read CSRF cookie '{csrf_token_cookie_name}' or fallback '{fallback_csrf_cookie_name}' from browser...")
         specific_csrf_token = None
-        try:
-            cookie_obj = driver.get_cookie(csrf_token_cookie_name)
-            if cookie_obj and isinstance(cookie_obj, dict) and 'value' in cookie_obj:
-                specific_csrf_token = cookie_obj['value']
-                logger.info(f"Successfully read CSRF token from cookie: {specific_csrf_token[:10]}...")
-            else:
-                logger.warning(f"Could not find or parse '{csrf_token_cookie_name}' cookie object via get_cookie.")
-                all_cookies = get_driver_cookies(driver)
-                # *** CORRECTED INDENTATION START ***
-                if csrf_token_cookie_name in all_cookies:
-                    specific_csrf_token = all_cookies[csrf_token_cookie_name]
-                    logger.info(f"Successfully read CSRF token via fallback get_driver_cookies: {specific_csrf_token[:10]}...")
-                else:
-                    logger.warning(f"'{csrf_token_cookie_name}' not found in fallback either.")
-                # *** CORRECTED INDENTATION END ***
-        except NoSuchCookieException:
-            logger.error(f"CSRF cookie '{csrf_token_cookie_name}' not found in browser!")
-            return [], None
-        except WebDriverException as cookie_e:
-            logger.error(f"WebDriver error getting CSRF cookie: {cookie_e}")
-            return [], None
-        except Exception as e:
-            logger.error(f"Unexpected error getting CSRF cookie: {e}", exc_info=True)
-            return [], None
+        found_token_name = None
+        for cookie_name in [csrf_token_cookie_name, fallback_csrf_cookie_name]:
+            try:
+                cookie_obj = driver.get_cookie(cookie_name)
+                if cookie_obj and isinstance(cookie_obj, dict) and 'value' in cookie_obj:
+                    # Decode and split value if needed (similar to test2.py)
+                    raw_value = cookie_obj['value']
+                    if raw_value:
+                         specific_csrf_token = unquote(raw_value).split('|')[0]
+                         found_token_name = cookie_name
+                         logger.info(f"Successfully read CSRF token from cookie '{found_token_name}': {specific_csrf_token[:10]}...")
+                         break # Found a token, stop checking
+                    else:
+                         logger.debug(f"Cookie '{cookie_name}' found but value is empty.")
+                # else: logger.debug(f"Cookie '{cookie_name}' not found or invalid format via get_cookie.")
+
+            except NoSuchCookieException:
+                 logger.debug(f"CSRF cookie '{cookie_name}' not found via get_cookie.")
+                 continue # Try next cookie name
+            except WebDriverException as cookie_e:
+                 logger.warning(f"WebDriver error getting cookie '{cookie_name}': {cookie_e}")
+                 continue # Try next cookie name
+            except Exception as e:
+                 logger.error(f"Unexpected error getting cookie '{cookie_name}': {e}", exc_info=True)
+                 continue # Try next cookie name
+
+        # Fallback using get_driver_cookies if specific attempts failed
+        if not specific_csrf_token:
+            logger.debug(f"CSRF token not found via get_cookie. Trying fallback with get_driver_cookies...")
+            all_cookies = get_driver_cookies(driver)
+            for cookie_name in [csrf_token_cookie_name, fallback_csrf_cookie_name]:
+                 if cookie_name in all_cookies:
+                      raw_value = all_cookies[cookie_name]
+                      if raw_value:
+                           specific_csrf_token = unquote(raw_value).split('|')[0]
+                           found_token_name = cookie_name
+                           logger.info(f"Successfully read CSRF token via fallback get_driver_cookies ('{found_token_name}'): {specific_csrf_token[:10]}...")
+                           break
+                      else:
+                           logger.debug(f"Cookie '{cookie_name}' found via fallback but value is empty.")
 
         if not specific_csrf_token:
-             logger.error(f"Failed to obtain the specific CSRF token from cookie '{csrf_token_cookie_name}'. Cannot call Match List API.")
+             logger.error(f"Failed to obtain a valid CSRF token from cookies. Cannot call Match List API.")
              return [], None
         # --- End CSRF Token Reading ---
 
@@ -886,25 +905,40 @@ def get_matches(
         )
         logger.debug(f"Fetching match list for page {current_page} using requests...")
 
-        # --- Define headers ---
-        curl_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-        curl_sec_ch_ua = '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"'
+        # --- Define headers based on test2.py ---
+        # Use a consistent Chrome version (e.g., 125) or make dynamic if needed
+        chrome_version = "125" # Or retrieve dynamically if preferred
+        user_agent = (
+            f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{chrome_version}.0.0.0 Safari/537.36"
+        )
+        sec_ch_ua = (
+            f'"Google Chrome";v="{chrome_version}", '
+            '"Not-A.Brand";v="8", "Chromium";v="{chrome_version}"'
+        )
 
         match_list_headers = {
+            "User-Agent": user_agent,
             "accept": "application/json",
-            "accept-language": "en-GB,en;q=0.9",
-            "X-CSRF-Token": specific_csrf_token,
-            "Content-Type": "application/json",
-            "dnt": "1",
-            "sec-ch-ua": curl_sec_ch_ua,
+            "Referer": urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"), # Referer from match list page
+            "x-csrf-token": specific_csrf_token, # Use the retrieved token
+            "sec-ch-ua": sec_ch_ua,
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
-            "User-Agent": curl_user_agent,
-            "priority": "u=1, i",
+            "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8", # Common language header
+            # Add other potentially important headers observed in successful requests
+            "Origin": config_instance.BASE_URL.rstrip('/'),
             "sec-fetch-dest": "empty",
             "sec-fetch-mode": "cors",
             "sec-fetch-site": "same-origin",
+            # "priority": "u=1, i", # This might be less critical
+            "dnt": "1", # Do Not Track often included
+            # Content-Type might not be needed for GET, but doesn't hurt
+            "Content-Type": "application/json",
         }
+        # UBE header is usually added by _api_req if driver is available
+
+        logger.debug(f"Headers prepared for Match List API call: {match_list_headers}")
 
         api_response = _api_req(
             url=match_list_url,
@@ -912,13 +946,14 @@ def get_matches(
             session_manager=session_manager,
             method="GET",
             headers=match_list_headers,
-            use_csrf_token=True,
+            use_csrf_token=False, # Token is manually included in headers
             api_description="Match List API",
-            referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
+            allow_redirects=False, # *** CRITICAL CHANGE: Do not allow redirects ***
         )
 
-        # --- Handle API Response (remains the same) ---
+        # --- Handle API Response ---
         if api_response is None:
+            # _api_req logs errors internally, including status codes if response object exists
             logger.warning(f"No response or error from match list API for page {current_page}.")
             return [], None
 
@@ -926,11 +961,18 @@ def get_matches(
             logger.error(
                 f"Match List API call did not return a dictionary (received {type(api_response)}). Aborting page {current_page}."
             )
-            if isinstance(api_response, str): logger.debug(f"Received text content: {api_response[:1000]}")
-            else: logger.debug(f"Received non-dict/non-str data: {api_response}")
+            # Log content if it's not a dict
+            if isinstance(api_response, (str, bytes)):
+                try:
+                    content_preview = api_response.decode() if isinstance(api_response, bytes) else api_response
+                    logger.debug(f"Received non-dict content (first 500 chars): {content_preview[:500]}")
+                except Exception as decode_err:
+                     logger.debug(f"Received non-dict content (could not decode): {type(api_response)}")
+            else:
+                 logger.debug(f"Received non-dict/non-str data: {api_response}")
             return [], None
 
-        # --- Process the Dictionary Response (remains the same) ---
+        # --- Process the Dictionary Response (should be 200 OK now) ---
         total_pages_raw = api_response.get("totalPages"); total_pages = None
         if total_pages_raw is not None:
             try: total_pages = int(total_pages_raw)
@@ -940,6 +982,7 @@ def get_matches(
         match_data_list = api_response.get("matchList", [])
         if not match_data_list:
             logger.info(f"No matches found in 'matchList' for page {current_page}.")
+            # Still return total_pages if available
             return [], total_pages
 
         logger.debug(f"Got {len(match_data_list)} raw matches from API on page {current_page}.")
@@ -954,7 +997,7 @@ def get_matches(
 
         sample_ids_on_page = [match["sampleId"].upper() for match in valid_matches_for_processing]
 
-        # --- In-Tree Status Check (remains the same, ensure CSRF uses specific token) ---
+        # --- In-Tree Status Check (remains the same, uses POST, default allow_redirects=True) ---
         in_tree_ids: Set[str] = set()
         cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
         cached_in_tree = session_manager.cache.get(cache_key_tree)
@@ -964,18 +1007,30 @@ def get_matches(
         else:
             in_tree_url = urljoin(config_instance.BASE_URL, f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}")
             logger.debug(f"Fetching in-tree status for page {current_page}...")
-            in_tree_headers = {"X-CSRF-Token": specific_csrf_token, "Content-Type": "application/json"}
+            # Re-use the retrieved CSRF token for this POST request
+            in_tree_headers = {
+                 "X-CSRF-Token": specific_csrf_token, # Use same token
+                 "Content-Type": "application/json",
+                 # Add other potentially relevant headers if needed, like User-Agent
+                 "User-Agent": user_agent,
+                 "Referer": urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
+                 "Origin": config_instance.BASE_URL.rstrip('/'),
+                 "Accept": "application/json", # Explicitly accept JSON
+            }
+            # UBE will be added by _api_req
             response_in_tree = _api_req(
                 url=in_tree_url, driver=driver, session_manager=session_manager,
                 method="POST", json_data={"sampleIds": sample_ids_on_page},
                 headers=in_tree_headers,
-                use_csrf_token=True,
-                api_description="In-Tree Status Check", referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"))
+                use_csrf_token=False, # Manually included token
+                api_description="In-Tree Status Check",
+                # allow_redirects=True (default) is fine here for POST
+            )
             if isinstance(response_in_tree, list):
                 in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
                 session_manager.cache.set(cache_key_tree, in_tree_ids, timeout=config_instance.CACHE_TIMEOUT)
                 logger.debug(f"Fetched/cached {len(in_tree_ids)} in-tree IDs for page {current_page}.")
-            else: logger.warning(f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.")
+            else: logger.warning(f"In-Tree Status Check API failed or returned unexpected format for page {current_page}. Response: {response_in_tree}")
 
         # --- Compile Final Refined Match Data (remains the same) ---
         refined_matches: List[Dict[str, Any]] = []
@@ -992,6 +1047,7 @@ def get_matches(
              refined_match_data = { "username": match_username, "first_name": first_name, "initials": profile.get("displayInitials", "??").upper(), "gender": match.get("gender"), "profile_id": profile_user_id_upper, "uuid": sample_id_upper, "administrator_profile_id_hint": admin_profile_id_hint, "administrator_username_hint": admin_username_hint, "photoUrl": profile.get("photoUrl", ""), "cM_DNA": int(relationship.get("sharedCentimorgans", 0)), "numSharedSegments": int(relationship.get("numSharedSegments", 0)), "compare_link": compare_link, "message_link": None, "in_my_tree": sample_id_upper in in_tree_ids, "createdDate": match.get("createdDate"), }
              refined_matches.append(refined_match_data)
 
+        if skipped_profile_id_count > 0: logger.warning(f"Skipped {skipped_profile_id_count} matches on page {current_page} due to missing tester 'profile_id'.")
         logger.debug(f"Processed page {current_page}: Raw={len(match_data_list)}, Refined={len(refined_matches)}")
         return refined_matches, total_pages
 
@@ -1227,11 +1283,14 @@ def _fetch_batch_badge_details(
         return None
 # end _fetch_batch_badge_details
 
-@retry_api() 
+@retry_api()
 def _fetch_batch_ladder(
     session_manager: SessionManager, cfpid: str, tree_id: str
 ) -> Optional[Dict[str, Any]]:
-    """Fetches and parses /getladder for a single CFPID."""
+    """
+    V14.2 REVISED: Fetches and parses /getladder for a single CFPID.
+    - Forces text response parsing in _api_req.
+    """
     if not cfpid or not tree_id:
         logger.warning("Missing cfpid or tree_id for ladder fetch.")
         return None
@@ -1247,25 +1306,34 @@ def _fetch_batch_ladder(
     ladder_data = {}
 
     try:
-        # This API returns JSONP (text), force text parsing in _api_req
+        # --- Request text response explicitly ---
         response_text = _api_req(
             url=ladder_api_url,
-            driver=session_manager.driver,  # For UBE
+            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
-            headers={"Accept": "*/*"},
+            headers={"Accept": "*/*"}, # Keep broad accept header
             use_csrf_token=False,
-            api_description="Get Ladder API (Batch)",  # Key to ensure text parsing if needed
+            api_description="Get Ladder API (Batch)",
             referer_url=dynamic_referer,
+            force_text_response=True, # <<< FORCE TEXT RESPONSE >>>
         )
+        # --- End request text response explicitly ---
 
         if response_text and isinstance(response_text, str):
+            # --- JSONP Parsing Logic (remains the same) ---
             match_jsonp = re.match(
                 r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE
             )
             if match_jsonp:
                 json_string = match_jsonp.group(1).strip()
                 try:
+                    # --- Check for empty JSON string specifically ---
+                    if not json_string or json_string == '""' or json_string == "''":
+                        logger.warning(f"Empty JSON content within JSONP for cfpid {cfpid}.")
+                        return None # Treat empty content as failure
+                    # --- End check for empty JSON string ---
+
                     ladder_json = json.loads(json_string)
                     if isinstance(ladder_json, dict) and "html" in ladder_json:
                         html_content = ladder_json["html"]
@@ -1374,16 +1442,20 @@ def _fetch_batch_ladder(
                         logger.warning(
                             f"Missing 'html' key in getladder JSON for cfpid {cfpid}."
                         )
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to decode JSONP content for cfpid {cfpid}.")
+                # --- Catch JSONDecodeError specifically for the inner parsing ---
+                except json.JSONDecodeError as inner_json_err:
+                    logger.error(f"Failed to decode JSONP content for cfpid {cfpid}: {inner_json_err}")
+                    logger.debug(f"JSON string causing decode error: '{json_string[:200]}'") # Log the problematic string
+                    return None # Failure
             else:
                 logger.error(f"Could not parse JSONP format for cfpid {cfpid}.")
+        # --- Handle case where _api_req returned None or non-string ---
+        elif response_text is None:
+             logger.warning(f"_api_req returned None for Get Ladder API for cfpid {cfpid}.")
         else:
-            logger.warning(
-                f"No/invalid response text from Get Ladder API for cfpid {cfpid}."
-            )
+             logger.warning(f"_api_req returned unexpected type '{type(response_text).__name__}' for Get Ladder API for cfpid {cfpid}.")
 
-        return None  # Return None if parsing failed
+        return None  # Return None if parsing failed or response invalid
 
     except Exception as e:
         logger.error(
@@ -1394,22 +1466,30 @@ def _fetch_batch_ladder(
         return None
 # end _fetch_batch_ladder
 
-@retry_api()
+@retry_api(retry_on_exceptions=(requests.exceptions.RequestException, HTTPError, cloudscraper.exceptions.CloudflareException)) # Add CloudflareException
 def _fetch_batch_relationship_prob(
     session_manager: SessionManager, match_uuid: str, max_labels_param: int
 ) -> Optional[str]:
     """
-    V13.3 FIXED: Fetches and processes /matchProbabilityData for a single match UUID.
-    - Uses the passed max_labels_param parameter correctly.
-    - Returns relationship string.
+    V14.5 REVISED: Fetches /matchProbabilityData using cloudscraper.
+    - Uses cloudscraper to handle potential Cloudflare/JS challenges.
+    - Constructs headers based on cURL example.
+    - Copies cookies from WebDriver to scraper session.
     """
-    # Removed global MAX_LABELS_TO_SHOW access - use the parameter
+    driver = session_manager.driver
 
     if not session_manager.my_uuid or not match_uuid:
-        logger.warning(
-            "Missing my_uuid or match_uuid for relationship probability fetch."
-        )
+        logger.warning("Missing my_uuid or match_uuid for relationship probability fetch.")
         return "N/A (Error - Missing IDs)"
+    if not session_manager.csrf_token:
+        # Try fetching CSRF again if missing? Or rely on driver cookies below?
+        # For now, assume SessionManager has it or driver cookies will provide.
+        logger.warning("CSRF token missing in session_manager, relying on driver cookies.")
+        # If using cloudscraper, the CSRF might be handled differently or be in cookies anyway.
+
+    if not driver or not session_manager.is_sess_valid():
+         logger.error("Driver not available or session invalid for fetching relationship probability.")
+         return "N/A (Error - Driver Invalid)"
 
     my_uuid_upper = session_manager.my_uuid.upper()
     sample_id_upper = match_uuid.upper()
@@ -1417,84 +1497,167 @@ def _fetch_batch_relationship_prob(
         config_instance.BASE_URL,
         f"discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}",
     )
+    referer_url = urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/")
+
+    # --- Prepare Headers based on cURL & Script ---
+    chrome_version = "125" # Consistent version
+    user_agent = (
+        f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        f"(KHTML, like Gecko) Chrome/{chrome_version}.0.0.0 Safari/537.36"
+    )
+    sec_ch_ua = (
+        f'"Google Chrome";v="{chrome_version}", '
+        '"Not-A.Brand";v="8", "Chromium";v="{chrome_version}"'
+    )
+    rel_headers = {
+        "Accept": "application/json", # Match cURL
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache", # Add from cURL
+        "Content-Type": "application/json",
+        # "X-CSRF-Token": session_manager.csrf_token, # Let cloudscraper/cookies handle? Or get fresh below?
+        "Origin": config_instance.BASE_URL.rstrip('/'),
+        "Pragma": "no-cache", # Add from cURL
+        "Priority": "u=1, i", # Add from cURL (optional)
+        "Referer": referer_url,
+        "sec-ch-ua": sec_ch_ua,
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "User-Agent": user_agent,
+        # "dnt": "1", # Can omit if needed
+        # UBE/NewRelic/Trace headers - cloudscraper might not easily replicate these.
+        # Let's try *without* them first, as Cloudflare might be the main issue.
+    }
+
+    # --- Get CSRF Token from WebDriver cookies just before call ---
+    csrf_token_val = None
+    csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
-        response_rel = _api_req(
-            url=rel_url,
-            driver=session_manager.driver,  # For UBE
-            session_manager=session_manager,
-            method="POST",
-            json_data={},
-            use_csrf_token=True,
-            api_description="Match Probability API (Batch)",
-            referer_url=urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
+        driver_cookies_dict = {c['name']: c['value'] for c in driver.get_cookies()}
+        for name in csrf_cookie_names:
+             if name in driver_cookies_dict and driver_cookies_dict[name]:
+                  csrf_token_val = unquote(driver_cookies_dict[name]).split('|')[0]
+                  rel_headers["X-CSRF-Token"] = csrf_token_val # Add specific token to header
+                  logger.debug(f"Using fresh CSRF token '{name}' from driver cookies for rel prob.")
+                  break
+    except Exception as csrf_e:
+        logger.warning(f"Could not get fresh CSRF token from driver cookies: {csrf_e}")
+
+    if "X-CSRF-Token" not in rel_headers:
+         logger.error("Failed to add CSRF token to headers for cloudscraper request.")
+         return "N/A (Error - Missing CSRF)"
+
+    api_description = "Match Probability API (Cloudscraper)"
+
+    try:
+        # --- Create scraper instance ---
+        # browser={'custom': user_agent} might not be needed if UA is in header
+        scraper = cloudscraper.create_scraper(delay=5) # Shorter delay?
+
+        # --- Set cookies from WebDriver ---
+        try:
+            driver_cookies = driver.get_cookies()
+            if not driver_cookies:
+                logger.warning(f"{api_description}: WebDriver returned no cookies to set in scraper.")
+            else:
+                logger.debug(f"{api_description}: Populating scraper cookie jar with {len(driver_cookies)} cookies from WebDriver...")
+                for cookie in driver_cookies:
+                    if 'name' in cookie and 'value' in cookie and 'domain' in cookie:
+                        scraper.cookies.set(
+                            cookie['name'],
+                            cookie['value'],
+                            domain=cookie.get('domain'),
+                            path=cookie.get('path', '/')
+                            # Scraper handles secure/expiry/httpOnly implicitly based on session
+                        )
+        except WebDriverException as cookie_err:
+            logger.error(f"{api_description}: WebDriverException getting cookies for scraper: {cookie_err}")
+            # Proceeding without fresh cookies, scraper might handle it.
+        except Exception as e:
+            logger.error(f"{api_description}: Unexpected error setting cookies for scraper: {e}", exc_info=True)
+
+        # --- Make the POST request using cloudscraper ---
+        logger.debug(f"Making {api_description} POST request to {rel_url}")
+        response_rel = scraper.post(
+            rel_url,
+            headers=rel_headers,
+            json={}, # Send empty JSON body
+            allow_redirects=False, # Explicitly prevent redirects
+            timeout=selenium_config.API_TIMEOUT # Use configured timeout
         )
-        if (
-            not response_rel
-            or not isinstance(response_rel, dict)
-            or "matchProbabilityToSampleId" not in response_rel
-        ):
-            logger.warning(
-                f"Invalid data format from Match Probability API for {sample_id_upper}. Resp: {response_rel}"
-            )
-            return "N/A (Invalid Data)"
+        # --- End request ---
 
-        prob_data = response_rel["matchProbabilityToSampleId"]
-        predictions = prob_data.get("relationships", {}).get("predictions", [])
-        if not predictions:
-            logger.debug(
-                f"No relationship predictions found for {sample_id_upper}. Marking as Distant."
-            )
-            return "Distant relationship?"
+        logger.debug(f"<-- {api_description} Response Status: {response_rel.status_code} {response_rel.reason}")
 
-        valid_preds = [
-            p
-            for p in predictions
-            if isinstance(p, dict)
-            and "distributionProbability" in p
-            and "pathsToMatch" in p
-        ]
-        if not valid_preds:
-            logger.warning(f"No valid prediction paths found for {sample_id_upper}.")
-            return "N/A (No Valid Paths)"
+        # --- Handle Response ---
+        if not response_rel.ok: # Check status code (e.g., != 200)
+             status_code = response_rel.status_code
+             logger.warning(
+                 f"{api_description} failed for {sample_id_upper}. Status: {status_code}, Reason: {response_rel.reason}"
+             )
+             # Log response body if helpful
+             try: logger.debug(f"  Response Body: {response_rel.text[:500]}")
+             except Exception: pass
+             # Check for redirect specifically
+             if 300 <= status_code < 400:
+                  logger.warning(f"  -> Redirect detected (Loc: {response_rel.headers.get('Location')}). Check headers/cookies.")
+             return "N/A (API Error/Redirect)"
 
-        best_pred = max(
-            valid_preds, key=lambda x: x.get("distributionProbability", 0.0)
-        )
-        top_prob = best_pred.get("distributionProbability", 0.0)
-        paths = best_pred.get("pathsToMatch", [])
-        labels = [
-            p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
-        ]
-        if not labels:
-            logger.warning(
-                f"Prediction found for {sample_id_upper}, but no labels in paths."
-            )
-            return f"N/A (No Labels) [{top_prob:.1f}%]"
+        # --- Process successful (2xx) response ---
+        try:
+            # Check for empty response before decoding
+            if not response_rel.content:
+                logger.warning(f"{api_description}: OK ({response_rel.status_code}), but response body is EMPTY. Returning None.")
+                return "N/A (Empty Response)"
 
-        # --- V13.3 FIX: Use the passed parameter ---
-        final_labels = labels[:max_labels_param]
-        # --- END FIX ---
-        relationship_str = " or ".join(map(str, final_labels))
-        return f"{relationship_str} [{top_prob:.1f}%]"
+            data = response_rel.json() # Try decoding JSON
 
+            if "matchProbabilityToSampleId" not in data:
+                logger.warning(f"Invalid data structure from {api_description} for {sample_id_upper}. Resp: {data}")
+                return "N/A (Invalid Data Structure)"
+
+            prob_data = data["matchProbabilityToSampleId"]
+            predictions = prob_data.get("relationships", {}).get("predictions", [])
+            if not predictions:
+                logger.debug(f"No relationship predictions found for {sample_id_upper}. Marking as Distant.")
+                return "Distant relationship?"
+            valid_preds = [p for p in predictions if isinstance(p, dict) and "distributionProbability" in p and "pathsToMatch" in p]
+            if not valid_preds:
+                logger.warning(f"No valid prediction paths found for {sample_id_upper}.")
+                return "N/A (No Valid Paths)"
+            best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+            top_prob = best_pred.get("distributionProbability", 0.0)
+            paths = best_pred.get("pathsToMatch", [])
+            labels = [p.get("label") for p in paths if isinstance(p, dict) and p.get("label")]
+            if not labels:
+                logger.warning(f"Prediction found for {sample_id_upper}, but no labels in paths.")
+                return f"N/A (No Labels) [{top_prob:.1f}%]"
+            final_labels = labels[:max_labels_param]
+            relationship_str = " or ".join(map(str, final_labels))
+            return f"{relationship_str} [{top_prob:.1f}%]"
+
+        except json.JSONDecodeError as json_err:
+            logger.error(f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}")
+            logger.debug(f"Response text causing decode error: {response_rel.text[:500]}")
+            return "N/A (JSON Decode Error)"
+        except Exception as e:
+            logger.error(f"{api_description}: Error processing successful response for {sample_id_upper}: {e}", exc_info=True)
+            return "N/A (Processing Error)"
+
+    # --- Handle Exceptions during scraper request ---
+    except cloudscraper.exceptions.CloudflareException as cf_e:
+         logger.error(f"{api_description}: Cloudflare challenge failed for {sample_id_upper}: {cf_e}")
+         # This indicates cloudscraper couldn't solve the protection
+         raise cf_e # Re-raise for retry_api decorator
+    except requests.exceptions.RequestException as req_e:
+        logger.error(f"{api_description}: RequestException for {sample_id_upper}: {req_e}")
+        raise req_e # Re-raise for retry_api decorator
     except Exception as e:
-        # Log less verbosely for common errors, but include type
-        log_level = (
-            logging.ERROR
-            if not isinstance(e, (requests.exceptions.RequestException, HTTPError))
-            else logging.WARNING
-        )
-        logger.log(
-            log_level,
-            f"Error fetching relationship probability for {sample_id_upper}: {type(e).__name__} - {e}",
-            exc_info=False,
-        )
-        # Debug log full traceback if needed
-        # logger.debug(f"Traceback for relationship prob error:", exc_info=True)
-
-        # Re-raise only retryable exceptions for the decorator
-        if isinstance(e, (requests.exceptions.RequestException, HTTPError)):
-            raise
+        # Log other unexpected errors
+        logger.error(f"{api_description}: Unexpected error for {sample_id_upper}: {type(e).__name__} - {e}", exc_info=True)
+        # Don't re-raise non-retryable exceptions here, let retry_api handle based on its config
         return "N/A (Fetch Error)"
 # end _fetch_batch_relationship_prob
 
