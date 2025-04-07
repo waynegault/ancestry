@@ -578,7 +578,7 @@ def _do_batch(
             )
         }
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             # Submit combined details and relationship prob for all candidates
             for uuid_val in fetch_candidates_uuid:
                 delay = session_manager.dynamic_rate_limiter.wait()

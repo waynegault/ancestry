@@ -1,5 +1,3 @@
-# File: config.py
-
 #!/usr/bin/env python3
 
 # config.py
@@ -178,23 +176,19 @@ class Config_Class(BaseConfig):
 
     # --- Constants / Fixed Settings ---
     # --- Rate Limiter Defaults (Tune via .env if needed) ---
-    INITIAL_DELAY: float = 0.5  # Start slightly faster
+    INITIAL_DELAY: float = 0.5
     MAX_DELAY: float = 60.0
-    BACKOFF_FACTOR: float = 1.8  # Less aggressive backoff
-    DECREASE_FACTOR: float = 0.98  # Slower decrease when things are good
-    LOG_LEVEL: str = "INFO"  # Default log level if not set otherwise
-    RETRY_STATUS_CODES: Tuple[int, ...] = (
-        429,
-        500,
-        502,
-        503,
-        504,
-    )  # Use tuple for immutability
-    DB_POOL_SIZE = 120
+    BACKOFF_FACTOR: float = 1.8
+    DECREASE_FACTOR: float = 0.98
+    LOG_LEVEL: str = "INFO"
+    RETRY_STATUS_CODES: Tuple[int, ...] = (429, 500, 502, 503, 504)
+    # --- MODIFIED: Reduced default pool size for SQLite concurrency ---
+    DB_POOL_SIZE = 10  # Reduced from 120
+    # --- END MODIFICATION ---
     MESSAGE_TRUNCATION_LENGTH: int = 100
 
     # --- Feature Flags ---
-    CHECK_JS_ERRORS_ACTN_6: bool = False  # Keep default as False unless needed
+    CHECK_JS_ERRORS_ACTN_6: bool = False
 
     # --- User Agents ---
     USER_AGENTS: list[str] = [
@@ -206,12 +200,7 @@ class Config_Class(BaseConfig):
 
     def __init__(self):
         """Initializes Config_Class by loading values from environment."""
-        # Call _load_values first, which now also constructs API_BASE_URL
         self._load_values()
-
-        # Note: self.CACHE_DIR is now the primary Path object for the cache directory,
-        # set within _load_values(). Other modules like cache.py and utils.py
-        # should now directly use config_instance.CACHE_DIR.
 
     # end __init__
 
@@ -260,10 +249,9 @@ class Config_Class(BaseConfig):
         )
         self.API_BASE_URL_PATH: str = self._get_string_env(
             "API_BASE_URL_PATH", "/api/v2/"
-        )  # Example default
+        )
 
-        # --- MOVED API_BASE_URL Construction Here ---
-        if self.BASE_URL and self.API_BASE_URL_PATH:  # Check dependencies are loaded
+        if self.BASE_URL and self.API_BASE_URL_PATH:
             self.API_BASE_URL = urljoin(self.BASE_URL, self.API_BASE_URL_PATH)
         elif self.BASE_URL:
             logger.debug(
@@ -275,7 +263,6 @@ class Config_Class(BaseConfig):
                 "BASE_URL not loaded correctly, cannot construct API_BASE_URL."
             )
             self.API_BASE_URL = None
-        # --- END MOVE ---
 
         # === Application Behavior ===
         self.APP_MODE: str = self._get_string_env("APP_MODE", "dry_run")
@@ -285,17 +272,19 @@ class Config_Class(BaseConfig):
         self.BATCH_SIZE: int = self._get_int_env("BATCH_SIZE", 50)
 
         # === Database ===
+        # --- MODIFIED: Load DB_POOL_SIZE using new default ---
         self.DB_POOL_SIZE: int = self._get_int_env(
-            "DB_POOL_SIZE", self.DB_POOL_SIZE
-        )  # Use class default
+            "DB_POOL_SIZE", self.DB_POOL_SIZE  # Now defaults to 10 from class attr
+        )
+        # --- END MODIFICATION ---
+        logger.info(
+            f"Database Pool Size configured to: {self.DB_POOL_SIZE}"
+        )  # Log the value being used
 
         # === Caching ===
-        self.CACHE_TIMEOUT: int = self._get_int_env(
-            "CACHE_TIMEOUT", 3600
-        )  # 1 hour default
+        self.CACHE_TIMEOUT: int = self._get_int_env("CACHE_TIMEOUT", 3600)
 
-        # --- Load Rate Limiter Values from Env or use Class Defaults ---
-        # *** Values now use tuned class defaults ***
+        # --- Load Rate Limiter Values ---
         self.INITIAL_DELAY = self._get_float_env("INITIAL_DELAY", self.INITIAL_DELAY)
         self.MAX_DELAY = self._get_float_env("MAX_DELAY", self.MAX_DELAY)
         self.BACKOFF_FACTOR = self._get_float_env("BACKOFF_FACTOR", self.BACKOFF_FACTOR)
@@ -329,8 +318,8 @@ class Config_Class(BaseConfig):
         # === API Headers ===
         parsed_base_url = urlparse(self.BASE_URL)
         origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
-        # Header definitions remain the same as before...
         self.API_CONTEXTUAL_HEADERS: Dict[str, Dict[str, Optional[str]]] = {
+            # ... (Header definitions remain the same) ...
             # --- Core/Session Related ---
             "CSRF Token API": {
                 "Accept": "application/json",
@@ -348,7 +337,7 @@ class Config_Class(BaseConfig):
                 "Accept": "application/json",
                 "Referer": self.BASE_URL,
             },
-            "API Login Verification (header/dna)": {  # Used by SessionManager._verify_api_login_status
+            "API Login Verification (header/dna)": {
                 "Accept": "application/json",
                 "Referer": self.BASE_URL,
             },
@@ -362,8 +351,8 @@ class Config_Class(BaseConfig):
                 "ancestry-clientpath": "Browser:meexp-uhome",
                 "Referer": self.BASE_URL,
             },
-            "Get Ladder API": {  # Note: Referer added dynamically in _get_relShip
-                "Accept": "*/*",  # Expects JSONP, Accept */* is safe
+            "Get Ladder API": {
+                "Accept": "*/*",
             },
             # --- Match List/Processing Related ---
             "Match List API": {
@@ -394,21 +383,21 @@ class Config_Class(BaseConfig):
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
             },
-            "Badge Details API": {  # Called by _get_tree
+            "Badge Details API": {
                 "Accept": "application/json",
                 "Referer": urljoin(self.BASE_URL, "/discoveryui-matches/list/"),
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
             },
-            "Match Details API": {  # Called by _get_match_details_and_admin (/details endpoint)
+            "Match Details API": {
                 "Accept": "application/json",
-                # Referer added dynamically based on compare page URL
+                # Referer added dynamically
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
             },
-            "Profile Details API": {  # Called by _get_match_details_and_admin (/profiles/details endpoint)
+            "Profile Details API": {
                 "accept": "application/json",
                 "ancestry-clientpath": "express-fe",
                 # "ancestry-userid": Added dynamically
@@ -427,7 +416,7 @@ class Config_Class(BaseConfig):
                 "ancestry-clientpath": "express-fe",
                 # "ancestry-userid": handled dynamically
                 "Origin": origin_header_value,
-                "Referer": urljoin(self.BASE_URL, "/messaging/"),  # Corrected path
+                "Referer": urljoin(self.BASE_URL, "/messaging/"),
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
@@ -441,7 +430,7 @@ class Config_Class(BaseConfig):
                 "ancestry-clientpath": "express-fe",
                 # "ancestry-userid": handled dynamically
                 "Origin": origin_header_value,
-                "Referer": urljoin(self.BASE_URL, "/messaging/"),  # Corrected path
+                "Referer": urljoin(self.BASE_URL, "/messaging/"),
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
@@ -454,7 +443,7 @@ class Config_Class(BaseConfig):
                 "ancestry-clientpath": "express-fe",
                 "cache-control": "no-cache",
                 "pragma": "no-cache",
-                "referer": urljoin(self.BASE_URL, "/messaging/"),  # Corrected path
+                "referer": urljoin(self.BASE_URL, "/messaging/"),
                 "sec-fetch-dest": "empty",
                 "sec-fetch-mode": "cors",
                 "sec-fetch-site": "same-origin",
@@ -463,7 +452,6 @@ class Config_Class(BaseConfig):
         }
 
         # --- Log loaded critical values ---
-        # Now safe to access self.API_BASE_URL here
         logger.info(
             f"Configuration Loaded: BASE_URL='{self.BASE_URL}', DB='{self.DATABASE_FILE.name}', TREE_NAME='{self.TREE_NAME or 'Not Set'}'"
         )
@@ -479,18 +467,13 @@ class Config_Class(BaseConfig):
             f"Max Pages to Process: {self.MAX_PAGES if self.MAX_PAGES > 0 else 'All'}"
         )
         logger.debug(f"Batch Size (if used): {self.BATCH_SIZE}")
-        # >>> ADDED Log <<<
         logger.debug(f"Message Truncation Length: {self.MESSAGE_TRUNCATION_LENGTH}")
-
         logger.debug("Config settings loading complete.\n")
 
     # end _load_values
 
 
-#
 # End of Config_Class
-
-# ... (rest of config.py, including SeleniumConfig and instances, remains the same) ...
 
 
 class SeleniumConfig(BaseConfig):
@@ -502,22 +485,19 @@ class SeleniumConfig(BaseConfig):
     # --- Define defaults directly as class attributes ---
     HEADLESS_MODE: bool = False
     PROFILE_DIR: str = "Default"
-    DEBUG_PORT: int = 9516  # Default debug port, can be overridden
+    DEBUG_PORT: int = 9516
     CHROME_MAX_RETRIES: int = 3
     CHROME_RETRY_DELAY: int = 5
-    # --- Implicit Wait is generally discouraged with explicit waits ---
     IMPLICIT_WAIT: int = 0
-    # --- Explicit Wait Timeouts ---
-    ELEMENT_TIMEOUT: int = 20  # Default for finding elements
-    PAGE_TIMEOUT: int = 40  # Default for page readiness state
-    ASYNC_SCRIPT_TIMEOUT: int = 60  # Default for execute_async_script
-    LOGGED_IN_CHECK_TIMEOUT: int = 15  # Specific timeout for login status UI check
-    MODAL_TIMEOUT: int = 10  # Timeout for modals (like consent)
-    DNA_LIST_PAGE_TIMEOUT: int = 30  # Timeout specific to DNA list page elements
-    NEW_TAB_TIMEOUT: int = 15  # Timeout for new tab operations
-    TWO_FA_CODE_ENTRY_TIMEOUT: int = 300  # Long timeout for manual 2FA entry (5 mins)
-    # --- API Timeout for 'requests' library ---
-    API_TIMEOUT: int = 60  # Default timeout for requests library calls
+    ELEMENT_TIMEOUT: int = 20
+    PAGE_TIMEOUT: int = 40
+    ASYNC_SCRIPT_TIMEOUT: int = 60
+    LOGGED_IN_CHECK_TIMEOUT: int = 15
+    MODAL_TIMEOUT: int = 10
+    DNA_LIST_PAGE_TIMEOUT: int = 30
+    NEW_TAB_TIMEOUT: int = 15
+    TWO_FA_CODE_ENTRY_TIMEOUT: int = 300
+    API_TIMEOUT: int = 60
 
     def __init__(self):
         """Initializes SeleniumConfig by loading relevant environment variables."""
@@ -528,23 +508,19 @@ class SeleniumConfig(BaseConfig):
 
     def _load_values(self):
         """Load Selenium specific variables from .env or use defaults."""
-        # Paths (use _get_path_env which handles Path objects and None)
         self.CHROME_DRIVER_PATH: Optional[Path] = self._get_path_env(
             "CHROME_DRIVER_PATH", None
         )
         self.CHROME_BROWSER_PATH: Optional[Path] = self._get_path_env(
             "CHROME_BROWSER_PATH", None
         )
-        # Provide a sensible string default for CHROME_USER_DATA_DIR path
         default_user_data_str = str(Path.home() / ".ancestry_chrome_data")
         self.CHROME_USER_DATA_DIR: Optional[Path] = self._get_path_env(
             "CHROME_USER_DATA_DIR", default_user_data_str
         )
-        # Ensure user data directory exists (only if path is resolved)
         if self.CHROME_USER_DATA_DIR:
             self.CHROME_USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Load other settings using defaults defined above
         self.HEADLESS_MODE = self._get_bool_env("HEADLESS_MODE", self.HEADLESS_MODE)
         self.PROFILE_DIR = self._get_string_env("PROFILE_DIR", self.PROFILE_DIR)
         self.DEBUG_PORT = self._get_int_env("DEBUG_PORT", self.DEBUG_PORT)
@@ -554,7 +530,6 @@ class SeleniumConfig(BaseConfig):
         self.CHROME_RETRY_DELAY = self._get_int_env(
             "CHROME_RETRY_DELAY", self.CHROME_RETRY_DELAY
         )
-        # Load Explicit Wait Timeouts from Env or use Class Defaults
         self.ELEMENT_TIMEOUT = self._get_int_env(
             "ELEMENT_TIMEOUT", self.ELEMENT_TIMEOUT
         )
@@ -575,10 +550,8 @@ class SeleniumConfig(BaseConfig):
         self.TWO_FA_CODE_ENTRY_TIMEOUT = self._get_int_env(
             "TWO_FA_CODE_ENTRY_TIMEOUT", self.TWO_FA_CODE_ENTRY_TIMEOUT
         )
-        # Load API_TIMEOUT from ENV or use Class Default
         self.API_TIMEOUT = self._get_int_env("API_TIMEOUT", self.API_TIMEOUT)
 
-        # Log loaded paths and key settings
         logger.debug(f"ChromeDriver Path: {self.CHROME_DRIVER_PATH or 'Auto-detect'}")
         logger.debug(
             f"Chrome Browser Path: {self.CHROME_BROWSER_PATH or 'System default'}"
@@ -593,60 +566,47 @@ class SeleniumConfig(BaseConfig):
 
     # end _load values
 
-    # --- WebDriverWait Factory Methods (providing convenience) ---
+    # --- WebDriverWait Factory Methods ---
     def default_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
-        """Returns a WebDriverWait instance with the default element timeout."""
         return WebDriverWait(
             driver, timeout if timeout is not None else self.ELEMENT_TIMEOUT
         )
 
     def page_load_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
-        """Returns a WebDriverWait instance with the page load timeout."""
         return WebDriverWait(
             driver, timeout if timeout is not None else self.PAGE_TIMEOUT
         )
 
     def short_wait(self, driver, timeout: int = 5) -> WebDriverWait:
-        """Returns a WebDriverWait instance with a short, fixed timeout."""
         return WebDriverWait(driver, timeout)
 
     def long_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
-        """Returns a WebDriverWait instance with a long timeout (defaults to 2FA timeout)."""
         return WebDriverWait(
             driver, timeout if timeout is not None else self.TWO_FA_CODE_ENTRY_TIMEOUT
         )
 
-    # --- Specific Wait Factories (for clarity in code) ---
     def logged_in_check_wait(self, driver) -> WebDriverWait:
-        """Returns WebDriverWait for login UI checks."""
         return WebDriverWait(driver, self.LOGGED_IN_CHECK_TIMEOUT)
 
     def element_wait(self, driver) -> WebDriverWait:
-        """Returns WebDriverWait using the default element timeout."""
         return WebDriverWait(driver, self.ELEMENT_TIMEOUT)
 
     def page_wait(self, driver) -> WebDriverWait:
-        """Returns WebDriverWait using the default page load timeout."""
         return WebDriverWait(driver, self.PAGE_TIMEOUT)
 
     def modal_wait(self, driver) -> WebDriverWait:
-        """Returns WebDriverWait for modal dialogs."""
         return WebDriverWait(driver, self.MODAL_TIMEOUT)
 
     def dna_list_page_wait(self, driver) -> WebDriverWait:
-        """Returns WebDriverWait specifically for DNA list page elements."""
         return WebDriverWait(driver, self.DNA_LIST_PAGE_TIMEOUT)
 
     def new_tab_wait(self, driver) -> WebDriverWait:
-        """Returns WebDriverWait for new tab operations."""
         return WebDriverWait(driver, self.NEW_TAB_TIMEOUT)
 
 
-#
 # End of SeleniumConfig class
 
 # --- Singleton Instances ---
-# These instances are created when the module is imported, making settings globally accessible.
 config_instance = Config_Class()
 selenium_config = SeleniumConfig()
 
