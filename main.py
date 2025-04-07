@@ -15,7 +15,7 @@ import traceback
 import warnings
 from pathlib import Path
 from urllib.parse import urljoin
-from typing import Optional
+from typing import Optional, Any  # Added Any
 
 # --- Third-party imports  ---
 from selenium.webdriver.remote.remote_connection import RemoteConnection
@@ -51,11 +51,11 @@ from my_selectors import (
     MATCH_ENTRY_SELECTOR,
     WAIT_FOR_PAGE_SELECTOR,
 )
-from utils import (
+from utils import (  # Ensure SessionManager is imported
     SessionManager,
     is_elem_there,
-    log_in,
-    login_status,
+    log_in,  # Keep log_in import for now, SessionManager uses it internally
+    login_status,  # Keep login_status import, SessionManager uses it internally
     nav_to_page,
     retry,
 )
@@ -67,54 +67,44 @@ def menu():
     print("=" * 13)
     level_name = "UNKNOWN"  # Default
 
-    # Get level NAME from the console handler if logger is initialized and has handlers
     if logger and logger.handlers:
         try:
             console_handler = None
             for handler in logger.handlers:
-                # Identify the specific console handler targeting stderr
                 if (
                     isinstance(handler, logging.StreamHandler)
                     and handler.stream == sys.stderr
                 ):
                     console_handler = handler
                     break
-
             if console_handler:
                 level_name = logging.getLevelName(console_handler.level)
-            else:  # Fallback if no console handler found (less likely with current setup)
-                level_name = logging.getLevelName(
-                    logger.getEffectiveLevel()
-                )  # Use logger's level
+            else:
+                level_name = logging.getLevelName(logger.getEffectiveLevel())
         except Exception as e:
-            # Use print as logger might be the source of the issue
-            print(
-                f"DEBUG: Error retrieving console handler level: {e}", file=sys.stderr
-            )
-            level_name = "ERROR"  # Error retrieving level
-
+            print(f"DEBUG: Error getting console handler level: {e}", file=sys.stderr)
+            level_name = "ERROR"
     elif "config_instance" in globals() and hasattr(config_instance, "LOG_LEVEL"):
-        # If logger not ready, show the configured initial level
         level_name = config_instance.LOG_LEVEL.upper()
-    # else: # Logger not ready and config not available yet
-    #     level_name remains "UNKNOWN"
 
-    print(f"(Log Level: {level_name})\n")  # Show console and fixed file level
+    print(f"(Log Level: {level_name})\n")
     print("1. Run Actions 6, 7, and 8 Sequentially")
     print("2. Reset Database")
     print("3. Backup Database")
     print("4. Restore Database")
-    print("5. Check Login")
+    print("5. Check Login Status")  # Updated Menu Text
     print("6. Gather Matches [start page]")
     print("7. Search Inbox")
     print("8. Send Messages")
     print("9. Delete all rows except the first")
     print("")
-    print("t. Toggle Console Log Level (INFO/DEBUG)")  # Clarify it's console level
+    print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
     print("q. Exit")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
+
+
 # End of menu
 
 
@@ -124,16 +114,13 @@ def clear_log_file():
     cleared = False
     handler_to_reopen = None
     log_path = None
-
     try:
         for handler in logger.handlers:
             if isinstance(handler, logging.FileHandler):
                 handler_to_reopen = handler
                 log_path = handler.baseFilename
-                break  # Assume only one file handler
-
+                break
         if handler_to_reopen and log_path:
-            # --- Ensure handler is valid before using ---
             if (
                 hasattr(handler_to_reopen, "flush")
                 and hasattr(handler_to_reopen, "close")
@@ -141,45 +128,35 @@ def clear_log_file():
                 and handler_to_reopen.stream
             ):
                 handler_to_reopen.flush()
-                handler_to_reopen.close()  # Close the stream
-                # Clear the file by opening in write mode
+                handler_to_reopen.close()
                 with open(log_path, "w", encoding="utf-8") as f:
-                    pass  # Just opening in 'w' truncates the file
+                    pass
                 cleared = True
-                # FileHandler should reopen automatically on next log message
             else:
-                print(
-                    f"WARNING: FileHandler for '{log_path}' seems invalid or closed already. Skipping clear.",
-                    file=sys.stderr,
+                logger.warning(
+                    f"FileHandler '{log_path}' invalid/closed. Skipping clear."
                 )
-
     except PermissionError as pe:
-        print(
-            f"WARNING: Permission denied clearing log file '{log_path}'. Log may not be fresh. Error: {pe}",
-            file=sys.stderr,
-        )
+        logger.warning(f"Permission denied clearing log '{log_path}': {pe}")
     except IOError as e:
-        print(
-            f"WARNING: IOError clearing log file '{log_path}'. Log may not be fresh. Error: {e}",
-            file=sys.stderr,
-        )
+        logger.warning(f"IOError clearing log '{log_path}': {e}")
     except Exception as e:
-        print(
-            f"WARNING: Unexpected error clearing log file '{log_path}'. Log may not be fresh. Error: {e}",
-            file=sys.stderr,
-        )
-        traceback.print_exc(file=sys.stderr)  # Print traceback for unexpected errors
-
+        logger.warning(f"Error clearing log '{log_path}': {e}", exc_info=True)
     return cleared, log_path
+
+
 # End of clear_log_file
 
 
 def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     """
-    V3.1 REVISED: Executes an action function, managing session start/stop
-    and logging performance. Correctly handles 'start' argument for coord_action.
+    V3.5 REVISED: Executes action, manages session start/stop using new phases.
+    Handles browserless actions and Action 5 specifically.
+    Skips Phase 2 (ensure_session_ready) for Action 5.
+    Restores original header/footer style.
+    Correctly passes session_manager to browserless actions needing it for cleanup.
     """
-    import inspect  # Local import for signature check
+    import inspect  # Local import
 
     log_cleared, cleared_log_path = clear_log_file()
     start_time = time.time()
@@ -187,12 +164,16 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
 
+    # --- Restore Header Style ---
     logger.info("--------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
     logger.info("--------------------------------------\n")
+    # --- End Restore Header Style ---
 
     action_result = None
     session_started_by_exec = False
+    session_made_ready_by_exec = False  # Keep this flag for potential future use
+
     browserless_actions = [
         "reset_db_actn",
         "backup_db_actn",
@@ -201,73 +182,93 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     ]
 
     try:
-        # Start session ONLY if needed by the action AND not already active
-        if (
-            session_manager
-            and not session_manager.session_active
-            and action_name not in browserless_actions
-            and action_name != "check_login_actn"  # check_login starts its own
-        ):
+        needs_browser = action_name not in browserless_actions
+        # Determine if Phase 2 (readiness) is needed - skip for Action 5
+        needs_ready_session = (
+            action_name not in browserless_actions and action_name != "check_login_actn"
+        )
 
-            logger.debug(f"Starting browser session for action: {action_name}\n")
-            start_ok, _ = session_manager.start_sess(action_name=action_name)
-            if not start_ok:
-                logger.critical(
-                    f"Failed to start browser session for action {action_name}. Aborting action."
+        if needs_browser and session_manager:
+            # --- Phase 1: Ensure Driver is Live ---
+            if not session_manager.driver_live:
+                logger.info(
+                    f"Driver not live for {action_name}. Starting driver (Phase 1)..."
                 )
-                raise Exception("Browser Session start failed")
-            session_started_by_exec = True
-            logger.debug(
-                f"Browser session successfully started by exec_actn for {action_name}."
-            )
-        elif (
-            session_manager
-            and session_manager.session_active  # Check if already active
-            and action_name not in browserless_actions
-            and action_name != "check_login_actn"
-        ):
-            logger.debug(f"Browser session already active for action: {action_name}.")
-        elif action_name in browserless_actions:
-            logger.debug(
-                f"Action '{action_name}' does not require browser start via exec_actn."
-            )
-        elif action_name == "check_login_actn":
-            logger.debug(f"Action '{action_name}' handles its own session start/stop.")
+                start_ok = session_manager.start_sess(
+                    action_name=f"{action_name} - Driver Start"
+                )
+                if not start_ok:
+                    raise Exception("Driver Start Failed (Phase 1)")
+                session_started_by_exec = True
+                logger.info(f"Driver started successfully for {action_name}.")
+            else:
+                logger.debug(f"Driver already live for {action_name}.")
+
+            # --- Phase 2: Ensure Session is Ready (if needed) ---
+            if needs_ready_session:  # Check the flag determined above
+                if not session_manager.session_ready:
+                    logger.info(
+                        f"Session not ready for {action_name}. Ensuring readiness (Phase 2)..."
+                    )
+                    ready_ok = session_manager.ensure_session_ready(
+                        action_name=f"{action_name} - Session Ready"
+                    )
+                    if not ready_ok:
+                        raise Exception("Session Readiness Failed (Phase 2)")
+                    session_made_ready_by_exec = True
+                    logger.info(f"Session ready for {action_name}.")
+                else:
+                    logger.debug(f"Session already ready for {action_name}.")
+            elif action_name == "check_login_actn":
+                logger.debug(
+                    f"Skipping Phase 2 (ensure_session_ready) for {action_name}."
+                )
+
+        elif needs_browser and not session_manager:
+            raise Exception("SessionManager Missing")
+        else:
+            logger.debug(f"Action {action_name} is browserless.")
 
         # Execute the action function
         func_sig = inspect.signature(action_func)
-        action_args_to_pass = list(
-            args
-        )  # Convert tuple to list for potential modification
-        pass_config = False
-        if "config_instance" in func_sig.parameters:
-            pass_config = True
-            if not action_args_to_pass or action_args_to_pass[0] != config_instance:
-                action_args_to_pass.insert(0, config_instance)
+        action_args_to_pass = list(args)
+        pass_config = "config_instance" in func_sig.parameters
+        pass_session_manager = "session_manager" in func_sig.parameters
 
-        # --- CORRECTED: Check if 'start' needs to be passed (for coord_action) ---
-        if action_name == "coord_action" and "start" in func_sig.parameters:
-            start_val = 1  # Default
-            if len(args) > 0 and isinstance(args[-1], int):
-                start_val = args[-1]
-            # Prepare keyword arguments dictionary
+        # Prepare arguments, ensuring session_manager is passed if needed
+        final_args = []
+        if pass_session_manager:
+            final_args.append(session_manager)
+        if pass_config:
+            # Ensure config_instance is only added if not already in args
+            # (This logic might be simplified depending on how args are always passed)
+            if not any(isinstance(a, type(config_instance)) for a in args):
+                final_args.append(config_instance)
+        final_args.extend(args)  # Add remaining args
+
+        # --- Corrected: Handle keyword args for coord_action specifically ---
+        target_func_name = action_func.__name__
+        if hasattr(action_func, "__wrapped__"):
+            target_func_name = action_func.__wrapped__.__name__
+
+        if target_func_name == "coord_action_func" and "start" in func_sig.parameters:
+            start_val = 1
+            # Find the integer start value if provided in *args
+            int_args = [a for a in args if isinstance(a, int)]
+            if int_args:
+                start_val = int_args[-1]  # Assume last int is start page
+
             kwargs_for_action = {"start": start_val}
+            # Rebuild final_args for coord, ensuring session_manager and config are first if needed
+            coord_args = []
+            if pass_session_manager:
+                coord_args.append(session_manager)
             if pass_config:
-                # Pass session_manager, config_instance, and start=...
-                action_result = action_func(
-                    session_manager,
-                    action_args_to_pass[0],  # config_instance
-                    **kwargs_for_action,
-                )
-            else:
-                # Pass session_manager and start=...
-                action_result = action_func(session_manager, **kwargs_for_action)
+                coord_args.append(config_instance)
+            action_result = action_func(*coord_args, **kwargs_for_action)
         else:
-            # General case for other actions
-            if pass_config:
-                action_result = action_func(session_manager, *action_args_to_pass)
-            else:
-                action_result = action_func(session_manager, *args)
+            # General case - pass the assembled final_args list
+            action_result = action_func(*final_args)
 
     except Exception as e:
         logger.error(f"Exception during action {action_name}: {e}", exc_info=True)
@@ -276,46 +277,51 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     finally:
         # Session Closing Logic
         exec_should_close_browser = False
-        if session_manager and session_manager.session_active:
+        if session_manager and session_manager.driver_live:
             if session_started_by_exec and close_sess:
+                # If we started the driver in this exec_actn call AND close_sess is True
                 exec_should_close_browser = True
-
-        if exec_should_close_browser:
-            logger.debug(
-                f"Closing browser session started by exec_actn for {action_name}."
-            )
-            session_manager.close_sess()
-            logger.debug("Browser session closed.")
-        elif session_manager and session_manager.session_active:
-            if action_name == "check_login_actn":
-                # Check login should have closed its own session
-                # Log if it's still active unexpectedly
                 logger.debug(
-                    f"Session remains active after {action_name}, which should normally close it."
+                    f"Closing session started by {action_name} (close_sess=True)."
                 )
+            elif action_name != "check_login_actn" and close_sess:
+                # If session existed before, but close_sess is True AND it's not Action 5
+                exec_should_close_browser = True
+                logger.debug(
+                    f"Closing pre-existing session after {action_name} (close_sess=True)."
+                )
+            elif action_name == "check_login_actn":
+                # Explicitly keep Action 5 open (unless close_sess was False passed externally - unlikely)
+                logger.debug(f"Keeping session live after {action_name} (Action 5).")
             elif not close_sess:
                 logger.debug(
-                    f"Keeping browser session active after {action_name} as requested (close_sess=False)."
+                    f"Keeping session live after {action_name} (close_sess=False)."
                 )
-            elif not session_started_by_exec:
-                logger.debug(
-                    f"Keeping browser session active after {action_name} (was already active)."
-                )
-            elif action_name in browserless_actions:
-                logger.debug(
-                    f"Browser session was not started by exec_actn for {action_name}, keeping active if running."
-                )
+
+        if exec_should_close_browser:
+            logger.debug(f"Closing browser session after {action_name}...")
+            # Pass keep_db based on whether the action was browserless (keep DB for those)
+            session_manager.close_sess(keep_db=(action_name in browserless_actions))
+            logger.debug(
+                f"Browser session closed. DB Pool status: {'Kept' if action_name in browserless_actions else 'Closed'}."
+            )
+        elif action_name in browserless_actions:
+            # If the action was browserless, ensure the DB pool (if held by session_manager) is still closed correctly,
+            # unless close_sess was explicitly False (unlikely for browserless).
+            # The main 'finally' block in main() handles final cleanup anyway.
+            # The action itself should now handle closing the pool it was passed.
+            logger.debug(f"No browser session relevant for {action_name}.")
 
         # Performance Logging
         duration = time.time() - start_time
+        # Restore old duration format
         hours, remainder = divmod(duration, 3600)
         minutes, seconds = divmod(remainder, 60)
         formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
         mem_after = process.memory_info().rss / (1024 * 1024)
         mem_used = mem_after - mem_before
 
-        # print(" ") # Spacer
-
+        # Restore old footer style
         if action_result is False:
             logger.error(
                 f"Action {choice} ({action_name}) reported a failure (returned False or exception occurred).\n"
@@ -326,434 +332,346 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info(f"Duration: {formatted_duration}")
         logger.info(f"Memory used: {mem_used:.1f} MB")
         logger.info("--------------------------------------\n")
+        # End Restore old footer style
+
+
 # End of exec_actn
+
+
+# --- Action Functions (Update required actions) ---
 
 
 # Action 1
 def run_actions_6_7_8_action(session_manager, *args):
     """
-    Action to run actions 6, 7, and 8 sequentially with stricter checks.
-    Stops execution if any action fails or its prerequisite navigation fails.
-    V1.3: Updates Action 7 navigation URL.
+    Action to run actions 6, 7, and 8 sequentially.
+    Relies on exec_actn ensuring session is ready beforehand.
     """
-    if (
-        not session_manager
-        or not session_manager.driver
-        or not session_manager.session_active
-    ):
-        logger.error("Cannot run sequential actions: Session not active.")
+    # Guard clause now checks session_ready
+    if not session_manager or not session_manager.session_ready:
+        logger.error("Cannot run sequential actions: Session not ready.")
         return False
 
-    all_successful = True  # Assume success initially
-
+    all_successful = True
     try:
         # --- Action 6 ---
-        logger.info("--- Starting Action 6: Gather Matches (Always from page 1) ---")
-        gather_result = coord_action_func(
-            session_manager, config_instance, start=1  # Always start from page 1
-        )
+        logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
+        # coord_action_func expects session_manager, config_instance, start=...
+        # config_instance is needed
+        gather_result = coord_action_func(session_manager, config_instance, start=1)
         if gather_result is False:
-            logger.error("Action 6 (Gather Matches) FAILED. Stopping sequence.")
-            return False  # Stop sequence on failure
+            logger.error("Action 6 FAILED.")
+            return False
         else:
-            logger.info("Action 6 completed successfully.")
+            logger.info("Action 6 OK.")
 
         # --- Action 7 ---
-        logger.info("--- Starting Action 7: Search Inbox ---")
-        # --- MODIFIED: Use the new messaging URL base ---
-        inbox_url = urljoin(
-            config_instance.BASE_URL, "/messaging/"  # Use the URL observed in logs
-        )
-        logger.debug(
-            f"Navigating to Inbox/Messaging page ({inbox_url}) for Action 7..."
-        )
-        # Use strict navigation check
+        logger.info("--- Running Action 7: Search Inbox ---")
+        inbox_url = urljoin(config_instance.BASE_URL, "/messaging/")
+        logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
+        # Wait for a specific element indicating inbox has loaded
         if not nav_to_page(
-            # Wait for a selector that exists on the /messaging/ page, e.g., conversation list
             session_manager.driver,
             inbox_url,
-            "div[data-testid='conversation-list-item']",
+            "div[data-testid='conversation-list-item']",  # Selector for a conversation item
             session_manager,
         ):
-            logger.error(
-                "Action 7 prerequisite FAILED: Cannot navigate to inbox/messaging page. Stopping sequence."
-            )
-            return False  # Stop sequence on navigation failure
-
-        logger.debug("Navigation to Inbox/Messaging successful. Running search...")
+            logger.error("Action 7 nav FAILED.")
+            return False
+        logger.debug("Nav OK. Running search...")
         inbox_processor = InboxProcessor(session_manager=session_manager)
         search_result = inbox_processor.search_inbox()
         if search_result is False:
-            logger.error("Action 7 (Search Inbox) FAILED. Stopping sequence.")
-            return False  # Stop sequence on action failure
+            logger.error("Action 7 FAILED.")
+            return False
         else:
-            logger.info("Action 7 completed successfully.")
+            logger.info("Action 7 OK.")
 
         # --- Action 8 ---
-        logger.info("--- Starting Action 8: Send Messages ---")
-        # Navigate to a neutral page before starting messaging
+        logger.info("--- Running Action 8: Send Messages ---")
         logger.debug("Navigating to Base URL for Action 8...")
         if not nav_to_page(
             session_manager.driver,
             config_instance.BASE_URL,
-            WAIT_FOR_PAGE_SELECTOR,  # Wait for main page element
+            WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
             session_manager,
         ):
-            logger.error(
-                "Action 8 prerequisite FAILED: Cannot navigate to base URL. Stopping sequence."
-            )
-            return False  # Stop sequence on navigation failure
-
-        logger.debug("Navigation to Base URL successful. Sending messages...")
+            logger.error("Action 8 nav FAILED.")
+            return False
+        logger.debug("Nav OK. Sending messages...")
+        # send_messages_to_matches expects session_manager
         send_result = send_messages_to_matches(session_manager)
         if send_result is False:
-            logger.error("Action 8 (Send Messages) FAILED. Stopping sequence.")
-            return False  # Stop sequence on action failure
+            logger.error("Action 8 FAILED.")
+            return False
         else:
-            logger.info("Action 8 completed successfully.")
+            logger.info("Action 8 OK.")
 
-        # If we reach here, all actions passed
         logger.info("Sequential Actions 6-7-8 finished successfully.")
         return True
-
     except Exception as e:
         logger.error(
             f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
         )
         return False
+
+
 # End Action 1
 
 
-# Action 2
-def reset_db_actn(session_manager, *args):
+# Action 2 (reset_db_actn) - REVISED
+def reset_db_actn(session_manager: SessionManager, *args):  # Added session_manager back
     """
-    Action to reset the database and seed message_types.
-    Ensures main session manager connections are closed BEFORE attempting deletion.
+    Action to reset the database. Browserless.
+    Closes the provided main session pool FIRST.
     """
     db_path = config_instance.DATABASE_FILE
     reset_successful = False
-    original_session_closed_here = False
-
-    # --- STEP 1: Ensure main session manager connections are closed ---
-    # --- MODIFIED: Check for engine instead of _db_conn_pool ---
-    if session_manager and session_manager.engine:  # Check if engine exists
-        logger.warning(
-            "Main session manager has an active DB engine. Closing connections before reset attempt..."
-        )
-        # --- END MODIFICATION ---
-        try:
-            session_manager.cls_db_conn()  # Close pool and dispose engine
-            original_session_closed_here = True
-            logger.debug("Main session DB connections closed successfully.")
-            # Add a brief pause and GC just in case
-            gc.collect()
-            time.sleep(0.5)
-        except Exception as close_err:
-            logger.error(
-                f"Failed to close main session DB connections before reset: {close_err}",
-                exc_info=True,
-            )
-            # Proceed with caution, deletion might still fail
-    elif session_manager:
-        logger.debug(
-            "Main session manager DB engine already seems closed or uninitialized."
-        )
-    else:
-        logger.warning("No main session manager provided to reset_db_actn.")
-        # Create a temporary manager just for the deletion attempt, but this is less ideal
-        session_manager = SessionManager()  # Create temporary one
-
-    # --- STEP 2: Attempt Database Deletion ---
     try:
-        logger.debug("Attempting database file deletion...")
-        # Pass the potentially temporary or already-closed session_manager
-        # delete_database will try to close its connections again (harmless if already done)
-        delete_database(session_manager, db_path, max_attempts=5)
-        logger.debug(
-            f"Database file '{db_path}' deleted successfully (or was already gone)."
-        )
+        # --- Close main pool FIRST ---
+        if session_manager:
+            logger.warning("Closing main DB connections before reset attempt...")
+            session_manager.cls_db_conn(keep_db=False)
+            logger.info("Main DB pool closed.")
+        else:
+            logger.warning("No main session manager passed to reset_db_actn to close.")
+        # --- End closing main pool ---
 
-        # --- STEP 3: Re-initialize DB and Seed ---
-        # Use a new, clean SessionManager instance specifically for re-creation
-        recreation_manager = SessionManager()
+        logger.debug("Running GC before delete attempt...")
+        gc.collect()
+        time.sleep(0.5)
+        gc.collect()  # Short GC pause
+
+        logger.debug("Attempting database file deletion...")
+        # Pass None for session_manager to delete_database as it doesn't need it anymore
+        delete_database(None, db_path, max_attempts=5)
+        logger.info(f"Database file '{db_path}' deleted/gone.")
+
+        # Re-initialize DB and Seed using a temporary manager
+        logger.debug("Re-initializing DB...")
+        recreation_manager = SessionManager()  # Create temporary one
         recreation_session = None
         try:
-            logger.debug("Re-initializing DB engine/pool for recreation manager...")
-            # Use the string path for create_engine URI
-            recreation_manager.engine = create_engine(f"sqlite:///{str(db_path)}")
+            # Initialize engine/session factory for the temp manager
+            recreation_manager._initialize_db_engine_and_session()
+            if not recreation_manager.engine or not recreation_manager.Session:
+                raise SQLAlchemyError("Failed to re-initialize DB engine/session!")
 
-            @event.listens_for(recreation_manager.engine, "connect")
-            def enable_foreign_keys(dbapi_conn, conn_rec):
-                cursor = dbapi_conn.cursor()
-                try:
-                    cursor.execute("PRAGMA foreign_keys=ON")
-                finally:
-                    cursor.close()
-
-            recreation_manager.Session = sessionmaker(bind=recreation_manager.engine)
-            # --- REMOVED Pool initialization, rely on engine ---
-
-            logger.debug("Creating tables...")
+            # Create tables using the temp manager's engine
             Base.metadata.create_all(recreation_manager.engine)
             logger.debug("Tables created.")
 
+            # Seed message types using the temp manager's session
             recreation_session = recreation_manager.get_db_conn()
             if not recreation_session:
-                raise SQLAlchemyError(
-                    "Failed to get session after DB re-initialization!"
-                )
+                raise SQLAlchemyError("Failed to get session for seeding!")
 
             logger.debug("Seeding message_types...")
-            try:
-                # Define messages_file path relative to the main script or use absolute path if needed
-                # Assuming messages.json is in the same directory as main.py
-                script_dir = (
-                    Path(__file__).resolve().parent
-                )  # Use resolve() for robustness
-                messages_file = script_dir / "messages.json"
-
-                if messages_file.exists():
-                    with messages_file.open("r", encoding="utf-8") as f:
-                        messages_data = json.load(f)
-
-                    if isinstance(messages_data, dict):
-                        # Use the recreation_session for seeding
-                        with db_transn(recreation_session) as sess:
-                            types_to_add = []
-                            for name in messages_data:
-                                exists = (
-                                    sess.query(MessageType)
-                                    .filter_by(type_name=name)
-                                    .first()
-                                )
-                                if not exists:
-                                    types_to_add.append(MessageType(type_name=name))
-
-                            if types_to_add:
-                                logger.debug(
-                                    f"Adding {len(types_to_add)} new message types..."
-                                )
-                                sess.add_all(types_to_add)
-                                logger.debug("Seeding commit OK.")
-                            else:
-                                logger.info(
-                                    "Message types already exist in the new database."
-                                )
-                        # Verify count after commit
-                        count = recreation_session.query(
-                            func.count(MessageType.id)
-                        ).scalar()
-                        logger.debug(
-                            f"Verification: {count} message types found in DB."
-                        )
-                    else:
-                        logger.error(
-                            "'messages.json' has incorrect format (expected dictionary)."
-                        )
-                else:
-                    logger.warning(
-                        f"'messages.json' not found at '{messages_file}', skipping message type seeding."
+            script_dir = Path(__file__).resolve().parent
+            messages_file = script_dir / "messages.json"
+            if messages_file.exists():
+                with messages_file.open("r", encoding="utf-8") as f:
+                    messages_data = json.load(f)
+                if isinstance(messages_data, dict):
+                    with db_transn(recreation_session) as sess:  # Use context manager
+                        types_to_add = [
+                            MessageType(type_name=name)
+                            for name in messages_data
+                            if not sess.query(MessageType)
+                            .filter_by(type_name=name)
+                            .first()
+                        ]
+                        if types_to_add:
+                            sess.add_all(types_to_add)
+                            logger.debug(f"Added {len(types_to_add)} message types.")
+                        else:
+                            logger.debug("Message types already exist.")
+                    count = (
+                        recreation_session.query(func.count(MessageType.id)).scalar()
+                        or 0
                     )
-
-                reset_successful = True  # Mark success only after seeding attempt
-                logger.info("Reset and re-initialization completed OK.\n")
-
-            except (FileNotFoundError, json.JSONDecodeError, SQLAlchemyError) as seed_e:
-                logger.error(
-                    f"Error seeding message_types after reset: {seed_e}\n",
-                    exc_info=True,
+                    logger.debug(f"Verification: {count} message types found.")
+                else:
+                    logger.error("'messages.json' has incorrect format.")
+            else:
+                logger.warning(
+                    f"'messages.json' not found at '{messages_file}', skipping seeding."
                 )
-                reset_successful = False  # Failed during seeding
-            except Exception as seed_e_unexp:
-                logger.critical(
-                    f"Unexpected seeding error after reset: {seed_e_unexp}\n",
-                    exc_info=True,
-                )
-                reset_successful = False  # Failed during seeding
 
-        finally:
-            # Clean up the recreation_manager
+            reset_successful = True
+            logger.info("Database reset and re-initialization completed OK.")
+        except Exception as seed_e:
+            logger.error(
+                f"Error during DB re-initialization/seeding: {seed_e}", exc_info=True
+            )
+            reset_successful = False
+        finally:  # Cleanup temp manager
             logger.debug("Cleaning up recreation manager resources...")
-            if "recreation_manager" in locals() and recreation_manager:
-                if recreation_session:
-                    recreation_manager.return_session(recreation_session)
-                recreation_manager.cls_db_conn()  # Close pool and dispose engine
+            if recreation_session:
+                recreation_manager.return_session(recreation_session)
+            recreation_manager.cls_db_conn(
+                keep_db=False
+            )  # Ensure temp engine is disposed
             logger.debug("Recreation manager cleanup finished.")
 
     except PermissionError as pe:
-        logger.error(
-            f"Database reset FAILED: Could not delete file '{db_path}' due to permissions/lock.",
-            exc_info=False,
-        )
-        logger.debug(f"PermissionError details: {pe}")
-        reset_successful = False
+        logger.error(f"DB reset FAILED: Permissions/lock on '{db_path}'. {pe}")
     except Exception as e:
-        logger.error(f"Error during DB reset process: {e}", exc_info=True)
-        reset_successful = False
-
+        logger.error(f"Error during DB reset: {e}", exc_info=True)
     finally:
-        # --- STEP 4: Potentially Re-initialize Main Session ---
-        # If the original session was closed by *this* function,
-        # we should probably leave it closed, as the caller (exec_actn)
-        # expects browserless actions not to mess with the main session state.
-        # The next action requiring DB will re-initialize it if needed.
-        if original_session_closed_here:
-            logger.debug(
-                "Original main session was closed by reset_db_actn. Leaving it closed."
-            )
-            # It's important that subsequent actions correctly handle getting a new DB connection
-            # if session_manager._db_conn_pool is None.
-
         logger.debug("Reset DB action finished.")
-
     return reset_successful
+
+
 # end of Action 2
 
 
-# Action 3
-def backup_db_actn(session_manager, *args):
-    """Action to backup the database."""
+# Action 3 (backup_db_actn) - No changes needed, browserless.
+def backup_db_actn(
+    session_manager: Optional[SessionManager], *args
+):  # Added session_manager back (Optional)
+    """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
+        # session_manager isn't strictly needed but kept for signature consistency
         backup_database()
-        logger.debug("DB backup OK.")
+        logger.info("DB backup OK.")
         return True
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
+
+
 # end of Action 3
 
 
-# Action 4
-def restore_db_actn(session_manager, *args):
-    """Action to restore the database from the backup."""
+# Action 4 (restore_db_actn) - REVISED
+def restore_db_actn(
+    session_manager: SessionManager, *args
+):  # Added session_manager back
+    """
+    Action to restore the database. Browserless.
+    Closes the provided main session pool FIRST.
+    """
     backup_dir = config_instance.DATA_DIR
     backup_path = backup_dir / "ancestry_backup.db"
     db_path = config_instance.DATABASE_FILE
     success = False
-    if not session_manager:
-        logger.error("SessionManager required for restore.")
-        return False
     try:
-        logger.debug(f"Restoring DB from: {backup_path}")
+        # --- Close main pool FIRST ---
+        if session_manager:
+            logger.warning("Closing main DB connections before restore...")
+            session_manager.cls_db_conn(keep_db=False)
+            logger.info("Main DB pool closed.")
+        else:
+            logger.warning(
+                "No main session manager passed to restore_db_actn to close."
+            )
+        # --- End closing main pool ---
+
+        logger.info(f"Restoring DB from: {backup_path}")
         if not backup_path.exists():
             logger.error(f"Backup not found: {backup_path}.")
             return False
-        logger.debug("Closing connections before restore...")
-        session_manager.cls_db_conn()
+
+        logger.debug("Running GC before restore...")
         gc.collect()
-        time.sleep(1)
+        time.sleep(0.5)
+        gc.collect()
+
         shutil.copy2(backup_path, db_path)
-        logger.info(f"Db restored from backup OK.\n")
+        logger.info(f"Db restored from backup OK.")
         success = True
     except FileNotFoundError:
-        logger.error(f"Backup not found during copy: {backup_path}\n")
+        logger.error(f"Backup not found during copy: {backup_path}")
     except (OSError, IOError, shutil.Error) as e:
         logger.error(f"Error restoring DB: {e}", exc_info=True)
     except Exception as e:
-        logger.critical(f"Unexpected restore error: {e}\n", exc_info=True)
+        logger.critical(f"Unexpected restore error: {e}", exc_info=True)
     finally:
         logger.debug("DB restore action finished.")
     return success
+
+
 # end of Action 4
 
 
-# Action 5
+# Action 5 (check_login_actn) - REVISED V5
 def check_login_actn(session_manager: SessionManager, *args) -> bool:
     """
-    REVISED: Action to verify login status. If not logged in (or no session),
-    it attempts to start the session and log in using session_manager.start_sess().
-    Relies on the caller (exec_actn) to keep the session open afterwards.
+    REVISED V5: Checks login status using login_status.
+    Relies on exec_actn to ensure driver is live (Phase 1) if needed.
+    Does NOT attempt login itself. Does NOT trigger ensure_session_ready. Keeps session open.
     """
     if not session_manager:
         logger.error("SessionManager required for check_login_actn.")
         return False
 
-    logger.debug("Verifying login status...")
+    logger.info("Verifying login status...")
 
-    # --- Initial Check ---
-    # Check the status WITHOUT forcing a session start yet
-    initial_status: Optional[bool] = login_status(session_manager)
-
-    if initial_status is True:
-        logger.info("Already logged in.\n")
-        return True
-    elif initial_status is False:
-        logger.info("Not logged in.\n")
-        # Proceed to call start_sess below
-    else:  # initial_status is None (critical error during check)
-        logger.warning(
-            "Initial login status check failed critically. Attempting full session start/login..."
-        )
-        # Proceed to call start_sess below
-
-    # --- Attempt Login / Session Start ---
-    # If initial check failed or indicated not logged in, call start_sess
-    # start_sess contains the logic to initialize WebDriver, navigate, and log in.
-    try:
-        start_ok, _ = session_manager.start_sess(
-            action_name="Login Verification (Action 5 - Start/Login Attempt)"
-        )
-        if start_ok:
-            # Re-verify status after start_sess claims success
-            final_status = login_status(session_manager)
-            if final_status is True:
-                logger.info(
-                    "Login verification successful (Login process completed).\n"
-                )
-                return True
-            else:
-                logger.error(
-                    "Session start/login reported success, but final status check failed.\n"
-                )
-                return False
-        else:
-            logger.error("Login verification failed (start_sess reported failure).\n")
-            return False
-    except Exception as e:
-        logger.error(
-            f"Error during login verification (exception in start_sess): {e}\n",
-            exc_info=True,
-        )
+    # Phase 1 (Driver Start) is handled by exec_actn if needed.
+    # We only need to check if driver is live before proceeding.
+    if not session_manager.driver_live:
+        logger.error("Driver not live. Cannot check login status.")
+        # It's possible exec_actn failed Phase 1.
         return False
 
-    # Note: Session closing is handled by exec_actn based on close_sess flag (which is False for Action 5)
+    # Call login_status directly to check
+    status = login_status(session_manager)
+
+    if status is True:
+        logger.info("Login verification successful (already logged in).")
+        # --- REMOVED: Do not call ensure_session_ready here ---
+        return True
+    elif status is False:
+        logger.warning("Login verification failed (user not logged in).")
+        return False
+    else:  # Status is None
+        logger.error("Login verification failed (critical error during check).")
+        return False
+
+
 # End Action 5
 
 
-# Action 6
+# Action 6 (coord_action wrapper) - REVISED
 def coord_action(session_manager, config_instance, start=1):
-    """Action wrapper for gathering matches (coord), using 'start' argument."""
-    if (
-        not session_manager
-        or not session_manager.driver
-        or not session_manager.session_active
-    ):
-        logger.error("Cannot gather: Session not active.")
+    """
+    Action wrapper for gathering matches (coord_action_func).
+    Relies on exec_actn ensuring session is ready before calling.
+    """
+    # Guard clause now checks session_ready
+    if not session_manager or not session_manager.session_ready:
+        logger.error("Cannot gather matches: Session not ready.")
         return False
-    logger.debug(f"Gathering DNA Matches from page {start}...\n\n")
+
+    logger.debug(f"Gathering DNA Matches from page {start}...")
     try:
-        # Call the imported coord_action_func with the 'start' argument
+        # Call the imported function (coord_action_func from action6_gather)
         result = coord_action_func(session_manager, config_instance, start=start)
         if result is False:
-            logger.debug("Match gathering reported failure.")
+            logger.error("Match gathering reported failure.")
             return False
         else:
-            logger.debug("Gathering matches OK.")
-            return True
+            logger.info("Gathering matches OK.")
+            return True  # Use INFO for success
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
-# End of coord_action6
 
 
-# Action 7
+# End of coord_action
+
+
+# Action 7 (srch_inbox_actn) - REVISED
 def srch_inbox_actn(session_manager, *args):
-    """Action to search the inbox for messages using the API."""
-    if not session_manager or not session_manager.is_sess_valid():
-        logger.error("Cannot search inbox: Session invalid.")
+    """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
+    # Guard clause now checks session_ready
+    if not session_manager or not session_manager.session_ready:
+        logger.error("Cannot search inbox: Session not ready.")
         return False
-    logger.debug("Starting inbox search...\n\n")
+
+    logger.debug("Starting inbox search...")
     try:
         processor = InboxProcessor(session_manager=session_manager)
         result = processor.search_inbox()
@@ -761,60 +679,85 @@ def srch_inbox_actn(session_manager, *args):
             logger.error("Inbox search reported failure.")
             return False
         else:
-            logger.debug("Inbox search OK.")
-            return True
+            logger.info("Inbox search OK.")
+            return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
+
+
 # End of srch_inbox_actn
 
 
-# Action 8
+# Action 8 (send_messages_action) - REVISED
 def send_messages_action(session_manager, *args):
-    """Action to send messages to DNA matches."""
-    if (
-        not session_manager
-        or not session_manager.driver
-        or not session_manager.session_active
-    ):
-        logger.error("Cannot send messages: Session not active.")
+    """Action to send messages. Relies on exec_actn ensuring session is ready."""
+    # Guard clause now checks session_ready
+    if not session_manager or not session_manager.session_ready:
+        logger.error("Cannot send messages: Session not ready.")
         return False
-    logger.debug("Starting message sending...\n\n")
+
+    logger.debug("Starting message sending...")
     try:
+        # Navigate to Base URL first (good practice before starting message loops)
+        logger.debug("Navigating to Base URL before sending...")
         if not nav_to_page(
             session_manager.driver,
             config_instance.BASE_URL,
             WAIT_FOR_PAGE_SELECTOR,
             session_manager,
         ):
-            logger.error("Failed nav to base URL. Aborting.")
+            logger.error("Failed nav to base URL. Aborting message sending.")
             return False
+        logger.debug("Navigation OK. Proceeding to send messages...")
+
+        # Call the actual sending function
         result = send_messages_to_matches(session_manager)
         if result is False:
             logger.error("Message sending reported failure.")
             return False
         else:
-            logger.debug("Messages sent OK.")
-            return True
+            logger.info("Messages sent OK.")
+            return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
+
+
 # End of send_messages_action
 
 
-# Action 9
-def all_but_first_actn(session_manager, *args):
-    """Action to delete all 'people' rows except the first."""
-    if not session_manager:
-        logger.error("SessionManager required.")
-        return False
+# Action 9 (all_but_first_actn) - REVISED
+def all_but_first_actn(
+    session_manager: SessionManager, *args
+):  # Added session_manager back
+    """
+    Action to delete all 'people' rows except the first. Browserless.
+    Closes the provided main session pool FIRST.
+    Creates a temporary SessionManager for the delete operation.
+    """
+    temp_manager = None  # Initialize
     session = None
     success = False
     try:
-        logger.info("Deleting all but first person record...\n\n")
-        session = session_manager.get_db_conn()
+        # --- Close main pool FIRST ---
+        if session_manager:
+            logger.warning("Closing main DB connections before delete-all-but-first...")
+            session_manager.cls_db_conn(keep_db=False)
+            logger.info("Main DB pool closed.")
+        else:
+            logger.warning(
+                "No main session manager passed to all_but_first_actn to close."
+            )
+        # --- End closing main pool ---
+
+        logger.info("Deleting all but first person record...")
+        # Create a temporary SessionManager for this specific operation
+        temp_manager = SessionManager()
+        session = temp_manager.get_db_conn()
         if session is None:
-            raise Exception("Failed to get DB session.")
+            raise Exception("Failed to get DB session via temporary manager.")
+
         with db_transn(session) as sess:
             first = sess.query(Person).order_by(Person.id.asc()).first()
             if not first:
@@ -822,54 +765,44 @@ def all_but_first_actn(session_manager, *args):
                 return True
             logger.debug(f"Keeping ID: {first.id} ({first.username})")
             to_delete = sess.query(Person).filter(Person.id != first.id).all()
-            count = 0
-            total = len(to_delete)
             if not to_delete:
                 logger.info("Only one person found.")
             else:
-                logger.debug(f"Deleting {total} people...")
+                logger.debug(f"Deleting {len(to_delete)} people...")
                 for i, person in enumerate(to_delete):
-                    logger.debug(
-                        f"Deleting {i+1}/{total}: {person.username} (ID: {person.id})"
-                    )
+                    # logger.debug(f"Deleting {i+1}/{len(to_delete)}: {person.username} (ID: {person.id})") # Can be verbose
                     sess.delete(person)
-                    count += 1
-                logger.info(f"Deleted {count} people.")
+                logger.info(f"Deleted {len(to_delete)} people.")
         success = True
     except Exception as e:
         logger.error(f"Error during deletion: {e}", exc_info=True)
     finally:
-        logger.debug("Cleaning up delete action...")
-        if session_manager and session:
-            session_manager.return_session(session)
+        if temp_manager:
+            if session:
+                temp_manager.return_session(session)
+            temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
         logger.debug("Delete action finished.")
     return success
+
+
 # end of Action 9
 
 
 def main():
-    # Import inspect locally within main if needed (renamed due to conflict)
-    import inspect as std_inspect
-
-    global logger, session_manager  # Declare globals
-
-    session_manager = None  # Initialize global session_manager
+    global logger, session_manager
+    session_manager = None
+    was_driver_live = False  # Track if driver was ever successfully started
 
     try:
-        # Clear screen and print initial spacer
         os.system("cls" if os.name == "nt" else "clear")
         print("")
-
-        # --- Setup Logging ---
         try:
-            from config import config_instance  # Keep local import for clarity
+            from config import config_instance  # Local import for clarity
 
             db_file_path = config_instance.DATABASE_FILE
             log_filename = db_file_path.with_suffix(".log").name
-            # Pass log_level from config if available
             log_level_to_set = getattr(config_instance, "LOG_LEVEL", "INFO").upper()
             logger = setup_logging(log_file=log_filename, log_level=log_level_to_set)
-            # logger.info(f"Initial logger level configured to: {log_level_to_set}") # Log initial level
         except Exception as log_setup_e:
             print(f"CRITICAL: Logging setup error: {log_setup_e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
@@ -879,72 +812,69 @@ def main():
             logger = logging.getLogger("logger_fallback")
             logger.warning("Using fallback logging.")
 
-        # Instantiate SessionManager AFTER logging setup AND logger level adjustment
-        session_manager = SessionManager()  # Assign to global variable
+        session_manager = SessionManager()  # Instantiate AFTER logging setup
 
         # --- Main menu loop ---
         while True:
             choice = menu()
-            print("")  # Spacer
-
+            print("")
             # --- Action Dispatching ---
             if choice == "1":
-                # NOTE: This keeps the session open *after* the sequence completes.
-                # If you want it closed, change close_sess=True
-                exec_actn(
-                    run_actions_6_7_8_action, session_manager, choice, close_sess=False
-                )
+                exec_actn(run_actions_6_7_8_action, session_manager, choice)
             elif choice == "2":
-                exec_actn(
-                    reset_db_actn, session_manager, choice, close_sess=False
-                )  # DB actions don't need browser closed
+                # --- Modified Handling for Action 2 ---
+                # Now pass the current session_manager to exec_actn
+                exec_actn(reset_db_actn, session_manager, choice, close_sess=False)
+                logger.info("Re-initializing main SessionManager after reset...")
+                session_manager = SessionManager()  # Recreate for subsequent actions
+                # --- End Modified Handling for Action 2 ---
             elif choice == "3":
-                exec_actn(
-                    backup_db_actn, session_manager, choice, close_sess=False
-                )  # DB actions don't need browser closed
+                # --- Modified Handling for Action 3 ---
+                # Pass session_manager (though backup_db_actn might not use it)
+                exec_actn(backup_db_actn, session_manager, choice, close_sess=False)
+                # --- End Modified Handling for Action 3 ---
             elif choice == "4":
-                exec_actn(
-                    restore_db_actn, session_manager, choice, close_sess=False
-                )  # DB actions don't need browser closed
+                # --- Modified Handling for Action 4 ---
+                # Pass the current session_manager to exec_actn
+                exec_actn(restore_db_actn, session_manager, choice, close_sess=False)
+                logger.info("Re-initializing main SessionManager after restore...")
+                session_manager = SessionManager()  # Recreate for subsequent actions
+                # --- End Modified Handling for Action 4 ---
             elif choice == "5":
+                # Action 5 now only checks status, keep session open by default
                 exec_actn(check_login_actn, session_manager, choice, close_sess=False)
             elif choice.startswith("6"):
                 parts = choice.split()
-                # --- CORRECTED: Use 'start' variable name ---
                 start_val = 1
                 if len(parts) > 1:
                     try:
-                        start_arg = int(parts[1])  # Convert
-                        if start_arg <= 0:
-                            raise ValueError("Start page must be positive")
-                        start_val = start_arg  # Assign only if valid
-                    except ValueError as e:
-                        print(f"Invalid start page: {e}. Using page 1.")
-                        start_val = 1
-                # Pass start_val using *args mechanism correctly handled by exec_actn
+                        start_arg = int(parts[1])
+                        start_val = start_arg if start_arg > 0 else 1
+                    except ValueError:
+                        logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
+                # Pass session_manager, config_instance and start_val correctly
                 exec_actn(
-                    coord_action, session_manager, "6", True, start_val
-                )  # Pass start_val as the last positional arg
-
+                    coord_action, session_manager, "6", True, config_instance, start_val
+                )
             elif choice == "7":
-                exec_actn(
-                    srch_inbox_actn, session_manager, choice, close_sess=True
-                )  # Close browser after inbox search
+                exec_actn(srch_inbox_actn, session_manager, choice)
             elif choice == "8":
-                exec_actn(
-                    send_messages_action, session_manager, choice, close_sess=True
-                )  # Close browser after sending
+                exec_actn(send_messages_action, session_manager, choice)
             elif choice == "9":
-                exec_actn(
-                    all_but_first_actn, session_manager, choice, close_sess=False
-                )  # DB action
+                # --- Modified Handling for Action 9 ---
+                # Pass the current session_manager to exec_actn
+                exec_actn(all_but_first_actn, session_manager, choice, close_sess=False)
+                logger.info(
+                    "Re-initializing main SessionManager after delete-all-but-first..."
+                )
+                session_manager = SessionManager()  # Recreate for subsequent actions
+                # --- End Modified Handling for Action 9 ---
 
             # --- Meta Options ---
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")
                 if logger and logger.handlers:
                     console_handler = None
-                    # Find the specific handler for stderr
                     for handler in logger.handlers:
                         if (
                             isinstance(handler, logging.StreamHandler)
@@ -954,15 +884,12 @@ def main():
                             break
                     if console_handler:
                         current_level = console_handler.level
-                        # Toggle between DEBUG and INFO
                         new_level = (
                             logging.DEBUG
                             if current_level > logging.DEBUG
                             else logging.INFO
                         )
                         new_level_name = logging.getLevelName(new_level)
-                        # Re-run setup_logging to apply the new level globally (including console)
-                        # Ensure logger instance is reassigned if setup_logging potentially returns a new one
                         logger = setup_logging(log_level=new_level_name)
                     else:
                         logger.warning(
@@ -972,7 +899,6 @@ def main():
                     print(
                         "WARNING: Logger not ready or has no handlers.", file=sys.stderr
                     )
-
             elif choice == "c":
                 os.system("cls" if os.name == "nt" else "clear")
             elif choice == "q":
@@ -982,35 +908,55 @@ def main():
             else:
                 print("Invalid choice.\n")
 
-    # --- Exception Handling & Cleanup ---
+            # --- Check if driver became live during the action ---
+            if (
+                session_manager  # Check if session_manager exists (wasn't None)
+                and hasattr(session_manager, "driver_live")
+                and session_manager.driver_live
+            ):
+                was_driver_live = True
+
     except KeyboardInterrupt:
         os.system("cls" if os.name == "nt" else "clear")
         print("\nCTRL+C detected. Exiting.")
     except Exception as e:
-        # Use logger if available, otherwise print to stderr
         if "logger" in globals() and logger:
             logger.critical(f"Critical error in main: {e}", exc_info=True)
         else:
             print(f"CRITICAL ERROR (no logger): {e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
     finally:
-        # Use session_manager if it was successfully initialized
+        # Use session_manager if initialized (it might be None after Action 2/4/9)
         if "session_manager" in locals() and session_manager:
-            active_before = session_manager.session_active
-            if active_before:
-                if logger:
-                    logger.info("Performing final browser cleanup...")
-                else:
-                    print("Performing final browser cleanup...", file=sys.stderr)
-                session_manager.close_sess()
-            # Ensure DB connections are closed even if browser wasn't active
-            if logger:
-                logger.debug("Performing final DB cleanup...")
-            else:
-                print("Performing final DB cleanup...", file=sys.stderr)
-            session_manager.cls_db_conn()
+            # --- Corrected Check for final cleanup log message ---
+            should_log_cleanup = False
+            if was_driver_live:  # Check if driver was *ever* live during the run
+                should_log_cleanup = True
+            elif (
+                session_manager
+                and hasattr(session_manager, "driver_live")
+                and session_manager.driver_live
+            ):  # Check if *currently* live
+                should_log_cleanup = True
+            # --- End Corrected Check ---
 
-        # Log final message using logger if available
+            if should_log_cleanup:
+                log_msg = "Performing final browser cleanup..."
+                if logger:
+                    logger.info(log_msg)
+                else:
+                    print(log_msg, file=sys.stderr)
+
+            # close_sess handles driver quit and DB pool dispose safely
+            session_manager.close_sess(
+                keep_db=False
+            )  # Ensure DB pool is closed on final exit
+
+        elif not ("session_manager" in locals() and session_manager):
+            logger.info(
+                "Session Manager was None during final cleanup (expected after reset/restore/delete)."
+            )
+
         if "logger" in globals() and logger:
             logger.info("--- Main program execution finished ---")
         else:
@@ -1019,13 +965,12 @@ def main():
                 file=sys.stderr,
             )
         print("\nExecution finished.")
+
+
 # end main
 
 # --- Entry Point ---
 if __name__ == "__main__":
     main()
-
-
-
 
 # end of main.py

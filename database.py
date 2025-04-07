@@ -1282,11 +1282,12 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
 
 
 def delete_database(
-    session_manager, db_path: Path, max_attempts=5
-):  # Increased max_attempts to 5
+    session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
+):  # Restored session_manager signature (Optional)
     """
     Delete the database file (Path object) with retry and exponential backoff.
     More aggressive cleanup and error handling for file locks.
+    Caller is responsible for closing the main DB pool *before* calling this.
     """
     if not isinstance(db_path, Path):
         try:
@@ -1304,14 +1305,9 @@ def delete_database(
     for attempt in range(max_attempts):
         logger.debug(f"Delete attempt {attempt + 1}/{max_attempts}...")
         try:
-            # 1. Aggressive Cleanup: Close connections, dispose engine, garbage collect
-            logger.debug("Closing DB connections and disposing engine...")
-            if session_manager:
-                session_manager.cls_db_conn()  # Should dispose engine
-            else:
-                logger.warning("No session_manager provided to delete_database.")
-
-            # Multiple GC calls and longer sleep
+            # 1. Aggressive Cleanup: Garbage collect aggressively
+            # REMOVED cls_db_conn call - handled by caller
+            logger.debug("Running garbage collection before delete attempt...")
             gc.collect()
             time.sleep(0.5)  # Short sleep
             gc.collect()
@@ -1324,7 +1320,7 @@ def delete_database(
                 # Verify deletion
                 time.sleep(0.1)  # Tiny pause before checking again
                 if not db_path.exists():
-                    logger.debug(
+                    logger.info(
                         f"'{db_path}' deleted successfully."
                     )  # Use INFO for success
                     return  # SUCCESS
@@ -1399,7 +1395,7 @@ def delete_database(
 
 
 def backup_database(
-    session_manager=None,  # Keep session_manager arg for potential future use or remove if definitely unused
+    session_manager=None,  # Kept for signature consistency
 ):
     """Backs up the database file specified in config_instance to the 'Data' folder."""
     db_path = config_instance.DATABASE_FILE  # This is now a Path object
@@ -1466,7 +1462,7 @@ if __name__ == "__main__":
         sys.exit(1)  # Exit if config is broken
 
     engine = None
-    conn_pool = None
+    # conn_pool removed as it wasn't used here
 
     try:
         # --- Create Engine ---
@@ -1549,12 +1545,13 @@ if __name__ == "__main__":
     finally:
         # --- Final Cleanup ---
         standalone_logger.debug("Performing final cleanup...")
-        if conn_pool:
-            conn_pool.clse_all_sess()  # Closes pool and disposes engine
-        elif engine:
+        # conn_pool removed
+        if engine:
             engine.dispose()
-            standalone_logger.debug(
-                "SQLAlchemy engine disposed (pool cleanup skipped/failed)."
-            )
+            standalone_logger.debug("SQLAlchemy engine disposed.")
 
         standalone_logger.info("--- Database.py standalone test finished ---")
+        # Optionally, exit the script
+        sys.exit(0)
+# End of standalone execution
+# end of database.py

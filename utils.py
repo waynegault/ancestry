@@ -1,5 +1,3 @@
-# utils.py
-
 #!/usr/bin/env python3
 
 # # utils.py
@@ -63,6 +61,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from logging_config import setup_logging, logger
 from chromedriver import init_webdvr
+import cloudscraper 
 
 
 # ------------------------------------------------------------------------------------
@@ -666,6 +665,7 @@ class DynamicRateLimiter:
 # Session Management
 # ------------------------------
 
+
 class SessionManager:
     """Manages the Selenium WebDriver session and database connection."""
 
@@ -694,16 +694,18 @@ class SessionManager:
         self.chrome_max_retries: int = self.selenium_config.CHROME_MAX_RETRIES
         self.chrome_retry_delay: int = self.selenium_config.CHROME_RETRY_DELAY
         self.headless_mode: bool = self.selenium_config.HEADLESS_MODE
-        self.session_active: bool = False
-        self.cache_dir: Path = config_instance.CACHE_DIR  # Ensure Path type
+        # --- Refactoring V3 State Flags ---
+        self.driver_live: bool = False
+        self.session_ready: bool = False
+        # --- Initialize DB/Session attributes early ---
         self.engine = None
         self.Session = None
         self._db_init_attempted = False
-        logger.debug(f"SessionManager instance created: ID={id(self)}")
-        self.last_js_error_check: datetime = datetime.now()
-        self.dynamic_rate_limiter: DynamicRateLimiter = DynamicRateLimiter()
+        # --- Initialize other attributes ---
+        self.cache_dir: Path = (
+            config_instance.CACHE_DIR
+        )  # Keep for now if save/restore uses it
         self.csrf_token: Optional[str] = None
-        self.api_login_verified: bool = False
         self.my_profile_id: Optional[str] = None
         self.my_uuid: Optional[str] = None
         self.my_tree_id: Optional[str] = None
@@ -713,6 +715,10 @@ class SessionManager:
         self._uuid_logged = False
         self._tree_id_logged = False
         self._owner_logged = False
+
+        logger.debug(f"SessionManager instance created: ID={id(self)}")
+
+        # --- Initialize requests.Session FIRST ---
         self._requests_session = requests.Session()
         adapter = HTTPAdapter(
             pool_connections=20,
@@ -726,41 +732,80 @@ class SessionManager:
         self._requests_session.mount("http://", adapter)
         self._requests_session.mount("https://", adapter)
         logger.debug("Configured requests.Session with HTTPAdapter.")
-        self.cache = self.Cache()
+
+        # --- Initialize scraper attribute to None BEFORE trying to set it up ---
+        self.scraper = None
+
+        # --- Initialize Rate Limiter ---
+        self.dynamic_rate_limiter: DynamicRateLimiter = DynamicRateLimiter()
+        self.last_js_error_check: datetime = datetime.now()
+
+        # --- Cloudscraper Initialization (MOVED HERE) ---
+        try:
+            self.scraper = cloudscraper.create_scraper(
+                browser={  # Mimic browser headers
+                    "browser": "chrome",
+                    "platform": "windows",
+                    "desktop": True,
+                },
+                delay=10,  # Add a base delay
+            )
+            # Configure retry strategy for the scraper's session
+            scraper_retry = Retry(
+                total=3,
+                backoff_factor=0.8,  # Slightly gentler backoff for scraper
+                status_forcelist=[
+                    429,
+                    500,
+                    502,
+                    503,
+                    504,
+                    403,
+                ],  # Add 403 for CF challenges
+            )
+            scraper_adapter = HTTPAdapter(max_retries=scraper_retry)
+            self.scraper.mount("http://", scraper_adapter)
+            self.scraper.mount("https://", scraper_adapter)
+            logger.debug(
+                "Initialized shared cloudscraper instance with retry strategy."
+            )
+        except Exception as scraper_init_e:
+            logger.error(
+                f"Failed to initialize cloudscraper instance: {scraper_init_e}",
+                exc_info=True,
+            )
+            self.scraper = None  # Ensure scraper is None if init fails
+        # --- END Cloudscraper Initialization ---
+
     # end of __init__
 
-    def start_sess(
-        self, action_name: Optional[str] = None
-    ) -> Tuple[bool, Optional[WebDriver]]:
+    def start_sess(self, action_name: Optional[str] = None) -> bool:
         """
-        Starts or reuses a Selenium WebDriver session following a specific sequence:
-        Initialize -> WebDriver -> Navigate Base -> Login Check -> URL Check -> Cookies -> CSRF -> Identifiers -> Tree Owner -> Success.
+        REVISED V3.1: Phase 1 of session start. Initializes driver and navigates to base URL.
+        Sets self.driver_live = True on success.
+        Does NOT perform login checks or identifier fetching.
         """
-        session_start_success = False
-        retry_count = 0
-        max_retries = self.selenium_config.CHROME_MAX_RETRIES
+        logger.info(f"--- SessionManager Phase 1: Starting Driver ({action_name}) ---")
+        self.driver_live = False  # Reset flag at the start of attempt
+        self.session_ready = False # Also reset session ready flag
+        self.driver = None         # Ensure driver starts as None
 
-        # --- 1. Initialize Session Start ---
-        logger.debug(
-            f"1. Session start initiated for action: '{action_name or 'Unknown'}'..."
-        )
-        self.driver = None
-        self.cache.clear()
+        # Clean up old session state if any existed
+        # self.cache.clear() # Removed - use global cache clear if needed externally
         self.csrf_token = None
         self.my_profile_id = None
         self.my_uuid = None
         self.my_tree_id = None
         self.tree_owner_name = None
-        self.api_login_verified = False  # Reset verification flag
+        self._reset_logged_flags() # Helper to reset logging flags
 
         # Initialize DB Engine/Session if needed
         if not self.engine or not self.Session:
-            self._initialize_db_engine_and_session()
-            if not self.engine or not self.Session:
-                logger.critical(
-                    "Failed to initialize DB Engine/Session during session start."
-                )
-                return False, None  # Fail if DB can't be initialized
+            try:
+                self._initialize_db_engine_and_session()
+            except Exception as db_init_e:
+                logger.critical(f"DB Initialization failed during start_sess: {db_init_e}")
+                return False # Fail Phase 1 if DB can't init
 
         # Ensure requests session exists
         if not hasattr(self, "_requests_session") or not isinstance(
@@ -769,200 +814,198 @@ class SessionManager:
             self._requests_session = requests.Session()
             logger.debug("requests.Session initialized (fallback).")
 
-        # --- Retry Loop for Session Initialization ---
-        while retry_count < max_retries and not session_start_success:
-            retry_count += 1
-            logger.debug(f"Attempting session start: {retry_count}/{max_retries}\n\n")
+        # --- Retry Loop specifically for Driver Initialization ---
+        # init_webdvr now handles its own retries internally
+        logger.debug("Initializing WebDriver instance (using init_webdvr)...")
+        try:
+            self.driver = init_webdvr() # No attach_attempt flag needed here
+            if not self.driver:
+                logger.error("WebDriver initialization failed (init_webdvr returned None).")
+                return False # Failed to get driver after retries
+
+            logger.debug("WebDriver initialization successful.")
+
+            # --- Navigate to Base URL to Stabilize ---
+            logger.debug("Navigating to Base URL to stabilize initial state...")
+            base_url_nav_ok = nav_to_page(
+                self.driver,
+                config_instance.BASE_URL,
+                selector="body", # Wait for body to exist
+                session_manager=self,
+            )
+            if not base_url_nav_ok:
+                logger.error("Failed to navigate to Base URL after WebDriver init.")
+                self.close_sess() # Clean up driver
+                return False
+
+            logger.debug("Initial navigation to Base URL successful.")
+            self.driver_live = True # Set flag indicating driver is up and on base URL
+            self.session_start_time = time.time()
+            self.last_js_error_check = datetime.now()
+            logger.info("--- SessionManager Phase 1: Driver Start Successful ---")
+            return True
+
+        except WebDriverException as wd_exc:
+            logger.error(f"WebDriverException during driver start/base nav: {wd_exc}", exc_info=False)
+            self.close_sess()
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during driver start/base nav: {e}", exc_info=True)
+            self.close_sess()
+            return False
+    # end start_sess (Phase 1)
+
+    def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:
+        """
+        REVISED V3.1: Phase 2 of session start. Ensures user is logged in and identifiers fetched.
+        Must be called AFTER start_sess (Phase 1) is successful.
+        Sets self.session_ready = True on success.
+        """
+        logger.info(f"--- SessionManager Phase 2: Ensuring Session Ready ({action_name}) ---")
+        if not self.driver_live or not self.driver:
+            logger.error("Cannot ensure session readiness: Driver not live (Phase 1 not run/failed).")
+            return False
+        if self.session_ready:
+            logger.debug("Session already marked as ready. Skipping readiness checks.")
+            return True
+
+        # Reset state flags specific to Phase 2
+        self.csrf_token = None
+        self.my_profile_id = None
+        self.my_uuid = None
+        self.my_tree_id = None
+        self.tree_owner_name = None
+        self._reset_logged_flags()
+
+        max_readiness_attempts = 2 # Limit retries for the readiness phase itself
+        for attempt in range(1, max_readiness_attempts + 1):
+            logger.debug(f"Session readiness attempt {attempt}/{max_readiness_attempts}...")
             try:
-                # --- 2. Initialize WebDriver ---
-                logger.debug("2. Initializing WebDriver instance.")
-                self.driver = init_webdvr(
-                    attach_attempt=True
-                )  # init_webdvr handles its own retries internally now
-                if not self.driver:
-                    logger.error(
-                        f"WebDriver initialization failed after internal retries (attempt {retry_count})."
-                    )
-                    # No need to sleep/retry here, init_webdvr already did
-                    # If init_webdvr fails after its retries, fail start_sess permanently
-                    return False, None  # Permanent failure if init_webdvr fails
+                # --- 1. Check Login Status ---
+                logger.debug("Checking login status...")
+                login_stat = login_status(self) # Uses API check first, then UI
 
-                logger.debug("WebDriver initialization successful.")
-
-                # --- Navigate to Base URL to Stabilize ---
-                logger.debug("Navigating to Base URL to stabilize initial state...")
-                base_url_nav_ok = nav_to_page(
-                    self.driver,
-                    config_instance.BASE_URL,
-                    selector="body",
-                    session_manager=self,
-                )
-                if not base_url_nav_ok:
-                    logger.error(
-                        "Failed to navigate to Base URL after WebDriver init. Aborting attempt {retry_count}."
-                    )
-                    self.close_sess()  # Clean up driver
-                    # Consider if retry is useful here or just fail the whole start_sess
-                    if retry_count < max_retries:
-                        time.sleep(self.selenium_config.CHROME_RETRY_DELAY)
-                        continue  # Retry the whole start_sess attempt
-                    else:
-                        return (
-                            False,
-                            None,
-                        )  # Fail permanently if base nav fails repeatedly
-
-                logger.debug("Initial navigation to Base URL successful.\n\n")
-
-                # --- 3. Check Login Status & Log In If Needed ---
-                logger.debug("3. Checking login status.")
-                login_stat = login_status(self)  # Uses API check first, then UI
                 if login_stat is True:
                     logger.debug("User is logged in.")
                 elif login_stat is False:
-                    logger.info("Attempting login process...")  # Use INFO
+                    logger.info("User not logged in. Attempting login process...")
                     login_result = log_in(self)
                     if login_result != "LOGIN_SUCCEEDED":
-                        logger.critical(
-                            f"Login failed ({login_result}). Aborting session start."
-                        )  # Use CRITICAL
-                        self.close_sess()
-                        return False, None  # Fail permanently on login failure
-                    logger.debug("Login successful.")  # Use INFO
+                        logger.error(f"Login failed ({login_result}). Readiness check failed.")
+                        # Don't close session here, let caller decide
+                        return False
+                    logger.info("Login successful.")
                     # Re-verify after login attempt
-                    if not login_status(self):  # Check again
-                        logger.critical(
-                            "Login status verification failed even after successful login attempt reported."
-                        )  # Use CRITICAL
-                        self.close_sess()
-                        return False, None
+                    if not login_status(self): # Check again
+                        logger.error("Login status verification failed even after successful login attempt reported.")
+                        return False
                     logger.debug("Login status re-verified successfully after login.")
-                else:  # login_stat is None (critical error during check)
-                    logger.critical(
-                        f"Login status check failed critically. Aborting session start."
-                    )  # Use CRITICAL
-                    self.close_sess()
-                    return False, None
-                logger.debug("Login status confirmed.\n\n")
+                else: # login_stat is None (critical error during check)
+                    logger.error(f"Login status check failed critically. Readiness check failed.")
+                    return False
+                logger.debug("Login status confirmed.")
 
-                # --- 4. URL Check & Navigation to Base URL (Refined Logic) ---
-                # This check might be less critical now that login_status is robust, but keep as safety net
-                logger.debug("4. Re-checking current URL validity.")
+                # --- 2. URL Check & Correction (Optional but good practice) ---
+                logger.debug("Checking current URL validity...")
                 if not self._check_and_handle_url():
-                    logger.error("URL check/handling failed. Aborting session start.")
-                    self.close_sess()
-                    return False, None
-                logger.debug("URL re-check completed.\\n")
+                    logger.error("URL check/handling failed during readiness check.")
+                    return False
+                logger.debug("URL check/handling completed.")
 
-                # --- 5. Verify Essential Cookies ---
-                logger.debug(
-                    "5. Verifying essential cookies (ANCSESSIONID, SecureATT)."
-                )
+                # --- 3. Verify Essential Cookies ---
+                logger.debug("Verifying essential cookies (ANCSESSIONID, SecureATT)...")
                 essential_cookies = ["ANCSESSIONID", "SecureATT"]
                 if not self.get_cookies(essential_cookies, timeout=15):
-                    logger.error(
-                        f"Essential cookies {essential_cookies} not found. Aborting session start."
-                    )
-                    self.close_sess()
-                    return False, None
-                logger.debug("Essential cookies verified.\n\n")
+                    logger.error(f"Essential cookies {essential_cookies} not found. Readiness check failed.")
+                    return False
+                logger.debug("Essential cookies verified.")
 
-                # --- 6. Synchronize Cookies to requests.Session ---
-                logger.debug("6. Syncing cookies from WebDriver to requests session.")
+                # --- 4. Synchronize Cookies to requests.Session ---
+                logger.debug("Syncing cookies from WebDriver to requests session...")
                 self._sync_cookies()
-                logger.debug("Cookies synced.\n\n")
+                logger.debug("Cookies synced.")
 
-                # --- 7. Retrieve and Store CSRF Token ---
-                logger.debug("7. Retrieving CSRF token.")
+                # --- 5. Retrieve and Store CSRF Token ---
+                logger.debug("Retrieving CSRF token...")
                 self.csrf_token = self.get_csrf()
                 if not self.csrf_token:
-                    logger.error(
-                        "Failed to retrieve CSRF token. Aborting session start."
-                    )
-                    self.close_sess()
-                    return False, None
-                logger.debug(f"CSRF token retrieved: {self.csrf_token[:10]}...\n\n")
+                    logger.error("Failed to retrieve CSRF token. Readiness check failed.")
+                    return False
+                logger.debug(f"CSRF token retrieved: {self.csrf_token[:10]}...")
 
-                # --- 8. Retrieve User Identifiers ---
-                logger.debug("8. Retrieving user identifiers.")
+                # --- 6. Retrieve User Identifiers ---
+                logger.debug("Retrieving user identifiers...")
                 if not self._retrieve_identifiers():
-                    logger.error(
-                        "Failed to retrieve essential user identifiers. Aborting session start."
-                    )
-                    self.close_sess()
-                    return False, None
-                logger.debug("Finished retrieving user identifiers.\n\n")
+                    logger.error("Failed to retrieve essential user identifiers. Readiness check failed.")
+                    return False
+                logger.debug("Finished retrieving user identifiers.")
 
-                # --- 9. Retrieve Tree Owner Name ---
-                logger.debug("9. Retrieving tree owner name.")
-                self._retrieve_tree_owner()  # Log internally
-                logger.debug("Finished retrieving tree owner name.\n\n")
+                # --- 7. Retrieve Tree Owner Name (if applicable) ---
+                logger.debug("Retrieving tree owner name (if applicable)...")
+                self._retrieve_tree_owner() # Log internally
+                logger.debug("Finished retrieving tree owner name.")
 
-                # --- 10. Session Start Successful ---
-                session_start_success = True
-                self.session_active = True
-                self.session_start_time = time.time()
-                self.last_js_error_check = datetime.now()
-                logger.debug(
-                    f"10. Session started successfully on attempt {retry_count}."
-                )  # Use INFO
-                return True, self.driver
+                # --- 8. Mark Session as Ready ---
+                self.session_ready = True
+                logger.info("--- SessionManager Phase 2: Session Ready Successful ---")
+                return True # Success!
 
             # --- Handle Exceptions during the attempt ---
             except WebDriverException as wd_exc:
-                logger.error(
-                    f"WebDriverException during session start attempt {retry_count}: {wd_exc}",
-                    exc_info=False,
-                )
-                logger.debug("Closing potentially broken WebDriver instance for retry.")
-                self.close_sess()  # Clean up driver before retry
-                if retry_count < max_retries:
-                    logger.info(
-                        f"Waiting {self.selenium_config.CHROME_RETRY_DELAY}s before next attempt..."
-                    )
+                logger.error(f"WebDriverException during readiness check attempt {attempt}: {wd_exc}", exc_info=False)
+                # If session died, we can't continue readiness checks
+                if not self.is_sess_valid():
+                    logger.error("Session became invalid during readiness check. Aborting.")
+                    self.driver_live = False # Mark driver as not live
+                    self.session_ready = False
+                    self.close_sess() # Clean up
+                    return False
+                # If session still seems valid, maybe it was a transient error
+                if attempt < max_readiness_attempts:
+                    logger.info(f"Waiting {self.selenium_config.CHROME_RETRY_DELAY}s before next readiness attempt...")
                     time.sleep(self.selenium_config.CHROME_RETRY_DELAY)
-                # else loop condition handles exit
+                else:
+                    logger.error("Readiness check failed after final attempt due to WebDriverException.")
+                    return False
 
             except Exception as e:
-                logger.error(
-                    f"Unexpected error during session start attempt {retry_count}: {e}",
-                    exc_info=True,
-                )
-                self.close_sess()  # Clean up driver
-                if retry_count < max_retries:
-                    logger.info(
-                        f"Waiting {self.selenium_config.CHROME_RETRY_DELAY}s before next attempt..."
-                    )
+                logger.error(f"Unexpected error during readiness check attempt {attempt}: {e}", exc_info=True)
+                if attempt < max_readiness_attempts:
+                    logger.info(f"Waiting {self.selenium_config.CHROME_RETRY_DELAY}s before next readiness attempt...")
                     time.sleep(self.selenium_config.CHROME_RETRY_DELAY)
-                # else loop condition handles exit
+                else:
+                    logger.error("Readiness check failed after final attempt due to unexpected error.")
+                    return False
 
         # --- End of Retry Loop ---
-        if not session_start_success:
-            logger.critical(
-                f"Session start FAILED permanently after {max_retries} attempts."
-            )
-            self.close_sess()  # Ensure cleanup on permanent failure
-            return False, None
+        logger.error(f"Session readiness check FAILED after {max_readiness_attempts} attempts.")
+        return False
+    # end ensure_session_ready (Phase 2)
 
-        # Fallback (should not be reached)
-        logger.error(
-            "start_sess exited retry loop unexpectedly without success/failure return."
-        )
-        self.close_sess()
-        return False, None
-    # end start_sess
+    def _reset_logged_flags(self):
+        """Helper to reset the logging flags for identifiers."""
+        self._profile_id_logged = False
+        self._uuid_logged = False
+        self._tree_id_logged = False
+        self._owner_logged = False
+    # end _reset_logged_flags
 
     def _initialize_db_engine_and_session(self):
         """Initializes the SQLAlchemy engine and session factory with pooling."""
-        # Log which SessionManager instance is doing the init
-        logger.debug(f"SessionManager ID={id(self)} attempting DB initialization...")
-        self._db_init_attempted = True  # Mark that we tried
+        # Check if already initialized
+        if self.engine and self.Session:
+            logger.debug(
+                f"DB Engine/Session already initialized for SM ID={id(self)}. Skipping."
+            )
+            return
 
-        # --- If an engine already exists, dispose it first ---
-        # This handles potential re-initialization scenarios more cleanly
+        logger.debug(f"SessionManager ID={id(self)} attempting DB initialization...")
+        self._db_init_attempted = True
+
+        # Dispose existing engine if present (handles re-init scenarios)
         if self.engine:
             logger.debug(
-                f"SessionManager ID={id(self)} found existing engine (ID={id(self.engine)}). Disposing before re-initializing."
+                f"Disposing existing engine before re-initializing (SM ID={id(self)})."
             )
             try:
                 self.engine.dispose()
@@ -970,12 +1013,11 @@ class SessionManager:
                 logger.error(f"Error disposing existing engine: {dispose_e}")
             self.engine = None
             self.Session = None
-        # --- End Dispose ---
 
         try:
             logger.debug(f"Initializing SQLAlchemy Engine for: {self.db_path}")
 
-            # === POOL SIZE LOGIC V4 (kept from previous attempt) ===
+            # === POOL SIZE LOGIC V4 (copied from previous correct version) ===
             pool_size_env_str = os.getenv("DB_POOL_SIZE")
             pool_size_config = getattr(config_instance, "DB_POOL_SIZE", None)
             logger.debug(
@@ -1005,7 +1047,7 @@ class SessionManager:
                 )
                 pool_size_str_to_parse = "50"
 
-            pool_size = 20
+            pool_size = 20  # Default if parsing fails below
             try:
                 parsed_val = int(pool_size_str_to_parse)
                 if parsed_val <= 0:
@@ -1013,11 +1055,12 @@ class SessionManager:
                         f"DB_POOL_SIZE value '{parsed_val}' invalid (<=0). Using default {pool_size}."
                     )
                 elif parsed_val == 1:
+                    pool_size = 1  # Allow 1 explicitly, though maybe warn
                     logger.warning(
-                        f"DB_POOL_SIZE value '1' detected. Overriding to minimum default {pool_size} for safety."
+                        f"DB_POOL_SIZE value '1' detected. Using minimal pool size."
                     )
                 else:
-                    pool_size = min(parsed_val, 100)
+                    pool_size = min(parsed_val, 100)  # Cap at 100
                     logger.debug(f"Successfully parsed pool size: {pool_size}")
             except (ValueError, TypeError):
                 logger.warning(
@@ -1029,15 +1072,10 @@ class SessionManager:
             pool_class = sqlalchemy_pool.QueuePool
             # === END POOL SIZE LOGIC ===
 
-            # --- ABSOLUTE FINAL CHECK LOGGING ---
             final_params_log = f"FINAL PARAMS for create_engine: pool_size={pool_size}, max_overflow={max_overflow}, pool_timeout={pool_timeout}"
-            logger.debug(
-                f"*** SessionManager ID={id(self)} {final_params_log} ***"
-            )  # Include SM ID
-            # --- END FINAL CHECK ---
+            logger.debug(f"*** SessionManager ID={id(self)} {final_params_log} ***")
 
-            # Create Engine
-            self.engine = create_engine(
+            self.engine = create_engine(  # Assign to self.engine
                 f"sqlite:///{self.db_path}",
                 echo=False,
                 pool_size=pool_size,
@@ -1046,11 +1084,11 @@ class SessionManager:
                 poolclass=pool_class,
                 connect_args={"check_same_thread": False},
             )
-            # Log the new engine ID
             logger.debug(
                 f"SessionManager ID={id(self)} created NEW engine: ID={id(self.engine)}"
             )
 
+            # Log pool size
             try:
                 actual_pool_size = getattr(self.engine.pool, "_size", "N/A")
                 logger.debug(
@@ -1071,13 +1109,14 @@ class SessionManager:
                 finally:
                     cursor.close()
 
-            # --- Session factory ---
-            self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
+            self.Session = sessionmaker(
+                bind=self.engine, expire_on_commit=False
+            )  # Assign to self.Session
             logger.debug(
                 f"SessionManager ID={id(self)} created Session factory for Engine ID={id(self.engine)}"
             )
 
-            # --- Create tables ---
+            # Create tables
             try:
                 Base.metadata.create_all(self.engine)
                 logger.debug("DB tables checked/created.")
@@ -1092,16 +1131,16 @@ class SessionManager:
                 f"SessionManager ID={id(self)} FAILED to initialize SQLAlchemy: {e}",
                 exc_info=True,
             )
-            # Ensure state is clean on failure
             if self.engine:
                 try:
                     self.engine.dispose()
                 except Exception:
                     pass
-            self.engine = None
-            self.Session = None
-            raise e  # Re-raise
-    #  end _initialize_db_engine_and_session
+            self.engine = None  # Ensure engine is None on failure
+            self.Session = None  # Ensure Session is None on failure
+            raise e
+
+    # end _initialize_db_engine_and_session
 
     def _check_and_handle_url(self) -> bool:
         """Checks current URL and navigates to base URL if necessary."""
@@ -1323,17 +1362,8 @@ class SessionManager:
                 if self.driver is None:
                     logger.error("Driver is not initialized. Cannot retrieve cookies.")
                     return False
-                if self.driver is not None:
-                    if self.driver is not None:
-                        cookies = self.driver.get_cookies()
-                    else:
-                        logger.error(
-                            "Driver is not initialized. Cannot retrieve cookies."
-                        )
-                        cookies = {}
-                else:
-                    logger.error("Driver is not initialized. Cannot retrieve cookies.")
-                    cookies = {}
+                # Simplified check as is_sess_valid already checked driver existence
+                cookies = self.driver.get_cookies()
                 current_cookies_lower = {c["name"].lower() for c in cookies}
                 missing_lower = required_lower - current_cookies_lower
 
@@ -1365,11 +1395,18 @@ class SessionManager:
                 time.sleep(interval * 2)
 
         # Loop finished without finding all cookies
-        missing_final = [
-            name
-            for name in cookie_names
-            if name.lower() in (required_lower - current_cookies_lower)
-        ]
+        # Recalculate missing cookies one last time
+        missing_final = []
+        try:
+            if self.driver:
+                cookies_final = self.driver.get_cookies()
+                current_cookies_final_lower = {c["name"].lower() for c in cookies_final}
+                missing_final = [name for name in cookie_names if name.lower() in (required_lower - current_cookies_final_lower)]
+            else:
+                missing_final = cookie_names # Assume all are missing if driver gone
+        except Exception: # Catch errors during final check
+            missing_final = cookie_names # Assume all missing on error
+
         logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
         return False
     # end get_cookies
@@ -1381,11 +1418,10 @@ class SessionManager:
             return
 
         try:
-            if self.driver is not None:
-                cookies = self.driver.get_cookies()
-            else:
-                logger.error("Driver is not initialized. Cannot retrieve cookies.")
-                cookies = {}
+            if self.driver is None:
+                logger.error("Driver is None. Cannot retrieve cookies for sync.")
+                return
+            cookies = self.driver.get_cookies()
             # Clear existing cookies in requests session before syncing
             self._requests_session.cookies.clear()
             synced_count = 0
@@ -1415,7 +1451,11 @@ class SessionManager:
                     }
                     # Add expires if present (requests uses 'expires')
                     if "expiry" in cookie and cookie["expiry"] is not None:
-                        cookie_attrs["expires"] = int(cookie["expiry"])
+                        # Check if expiry is already an int timestamp (preferred by requests)
+                        if isinstance(cookie["expiry"], (int, float)):
+                            cookie_attrs["expires"] = int(cookie["expiry"])
+                        # Handle other potential formats (less common for expiry) if needed
+                        # else: logger.warning(f"Unexpected expiry format for cookie {cookie['name']}: {cookie['expiry']}")
 
                     self._requests_session.cookies.set(**cookie_attrs)
                     synced_count += 1
@@ -1424,7 +1464,7 @@ class SessionManager:
                         f"Skipping invalid cookie format during sync: {cookie}"
                     )
 
-            # logger.debug(f"Synced {synced_count} cookies to requests session.") # Less verbose
+            logger.debug(f"Synced {synced_count} cookies to requests session.") # Less verbose
         except WebDriverException as e:
             logger.error(f"WebDriverException during cookie sync: {e}")
             # Check if session died
@@ -1436,32 +1476,7 @@ class SessionManager:
             logger.error(f"Unexpected error during cookie sync: {e}", exc_info=True)
     # end _sync_cookies
 
-    class Cache:
-        """
-        Simple in-memory cache to store API responses to avoid redundant calls.
-        Using a class to namespace the cache and avoid potential attribute conflicts in SessionManager.
-        """
-
-        def __init__(self):
-            self._cache: Dict[str, Any] = {}  # Type hint cache dict
-
-        def get(self, key: str) -> Optional[Any]:  # Type hint key and return
-            return self._cache.get(key)
-
-        def set(
-            self, key: str, value: Any, timeout: Optional[int] = None
-        ) -> bool:  # Type hint key/value/timeout
-            # Timeout is ignored in this simple implementation, but kept for potential future use
-            self._cache[key] = value
-            # logger.debug(f"Cached value for key: {key}") # Less verbose
-            return True  # Indicate successful caching
-
-        def clear(self):
-            self._cache = {}
-            logger.debug("Internal cache cleared.")
-
-        #
-    # End of Cache class
+    # --- Removed inner Cache class ---
 
     def return_session(self, session: Session):
         """Closes the session, returning the underlying connection to the pool."""
@@ -1562,29 +1577,45 @@ class SessionManager:
                 self.return_session(session)
     # End of get_db_conn_context method
 
-    def cls_db_conn(self):
-        """Disposes the SQLAlchemy engine, closing all pooled connections."""
-        engine_id = id(self.engine) if self.engine else "None"
-        logger.debug(
-            f"SessionManager ID={id(self)} cls_db_conn called. Disposing Engine ID: {engine_id}"
-        )
-        if self.engine:
-            try:
-                self.engine.dispose()
-                logger.debug(f"Engine ID={engine_id} disposed.")
-            except Exception as e:
-                logger.error(
-                    f"Error disposing SQLAlchemy engine ID={engine_id}: {e}",
-                    exc_info=True,
-                )
-            finally:
-                self.engine = None  # Set engine to None
-                self.Session = None  # Set Session factory to None
-                self._db_init_attempted = False  # Reset flag
-        else:
+    def cls_db_conn(self, keep_db: bool = True):
+        """
+        Disposes the SQLAlchemy engine, closing all pooled connections.
+        Optionally keeps the engine alive if keep_db is True.
+        """
+        # Check self.engine existence BEFORE accessing it for logging/disposal
+        if not self.engine:
             logger.debug(
                 f"SessionManager ID={id(self)}: No active SQLAlchemy engine to dispose."
             )
+            # Ensure other related attributes are also None
+            self.Session = None
+            self._db_init_attempted = False
+            return  # Nothing more to do
+
+        engine_id = id(self.engine)  # Safe to get ID now
+        if keep_db:
+            logger.debug(
+                f"SessionManager ID={id(self)} cls_db_conn called (keep_db=True). Skipping engine disposal for Engine ID: {engine_id}"
+            )
+            return  # Do nothing if keeping DB
+
+        logger.debug(
+            f"SessionManager ID={id(self)} cls_db_conn called (keep_db=False). Disposing Engine ID: {engine_id}"
+        )
+        try:
+            self.engine.dispose()
+            logger.debug(f"Engine ID={engine_id} disposed.")
+        except Exception as e:
+            logger.error(
+                f"Error disposing SQLAlchemy engine ID={engine_id}: {e}",
+                exc_info=True,
+            )
+        finally:
+            # Always set engine/Session to None after disposal attempt
+            self.engine = None
+            self.Session = None
+            self._db_init_attempted = False  # Reset flag
+
     # End of cls_db_conn
 
     @retry_api()  # Add retry decorator
@@ -1797,17 +1828,25 @@ class SessionManager:
             return False
     # End of verify_sess
 
-    def _verify_api_login_status(self) -> bool:
+    def _verify_api_login_status(self) -> Optional[bool]:
         """
-        REVISED: Checks login status via API. Logs concisely if API call fails (likely 401).
+        REVISED V4: Checks login status via /header/dna API.
+        Returns True if API confirms login, False if API indicates not logged in,
+        None if a critical error occurs during the check.
         """
-        if self.api_login_verified:
-            # logger.debug("API login already verified this session (cached).")
-            return True
+        # Removed internal caching flag (self.api_login_verified)
 
         logger.debug("Verifying login status via header/dna API endpoint...")
         url = urljoin(config_instance.BASE_URL, "api/uhome/secure/rest/header/dna")
         api_description = "API Login Verification (header/dna)"
+
+        # Check driver state before proceeding
+        if not self.driver or not self.is_sess_valid():
+            logger.warning(f"{api_description}: Driver/session not valid for API check.")
+            return None # Critical error if driver isn't ready
+
+        # Ensure cookies are synced *before* this specific API call
+        self._sync_cookies()
 
         try:
             # Pass self (SessionManager instance) correctly
@@ -1818,32 +1857,42 @@ class SessionManager:
                 method="GET",
                 use_csrf_token=False,
                 api_description=api_description,
-                force_requests=True,
+                force_requests=True, # Use requests session which should now have synced cookies
             )
 
-            if response_data is not None:
-                # Check for expected data in response
-                if isinstance(response_data, dict) and "testId" in response_data:
+            # Handle cases based on _api_req return value
+            if response_data is None:
+                # _api_req returns None on total failure (retries exhausted)
+                logger.warning(f"{api_description}: _api_req returned None (likely connection/timeout after retries). Returning None.")
+                return None # Critical error state
+
+            elif isinstance(response_data, requests.Response):
+                # _api_req returns the Response object on non-2xx status codes that aren't retryable
+                status_code = response_data.status_code
+                if status_code in [401, 403]:
+                    logger.debug(f"{api_description}: API check failed with status {status_code}. User not logged in.")
+                    return False # Explicitly not logged in
+                else:
+                    logger.warning(f"{api_description}: API check failed with unexpected status {status_code}. Returning None.")
+                    return None # Unexpected error state
+
+            elif isinstance(response_data, dict):
+                # Successful 2xx response, check content
+                if "testId" in response_data:
                     logger.debug(f"API login check successful via {api_description}.")
-                    self.api_login_verified = True
                     return True
                 else:
-                    # Succeeded (2xx) but unexpected format - still treat as logged in?
+                    # Succeeded (2xx) but unexpected format - Treat as error? Or logged in?
+                    # Let's treat unexpected format cautiously as potentially logged in but warn.
                     logger.warning(
                         f"API login check via {api_description} succeeded (2xx), but response format unexpected: {response_data}"
                     )
-                    self.api_login_verified = (
-                        True  # Cautiously set True as API didn't return error
-                    )
-                    return True
+                    return True # Cautiously assume logged in if 2xx
+
             else:
-                # --- Log failure more concisely (likely 401/403 handled quietly in _api_req) ---
-                logger.debug(
-                    f"API login check indicates user is not logged in ({api_description} failed)."
-                )
-                # --- End Logging Change ---
-                self.api_login_verified = False
-                return False
+                # _api_req returned something else unexpected (e.g., string from non-JSON 2xx)
+                logger.error(f"{api_description}: _api_req returned unexpected type {type(response_data)}. Returning None.")
+                return None # Critical error state
 
         except Exception as e:
             # Catch unexpected errors during the verification process itself
@@ -1851,8 +1900,7 @@ class SessionManager:
                 f"Unexpected error during API login status check ({api_description}): {e}",
                 exc_info=True,
             )
-            self.api_login_verified = False
-            return False
+            return None # Critical error state
     # end _verify_api_login_status
 
     @retry_api()  # Use retry_api decorator
@@ -1947,8 +1995,8 @@ class SessionManager:
             return False
     # End of is_sess_valid
 
-    def close_sess(self):
-        """Closes the Selenium WebDriver session."""
+    def close_sess(self, keep_db: bool = False): # Added keep_db flag
+        """Closes the Selenium WebDriver session and optionally the DB pool."""
         if self.driver:
             logger.debug("Attempting to close WebDriver session...")
             try:
@@ -1957,13 +2005,20 @@ class SessionManager:
             except Exception as e:
                 logger.error(f"Error closing WebDriver session: {e}", exc_info=True)
             finally:
-                self.driver = None  # Ensure driver is None even if quit fails
+                self.driver = None # Ensure driver is None even if quit fails
         else:
             logger.debug("No active WebDriver session to close.")
-        self.session_active = False
-        self.api_login_verified = False  # Reset API verification flag
-        self.csrf_token = None  # Clear CSRF token
-        # Keep DB connection pool alive unless explicitly closed by cls_db_conn
+
+        # Reset state flags
+        self.driver_live = False
+        self.session_ready = False
+        self.csrf_token = None # Clear CSRF token
+
+        # Close DB connection pool unless asked to keep it
+        if not keep_db:
+            self.cls_db_conn(keep_db=False) # Call helper to dispose engine
+        else:
+            logger.debug("Keeping DB connection pool alive (keep_db=True).")
     # End of close_sess
 
     def restart_sess(
@@ -1971,14 +2026,25 @@ class SessionManager:
     ) -> bool:  # Return bool for success
         """Restarts the WebDriver session and optionally navigates to a URL."""
         logger.warning("Restarting WebDriver session...")
-        self.close_sess()  # Ensure any existing session is closed
-        start_ok, _ = self.start_sess(
-            action_name="Session Restart"
-        )  # Attempt to start new session
+        self.close_sess(keep_db=True) # Ensure any existing session is closed, but keep DB pool
+
+        # --- V3 Refactoring: Use two-phase start ---
+        # Phase 1: Start Driver
+        start_ok = self.start_sess(action_name="Session Restart - Phase 1")
         if not start_ok:
-            logger.error("Failed to restart session.")
+            logger.error("Failed to restart session (Phase 1: Driver Start failed).")
             return False
-        # Session started, now navigate if URL provided
+
+        # Phase 2: Ensure Session Ready (Login, Identifiers)
+        ready_ok = self.ensure_session_ready(action_name="Session Restart - Phase 2")
+        if not ready_ok:
+            logger.error("Failed to restart session (Phase 2: Session Ready failed).")
+            # Clean up driver started in Phase 1
+            self.close_sess(keep_db=True) # Keep DB pool if restart fails here
+            return False
+        # --- End V3 Refactoring ---
+
+        # Session started and ready, now navigate if URL provided
         if url and self.driver:
             logger.info(f"Re-navigating to {url} after restart...")
             if nav_to_page(
@@ -2116,6 +2182,8 @@ class SessionManager:
                 f"Unexpected error checking for Javascript errors: {e}", exc_info=True
             )
     # end of check_js_errors
+
+
 # end SessionManager
 
 
@@ -2151,7 +2219,7 @@ def _api_req(
             f"{api_description}: Aborting - SessionManager instance is required."
         )
         return None
-    browser_needed = not force_requests or not session_manager.api_login_verified
+    browser_needed = not force_requests # If forcing requests, assume browser isn't strictly needed for THIS call
     if browser_needed and not session_manager.is_sess_valid():
         logger.error(
             f"{api_description}: Aborting - Browser session is invalid or closed."
@@ -2197,7 +2265,12 @@ def _api_req(
         else:
             logger.warning(f"{api_description}: Failed to generate UBE header.")
     if "ancestry-userid" in contextual_headers and session_manager.my_profile_id:
-        final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
+        # Check if my_profile_id exists before trying to upper()
+        if session_manager.my_profile_id:
+             final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
+        else:
+             logger.warning(f"{api_description}: Expected ancestry-userid header, but session_manager.my_profile_id is None.")
+
     if "newrelic" not in final_headers:
         final_headers["newrelic"] = make_newrelic(driver)
     if "traceparent" not in final_headers:
@@ -2356,7 +2429,8 @@ def _api_req(
                     logger.warning(
                         f"{api_description}: API call failed with status {status} {response.reason}. Likely not logged in or session expired."
                     )
-                    session_manager.api_login_verified = False
+                    # session_manager.api_login_verified = False # Removed this flag
+                    session_manager.session_ready = False # Use session_ready flag instead
                 else:
                     logger.error(
                         f"{api_description}: Non-retryable error: {status} {response.reason}."
@@ -2593,17 +2667,8 @@ def handle_twoFA(session_manager: SessionManager) -> bool:
         logger.error("SessionManager driver is None. Cannot proceed.")
         return False
     else:
-        if session_manager.driver is not None:
-            if session_manager.driver is None:
-                raise ValueError("SessionManager driver is None.")
-            if session_manager.driver is not None:
-                driver = session_manager.driver
-            else:
-                logger.error("SessionManager driver is None. Cannot proceed.")
-                return False
-        else:
-            logger.error("SessionManager driver is None. 2FA handling failed.")
-            return False
+        # Simplified: driver existence already confirmed by `is None` check
+        driver = session_manager.driver
 
     element_wait = selenium_config.element_wait(driver)
     page_wait = selenium_config.page_wait(driver)
@@ -3136,12 +3201,14 @@ def log_in(session_manager: "SessionManager") -> str:  # Return specific status 
         if not nav_to_page(
             driver, signin_url, USERNAME_INPUT_SELECTOR, session_manager
         ):
-            if login_status(session_manager):
-                logger.warning(
-                    "Navigation to signin page failed, but login status is now TRUE. Assuming already logged in."
-                )
-                return "LOGIN_SUCCEEDED"
-            logger.error("Failed to navigate to or load the login page properly.")
+            # --- Check if failure was due to being *already* logged in ---
+            logger.debug("Navigation to signin page failed. Checking current login status as potential cause...")
+            current_status = login_status(session_manager)
+            if current_status is True:
+                 logger.info("Navigation to signin page failed, but now detected as logged in. Login considered successful.")
+                 return "LOGIN_SUCCEEDED"
+            # --- End check ---
+            logger.error("Failed to navigate to or load the login page properly (and not already logged in).")
             return "LOGIN_FAILED_NAVIGATION"
         logger.debug("Successfully navigated to signin page.")
 
@@ -3326,10 +3393,11 @@ def log_in(session_manager: "SessionManager") -> str:  # Return specific status 
 @retry(MAX_RETRIES=2)
 def login_status(session_manager: SessionManager) -> Optional[bool]:
     """
-    REVISED: Checks login status using API and specific UI selectors as fallback.
+    REVISED V4: Checks login status using API (/header/dna) and robust UI selectors as fallback.
     Returns True if likely logged in, False if likely not, None if critical error.
+    Ensures cookie sync before API check.
     """
-    # logger.debug("Checking login status (API prioritized)...")
+    logger.debug("Checking login status (API prioritized)...")
     api_check_result: Optional[bool] = None
     ui_check_result: Optional[bool] = None
 
@@ -3344,98 +3412,92 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:
         if (
             not session_manager.is_sess_valid()
         ):  # Uses the more robust check from SessionManager
-            # logger.debug("Login status: Session invalid or browser closed.")
+            logger.debug("Login status: Session invalid or browser closed.")
             return False
 
         driver = session_manager.driver
+        if driver is None:
+             logger.error("Login status check: Driver is None.")
+             return None # Cannot proceed without driver
 
         # --- 2. API-Based Login Verification (PRIORITY) ---
-        # logger.debug("Attempting API login verification...")
-        api_check_result = session_manager._verify_api_login_status()
+        logger.debug("Attempting API login verification...")
+        # --- Ensure cookies are synced BEFORE API check ---
+        try:
+            logger.debug("Syncing cookies before API login check...")
+            session_manager._sync_cookies()
+        except Exception as sync_e:
+             logger.warning(f"Error syncing cookies before API login check: {sync_e}")
+             # Proceed with API check cautiously, might fail if cookies were crucial
+        # --- End cookie sync ---
+        api_check_result = session_manager._verify_api_login_status() # Now uses /header/dna
 
         if api_check_result is True:
-            # logger.debug("Login status confirmed via API check.")
-            # Optional safety check: Ensure UI isn't showing explicit logout state
-            try:
-                # Use specific Log In button selector
-                if is_elem_there(
-                    driver, By.CSS_SELECTOR, LOG_IN_BUTTON_SELECTOR, wait=1
-                ):
-                    logger.warning(
-                        "API login check passed, but UI shows specific 'Log In' button. State mismatch?"
-                    )
-                return True  # Trust API but warn
-            except Exception as ui_safety_check_e:
-                logger.warning(
-                    f"Error during UI safety check after successful API check: {ui_safety_check_e}"
-                )
-                return True
+            logger.debug("Login status confirmed via API check.")
+            return True # API confirmed login, no need for UI check
 
         elif api_check_result is False:
-            logger.debug("API login verification failed. Falling back to UI check.")
-        # else: pass # API check returned None (error occurred, logged in _verify_api_login_status) - proceed to UI check
+            logger.debug("API login verification indicates user NOT logged in. Falling back to UI check.")
+        else: # API check returned None (critical error occurred, logged in _verify_api_login_status)
+            logger.warning("API login check returned None (critical error). Falling back to UI check.")
 
         # --- 3. UI-Based Login Verification (FALLBACK) ---
         logger.debug("Performing fallback UI login check...")
 
         # --- 3a. Handle Consent Overlay ---
-        if driver is not None:
-            try:
-                consent(driver)  # Use revised consent with specific selectors
-            except Exception:
-                pass
+        # Removed consent check here - it should be handled by navigation/login process if needed.
+        # Trying to handle consent here might interfere with checking the actual page state.
 
-        # --- 3b. Check for Logged-In UI Element (Specific Selector) ---
-        # Use the specific selector provided by user
-        logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR
-        logger.debug(
-            f"Attempting UI verification using logged-in selector: '{logged_in_selector}'"
-        )
-        ui_element_present = is_elem_there(
-            driver, By.CSS_SELECTOR, logged_in_selector, wait=5
-        )
-
-        if ui_element_present:
-            logger.debug(
-                "Login status confirmed via fallback UI check (specific logged-in element found)."
+        # --- 3b. Check for Logged-Out UI Element (Absence is good) ---
+        login_button_selector = LOG_IN_BUTTON_SELECTOR # e.g., '#secMenuItem-SignIn > span'
+        logger.debug(f"Attempting UI verification: Checking absence of login button: '{login_button_selector}'")
+        # Use a short wait (e.g., 1-2 seconds) to check if the login button *is* present
+        login_button_present = False
+        try:
+            WebDriverWait(driver, 2).until(
+                 EC.visibility_of_element_located((By.CSS_SELECTOR, login_button_selector))
             )
-            session_manager.api_login_verified = True  # Update flag based on UI success
-            return True
+            login_button_present = True
+            logger.debug("Login button FOUND during UI check.")
+        except TimeoutException:
+            # Login button NOT found within timeout - good sign!
+            logger.debug("Login button NOT found during UI check (good indication).")
+            login_button_present = False
+        except Exception as e:
+            logger.warning(f"Error checking for login button presence: {e}")
+            # Proceed cautiously, assume maybe not present if error occurred
+
+        if login_button_present:
+            # If login button IS reliably found, user is definitely logged out.
+            logger.debug("Login status confirmed NOT logged in via UI check (login button found).")
+            return False
         else:
-            logger.debug(
-                "Login confirmation UI element ('{}') not found in fallback check.".format(
-                    logged_in_selector
-                )
-            )
-            # --- 3c. Check for Logged-Out UI Element (Specific Selector) ---
-            login_button_selector = LOG_IN_BUTTON_SELECTOR
-            login_button_present = is_elem_there(
-                driver, By.CSS_SELECTOR, login_button_selector, wait=1
+            # Login button NOT found. Now check for logged-in indicator as confirmation.
+            # --- 3c. Check for Logged-In UI Element ---
+            logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR # e.g., '#navAccount'
+            logger.debug(f"Login button absent. Checking presence of logged-in element: '{logged_in_selector}'")
+            ui_element_present = is_elem_there(
+                driver, By.CSS_SELECTOR, logged_in_selector, wait=3 # Short wait okay here
             )
 
-            if login_button_present:
+            if ui_element_present:
                 logger.debug(
-                    "Login status confirmed NOT logged in via fallback UI check (specific 'Log In' button found)."
+                    "Login status confirmed via fallback UI check (login button absent AND logged-in element found)."
                 )
-                session_manager.api_login_verified = False
-                return False
+                return True
             else:
                 # --- 3d. Handle Ambiguity ---
                 logger.warning(
-                    "Login status ambiguous: API failed and neither specific confirmation nor specific login UI elements found."
+                    "Login status ambiguous: API failed/false, login button absent, AND logged-in element absent."
                 )
                 current_url_context = "Unknown"
-                if driver is not None:
-                    try:
-                        current_url_context = driver.current_url
-                    except Exception:
-                        pass
-                else:
-                    logger.warning("Driver is None, unable to retrieve current URL.")
-                    current_url_context = "Unknown"
+                try:
+                    current_url_context = driver.current_url
+                except Exception:
+                    pass
                 logger.debug(f"Ambiguous login state at URL: {current_url_context}")
-                session_manager.api_login_verified = False
-                return False  # Defaulting to False in ambiguous state
+                # Defaulting to False in ambiguous state is safer to trigger login if needed
+                return False
 
     # --- Handle Exceptions ---
     except WebDriverException as e:
@@ -3472,8 +3534,9 @@ def is_browser_open(driver: Optional[WebDriver]) -> bool:  # Type hint driver
             "invalid session id" in str(e).lower()
             or "target closed" in str(e).lower()
             or "disconnected" in str(e).lower()
+            or "no such window" in str(e).lower() # Added NoSuchWindowException check
         ):
-            # logger.debug(f"Browser appears closed or session invalid: {e}") # Less verbose
+            logger.debug(f"Browser appears closed or session invalid: {type(e).__name__}") # Less verbose, show exception type
             return False
         else:
             # Other WebDriver errors might occur even if browser is open
@@ -3990,6 +4053,15 @@ def nav_to_page(
 
             # --- 3b. Check if landed on the target URL base ---
             if landed_url_base != target_url_base:
+                # Special handling for expected redirects AFTER login attempt
+                # If target was signin page, and we landed on base URL, check login status
+                if target_url_base == signin_page_url_base and landed_url_base == urlparse(config_instance.BASE_URL).path.rstrip('/'):
+                     logger.debug("Redirected from signin page to base URL. Checking login status...")
+                     time.sleep(1) # Allow slight delay
+                     if session_manager and login_status(session_manager) is True:
+                          logger.info("Redirected from signin, but now logged in. Navigation OK.")
+                          return True # Treat as success if logged in
+
                 logger.warning(
                     f"Navigation landed on unexpected URL base: '{landed_url_base}' (Expected: '{target_url_base}')"
                 )
@@ -4195,16 +4267,28 @@ def main():
     try:
         # --- Test Session Start (includes identifier retrieval) ---
         logger.info("--- Testing SessionManager.start_sess() ---")
-        start_ok, driver_instance = session_manager.start_sess(action_name="Utils Test")
-        if not start_ok or not driver_instance:
-            logger.error("SessionManager.start_sess() FAILED. Aborting further tests.")
+        # V3 Change: Call start_sess (Phase 1) first
+        start_ok = session_manager.start_sess(action_name="Utils Test - Phase 1")
+        if not start_ok or not session_manager.driver_live:
+            logger.error("SessionManager.start_sess() (Phase 1) FAILED. Aborting further tests.")
             test_success = False
-            return  # Use return for cleaner exit in tests
+            return # Use return for cleaner exit in tests
         else:
-            logger.info("SessionManager.start_sess() PASSED.")
+            logger.info("SessionManager.start_sess() (Phase 1) PASSED.")
+            driver_instance = session_manager.driver # Get driver instance
+
+            # V3 Change: Call ensure_session_ready (Phase 2)
+            logger.info("--- Testing SessionManager.ensure_session_ready() ---")
+            ready_ok = session_manager.ensure_session_ready(action_name="Utils Test - Phase 2")
+            if not ready_ok or not session_manager.session_ready:
+                logger.error("SessionManager.ensure_session_ready() (Phase 2) FAILED. Aborting further tests.")
+                test_success = False
+                return
+            else:
+                 logger.info("SessionManager.ensure_session_ready() (Phase 2) PASSED.")
 
             # --- Verify Identifiers ---
-            logger.info("--- Verifying Identifiers (Retrieved during start_sess) ---")
+            logger.info("--- Verifying Identifiers (Retrieved during ensure_session_ready) ---")
             errors = []
             if not session_manager.my_profile_id:
                 errors.append("my_profile_id")
@@ -4367,8 +4451,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
 
 # End of utils.py
