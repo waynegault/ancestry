@@ -10,6 +10,7 @@ config_instance and selenium_config) throughout the login functions and
 utility functions, enhancing configurability and maintainability.
 """
 
+# --- Standard library imports ---
 import time
 import random
 import os
@@ -24,9 +25,11 @@ import uuid
 import base64
 from functools import wraps, lru_cache
 import contextlib
-from datetime import datetime, timezone  # Added timezone back for naive conversion
+from datetime import datetime, timezone
 from typing import Optional, Tuple, List, Dict, Any, Generator, Callable
 from pathlib import Path
+
+# --- Third-party imports ---
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
@@ -53,16 +56,17 @@ from requests import Response as RequestsResponse, Request
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from sqlalchemy import create_engine, event, text, pool as sqlalchemy_pool
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
 from requests.exceptions import RequestException, HTTPError
+import cloudscraper 
+
+# --- Local application imports ---
 from my_selectors import *
 from config import config_instance, selenium_config
 from database import Base, MessageType
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import SQLAlchemyError
 from logging_config import setup_logging, logger
 from chromedriver import init_webdvr
-import cloudscraper 
-
 
 # ------------------------------------------------------------------------------------
 # Helper functions
@@ -776,7 +780,6 @@ class SessionManager:
             )
             self.scraper = None  # Ensure scraper is None if init fails
         # --- END Cloudscraper Initialization ---
-
     # end of __init__
 
     def start_sess(self, action_name: Optional[str] = None) -> bool:
@@ -1139,7 +1142,6 @@ class SessionManager:
             self.engine = None  # Ensure engine is None on failure
             self.Session = None  # Ensure Session is None on failure
             raise e
-
     # end _initialize_db_engine_and_session
 
     def _check_and_handle_url(self) -> bool:
@@ -1615,7 +1617,6 @@ class SessionManager:
             self.engine = None
             self.Session = None
             self._db_init_attempted = False  # Reset flag
-
     # End of cls_db_conn
 
     @retry_api()  # Add retry decorator
@@ -1932,7 +1933,7 @@ class SessionManager:
             return False
     # end get_header
 
-    def _validate_ess_cookies(self, required_cookies: List[str]) -> bool:  # Type hint
+    def _validate_sess_cookies(self, required_cookies: List[str]) -> bool:  # Type hint
         """Check if specific cookies exist in the current session."""
         if not self.is_sess_valid():  # Use robust check
             logger.warning("Cannot validate cookies: Session invalid.")
@@ -1954,7 +1955,7 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Unexpected error validating cookies: {e}", exc_info=True)
             return False
-    # End of _validate_ess_cookies
+    # End of _validate_sess_cookies
 
     def is_sess_logged_in(self) -> bool:  # Return bool only
         """DEPRECATED: Use login_status() instead. Checks session validity AND login using UI element verification ONLY."""
@@ -2182,8 +2183,6 @@ class SessionManager:
                 f"Unexpected error checking for Javascript errors: {e}", exc_info=True
             )
     # end of check_js_errors
-
-
 # end SessionManager
 
 
@@ -2267,9 +2266,9 @@ def _api_req(
     if "ancestry-userid" in contextual_headers and session_manager.my_profile_id:
         # Check if my_profile_id exists before trying to upper()
         if session_manager.my_profile_id:
-             final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
+            final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
         else:
-             logger.warning(f"{api_description}: Expected ancestry-userid header, but session_manager.my_profile_id is None.")
+            logger.warning(f"{api_description}: Expected ancestry-userid header, but session_manager.my_profile_id is None.")
 
     if "newrelic" not in final_headers:
         final_headers["newrelic"] = make_newrelic(driver)
@@ -2473,35 +2472,38 @@ def _api_req(
 
 def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
     """
-    REVISED V13.8: Generates UBE header. Ensures correlatedSessionId matches ANCSESSIONID cookie.
+    REVISED V14.1: Generates UBE header. Ensures correlatedSessionId matches ANCSESSIONID cookie.
     Uses static null eventId from cURL example.
+    Removed internal SessionManager creation, uses driver directly.
     """
     if not driver:
         logger.debug("Cannot generate UBE header: WebDriver is None.")
         return None
     try:
-        # Temporarily create SessionManager for session check - not ideal but avoids major refactor now
-        temp_sm = SessionManager()  # Create temporary manager
-        temp_sm.driver = driver  # Assign driver
-        if not temp_sm.is_sess_valid():
-            logger.warning("Cannot generate UBE header: Session invalid.")
+        # --- Use helper function or direct check for session validity ---
+        # if not is_browser_open(driver): # Check using the global helper
+        # Or inline check:
+        try:
+            _ = driver.window_handles  # Simple check if driver is responsive
+        except WebDriverException as e:
+            logger.warning(
+                f"Cannot generate UBE header: Session invalid/unresponsive ({type(e).__name__})."
+            )
             return None
+        # --- End session validity check ---
 
-        # *** CHANGE: Read ANCSESSIONID cookie *here* ***
         ancsessionid = None
         try:
             cookie_obj = driver.get_cookie("ANCSESSIONID")
             if cookie_obj and "value" in cookie_obj:
                 ancsessionid = cookie_obj["value"]
-            else:  # Fallback if get_cookie fails for some reason
+            else:
                 cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
                 ancsessionid = cookies.get("ANCSESSIONID")
 
             if not ancsessionid:
                 logger.warning("ANCSESSIONID cookie not found for UBE header.")
                 return None
-            # logger.debug(f"Using ANCSESSIONID '{ancsessionid}' for UBE correlatedSessionId.") # Optional log
-
         except NoSuchCookieException:
             logger.warning(
                 "ANCSESSIONID cookie not found via get_cookie for UBE header."
@@ -2512,20 +2514,16 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
                 f"WebDriver error getting ANCSESSIONID cookie for UBE: {cookie_e}"
             )
             return None
-        # *** END CHANGE ***
 
-        event_id = "00000000-0000-0000-0000-000000000000"  # Static null ID from cURL
-        correlated_id = str(uuid.uuid4())  # Keep this dynamic
-
+        event_id = "00000000-0000-0000-0000-000000000000"
+        correlated_id = str(uuid.uuid4())
         screen_name_standard = "ancestry : uk : en : dna-matches-ui : match-list : 1"
         screen_name_legacy = "ancestry uk : dnamatches-matchlistui : list"
 
         ube_data = {
             "eventId": event_id,
             "correlatedScreenViewedId": correlated_id,
-            # *** CHANGE: Use the fetched ancsessionid ***
             "correlatedSessionId": ancsessionid,
-            # *** END CHANGE ***
             "screenNameStandard": screen_name_standard,
             "screenNameLegacy": screen_name_legacy,
             "userConsent": "necessary|preference|performance|analytics1st|analytics3rd|advertising1st|advertising3rd|attribution3rd",
@@ -2533,7 +2531,7 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
             "vendorConfigurations": "{}",
         }
 
-        logger.debug(f"UBE JSON Payload before encoding: {json.dumps(ube_data)}")
+        # logger.debug(f"UBE JSON Payload before encoding: {json.dumps(ube_data)}") # Less verbose
 
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
@@ -2541,9 +2539,8 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
 
     except WebDriverException as e:
         logger.error(f"WebDriverException generating UBE header: {e}")
-        temp_sm = SessionManager()
-        temp_sm.driver = driver
-        if not temp_sm.is_sess_valid():
+        # Check validity again after error
+        if not is_browser_open(driver):
             logger.error(
                 "Session invalid after WebDriverException during UBE generation."
             )
@@ -2554,82 +2551,71 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
 # End of make_ube
 
 
-def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]:  # Type hint driver
-    """Generates the newrelic header value."""
-    # This doesn't strictly need the driver, but kept arg for consistency
+def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]: # driver arg kept for consistency, but not used
+    """Generates the newrelic header value. No driver needed."""
     try:
-        # Generate random hex IDs (more typical format)
-        trace_id = uuid.uuid4().hex[:16]  # 16 hex chars
-        span_id = uuid.uuid4().hex[:16]  # 16 hex chars
-        account_id = "1690570"  # From observed data
-        app_id = "1588726612"  # From observed data
-        tk = "2611750"  # From observed data
+        trace_id = uuid.uuid4().hex[:16]
+        span_id = uuid.uuid4().hex[:16]
+        account_id = "1690570"
+        app_id = "1588726612"
+        tk = "2611750"
 
         newrelic_data = {
-            "v": [0, 1],  # Version
+            "v": [0, 1],
             "d": {
-                "ty": "Browser",  # Type
-                "ac": account_id,  # Account ID
-                "ap": app_id,  # App ID
-                "id": span_id,  # Span ID
-                "tr": trace_id,  # Trace ID
-                "ti": int(time.time() * 1000),  # Timestamp ms
-                "tk": tk,  # Trust Key
+                "ty": "Browser", "ac": account_id, "ap": app_id,
+                "id": span_id, "tr": trace_id,
+                "ti": int(time.time() * 1000), "tk": tk,
             },
         }
         json_payload = json.dumps(newrelic_data, separators=(",", ":")).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
         return encoded_payload
-
     except Exception as e:
         logger.error(f"Error generating NewRelic header: {e}", exc_info=True)
         return None
 # End of make_newrelic
 
 
-def make_traceparent(driver: Optional[WebDriver]) -> Optional[str]:  # Type hint driver
-    """Generates the traceparent header value (W3C Trace Context)."""
-    # This doesn't strictly need the driver
+def make_traceparent(
+    driver: Optional[WebDriver],
+) -> Optional[str]:  # driver arg kept for consistency, but not used
+    """Generates the traceparent header value (W3C Trace Context). No driver needed."""
     try:
         version = "00"
-        trace_id = uuid.uuid4().hex  # 32 hex chars
-        parent_id = uuid.uuid4().hex[:16]  # 16 hex chars for parent/span ID
+        trace_id = uuid.uuid4().hex
+        parent_id = uuid.uuid4().hex[:16]
         flags = "01"  # Sampled flag
         traceparent = f"{version}-{trace_id}-{parent_id}-{flags}"
         return traceparent
-
     except Exception as e:
         logger.error(f"Error generating traceparent header: {e}", exc_info=True)
         return None
 # End of make_traceparent
 
 
-def make_tracestate(driver: Optional[WebDriver]) -> Optional[str]:  # Type hint driver
-    """Generates the tracestate header value (W3C Trace Context)."""
-    # This doesn't strictly need the driver
+def make_tracestate(driver: Optional[WebDriver]) -> Optional[str]: # driver arg kept for consistency, but not used
+    """Generates the tracestate header value (W3C Trace Context). No driver needed."""
     try:
-        # Based on observed New Relic format within tracestate
-        tk = "2611750"  # Trust key
+        tk = "2611750"
         account_id = "1690570"
         app_id = "1588726612"
-        span_id = uuid.uuid4().hex[:16]  # Matches parent_id in traceparent usually
+        span_id = uuid.uuid4().hex[:16]
         timestamp = int(time.time() * 1000)
-
-        # Format: <tk>@nr=<version>-<type>-<account>-<app>-<span_id>-<transaction_id?>-<sampled?>----<timestamp>
-        # Transaction ID and sampled flag might be empty/default in basic cases
         tracestate = f"{tk}@nr=0-1-{account_id}-{app_id}-{span_id}----{timestamp}"
         return tracestate
-
     except Exception as e:
         logger.error(f"Error generating tracestate header: {e}", exc_info=True)
         return None
 # End of make_tracestate
 
-
 def get_driver_cookies(
     driver: WebDriver,
-) -> Dict[str, str]:  # Type hint driver and return
-    """Retrieves cookies from the Selenium driver as a simple dictionary."""
+) -> Dict[str, str]:
+    """
+    Retrieves cookies from the Selenium driver as a simple dictionary.
+    Removed internal SessionManager creation.
+    """
     if not driver:
         logger.warning("Cannot get driver cookies: WebDriver is None.")
         return {}
@@ -2640,10 +2626,8 @@ def get_driver_cookies(
         return cookies_dict
     except WebDriverException as e:
         logger.error(f"WebDriverException getting driver cookies: {e}")
-        # Check session validity after error
-        temp_sm = SessionManager()  # Create temporary manager
-        temp_sm.driver = driver
-        if not temp_sm.is_sess_valid():
+        # Check session validity directly after error
+        if not is_browser_open(driver): # Use helper function
             logger.error("Session invalid after WebDriverException getting cookies.")
         return {}
     except Exception as e:
@@ -2833,7 +2817,6 @@ def handle_twoFA(session_manager: SessionManager) -> bool:
         return False
 # End of handle_twoFA
 
-
 # Login 4
 def enter_creds(driver: WebDriver) -> bool:  # Type hint driver and return
     """REFINED: Enters username/password, attempts to click Sign In button robustly."""
@@ -3007,7 +2990,6 @@ def enter_creds(driver: WebDriver) -> bool:  # Type hint driver and return
         return False
 # End of enter_creds
 
-
 # Login 3
 @retry(MAX_RETRIES=2, BACKOFF_FACTOR=1, MAX_DELAY=3)  # Add retry for consent handling
 def consent(driver: WebDriver) -> bool:  # Type hint driver and return
@@ -3163,7 +3145,6 @@ def consent(driver: WebDriver) -> bool:  # Type hint driver and return
     # Ensure a return value for all code paths
     return False
 # End of consent
-
 
 # Login 2
 def log_in(session_manager: "SessionManager") -> str:  # Return specific status strings
@@ -3388,7 +3369,6 @@ def log_in(session_manager: "SessionManager") -> str:  # Return specific status 
         return "LOGIN_FAILED_UNEXPECTED"
 # End of log_in
 
-
 # Login 1
 @retry(MAX_RETRIES=2)
 def login_status(session_manager: SessionManager) -> Optional[bool]:
@@ -3521,32 +3501,28 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:
 def is_browser_open(driver: Optional[WebDriver]) -> bool:  # Type hint driver
     """
     Checks if the browser window associated with the driver instance is open.
+    (Copied from SessionManager for standalone use in helpers)
     """
     if driver is None:
         return False
     try:
-        # Accessing window_handles is a lightweight way to check if the browser session is active
         _ = driver.window_handles
-        return True  # If no exception, browser is responsive
+        return True
     except WebDriverException as e:
-        # Specific exceptions indicating closed browser/session
         if (
             "invalid session id" in str(e).lower()
             or "target closed" in str(e).lower()
             or "disconnected" in str(e).lower()
             or "no such window" in str(e).lower() # Added NoSuchWindowException check
         ):
-            logger.debug(f"Browser appears closed or session invalid: {type(e).__name__}") # Less verbose, show exception type
+            logger.debug(f"Browser appears closed or session invalid: {type(e).__name__}")
             return False
         else:
-            # Other WebDriver errors might occur even if browser is open
             logger.warning(
                 f"WebDriverException checking browser status (but might still be open): {e}"
             )
-            # Cautiously return True unless it's a known "closed" error? Or False? Let's be cautious.
             return False
     except Exception as e:
-        # Catch any other unexpected errors
         logger.error(f"Unexpected error checking browser status: {e}", exc_info=True)
         return False
 # End of is_browser_open
