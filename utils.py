@@ -788,7 +788,7 @@ class SessionManager:
         Sets self.driver_live = True on success.
         Does NOT perform login checks or identifier fetching.
         """
-        logger.info(f"--- SessionManager Phase 1: Starting Driver ({action_name}) ---")
+        logger.debug(f"--- SessionManager Phase 1: Starting Driver ({action_name}) ---")
         self.driver_live = False  # Reset flag at the start of attempt
         self.session_ready = False # Also reset session ready flag
         self.driver = None         # Ensure driver starts as None
@@ -845,7 +845,7 @@ class SessionManager:
             self.driver_live = True # Set flag indicating driver is up and on base URL
             self.session_start_time = time.time()
             self.last_js_error_check = datetime.now()
-            logger.info("--- SessionManager Phase 1: Driver Start Successful ---")
+            logger.debug("--- SessionManager Phase 1: Driver Start Successful ---")
             return True
 
         except WebDriverException as wd_exc:
@@ -864,7 +864,7 @@ class SessionManager:
         Must be called AFTER start_sess (Phase 1) is successful.
         Sets self.session_ready = True on success.
         """
-        logger.info(f"--- SessionManager Phase 2: Ensuring Session Ready ({action_name}) ---")
+        logger.debug(f"--- SessionManager Phase 2: Ensuring Session Ready ({action_name}) ---")
         if not self.driver_live or not self.driver:
             logger.error("Cannot ensure session readiness: Driver not live (Phase 1 not run/failed).")
             return False
@@ -950,7 +950,7 @@ class SessionManager:
 
                 # --- 8. Mark Session as Ready ---
                 self.session_ready = True
-                logger.info("--- SessionManager Phase 2: Session Ready Successful ---")
+                logger.debug("--- SessionManager Phase 2: Session Ready Successful ---")
                 return True # Success!
 
             # --- Handle Exceptions during the attempt ---

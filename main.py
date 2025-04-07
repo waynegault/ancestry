@@ -191,7 +191,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         if needs_browser and session_manager:
             # --- Phase 1: Ensure Driver is Live ---
             if not session_manager.driver_live:
-                logger.info(
+                logger.debug(
                     f"Driver not live for {action_name}. Starting driver (Phase 1)..."
                 )
                 start_ok = session_manager.start_sess(
@@ -200,14 +200,14 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
                 if not start_ok:
                     raise Exception("Driver Start Failed (Phase 1)")
                 session_started_by_exec = True
-                logger.info(f"Driver started successfully for {action_name}.")
+                logger.debug(f"Driver started successfully for {action_name}.")
             else:
                 logger.debug(f"Driver already live for {action_name}.")
 
             # --- Phase 2: Ensure Session is Ready (if needed) ---
             if needs_ready_session:  # Check the flag determined above
                 if not session_manager.session_ready:
-                    logger.info(
+                    logger.debug(
                         f"Session not ready for {action_name}. Ensuring readiness (Phase 2)..."
                     )
                     ready_ok = session_manager.ensure_session_ready(
@@ -216,7 +216,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
                     if not ready_ok:
                         raise Exception("Session Readiness Failed (Phase 2)")
                     session_made_ready_by_exec = True
-                    logger.info(f"Session ready for {action_name}.")
+                    logger.debug(f"Session ready for {action_name}.")
                 else:
                     logger.debug(f"Session already ready for {action_name}.")
             elif action_name == "check_login_actn":
@@ -326,7 +326,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
             logger.error(
                 f"Action {choice} ({action_name}) reported a failure (returned False or exception occurred).\n"
             )
-
+        print(" ")
         logger.info("--------------------------------------")
         logger.info(f"Action {choice} ({action_name}) finished.")
         logger.info(f"Duration: {formatted_duration}")
@@ -430,9 +430,9 @@ def reset_db_actn(session_manager: SessionManager, *args):  # Added session_mana
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.warning("Closing main DB connections before reset attempt...")
+            logger.debug("Closing main DB connections before reset attempt...")
             session_manager.cls_db_conn(keep_db=False)
-            logger.info("Main DB pool closed.")
+            logger.debug("Main DB pool closed.")
         else:
             logger.warning("No main session manager passed to reset_db_actn to close.")
         # --- End closing main pool ---
@@ -445,7 +445,7 @@ def reset_db_actn(session_manager: SessionManager, *args):  # Added session_mana
         logger.debug("Attempting database file deletion...")
         # Pass None for session_manager to delete_database as it doesn't need it anymore
         delete_database(None, db_path, max_attempts=5)
-        logger.info(f"Database file '{db_path}' deleted/gone.")
+        logger.debug(f"Database file '{db_path}' deleted/gone.")
 
         # Re-initialize DB and Seed using a temporary manager
         logger.debug("Re-initializing DB...")
@@ -535,7 +535,6 @@ def backup_db_actn(
         logger.debug("Starting DB backup...")
         # session_manager isn't strictly needed but kept for signature consistency
         backup_database()
-        logger.info("DB backup OK.")
         return True
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
@@ -560,9 +559,9 @@ def restore_db_actn(
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.warning("Closing main DB connections before restore...")
+            logger.debug("Closing main DB connections before restore...")
             session_manager.cls_db_conn(keep_db=False)
-            logger.info("Main DB pool closed.")
+            logger.debug("Main DB pool closed.")
         else:
             logger.warning(
                 "No main session manager passed to restore_db_actn to close."
@@ -580,7 +579,7 @@ def restore_db_actn(
         gc.collect()
 
         shutil.copy2(backup_path, db_path)
-        logger.info(f"Db restored from backup OK.")
+        logger.debug(f"Db restored from backup OK.")
         success = True
     except FileNotFoundError:
         logger.error(f"Backup not found during copy: {backup_path}")
@@ -607,7 +606,7 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
         logger.error("SessionManager required for check_login_actn.")
         return False
 
-    logger.info("Verifying login status...")
+    logger.debug("Verifying login status...")
 
     # Phase 1 (Driver Start) is handled by exec_actn if needed.
     # We only need to check if driver is live before proceeding.
@@ -653,7 +652,7 @@ def coord_action(session_manager, config_instance, start=1):
             logger.error("Match gathering reported failure.")
             return False
         else:
-            logger.info("Gathering matches OK.")
+            logger.debug("Gathering matches OK.")
             return True  # Use INFO for success
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
@@ -679,7 +678,7 @@ def srch_inbox_actn(session_manager, *args):
             logger.error("Inbox search reported failure.")
             return False
         else:
-            logger.info("Inbox search OK.")
+            logger.debug("Inbox search OK.")
             return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
@@ -742,9 +741,9 @@ def all_but_first_actn(
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.warning("Closing main DB connections before delete-all-but-first...")
+            logger.debug("Closing main DB connections before delete-all-but-first...")
             session_manager.cls_db_conn(keep_db=False)
-            logger.info("Main DB pool closed.")
+            logger.debug("Main DB pool closed.")
         else:
             logger.warning(
                 "No main session manager passed to all_but_first_actn to close."
@@ -825,7 +824,6 @@ def main():
                 # --- Modified Handling for Action 2 ---
                 # Now pass the current session_manager to exec_actn
                 exec_actn(reset_db_actn, session_manager, choice, close_sess=False)
-                logger.info("Re-initializing main SessionManager after reset...")
                 session_manager = SessionManager()  # Recreate for subsequent actions
                 # --- End Modified Handling for Action 2 ---
             elif choice == "3":
@@ -837,7 +835,6 @@ def main():
                 # --- Modified Handling for Action 4 ---
                 # Pass the current session_manager to exec_actn
                 exec_actn(restore_db_actn, session_manager, choice, close_sess=False)
-                logger.info("Re-initializing main SessionManager after restore...")
                 session_manager = SessionManager()  # Recreate for subsequent actions
                 # --- End Modified Handling for Action 4 ---
             elif choice == "5":
@@ -864,9 +861,6 @@ def main():
                 # --- Modified Handling for Action 9 ---
                 # Pass the current session_manager to exec_actn
                 exec_actn(all_but_first_actn, session_manager, choice, close_sess=False)
-                logger.info(
-                    "Re-initializing main SessionManager after delete-all-but-first..."
-                )
                 session_manager = SessionManager()  # Recreate for subsequent actions
                 # --- End Modified Handling for Action 9 ---
 

@@ -9,17 +9,19 @@ import logging
 import math
 import os
 import random
+import re
+import sys
 import time
 import traceback
-import sys
-import tqdm
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 from urllib.parse import urljoin
 
 # Third-party imports
 import requests
-from tqdm.contrib.logging import logging_redirect_tqdm
+from tqdm.auto import tqdm
 from sqlalchemy import (
     Boolean,
     Column,
@@ -27,12 +29,19 @@ from sqlalchemy import (
     Enum as SQLEnum,
     Integer,
     String,
+    Subquery,
     desc,
     func,
+    over,
 )
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.orm import (
+    Session as DbSession,
+    aliased,
+    joinedload,
+)
+from sqlalchemy.sql import select
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 # Local application imports
 from config import config_instance
@@ -40,9 +49,9 @@ from database import (
     InboxStatus,
     Person,
     RoleType,
-    create_person,
+    create_person,  # Keep this import
     db_transn,
-    get_person_by_profile_id_and_username,
+    # Removed get_person_by_profile_id_and_username as lookup logic is now internal
 )
 from utils import (
     _api_req,
@@ -127,7 +136,7 @@ class InboxProcessor:
                 session_manager=session_manager,
                 method="GET",
                 use_csrf_token=False,  # GET request for conversations likely doesn't need CSRF
-                api_description="Get Inbox Conversations",  # Add a description if needed for headers
+                api_description="Get Inbox Conversations",
             )
 
             # Process the response data returned by _api_req
@@ -296,8 +305,9 @@ class InboxProcessor:
 
     def search_inbox(self) -> bool:
         """
-        V1.7 REVISED: Searches inbox using cursor pagination and batch processing via API.
-        - Removed tqdm progress bar and logging_redirect_tqdm due to display issues.
+        V1.8 REVISED: Searches inbox using cursor pagination and batch processing via API.
+        - Implements bulk Person lookup before processing each batch.
+        - Calls modified _lookup_or_create_person with pre-fetched data.
         """
         # --- Initialize counters ---
         known_conversation_found = False
@@ -396,6 +406,42 @@ class InboxProcessor:
                             continue
 
                     current_batch_num += 1
+
+                    # --- Optimization: Bulk Person Lookup ---
+                    batch_profile_ids = {
+                        conv.get("profile_id", "").upper()
+                        for conv in all_conversations_batch
+                        if conv.get("profile_id")
+                        and conv.get("profile_id") != "UNKNOWN"
+                    }
+                    existing_persons_map: Dict[str, Person] = {}
+                    if batch_profile_ids:
+                        try:
+                            logger.debug(
+                                f"Performing bulk Person lookup for {len(batch_profile_ids)} profile IDs..."
+                            )
+                            existing_persons = (
+                                session.query(Person)
+                                .filter(Person.profile_id.in_(batch_profile_ids))
+                                .all()
+                            )
+                            existing_persons_map = {
+                                person.profile_id: person
+                                for person in existing_persons
+                                if person.profile_id
+                            }
+                            logger.debug(
+                                f"Found {len(existing_persons_map)} existing Person records for batch."
+                            )
+                        except SQLAlchemyError as db_err:
+                            logger.error(
+                                f"Bulk Person lookup failed for batch {current_batch_num}: {db_err}",
+                                exc_info=True,
+                            )
+                            # Decide how to handle - skip batch? Abort? For now, continue without pre-fetched data.
+                            existing_persons_map = {}  # Ensure it's empty on error
+                    # --- End Optimization ---
+
                     batch_data_to_save = []
 
                     for conversation_info in all_conversations_batch:
@@ -418,6 +464,7 @@ class InboxProcessor:
                             comparator_timestamp = most_recent_message.get(
                                 "last_message_timestamp"
                             )
+
                             profile_id_match = (
                                 comparator_profile_id
                                 and profile_id
@@ -447,13 +494,14 @@ class InboxProcessor:
                                 and last_message_timestamp is None
                             ):
                                 timestamps_match = True
+
                             if profile_id_match and username_match and timestamps_match:
                                 logger.info(
                                     f"Comparator ({username}) found at index {items_processed_before_stop - 1}.\nStopping further processing.\n"
                                 )
                                 known_conversation_found = True
                                 stop_reason = "Comparator Match"
-                                break
+                                break  # Exit inner loop
 
                         # Limit Check
                         if (
@@ -468,12 +516,12 @@ class InboxProcessor:
                             )
                             known_conversation_found = True
                             stop_reason = f"Inbox Limit ({self.max_inbox_limit} items)"
-                            break
+                            break  # Exit inner loop
 
                         # Process Item (If checks passed)
                         # Log progress periodically instead of using progress bar
                         if items_processed_before_stop % 50 == 0:
-                            logger.info(
+                            logger.debug(
                                 f"Processed {items_processed_before_stop} items..."
                             )
 
@@ -489,9 +537,19 @@ class InboxProcessor:
                             )
                             continue
 
-                        person, person_status = self._lookup_or_create_person(
-                            session, profile_id, username, conversation_id
+                        # --- Use pre-fetched person data ---
+                        existing_person_for_item = existing_persons_map.get(
+                            profile_id.upper()
                         )
+                        person, person_status = self._lookup_or_create_person(
+                            session,
+                            profile_id,
+                            username,
+                            conversation_id,
+                            existing_person_arg=existing_person_for_item,  # Pass pre-fetched data
+                        )
+                        # --- End Use pre-fetched person data ---
+
                         if not person or person.id is None:
                             logger.error(
                                 f"Failed create/get Person/ID for {profile_id} in conv {conversation_id} (item index {items_processed_before_stop - 1}). Skipping save for this item."
@@ -523,9 +581,8 @@ class InboxProcessor:
                     # --- End of inner for loop ---
 
                     # --- Save Batch ---
-                    if (
-                        batch_data_to_save
-                    ):  # Save only if there's data AND stop condition wasn't met *before* saving
+                    if batch_data_to_save:
+                        # Check stop condition again *before* saving
                         if not known_conversation_found:
                             new_in_batch, updated_in_batch = self._save_batch(
                                 session, batch_data_to_save
@@ -544,7 +601,7 @@ class InboxProcessor:
                         logger.debug(
                             "Stop condition met before processing any data in this batch."
                         )
-                    else:  # No data and not stopped - likely an empty API response handled earlier
+                    else:  # No data and not stopped
                         logger.debug("No data prepared in batch to save.")
 
                     # --- Update Cursor and Check Outer Loop ---
@@ -552,7 +609,7 @@ class InboxProcessor:
                     if known_conversation_found:
                         break  # Exit outer loop if stop condition met
                     if not next_cursor:
-                        logger.info("No next cursor from API. Finishing inbox search.")
+                        logger.debug("No next cursor from API. Finishing inbox search.\n")
                         stop_reason = "End of Inbox Reached"
                         known_conversation_found = True  # Mark as finished cleanly
                         break  # Exit outer loop
@@ -565,14 +622,11 @@ class InboxProcessor:
             return False  # Indicate failure
         finally:
             # --- Cleaned Finally Block (No Progress Bar) ---
-            # 1. Determine final stop reason if needed
             if known_conversation_found and not stop_reason:
-                stop_reason = "Unknown/Interrupted"  # e.g., Ctrl+C
-
-            # 2. Log the summary
+                stop_reason = "Unknown/Interrupted"
             _log_inbox_summary(
                 total_api_items=total_processed_api_items,
-                items_processed=items_processed_before_stop,  # Use the final count
+                items_processed=items_processed_before_stop,
                 new_records=new_records_saved,
                 updated_records=updated_records_saved,
                 stop_reason=stop_reason,
@@ -584,194 +638,158 @@ class InboxProcessor:
 
     # end of search_inbox
 
-    def _create_comparator(self, session: Session) -> Optional[Dict[str, Any]]:
+    def _create_comparator(self, session: DbSession) -> Optional[Dict[str, Any]]:
         """
         Creates comparator record using the provided Session.
         Includes profile_id for optimized checking.
         """
         most_recent_message = None
         try:
-            # Query optimized: Order by timestamp DESC (nulls last), then ID DESC
             comparator_inbox_status = (
                 session.query(InboxStatus)
                 .order_by(
                     InboxStatus.last_message_timestamp.desc().nullslast(),
                     InboxStatus.id.desc(),
                 )
-                # Eager load the associated Person to avoid a separate query later
                 .options(joinedload(InboxStatus.person))
                 .first()
             )
 
             if comparator_inbox_status:
-                # Access the eager-loaded person object
                 comparator_person = comparator_inbox_status.person
-
                 if (
                     comparator_person
                     and comparator_person.id is not None
                     and comparator_person.profile_id is not None
-                ):  # Ensure person, ID, and profile_id are valid
+                ):
                     most_recent_message = {
-                        "people_id": comparator_person.id,  # Still needed for potential DB ops if match fails
-                        "profile_id": comparator_person.profile_id,  # ADDED: Store profile_id
-                        "username": comparator_person.username,  # Use username from person record
-                        "last_message_timestamp": comparator_inbox_status.last_message_timestamp,  # datetime or None
+                        "people_id": comparator_person.id,
+                        "profile_id": comparator_person.profile_id,
+                        "username": comparator_person.username,
+                        "last_message_timestamp": comparator_inbox_status.last_message_timestamp,
                     }
-                    # Format timestamp safely for logging
                     ts_str = "None"
                     timestamp_val = most_recent_message.get("last_message_timestamp")
                     if isinstance(timestamp_val, datetime):
                         try:
-                            # Use ISO format for clarity and include timezone info if available (UTC assumed here)
-                            ts_str = timestamp_val.isoformat() + "Z"  # Indicate UTC
+                            ts_str = timestamp_val.isoformat() + "Z"
                         except ValueError:
-                            logger.warning(
-                                f"Comparator timestamp {timestamp_val} likely out of range for ISO format."
-                            )
-                            ts_str = str(timestamp_val)  # Use string representation
+                            ts_str = str(timestamp_val)
                     elif timestamp_val is not None:
                         ts_str = str(timestamp_val)
-
-                    # Log comparator details at INFO level for better visibility
                     logger.debug(
                         f"Comparator created: {most_recent_message.get('username', 'N/A')} (Profile: {most_recent_message.get('profile_id')})"
-                    )  # Added profile_id to log
+                    )
                 elif comparator_person and comparator_person.profile_id is None:
                     logger.warning(
-                        f"Comparator error: Found Person object (ID: {comparator_person.id}) for InboxStatus ID {comparator_inbox_status.id}, but Person has no profile_id."
+                        f"Comparator error: Person ID {comparator_person.id} has no profile_id."
                     )
                 elif comparator_person and comparator_person.id is None:
                     logger.warning(
-                        f"Comparator error: Found Person object for InboxStatus ID {comparator_inbox_status.id}, but Person has no ID."
+                        f"Comparator error: Person object found but has no ID."
                     )
                 elif not comparator_person:
                     logger.warning(
-                        f"Comparator error: InboxStatus record found (ID: {comparator_inbox_status.id}), but associated Person (people_id: {comparator_inbox_status.people_id}) could not be loaded/found."
+                        f"Comparator error: Associated Person not found for InboxStatus ID {comparator_inbox_status.id}."
                     )
-
             else:
                 logger.info("No messages in database. Comparator not needed.\n")
-
         except SQLAlchemyError as e:
             logger.error(f"Database error creating comparator: {e}", exc_info=True)
             return None
         except Exception as e:
             logger.error(f"Unexpected error creating comparator: {e}", exc_info=True)
             return None
-
         return most_recent_message
 
     # end of _create_comparator
 
     def _lookup_or_create_person(
         self,
-        session: Session,
+        session: DbSession,
         profile_id: str,
         username: str,
         conversation_id: Optional[str],
+        existing_person_arg: Optional[Person] = None,  # New optional argument
     ) -> Tuple[Optional[Person], Literal["new", "skipped", "error", "updated"]]:
         """
         Looks up Person primarily by profile_id, creates if not found.
         Updates link and username if the found person's details differ.
+        Uses pre-fetched existing_person_arg if provided.
         Returns the Person object and status. Ensures message_link is updated correctly.
         """
         if not profile_id or profile_id == "UNKNOWN":
             logger.warning(
-                f"Cannot lookup person due to invalid profile_id '{profile_id}' in conv {conversation_id}. Skipping."
+                f"Cannot lookup person: invalid profile_id '{profile_id}' in conv {conversation_id}."
             )
             return None, "error"
-
         if not username:
             logger.warning(
                 f"Missing username for profile_id {profile_id} in conv {conversation_id}. Using 'Unknown'."
             )
             username = "Unknown"
 
-        profile_id_upper = (
-            profile_id.upper()
-        )  # Ensure consistent case for lookup and link
-        username_lower = username.lower()  # For case-insensitive comparison
-
-        # Construct the expected message link
+        profile_id_upper = profile_id.upper()
+        username_lower = username.lower()
         correct_message_link: Optional[str] = None
         try:
-            # Ensure profile_id_upper is valid before constructing URL
-            if profile_id_upper and profile_id_upper != "UNKNOWN":
-                # Use urljoin for robustness
-                base_url = getattr(
-                    config_instance, "BASE_URL", "https://www.ancestry.co.uk/"
-                )
-                correct_message_link = urljoin(
-                    base_url, f"messaging/?p={profile_id_upper}"
-                )
-            else:
-                logger.warning(
-                    f"Cannot construct message link, profile_id is invalid or UNKNOWN ({profile_id_upper}) for conv {conversation_id}."
-                )
+            base_url = getattr(
+                config_instance, "BASE_URL", "https://www.ancestry.co.uk/"
+            )
+            correct_message_link = urljoin(base_url, f"messaging/?p={profile_id_upper}")
         except Exception as url_e:
             logger.warning(
-                f"Error constructing message link for profile {profile_id_upper} in conv {conversation_id}: {url_e}"
+                f"Error constructing message link for profile {profile_id_upper}: {url_e}"
             )
 
+        person: Optional[Person] = None
+        lookup_needed = existing_person_arg is None  # Only lookup if not pre-fetched
+
         try:
-            # --- MODIFIED LOOKUP: Primarily by profile_id ---
-            person = (
-                session.query(Person)
-                .filter(Person.profile_id == profile_id_upper)
-                .first()
-            )
+            if lookup_needed:
+                # Perform the lookup only if needed
+                logger.debug(
+                    f"Performing DB lookup for Person ProfileID='{profile_id_upper}'"
+                )
+                person = (
+                    session.query(Person)
+                    .filter(Person.profile_id == profile_id_upper)
+                    .first()
+                )
+            else:
+                # Use the pre-fetched person
+                person = existing_person_arg
+                # logger.debug(f"Using pre-fetched Person data for ProfileID='{profile_id_upper}'") # Less verbose
 
             if person:
                 # Person exists, check if update is needed
                 updated = False
                 log_prefix = f"Person ID {person.id} ('{person.username}', Profile: {profile_id_upper})"
 
-                # Check and update username if different (case-insensitive)
+                # Check username
                 if person.username.lower() != username_lower:
                     logger.debug(
                         f"{log_prefix}: Updating username from '{person.username}' to '{username}'."
                     )
-                    session.query(Person).filter(Person.id == person.id).update(
-                        {"username": username}
-                    )
+                    person.username = username  # Update directly on the object
                     updated = True
 
-                # Check and update message_link if different or missing
-                # Corrected comparison: ColumnElement != str comparison is deprecated
-                # Fetch the current value explicitly before comparing
+                # Check message_link
                 current_message_link_val = person.message_link
-
                 if (
                     correct_message_link is not None
                     and current_message_link_val != correct_message_link
                 ):
-                    logger.debug(f"{log_prefix}: Updating message_link.")
-                    session.query(Person).filter(Person.id == person.id).update(
-                        {"message_link": correct_message_link}
-                    )
+                    if current_message_link_val is None:
+                        logger.debug(f"{log_prefix}: Adding missing message_link.")
+                    else:
+                        logger.debug(f"{log_prefix}: Updating message_link.")
+                    person.message_link = correct_message_link
                     updated = True
-                elif (
-                    current_message_link_val is None
-                    and correct_message_link is not None
-                ):
-                    logger.debug(f"{log_prefix}: Adding missing message_link.")
-                    session.query(Person).filter(Person.id == person.id).update(
-                        {"message_link": correct_message_link}
-                    )
-                    updated = True
-
-                # Ensure ID is valid before returning
-                if person.id is None:
-                    logger.error(
-                        f"Found {person.username} but their ID is None. Data inconsistency? Conv {conversation_id}"
-                    )
-                    return None, "error"
 
                 if updated:
-                    # Explicitly set updated_at timestamp
                     person.updated_at = datetime.now()
-                    # No flush needed here, let _save_batch handle commit/rollback
+                    # No need to query/update separately if modifying the object directly before commit
                     logger.debug(f"{log_prefix}: Record staged for update.")
                     return person, "updated"
                 else:
@@ -786,21 +804,19 @@ class InboxProcessor:
                 new_person = Person(
                     profile_id=profile_id_upper,
                     username=username,
-                    message_link=correct_message_link,  # Use constructed link
-                    in_my_tree=False,  # Default for inbox-created person
-                    uuid=None,  # Inbox doesn't provide UUID
+                    message_link=correct_message_link,
+                    in_my_tree=False,
                     status="active",
+                    contactable=True,  # Default to contactable if creating from inbox? Or False? Let's assume True.
                     # created_at and updated_at have defaults
                 )
                 session.add(new_person)
-                session.flush()  # Flush to get ID and check constraints early
+                session.flush()  # Flush to get ID
 
-                # Critical check for ID assignment
                 if new_person.id is None:
                     logger.error(
-                        f"Person ID not assigned after flush for {username} (Profile: {profile_id_upper})! Conversation {conversation_id}"
+                        f"Person ID not assigned after flush for {username} (Profile: {profile_id_upper})! Conv {conversation_id}"
                     )
-                    # Returning "error" will prevent this specific conversation from being saved in _save_batch
                     return None, "error"
 
                 logger.debug(
@@ -810,12 +826,11 @@ class InboxProcessor:
 
         except SQLAlchemyError as e:
             logger.error(
-                f"Database error in _lookup_or_create_person for {username} (Profile: {profile_id_upper}): {e}",
+                f"DB error in _lookup_or_create_person for {username} (Profile: {profile_id_upper}): {e}",
                 exc_info=True,
             )
-            # Let the caller handle rollback if necessary
             return None, "error"
-        except Exception as e:  # Catch any other unexpected error
+        except Exception as e:
             logger.critical(
                 f"Unexpected error in _lookup_or_create_person for {username} (Profile: {profile_id_upper}): {e}",
                 exc_info=True,
@@ -825,7 +840,7 @@ class InboxProcessor:
     # end of _lookup_or_create_person
 
     def _save_batch(
-        self, session: Session, batch: List[Dict[str, Any]]
+        self, session: DbSession, batch: List[Dict[str, Any]]
     ) -> Tuple[int, int]:
         """
         Saves a batch of conversation data to the database using bulk operations.
@@ -834,7 +849,6 @@ class InboxProcessor:
         """
         new_count, updated_count = 0, 0
         if not batch:
-            # logger.debug("No new inbox data to save in this batch.") # Less verbose
             return new_count, updated_count
 
         new_items = []
@@ -865,21 +879,17 @@ class InboxProcessor:
 
             for item in batch:
                 people_id = item.get("people_id")
-                # Check again for safety, although filtered above
                 if people_id is None:
                     logger.warning(f"Skipping item due to missing 'people_id': {item}")
                     continue
 
                 my_role_enum_value = item.get("my_role")
-
-                # Ensure my_role is a valid RoleType enum member
                 if not isinstance(my_role_enum_value, RoleType):
                     logger.warning(
                         f"Invalid role type '{my_role_enum_value}' for people_id {people_id}. Skipping item."
                     )
                     continue
 
-                # Get corresponding existing status, if any
                 inbox_status = existing_statuses.get(people_id)
 
                 if not inbox_status:
@@ -887,74 +897,54 @@ class InboxProcessor:
                     new_item_data = {
                         "people_id": people_id,
                         "conversation_id": item.get("conversation_id"),
-                        "my_role": my_role_enum_value,  # Use validated enum
+                        "my_role": my_role_enum_value,
                         "last_message": item.get("last_message_content", ""),
                         "last_message_timestamp": item.get("last_message_timestamp"),
                     }
                     new_items.append(new_item_data)
-                    # logger.debug(f"Prepared NEW item for people_id {people_id}: my_role={new_item_data['my_role']}") # Less verbose
-
                 else:
                     # Existing record found, check if update is needed
                     needs_update: bool = False
-
-                    # Compare last_message_timestamp (handle None safely)
                     db_ts = cast(
                         Optional[datetime], inbox_status.last_message_timestamp
                     )
                     item_ts = item.get("last_message_timestamp")
                     if db_ts != item_ts:
                         needs_update = True
-                        # logger.debug(f"InboxStatus update needed for people_id {people_id}: Timestamp differs ('{db_ts}' vs '{item_ts}').") # Less verbose
 
-                    # Compare last_message_content if timestamp matches or is None
                     if not needs_update:
                         db_msg = cast(Optional[str], inbox_status.last_message)
                         item_msg = item.get("last_message_content", "")
                         if db_msg != item_msg:
                             needs_update = True
-                            # logger.debug(f"InboxStatus update needed for people_id {people_id}: Message differs.") # Less verbose
 
-                    # Compare my_role if still no difference found
                     if not needs_update:
-                        db_role = cast(
-                            Optional[RoleType], inbox_status.my_role
-                        )  # Should be RoleType enum
+                        db_role = cast(Optional[RoleType], inbox_status.my_role)
                         if db_role != my_role_enum_value:
                             needs_update = True
-                            # logger.debug(f"InboxStatus update needed for people_id {people_id}: Role differs ('{db_role}' vs '{my_role_enum_value}').") # Less verbose
 
-                    # Compare conversation_id if still no difference found
                     if not needs_update:
                         db_conv_id = cast(Optional[str], inbox_status.conversation_id)
                         item_conv_id = item.get("conversation_id")
                         if db_conv_id != item_conv_id:
                             needs_update = True
-                            # logger.debug(f"InboxStatus update needed for people_id {people_id}: Conversation ID differs.") # Less verbose
 
                     if needs_update:
-                        # Ensure the existing status object has an ID before adding to update list
                         if inbox_status.id is not None:
                             update_item_data = {
-                                # Map to the database columns
-                                "id": inbox_status.id,  # Primary key for update mapping
+                                "id": inbox_status.id,
                                 "conversation_id": item.get("conversation_id"),
-                                "my_role": my_role_enum_value,  # Use validated enum
+                                "my_role": my_role_enum_value,
                                 "last_message": item.get("last_message_content", ""),
                                 "last_message_timestamp": item.get(
                                     "last_message_timestamp"
                                 ),
-                                # last_updated is handled by onupdate=datetime.now
                             }
                             update_items.append(update_item_data)
-                            # logger.debug(f"Prepared UPDATE item for people_id {people_id} (InboxStatus.id: {update_item_data['id']}): my_role={update_item_data['my_role']}") # Less verbose
                         else:
-                            # This case should ideally not happen if records are fetched correctly
                             logger.warning(
-                                f"Skipping update for people_id {people_id}: Existing InboxStatus found but has no ID (maybe not flushed/committed yet?)."
+                                f"Skipping update for people_id {people_id}: Existing InboxStatus found but has no ID."
                             )
-                    # else:
-                    #    logger.debug(f"No update needed for InboxStatus for people_id {people_id}.") # Less verbose
 
             # Perform bulk operations if there are items
             if new_items:
@@ -982,11 +972,10 @@ class InboxProcessor:
 
         except SQLAlchemyError as e:
             logger.error(f"Database save failed in _save_batch: {e}", exc_info=True)
-            # Rollback should be handled by the caller context manager
-            raise  # Re-raise to trigger rollback in the context manager
+            raise
         except Exception as e:
             logger.error(f"Unexpected error in _save_batch: {e}", exc_info=True)
-            raise  # Re-raise to trigger rollback in the context manager
+            raise
 
     # end of _save_batch
 
@@ -1008,10 +997,9 @@ def _log_inbox_summary(
     if stop_reason:
         logger.info(f"  Processing Stopped Due To: {stop_reason}")
     elif max_inbox_limit == 0 or items_processed < max_inbox_limit:
-        # If no stop reason AND (limit is 0 OR we processed fewer than the limit), we reached the end
         logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
     total_saved = new_records + updated_records
-    logger.info("----------------------------\n")
+    logger.info("----------------------------")
 
 
 # End of _log_inbox_summary
