@@ -186,7 +186,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
             )
             return False
         total_pages = fetched_total_pages
-        logger.info(f"Total pages found: {total_pages}")
+        logger.info(f"Total pages found: {total_pages}\n")
 
         max_pages_config = config_instance.MAX_PAGES
         pages_to_process_config = (
@@ -2335,7 +2335,13 @@ def _log_coord_summary(
     logger.info(f"  Total Updated Matches: {total_updated}")
     logger.info(f"  Total Skipped Matches: {total_skipped}")
     logger.info(f"  Total Errors:          {total_errors}")
+<<<<<<< HEAD
     logger.info("------------------------------------")
+=======
+    logger.info("------------------------------------\n")
+
+
+>>>>>>> parent of b5d69aa (afternoon3)
 # end of _log_coord_summary
 
 

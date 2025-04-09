@@ -1244,7 +1244,7 @@ def delete_database(
                 # Verify deletion
                 time.sleep(0.1)  # Tiny pause before checking again
                 if not db_path.exists():
-                    logger.debug(
+                    logger.info(
                         f"'{db_path}' deleted successfully."
                     )  # Use INFO for success
                     return  # SUCCESS
@@ -1337,12 +1337,12 @@ def backup_database(
         if db_path.exists():
             # shutil.copy2 works with Path objects
             shutil.copy2(db_path, backup_path)
-            logger.info(f"Backed up to '{backup_path}' OK.")  # Use INFO for success
+            logger.info(f"Backed up to '{backup_path}' OK.\n")  # Use INFO for success
         else:
-            logger.warning(f"Database file '{db_path}' not found. No backup created.")
+            logger.warning(f"Database file '{db_path}' not found. No backup created.\n")
     except Exception as e:
         logger.error(
-            f"Error backing up database from '{db_path}' to '{backup_path}': {e}",
+            f"Error backing up database from '{db_path}' to '{backup_path}': {e}\n",
             exc_info=True,
         )
         # Re-raise the exception if backup failure should halt execution
