@@ -41,7 +41,6 @@ from database import (
     Base,
     db_transn,
     delete_database,
-    InboxStatus,
     MessageType,
     Person,
 )

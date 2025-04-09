@@ -56,8 +56,6 @@ from config import config_instance, selenium_config
 from database import (
     DnaMatch,
     FamilyTree,
-    InboxStatus,
-    MessageHistory,
     MessageType,
     Person,
     RoleType,
