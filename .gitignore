@@ -12,3 +12,4 @@
 /__pycache__
 /logs/ancestry.log
 /logs/ancestry.log.1
+/test.py

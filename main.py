@@ -41,7 +41,6 @@ from database import (
     Base,
     db_transn,
     delete_database,
-    InboxStatus,
     MessageType,
     Person,
 )
@@ -103,8 +102,6 @@ def menu():
     print("q. Exit")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
-
-
 # End of menu
 
 
@@ -143,8 +140,6 @@ def clear_log_file():
     except Exception as e:
         logger.warning(f"Error clearing log '{log_path}': {e}", exc_info=True)
     return cleared, log_path
-
-
 # End of clear_log_file
 
 
@@ -333,12 +328,10 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info(f"Memory used: {mem_used:.1f} MB")
         logger.info("--------------------------------------\n")
         # End Restore old footer style
-
-
 # End of exec_actn
 
 
-# --- Action Functions (Update required actions) ---
+# --- Action Functions 
 
 
 # Action 1
@@ -419,50 +412,75 @@ def run_actions_6_7_8_action(session_manager, *args):
 # End Action 1
 
 
-# Action 2 (reset_db_actn) - REVISED
-def reset_db_actn(session_manager: SessionManager, *args):  # Added session_manager back
+# Action 2 (reset_db_actn)
+def reset_db_actn(session_manager: SessionManager, *args):
     """
     Action to reset the database. Browserless.
-    Closes the provided main session pool FIRST.
+    Closes main pool, explicitly DROPS conversation_log, recreates schema, seeds.
     """
     db_path = config_instance.DATABASE_FILE
     reset_successful = False
+    temp_manager = None
+    recreation_session = None
+    engine_temp = None  # Hold temporary engine for dropping table
+
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.debug("Closing main DB connections before reset attempt...")
+            logger.debug("Closing main DB connections before reset...")
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
         else:
-            logger.warning("No main session manager passed to reset_db_actn to close.")
-        # --- End closing main pool ---
+            logger.warning("No main session manager passed to reset_db_actn.")
 
-        logger.debug("Running GC before delete attempt...")
+        logger.debug("Running GC before delete/recreate...")
         gc.collect()
         time.sleep(0.5)
-        gc.collect()  # Short GC pause
+        gc.collect()
 
-        logger.debug("Attempting database file deletion...")
-        # Pass None for session_manager to delete_database as it doesn't need it anymore
-        delete_database(None, db_path, max_attempts=5)
-        logger.debug(f"Database file '{db_path}' deleted/gone.")
+        # --- Explicitly Drop Table Using Temporary Engine ---
+        logger.info(f"Ensuring schema consistency for {db_path.name}...")
+        try:
+            # Create a temporary engine just for the drop operation
+            db_path_str = str(db_path.resolve())
+            engine_temp = create_engine(f"sqlite:///{db_path_str}", echo=False)
+
+            @event.listens_for(engine_temp, "connect")
+            def enable_foreign_keys_temp(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                finally:
+                    cursor.close()
+
+            with engine_temp.connect() as connection:
+                with connection.begin():
+                    logger.warning(
+                        "Attempting to drop 'conversation_log' table if it exists..."
+                    )
+                    connection.execute(text("DROP TABLE IF EXISTS conversation_log"))
+                    logger.info("'conversation_log' table dropped (if existed).")
+        except Exception as drop_err:
+            logger.error(f"Error during explicit table drop: {drop_err}", exc_info=True)
+            # Continue, create_all might still fix it or fail clearly
+        finally:
+            if engine_temp:
+                engine_temp.dispose()
+                logger.debug("Temporary drop engine disposed.")
+        # --- End Explicit Drop ---
 
         # Re-initialize DB and Seed using a temporary manager
-        logger.debug("Re-initializing DB...")
-        recreation_manager = SessionManager()  # Create temporary one
-        recreation_session = None
+        logger.debug("Re-initializing DB schema...")
+        temp_manager = SessionManager()
         try:
-            # Initialize engine/session factory for the temp manager
-            recreation_manager._initialize_db_engine_and_session()
-            if not recreation_manager.engine or not recreation_manager.Session:
+            temp_manager._initialize_db_engine_and_session()
+            if not temp_manager.engine or not temp_manager.Session:
                 raise SQLAlchemyError("Failed to re-initialize DB engine/session!")
 
-            # Create tables using the temp manager's engine
-            Base.metadata.create_all(recreation_manager.engine)
-            logger.debug("Tables created.")
+            Base.metadata.create_all(temp_manager.engine)  # Recreate tables
+            logger.debug("Tables created/verified.")
 
-            # Seed message types using the temp manager's session
-            recreation_session = recreation_manager.get_db_conn()
+            recreation_session = temp_manager.get_db_conn()
             if not recreation_session:
                 raise SQLAlchemyError("Failed to get session for seeding!")
 
@@ -473,30 +491,25 @@ def reset_db_actn(session_manager: SessionManager, *args):  # Added session_mana
                 with messages_file.open("r", encoding="utf-8") as f:
                     messages_data = json.load(f)
                 if isinstance(messages_data, dict):
-                    with db_transn(recreation_session) as sess:  # Use context manager
+                    with db_transn(recreation_session) as sess:
                         types_to_add = [
                             MessageType(type_name=name)
                             for name in messages_data
-                            if not sess.query(MessageType)
+                            if not sess.query(MessageType.id)
                             .filter_by(type_name=name)
                             .first()
                         ]
                         if types_to_add:
                             sess.add_all(types_to_add)
-                            logger.debug(f"Added {len(types_to_add)} message types.")
-                        else:
-                            logger.debug("Message types already exist.")
                     count = (
                         recreation_session.query(func.count(MessageType.id)).scalar()
                         or 0
                     )
-                    logger.debug(f"Verification: {count} message types found.")
+                    logger.debug(f"MessageType seeding OK. Total: {count}")
                 else:
-                    logger.error("'messages.json' has incorrect format.")
+                    logger.error("'messages.json' incorrect format.")
             else:
-                logger.warning(
-                    f"'messages.json' not found at '{messages_file}', skipping seeding."
-                )
+                logger.warning(f"'messages.json' not found, skipping seeding.")
 
             reset_successful = True
             logger.info("Database reset and re-initialization completed OK.")
@@ -505,28 +518,23 @@ def reset_db_actn(session_manager: SessionManager, *args):  # Added session_mana
                 f"Error during DB re-initialization/seeding: {seed_e}", exc_info=True
             )
             reset_successful = False
-        finally:  # Cleanup temp manager
-            logger.debug("Cleaning up recreation manager resources...")
-            if recreation_session:
-                recreation_manager.return_session(recreation_session)
-            recreation_manager.cls_db_conn(
-                keep_db=False
-            )  # Ensure temp engine is disposed
+        finally:
+            logger.debug("Cleaning up temporary recreation manager...")
+            if temp_manager:
+                if recreation_session:
+                    temp_manager.return_session(recreation_session)
+                temp_manager.cls_db_conn(keep_db=False)  # Dispose temp engine
             logger.debug("Recreation manager cleanup finished.")
 
-    except PermissionError as pe:
-        logger.error(f"DB reset FAILED: Permissions/lock on '{db_path}'. {pe}")
     except Exception as e:
-        logger.error(f"Error during DB reset: {e}", exc_info=True)
+        logger.error(f"Error during DB reset action: {e}", exc_info=True)
     finally:
         logger.debug("Reset DB action finished.")
     return reset_successful
-
-
 # end of Action 2
 
 
-# Action 3 (backup_db_actn) - No changes needed, browserless.
+# Action 3 (backup_db_actn) 
 def backup_db_actn(
     session_manager: Optional[SessionManager], *args
 ):  # Added session_manager back (Optional)
@@ -539,12 +547,10 @@ def backup_db_actn(
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
-
-
 # end of Action 3
 
 
-# Action 4 (restore_db_actn) - REVISED
+# Action 4 (restore_db_actn) 
 def restore_db_actn(
     session_manager: SessionManager, *args
 ):  # Added session_manager back
@@ -590,12 +596,10 @@ def restore_db_actn(
     finally:
         logger.debug("DB restore action finished.")
     return success
-
-
 # end of Action 4
 
 
-# Action 5 (check_login_actn) - REVISED V5
+# Action 5 (check_login_actn) 
 def check_login_actn(session_manager: SessionManager, *args) -> bool:
     """
     REVISED V5: Checks login status using login_status.
@@ -628,12 +632,10 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
     else:  # Status is None
         logger.error("Login verification failed (critical error during check).")
         return False
-
-
 # End Action 5
 
 
-# Action 6 (coord_action wrapper) - REVISED
+# Action 6 (coord_action wrapper) 
 def coord_action(session_manager, config_instance, start=1):
     """
     Action wrapper for gathering matches (coord_action_func).
@@ -657,12 +659,10 @@ def coord_action(session_manager, config_instance, start=1):
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
-
-
 # End of coord_action
 
 
-# Action 7 (srch_inbox_actn) - REVISED
+# Action 7 (srch_inbox_actn) 
 def srch_inbox_actn(session_manager, *args):
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_ready
@@ -683,12 +683,10 @@ def srch_inbox_actn(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
-
-
 # End of srch_inbox_actn
 
 
-# Action 8 (send_messages_action) - REVISED
+# Action 8 (send_messages_action)
 def send_messages_action(session_manager, *args):
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_ready
@@ -721,12 +719,10 @@ def send_messages_action(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
-
-
 # End of send_messages_action
 
 
-# Action 9 (all_but_first_actn) - REVISED
+# Action 9 (all_but_first_actn) 
 def all_but_first_actn(
     session_manager: SessionManager, *args
 ):  # Added session_manager back
@@ -782,8 +778,6 @@ def all_but_first_actn(
             temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
         logger.debug("Delete action finished.")
     return success
-
-
 # end of Action 9
 
 
@@ -959,12 +953,12 @@ def main():
                 file=sys.stderr,
             )
         print("\nExecution finished.")
-
-
 # end main
 
 # --- Entry Point ---
 if __name__ == "__main__":
     main()
+
+
 
 # end of main.py

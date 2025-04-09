@@ -15,19 +15,9 @@ import contextlib
 from contextlib import contextmanager
 import enum
 from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
-    String,
-    DateTime,
-    ForeignKey,
-    event,
-    Boolean,
-    UniqueConstraint,
-    Enum as SQLEnum,
-    Index,
-    func,
-    Float,
+    create_engine, Column, Integer, String, DateTime, ForeignKey,
+    event, Boolean, UniqueConstraint, Enum as SQLEnum, Index, func,
+    Float, Text, PrimaryKeyConstraint 
 )
 from sqlalchemy.orm import (
     declarative_base,
@@ -40,6 +30,8 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError  # Added IntegrityErr
 import logging
 import re
 import inspect
+import sys
+import json
 
 
 # Initialize logging
@@ -52,68 +44,83 @@ logger = logging.getLogger("logger")
 Base = declarative_base()
 
 
-class RoleType(enum.Enum):
+# --- Define Enums Globally ---
+
+
+# --- NEW MessageDirectionEnum ---
+class MessageDirectionEnum(enum.Enum):
+    IN = "IN"  # Incoming message from correspondent
+    OUT = "OUT"  # Outgoing message from script/ me
+# End MessageDirectionEnum definition
+
+
+class RoleType(enum.Enum):  # Moved outside Person/ConversationLog
     AUTHOR = "AUTHOR"
     RECIPIENT = "RECIPIENT"
-
-
 # end of class RoleType
 
 
-class InboxStatus(Base):
-    __tablename__ = "inbox_status"
-    id = Column(Integer, primary_key=True)
-    conversation_id = Column(String, nullable=True)
+class PersonStatusEnum(enum.Enum):
+    ACTIVE = "active"
+    DESIST = "desist"
+    ARCHIVE = "archive" 
+    BLOCKED = "blocked"
+# End PersonStatusEnum definition
+
+
+class ConversationLog(Base):
+    __tablename__ = "conversation_log"
+    # Composite Primary Key
+    conversation_id = Column(String, primary_key=True, index=True)
+    direction = Column(
+        SQLEnum(MessageDirectionEnum, name="message_direction_enum_v5"),
+        primary_key=True,
+    )  # Use global MessageDirectionEnum
+
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
-    my_role = Column(
-        SQLEnum(RoleType), nullable=False, name="my_role"
-    )  # Use SQLEnum here
-    last_message = Column(String, nullable=True)
-    last_message_timestamp = Column(
-        DateTime, nullable=True, index=True
-    )  # Add index=True
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    last_updated = Column(
-        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    latest_message_content = Column(Text, nullable=True)
+    latest_timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    ai_sentiment = Column(String, nullable=True, index=True)
+    message_type_id = Column(Integer, ForeignKey("message_types.id"), nullable=True)
+    script_message_status = Column(String, nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
-    person = relationship("Person", back_populates="inbox_status")
+
+    # --- MODIFICATION: Define relationship here with backref ---
+    person = relationship(
+        "Person",
+        backref="conversation_log_entries",  # Use backref to create the collection on Person
+    )
+    # --- END MODIFICATION ---
+
+    message_type = relationship("MessageType")
+
+    # Removed separate PK, composite handled above. Keep useful indexes.
     __table_args__ = (
         Index(
-            "ix_inbox_status_people_id_timestamp", "people_id", "last_message_timestamp"
-        ),
+            "ix_conversation_log_people_id_direction_ts",
+            "people_id",
+            "direction",
+            "latest_timestamp",
+        ),  # Better index for Action 8
+        Index(
+            "ix_conversation_log_timestamp", "latest_timestamp"
+        ),  # Keep for comparator
     )
 
+# End of class ConversationLog
 
-# End of class InboxStatus
 
-
-class MessageType(Base):  # Add MessageType
+class MessageType(Base):
+    # ... (unchanged) ...
     __tablename__ = "message_types"
     id = Column(Integer, primary_key=True)
     type_name = Column(String, unique=True, nullable=False)
-    messages = relationship(
-        "MessageHistory",
-        back_populates="message_type",
-        cascade="all, delete, delete-orphan",
-    )
-
-
 # End of class MessageType
-
-
-class MessageHistory(Base):
-    __tablename__ = "message_history"
-    id = Column(Integer, primary_key=True)
-    people_id = Column(Integer, ForeignKey("people.id"), nullable=False)
-    message_type_id = Column(Integer, ForeignKey("message_types.id"), nullable=False)
-    message_text = Column(String, nullable=False)
-    status = Column(String, default="none", nullable=False)
-    sent_at = Column(DateTime, default=datetime.now, nullable=False)
-    person = relationship("Person", back_populates="message_history")
-    message_type = relationship("MessageType", back_populates="messages")
-
-
-# End of class messagehistory
 
 
 class DnaMatch(Base):
@@ -135,8 +142,6 @@ class DnaMatch(Base):
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="dna_match")
-
-
 # End of class DnaMatch
 
 
@@ -157,35 +162,42 @@ class FamilyTree(Base):  # Point 8 Refinement
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
     person = relationship("Person", back_populates="family_tree")
-
-
 # End of class family tree
 
 
 class Person(Base):
     __tablename__ = "people"
     id = Column(Integer, primary_key=True)
-    uuid = Column(String, nullable=True, unique=True, index=True)  # Keep UUID unique
-    # --- RE-ADD unique=True to profile_id ---
+    uuid = Column(String, nullable=True, unique=True, index=True)
     profile_id = Column(String, unique=True, nullable=True, index=True)
-    # --- END RE-ADD ---
     username = Column(String, unique=False, nullable=False)
     first_name = Column(String, nullable=True)
-    gender = Column(String(1), nullable=True)  # Store 'f', 'm', or None
+    gender = Column(String(1), nullable=True)
     birth_year = Column(Integer, nullable=True)
     message_link = Column(String, unique=False, nullable=True)
     in_my_tree = Column(Boolean, default=False)
     contactable = Column(Boolean, default=False)
-    last_logged_in = Column(DateTime, nullable=True, index=True)  # Store as naive UTC
+    last_logged_in = Column(DateTime(timezone=True), nullable=True, index=True)
     administrator_profile_id = Column(String, nullable=True, index=True)
     administrator_username = Column(String, nullable=True)
-    status = Column(String, default="active", nullable=False)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    status = Column(
+        SQLEnum(PersonStatusEnum, name="person_status_enum_v3"),
+        default=PersonStatusEnum.ACTIVE,
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
     updated_at = Column(
-        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
-    # Relationships (remain the same)
     family_tree = relationship(
         "FamilyTree",
         back_populates="person",
@@ -198,24 +210,6 @@ class Person(Base):
         uselist=False,
         cascade="all, delete, delete-orphan",
     )
-    inbox_status = relationship(
-        "InboxStatus",
-        back_populates="person",
-        uselist=False,
-        cascade="all, delete, delete-orphan",
-        foreign_keys="InboxStatus.people_id",
-    )  # Corrected foreign_keys usage
-    message_history = relationship(
-        "MessageHistory", back_populates="person", cascade="all, delete, delete-orphan"
-    )
-
-    # If you prefer SQLAlchemy checks, uncomment this, otherwise DB unique handles it
-    # __table_args__ = (
-    #     UniqueConstraint('profile_id', name='uq_people_profile_id'),
-    #     UniqueConstraint('uuid', name='uq_people_uuid') # Ensure UUID constraint name if needed
-    # )
-
-
 # End of class Person
 
 
@@ -262,100 +256,69 @@ def db_transn(session: Session):
 
 
 def create_person(session: Session, person_data: Dict[str, Any]) -> int:
-    """
-    V1.1 REVISED: Creates a new person record in the database.
-    - Checks for existing profile_id (case-insensitive) before insertion.
-    - Ensures profile_id and uuid are stored uppercase.
-    """
+    """Creates a new person record."""
     required_keys = ("username", "uuid")
     if not all(
         key in person_data and person_data[key] is not None for key in required_keys
     ):
         logger.warning(
-            f"Missing required non-null data for person creation: Needs username and uuid. Data: {person_data}"
+            f"Missing required data for person creation (username, uuid): {person_data}"
         )
         return 0
-
-    profile_id_raw = person_data.get("profile_id")  # Can be None
-    # --- Convert to uppercase EARLY for check and insert ---
+    profile_id_raw = person_data.get("profile_id")
     profile_id_upper = profile_id_raw.upper() if profile_id_raw else None
     uuid_upper = str(person_data["uuid"]).upper() if person_data.get("uuid") else None
-    # --- End Uppercase Conversion ---
-
     username = person_data["username"]
-    log_ref = f"UUID={uuid_upper or 'NULL'} / ProfileID={profile_id_upper or 'NULL'} / User='{username}'"
-
+    log_ref = f"UUID={uuid_upper or 'NULL'} / Prof={profile_id_upper or 'NULL'}"
     try:
-        # --- Explicit Check for Profile ID Conflict BEFORE insert ---
-        if profile_id_upper:  # Check using the uppercased version
-            existing_by_profile = (
-                session.query(Person)
+        if profile_id_upper:
+            existing = (
+                session.query(Person.id)
                 .filter(Person.profile_id == profile_id_upper)
                 .first()
             )
-            if existing_by_profile:
+            if existing:
                 logger.error(
-                    f"create_person FAILED for {log_ref}: Profile ID '{profile_id_upper}' already exists for Person ID {existing_by_profile.id} (UUID: {existing_by_profile.uuid}). Cannot create duplicate profile_id."
+                    f"Create FAILED {log_ref}: Profile ID exists (ID {existing.id})"
                 )
-                return 0  # Fail creation due to profile_id uniqueness requirement
-        # --- End Profile ID Check ---
-
-        # Proceed with creation if profile_id is NULL or not conflicting
-        logger.debug(f"Proceeding with Person creation for {log_ref}.")
+                return 0
+        last_logged_in_dt = person_data.get("last_logged_in")
+        if isinstance(last_logged_in_dt, datetime) and last_logged_in_dt.tzinfo is None:
+            last_logged_in_dt = last_logged_in_dt.replace(tzinfo=timezone.utc)
         new_person = Person(
-            uuid=uuid_upper,  # Store uppercase UUID
-            profile_id=profile_id_upper,  # Store uppercase Profile ID or None
+            uuid=uuid_upper,
+            profile_id=profile_id_upper,
             username=username,
             administrator_profile_id=(
                 person_data.get("administrator_profile_id").upper()
                 if person_data.get("administrator_profile_id")
                 else None
-            ),  # Uppercase Admin ID
+            ),
             administrator_username=person_data.get("administrator_username"),
             message_link=person_data.get("message_link"),
             in_my_tree=bool(person_data.get("in_my_tree", False)),
-            status="active",
+            status=PersonStatusEnum.ACTIVE,
             first_name=person_data.get("first_name"),
             gender=person_data.get("gender"),
             birth_year=person_data.get("birth_year"),
             contactable=person_data.get("contactable", True),
-            last_logged_in=person_data.get("last_logged_in"),
+            last_logged_in=last_logged_in_dt,
         )
-
         session.add(new_person)
-        session.flush()  # Flush to get the ID and check constraints (like UUID UNIQUE)
-
+        session.flush()
         if new_person.id is None:
-            logger.error(
-                f"ID not assigned after flush for person {log_ref}! Data: {person_data}"
-            )
+            logger.error(f"ID None after flush {log_ref}!")
             session.rollback()
             return 0
-
-        logger.debug(f"Created Person record ID {new_person.id} for {log_ref}.")
         return int(new_person.id)
-
     except IntegrityError as ie:
         session.rollback()
-        logger.error(
-            f"IntegrityError creating person {log_ref}: {ie}. UUID likely exists.",
-            exc_info=False,
-        )
-        return 0
-    except SQLAlchemyError as e:
-        logger.error(f"Database error creating person {log_ref}: {e}", exc_info=True)
-        if session.is_active:
-            session.rollback()
+        logger.error(f"IntegrityError create_person {log_ref}: {ie}. UUID exists?")
         return 0
     except Exception as e:
-        logger.critical(
-            f"Unexpected error in create_person for {log_ref}: {e}", exc_info=True
-        )
-        if session.is_active:
-            session.rollback()
+        logger.critical(f"Unexpected error create_person {log_ref}: {e}", exc_info=True)
+        session.rollback()
         return 0
-
-
 # End of create_person
 
 
@@ -494,8 +457,6 @@ def create_dna_match(
             f"Unexpected error in create_dna_match for {log_ref}: {e}", exc_info=True
         )
         return "error"
-
-
 # End of create_dna_match
 
 
@@ -594,8 +555,6 @@ def create_family_tree(
             f"Unexpected error in create_family_tree for {log_ref}: {e}", exc_info=True
         )
         return "error"
-
-
 # End create_family_tree
 
 # ----------------------------------------------------------------------
@@ -625,8 +584,6 @@ def get_person_by_profile_id_and_username(
             f"Error retrieving person by profile_id/username: {e}", exc_info=True
         )
         return None
-
-
 # end get_person_by_profile_id_and_username
 
 
@@ -655,8 +612,6 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
             f"Error retrieving person by profile_id '{profile_id}': {e}", exc_info=True
         )
         return None
-
-
 # end of get_person_by_profile_id
 
 
@@ -705,8 +660,6 @@ def get_person_and_dna_match(
             exc_info=True,
         )
         return None, None  # Return None tuple on error
-
-
 # end of get_person_and_dna_match
 
 
@@ -822,8 +775,6 @@ def find_existing_person(
 
     # Return the found person (which might be None if not found/identified)
     return person
-
-
 # end of find_existing_person
 
 
@@ -849,8 +800,6 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
     except Exception as e:
         logger.error(f"Error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
-
-
 # end of get_person_by_uuid
 
 # ----------------------------------------------------------------------
@@ -1108,47 +1057,29 @@ def create_or_update_person(
             f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
         )
         return None, "error"
-
-
 # End create_or_update_person
 
 
 def update_person(
     session: Session, profile_id: str, username: str, update_data: Dict[str, Any]
 ) -> bool:
-    """Updates an existing person record. Uses profile_id and username for lookup.
-
-    Args:
-        session: The SQLAlchemy Session.
-        profile_id: The profile ID of the person to update.
-        username: The username of the person to update.
-        update_data: A dictionary containing the fields to update.
-
-    Returns:
-        True if the update was successful, False otherwise.
-    """
+    """Updates allowed fields of an existing Person (identified by profile_id/username)."""
     if not profile_id or not username:
-        logger.warning("update_person: profile_id and username required.")
         return False
     try:
         person = (
             session.query(Person)
-            .filter_by(
-                profile_id=profile_id.upper(), username=username
-            )  # Ensure uppercase lookup
+            .filter(
+                Person.profile_id == profile_id.upper(), Person.username == username
+            )
             .first()
         )
         if not person:
-            logger.warning(
-                f"update_person: Person with profile_id {profile_id} and username {username} not found."
-            )
             return False
-
-        # Update fields (whitelist approach for safety)
-        updated = False  # Track if any changes are made
-        allowed_fields = [
+        updated = False
+        allowed = [
             "uuid",
-            "profile_id",  # Allow updating profile_id if needed (e.g., placeholder)
+            "profile_id",
             "username",
             "administrator_profile_id",
             "administrator_username",
@@ -1160,63 +1091,58 @@ def update_person(
             "birth_year",
             "contactable",
             "last_logged_in",
-        ]  # Expanded allowed fields based on create_or_update logic
+        ]
         for key, value in update_data.items():
-            if key in allowed_fields and hasattr(person, key):
+            if key in allowed and hasattr(person, key):
                 current_value = getattr(person, key)
-                # Handle potential case differences for IDs
                 value_to_compare = value
-                if key in ("profile_id", "administrator_profile_id", "uuid") and value:
-                    value_to_compare = value.upper()
-
-                if current_value != value_to_compare:  # Only update if value changed
-                    setattr(person, key, value_to_compare)  # Store corrected case if ID
-                    logger.debug(
-                        f"Updating {key} for Person ID {person.id} to {value_to_compare}"
-                    )
+                if isinstance(current_value, datetime) and isinstance(
+                    value_to_compare, datetime
+                ):
+                    current_naive = (
+                        current_value.astimezone(timezone.utc)
+                        if current_value.tzinfo
+                        else current_value
+                    ).replace(tzinfo=None, microsecond=0)
+                    new_naive = (
+                        value_to_compare.astimezone(timezone.utc)
+                        if value_to_compare.tzinfo
+                        else value_to_compare
+                    ).replace(tzinfo=None, microsecond=0)
+                    if current_naive != new_naive:
+                        setattr(person, key, value_to_compare)
+                        updated = True
+                elif key == "status":  # Handle Enum update
+                    # Convert string value from update_data to Enum member if needed
+                    try:
+                        # Convert string value from update_data to Enum member if needed
+                        enum_value = (
+                            PersonStatusEnum(value_to_compare)
+                            if isinstance(value_to_compare, str)
+                            else value_to_compare
+                        )
+                        # Check if the resolved value is actually part of the Enum
+                        if (
+                            isinstance(enum_value, PersonStatusEnum)
+                            and current_value != enum_value
+                        ):
+                            setattr(person, key, enum_value)
+                            updated = True
+                    except ValueError:
+                        logger.warning(
+                            f"Invalid status value '{value_to_compare}' provided for update on Person ID {person.id}."
+                        )
+                elif current_value != value_to_compare:
+                    setattr(person, key, value_to_compare)
                     updated = True
-            elif key not in allowed_fields:
-                logger.warning(
-                    f"Attempted to update non-allowed attribute '{key}' on Person ID {person.id}."
-                )
-
         if updated:
-            person.updated_at = datetime.now()  # Update timestamp if changed
-            session.flush()  # Stage the update
-            logger.info(
-                f"Updated person with profile_id {profile_id} and username {username} (ID: {person.id})."
-            )
-            return True
-        else:
-            logger.debug(
-                f"No update needed for person profile_id {profile_id} / username {username}."
-            )
-            return True  # Return True even if no changes needed, as the record exists
-
-    except IntegrityError as ie:
-        session.rollback()
-        logger.error(
-            f"IntegrityError updating person {profile_id}/{username}: {ie}.",
-            exc_info=False,  # Less verbose for integrity
-        )
-        return False
-    except SQLAlchemyError as e:
-        logger.error(
-            f"Database error updating person {profile_id}/{username}: {e}",
-            exc_info=True,
-        )
+            person.updated_at = datetime.now(timezone.utc)
+            session.flush()
+        return True
+    except Exception as e:
+        logger.error(f"Error update_person {profile_id}/{username}: {e}", exc_info=True)
         session.rollback()
         return False
-    except Exception as e:  # Catch any other unexpected error
-        logger.critical(
-            f"Unexpected error in update_person for {profile_id}/{username}: {e}",
-            exc_info=True,
-        )
-        if session.is_active:
-            session.rollback()
-        return False
-
-
 # End of update_person
 
 # ----------------------------------------------------------------------
@@ -1276,8 +1202,6 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         if session.is_active:
             session.rollback()
         return False
-
-
 # End of delete_person
 
 
@@ -1385,8 +1309,6 @@ def delete_database(
 
     # Should not be reached if max_attempts > 0
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")
-
-
 # End of delete_database
 
 # ----------------------------------------------------------------------
@@ -1425,72 +1347,72 @@ def backup_database(
         )
         # Re-raise the exception if backup failure should halt execution
         # raise
-
-
 # End of backup_database
 
-# ----------------------------------------------------------------------
-# Standalone execution (for testing database setup)
-#################################################################################
-
-
+##########################################################################
+# Standalone Execution (Database Setup/Verification)
+##########################################################################
 if __name__ == "__main__":
-    # Import sys here for the forced logging stream
-    import sys
-    import json  # Needed for seeding
-
-    # --- Force basic logging config for standalone execution ---
     logging.basicConfig(
-        level=logging.DEBUG,  # Set to DEBUG for detailed output during test
-        format="%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s",  # Simplified format
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s",
         datefmt="%H:%M:%S",
-        stream=sys.stderr,  # Force output to stderr for visibility
+        stream=sys.stderr,
     )
-    # Get the logger again *after* basicConfig is set
-    standalone_logger = logging.getLogger("db_standalone")  # Use a specific name
-    standalone_logger.info("--- Starting database.py standalone test ---")
-
-    # --- Get DB Path ---
+    standalone_logger = logging.getLogger("db_standalone")
+    standalone_logger.info(
+        "--- Starting database.py standalone test (Drop Table, 2-Row Log, Enum Status) ---"
+    )  # Updated log
     try:
         db_path_obj = config_instance.DATABASE_FILE
-        db_path_str = str(db_path_obj.resolve())  # Resolve for absolute path
-        standalone_logger.info(f"Using database file: {db_path_str}")
+        db_path_str = str(db_path_obj.resolve())
     except Exception as config_err:
-        standalone_logger.critical(
-            f"CRITICAL: Error getting database path from config: {config_err}. Cannot proceed."
-        )
-        sys.exit(1)  # Exit if config is broken
-
+        standalone_logger.critical(f"CRITICAL: Error getting DB path: {config_err}.")
+        sys.exit(1)
+    standalone_logger.info(f"Using database file: {db_path_str}")
     engine = None
-    # conn_pool removed as it wasn't used here
-
     try:
-        # --- Create Engine ---
-        standalone_logger.debug("Creating SQLAlchemy engine...")
         engine = create_engine(f"sqlite:///{db_path_str}", echo=False)
 
-        # --- Add PRAGMA foreign_keys=ON listener ---
         @event.listens_for(engine, "connect")
         def enable_foreign_keys(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
             try:
-                cursor.execute("PRAGMA foreign_keys=ON")
-            except Exception as pragma_e:
-                standalone_logger.error(f"Failed PRAGMA: {pragma_e}")
+                cursor.execute(
+                    "PRAGMA foreign_keys=ON"
+                )  # Ensure FKs are on for dropping/creating
             finally:
                 cursor.close()
 
-        standalone_logger.debug("Foreign key listener attached.")
+        # --- Explicitly Drop Table Before Creation ---
+        try:
+            with engine.connect() as connection:
+                with connection.begin():  # Use transaction
+                    standalone_logger.warning(
+                        "Attempting to drop 'conversation_log' table if it exists..."
+                    )
+                    connection.execute(text("DROP TABLE IF EXISTS conversation_log"))
+                    standalone_logger.info(
+                        "'conversation_log' table dropped (if existed)."
+                    )
+                    # Optionally drop other related tables if FK issues persist, but start with just this one.
+        except Exception as drop_err:
+            standalone_logger.error(
+                f"Error during explicit table drop: {drop_err}", exc_info=True
+            )
+            # Proceed cautiously, create_all might still work or fail clearly
 
         # --- Create Tables ---
-        standalone_logger.debug("Creating/Verifying database tables...")
-        Base.metadata.create_all(engine)
+        standalone_logger.info("Creating/Verifying database tables...")
+        Base.metadata.create_all(
+            engine
+        )  # Should now create conversation_log with correct constraints
         standalone_logger.info(f"Database tables OK: {db_path_str}")
 
-        # --- Seed Message Types (Essential for FK constraints) ---
+        # --- Seed Message Types ---
         standalone_logger.info("Seeding MessageType table...")
         SessionSeed = sessionmaker(bind=engine)
-        seed_session = None  # Initialize
+        seed_session = None
         try:
             seed_session = SessionSeed()
             script_dir = Path(__file__).resolve().parent
@@ -1499,21 +1421,19 @@ if __name__ == "__main__":
                 with messages_file.open("r", encoding="utf-8") as f:
                     messages_data = json.load(f)
                 if isinstance(messages_data, dict):
-                    with db_transn(seed_session) as sess:  # Use context manager
-                        types_to_add = []
-                        for name in messages_data:
-                            exists = (
-                                sess.query(MessageType)
-                                .filter_by(type_name=name)
-                                .first()
-                            )
-                            if not exists:
-                                types_to_add.append(MessageType(type_name=name))
+                    with db_transn(seed_session) as sess:
+                        types_to_add = [
+                            MessageType(type_name=name)
+                            for name in messages_data
+                            if not sess.query(MessageType.id)
+                            .filter_by(type_name=name)
+                            .first()
+                        ]
                         if types_to_add:
-                            standalone_logger.debug(
-                                f"Adding {len(types_to_add)} message types..."
-                            )
                             sess.add_all(types_to_add)
+                            standalone_logger.debug(
+                                f"Added {len(types_to_add)} message types."
+                            )
                         else:
                             standalone_logger.debug("Message types already exist.")
                     count = seed_session.query(func.count(MessageType.id)).scalar() or 0
@@ -1521,37 +1441,24 @@ if __name__ == "__main__":
                         f"MessageType seeding OK. Total types: {count}"
                     )
                 else:
-                    standalone_logger.error("'messages.json' has incorrect format.")
+                    standalone_logger.error("'messages.json' incorrect format.")
             else:
-                standalone_logger.warning(
-                    f"'messages.json' not found at '{messages_file}', skipping seeding."
-                )
+                standalone_logger.warning(f"'messages.json' not found.")
         except Exception as seed_err:
             standalone_logger.error(
-                f"Error seeding MessageType table: {seed_err}", exc_info=True
+                f"Error seeding MessageType: {seed_err}", exc_info=True
             )
         finally:
             if seed_session:
                 seed_session.close()
 
-    except SQLAlchemyError as db_e:
-        standalone_logger.critical(
-            f"Database setup/connection error: {db_e}", exc_info=True
-        )
     except Exception as e:
-        standalone_logger.critical(
-            f"Unexpected error during standalone test: {e}", exc_info=True
-        )
+        standalone_logger.critical(f"Unexpected error during setup: {e}", exc_info=True)
     finally:
-        # --- Final Cleanup ---
-        standalone_logger.debug("Performing final cleanup...")
-        # conn_pool removed
         if engine:
             engine.dispose()
             standalone_logger.debug("SQLAlchemy engine disposed.")
-
         standalone_logger.info("--- Database.py standalone test finished ---")
-        # Optionally, exit the script
         sys.exit(0)
 # End of standalone execution
-# end of database.py
+# End of database.py

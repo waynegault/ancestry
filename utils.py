@@ -2205,91 +2205,54 @@ def _api_req(
     force_requests: bool = False,
     cookie_jar: Optional[RequestsCookieJar] = None,
     allow_redirects: bool = True,
-    force_text_response: bool = False,  # <<< ADDED force_text_response flag
+    force_text_response: bool = False,
 ) -> Optional[Any]:
     """
-    V14.3 CORRECTED: Makes HTTP request. Allows passing cookie jar, allow_redirects, force_text_response.
-    - Added `force_text_response` parameter (default False).
-    - Checks force_text_response before Content-Type for parsing.
+    V14.5 CORRECTED: Makes HTTP request. REMOVED internal _sync_cookies call.
+    Relies on caller ensuring cookies are synced appropriately beforehand.
     """
-    # [Initial checks and header assembly remain the same as previous version]
-    if not session_manager:
-        logger.error(
-            f"{api_description}: Aborting - SessionManager instance is required."
-        )
-        return None
-    browser_needed = not force_requests # If forcing requests, assume browser isn't strictly needed for THIS call
-    if browser_needed and not session_manager.is_sess_valid():
-        logger.error(
-            f"{api_description}: Aborting - Browser session is invalid or closed."
-        )
-        return None
-    max_retries = config_instance.MAX_RETRIES
-    initial_delay = config_instance.INITIAL_DELAY
-    backoff_factor = config_instance.BACKOFF_FACTOR
-    max_delay = config_instance.MAX_DELAY
-    retry_status_codes = config_instance.RETRY_STATUS_CODES
-    final_headers = {}
-    contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {})
-    final_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
-    if headers:
-        final_headers.update({k: v for k, v in headers.items() if v is not None})
+    # ...(Initial checks, Header Assembly - unchanged)...
+    if not session_manager: logger.error(f"{api_description}: Aborting - SessionManager required."); return None
+    browser_needed_quick_check = not force_requests and driver is not None
+    if browser_needed_quick_check and not session_manager.is_sess_valid(): logger.error(f"{api_description}: Aborting - Browser session invalid."); return None
+    max_retries = config_instance.MAX_RETRIES; initial_delay = config_instance.INITIAL_DELAY; backoff_factor = config_instance.BACKOFF_FACTOR; max_delay = config_instance.MAX_DELAY; retry_status_codes = config_instance.RETRY_STATUS_CODES
+    final_headers = {}; contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {}); final_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
+    if headers: final_headers.update({k: v for k, v in headers.items() if v is not None})
     if "User-Agent" not in final_headers:
-        ua = None
-        if driver and session_manager.is_sess_valid():
-            try:
-                ua = driver.execute_script("return navigator.userAgent;")
-            except Exception:
-                pass
-        if not ua:
-            ua = random.choice(config_instance.USER_AGENTS)
+        ua = None;
+        if driver and session_manager.is_sess_valid(): # Check validity again before execute_script
+            try: ua = driver.execute_script("return navigator.userAgent;")
+            except Exception: pass
+        if not ua: ua = random.choice(config_instance.USER_AGENTS);
         final_headers["User-Agent"] = ua
-    if referer_url and "Referer" not in final_headers:
-        final_headers["Referer"] = referer_url
+    if referer_url and "Referer" not in final_headers: final_headers["Referer"] = referer_url
     if use_csrf_token and "X-CSRF-Token" not in final_headers:
         csrf_from_manager = session_manager.csrf_token
-        if csrf_from_manager:
-            final_headers["X-CSRF-Token"] = csrf_from_manager
-        else:
-            logger.error(f"{api_description}: CSRF token required but not found.")
-            return None
-    if (
-        driver
-        and session_manager.is_sess_valid()
-        and "ancestry-context-ube" not in final_headers
-    ):
-        ube_header = make_ube(driver)
-        if ube_header:
-            final_headers["ancestry-context-ube"] = ube_header
-        else:
-            logger.warning(f"{api_description}: Failed to generate UBE header.")
+        if csrf_from_manager: final_headers["X-CSRF-Token"] = csrf_from_manager
+        else: logger.error(f"{api_description}: CSRF token required but not found."); return None
+    if driver and session_manager.is_sess_valid() and "ancestry-context-ube" not in final_headers:
+        ube_header = make_ube(driver);
+        if ube_header: final_headers["ancestry-context-ube"] = ube_header
     if "ancestry-userid" in contextual_headers and session_manager.my_profile_id:
-        # Check if my_profile_id exists before trying to upper()
-        if session_manager.my_profile_id:
-            final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
-        else:
-            logger.warning(f"{api_description}: Expected ancestry-userid header, but session_manager.my_profile_id is None.")
-
-    if "newrelic" not in final_headers:
-        final_headers["newrelic"] = make_newrelic(driver)
-    if "traceparent" not in final_headers:
-        final_headers["traceparent"] = make_traceparent(driver)
-    if "tracestate" not in final_headers:
-        final_headers["tracestate"] = make_tracestate(driver)
+         if session_manager.my_profile_id: final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
+    if "newrelic" not in final_headers: final_headers["newrelic"] = make_newrelic(driver)
+    if "traceparent" not in final_headers: final_headers["traceparent"] = make_traceparent(driver)
+    if "tracestate" not in final_headers: final_headers["tracestate"] = make_tracestate(driver)
+    # --- Special override for Match List API allow_redirects ---
+    # This forces allow_redirects=False ONLY for the Match List API call
+    effective_allow_redirects = allow_redirects
     if api_description == "Match List API":
-        if "Cache-Control" not in final_headers:
-            final_headers["Cache-Control"] = "no-cache"
-        if "Pragma" not in final_headers:
-            final_headers["Pragma"] = "no-cache"
+         logger.debug("Match List API call detected: Forcing allow_redirects=False.")
+         effective_allow_redirects = False
+    # --- End Special override ---
+    if api_description == "Match List API" and "Cache-Control" not in final_headers: final_headers["Cache-Control"] = "no-cache"; final_headers["Pragma"] = "no-cache"
+
 
     request_timeout = timeout if timeout is not None else selenium_config.API_TIMEOUT
-    logger.debug(
-        f"API Req: {method.upper()} {url} (AllowRedirects={allow_redirects}, ForceText={force_text_response})"
-    )
+    logger.debug(f"API Req: {method.upper()} {url} (AllowRedirects={effective_allow_redirects}, ForceText={force_text_response})") # Use effective_allow_redirects
     req_session = session_manager._requests_session
     effective_cookies = cookie_jar if cookie_jar is not None else req_session.cookies
-    if cookie_jar is not None:
-        logger.debug(f"Using explicitly provided cookie jar for '{api_description}'.")
+    if cookie_jar is not None: logger.debug(f"Using explicitly provided cookie jar for '{api_description}'.")
 
     retries_left = max_retries
     last_exception = None
@@ -2299,176 +2262,62 @@ def _api_req(
         attempt = max_retries - retries_left + 1
         response: Optional[RequestsResponse] = None
         try:
-            if cookie_jar is None and driver and session_manager.is_sess_valid():
-                try:
-                    session_manager._sync_cookies()
-                except Exception as sync_err:
-                    logger.warning(
-                        f"{api_description}: Error syncing cookies (Attempt {attempt}): {sync_err}"
-                    )
+            # --- REMOVED COOKIE SYNC ---
+            # No longer sync cookies inside the loop
+            # logger.debug(f"{api_description}: Syncing cookies from driver before attempt {attempt}...") # REMOVED
+            # if cookie_jar is None and driver and session_manager.is_sess_valid(): # REMOVED
+            #    try: session_manager._sync_cookies() # REMOVED
+            #    except Exception as sync_err: logger.warning(f"{api_description}: Error syncing cookies (Attempt {attempt}): {sync_err}") # REMOVED
+            # --- END REMOVAL ---
 
-            # [Detailed Logging remains the same]
+            # ...(Logging and Request making - unchanged, but uses effective_allow_redirects)...
             if logger.isEnabledFor(logging.DEBUG):
-                # (Log headers, cookies, payload as before)
-                pass
-
-            # Make Request
-            response = req_session.request(
-                method=method.upper(),
-                url=url,
-                headers=final_headers,
-                data=data,
-                json=json_data,
-                timeout=request_timeout,
-                verify=True,
-                allow_redirects=allow_redirects,
-                cookies=effective_cookies,
-            )
+                 log_hdrs = {k: (v[:10] + "..." if k in ["Authorization", "Cookie", "X-CSRF-Token"] and v and len(v) > 15 else v) for k, v in final_headers.items()}
+                 # logger.debug(f"  Headers: {log_hdrs}") # Optional
+                 if json_data: logger.debug(f"  JSON Payload: {json.dumps(json_data)[:200]}...")
+                 elif data: logger.debug(f"  Data Payload: {str(data)[:200]}...")
+            response = req_session.request( method=method.upper(), url=url, headers=final_headers, data=data, json=json_data, timeout=request_timeout, verify=True, allow_redirects=effective_allow_redirects, cookies=effective_cookies) # Use effective_allow_redirects
             status = response.status_code
-
-            # Log Response
             logger.debug(f"<-- Response Status: {status} {response.reason}")
-            # [Detailed response logging remains the same]
-            if logger.isEnabledFor(logging.DEBUG):
-                # (Log headers, history, body preview as before)
-                pass
 
-            # --- Response Handling ---
+            # --- Response Handling - unchanged ---
             if status in retry_status_codes:
-                # [Retry logic remains the same]
-                retries_left -= 1
-                last_exception = HTTPError(
-                    f"{status} Server Error: {response.reason}", response=response
-                )
-                if retries_left <= 0:
-                    logger.error(
-                        f"{api_description}: Failed after {max_retries} attempts (Final Status {status})."
-                    )
-                    return response
+                retries_left -= 1; last_exception = HTTPError(f"{status} Server Error: {response.reason}", response=response)
+                if retries_left <= 0: logger.error(f"{api_description}: Failed after {max_retries} attempts (Final Status {status})."); return response
                 else:
-                    sleep_time = min(
-                        delay * (backoff_factor ** (attempt - 1)), max_delay
-                    )
-                    sleep_time = max(0.1, sleep_time)
-                    if session_manager.dynamic_rate_limiter and status == 429:
-                        session_manager.dynamic_rate_limiter.increase_delay()
-                    logger.warning(
-                        f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
-                    )
-                    time.sleep(sleep_time)
-                    delay *= backoff_factor
-                    continue
-
-            elif 300 <= status < 400 and not allow_redirects:
-                # [Handling disabled redirects remains the same]
-                logger.warning(
-                    f"{api_description}: Received redirect status {status} {response.reason} (Redirects were disabled). Returning response object."
-                )
-                return response
-
-            elif 300 <= status < 400 and allow_redirects:
-                # [Handling unexpected final redirects remains the same]
-                logger.warning(
-                    f"{api_description}: Received unexpected final redirect status {status} {response.reason} (Redirects were enabled)."
-                )
-                return response
-
-            elif response.ok:  # Status 2xx
-                if session_manager.dynamic_rate_limiter:
-                    session_manager.dynamic_rate_limiter.decrease_delay()
-
-                # <<< CHECK force_text_response FIRST >>>
-                if force_text_response:
-                    logger.debug(
-                        f"{api_description}: OK ({status}). Returning TEXT response as forced."
-                    )
-                    return response.text
-                # <<< END CHECK >>>
-
-                # --- If not forced, check Content-Type ---
+                    sleep_time = min(delay * (backoff_factor ** (attempt - 1)), max_delay) + random.uniform(0, 0.2); sleep_time = max(0.1, sleep_time)
+                    if session_manager.dynamic_rate_limiter and status == 429: session_manager.dynamic_rate_limiter.increase_delay()
+                    logger.warning(f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."); time.sleep(sleep_time); delay *= backoff_factor; continue
+            elif 300 <= status < 400 and not effective_allow_redirects: logger.warning(f"{api_description}: Status {status} {response.reason} (Redirects Disabled). Returning response."); return response
+            elif 300 <= status < 400 and effective_allow_redirects: logger.warning(f"{api_description}: Unexpected final status {status} {response.reason} (Redirects Enabled)."); return response # Should have been followed
+            elif response.ok: # Status 2xx
+                if session_manager.dynamic_rate_limiter: session_manager.dynamic_rate_limiter.decrease_delay()
+                if force_text_response: return response.text
                 content_type = response.headers.get("content-type", "").lower()
                 if "application/json" in content_type:
                     try:
-                        # --- Add check for empty response body before JSON decode ---
-                        if not response.content:
-                            logger.warning(
-                                f"{api_description}: OK ({status}), Content-Type is JSON, but response body is EMPTY. Returning None."
-                            )
-                            return None
-                        # --- End check for empty body ---
+                        if not response.content: logger.warning(f"{api_description}: OK ({status}), JSON, but response EMPTY."); return None
                         return response.json()
-                    except json.JSONDecodeError as json_err:
-                        logger.error(
-                            f"{api_description}: OK ({status}), Content-Type is JSON, but JSON decode FAILED: {json_err}"
-                        )
-                        logger.debug(
-                            f"Response text causing decode error: {response.text[:500]}"
-                        )
-                        return None  # Indicate failure if JSON expected but invalid
+                    except json.JSONDecodeError as json_err: logger.error(f"{api_description}: OK ({status}), JSON decode FAILED: {json_err}"); logger.debug(f"Response text: {response.text[:500]}"); return None
                 else:
-                    # Specific handling for CSRF text/plain remains useful
-                    if (
-                        api_description == "CSRF Token API"
-                        and "text/plain" in content_type
-                    ):
-                        logger.debug(
-                            f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning TEXT as expected."
-                        )
-                        csrf_text = response.text.strip()
-                        return csrf_text if csrf_text else None
-                    else:  # General fallback for other non-JSON types
-                        logger.warning(
-                            f"{api_description}: Request OK ({status}), but received unexpected Content-Type '{content_type}'. Returning TEXT."
-                        )
-                        return response.text
-
-            else:  # Non-retryable error >= 400
-                # [Error handling remains the same]
-                if status in [401, 403]:
-                    logger.warning(
-                        f"{api_description}: API call failed with status {status} {response.reason}. Likely not logged in or session expired."
-                    )
-                    # session_manager.api_login_verified = False # Removed this flag
-                    session_manager.session_ready = False # Use session_ready flag instead
-                else:
-                    logger.error(
-                        f"{api_description}: Non-retryable error: {status} {response.reason}."
-                    )
+                    if api_description == "CSRF Token API" and "text/plain" in content_type: csrf_text = response.text.strip(); return csrf_text if csrf_text else None
+                    else: logger.debug(f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning TEXT."); return response.text
+            else: # Non-retryable error >= 400
+                if status in [401, 403]: logger.warning(f"{api_description}: API call failed {status} {response.reason}. Session expired/invalid?"); session_manager.session_ready = False
+                else: logger.error(f"{api_description}: Non-retryable error: {status} {response.reason}.")
                 return response
 
-        # --- Exception Handling ---
+        # --- Exception Handling - unchanged ---
         except requests.exceptions.RequestException as e:
-            # [Exception retry logic remains the same]
-            retries_left -= 1
-            last_exception = e
-            if retries_left <= 0:
-                logger.error(
-                    f"{api_description}: RequestException failed after {max_retries} attempts. Final Error: {e}",
-                    exc_info=False,
-                )
-                return None
+            retries_left -= 1; last_exception = e
+            if retries_left <= 0: logger.error(f"{api_description}: RequestException failed after {max_retries} attempts. Error: {e}", exc_info=False); return None
             else:
-                sleep_time = min(delay * (backoff_factor ** (attempt - 1)), max_delay)
-                sleep_time = max(0.1, sleep_time)
-                logger.warning(
-                    f"{api_description}: RequestException (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
-                )
-                time.sleep(sleep_time)
-                delay *= backoff_factor
-                continue
-        except Exception as e:
-            logger.critical(
-                f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
-                exc_info=True,
-            )
-            return None
+                sleep_time = min(delay * (backoff_factor ** (attempt - 1)), max_delay) + random.uniform(0, 0.2); sleep_time = max(0.1, sleep_time)
+                logger.warning(f"{api_description}: RequestException (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"); time.sleep(sleep_time); delay *= backoff_factor; continue
+        except Exception as e: logger.critical(f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}", exc_info=True); return None
 
-    logger.error(
-        f"{api_description}: Exited retry loop after {max_retries} failed attempts. Last Exception: {last_exception}. Returning None."
-    )
-    return None
+    logger.error(f"{api_description}: Exited retry loop unexpectedly. Last Exception: {last_exception}."); return None
 # End of _api_req
-
 
 def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
     """
@@ -3870,21 +3719,6 @@ def nav_to_page(
     if not url:
         logger.error("Navigation failed: Target URL is required.")
         return False
-
-    from utils import (
-        SessionManager,
-        is_browser_open,
-        log_in,
-        login_status,
-        urljoin,
-        config_instance,
-        selenium_config,
-        USERNAME_INPUT_SELECTOR,
-        TWO_STEP_VERIFICATION_HEADER_SELECTOR,
-        TEMP_UNAVAILABLE_SELECTOR,
-        PAGE_NO_LONGER_AVAILABLE_SELECTOR,
-        _check_for_unavailability,
-    )  # Add necessary imports
 
     max_attempts = config_instance.MAX_RETRIES
     page_timeout = selenium_config.PAGE_TIMEOUT
