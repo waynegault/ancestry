@@ -334,7 +334,6 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
 
 # --- Action Functions
 
-
 # Action 1
 def run_actions_6_7_8_action(session_manager, *args):
     """

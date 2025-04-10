@@ -69,10 +69,10 @@ class RoleType(enum.Enum):  # Kept enum from user file
 
 
 class PersonStatusEnum(enum.Enum):  # Added Enum for status
-    ACTIVE = "active"
-    DESIST = "desist"
-    ARCHIVE = "archive"
-    BLOCKED = "blocked"
+    ACTIVE = "ACTIVE"
+    DESIST = "DESIST"
+    ARCHIVE = "ARCHIVE"
+    BLOCKED = "BLOCKED"
 
 
 # --- Model Definitions ---
@@ -200,9 +200,9 @@ class Person(Base):
     administrator_username = Column(String, nullable=True)
     status = Column(
         SQLEnum(PersonStatusEnum, name="person_status_enum_v3"),
-        default=PersonStatusEnum.ACTIVE,
         nullable=False,
-        index=True,
+        default=PersonStatusEnum.ACTIVE,
+        server_default=PersonStatusEnum.ACTIVE.value,
     )
     created_at = Column(
         DateTime(timezone=True),
@@ -240,22 +240,66 @@ class Person(Base):
 
 @contextlib.contextmanager
 def db_transn(session: Session):
-    """Context manager for database transactions."""
-    if not session or not session.is_active:
-        raise SQLAlchemyError("Invalid or inactive session provided to db_transn.")
-    try:
-        yield session
-        if session.is_active:
-            session.commit()
-    except Exception as e:
-        logger.error(
-            f"Exception within db_transn block: {e}. Rolling back.", exc_info=True
+    """Provides a transactional scope around a series of operations."""
+    if not session.is_active:
+        logger.debug(
+            "Transaction started on inactive session, beginning new transaction."
         )
-        if session and session.is_active:
+        # Removed session.begin() here - sessionmaker usually handles this implicitly
+        # If issues persist, uncommenting might be needed, but usually not.
+        # session.begin()
+
+    try:
+        logger.debug(f"--- Entering db_transn block (Session: {id(session)}) ---")
+        yield session
+        # --- Explicit Commit Logging ---
+        logger.debug(
+            f"--- Exiting db_transn block successfully (Session: {id(session)}) ---"
+        )
+        logger.info(f"Attempting commit... (Session: {id(session)})")
+        session.commit()
+        logger.info(f"Commit successful. (Session: {id(session)})")
+        # --- End Explicit Commit Logging ---
+    except SQLAlchemyError as e:
+        # --- Explicit Rollback Logging ---
+        logger.error(
+            f"SQLAlchemyError occurred: {e}. Attempting rollback... (Session: {id(session)})",
+            exc_info=True,
+        )
+        try:
             session.rollback()
-        raise
+            logger.warning(f"Rollback successful. (Session: {id(session)})")
+        except Exception as rb_err:
+            logger.critical(
+                f"CRITICAL: Failed during rollback: {rb_err} (Session: {id(session)})",
+                exc_info=True,
+            )
+        # --- End Explicit Rollback Logging ---
+        raise  # Re-raise the original SQLAlchemyError
+    except Exception as e:
+        # --- Explicit Rollback Logging for General Errors ---
+        logger.error(
+            f"Non-SQLAlchemy Exception occurred: {e}. Attempting rollback... (Session: {id(session)})",
+            exc_info=True,
+        )
+        try:
+            session.rollback()
+            logger.warning(
+                f"Rollback successful due to general exception. (Session: {id(session)})"
+            )
+        except Exception as rb_err:
+            logger.critical(
+                f"CRITICAL: Failed during rollback after general exception: {rb_err} (Session: {id(session)})",
+                exc_info=True,
+            )
+        # --- End Explicit Rollback Logging ---
+        raise  # Re-raise the original exception
     finally:
-        pass
+        # Session closing is handled by SessionManager.return_session now
+        logger.debug(
+            f"--- db_transn finally block reached (Session: {id(session)}). Returning connection to pool is handled elsewhere. ---"
+        )
+        # Removed session.close() - should be done by caller using return_session
 
 
 # end db_transn
