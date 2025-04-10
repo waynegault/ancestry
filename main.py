@@ -40,7 +40,7 @@ from database import (
     backup_database,
     Base,
     db_transn,
-    delete_database, 
+    delete_database,
     MessageType,
     Person,
 )
@@ -51,7 +51,7 @@ from my_selectors import (
     MATCH_ENTRY_SELECTOR,
     WAIT_FOR_PAGE_SELECTOR,
 )
-from utils import ( 
+from utils import (
     SessionManager,
     is_elem_there,
     log_in,  # Keep log_in import for now, SessionManager uses it internally
@@ -103,6 +103,8 @@ def menu():
     print("q. Exit")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
+
+
 # End of menu
 
 
@@ -141,6 +143,8 @@ def clear_log_file():
     except Exception as e:
         logger.warning(f"Error clearing log '{log_path}': {e}", exc_info=True)
     return cleared, log_path
+
+
 # End of clear_log_file
 
 
@@ -329,10 +333,13 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info(f"Memory used: {mem_used:.1f} MB")
         logger.info("--------------------------------------\n")
         # End Restore old footer style
+
+
 # End of exec_actn
 
 
 # --- Action Functions
+
 
 # Action 1
 def run_actions_6_7_8_action(session_manager, *args):
@@ -407,6 +414,8 @@ def run_actions_6_7_8_action(session_manager, *args):
             f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
         )
         return False
+
+
 # End Action 1
 
 
@@ -528,6 +537,8 @@ def reset_db_actn(session_manager: SessionManager, *args):
         logger.debug("Reset DB action finished.")
 
     return reset_successful
+
+
 # end of Action 2 (reset_db_actn)
 
 
@@ -545,6 +556,8 @@ def backup_db_actn(
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
+
+
 # end of Action 3
 
 
@@ -594,6 +607,8 @@ def restore_db_actn(
     finally:
         logger.debug("DB restore action finished.")
     return success
+
+
 # end of Action 4
 
 
@@ -630,6 +645,8 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
     else:  # Status is None
         logger.error("Login verification failed (critical error during check).")
         return False
+
+
 # End Action 5
 
 
@@ -657,6 +674,8 @@ def coord_action(session_manager, config_instance, start=1):
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
+
+
 # End of coord_action
 
 
@@ -681,6 +700,8 @@ def srch_inbox_actn(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
+
+
 # End of srch_inbox_actn
 
 
@@ -717,6 +738,8 @@ def send_messages_action(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
+
+
 # End of send_messages_action
 
 
@@ -776,6 +799,8 @@ def all_but_first_actn(
             temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
         logger.debug("Delete action finished.")
     return success
+
+
 # end of Action 9
 
 
@@ -956,6 +981,8 @@ def main():
                 file=sys.stderr,
             )
         print("\nExecution finished.")
+
+
 # end main
 
 # --- Entry Point ---

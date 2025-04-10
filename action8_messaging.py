@@ -1,9 +1,7 @@
 # File: action8_messaging.py
-# V14.14: Initialize tqdm inside logging_redirect_tqdm context.
+# V14.55: Cleaned up, consolidated fixes, verified syntax.
 
 #!/usr/bin/env python3
-
-# File: action8_messaging.py
 
 #####################################################
 # Imports
@@ -41,7 +39,11 @@ from sqlalchemy import (
     func,
     over,
 )
-from sqlalchemy.exc import SQLAlchemyError
+
+# --- CORRECT: Added missing import ---
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+
+# --- End Correction ---
 from sqlalchemy.orm import (
     Session as DbSession,
     aliased,
@@ -159,9 +161,7 @@ def determine_next_message_type(
     last_message_details: Optional[Tuple[str, datetime, str]], is_in_family_tree: bool
 ) -> Optional[str]:
     """
-    V2 REVISED: Determines the next message type based ONLY on history and current tree status.
-    Assumes caller has already checked for replies and message interval.
-    Adds specific logging for why a message is skipped.
+    Determines the next message type based ONLY on history and current tree status.
     """
     logger.debug(f"Currently In Tree: {is_in_family_tree}")
 
@@ -191,11 +191,17 @@ def determine_next_message_type(
             skip_reason = f"End of In_Tree sequence (last was {last_message_type})"
             logger.debug(f"{skip_reason}.")
         else:
-            skip_reason = (
-                f"Unexpected previous In_Tree message type: {last_message_type}"
-            )
-            logger.warning(f"{skip_reason}.")
-    else:
+            if last_message_type == "Unknown":
+                skip_reason = (
+                    f"Previous message type was Unknown, cannot determine next step."
+                )
+                logger.warning(f"{skip_reason} for In_Tree match.")
+            else:
+                skip_reason = (
+                    f"Unexpected previous In_Tree message type: {last_message_type}"
+                )
+                logger.warning(f"{skip_reason}.")
+    else:  # Not in family tree
         if last_message_type.startswith("In_Tree"):
             skip_reason = f"Match was In_Tree ({last_message_type}) but is now Out_Tree"
             logger.warning(f"{skip_reason}. Skipping.")
@@ -209,19 +215,22 @@ def determine_next_message_type(
             skip_reason = f"End of Out_Tree sequence (last was {last_message_type})"
             logger.debug(f"{skip_reason}.")
         else:
-            skip_reason = (
-                f"Unexpected previous Out_Tree message type: {last_message_type}"
-            )
-            logger.warning(f"{skip_reason}.")
+            if last_message_type == "Unknown":
+                skip_reason = (
+                    f"Previous message type was Unknown, cannot determine next step."
+                )
+                logger.warning(f"{skip_reason} for Out_Tree match.")
+            else:
+                skip_reason = (
+                    f"Unexpected previous Out_Tree message type: {last_message_type}"
+                )
+                logger.warning(f"{skip_reason}.")
 
     if next_type:
         logger.debug(f"Sending {next_type} (Reason: Following sequence).")
     else:
         logger.debug(f"Skipping: {skip_reason}.")
-
     return next_type
-
-
 # End of determine_next_message_type
 
 #####################################################
@@ -1033,7 +1042,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                         db_objects_to_commit = (
                                             []
                                         )  # Clear original list on SUCCESS
-                                    except IntegrityError as ie:
+                                    except (
+                                        IntegrityError
+                                    ) as ie:  # Catch specific IntegrityError
                                         if config_instance.APP_MODE == "dry_run":
                                             logger.warning(
                                                 f"Dry Run: UNIQUE constraint error during batch commit (likely duplicate dryrun_ ID): {ie}. Skipping commit for this batch, continuing run."
@@ -1059,7 +1070,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                             raise StopIteration(
                                                 "DB Batch Commit Failed - IntegrityError"
                                             ) from ie
-                                    except Exception as commit_err:
+                                    except (
+                                        Exception
+                                    ) as commit_err:  # Catch other commit errors
                                         logger.error(
                                             f"Error committing ConvLog batch: {commit_err}",
                                             exc_info=True,
@@ -1149,7 +1162,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         )
                     logger.debug("Final DB object batch committed.")
                     db_objects_to_commit = []
-                except IntegrityError as final_ie:
+                except IntegrityError as final_ie:  # Catch specific IntegrityError
                     if config_instance.APP_MODE == "dry_run":
                         logger.warning(
                             f"Dry Run: UNIQUE constraint error during final batch commit: {final_ie}. Data not saved."
@@ -1163,7 +1176,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         error_count += len(db_objects_to_commit_final_unique)
                         overall_success = False
                         db_objects_to_commit = []
-                except Exception as final_commit_err:
+                except Exception as final_commit_err:  # Catch other commit errors
                     logger.error(
                         f"Error committing final DB batch: {final_commit_err}",
                         exc_info=True,
@@ -1203,27 +1216,20 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         logger.info("---------------------------------\n")
 
     return overall_success
-
-
 # End of send_messages_to_matches
-
-
-#####################################################
-# Stand alone testing
-#####################################################
 
 
 def main():
     """Main function for standalone testing of Action 8 (API version)."""
-    from logging_config import setup_logging
+    from logging_config import setup_logging  # Keep local import
 
     # --- Setup Logging ---
     try:
-        from config import config_instance
+        from config import config_instance  # Keep local import
 
         db_file_path = config_instance.DATABASE_FILE
         log_filename_only = db_file_path.with_suffix(".log").name
-        global logger
+        global logger  # Ensure logger is treated as global
         if (
             "logger" not in globals()
             or not isinstance(logger, logging.Logger)
@@ -1240,7 +1246,7 @@ def main():
         logger.info(f"APP_MODE: {config_instance.APP_MODE}")
     except Exception as log_setup_e:
         import sys
-        import logging as pylogging
+        import logging as pylogging  # Fallback imports
 
         print(f"CRITICAL: Error during logging setup: {log_setup_e}", file=sys.stderr)
         pylogging.basicConfig(level=pylogging.DEBUG)
@@ -1249,26 +1255,45 @@ def main():
         logger.error(f"Initial logging setup failed: {log_setup_e}", exc_info=True)
 
     session_manager = SessionManager()
-    action_success = False
+    action_success = False  # Initialize action_success
 
     try:
         logger.info("Attempting to start session...")
-        start_ok, _ = session_manager.start_sess(action_name="Action 8 Test")
+        # Phase 1 call returns a single boolean
+        start_ok = session_manager.start_sess(action_name="Action 8 Test - Phase 1")
         if start_ok:
-            logger.info("Session started. Proceeding to send_messages_to_matches...")
-            action_success = send_messages_to_matches(session_manager)
-            if action_success:
-                logger.info("send_messages_to_matches completed successfully.")
+            logger.info("Phase 1 OK. Ensuring session ready (Phase 2)...")
+            # Phase 2 call returns a single boolean
+            ready_ok = session_manager.ensure_session_ready(
+                action_name="Action 8 Test - Phase 2"
+            )
+            if ready_ok:
+                logger.info("Phase 2 OK. Proceeding to send_messages_to_matches...")
+                # *** ADDED DEBUG LOGGING BEFORE CALL ***
+                logger.debug("<<< ABOUT TO CALL send_messages_to_matches >>>")
+                # Action 8 call returns a single boolean
+                action_success = send_messages_to_matches(session_manager)
+                # *** ADDED DEBUG LOGGING AFTER CALL ***
+                logger.debug(
+                    f"<<< RETURNED FROM send_messages_to_matches with result: {action_success} >>>"
+                )
+
+                if action_success:  # Simple boolean check
+                    logger.info("send_messages_to_matches completed successfully.")
+                else:  # Simple boolean check
+                    logger.error("send_messages_to_matches reported errors/failed.")
             else:
-                logger.error("send_messages_to_matches reported errors/failed.")
+                logger.critical("Failed Phase 2 (Session Ready). Cannot run messaging.")
+                action_success = False  # Assign boolean
         else:
-            logger.critical("Failed to start session. Cannot run messaging.")
-            action_success = False
+            logger.critical("Failed Phase 1 (Driver Start). Cannot run messaging.")
+            action_success = False  # Assign boolean
     except Exception as e:
+        # The error is caught here
         logger.critical(
             f"Critical error in Action 8 standalone main: {e}", exc_info=True
         )
-        action_success = False
+        action_success = False  # Assign boolean
     finally:
         logger.info("Closing session manager...")
         if session_manager:
@@ -1276,8 +1301,6 @@ def main():
         logger.info(
             f"--- Action 8 Standalone Test Finished (Overall Success: {action_success}) ---"
         )
-
-
 # end main
 
 if __name__ == "__main__":

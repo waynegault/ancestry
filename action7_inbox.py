@@ -129,6 +129,7 @@ class InboxProcessor:
         except Exception as e:
             logger.error(f"Unexpected error in _get_all_conv_api: {e}", exc_info=True)
             return None, None
+
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
@@ -177,6 +178,7 @@ class InboxProcessor:
             "username": username,
             "last_message_timestamp": last_msg_ts_aware,
         }
+
     # End of _extract_conversation_info
 
     @retry_api(max_retries=2)
@@ -256,6 +258,7 @@ class InboxProcessor:
                 f"Error fetch context conv {conversation_id}: {e}", exc_info=True
             )
             return None
+
     # End of _fetch_conversation_context
 
     def search_inbox(self) -> bool:
@@ -736,6 +739,7 @@ class InboxProcessor:
             if session:
                 self.session_manager.return_session(session)
         return True
+
     # End of search_inbox
 
     def _format_context_for_ai(
@@ -755,6 +759,7 @@ class InboxProcessor:
                 truncated_content += "..."
             context_lines.append(f"{label}{truncated_content}")
         return "\n".join(context_lines)
+
     # End of _format_context_for_ai
 
     def _commit_batch_data_upsert(
@@ -1061,6 +1066,7 @@ class InboxProcessor:
             logger.error(f"Error creating comparator: {e}", exc_info=True)
             return None  # Return None on error
         return latest_log_entry_info
+
     # End of _create_comparator
 
     def _lookup_or_create_person(
@@ -1264,6 +1270,7 @@ class InboxProcessor:
                 exc_info=True,
             )
             return None, "error"
+
     # End of _lookup_or_create_person
 
     def _log_unified_summary(
@@ -1287,7 +1294,10 @@ class InboxProcessor:
         elif max_inbox_limit == 0 or items_processed < max_inbox_limit:
             logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
         logger.info("-----------------------------------------")
+
     # End of _log_unified_summary
+
+
 # End of InboxProcessor class
 
 
@@ -1387,6 +1397,8 @@ def _fetch_profile_details_for_person(
         if isinstance(e, requests.exceptions.RequestException):
             raise  # Re-raise for retry decorator
         return None  # Return None for other exceptions
+
+
 # End _fetch_profile_details_for_person
 
 

@@ -69,11 +69,11 @@ class RoleType(enum.Enum):  # Kept enum from user file
 
 
 class PersonStatusEnum(enum.Enum):  # Added Enum for status
-    ACTIVE = "ACTIVE"    # Eligible for messaging (if rules pass)
-    DESIST = "DESIST"    # Set by AI (Desist/Uninterested reply), skip messaging
+    ACTIVE = "ACTIVE"  # Eligible for messaging (if rules pass)
+    DESIST = "DESIST"  # Set by AI (Desist/Uninterested reply), skip messaging
     ARCHIVE = "ARCHIVE"  # Set after sending Desist ACK (Future), skip messaging
     BLOCKED = "BLOCKED"  # Set MANUALLY by user, skip messaging
-    DEAD = "DEAD"        # Set MANUALLY by user, skip messaging
+    DEAD = "DEAD"  # Set MANUALLY by user, skip messaging
 
 
 # --- Model Definitions ---
