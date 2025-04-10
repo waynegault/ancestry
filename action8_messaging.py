@@ -231,11 +231,10 @@ def determine_next_message_type(
 
 def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
-    V14.43 REVISED: Corrected SyntaxErrors in exception handling. Logs outgoing
-    messages to ConversationLog, populating message_type_id and script_message_status.
-    - Filters potential matches by ACTIVE status.
-    - Checks for replies based on IN/OUT log timestamps & sentiment.
-    - Checks message interval based on last OUT log.
+    V14.55 REVISED: Handles IntegrityError during dry runs gracefully without aborting.
+    Refined final error count logic. Consolidated previous fixes.
+    Logs outgoing messages to ConversationLog. Filters by ACTIVE status.
+    Skips if last message is IN. Checks interval based on last OUT log.
     """
     # --- Prerequisites ---
     if not session_manager:
@@ -262,10 +261,11 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     error_count = 0
     potential_matches = []
     max_to_send = config_instance.MAX_INBOX
-    db_commit_batch_size = config_instance.BATCH_SIZE  # Corrected config attribute name
+    db_commit_batch_size = config_instance.BATCH_SIZE
     db_objects_to_commit: List[ConversationLog] = []
     progress_bar = None
     total_potential = 0
+    critical_db_error_occurred = False  # Flag for critical commit errors
 
     try:
         with session_manager.get_db_conn_context() as db_session:
@@ -273,8 +273,29 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 logger.error("Failed to get DB connection.")
                 return False
 
-            # --- Pre-fetching (Modified for Sentiment) ---
+            # --- Pre-fetching ---
             logger.debug("--- Starting Pre-fetching for Action 8 (Messaging) ---")
+            logger.debug("Constructing potential_matches_query...")
+            try:  # DB State Check
+                person_count = db_session.query(func.count(Person.id)).scalar()
+                active_person_count = (
+                    db_session.query(func.count(Person.id))
+                    .filter(Person.status == PersonStatusEnum.ACTIVE)
+                    .scalar()
+                )
+                contactable_person_count = (
+                    db_session.query(func.count(Person.id))
+                    .filter(Person.contactable == True)
+                    .scalar()
+                )
+                dna_match_count = db_session.query(func.count(DnaMatch.id)).scalar()
+                logger.debug(
+                    f"DB State Check: Total Persons={person_count}, Active={active_person_count}, Contactable={contactable_person_count}, DnaMatches={dna_match_count}"
+                )
+            except Exception as count_e:
+                logger.error(f"Error performing DB state counts: {count_e}")
+
+            # Corrected Initial Query
             potential_matches_query = (
                 db_session.query(
                     Person.id.label("people_id"),
@@ -288,24 +309,46 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     FamilyTree.relationship_path,
                     Person.status.label("person_status"),
                 )
-                .join(Person, DnaMatch.people_id == Person.id)
+                .select_from(Person)
+                .join(DnaMatch, Person.id == DnaMatch.people_id)
                 .outerjoin(FamilyTree, Person.id == FamilyTree.people_id)
                 .filter(
                     Person.profile_id.isnot(None),
                     Person.profile_id != "",
                     Person.profile_id != "UNKNOWN",
-                    Person.status == PersonStatusEnum.ACTIVE,
                     Person.contactable == True,
+                    Person.status == PersonStatusEnum.ACTIVE,
                 )
                 .order_by(Person.id)
             )
+            # Raw SQL Logging
+            try:
+                from sqlalchemy.dialects import sqlite
+
+                raw_sql = str(
+                    potential_matches_query.statement.compile(
+                        dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}
+                    )
+                )
+                logger.debug(f"Raw SQL for potential_matches_query:\n{raw_sql}")
+            except Exception as sql_e:
+                logger.warning(f"Could not compile raw SQL for logging: {sql_e}")
+
             potential_matches = potential_matches_query.all()
             total_potential = len(potential_matches)
+            # Logging After Query
             logger.debug(
-                f"Found {total_potential} potential ACTIVE & CONTACTABLE DNA matches to check."
+                f"Query executed. Found {total_potential} potential ACTIVE & contactable DNA matches."
             )
+            if total_potential > 0:
+                logger.debug(
+                    f"First potential match data (sample): {potential_matches[0]}"
+                )
+
             if not potential_matches:
-                logger.info("No potential matches meet criteria. Finishing.")
+                logger.info(
+                    "No potential matches meet ACTIVE/Contactable criteria. Finishing."
+                )
                 return True
             potential_person_ids = [
                 match.people_id for match in potential_matches if match.people_id
@@ -352,22 +395,17 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     .filter(ConversationLog.direction == MessageDirectionEnum.OUT)
                     .all()
                 )
-                for row in latest_outgoing_logs:
-                    person_id, type_name, sent_at_db, status = row
-                    if sent_at_db:
-                        sent_at_naive_utc = (
-                            sent_at_db.astimezone(timezone.utc).replace(tzinfo=None)
-                            if sent_at_db.tzinfo
-                            else sent_at_db.replace(tzinfo=None)
+                for pid, type_n, sent_db, stat in latest_outgoing_logs:
+                    if sent_db:
+                        sent_naive = (
+                            sent_db.astimezone(timezone.utc).replace(tzinfo=None)
+                            if sent_db.tzinfo
+                            else sent_db.replace(tzinfo=None)
                         )
-                        latest_outgoing_log_data[person_id] = (
-                            type_name if type_name else "Unknown",
-                            sent_at_naive_utc,
-                            status if status else "Unknown",
-                        )
-                    else:
-                        logger.warning(
-                            f"Found OUT Log for PersonID {person_id}, but timestamp is NULL."
+                        latest_outgoing_log_data[pid] = (
+                            type_n or "Unknown",
+                            sent_naive,
+                            stat or "Unknown",
                         )
                 logger.debug(
                     f"Fetched latest OUT Log data for {len(latest_outgoing_log_data)} people."
@@ -381,11 +419,11 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 )
                 return False
 
-            # Fetch latest INCOMING message details (Timestamp AND Sentiment)
+            # Fetch latest INCOMING message details
             logger.debug(
-                f"Pre-fetching latest INCOMING ConversationLog (Timestamp, Sentiment) for {len(potential_person_ids)} people..."
+                f"Pre-fetching latest INCOMING ConversationLog timestamp for {len(potential_person_ids)} people..."
             )
-            latest_incoming_log_data: Dict[int, Tuple[datetime, Optional[str]]] = {}
+            latest_incoming_ts_data: Dict[int, datetime] = {}
             try:
                 latest_in_subq = (
                     db_session.query(
@@ -399,34 +437,19 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     .group_by(ConversationLog.people_id)
                     .subquery("latest_in_ts")
                 )
-                latest_incoming_results = (
-                    db_session.query(
-                        ConversationLog.people_id,
-                        ConversationLog.latest_timestamp,
-                        ConversationLog.ai_sentiment,
-                    )
-                    .join(
-                        latest_in_subq,
-                        (ConversationLog.people_id == latest_in_subq.c.people_id)
-                        & (ConversationLog.latest_timestamp == latest_in_subq.c.max_ts),
-                    )
-                    .filter(ConversationLog.direction == MessageDirectionEnum.IN)
-                    .all()
-                )
-                for person_id, ts_db, sentiment in latest_incoming_results:
+                latest_incoming_results = db_session.query(
+                    latest_in_subq.c.people_id, latest_in_subq.c.max_ts
+                ).all()
+                for pid, ts_db in latest_incoming_results:
                     if ts_db:
-                        ts_naive_utc = (
+                        ts_naive = (
                             ts_db.astimezone(timezone.utc).replace(tzinfo=None)
                             if ts_db.tzinfo
                             else ts_db.replace(tzinfo=None)
                         )
-                        latest_incoming_log_data[person_id] = (ts_naive_utc, sentiment)
-                    else:
-                        logger.warning(
-                            f"Found IN Log entry for PersonID {person_id}, but timestamp is NULL."
-                        )
+                        latest_incoming_ts_data[pid] = ts_naive
                 logger.debug(
-                    f"Fetched latest IN Log data (Timestamp, Sentiment) for {len(latest_incoming_log_data)} people."
+                    f"Fetched latest IN Log timestamp for {len(latest_incoming_ts_data)} people."
                 )
             except SQLAlchemyError as db_err:
                 logger.error(f"DB error pre-fetching IN Logs: {db_err}", exc_info=True)
@@ -440,12 +463,21 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             # Fetch existing Conversation IDs
             conversation_ids: Dict[int, str] = {}
             try:
+                # Note: .distinct(column) is dialect-specific (PostgreSQL).
+                # For SQLite, a common pattern is to use a subquery or group_by.
+                # However, fetching all and processing in Python is often simplest if dataset isn't huge.
+                # Using previous simpler query for broader compatibility:
                 conv_id_results = (
                     db_session.query(
                         ConversationLog.people_id, ConversationLog.conversation_id
                     )
                     .filter(ConversationLog.people_id.in_(potential_person_ids))
-                    .distinct(ConversationLog.people_id)
+                    .filter(
+                        ConversationLog.conversation_id.isnot(None)
+                    )  # Ensure not null
+                    .group_by(
+                        ConversationLog.people_id
+                    )  # Get one per person (last one based on internal order)
                     .all()
                 )
                 conversation_ids = {pid: cid for pid, cid in conv_id_results if cid}
@@ -476,7 +508,17 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 )
                 stop_reason = None
                 for match_data in potential_matches:
-                    # --- Reset item-specific variables ---
+                    if critical_db_error_occurred:
+                        logger.warning(
+                            "Aborting loop due to previous critical DB error during commit."
+                        )
+                        remaining_items = total_potential - processed_count
+                        if progress_bar and remaining_items > 0:
+                            error_count += remaining_items
+                            progress_bar.update(remaining_items)
+                        break
+
+                    # Reset item variables
                     item_skipped = False
                     item_error = False
                     person_id = None
@@ -489,13 +531,11 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     original_actual_relationship = None
                     original_relationship_path = None
                     person_status = None
-                    last_script_message_details: Optional[Tuple[str, datetime, str]] = (
-                        None
-                    )
-                    last_reply_details: Optional[Tuple[datetime, Optional[str]]] = None
-                    existing_conversation_id: Optional[str] = None
+                    last_script_message_details = None
+                    last_reply_timestamp = None
+                    existing_conversation_id = None
 
-                    # --- Check Limits ---
+                    # Check Limits
                     if max_to_send != 0 and sent_count >= max_to_send:
                         stop_reason = f"Send Limit ({max_to_send})"
                         logger.info(
@@ -504,7 +544,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         break
                     processed_count += 1
 
-                    # --- Unpack Data ---
+                    # Unpack Data
                     try:
                         (
                             person_id,
@@ -524,16 +564,12 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             or not username
                             or not person_status
                         ):
-                            raise ValueError(
-                                "Missing essential person data (id, profile_id, username, status)"
-                            )
-                        # <<< CORRECTED: Assertions MOVED inside the try block >>>
+                            raise ValueError("Missing essential person data")
                         assert person_id is not None
                         assert profile_id is not None
                         assert username is not None
                         assert person_status is not None
                     except (ValueError, TypeError) as unpack_e:
-                        # <<< CORRECTED: Statements on separate lines >>>
                         logger.error(
                             f"Error unpacking data: {unpack_e}. Row: {match_data}",
                             exc_info=True,
@@ -543,54 +579,42 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         item_error = True
                         if progress_bar:
                             progress_bar.update(1)
-                        continue  # Skip to the next match
+                        continue
 
                     recipient_profile_id_upper = profile_id.upper()
                     log_prefix = f"{username} #{person_id}"
-                    logger.debug(
-                        f"#### Processing {log_prefix} (Status: {person_status.name}) ####"
-                    )
 
-                    # --- Main Processing Logic ---
+                    # Main Processing Logic for this item
                     try:
                         now_local_naive_utc = datetime.now(timezone.utc).replace(
                             tzinfo=None
                         )
-
-                        # --- Get Pre-fetched Data ---
                         last_script_message_details = latest_outgoing_log_data.get(
                             person_id
                         )
-                        last_reply_details = latest_incoming_log_data.get(person_id)
+                        last_reply_timestamp = latest_incoming_ts_data.get(person_id)
                         existing_conversation_id = conversation_ids.get(person_id)
 
-                        # --- Rule Checks (Reply Timestamp, Sentiment, Interval, Status) ---
-                        user_replied_since_last_script = False
-                        if last_reply_details and last_script_message_details:
-                            if last_reply_details[0] > last_script_message_details[1]:
-                                user_replied_since_last_script = True
-                        elif last_reply_details and not last_script_message_details:
-                            user_replied_since_last_script = True
-
+                        # --- Rule Checks ---
+                        if person_status != PersonStatusEnum.ACTIVE:
+                            logger.warning(
+                                f"Skipping {log_prefix}: Status is {person_status.name} (Should be filtered)."
+                            )
+                            skipped_count += 1
+                            item_skipped = True
+                            raise StopIteration
+                        user_replied_since_last_script = (
+                            last_reply_timestamp
+                            and last_script_message_details
+                            and last_reply_timestamp > last_script_message_details[1]
+                        ) or (last_reply_timestamp and not last_script_message_details)
                         if user_replied_since_last_script:
                             logger.debug(
-                                f"{log_prefix}: User has replied since last script message."
+                                f"Skipping {log_prefix}: User sent the last message (reply pending)."
                             )
-                            last_reply_sentiment = (
-                                last_reply_details[1] if last_reply_details else None
-                            )
-                            if last_reply_sentiment != "PRODUCTIVE":
-                                logger.debug(
-                                    f"Skipping {log_prefix}: Last reply sentiment was '{last_reply_sentiment}' (not PRODUCTIVE)."
-                                )
-                                skipped_count += 1
-                                item_skipped = True
-                                raise StopIteration
-                            else:
-                                logger.debug(
-                                    f"{log_prefix}: Last reply sentiment was PRODUCTIVE. Proceeding..."
-                                )
-
+                            skipped_count += 1
+                            item_skipped = True
+                            raise StopIteration
                         if (
                             last_script_message_details
                             and (now_local_naive_utc - last_script_message_details[1])
@@ -598,14 +622,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         ):
                             logger.debug(
                                 f"Skipping {log_prefix}: Within minimum message interval."
-                            )
-                            skipped_count += 1
-                            item_skipped = True
-                            raise StopIteration
-
-                        if person_status != PersonStatusEnum.ACTIVE:
-                            logger.warning(
-                                f"Skipping {log_prefix}: Status is {person_status.name} (Should have been filtered)."
                             )
                             skipped_count += 1
                             item_skipped = True
@@ -623,7 +639,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             item_skipped = True
                             raise StopIteration
 
-                        # --- Format Message ---
+                        # --- Format Message (Corrected V14.48) ---
                         message_template = MESSAGE_TEMPLATES.get(next_message_type_key)
                         if not message_template:
                             logger.error(
@@ -633,8 +649,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             overall_success = False
                             item_error = True
                             raise StopIteration
-                        name_to_use = "Valued Relative"
-                        source = "Fallback"
+                        name_to_use = None
+                        source = None
                         if is_in_family_tree and person_name_in_tree:
                             name_to_use = person_name_in_tree
                             source = "Tree"
@@ -642,16 +658,22 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             name_to_use = first_name
                             source = "Person.first"
                         elif username and username != "Unknown":
-                            clean_user = (
+                            cleaned_username = (
                                 username.replace("(managed by ", "")
                                 .replace(")", "")
                                 .strip()
                             )
-                            if clean_user and clean_user != "Unknown User":
-                                name_to_use = clean_user
+                            if cleaned_username and cleaned_username != "Unknown User":
+                                name_to_use = cleaned_username
                                 source = "Person.user"
                             else:
                                 source = "Person.user (unknown)"
+                        else:
+                            source = "Username unavailable"
+                        if name_to_use is None:
+                            name_to_use = "Valued Relative"
+                        if source is None:
+                            source = "Fallback default"
                         formatted_name = format_name(name_to_use)
                         logger.debug(
                             f"Using name '{formatted_name}' (Source: {source}) for {log_prefix}"
@@ -670,12 +692,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         }
                         try:
                             message_text = message_template.format(**format_data)
-                        except KeyError as e:
-                            logger.error(f"KeyError fmt msg for {log_prefix}: {e}.")
-                            error_count += 1
-                            overall_success = False
-                            item_error = True
-                            raise StopIteration
                         except Exception as e:
                             logger.error(f"Error fmt msg for {log_prefix}: {e}.")
                             error_count += 1
@@ -784,15 +800,19 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                 overall_success = False
                                 item_error = True
                                 raise StopIteration
+
+                            # --- CORRECTED API Response Validation Logic ---
                             post_ok = False
                             api_conv_id = None
                             api_author = None
                             if api_response is not None:
                                 if is_initial_message:
+                                    # Check format first (is dict and has key)
                                     if (
                                         isinstance(api_response, dict)
                                         and "conversation_id" in api_response
                                     ):
+                                        # Now check values
                                         api_conv_id = str(
                                             api_response.get("conversation_id")
                                         )
@@ -802,23 +822,27 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                             if isinstance(msg_details, dict)
                                             else None
                                         )
+
                                         if (
                                             api_conv_id
                                             and api_author == MY_PROFILE_ID_UPPER
                                         ):
+                                            # Values are valid
                                             post_ok = True
                                             new_conversation_id_from_api_local = (
                                                 api_conv_id
                                             )
                                         else:
+                                            # Values invalid (but format was okay)
                                             logger.error(
-                                                f"API initial response invalid for {log_prefix}. ConvID: {api_conv_id}, Author: {api_author}"
+                                                f"API initial response invalid (values) for {log_prefix}. ConvID: {api_conv_id}, Author: {api_author}"
                                             )
                                     else:
+                                        # Response format was unexpected
                                         logger.error(
                                             f"API call ({send_api_desc}) unexpected format (initial) for {log_prefix}. Resp:{api_response}"
                                         )
-                                else:
+                                else:  # Follow-up message validation
                                     if (
                                         isinstance(api_response, dict)
                                         and "author" in api_response
@@ -839,6 +863,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                         logger.error(
                                             f"API call ({send_api_desc}) unexpected format (follow-up) for {log_prefix}. Resp:{api_response}"
                                         )
+
+                                # --- Final status check based on post_ok ---
                                 if post_ok:
                                     message_status = "delivered OK"
                                     logger.debug(
@@ -870,15 +896,14 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             item_skipped = True
                             raise StopIteration
 
-                        # --- DB Update Prep (ConversationLog OUT Row) ---
+                        # --- DB Update Prep ---
                         if message_status in ("delivered OK", "typed (dry_run)"):
                             if (
                                 message_status == "delivered OK"
                                 or config_instance.APP_MODE == "dry_run"
                             ):
                                 sent_count += 1
-                            try:  # DB Prep Try
-                                # --- Get MessageType ID ---
+                            try:  # DB Prep Try (Corrected V14.46)
                                 msg_type_obj = None
                                 try:
                                     msg_type_obj = (
@@ -900,11 +925,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                     raise StopIteration(
                                         "Failed MessageType Query"
                                     ) from mt_err
-
-                                # --- Check if MessageType was found ---
                                 if not msg_type_obj:
                                     logger.error(
-                                        f"CRITICAL: MessageType '{next_message_type_key}' not found in DB!"
+                                        f"CRITICAL: MessageType '{next_message_type_key}' not found!"
                                     )
                                     error_count += 1
                                     overall_success = False
@@ -913,7 +936,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                         f"MessageType '{next_message_type_key}' missing"
                                     )
 
-                                # --- Continue only if msg_type_obj is valid ---
                                 current_time_for_db = datetime.now(timezone.utc)
                                 trunc_msg_content = message_text[
                                     : config_instance.MESSAGE_TRUNCATION_LENGTH
@@ -928,7 +950,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                     item_error = True
                                     raise StopIteration("Missing Conv ID for DB Prep")
 
-                                # --- Prepare ConversationLog OUT row ---
                                 new_log_out = ConversationLog(
                                     conversation_id=effective_conv_id,
                                     direction=MessageDirectionEnum.OUT,
@@ -945,8 +966,55 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                     f"Staged OUT ConversationLog for {log_prefix} (Type: {next_message_type_key}, Status: {message_status}, ConvID: {effective_conv_id})"
                                 )
 
-                                # --- Commit periodically ---
+                                # --- Commit periodically (Corrected V14.55 Error Handling) ---
                                 if len(db_objects_to_commit) >= db_commit_batch_size:
+                                    # --- De-duplication Logic ---
+                                    unique_logs = []
+                                    seen_combinations = set()
+
+                                    for log_entry in db_objects_to_commit:
+                                        # Use conversation_id and direction as the unique key
+                                        combination = (
+                                            log_entry.conversation_id,
+                                            log_entry.direction,
+                                        )
+                                        if combination not in seen_combinations:
+                                            unique_logs.append(log_entry)
+                                            seen_combinations.add(combination)
+                                        else:
+                                            logger.warning(
+                                                f"  Duplicate log entry skipped in batch commit: {combination}"
+                                            )  # Reduced verbosity to warning
+
+                                    db_objects_to_commit_unique = (
+                                        unique_logs  # Use de-duplicated list for commit
+                                    )
+
+                                    # --- Add detailed logging BEFORE commit ---
+                                    logger.debug(
+                                        f"Preparing to commit batch of {len(db_objects_to_commit_unique)} unique ConversationLog entries (original batch size: {len(db_objects_to_commit)})."
+                                    )
+                                    if logger.isEnabledFor(
+                                        logging.DEBUG
+                                    ):  # Only if debug logging is enabled
+                                        for (
+                                            log_entry
+                                        ) in (
+                                            db_objects_to_commit_unique
+                                        ):  # Iterate over the unique list
+                                            log_repr = {
+                                                "conversation_id": log_entry.conversation_id,
+                                                "direction": log_entry.direction.value,
+                                                "people_id": log_entry.people_id,
+                                                "message_type_id": log_entry.message_type_id,
+                                                "script_message_status": log_entry.script_message_status,
+                                            }
+                                            logger.debug(
+                                                f"  Log Entry for Commit: {log_repr}"
+                                            )
+                                    # --- End detailed logging ---
+
+                                    # --- Attempt Commit ---
                                     logger.debug(
                                         f"Reached batch size ({db_commit_batch_size}). Committing ConvLogs..."
                                     )
@@ -955,21 +1023,51 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                             db_session.add_all(
                                                 [
                                                     obj
-                                                    for obj in db_objects_to_commit
+                                                    for obj in db_objects_to_commit_unique
                                                     if isinstance(obj, ConversationLog)
                                                 ]
                                             )
                                         logger.debug(
-                                            f"Committed batch of {len(db_objects_to_commit)} ConvLogs."
+                                            f"Committed batch of {len(db_objects_to_commit_unique)} ConvLogs."
                                         )
-                                        db_objects_to_commit = []
+                                        db_objects_to_commit = (
+                                            []
+                                        )  # Clear original list on SUCCESS
+                                    except IntegrityError as ie:
+                                        if config_instance.APP_MODE == "dry_run":
+                                            logger.warning(
+                                                f"Dry Run: UNIQUE constraint error during batch commit (likely duplicate dryrun_ ID): {ie}. Skipping commit for this batch, continuing run."
+                                            )
+                                            db_objects_to_commit = (
+                                                []
+                                            )  # Clear original list after rollback
+                                            # Don't set critical error flag or abort loop for dry run integrity error
+                                        else:  # Live mode - treat as critical
+                                            logger.error(
+                                                f"DB UNIQUE constraint error during batch commit: {ie}",
+                                                exc_info=False,
+                                            )
+                                            error_count += len(
+                                                db_objects_to_commit_unique
+                                            )
+                                            overall_success = False
+                                            db_objects_to_commit = []
+                                            critical_db_error_occurred = True
+                                            logger.critical(
+                                                "Aborting Action 8 run due to DB batch commit failure (IntegrityError)."
+                                            )
+                                            raise StopIteration(
+                                                "DB Batch Commit Failed - IntegrityError"
+                                            ) from ie
                                     except Exception as commit_err:
                                         logger.error(
                                             f"Error committing ConvLog batch: {commit_err}",
                                             exc_info=True,
                                         )
-                                        error_count += len(db_objects_to_commit)
+                                        error_count += len(db_objects_to_commit_unique)
                                         overall_success = False
+                                        db_objects_to_commit = []
+                                        critical_db_error_occurred = True
                                         logger.critical(
                                             "Aborting Action 8 run due to DB batch commit failure."
                                         )
@@ -977,9 +1075,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                             "DB Batch Commit Failed"
                                         ) from commit_err
 
-                            # --- Catch DB Prep Errors ---
                             except StopIteration:
-                                raise  # Re-raise StopIteration to exit item processing
+                                raise  # Re-raise StopIteration
                             except (
                                 ValueError,
                                 SQLAlchemyError,
@@ -995,8 +1092,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                 raise StopIteration from db_prep_err
 
                     except StopIteration:
-                        pass  # Graceful exit for skips/errors in this item
-                    except Exception as inner_loop_e:  # Catch unexpected errors
+                        pass
+                    except Exception as inner_loop_e:
                         logger.error(
                             f"Unexpected error processing {log_prefix}: {inner_loop_e}\n",
                             exc_info=True,
@@ -1018,33 +1115,66 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
             # --- End Main Loop (for match_data...) ---
 
-            # Commit remaining objects after loop
-            if db_objects_to_commit:
+            # Commit remaining objects after loop (Corrected V14.55 Error Handling)
+            if db_objects_to_commit and not critical_db_error_occurred:
+                # --- De-duplication Logic for Final Batch ---
+                unique_final_logs = []
+                seen_final_combinations = set()
+                for final_log_entry in db_objects_to_commit:
+                    final_combination = (
+                        final_log_entry.conversation_id,
+                        final_log_entry.direction,
+                    )
+                    if final_combination not in seen_final_combinations:
+                        unique_final_logs.append(final_log_entry)
+                        seen_final_combinations.add(final_combination)
+                    else:
+                        logger.warning(
+                            f"  Duplicate log entry skipped in final commit: {final_combination}"
+                        )
+                db_objects_to_commit_final_unique = unique_final_logs
+                # --- End De-duplication ---
+
                 logger.debug(
-                    f"Committing final batch of {len(db_objects_to_commit)} DB objects..."
+                    f"Committing final batch of {len(db_objects_to_commit_final_unique)} unique DB objects (original remaining: {len(db_objects_to_commit)})..."
                 )
                 try:
                     with db_transn(db_session):
                         db_session.add_all(
                             [
                                 obj
-                                for obj in db_objects_to_commit
+                                for obj in db_objects_to_commit_final_unique
                                 if isinstance(obj, ConversationLog)
                             ]
                         )
                     logger.debug("Final DB object batch committed.")
                     db_objects_to_commit = []
+                except IntegrityError as final_ie:
+                    if config_instance.APP_MODE == "dry_run":
+                        logger.warning(
+                            f"Dry Run: UNIQUE constraint error during final batch commit: {final_ie}. Data not saved."
+                        )
+                        db_objects_to_commit = []
+                    else:  # Live mode
+                        logger.error(
+                            f"DB UNIQUE constraint error during final batch commit: {final_ie}",
+                            exc_info=False,
+                        )
+                        error_count += len(db_objects_to_commit_final_unique)
+                        overall_success = False
+                        db_objects_to_commit = []
                 except Exception as final_commit_err:
                     logger.error(
                         f"Error committing final DB batch: {final_commit_err}",
                         exc_info=True,
                     )
-                    error_count += len(db_objects_to_commit)
+                    error_count += len(db_objects_to_commit_final_unique)
                     overall_success = False
+                    db_objects_to_commit = []
 
             logger.debug("Finished processing all potential matches.\n")
 
-    # --- Outer Exception Handling & Final Summary ---
+    # --- Outer Exception Handling & Final Summary (Corrected V14.55) ---
     except Exception as outer_e:
         logger.critical(
             f"CRITICAL: Critical error during message processing loop: {outer_e}",
@@ -1055,6 +1185,14 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         if progress_bar:
             progress_bar.close()
             print("", file=sys.stderr)
+        # Adjust final error count only if abort was due to a *non-dry run* critical DB error
+        if critical_db_error_occurred:
+            remaining_unprocessed = total_potential - processed_count
+            if remaining_unprocessed > 0:
+                logger.warning(
+                    f"Adding {remaining_unprocessed} unprocessed items to error count due to critical DB abort."
+                )
+                error_count += remaining_unprocessed
         logger.info("--- Message Sending Summary ----")
         logger.info(f"  Potential Matches Checked: {total_potential}")
         logger.info(f"  Processed in Detail:     {processed_count}")
