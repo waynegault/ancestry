@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # database.py
-# V1.29 - Merging latest schema with functions from user-provided older version, adapting functions minimally.
+# V1.30 - Current Schema merged with User's V1.1 Functions, adapted.
 
 # Imports
 import os
@@ -29,8 +29,8 @@ from sqlalchemy import (
     Index,
     func,
     Float,
-    Text,  # Added Text
-    PrimaryKeyConstraint,  # Added PrimaryKeyConstraint (though not used explicitly below if composite)
+    Text,
+    PrimaryKeyConstraint,
 )
 from sqlalchemy.orm import (
     declarative_base,
@@ -43,21 +43,21 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import logging
 import re
 import inspect
-import sys  # Added sys for standalone block
-import json  # Added json for standalone block
+import sys
+import json
 
 
 # Initialize logging
 logger = logging.getLogger("logger")
 
 # ----------------------------------------------------------------------
-# SQLAlchemy Models (Using LATEST Schema Definitions)
+# SQLAlchemy Models (LATEST Schema Definitions)
 # ----------------------------------------------------------------------
 
 Base = declarative_base()
 
 
-# --- Define Enums Globally ---
+# --- Enums ---
 class MessageDirectionEnum(enum.Enum):
     IN = "IN"
     OUT = "OUT"
@@ -75,18 +75,16 @@ class PersonStatusEnum(enum.Enum):  # Added Enum for status
     BLOCKED = "blocked"
 
 
-# --- Model Definitions (Current Schema) ---
+# --- Model Definitions ---
 
 
 class ConversationLog(Base):
     __tablename__ = "conversation_log"
-    # Composite Primary Key
     conversation_id = Column(String, primary_key=True, index=True)
     direction = Column(
         SQLEnum(MessageDirectionEnum, name="message_direction_enum_v5"),
-        primary_key=True,  # Uses correct Enum
+        primary_key=True,
     )
-
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
     latest_message_content = Column(Text, nullable=True)
     latest_timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -99,11 +97,8 @@ class ConversationLog(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-
-    # Relationship defined with backref (creates 'conversation_log_entries' on Person)
-    person = relationship("Person", backref="conversation_log_entries")
-    message_type = relationship("MessageType")  # Assumes MessageType defined below
-
+    person = relationship("Person", backref="conversation_log_entries")  # Uses backref
+    message_type = relationship("MessageType")
     __table_args__ = (
         Index(
             "ix_conversation_log_people_id_direction_ts",
@@ -115,21 +110,20 @@ class ConversationLog(Base):
     )
 
 
-# End of class ConversationLog
+# End ConversationLog
 
 
-class MessageType(Base):  # Kept from user file (was correct)
+class MessageType(Base):
     __tablename__ = "message_types"
     id = Column(Integer, primary_key=True)
     type_name = Column(String, unique=True, nullable=False)
-    # Removed messages relationship as MessageHistory is removed
-    # messages = relationship("MessageHistory", back_populates="message_type", cascade="all, delete, delete-orphan")
+    # messages relationship removed as MessageHistory is removed
 
 
-# End of class MessageType
+# End MessageType
 
 
-class DnaMatch(Base):  # Kept from user file, added timezone=True
+class DnaMatch(Base):
     __tablename__ = "dna_match"
     id = Column(Integer, primary_key=True)
     compare_link = Column(String, nullable=False)
@@ -147,20 +141,20 @@ class DnaMatch(Base):  # Kept from user file, added timezone=True
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-    )  # Set timezone
+    )
     updated_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
-    )  # Set timezone
+    )
     person = relationship("Person", back_populates="dna_match")
 
 
-# End of class DnaMatch
+# End DnaMatch
 
 
-class FamilyTree(Base):  # Kept from user file, added timezone=True
+class FamilyTree(Base):
     __tablename__ = "family_tree"
     id = Column(Integer, primary_key=True)
     people_id = Column(
@@ -176,26 +170,24 @@ class FamilyTree(Base):  # Kept from user file, added timezone=True
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-    )  # Set timezone
+    )
     updated_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
-    )  # Set timezone
+    )
     person = relationship("Person", back_populates="family_tree")
 
 
-# End of class family tree
+# End FamilyTree
 
 
-class Person(Base):  # Updated Person Model
+class Person(Base):
     __tablename__ = "people"
     id = Column(Integer, primary_key=True)
     uuid = Column(String, nullable=True, unique=True, index=True)
-    profile_id = Column(
-        String, unique=True, nullable=True, index=True
-    )  # Kept unique=True
+    profile_id = Column(String, unique=True, nullable=True, index=True)
     username = Column(String, unique=False, nullable=False)
     first_name = Column(String, nullable=True)
     gender = Column(String(1), nullable=True)
@@ -203,15 +195,11 @@ class Person(Base):  # Updated Person Model
     message_link = Column(String, unique=False, nullable=True)
     in_my_tree = Column(Boolean, default=False)
     contactable = Column(Boolean, default=False)
-    last_logged_in = Column(
-        DateTime(timezone=True), nullable=True, index=True
-    )  # Use timezone=True
+    last_logged_in = Column(DateTime(timezone=True), nullable=True, index=True)
     administrator_profile_id = Column(String, nullable=True, index=True)
     administrator_username = Column(String, nullable=True)
-    status = Column(  # Use Enum for status
-        SQLEnum(
-            PersonStatusEnum, name="person_status_enum_v3"
-        ),  # Kept v3 name but uses correct Enum
+    status = Column(
+        SQLEnum(PersonStatusEnum, name="person_status_enum_v3"),
         default=PersonStatusEnum.ACTIVE,
         nullable=False,
         index=True,
@@ -228,7 +216,6 @@ class Person(Base):  # Updated Person Model
         nullable=False,
     )
 
-    # Relationships using back_populates where appropriate
     family_tree = relationship(
         "FamilyTree",
         back_populates="person",
@@ -241,14 +228,13 @@ class Person(Base):  # Updated Person Model
         uselist=False,
         cascade="all, delete, delete-orphan",
     )
-    # Removed relationships to InboxStatus and MessageHistory
-    # conversation_log_entries is created by backref in ConversationLog model
+    # conversation_log_entries created by backref
 
 
-# End of class Person
+# End Person
 
 # ----------------------------------------------------------------------
-# Context Manager (Kept from user version - appears correct)
+# Context Manager (Kept from user version)
 # ----------------------------------------------------------------------
 
 
@@ -269,13 +255,13 @@ def db_transn(session: Session):
             session.rollback()
         raise
     finally:
-        pass  # Session closing handled by SessionManager
+        pass
 
 
 # end db_transn
 
 # ==================== CRUD OPERATIONS ====================
-# Keeping functions from user-provided version, adapted where necessary for schema
+# Keeping functions from user-provided version V1.1, adapted minimally
 
 # ----------------------------------------------------------------------
 # Create/ Insert
@@ -303,7 +289,6 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
     uuid_upper = str(person_data["uuid"]).upper() if person_data.get("uuid") else None
     username = person_data["username"]
     log_ref = f"UUID={uuid_upper or 'NULL'} / ProfileID={profile_id_upper or 'NULL'} / User='{username}'"
-
     try:
         if profile_id_upper:
             existing_by_profile = (
@@ -330,21 +315,17 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         last_logged_in_dt = person_data.get("last_logged_in")
         if isinstance(last_logged_in_dt, datetime) and last_logged_in_dt.tzinfo is None:
             last_logged_in_dt = last_logged_in_dt.replace(tzinfo=timezone.utc)
-
-        # Adapt status: Use PersonStatusEnum, default to ACTIVE if not provided or invalid
         status_value = person_data.get("status", PersonStatusEnum.ACTIVE)
         if not isinstance(status_value, PersonStatusEnum):
             try:
-                status_enum = PersonStatusEnum(
-                    str(status_value).lower()
-                )  # Try converting string
+                status_enum = PersonStatusEnum(str(status_value).lower())
             except ValueError:
                 logger.warning(
-                    f"Invalid status '{status_value}' provided for {log_ref}, defaulting to ACTIVE."
+                    f"Invalid status '{status_value}' for {log_ref}, defaulting to ACTIVE."
                 )
                 status_enum = PersonStatusEnum.ACTIVE
         else:
-            status_enum = status_value  # Already an Enum
+            status_enum = status_value
 
         new_person = Person(
             uuid=uuid_upper,
@@ -358,27 +339,21 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
             administrator_username=person_data.get("administrator_username"),
             message_link=person_data.get("message_link"),
             in_my_tree=bool(person_data.get("in_my_tree", False)),
-            status=status_enum,  # Use the validated Enum value
+            status=status_enum,
             first_name=person_data.get("first_name"),
             gender=person_data.get("gender"),
             birth_year=person_data.get("birth_year"),
             contactable=person_data.get("contactable", True),
             last_logged_in=last_logged_in_dt,
-            # created_at/updated_at use timezone=True defaults now
         )
         session.add(new_person)
-        session.flush()  # Flush to get ID and check constraints
-
+        session.flush()
         if new_person.id is None:
-            logger.error(
-                f"ID not assigned after flush for person {log_ref}! Rolling back."
-            )
+            logger.error(f"ID not assigned after flush for {log_ref}! Rolling back.")
             session.rollback()
             return 0
-
-        logger.debug(f"Created Person record ID {new_person.id} for {log_ref}.")
-        return int(new_person.id)  # Return the actual ID
-
+        logger.debug(f"Created Person ID {new_person.id} for {log_ref}.")
+        return int(new_person.id)
     except IntegrityError as ie:
         session.rollback()
         logger.error(f"IntegrityError create_person {log_ref}: {ie}.", exc_info=False)
@@ -393,13 +368,14 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         return 0
 
 
-# End of create_person
+# End create_person
 
 
 def create_dna_match(
     session: Session, match_data: Dict[str, Any]
 ) -> Literal["created", "skipped", "error"]:
-    """(Kept from user version - check logic carefully) Creates DNA Match record."""
+    """(Kept from user version) Creates DNA Match record."""
+    # ...(Logic unchanged from user version)...
     people_id = match_data.get("people_id")
     log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}"
     if not people_id or not isinstance(people_id, int) or people_id <= 0:
@@ -467,7 +443,6 @@ def create_dna_match(
                 ),
             )
             session.add(new_dna_match)
-            logger.debug(f"Staged new 'dna_match' {log_ref}")
             return "created"
     except IntegrityError as ie:
         session.rollback()
@@ -483,13 +458,14 @@ def create_dna_match(
         return "error"
 
 
-# End of create_dna_match
+# End create_dna_match
 
 
 def create_family_tree(
     session: Session, tree_data: Dict[str, Any]
 ) -> Literal["created", "updated", "skipped", "error"]:
-    """(Kept from user version - check logic carefully) Creates or updates FamilyTree record."""
+    """(Kept from user version) Creates or updates FamilyTree record."""
+    # ...(Logic unchanged from user version)...
     people_id = tree_data.get("people_id")
     if not people_id:
         logger.error("Cannot create/update FamilyTree: 'people_id' missing.")
@@ -525,15 +501,12 @@ def create_family_tree(
                     updated = True
             if updated:
                 existing_tree.updated_at = datetime.now(timezone.utc)
-                logger.debug(f"Staged update FT {log_ref}")
                 return "updated"
             else:
-                logger.debug(f"No update needed FT {log_ref}")
                 return "skipped"
         else:
             new_tree = FamilyTree(**valid_tree_args)
             session.add(new_tree)
-            logger.debug(f"Staged new FT {log_ref}")
             return "created"
     except TypeError as te:
         logger.critical(
@@ -555,7 +528,6 @@ def create_family_tree(
 
 
 # End create_family_tree
-
 
 # ----------------------------------------------------------------------
 # Retrieve (Kept functions from user version)
@@ -638,8 +610,8 @@ def get_person_and_dna_match(
 def find_existing_person(
     session: Session, identifier_data: Dict[str, Any]
 ) -> Optional[Person]:
-    """Finds an existing person based on uuid or profile_id, handling disambiguation."""
-    # ...(Logic from user version kept, appears compatible)...
+    """(Kept from user version) Finds existing person by uuid or profile_id."""
+    # ...(Logic unchanged from user version)...
     person_uuid = identifier_data.get("uuid")
     person_profile_id = identifier_data.get("profile_id")
     person_username = identifier_data.get("username")
@@ -660,9 +632,6 @@ def find_existing_person(
                 .first()
             )
             if person:
-                logger.debug(
-                    f"Found existing person by UUID: {person_uuid} (ID: {person.id})"
-                )
                 return person
         if person is None and person_profile_id:
             profile_id_upper = str(person_profile_id).upper()
@@ -672,14 +641,11 @@ def find_existing_person(
                 .all()
             )
             if not potential_matches:
-                logger.debug(f"No person found by Profile ID: {profile_id_upper}.")
+                pass
             elif len(potential_matches) == 1:
                 person = potential_matches[0]
-                logger.debug(
-                    f"Found unique person by Profile ID: {profile_id_upper} (ID: {person.id})"
-                )
                 return person
-            else:  # Multiple matches
+            else:
                 logger.warning(
                     f"Multiple ({len(potential_matches)}) people found for Profile ID: {profile_id_upper}. Disambiguating..."
                 )
@@ -690,27 +656,26 @@ def find_existing_person(
                         if p.username and p.username.lower() == username_lower:
                             if found_by_username is not None:
                                 logger.error(
-                                    f"CRITICAL: Found multiple people matching BOTH Profile ID {profile_id_upper} AND Username '{person_username}' (IDs: {found_by_username.id}, {p.id}). Cannot identify."
+                                    f"CRITICAL: Found multiple people matching BOTH Profile ID {profile_id_upper} AND Username '{person_username}'."
                                 )
                                 return None
                             found_by_username = p
                     if found_by_username:
-                        logger.debug(
-                            f"Disambiguated: Found Person ID {found_by_username.id} ('{found_by_username.username}') matching Profile ID {profile_id_upper}."
-                        )
                         return found_by_username
                     else:
                         logger.warning(
-                            f"Multiple matches for Profile ID {profile_id_upper}, but none matched username '{person_username}'. Cannot identify."
+                            f"Multiple matches for Profile ID {profile_id_upper}, but none matched username '{person_username}'."
                         )
                         return None
                 else:
                     logger.warning(
-                        f"Multiple matches for Profile ID {profile_id_upper}, but no username provided. Cannot identify."
+                        f"Multiple matches for Profile ID {profile_id_upper}, no username provided."
                     )
                     return None
         if person is None:
-            logger.debug(f"No existing person reliably identified for {log_ref}.")
+            logger.debug(
+                f"No existing person reliably identified for {log_ref}."
+            )  # Changed to debug
     except SQLAlchemyError as e:
         logger.error(f"DB error find_existing_person for {log_ref}: {e}", exc_info=True)
         return None
@@ -752,15 +717,15 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
 def create_or_update_person(
     session: Session,
     person_data: Dict[str, Any],
-    existing_person: Optional[Person] = None,  # existing_person arg kept for signature
+    existing_person: Optional[Person] = None,
 ) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
     """
     (Kept structure from user file V9, adapted for new schema, fixed syntax)
     Creates a new Person or updates an existing one based on input data.
-    - Relies on caller passing pre-fetched existing_person.
     - Uses create_person helper for insertion.
-    - Performs inline update logic if existing_person provided.
+    - Performs inline update logic if existing_person found via UUID lookup.
     - Uses PersonStatusEnum.
+    - Fixed except block syntax errors.
     """
     uuid_val = person_data.get("uuid")
     profile_id_val = person_data.get("profile_id")
@@ -768,33 +733,24 @@ def create_or_update_person(
 
     if not uuid_val or not username_val:
         logger.error(
-            f"Cannot create/update person for ProfileID='{profile_id_val or 'N/A'}', User='{username_val or 'N/A'}': UUID or Username missing."
+            f"Cannot create/update: UUID or Username missing. Data: {person_data}"
         )
         return None, "error"
 
     log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
-    updated = False  # Flag to track if any allowed Person field update occurred
+    updated = False
 
-    # Query for existing person based on UUID (as primary identifier now)
-    # This overrides the passed-in existing_person to ensure we use the definitive lookup
     try:
+        # Use UUID to definitively find if person exists
         actual_existing_person = (
             session.query(Person).filter(Person.uuid == uuid_val.upper()).first()
         )
-    except SQLAlchemyError as e:
-        logger.error(
-            f"DB error looking up person by UUID {uuid_val} in create_or_update_person: {e}"
-        )
-        return None, "error"
 
-    try:
         if actual_existing_person:
             # --- PERSON EXISTS --- Update logic ---
-            existing_person = actual_existing_person  # Use the one we just looked up
+            existing_person = actual_existing_person  # Use the found person
             person_id_for_logging = existing_person.id
-            logger.debug(
-                f"{log_ref}: Updating existing Person ID {person_id_for_logging}."
-            )
+            # logger.debug(f"{log_ref}: Updating existing Person ID {person_id_for_logging}.") # Verbose
             try:
                 session.expire(existing_person)
             except Exception as expire_e:
@@ -802,9 +758,7 @@ def create_or_update_person(
                     f"Could not expire session state for Person ID {person_id_for_logging}: {expire_e}"
                 )
 
-            # Apply Updates to Restricted Fields
-            person_update_needed = False
-            # (Comparison logic largely kept from user version's logic)
+            person_update_needed = False  # Renamed from 'updated' to avoid conflict
             new_last_logged_in = person_data.get("last_logged_in")
             current_last_logged_in = existing_person.last_logged_in
             current_naive = None
@@ -828,14 +782,12 @@ def create_or_update_person(
                 )
             if current_naive != new_naive:
                 existing_person.last_logged_in = new_last_logged_in
-                updated = True
                 person_update_needed = True
 
             new_contactable = person_data.get("contactable", False)
             current_contactable = existing_person.contactable
             if bool(current_contactable) != bool(new_contactable):
                 existing_person.contactable = bool(new_contactable)
-                updated = True
                 person_update_needed = True
 
             new_birth_year = person_data.get("birth_year")
@@ -844,32 +796,26 @@ def create_or_update_person(
                 try:
                     birth_year_int = int(new_birth_year)
                     existing_person.birth_year = birth_year_int
-                    updated = True
                     person_update_needed = True
                 except (ValueError, TypeError):
                     logger.warning(
-                        f"Skipping birth_year update {log_ref}: Invalid integer '{new_birth_year}'."
+                        f"Invalid birth_year '{new_birth_year}' for {log_ref}."
                     )
-
             new_in_my_tree = bool(person_data.get("in_my_tree", False))
             current_in_my_tree = existing_person.in_my_tree
             if bool(current_in_my_tree) != new_in_my_tree:
                 existing_person.in_my_tree = new_in_my_tree
-                updated = True
                 person_update_needed = True
-
             new_gender = person_data.get("gender")
             current_gender = existing_person.gender
-            if new_gender is not None and current_gender is None:
-                if isinstance(new_gender, str) and new_gender.lower() in ("f", "m"):
-                    existing_person.gender = new_gender.lower()
-                    updated = True
-                    person_update_needed = True
-                else:
-                    logger.warning(
-                        f"Skipping gender update {log_ref}: Invalid value '{new_gender}'."
-                    )
-
+            if (
+                new_gender is not None
+                and current_gender is None
+                and isinstance(new_gender, str)
+                and new_gender.lower() in ("f", "m")
+            ):
+                existing_person.gender = new_gender.lower()
+                person_update_needed = True
             new_admin_id = person_data.get("administrator_profile_id")
             new_admin_user = person_data.get("administrator_username")
             current_admin_id = existing_person.administrator_profile_id
@@ -877,41 +823,33 @@ def create_or_update_person(
             new_admin_id_upper = new_admin_id.upper() if new_admin_id else None
             if current_admin_id != new_admin_id_upper:
                 existing_person.administrator_profile_id = new_admin_id_upper
-                updated = True
                 person_update_needed = True
             if current_admin_user != new_admin_user:
                 existing_person.administrator_username = new_admin_user
-                updated = True
                 person_update_needed = True
-
             new_message_link = person_data.get("message_link")
             current_message_link = existing_person.message_link
             if not current_message_link and new_message_link:
                 existing_person.message_link = new_message_link
-                updated = True
                 person_update_needed = True
             elif (
                 current_message_link
                 and new_message_link
                 and current_message_link != new_message_link
             ):
-                logger.debug(
-                    f"Skipping message_link update for {log_ref} (existing present)"
-                )
-
+                logger.debug(f"Skipping message_link update {log_ref}")
             new_username = person_data.get("username")
             current_username = existing_person.username
             if not current_username and new_username:
                 existing_person.username = new_username
-                updated = True
                 person_update_needed = True
             elif current_username and new_username and current_username != new_username:
-                logger.debug(
-                    f"Skipping username update for {log_ref} (existing present and different)"
-                )
+                logger.debug(f"Skipping username update {log_ref}")
 
-            if updated:
+            if person_update_needed:
                 existing_person.updated_at = datetime.now(timezone.utc)
+                # Flush needed here to apply update before returning object state
+                session.flush()
                 return existing_person, "updated"
             else:
                 return existing_person, "skipped"
@@ -919,10 +857,8 @@ def create_or_update_person(
             # --- PERSON DOES NOT EXIST --- Create new logic ---
             logger.debug(f"{log_ref}: Creating new Person.")
             create_status_code = create_person(session, person_data)
-            if create_status_code > 0:  # create_person returns ID on success
-                new_person_obj = session.get(
-                    Person, create_status_code
-                )  # Get the created object
+            if create_status_code > 0:
+                new_person_obj = session.get(Person, create_status_code)
                 if new_person_obj:
                     return new_person_obj, "created"
                 else:
@@ -977,7 +913,8 @@ def create_or_update_person(
 def update_person(
     session: Session, profile_id: str, username: str, update_data: Dict[str, Any]
 ) -> bool:
-    """(Kept from user version, adapted status update) Updates existing Person."""
+    """(Kept from user version, adapted status) Updates existing Person."""
+    # ...(Logic mostly unchanged, ensures status uses Enum)...
     if not profile_id or not username:
         logger.warning("update_person: profile_id and username required.")
         return False
@@ -1012,8 +949,6 @@ def update_person(
                 value_to_compare = value
                 if key in ("profile_id", "administrator_profile_id", "uuid") and value:
                     value_to_compare = value.upper()
-
-                # Correctly handle status enum comparison and assignment
                 if key == "status":
                     enum_value = None
                     try:
@@ -1026,15 +961,13 @@ def update_person(
                                 f"Invalid type for status update: {type(value_to_compare)}"
                             )
                             continue
-
                         if current_value != enum_value:
                             setattr(person, key, enum_value)
                             updated = True
                     except ValueError:
                         logger.warning(
-                            f"Invalid status value '{value_to_compare}' for update on Person ID {person.id}."
+                            f"Invalid status value '{value_to_compare}' for update Person ID {person.id}."
                         )
-                # Datetime comparison (already handled timezone conversion in create_or_update)
                 elif isinstance(current_value, datetime) and isinstance(
                     value_to_compare, datetime
                 ):
@@ -1051,7 +984,6 @@ def update_person(
                     if current_naive != new_naive:
                         setattr(person, key, value_to_compare)
                         updated = True
-                # Standard comparison for other types
                 elif current_value != value_to_compare:
                     setattr(person, key, value_to_compare)
                     updated = True
@@ -1059,13 +991,9 @@ def update_person(
                 logger.warning(
                     f"Attempted update non-allowed attr '{key}' on Person ID {person.id}."
                 )
-
         if updated:
             person.updated_at = datetime.now(timezone.utc)
             session.flush()
-            logger.info(f"Updated person {profile_id}/{username} (ID: {person.id}).")
-        else:
-            logger.debug(f"No update needed for person {profile_id}/{username}.")
         return True
     except IntegrityError as ie:
         session.rollback()
@@ -1098,6 +1026,7 @@ def update_person(
 
 def delete_person(session: Session, profile_id: str, username: str) -> bool:
     """Deletes a person and associated records using profile_id and username."""
+    # ...(Logic unchanged)...
     if not profile_id or not username:
         logger.warning("delete_person: profile_id and username required.")
         return False
@@ -1113,9 +1042,7 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         person_id = person.id
         session.delete(person)
         session.flush()
-        logger.info(
-            f"Deleted person ID {person_id} ({profile_id}/{username}) and related records."
-        )
+        logger.info(f"Deleted person ID {person_id} ({profile_id}/{username}).")
         return True
     except SQLAlchemyError as e:
         logger.error(
@@ -1139,7 +1066,7 @@ def delete_database(
     session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
 ):
     """Deletes the database file with retry and cleanup."""
-    # ...(Logic kept from user version - appears correct)...
+    # ...(Logic unchanged)...
     if not isinstance(db_path, Path):
         try:
             db_path = Path(db_path)
@@ -1212,11 +1139,12 @@ def delete_database(
 
 # ----------------------------------------------------------------------
 # Backup and Recovery (Kept functions from user version)
-#################################################################################
+# ----------------------------------------------------------------------
 
 
 def backup_database(session_manager=None):
     """Backs up the database file specified in config_instance."""
+    # ...(Logic unchanged)...
     db_path = config_instance.DATABASE_FILE
     backup_dir = config_instance.DATA_DIR
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -1238,8 +1166,9 @@ def backup_database(session_manager=None):
 
 # ----------------------------------------------------------------------
 # Standalone execution (Updated for new schema)
-#################################################################################
+# ----------------------------------------------------------------------
 if __name__ == "__main__":
+    # ...(Setup logging - unchanged)...
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s",
@@ -1276,12 +1205,15 @@ if __name__ == "__main__":
                     standalone_logger.warning(
                         "Attempting to drop 'conversation_log' table if it exists..."
                     )
-                    connection.execute(text("DROP TABLE IF EXISTS conversation_log"))
+                    # Drop old tables if they might exist from previous schema versions
+                    connection.execute(text("DROP TABLE IF EXISTS message_history"))
+                    connection.execute(text("DROP TABLE IF EXISTS inbox_status"))
+                    connection.execute(
+                        text("DROP TABLE IF EXISTS conversation_log")
+                    )  # Drop new one too just in case
                     standalone_logger.info(
-                        "'conversation_log' table dropped (if existed)."
+                        "Dropped potentially conflicting old/new log tables."
                     )
-                    # NOTE: If other tables related to old schema (InboxStatus, MessageHistory) existed,
-                    # they would ideally be dropped here too for a clean slate.
         except Exception as drop_err:
             standalone_logger.error(
                 f"Error during explicit table drop: {drop_err}", exc_info=True
@@ -1290,11 +1222,11 @@ if __name__ == "__main__":
         standalone_logger.info(
             "Creating/Verifying database tables using current schema..."
         )
-        Base.metadata.create_all(
-            engine
-        )  # Create tables based on current models (ConversationLog, etc.)
+        Base.metadata.create_all(engine)  # Create tables based on current models
         standalone_logger.info(f"Database tables OK: {db_path_str}")
 
+        # Seed Message Types
+        # ...(Seeding logic unchanged)...
         standalone_logger.info("Seeding MessageType table...")
         SessionSeed = sessionmaker(bind=engine)
         seed_session = None
