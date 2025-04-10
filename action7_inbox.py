@@ -60,6 +60,8 @@ from utils import (
     retry,
     time_wait,
     retry_api,
+    format_name,
+    urljoin,
 )
 from ai_interface import classify_message_intent
 
@@ -1066,37 +1068,61 @@ class InboxProcessor:
         session: DbSession,
         profile_id: str,
         username: str,
-        conversation_id: Optional[str],
+        conversation_id: Optional[
+            str
+        ],  # Keep conversation_id for message link construction
         existing_person_arg: Optional[Person] = None,
     ) -> Tuple[Optional[Person], Literal["new", "skipped", "error", "updated"]]:
+        """
+        V1.21 REVISED: Looks up or creates a Person.
+        - Fetches profile details (FirstName, IsContactable, LastLoginDate) via helper
+          when CREATING a new Person record.
+        """
         if not profile_id or profile_id == "UNKNOWN":
+            logger.warning("_lookup_or_create_person: Invalid profile_id provided.")
             return None, "error"
         if not username:
-            username = "Unknown"
+            username = "Unknown"  # Default username if missing
+
         username_lower = username.lower()
         correct_message_link: Optional[str] = None
         try:
+            # Use profile_id for the message link target
             correct_message_link = urljoin(
-                config_instance.BASE_URL, f"messaging/?p={profile_id}"
+                config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
             )
         except Exception as url_e:
             logger.warning(f"Error constructing msg link for {profile_id}: {url_e}")
+
         person: Optional[Person] = None
         lookup_needed = existing_person_arg is None
+
         try:
             if lookup_needed:
+                # Query by profile_id only, as username might change or be inaccurate in overview
                 person = (
                     session.query(Person)
-                    .filter(Person.profile_id == profile_id)
+                    .filter(Person.profile_id == profile_id.upper())
                     .first()
                 )
             else:
-                person = existing_person_arg
+                person = existing_person_arg  # Use the one passed from prefetch
+
             if person:
+                # --- EXISTING PERSON ---
                 updated = False
-                if person.username.lower() != username_lower:
-                    person.username = username
+                # Update username only if current one is "Unknown" or differs significantly
+                # (Avoid overwriting potentially more accurate list username with older DB one)
+                if (
+                    person.username == "Unknown"
+                    or person.username.lower() != username_lower
+                ):
+                    # Maybe add more sophisticated name comparison if needed
+                    person.username = (
+                        username  # Update with potentially newer username from overview
+                    )
                     updated = True
+                # Update message link if missing or different
                 current_link = person.message_link
                 if (
                     correct_message_link is not None
@@ -1104,31 +1130,137 @@ class InboxProcessor:
                 ):
                     person.message_link = correct_message_link
                     updated = True
+
+                # Optional: Update other fields if missing?
+                # You could call _fetch_profile_details_for_person here too and update if
+                # fields like first_name, contactable, last_logged_in are NULL in the DB.
+                # Example (add this block if desired):
+                # if person.first_name is None or person.contactable is None or person.last_logged_in is None:
+                #      logger.debug(f"Existing person {profile_id} missing details. Fetching profile...")
+                #      profile_details = _fetch_profile_details_for_person(self.session_manager, profile_id)
+                #      if profile_details:
+                #          if person.first_name is None and profile_details.get("first_name"):
+                #              person.first_name = profile_details["first_name"]; updated = True
+                #          if person.contactable is None and profile_details.get("contactable") is not None:
+                #              person.contactable = profile_details["contactable"]; updated = True
+                #          if person.last_logged_in is None and profile_details.get("last_logged_in_dt"):
+                #              person.last_logged_in = profile_details["last_logged_in_dt"]; updated = True
+
                 if updated:
                     person.updated_at = datetime.now(timezone.utc)
+                    logger.debug(
+                        f"Updated existing Person record for {profile_id}/{username}"
+                    )
+                    # Ensure the updated object is managed by the session
+                    session.add(person)
                     return person, "updated"
                 else:
+                    logger.debug(
+                        f"Skipped update for existing Person {profile_id}/{username} (no changes detected)."
+                    )
                     return person, "skipped"
             else:
-                new_person = Person(
-                    profile_id=profile_id,
-                    username=username,
-                    message_link=correct_message_link,
-                    status=PersonStatusEnum.ACTIVE,
-                    contactable=True,
+                # --- NEW PERSON ---
+                logger.info(
+                    f"Person with profile ID {profile_id.upper()} not found. Attempting to create..."
                 )
+                # Fetch additional details before creating
+                profile_details = _fetch_profile_details_for_person(
+                    self.session_manager, profile_id
+                )
+
+                # Prepare data for new Person object
+                new_person_data = {
+                    "profile_id": profile_id.upper(),
+                    "username": username,  # Use username from conversation overview
+                    "message_link": correct_message_link,
+                    "status": PersonStatusEnum.ACTIVE,  # Default status
+                    "first_name": None,  # Default
+                    "contactable": True,  # Default assumption
+                    "last_logged_in": None,  # Default
+                    # Other fields like gender, birth_year, admin info will be None unless fetched
+                    "administrator_profile_id": None,
+                    "administrator_username": None,
+                    "gender": None,
+                    "birth_year": None,
+                    "in_my_tree": False,  # Default, can be updated by Action 6 if run later
+                }
+
+                if profile_details:
+                    logger.debug(
+                        f"Populating new person {profile_id} with fetched profile details."
+                    )
+                    new_person_data["first_name"] = profile_details.get("first_name")
+                    # Ensure contactable defaults to False if API returns None, otherwise use API value
+                    new_person_data["contactable"] = (
+                        profile_details.get("contactable", False)
+                        if profile_details.get("contactable") is not None
+                        else False
+                    )
+                    new_person_data["last_logged_in"] = profile_details.get(
+                        "last_logged_in_dt"
+                    )
+                else:
+                    logger.warning(
+                        f"Could not fetch profile details for new person {profile_id}. Using defaults."
+                    )
+
+                # Create and add the new Person
+                new_person = Person(**new_person_data)
                 session.add(new_person)
-                session.flush()
-                if new_person.id is None:
-                    logger.error(f"ID not assigned {username} ({profile_id})!")
+                # Flush here to get the new_person.id assigned immediately
+                # This is useful if subsequent operations in the same batch need the ID
+                try:
+                    session.flush()
+                    if new_person.id is None:
+                        logger.error(
+                            f"ID not assigned after flush for {username} ({profile_id})!"
+                        )
+                        session.rollback()  # Rollback if flush didn't assign ID
+                        return None, "error"
+                    logger.info(
+                        f"Created new Person ID {new_person.id} for {username} ({profile_id})."
+                    )
+                    return new_person, "new"
+                except (
+                    IntegrityError
+                ) as ie:  # Catch potential duplicate profile_id on flush
+                    session.rollback()
+                    logger.error(
+                        f"IntegrityError creating Person {username} ({profile_id}): {ie}. Rolling back.",
+                        exc_info=False,
+                    )
+                    # Attempt to refetch the person that caused the conflict
+                    conflicting_person = (
+                        session.query(Person)
+                        .filter(Person.profile_id == profile_id.upper())
+                        .first()
+                    )
+                    if conflicting_person:
+                        logger.warning(
+                            f"Returning conflicting Person ID {conflicting_person.id} instead."
+                        )
+                        return (
+                            conflicting_person,
+                            "skipped",
+                        )  # Treat as skipped as it already exists
                     return None, "error"
-                return new_person, "new"
+                except SQLAlchemyError as e_flush:
+                    logger.error(
+                        f"DB error during flush for new person {username} ({profile_id}): {e_flush}"
+                    )
+                    session.rollback()
+                    return None, "error"
+
         except SQLAlchemyError as e:
-            logger.error(f"DB error _lookup {username} ({profile_id}): {e}")
+            logger.error(
+                f"DB error in _lookup_or_create_person for {username} ({profile_id}): {e}"
+            )
+            # Rollback might be needed depending on session state, but let db_transn handle it usually
             return None, "error"
         except Exception as e:
             logger.critical(
-                f"Unexpected error _lookup {username} ({profile_id}): {e}",
+                f"Unexpected error in _lookup_or_create_person {username} ({profile_id}): {e}",
                 exc_info=True,
             )
             return None, "error"
@@ -1156,9 +1288,106 @@ class InboxProcessor:
             logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
         logger.info("-----------------------------------------")
     # End of _log_unified_summary
-
-
 # End of InboxProcessor class
+
+
+@retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
+def _fetch_profile_details_for_person(
+    session_manager: SessionManager, profile_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Fetches profile details (FirstName, IsContactable, LastLoginDate) for a given profile ID.
+    """
+    if not profile_id or profile_id == "UNKNOWN":
+        logger.warning("Cannot fetch profile details: Invalid profile_id provided.")
+        return None
+    if not session_manager or not session_manager.is_sess_valid():
+        logger.error(
+            f"Profile details fetch: WebDriver session invalid for Profile ID {profile_id}."
+        )
+        # Don't raise ConnectionError here, just return None as it might be called when session is closing
+        return None
+
+    profile_url = urljoin(
+        config_instance.BASE_URL,
+        f"/app-api/express/v1/profiles/details?userId={profile_id.upper()}",
+    )
+    api_desc_profile = "Profile Details API (Action 7)"
+    profile_data = {}
+
+    try:
+        profile_response = _api_req(
+            url=profile_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            use_csrf_token=False,
+            api_description=api_desc_profile,
+            # Referer might be less critical here, but could use messaging page if needed
+            # referer_url=urljoin(config_instance.BASE_URL, "/messaging/"),
+        )
+
+        if profile_response and isinstance(profile_response, dict):
+            logger.debug(f"Fetched /profiles/details for {profile_id} OK.")
+
+            # Extract FirstName
+            raw_first_name = profile_response.get("FirstName")
+            profile_data["first_name"] = (
+                format_name(raw_first_name) if raw_first_name else None
+            )
+
+            # Extract IsContactable
+            contactable_val = profile_response.get("IsContactable")
+            profile_data["contactable"] = (
+                bool(contactable_val) if contactable_val is not None else False
+            )  # Default False if missing
+
+            # Extract and parse LastLoginDate
+            last_login_str = profile_response.get("LastLoginDate")
+            last_login_dt = None
+            if last_login_str:
+                try:
+                    if last_login_str.endswith("Z"):
+                        last_login_dt = datetime.fromisoformat(
+                            last_login_str.replace("Z", "+00:00")
+                        )
+                    else:
+                        dt_naive = datetime.fromisoformat(last_login_str)
+                        last_login_dt = (
+                            dt_naive.replace(tzinfo=timezone.utc)
+                            if dt_naive.tzinfo is None
+                            else dt_naive.astimezone(timezone.utc)
+                        )
+                    profile_data["last_logged_in_dt"] = last_login_dt
+                except (ValueError, TypeError) as date_parse_err:
+                    logger.warning(
+                        f"Could not parse LastLoginDate '{last_login_str}' for {profile_id}: {date_parse_err}"
+                    )
+                    profile_data["last_logged_in_dt"] = None
+            else:
+                profile_data["last_logged_in_dt"] = None
+
+            return profile_data  # Return extracted data
+        else:
+            logger.warning(
+                f"Failed to get valid /profiles/details response for {profile_id}. Type: {type(profile_response)}"
+            )
+            return None  # Return None on failure
+
+    except ConnectionError as conn_err:
+        logger.error(
+            f"ConnectionError fetching /profiles/details for {profile_id}: {conn_err}",
+            exc_info=False,
+        )
+        raise  # Re-raise for retry decorator
+    except Exception as e:
+        logger.error(
+            f"Error fetching /profiles/details for {profile_id}: {e}", exc_info=True
+        )
+        if isinstance(e, requests.exceptions.RequestException):
+            raise  # Re-raise for retry decorator
+        return None  # Return None for other exceptions
+# End _fetch_profile_details_for_person
 
 
 # End of action7_inbox.py
