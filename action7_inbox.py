@@ -127,7 +127,6 @@ class InboxProcessor:
         except Exception as e:
             logger.error(f"Unexpected error in _get_all_conv_api: {e}", exc_info=True)
             return None, None
-
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
@@ -176,7 +175,6 @@ class InboxProcessor:
             "username": username,
             "last_message_timestamp": last_msg_ts_aware,
         }
-
     # End of _extract_conversation_info
 
     @retry_api(max_retries=2)
@@ -256,7 +254,6 @@ class InboxProcessor:
                 f"Error fetch context conv {conversation_id}: {e}", exc_info=True
             )
             return None
-
     # End of _fetch_conversation_context
 
     def search_inbox(self) -> bool:
@@ -737,7 +734,6 @@ class InboxProcessor:
             if session:
                 self.session_manager.return_session(session)
         return True
-
     # End of search_inbox
 
     def _format_context_for_ai(
@@ -757,7 +753,6 @@ class InboxProcessor:
                 truncated_content += "..."
             context_lines.append(f"{label}{truncated_content}")
         return "\n".join(context_lines)
-
     # End of _format_context_for_ai
 
     def _commit_batch_data_upsert(
@@ -768,71 +763,69 @@ class InboxProcessor:
         is_final_attempt: bool = False,
     ) -> int:
         """
-        V1.20 REVISED: Helper function to UPSERT ConversationLog entries and update Person statuses.
+        V1.21 REVISED: Helper function to UPSERT ConversationLog entries and update Person statuses.
         - Uses explicit query/update/add for ConversationLog.
-        - Uses bulk_update_mappings for Person status.
-        - Adds session.flush() inside the loop for logs.
+        - Explicitly adds modified existing_log objects back to session.
+        - Removes intermediate flushes, relies on final db_transn commit.
         - Logs session state before commit attempt.
         """
         updated_person_count = 0
+        processed_logs_count = 0
         if not log_upserts and not person_updates:
             return updated_person_count
+
         log_prefix = "[Final Save] " if is_final_attempt else "[Batch Save] "
         logger.info(
             f"{log_prefix} Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates."
         )
 
-        # --- Log Data Before Commit ---
-        # (Logging kept the same)
+        # --- Log Data Before Commit (Keep for debugging) ---
+        # ... (logging data remains the same) ...
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"{log_prefix}--- Log Upsert Data ---")
             for item in log_upserts:
-                logger.debug(
-                    f"  { {k: (str(v)[:50] + '...' if k=='latest_message_content' else v) for k, v in item.items()} }"
-                )
+                log_item_repr = {
+                    k: (
+                        str(v)[:50] + "..." if isinstance(v, str) and len(v) > 50 else v
+                    )
+                    for k, v in item.items()
+                }
+                logger.debug(f"  {log_item_repr}")
             logger.debug(f"{log_prefix}--- Person Update Data ---")
             for pid, data in person_updates.items():
                 logger.debug(f"  PersonID {pid}: {data}")
             logger.debug(f"{log_prefix}--- End Data ---")
-        # --- End Log Data ---
 
         try:
-            with db_transn(session):  # Use transaction context manager
+            # Use the main transaction context manager for the entire batch
+            with db_transn(session):
                 logger.debug(f"{log_prefix}Entered transaction block.")
 
-                # --- ConversationLog Upsert Logic ---
+                # --- ConversationLog Explicit Upsert Logic ---
                 if log_upserts:
-                    processed_logs_count = 0
+                    logger.debug(
+                        f"{log_prefix}Processing {len(log_upserts)} ConversationLog entries..."
+                    )
                     for data in log_upserts:
-                        try:  # Add inner try/except for individual log processing
+                        try:
                             conv_id = data.get("conversation_id")
-                            direction_val = data.get("direction")
+                            direction_str = data.get("direction")
 
-                            # Convert direction string/enum to Enum
-                            direction_enum = None
-                            if isinstance(direction_val, MessageDirectionEnum):
-                                direction_enum = direction_val
-                            elif isinstance(direction_val, str):
-                                try:
-                                    direction_enum = MessageDirectionEnum[direction_val]
-                                except KeyError:
-                                    logger.error(
-                                        f"{log_prefix}Invalid direction string '{direction_val}' for conv {conv_id}. Skipping."
-                                    )
-                                    continue
-                            else:
+                            # Validate and Convert Direction
+                            if not conv_id or not direction_str:
                                 logger.error(
-                                    f"{log_prefix}Invalid/missing direction value for conv {conv_id}. Skipping."
+                                    f"{log_prefix}Missing conv_id/direction: {data}. Skip."
+                                )
+                                continue
+                            try:
+                                direction_enum = MessageDirectionEnum(direction_str)
+                            except ValueError:
+                                logger.error(
+                                    f"{log_prefix}Invalid direction '{direction_str}' conv {conv_id}. Skip."
                                 )
                                 continue
 
-                            if not conv_id:
-                                logger.error(
-                                    f"{log_prefix}Missing conversation_id. Skipping log entry: {data}"
-                                )
-                                continue
-
-                            # Ensure timestamp is aware
+                            # Prepare data dictionary for update/insert
                             ts_val = data.get("latest_timestamp")
                             aware_timestamp = None
                             if isinstance(ts_val, datetime):
@@ -841,78 +834,99 @@ class InboxProcessor:
                                     if ts_val.tzinfo
                                     else ts_val.replace(tzinfo=timezone.utc)
                                 )
-                            elif ts_val is not None:
+                            if not aware_timestamp:
                                 logger.error(
-                                    f"{log_prefix} Invalid timestamp type '{type(ts_val)}' for conv {conv_id}. Skipping."
+                                    f"{log_prefix} Missing/invalid timestamp {conv_id}/{direction_enum.name}. Skip."
                                 )
                                 continue
 
-                            # Query for existing log entry
+                            update_data = {
+                                k: v
+                                for k, v in data.items()
+                                if k
+                                not in ["conversation_id", "direction", "updated_at"]
+                                and (
+                                    v is not None
+                                    or k
+                                    in [
+                                        "ai_sentiment",
+                                        "message_type_id",
+                                        "script_message_status",
+                                    ]
+                                )
+                            }
+                            update_data["updated_at"] = datetime.now(timezone.utc)
+                            update_data["latest_timestamp"] = aware_timestamp
+
+                            # Query for existing record
                             existing_log = (
                                 session.query(ConversationLog)
                                 .filter_by(
                                     conversation_id=conv_id, direction=direction_enum
                                 )
-                                .with_for_update()  # Add locking for update safety
                                 .first()
-                            )
-
-                            # Prepare update/insert data
-                            log_data_for_op = {
-                                "people_id": data.get("people_id"),
-                                "latest_message_content": data.get(
-                                    "latest_message_content"
-                                ),
-                                "latest_timestamp": aware_timestamp,
-                                "ai_sentiment": data.get("ai_sentiment"),
-                                "message_type_id": data.get("message_type_id"),
-                                "script_message_status": data.get(
-                                    "script_message_status"
-                                ),
-                                "updated_at": datetime.now(timezone.utc),
-                            }
+                            )  # No with_for_update needed if single worker
 
                             if existing_log:
-                                # Update existing record
-                                # logger.debug(f"{log_prefix}Updating ConvLog: conv {conv_id}, dir {direction_enum.name}") # Verbose
-                                for key, value in log_data_for_op.items():
-                                    setattr(existing_log, key, value)
+                                # Update Existing Record
+                                logger.debug(
+                                    f"{log_prefix} Updating existing log for {conv_id}/{direction_enum.name}..."
+                                )
+                                has_changes = False
+                                for key, value in update_data.items():
+                                    if getattr(existing_log, key) != value:
+                                        setattr(existing_log, key, value)
+                                        has_changes = True
+                                if not has_changes:
+                                    logger.debug(
+                                        f"    No actual changes needed for {conv_id}/{direction_enum.name}."
+                                    )
+                                else:
+                                    logger.debug(
+                                        f"    Changes staged for {conv_id}/{direction_enum.name}."
+                                    )
+                                    # *** Explicitly add modified object back to session ***
+                                    session.add(existing_log)
+                                    logger.debug(
+                                        f"    Explicitly added modified existing_log to session."
+                                    )
                             else:
-                                # Insert new record
-                                # logger.debug(f"{log_prefix}Adding new ConvLog: conv {conv_id}, dir {direction_enum.name}") # Verbose
-                                log_data_for_op["conversation_id"] = conv_id
-                                log_data_for_op["direction"] = direction_enum
-                                new_log_obj = ConversationLog(**log_data_for_op)
+                                # Insert New Record
+                                logger.debug(
+                                    f"{log_prefix} Creating new log entry for {conv_id}/{direction_enum.name}..."
+                                )
+                                new_log_data = update_data.copy()
+                                new_log_data["conversation_id"] = conv_id
+                                new_log_data["direction"] = direction_enum
+                                if "people_id" not in new_log_data:
+                                    logger.error(
+                                        f"{log_prefix} Missing 'people_id' for new log {conv_id}/{direction_enum.name}. Skip."
+                                    )
+                                    continue
+                                new_log_obj = ConversationLog(**new_log_data)
                                 session.add(new_log_obj)
-
-                            # --- MODIFICATION: Flush after each log item ---
-                            session.flush()
-                            # logger.debug(f"{log_prefix} Flushed item for conv {conv_id}, dir {direction_enum.name}") # Verbose
-                            # --- END MODIFICATION ---
+                                logger.debug(
+                                    f"    New ConversationLog added to session for {conv_id}/{direction_enum.name}."
+                                )
 
                             processed_logs_count += 1
 
-                        except Exception as inner_loop_exc:
-                            # Log error for this specific item but continue the loop
+                        except Exception as inner_log_exc:
                             logger.error(
-                                f"{log_prefix} Error processing single log item (conv={data.get('conversation_id')}, dir={data.get('direction')}): {inner_loop_exc}",
+                                f"{log_prefix} Error processing single log item (data: {data}): {inner_log_exc}",
                                 exc_info=True,
                             )
-                            # Optionally rollback this specific item's changes? Tricky within the larger transaction.
-                            # For now, just log and continue the batch.
-
                     logger.debug(
-                        f"{log_prefix}Processed {processed_logs_count} log entries (with flush after each)."
+                        f"{log_prefix}Finished processing {processed_logs_count} log entries."
                     )
-                # --- End ConversationLog Upsert Logic ---
+                # --- End ConversationLog Logic ---
 
-                # --- Person Update Logic (Unchanged) ---
+                # --- Person Update Logic (Keep bulk_update_mappings) ---
                 if person_updates:
-                    pids_to_update = list(person_updates.keys())
                     update_values = []
                     logger.debug(
-                        f"{log_prefix}Preparing {len(pids_to_update)} Person status updates..."
-                    )  # Debug level
+                        f"{log_prefix}Preparing {len(person_updates)} Person status updates..."
+                    )
                     for pid, data in person_updates.items():
                         status_val = data.get("status")
                         enum_value = None
@@ -920,19 +934,20 @@ class InboxProcessor:
                             enum_value = status_val
                         elif isinstance(status_val, str):
                             try:
-                                enum_value = PersonStatusEnum(status_val)
+                                enum_value = PersonStatusEnum(status_val.upper())
                             except ValueError:
                                 logger.warning(
-                                    f"Invalid status string '{status_val}' for Person ID {pid}. Skipping."
+                                    f"Invalid status string '{status_val}' for Person ID {pid}. Skip."
                                 )
                                 continue
                         else:
                             logger.warning(
-                                f"Invalid status type for Person ID {pid}: {type(status_val)}. Skipping."
+                                f"Invalid status type for Person ID {pid}: {type(status_val)}. Skip."
                             )
                             continue
+
                         logger.debug(
-                            f"  Preparing update for Person ID {pid}: status -> {enum_value.name}"
+                            f"  Prep update Person ID {pid}: status -> {enum_value.name}"
                         )
                         update_values.append(
                             {
@@ -944,35 +959,49 @@ class InboxProcessor:
 
                     if update_values:
                         logger.info(
-                            f"{log_prefix}Attempting bulk update mappings for {len(update_values)} persons statuses..."
-                        )  # Info level
-                        session.bulk_update_mappings(Person, update_values)
-                        updated_person_count = len(update_values)
-                        logger.info(
-                            f"{log_prefix}Bulk update mappings called for {updated_person_count} persons."
+                            f"{log_prefix}Attempting bulk update mappings for {len(update_values)} persons..."
                         )
+                        try:
+                            session.bulk_update_mappings(Person, update_values)
+                            updated_person_count = len(update_values)
+                            logger.info(
+                                f"{log_prefix}Bulk update mappings called for {updated_person_count} persons."
+                            )
+                        except Exception as bulk_err:
+                            logger.error(
+                                f"{log_prefix} Error during bulk_update_mappings: {bulk_err}",
+                                exc_info=True,
+                            )
+                            raise  # Re-raise to trigger rollback
                     else:
                         logger.warning(f"{log_prefix}No valid person updates prepared.")
                 # --- End Person Update Logic ---
 
                 # --- Log Session State Before Commit ---
-                logger.debug(
-                    f"{log_prefix}Session state before final commit: Dirty={session.dirty}, New={session.new}, Deleted={session.deleted}"
-                )
+                logger.info(f"{log_prefix}Session state BEFORE commit attempt:")
+                logger.info(f"  Dirty objects: {len(session.dirty)}")
+                if logger.isEnabledFor(logging.DEBUG) and session.dirty:
+                    logger.debug(f"    Dirty Details: {session.dirty}")
+                logger.info(f"  New objects: {len(session.new)}")
+                if logger.isEnabledFor(logging.DEBUG) and session.new:
+                    logger.debug(f"    New Details: {session.new}")
+                logger.info(f"  Deleted objects: {len(session.deleted)}")
                 # --- End Log Session State ---
 
                 logger.debug(
-                    f"{log_prefix}Exiting transaction block (Final commit attempt follows)."
+                    f"{log_prefix}Exiting transaction block (commit attempt follows)."
                 )
-            # --- Log success *after* the 'with db_transn' block ---
+            # --- Commit happens implicitly here by db_transn exiting the 'with' block ---
+
             logger.info(
-                f"{log_prefix}Commit successful. Updated {updated_person_count} persons."
-            )  # INFO level
+                f"{log_prefix}Transaction block exited. Commit should have occurred via db_transn."
+            )
             return updated_person_count
+
         except Exception as commit_err:
-            # db_transn handles rollback, just log error here
             logger.error(
-                f"{log_prefix}Commit FAILED inside helper: {commit_err}", exc_info=True
+                f"{log_prefix}Commit/Processing FAILED inside helper: {commit_err}",
+                exc_info=True,
             )
             return 0
 
@@ -1030,7 +1059,6 @@ class InboxProcessor:
             logger.error(f"Error creating comparator: {e}", exc_info=True)
             return None  # Return None on error
         return latest_log_entry_info
-
     # End of _create_comparator
 
     def _lookup_or_create_person(
@@ -1104,7 +1132,6 @@ class InboxProcessor:
                 exc_info=True,
             )
             return None, "error"
-
     # End of _lookup_or_create_person
 
     def _log_unified_summary(
@@ -1128,7 +1155,6 @@ class InboxProcessor:
         elif max_inbox_limit == 0 or items_processed < max_inbox_limit:
             logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
         logger.info("-----------------------------------------")
-
     # End of _log_unified_summary
 
 
