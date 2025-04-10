@@ -69,10 +69,11 @@ class RoleType(enum.Enum):  # Kept enum from user file
 
 
 class PersonStatusEnum(enum.Enum):  # Added Enum for status
-    ACTIVE = "ACTIVE"
-    DESIST = "DESIST"
-    ARCHIVE = "ARCHIVE"
-    BLOCKED = "BLOCKED"
+    ACTIVE = "ACTIVE"    # Eligible for messaging (if rules pass)
+    DESIST = "DESIST"    # Set by AI (Desist/Uninterested reply), skip messaging
+    ARCHIVE = "ARCHIVE"  # Set after sending Desist ACK (Future), skip messaging
+    BLOCKED = "BLOCKED"  # Set MANUALLY by user, skip messaging
+    DEAD = "DEAD"        # Set MANUALLY by user, skip messaging
 
 
 # --- Model Definitions ---
@@ -199,10 +200,11 @@ class Person(Base):
     administrator_profile_id = Column(String, nullable=True, index=True)
     administrator_username = Column(String, nullable=True)
     status = Column(
-        SQLEnum(PersonStatusEnum, name="person_status_enum_v3"),
+        SQLEnum(PersonStatusEnum),
         nullable=False,
         default=PersonStatusEnum.ACTIVE,
         server_default=PersonStatusEnum.ACTIVE.value,
+        index=True,
     )
     created_at = Column(
         DateTime(timezone=True),
@@ -1211,113 +1213,182 @@ def backup_database(session_manager=None):
 # ----------------------------------------------------------------------
 # Standalone execution (Updated for new schema)
 # ----------------------------------------------------------------------
+# --- Standalone execution ---
 if __name__ == "__main__":
-    # ...(Setup logging - unchanged)...
+    # Setup basic logging for standalone execution
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.DEBUG,  # Set to DEBUG for standalone run
         format="%(asctime)s %(levelname).3s [%(name)-12s %(lineno)-4d] %(message)s",
         datefmt="%H:%M:%S",
-        stream=sys.stderr,
+        stream=sys.stderr,  # Log to stderr for standalone runs
     )
+    # Create a specific logger for this standalone run if desired, or use root
     standalone_logger = logging.getLogger("db_standalone")
+    standalone_logger.info("--- Starting database.py standalone test ---")
     standalone_logger.info(
-        "--- Starting database.py standalone test (Merged: New Schema + Old Functions) ---"
+        f"--- Using Updated PersonStatusEnum: {[e.name for e in PersonStatusEnum]} ---"
     )
+
+    engine = None  # Initialize engine to None
     try:
+        # Import config_instance locally for standalone use
+        from config import config_instance
+
         db_path_obj = config_instance.DATABASE_FILE
         db_path_str = str(db_path_obj.resolve())
-    except Exception as config_err:
-        standalone_logger.critical(f"CRITICAL: Error getting DB path: {config_err}.")
-        sys.exit(1)
-    standalone_logger.info(f"Using database file: {db_path_str}")
-    engine = None
-    try:
-        engine = create_engine(f"sqlite:///{db_path_str}", echo=False)
+        standalone_logger.info(f"Using database file: {db_path_str}")
 
+        # Create engine
+        engine = create_engine(
+            f"sqlite:///{db_path_str}", echo=False
+        )  # echo=False for less noise
+
+        # Add PRAGMA settings listener
         @event.listens_for(engine, "connect")
-        def enable_foreign_keys(dbapi_connection, connection_record):
+        def enable_foreign_keys_and_wal(dbapi_connection, connection_record):
+            # Using 'enable_foreign_keys_and_wal' to reflect both settings
             cursor = dbapi_connection.cursor()
             try:
-                cursor.execute("PRAGMA foreign_keys=ON")
+                # Enable WAL mode for better concurrency (optional but recommended)
+                cursor.execute("PRAGMA journal_mode=WAL;")
+                # Enable Foreign Key constraints
+                cursor.execute("PRAGMA foreign_keys=ON;")
+                standalone_logger.debug(
+                    "PRAGMA journal_mode=WAL and foreign_keys=ON set for new connection."
+                )
+            except Exception as pragma_e:
+                # Use logger from this standalone script
+                standalone_logger.error(f"Failed setting PRAGMA: {pragma_e}")
             finally:
                 cursor.close()
 
-        # Explicitly Drop ConversationLog Table Before Creation
+        # --- Schema Migration/Creation ---
+        standalone_logger.warning("!!! Running database.py standalone.")
+        # Check if the enum type exists with the correct name (e.g., person_status_enum_v4)
+        # NOTE: Introspection for exact enum values in SQLite via SQLAlchemy is limited.
+        # This check mainly verifies table structure. Enum value changes still
+        # typically require manual intervention or migration tools for SQLite.
         try:
-            with engine.connect() as connection:
-                with connection.begin():
-                    standalone_logger.warning(
-                        "Attempting to drop 'conversation_log' table if it exists..."
+            from sqlalchemy import inspect as sa_inspect
+
+            inspector = sa_inspect(engine)
+            if not inspector.has_table(Person.__tablename__):
+                standalone_logger.info(
+                    f"Table '{Person.__tablename__}' does not exist. Running create_all."
+                )
+                Base.metadata.create_all(engine)
+                standalone_logger.info(f"Database tables created: {db_path_str}")
+            else:
+                standalone_logger.info(
+                    f"Table '{Person.__tablename__}' already exists."
+                )
+                # Add a check for the 'status' column specifically if needed
+                columns = [
+                    col["name"] for col in inspector.get_columns(Person.__tablename__)
+                ]
+                if "status" not in columns:
+                    standalone_logger.error(
+                        f"CRITICAL: 'status' column missing from '{Person.__tablename__}'. Schema migration needed!"
                     )
-                    # Drop old tables if they might exist from previous schema versions
-                    connection.execute(text("DROP TABLE IF EXISTS message_history"))
-                    connection.execute(text("DROP TABLE IF EXISTS inbox_status"))
-                    connection.execute(
-                        text("DROP TABLE IF EXISTS conversation_log")
-                    )  # Drop new one too just in case
+                    # Potentially run create_all again, but it might fail or not add the column correctly.
+                    # Base.metadata.create_all(engine) # Uncomment cautiously
+                else:
                     standalone_logger.info(
-                        "Dropped potentially conflicting old/new log tables."
+                        "Column 'status' exists (Enum values require manual check or migration tool)."
                     )
-        except Exception as drop_err:
+                # Attempt create_all anyway - it's generally safe and creates missing tables/indexes
+                Base.metadata.create_all(engine)
+                standalone_logger.debug("Base.metadata.create_all() check completed.")
+
+        except Exception as create_err:
             standalone_logger.error(
-                f"Error during explicit table drop: {drop_err}", exc_info=True
+                f"Error during table check/creation: {create_err}", exc_info=True
             )
+            # Decide if we should exit or continue to seeding attempt
+            # For now, continue to seeding attempt
 
-        standalone_logger.info(
-            "Creating/Verifying database tables using current schema..."
-        )
-        Base.metadata.create_all(engine)  # Create tables based on current models
-        standalone_logger.info(f"Database tables OK: {db_path_str}")
-
-        # Seed Message Types
-        # ...(Seeding logic unchanged)...
-        standalone_logger.info("Seeding MessageType table...")
+        # --- Seed MessageType Table ---
+        standalone_logger.info("Seeding/Verifying MessageType table...")
         SessionSeed = sessionmaker(bind=engine)
-        seed_session = None
+        seed_session = None  # Initialize
         try:
             seed_session = SessionSeed()
+            # Ensure messages.json path is correct relative to database.py
             script_dir = Path(__file__).resolve().parent
             messages_file = script_dir / "messages.json"
+
             if messages_file.exists():
-                with messages_file.open("r", encoding="utf-8") as f:
-                    messages_data = json.load(f)
-                if isinstance(messages_data, dict):
-                    with db_transn(seed_session) as sess:
-                        types_to_add = [
-                            MessageType(type_name=name)
-                            for name in messages_data
-                            if not sess.query(MessageType.id)
-                            .filter_by(type_name=name)
-                            .first()
-                        ]
-                        if types_to_add:
-                            sess.add_all(types_to_add)
-                            standalone_logger.debug(
-                                f"Added {len(types_to_add)} msg types."
-                            )
-                        else:
-                            standalone_logger.debug("Message types already exist.")
-                    count = seed_session.query(func.count(MessageType.id)).scalar() or 0
-                    standalone_logger.info(
-                        f"MessageType seeding OK. Total types: {count}"
+                try:
+                    with messages_file.open("r", encoding="utf-8") as f:
+                        messages_data = json.load(f)
+
+                    if isinstance(messages_data, dict):
+                        # Use transaction context manager for seeding
+                        with db_transn(seed_session) as sess:
+                            existing_types = {
+                                t.type_name
+                                for t in sess.query(MessageType.type_name).all()
+                            }
+                            types_to_add = []
+                            for name in messages_data:
+                                if name not in existing_types:
+                                    types_to_add.append(MessageType(type_name=name))
+                            if types_to_add:
+                                sess.add_all(types_to_add)
+                                standalone_logger.debug(
+                                    f"Added {len(types_to_add)} new message types to session."
+                                )
+                            else:
+                                standalone_logger.debug(
+                                    "All message types from messages.json already exist in DB."
+                                )
+                        # Query count after commit (implicit in db_transn exit)
+                        final_count = (
+                            seed_session.query(func.count(MessageType.id)).scalar() or 0
+                        )
+                        standalone_logger.info(
+                            f"MessageType seeding/verification complete. Total types in DB: {final_count}"
+                        )
+                    else:
+                        standalone_logger.error(
+                            f"'{messages_file.name}' has incorrect format (expected dictionary)."
+                        )
+                except json.JSONDecodeError as json_err:
+                    standalone_logger.error(
+                        f"Error decoding '{messages_file.name}': {json_err}"
                     )
-                else:
-                    standalone_logger.error("'messages.json' incorrect format.")
+                except Exception as file_read_err:
+                    standalone_logger.error(
+                        f"Error reading '{messages_file.name}': {file_read_err}",
+                        exc_info=True,
+                    )
             else:
-                standalone_logger.warning(f"'messages.json' not found.")
+                standalone_logger.warning(
+                    f"'{messages_file.name}' not found at {messages_file}. Cannot seed MessageTypes."
+                )
         except Exception as seed_err:
             standalone_logger.error(
-                f"Error seeding MessageType: {seed_err}", exc_info=True
+                f"Error during MessageType seeding process: {seed_err}", exc_info=True
             )
         finally:
             if seed_session:
-                seed_session.close()
+                try:
+                    seed_session.close()  # Ensure session is closed
+                    standalone_logger.debug("Seed session closed.")
+                except Exception as close_err:
+                    standalone_logger.warning(
+                        f"Error closing seed session: {close_err}"
+                    )
     except Exception as e:
-        standalone_logger.critical(f"Unexpected error during setup: {e}", exc_info=True)
+        standalone_logger.critical(
+            f"CRITICAL error during standalone database setup: {e}", exc_info=True
+        )
     finally:
         if engine:
-            engine.dispose()
-            standalone_logger.debug("SQLAlchemy engine disposed.")
+            try:
+                engine.dispose()  # Dispose engine pool
+                standalone_logger.debug("SQLAlchemy engine disposed.")
+            except Exception as dispose_e:
+                standalone_logger.error(f"Error disposing engine: {dispose_e}")
         standalone_logger.info("--- Database.py standalone test finished ---")
-        sys.exit(0)
-# End of database.py
+        # sys.exit(0) # Keep commented out unless you specifically want to exit after standalone run
