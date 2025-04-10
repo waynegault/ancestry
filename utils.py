@@ -574,24 +574,31 @@ def time_wait(wait_description):
 # Rate Limiting (Used by all scripts)
 # ------------------------------
 
+
 class DynamicRateLimiter:
-    """Implements dynamic rate limiting with exponential backoff and jitter."""
+    """
+    V2: Implements rate limiting using a token bucket algorithm combined with
+    dynamic backoff based on throttling feedback.
+    """
 
     def __init__(
         self,
         initial_delay=None,
-        MAX_DELAY=None,
+        max_delay=None,
         backoff_factor=None,
-        decrease_factor=None,  # ADDED decrease_factor to init
+        decrease_factor=None,
+        token_capacity=None,
+        token_fill_rate=None,
         config_instance=config_instance,  # Pass config instance for defaults
     ):
         """
-        Initializes the rate limiter using config_instance defaults if not provided.
+        Initializes the rate limiter with token bucket and dynamic delay parameters.
         """
+        # Dynamic Delay Parameters (for sleep when token is available or backing off)
         self.initial_delay = (
             config_instance.INITIAL_DELAY if initial_delay is None else initial_delay
         )
-        self.MAX_DELAY = config_instance.MAX_DELAY if MAX_DELAY is None else MAX_DELAY
+        self.MAX_DELAY = config_instance.MAX_DELAY if max_delay is None else max_delay
         self.backoff_factor = (
             config_instance.BACKOFF_FACTOR if backoff_factor is None else backoff_factor
         )
@@ -600,68 +607,141 @@ class DynamicRateLimiter:
             if decrease_factor is None
             else decrease_factor
         )
-        self.current_delay = self.initial_delay
-        self.last_throttled = False
-        # Log initial values
-        # logger.debug(f"RateLimiter init: Initial={self.initial_delay:.2f}, Max={self.MAX_DELAY:.2f}, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}")
-    # end of __int__
+        self.current_delay = self.initial_delay  # Base sleep time when token available
+        self.last_throttled = False  # Flag if last action caused throttling
 
-    def wait(self):
-        """Wait for a dynamic delay based on rate-limiting conditions."""
-        jitter = random.uniform(0.8, 1.2)  # ±20% jitter
-        effective_delay = min(self.current_delay * jitter, self.MAX_DELAY)
-        # Ensure delay is not negative or extremely small
-        effective_delay = max(0.01, effective_delay)
-        time.sleep(effective_delay)
-        return effective_delay
-    # End of wait
+        # Token Bucket Parameters
+        self.capacity = float(
+            config_instance.TOKEN_BUCKET_CAPACITY
+            if token_capacity is None
+            else token_capacity
+        )
+        self.fill_rate = float(
+            config_instance.TOKEN_BUCKET_FILL_RATE
+            if token_fill_rate is None
+            else token_fill_rate
+        )
+        # Ensure fill_rate is positive to avoid division by zero or infinite waits
+        if self.fill_rate <= 0:
+            logger.warning(
+                f"Token fill rate ({self.fill_rate}) must be positive. Setting to 1.0."
+            )
+            self.fill_rate = 1.0
+        self.tokens = float(self.capacity)  # Start with a full bucket
+        self.last_refill_time = time.monotonic()  # Use monotonic clock
+
+        logger.debug(
+            f"RateLimiter V2 Init: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, "
+            f"InitialDelay={self.initial_delay:.2f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
+        )
+
+    def _refill_tokens(self):
+        """Refills tokens based on elapsed time."""
+        now = time.monotonic()
+        elapsed = max(
+            0, now - self.last_refill_time
+        )  # Ensure non-negative elapsed time
+        tokens_to_add = elapsed * self.fill_rate
+        self.tokens = min(self.capacity, self.tokens + tokens_to_add)
+        self.last_refill_time = now
+        # logger.debug(f"Refilled tokens. Current: {self.tokens:.2f}/{self.capacity:.1f} (Added: {tokens_to_add:.2f})") # Can be verbose
+
+    def wait(self) -> float:
+        """
+        Waits if necessary based on token availability and dynamic delay.
+        Consumes a token if available, otherwise waits for one.
+        Returns the actual time slept.
+        """
+        self._refill_tokens()
+        requested_at = time.monotonic()
+        sleep_duration = 0.0
+
+        if self.tokens >= 1.0:
+            # Consume a token
+            self.tokens -= 1.0
+            # Apply dynamic delay (base sleep) + jitter, even if token available
+            jitter = random.uniform(0.8, 1.2)  # Standard +/- 20% jitter
+            base_sleep = self.current_delay
+            sleep_duration = min(base_sleep * jitter, self.MAX_DELAY)
+            sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
+            logger.debug(
+                f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
+            )
+        else:
+            # Wait for a token
+            wait_needed = (1.0 - self.tokens) / self.fill_rate
+            # Add jitter to the token wait time itself
+            jitter = random.uniform(0.0, 0.2)  # Smaller positive jitter for token wait
+            sleep_duration = wait_needed + jitter
+            sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait
+            sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
+            logger.debug(
+                f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
+            )
+
+        # Perform the sleep
+        if sleep_duration > 0:
+            time.sleep(sleep_duration)
+
+        # Refill tokens *after* sleeping to account for the wait time
+        self._refill_tokens()
+
+        # Consume the token *after* waiting if we had to wait
+        if (
+            requested_at == self.last_refill_time
+        ):  # Check if we had to wait (i.e. tokens < 1 before)
+            if self.tokens >= 1.0:
+                self.tokens -= 1.0
+                logger.debug(
+                    f"Consumed token after waiting. Tokens left: {self.tokens:.2f}"
+                )
+            else:
+                # This case should be rare if wait calculation is correct, but handle it.
+                logger.warning(
+                    f"Waited for token, but still < 1 ({self.tokens:.2f}) after refill. Consuming fraction."
+                )
+                self.tokens = 0.0  # Consume whatever fraction was refilled
+
+        return sleep_duration
 
     def reset_delay(self):
-        """Resets the delay to the initial value."""
-        if self.current_delay != self.initial_delay:  # Only log if changed
+        """Resets the dynamic component of the delay to the initial value."""
+        if self.current_delay != self.initial_delay:
             self.current_delay = self.initial_delay
             logger.info(
-                f"Rate limiter delay reset to initial value: {self.initial_delay:.2f}s"
+                f"Rate limiter base delay reset to initial: {self.initial_delay:.2f}s"
             )
-    # End of reset_delay
+        self.last_throttled = False  # Also reset throttle flag on manual reset
 
     def decrease_delay(self):
-        """Gradually reduce the delay when no rate limits are detected."""
-        if (
-            not self.last_throttled and self.current_delay > self.initial_delay
-        ):  # Check last_throttled flag
+        """Gradually reduce the dynamic component of the delay."""
+        if not self.last_throttled and self.current_delay > self.initial_delay:
             previous_delay = self.current_delay
             self.current_delay = max(
                 self.current_delay * self.decrease_factor, self.initial_delay
             )
-            # Log only if delay actually changed significantly
             if abs(previous_delay - self.current_delay) > 0.01:
                 logger.debug(
-                    f"No rate limit detected. Decreased delay to {self.current_delay:.2f} seconds."
+                    f"Decreased base delay component to {self.current_delay:.2f}s"
                 )
-        self.last_throttled = False  # Reset flag after decrease attempt
-    # End of decrease_delay
+        self.last_throttled = False  # Reset flag after successful action
 
     def increase_delay(self):
-        """Increase the delay exponentially when a rate limit is detected."""
-        if (
-            not self.last_throttled
-        ):  # Only increase if not already throttled in last cycle
-            previous_delay = self.current_delay
-            self.current_delay = min(
-                self.current_delay * self.backoff_factor, self.MAX_DELAY
-            )
-            logger.info(  # Use INFO for increase as it's significant
-                f"Rate limit detected. Increased delay from {previous_delay:.2f}s to {self.current_delay:.2f} seconds."
-            )
-            self.last_throttled = True
-        # else: logger.debug("Already throttled, delay remains high.")
-    # End of increase_delay
+        """Increase the dynamic component of the delay exponentially on throttling."""
+        # Increase delay regardless of last_throttled state, as multiple throttles can occur
+        previous_delay = self.current_delay
+        self.current_delay = min(
+            self.current_delay * self.backoff_factor, self.MAX_DELAY
+        )
+        logger.info(  # Log increase as INFO
+            f"Rate limit detected (429). Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s"
+        )
+        self.last_throttled = True  # Set flag indicating throttling occurred
 
-    def is_throttled(self):
-        """Returns True if the rate limiter is currently in a throttled state."""
+    def is_throttled(self) -> bool:
+        """Returns True if the last action resulted in throttling feedback."""
         return self.last_throttled
-    # End of is_throttled
+#
 # end of class DynamicRateLimiter
 
 

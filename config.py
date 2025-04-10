@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # config.py
+# V14.34: Added Token Bucket configuration options.
 
 import os
 import logging
@@ -106,10 +107,10 @@ class Config_Class(BaseConfig):
     """Main configuration class loading settings."""
 
     # --- Constants / Fixed Settings ---
-    INITIAL_DELAY: float = 0.5
-    MAX_DELAY: float = 60.0
-    BACKOFF_FACTOR: float = 1.8
-    DECREASE_FACTOR: float = 0.98
+    INITIAL_DELAY: float = 0.5  # Base delay when not waiting for tokens
+    MAX_DELAY: float = 60.0  # Max sleep time in any case
+    BACKOFF_FACTOR: float = 1.8  # Multiplier for base delay on throttling
+    DECREASE_FACTOR: float = 0.98  # Multiplier to decrease base delay
     LOG_LEVEL: str = "INFO"
     RETRY_STATUS_CODES: Tuple[int, ...] = (429, 500, 502, 503, 504)
     DB_POOL_SIZE = 10
@@ -120,9 +121,13 @@ class Config_Class(BaseConfig):
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     ]
 
-    # --- AI Context Control Defaults (Added) ---
+    # --- AI Context Control Defaults ---
     AI_CONTEXT_MESSAGES_COUNT: int = 7
     AI_CONTEXT_MESSAGE_MAX_WORDS: int = 500
+
+    # --- Token Bucket Defaults (Added) ---
+    TOKEN_BUCKET_CAPACITY: float = 10.0  # Allow bursting up to 10 requests
+    TOKEN_BUCKET_FILL_RATE: float = 2.0  # Add 2 tokens per second (avg rate limit)
 
     def __init__(self):
         self._load_values()
@@ -177,13 +182,28 @@ class Config_Class(BaseConfig):
         self.DB_POOL_SIZE: int = self._get_int_env("DB_POOL_SIZE", self.DB_POOL_SIZE)
         # === Caching ===
         self.CACHE_TIMEOUT: int = self._get_int_env("CACHE_TIMEOUT", 3600)
-        # --- Rate Limiter Values ---
+
+        # --- Load Rate Limiter Values (including Token Bucket) ---
         self.INITIAL_DELAY = self._get_float_env("INITIAL_DELAY", self.INITIAL_DELAY)
         self.MAX_DELAY = self._get_float_env("MAX_DELAY", self.MAX_DELAY)
         self.BACKOFF_FACTOR = self._get_float_env("BACKOFF_FACTOR", self.BACKOFF_FACTOR)
         self.DECREASE_FACTOR = self._get_float_env(
             "DECREASE_FACTOR", self.DECREASE_FACTOR
         )
+        self.TOKEN_BUCKET_CAPACITY = self._get_float_env(
+            "TOKEN_BUCKET_CAPACITY", self.TOKEN_BUCKET_CAPACITY
+        )
+        self.TOKEN_BUCKET_FILL_RATE = self._get_float_env(
+            "TOKEN_BUCKET_FILL_RATE", self.TOKEN_BUCKET_FILL_RATE
+        )
+        # Log the loaded rate limiter values
+        logger.info(
+            f"Rate Limiter: InitialDelay={self.INITIAL_DELAY:.2f}s, BackoffFactor={self.BACKOFF_FACTOR:.2f}, DecreaseFactor={self.DECREASE_FACTOR:.2f}"
+        )
+        logger.info(
+            f"Token Bucket: Capacity={self.TOKEN_BUCKET_CAPACITY:.1f}, FillRate={self.TOKEN_BUCKET_FILL_RATE:.1f}/sec"
+        )
+
         # --- RETRY_STATUS_CODES ---
         retry_codes_env = self._get_json_env(
             "RETRY_STATUS_CODES", self.RETRY_STATUS_CODES
@@ -237,6 +257,7 @@ class Config_Class(BaseConfig):
         parsed_base_url = urlparse(self.BASE_URL)
         origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
         self.API_CONTEXTUAL_HEADERS: Dict[str, Dict[str, Optional[str]]] = {
+            # ... (Existing contextual headers remain unchanged) ...
             "CSRF Token API": {
                 "Accept": "application/json",
                 "Referer": urljoin(self.BASE_URL, "/discoveryui-matches/list/"),
