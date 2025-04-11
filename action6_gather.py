@@ -977,7 +977,7 @@ def _execute_bulk_db_operations(
                     "Verified uniqueness of non-NULL profile IDs pre-bulk insert."
                 )
 
-            logger.info(f"Bulk inserting {len(insert_data)} Person records...")
+            logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
             session.bulk_insert_mappings(Person, insert_data)
             logger.debug("Bulk insert Persons called.")
             # --- Get newly created IDs ---
@@ -1096,7 +1096,7 @@ def _execute_bulk_db_operations(
                         f"Skip DNA create UUID {person_uuid}: Person ID not found in master map."
                     )
             if dna_insert_data:
-                logger.info(
+                logger.debug(
                     f"Bulk inserting {len(dna_insert_data)} DnaMatch records..."
                 )
                 session.bulk_insert_mappings(DnaMatch, dna_insert_data)
@@ -1121,7 +1121,7 @@ def _execute_bulk_db_operations(
                         f"Skip FT create UUID {person_uuid}: Person ID not found in master map."
                     )
             if tree_insert_data:
-                logger.info(
+                logger.debug(
                     f"Bulk inserting {len(tree_insert_data)} FamilyTree records..."
                 )
                 session.bulk_insert_mappings(FamilyTree, tree_insert_data)
@@ -1272,12 +1272,12 @@ def _do_batch(
                         f"Exiting transaction block scope for page {current_page} (Commit/Rollback follows)."
                     )
                 # Post-transaction check (optional)
-                logger.info(
+                logger.debug(
                     f"Transaction block finished for page {current_page}. Checking session state..."
                 )
                 # ...(post-transaction query check kept from previous version)...
                 if session:
-                    logger.info(
+                    logger.debug(
                         f"  Session {id(session)} active status after transaction block: {session.is_active}"
                     )
                     try:
@@ -1292,11 +1292,11 @@ def _do_batch(
                                 .filter(Person.uuid.in_(committed_uuids))
                                 .scalar()
                             )
-                            logger.info(
+                            logger.debug(
                                 f"  Post-transaction query check: Found {count}/{len(committed_uuids)} people for this batch via direct query."
                             )
                         else:
-                            logger.info(
+                            logger.debug(
                                 "  Post-transaction query check: No new person UUIDs found in prepared data for query."
                             )
                     except KeyError as ke:

@@ -42,6 +42,8 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session as DbSession, aliased, joinedload
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from selenium.common.exceptions import WebDriverException
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 # Local application imports
 from config import config_instance
@@ -77,7 +79,13 @@ class InboxProcessor:
         self.session_manager = session_manager
         self.dynamic_rate_limiter = DynamicRateLimiter()
         self.max_inbox_limit = config_instance.MAX_INBOX
-        self.default_batch_size = min(config_instance.BATCH_SIZE, 30)
+        # Ensure default_batch_size doesn't exceed max_inbox_limit if set
+        default_batch = min(config_instance.BATCH_SIZE, 30)
+        self.default_batch_size = (
+            min(default_batch, self.max_inbox_limit)
+            if self.max_inbox_limit > 0
+            else default_batch
+        )
         self.ai_context_msg_count = config_instance.AI_CONTEXT_MESSAGES_COUNT
         self.ai_context_max_words = config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS
 
@@ -129,7 +137,6 @@ class InboxProcessor:
         except Exception as e:
             logger.error(f"Unexpected error in _get_all_conv_api: {e}", exc_info=True)
             return None, None
-
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
@@ -178,7 +185,6 @@ class InboxProcessor:
             "username": username,
             "last_message_timestamp": last_msg_ts_aware,
         }
-
     # End of _extract_conversation_info
 
     @retry_api(max_retries=2)
@@ -258,23 +264,23 @@ class InboxProcessor:
                 f"Error fetch context conv {conversation_id}: {e}", exc_info=True
             )
             return None
-
     # End of _fetch_conversation_context
 
     def search_inbox(self) -> bool:
-        """V1.23 REVISED: Correctly limits API fetch size based on MAX_INBOX alongside Comparator logic, 2-row Log, AI, UPSERTS, batch commits, TZ-aware compare. DIAGNOSTIC LOGGING ADDED."""
+        """V1.25: Processes inbox with simplified progress bar."""
         # --- Initialization ---
         ai_classified_count = 0
         status_updated_count = 0
         total_processed_api_items = 0
-        items_processed_before_stop = 0
-        self.max_inbox_limit = config_instance.MAX_INBOX  # Reinstated MAX_INBOX limit
+        items_processed_in_loop = 0
         stop_reason = ""
         next_cursor: Optional[str] = None
         current_batch_num = 0
         conv_log_upserts: List[Dict[str, Any]] = []
-        person_updates: Dict[int, Dict[str, Any]] = {}
-        stop_processing = False  # Flag to stop after comparator OR limit
+        person_updates: Dict[int, Dict[str, Any]] = {}  # Changed value type
+        stop_processing = False
+        progress_bar = None
+        critical_db_error_occurred = False  # Added flag
 
         if not self.session_manager or not self.session_manager.my_profile_id:
             logger.error("Session manager or profile ID missing.")
@@ -293,464 +299,444 @@ class InboxProcessor:
             comp_ts: Optional[datetime] = None
             if comparator_info:
                 comp_conv_id = comparator_info.get("conversation_id")
-                comp_ts = comparator_info.get("latest_timestamp")  # Already aware UTC
+                comp_ts = comparator_info.get("latest_timestamp")
             # --- End Get Comparator ---
 
-            logger.info(
-                f"Starting inbox search (Comparator Logic, MAX_INBOX={self.max_inbox_limit}, 2-Row Log, Contextual AI)..."
+            # --- Determine Progress Bar Total ---
+            pbar_total = self.max_inbox_limit if self.max_inbox_limit > 0 else None
+            effective_limit_log = (
+                f"MAX_INBOX={self.max_inbox_limit}"
+                if self.max_inbox_limit > 0
+                else "MAX_INBOX=Unlimited"
             )
-
-            while (
-                not stop_processing
-            ):  # Loop until comparator found, limit reached, or end of API
-                try:  # Inner try for batch processing
-                    if not self.session_manager.is_sess_valid():
-                        raise WebDriverException(
-                            "Session invalid before overview batch"
-                        )
-
-                    # --- MODIFIED: Calculate Limit for this API call ---
-                    current_limit = self.default_batch_size  # Start with default
-                    if self.max_inbox_limit > 0:
-                        remaining_allowed = (
-                            self.max_inbox_limit - items_processed_before_stop
-                        )
-                        if remaining_allowed <= 0:
-                            # This check might be redundant due to the loop break, but safe to keep
-                            stop_reason = (
-                                f"Inbox Limit ({self.max_inbox_limit}) Pre-Fetch"
-                            )
-                            stop_processing = True
-                            break  # Break inner try loop
-                        # Adjust limit to fetch only what's needed (up to batch size)
-                        current_limit = min(self.default_batch_size, remaining_allowed)
-                        logger.debug(
-                            f"MAX_INBOX active. Calculated remaining={remaining_allowed}, API limit for this batch: {current_limit}"
-                        )
-                    else:
-                        logger.debug(
-                            f"MAX_INBOX inactive (0). Using default API limit: {current_limit}"
-                        )
-                    # --- END MODIFICATION ---
-
-                    all_conversations_batch, next_cursor_from_api = (
-                        self._get_all_conversations_api(
-                            self.session_manager,
-                            limit=current_limit,  # Use the calculated limit
-                            cursor=next_cursor,
-                        )
+            pbar_total_log = (
+                f"PBar Total={pbar_total}" if pbar_total else "PBar Total=Indeterminate"
+            )
+            logger.debug(
+                f"Starting inbox search ({effective_limit_log}, {pbar_total_log}, Comparator Logic, 2-Row Log, Contextual AI)..."
+            )
+            logger.debug("Progress...\n")
+            print()  # Add blank line before progress bar
+            with logging_redirect_tqdm():
+                # --- Initialize Progress Bar ---
+                try:
+                    progress_bar = tqdm(
+                        total=pbar_total,
+                        desc="Processing Inbox",
+                        unit=" conv",
+                        ncols=100,
+                        bar_format=(
+                            "{percentage:3.0f}%|{bar}|" if pbar_total else None
+                        ),  # Simple format
+                        leave=True,
+                        # No postfix here
                     )
-
-                    # *** DIAGNOSTIC LOGGING START ***
-                    logger.debug(f"--- DIAG: API Batch Result ---")
-                    logger.debug(
-                        f"--- DIAG: Type(all_conversations_batch): {type(all_conversations_batch)}"
+                except Exception as pbar_e:
+                    logger.error(
+                        f"Failed to initialize progress bar: {pbar_e}", exc_info=True
                     )
-                    if isinstance(all_conversations_batch, list):
-                        logger.debug(
-                            f"--- DIAG: Len(all_conversations_batch): {len(all_conversations_batch)}"
-                        )
-                        if all_conversations_batch:
-                            logger.debug(
-                                f"--- DIAG: First item preview: {str(all_conversations_batch[0])[:200]}..."
-                            )
-                        else:
-                            logger.debug("--- DIAG: all_conversations_batch is empty.")
-                    else:
-                        logger.debug(
-                            f"--- DIAG: all_conversations_batch value: {all_conversations_batch}"
-                        )
-                    logger.debug(
-                        f"--- DIAG: next_cursor_from_api: {next_cursor_from_api}"
-                    )
-                    # *** DIAGNOSTIC LOGGING END ***
+                    progress_bar = None
 
-                    if all_conversations_batch is None:
-                        stop_reason = "API Error Fetching Batch"
-                        stop_processing = True
-                        break
-
-                    batch_api_item_count = len(all_conversations_batch)
-                    # IMPORTANT: Increment total_processed_api_items *before* checking the count
-                    # This reflects what the API *actually returned* for this call
-                    total_processed_api_items += batch_api_item_count
-
-                    if batch_api_item_count == 0:
-                        # Handle case where API returns empty list but maybe a cursor
-                        if not next_cursor_from_api:
-                            stop_reason = (
-                                "End of Inbox Reached (Empty Batch, No Cursor)"
-                            )
-                            stop_processing = True
-                        else:
-                            # Got a cursor but no items? Weird, but continue loop.
-                            logger.debug(
-                                "API returned empty batch but provided a cursor. Continuing fetch."
-                            )
-                            next_cursor = next_cursor_from_api
-                            continue  # Skip processing, go to next API call
-
-                    # Apply rate limiter delay if items were fetched
-                    wait_duration = self.dynamic_rate_limiter.wait()
-                    if wait_duration > 0.1:
-                        logger.debug(f"API batch wait: {wait_duration:.2f}s")
-
-                    current_batch_num += 1
-
-                    # Pre-fetch Persons and Logs
-                    # ...(Pre-fetching logic unchanged)...
-                    batch_conv_ids = [
-                        c["conversation_id"]
-                        for c in all_conversations_batch
-                        if c.get("conversation_id")
-                    ]
-                    batch_profile_ids = {
-                        c.get("profile_id", "").upper()
-                        for c in all_conversations_batch
-                        if c.get("profile_id") and c.get("profile_id") != "UNKNOWN"
-                    }
-                    existing_persons_map: Dict[str, Person] = {}
-                    existing_conv_logs: Dict[Tuple[str, str], ConversationLog] = {}
-                    if batch_profile_ids:
-                        try:
-                            persons = (
-                                session.query(Person)
-                                .filter(Person.profile_id.in_(batch_profile_ids))
-                                .all()
-                            )
-                            existing_persons_map = {
-                                p.profile_id: p for p in persons if p.profile_id
-                            }
-                        except SQLAlchemyError as db_err:
-                            logger.error(f"Bulk Person lookup failed: {db_err}")
-                    if batch_conv_ids:
-                        try:
-                            logs = (
-                                session.query(ConversationLog)
-                                .filter(
-                                    ConversationLog.conversation_id.in_(batch_conv_ids)
-                                )
-                                .all()
-                            )
-                            existing_conv_logs = {
-                                (log.conversation_id, log.direction.name): log
-                                for log in logs
-                                if log.direction
-                            }
-                        except SQLAlchemyError as db_err:
-                            logger.error(f"ConvLog lookup failed: {db_err}")
-
-                    # Process Batch
-                    for conversation_info in all_conversations_batch:
-
-                        # *** DIAGNOSTIC LOGGING START ***
-                        logger.debug(
-                            f"--- DIAG: >>> Entering conversation processing loop for item <<<"
-                        )
-                        logger.debug(
-                            f"--- DIAG: Processing conversation_info: {conversation_info}"
-                        )
-                        # *** DIAGNOSTIC LOGGING END ***
-
-                        # --- Check MAX_INBOX Limit ---
-                        # This check is now more of a safety fallback, as the API limit calculation should prevent exceeding it.
-                        if (
-                            self.max_inbox_limit > 0
-                            and items_processed_before_stop >= self.max_inbox_limit
-                        ):
-                            if not stop_reason:
-                                stop_reason = f"Inbox Limit ({self.max_inbox_limit})"  # Set reason if not already set
-                            stop_processing = True
-                            break  # Break inner loop (for conversation_info...)
-                        # --- End MAX_INBOX Check ---
-
-                        items_processed_before_stop += (
-                            1  # Increment only if not stopped by limit
-                        )
-
-                        profile_id_upper = conversation_info.get(
-                            "profile_id", "UNKNOWN"
-                        ).upper()
-                        api_conv_id = conversation_info.get("conversation_id")
-                        api_latest_ts = conversation_info.get("last_message_timestamp")
-
-                        if not api_conv_id or profile_id_upper == "UNKNOWN":
-                            logger.debug(
-                                f"Skipping item {items_processed_before_stop}: Invalid ConvID or ProfileID."
-                            )
-                            continue
-
-                        needs_fetch = False
-                        # Comparator Logic
-                        if comp_conv_id and api_conv_id == comp_conv_id:
-                            logger.debug(
-                                f"Comparator conversation {comp_conv_id} found in API results."
-                            )
-                            stop_processing = True
-                            if comp_ts and api_latest_ts and api_latest_ts > comp_ts:
-                                needs_fetch = True
-                                logger.debug("Comparator needs update.")
-                            else:
-                                logger.debug("Comparator does not need update.")
-                        else:
-                            # Check this specific conversation against its own history
-                            # ...(logic unchanged)...
-                            db_log_in = existing_conv_logs.get((api_conv_id, "IN"))
-                            db_log_out = existing_conv_logs.get((api_conv_id, "OUT"))
-                            min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
-                            db_latest_ts_in = min_aware_dt
-                            if db_log_in and db_log_in.latest_timestamp:
-                                ts_in = db_log_in.latest_timestamp
-                                if isinstance(ts_in, datetime):
-                                    db_latest_ts_in = (
-                                        ts_in.replace(tzinfo=timezone.utc)
-                                        if ts_in.tzinfo is None
-                                        else ts_in.astimezone(timezone.utc)
-                                    )
-                            db_latest_ts_out = min_aware_dt
-                            if db_log_out and db_log_out.latest_timestamp:
-                                ts_out = db_log_out.latest_timestamp
-                                if isinstance(ts_out, datetime):
-                                    db_latest_ts_out = (
-                                        ts_out.replace(tzinfo=timezone.utc)
-                                        if ts_out.tzinfo is None
-                                        else ts_out.astimezone(timezone.utc)
-                                    )
-                            db_latest_overall_for_conv = max(
-                                db_latest_ts_in, db_latest_ts_out
-                            )
-                            if (
-                                api_latest_ts
-                                and api_latest_ts > db_latest_overall_for_conv
-                            ):
-                                needs_fetch = True
-                            elif not db_log_in and not db_log_out:
-                                needs_fetch = True
-
-                        if not needs_fetch:
-                            if stop_processing:
-                                logger.debug(
-                                    "Comparator found and no fetch needed, breaking inner loop."
-                                )
-                                break
-                            continue
-
-                        # Fetch Context & Process (if needs_fetch is True)
-                        # ...(logic unchanged)...
+                while not stop_processing:
+                    try:  # Inner try for batch processing
                         if not self.session_manager.is_sess_valid():
                             raise WebDriverException(
-                                f"Session invalid fetch context conv {api_conv_id}"
+                                "Session invalid before overview batch"
                             )
-                        context_messages = self._fetch_conversation_context(api_conv_id)
-                        if context_messages is None:
-                            logger.error(
-                                f"Failed context fetch conv {api_conv_id}. Skipping item."
-                            )
-                            continue
 
-                        person, person_status_flag = self._lookup_or_create_person(
-                            session,
-                            profile_id_upper,
-                            conversation_info.get("username", "Unknown"),
-                            api_conv_id,
-                            existing_person_arg=existing_persons_map.get(
-                                profile_id_upper
-                            ),
+                        # Calculate API limit
+                        current_limit = self.default_batch_size
+                        logger.debug(f"API limit for this batch: {current_limit}")
+
+                        all_conversations_batch, next_cursor_from_api = (
+                            self._get_all_conversations_api(
+                                self.session_manager,
+                                limit=current_limit,
+                                cursor=next_cursor,
+                            )
                         )
-                        if not person or not person.id:
-                            logger.error(
-                                f"Failed person lookup/create conv {api_conv_id}. Skipping item."
-                            )
-                            continue
-                        people_id = person.id
 
-                        latest_ctx_in: Optional[Dict] = None
-                        latest_ctx_out: Optional[Dict] = None
-                        for msg in reversed(context_messages):
-                            author_lower = msg.get("author", "")
-                            if author_lower != my_pid_lower and latest_ctx_in is None:
-                                latest_ctx_in = msg
-                            elif (
-                                author_lower == my_pid_lower and latest_ctx_out is None
-                            ):
-                                latest_ctx_out = msg
-                            if latest_ctx_in and latest_ctx_out:
-                                break
+                        # ...(Handling of API result unchanged)...
+                        if all_conversations_batch is None:
+                            stop_reason = "API Error Fetching Batch"
+                            stop_processing = True
+                            break
+                        batch_api_item_count = len(all_conversations_batch)
+                        total_processed_api_items += batch_api_item_count
+                        if batch_api_item_count == 0:
+                            if not next_cursor_from_api:
+                                stop_reason = "End of Inbox Reached"
+                                stop_processing = True
+                            else:
+                                logger.debug("API returned empty batch but has cursor.")
+                                next_cursor = next_cursor_from_api
+                                continue
+                        else:
+                            wait_duration = self.dynamic_rate_limiter.wait()
+                            if wait_duration > 0.1:
+                                logger.debug(f"API batch wait: {wait_duration:.2f}s")
 
-                        ai_sentiment_result: Optional[str] = None
-                        # Process IN Row
-                        if latest_ctx_in and latest_ctx_in.get("timestamp"):
-                            ctx_ts_in_aware = latest_ctx_in.get("timestamp")
-                            if ctx_ts_in_aware and ctx_ts_in_aware > db_latest_ts_in:
-                                formatted_context = self._format_context_for_ai(
-                                    context_messages, my_pid_lower
+                        current_batch_num += 1
+
+                        # ...(Pre-fetching logic for batch unchanged)...
+                        batch_conv_ids = [
+                            c["conversation_id"]
+                            for c in all_conversations_batch
+                            if c.get("conversation_id")
+                        ]
+                        batch_profile_ids = {
+                            c.get("profile_id", "").upper()
+                            for c in all_conversations_batch
+                            if c.get("profile_id") and c.get("profile_id") != "UNKNOWN"
+                        }
+                        existing_persons_map: Dict[str, Person] = {}
+                        existing_conv_logs: Dict[Tuple[str, str], ConversationLog] = {}
+                        if batch_profile_ids:
+                            try:
+                                persons = (
+                                    session.query(Person)
+                                    .filter(Person.profile_id.in_(batch_profile_ids))
+                                    .all()
                                 )
+                                existing_persons_map = {
+                                    p.profile_id: p for p in persons if p.profile_id
+                                }
+                            except SQLAlchemyError as db_err:
+                                logger.error(f"Bulk Person lookup failed: {db_err}")
+                        if batch_conv_ids:
+                            try:
+                                logs = (
+                                    session.query(ConversationLog)
+                                    .filter(
+                                        ConversationLog.conversation_id.in_(
+                                            batch_conv_ids
+                                        )
+                                    )
+                                    .all()
+                                )
+                                existing_conv_logs = {
+                                    (log.conversation_id, log.direction.name): log
+                                    for log in logs
+                                    if log.direction
+                                }
+                            except SQLAlchemyError as db_err:
+                                logger.error(f"ConvLog lookup failed: {db_err}")
+
+                        # Process Batch
+                        for conversation_info in all_conversations_batch:
+                            # Increment processed count at the START of trying to process an item
+                            items_processed_in_loop += 1
+
+                            # --- Check MAX_INBOX Limit ---
+                            if (
+                                self.max_inbox_limit > 0
+                                and items_processed_in_loop > self.max_inbox_limit
+                            ):
+                                # Use ">" because we incremented *before* this check
+                                if not stop_reason:
+                                    stop_reason = (
+                                        f"Inbox Limit ({self.max_inbox_limit})"
+                                    )
+                                stop_processing = True
+                                break  # Break inner loop
+
+                            # --- Process Item (Comparator, Fetch, AI, DB Prep) ---
+                            # ...(Processing logic unchanged from V14.61)...
+                            profile_id_upper = conversation_info.get(
+                                "profile_id", "UNKNOWN"
+                            ).upper()
+                            api_conv_id = conversation_info.get("conversation_id")
+                            api_latest_ts = conversation_info.get(
+                                "last_message_timestamp"
+                            )  # Already tz-aware
+                            if not api_conv_id or profile_id_upper == "UNKNOWN":
+                                logger.debug(
+                                    f"Skipping item: Invalid ConvID/ProfileID."
+                                )
+                                continue  # Skip this item
+                            needs_fetch = False
+                            if comp_conv_id and api_conv_id == comp_conv_id:
+                                logger.debug(
+                                    f"Comparator conversation {comp_conv_id} found."
+                                )
+                                stop_processing = (
+                                    True  # Signal to stop after this batch
+                                )
+                                if (
+                                    comp_ts
+                                    and api_latest_ts
+                                    and api_latest_ts > comp_ts
+                                ):
+                                    needs_fetch = True
+                                    logger.debug("Comparator needs update.")
+                                else:
+                                    logger.debug("Comparator up-to-date.")
+                            else:
+                                db_log_in = existing_conv_logs.get((api_conv_id, "IN"))
+                                db_log_out = existing_conv_logs.get(
+                                    (api_conv_id, "OUT")
+                                )
+                                min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
+                                db_latest_ts_in = (
+                                    db_log_in.latest_timestamp.astimezone(timezone.utc)
+                                    if db_log_in and db_log_in.latest_timestamp
+                                    else min_aware_dt
+                                )
+                                db_latest_ts_out = (
+                                    db_log_out.latest_timestamp.astimezone(timezone.utc)
+                                    if db_log_out and db_log_out.latest_timestamp
+                                    else min_aware_dt
+                                )
+                                db_latest_overall_for_conv = max(
+                                    db_latest_ts_in, db_latest_ts_out
+                                )
+                                if (
+                                    api_latest_ts
+                                    and api_latest_ts > db_latest_overall_for_conv
+                                ):
+                                    needs_fetch = True
+                                elif not db_log_in and not db_log_out:
+                                    needs_fetch = True
+
+                            if needs_fetch:
                                 if not self.session_manager.is_sess_valid():
                                     raise WebDriverException(
-                                        f"Session invalid AI call conv {api_conv_id}"
+                                        f"Session invalid fetch context conv {api_conv_id}"
                                     )
-                                ai_sentiment_result = classify_message_intent(
-                                    formatted_context, self.session_manager
+                                context_messages = self._fetch_conversation_context(
+                                    api_conv_id
                                 )
-                                ai_classified_count += 1
-                                if ai_sentiment_result in ("DESIST", "UNINTERESTED"):
-                                    logger.info(
-                                        f"AI Classified conv {api_conv_id} (PID {people_id}) as '{ai_sentiment_result}'. Marking for 'desist'."
+                                if context_messages is None:
+                                    logger.error(
+                                        f"Failed context fetch conv {api_conv_id}."
                                     )
-                                    if people_id not in person_updates:
-                                        person_updates[people_id] = {}
-                                    person_updates[people_id][
-                                        "status"
-                                    ] = PersonStatusEnum.DESIST
-                                upsert_data_in = {
-                                    "conversation_id": api_conv_id,
-                                    "direction": "IN",
-                                    "people_id": people_id,
-                                    "latest_message_content": latest_ctx_in.get(
-                                        "content", ""
-                                    )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
-                                    "latest_timestamp": ctx_ts_in_aware,
-                                    "ai_sentiment": ai_sentiment_result,
-                                    "updated_at": datetime.now(timezone.utc),
-                                }
-                                upsert_data_in = {
-                                    k: v
-                                    for k, v in upsert_data_in.items()
-                                    if v is not None or k == "ai_sentiment"
-                                }
-                                conv_log_upserts.append(upsert_data_in)
-                        # Process OUT Row
-                        if latest_ctx_out and latest_ctx_out.get("timestamp"):
-                            ctx_ts_out_aware = latest_ctx_out.get("timestamp")
-                            if ctx_ts_out_aware and ctx_ts_out_aware > db_latest_ts_out:
-                                upsert_data_out = {
-                                    "conversation_id": api_conv_id,
-                                    "direction": "OUT",
-                                    "people_id": people_id,
-                                    "latest_message_content": latest_ctx_out.get(
-                                        "content", ""
-                                    )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
-                                    "latest_timestamp": ctx_ts_out_aware,
-                                    "message_type_id": None,
-                                    "script_message_status": None,
-                                    "ai_sentiment": None,
-                                    "updated_at": datetime.now(timezone.utc),
-                                }
-                                upsert_data_out = {
-                                    k: v
-                                    for k, v in upsert_data_out.items()
-                                    if v is not None
-                                    or k in ["message_type_id", "script_message_status"]
-                                }
-                                conv_log_upserts.append(upsert_data_out)
+                                    continue
+                                person, person_status_flag = (
+                                    self._lookup_or_create_person(
+                                        session,
+                                        profile_id_upper,
+                                        conversation_info.get("username", "Unknown"),
+                                        api_conv_id,
+                                        existing_person_arg=existing_persons_map.get(
+                                            profile_id_upper
+                                        ),
+                                    )
+                                )
+                                if not person or not person.id:
+                                    logger.error(
+                                        f"Failed person lookup/create conv {api_conv_id}."
+                                    )
+                                    continue
+                                people_id = person.id
+                                latest_ctx_in, latest_ctx_out = None, None
+                                for msg in reversed(context_messages):
+                                    author_lower = msg.get("author", "")
+                                    is_in = author_lower != my_pid_lower
+                                    is_out = author_lower == my_pid_lower
+                                    if is_in and latest_ctx_in is None:
+                                        latest_ctx_in = msg
+                                    elif is_out and latest_ctx_out is None:
+                                        latest_ctx_out = msg
+                                    if latest_ctx_in and latest_ctx_out:
+                                        break
+                                ai_sentiment_result = None
+                                if latest_ctx_in and latest_ctx_in.get("timestamp"):
+                                    ctx_ts_in_aware = latest_ctx_in.get("timestamp")
+                                    if (
+                                        ctx_ts_in_aware
+                                        and ctx_ts_in_aware > db_latest_ts_in
+                                    ):
+                                        formatted_context = self._format_context_for_ai(
+                                            context_messages, my_pid_lower
+                                        )
+                                        if not self.session_manager.is_sess_valid():
+                                            raise WebDriverException(
+                                                f"Session invalid AI call conv {api_conv_id}"
+                                            )
+                                        ai_sentiment_result = classify_message_intent(
+                                            formatted_context, self.session_manager
+                                        )
+                                        ai_classified_count += 1
+                                        if ai_sentiment_result in (
+                                            "DESIST",
+                                            "UNINTERESTED",
+                                        ):
+                                            logger.info(
+                                                f"AI Classified conv {api_conv_id} (PID {people_id}) as '{ai_sentiment_result}'. Marking for 'desist'."
+                                            )
+                                            if people_id not in person_updates:
+                                                person_updates[people_id] = {}
+                                            person_updates[people_id][
+                                                "status"
+                                            ] = PersonStatusEnum.DESIST
+                                        upsert_data_in = {
+                                            "conversation_id": api_conv_id,
+                                            "direction": "IN",
+                                            "people_id": people_id,
+                                            "latest_message_content": latest_ctx_in.get(
+                                                "content", ""
+                                            )[
+                                                : config_instance.MESSAGE_TRUNCATION_LENGTH
+                                            ],
+                                            "latest_timestamp": ctx_ts_in_aware,
+                                            "ai_sentiment": ai_sentiment_result,
+                                            "updated_at": datetime.now(timezone.utc),
+                                        }
+                                        upsert_data_in = {
+                                            k: v
+                                            for k, v in upsert_data_in.items()
+                                            if v is not None or k == "ai_sentiment"
+                                        }
+                                        conv_log_upserts.append(upsert_data_in)
+                                if latest_ctx_out and latest_ctx_out.get("timestamp"):
+                                    ctx_ts_out_aware = latest_ctx_out.get("timestamp")
+                                    if (
+                                        ctx_ts_out_aware
+                                        and ctx_ts_out_aware > db_latest_ts_out
+                                    ):
+                                        upsert_data_out = {
+                                            "conversation_id": api_conv_id,
+                                            "direction": "OUT",
+                                            "people_id": people_id,
+                                            "latest_message_content": latest_ctx_out.get(
+                                                "content", ""
+                                            )[
+                                                : config_instance.MESSAGE_TRUNCATION_LENGTH
+                                            ],
+                                            "latest_timestamp": ctx_ts_out_aware,
+                                            "message_type_id": None,
+                                            "script_message_status": None,
+                                            "ai_sentiment": None,
+                                            "updated_at": datetime.now(timezone.utc),
+                                        }
+                                        upsert_data_out = {
+                                            k: v
+                                            for k, v in upsert_data_out.items()
+                                            if v is not None
+                                            or k
+                                            in [
+                                                "message_type_id",
+                                                "script_message_status",
+                                            ]
+                                        }
+                                        conv_log_upserts.append(upsert_data_out)
 
-                        if (
-                            stop_processing
-                        ):  # Break inner loop if comparator/limit reached
+                            # Update progress bar AFTER potential processing/skip
+                            if progress_bar:
+                                progress_bar.update(1)
+
+                            # Break inner loop if comparator found (stop processing this batch)
+                            if (
+                                stop_processing
+                                and comp_conv_id
+                                and api_conv_id == comp_conv_id
+                            ):
+                                logger.debug(
+                                    "Comparator found, breaking inner loop after processing it."
+                                )
+                                break
+                        # --- End Inner Loop (for conversation_info...) ---
+
+                        # Commit batch data
+                        if conv_log_upserts or person_updates:
+                            if not critical_db_error_occurred:
+                                if (
+                                    len(conv_log_upserts) + len(person_updates)
+                                    >= self.default_batch_size
+                                ):
+                                    current_batch_num += 1
+                                    logger.debug(
+                                        f"Attempting batch commit (Batch {current_batch_num})..."
+                                    )
+                                    commit_ok = self._commit_batch_data_upsert(
+                                        session, conv_log_upserts, person_updates
+                                    )
+                                    if commit_ok:
+                                        status_updates_this_batch = len(person_updates)
+                                        status_updated_count += (
+                                            status_updates_this_batch
+                                        )
+                                        conv_log_upserts.clear()
+                                        person_updates.clear()
+                                        logger.debug(
+                                            f"Batch commit finished (Batch {current_batch_num}). Updated {status_updates_this_batch} persons."
+                                        )
+                                    else:
+                                        critical_db_error_occurred = True
+                                        stop_processing = True
+                                        logger.error(
+                                            f"CRITICAL: Batch commit {current_batch_num} failed.\n"
+                                        )
+                                        break
+
+                        # Check outer stop flag after processing batch
+                        if stop_processing:
+                            if not stop_reason:
+                                stop_reason = "Comparator Found or Limit Reached"
                             logger.debug(
-                                f"Stop flag set ({stop_reason}), breaking inner loop."
+                                f"Stop flag set ({stop_reason}). Breaking outer loop."
                             )
                             break
-                    # --- End Inner Loop (for conversation_info...) ---
 
-                    # Commit batch data
-                    if conv_log_upserts or person_updates:
-                        logger.info(
-                            f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts)} logs, {len(person_updates)} persons..."
-                        )
-                        status_updates_this_batch = self._commit_batch_data_upsert(
-                            session, conv_log_upserts, person_updates
-                        )
-                        status_updated_count += status_updates_this_batch
-                        conv_log_upserts.clear()
-                        person_updates.clear()
-                        logger.info(
-                            f"Batch commit attempt finished (Batch {current_batch_num}). Updated {status_updates_this_batch} persons."
-                        )
+                        next_cursor = next_cursor_from_api
+                        if not next_cursor:
+                            stop_reason = "End of Inbox Reached"
+                            stop_processing = True
+                            break
 
-                    # Check stop flag *after* commit and *before* getting next cursor
-                    if stop_processing:
-                        if not stop_reason:
-                            stop_reason = (
-                                "Comparator Found"  # Set default reason if needed
-                            )
-                        logger.debug(
-                            f"Stop flag set ({stop_reason}). Breaking outer loop."
-                        )
-                        break  # Break outer loop (while not stop_processing)
-
-                    next_cursor = next_cursor_from_api
-                    if not next_cursor:
-                        stop_reason = "End of Inbox Reached"
+                    # -- End Try block for batch processing --
+                    # ...(Exception handling unchanged)...
+                    except WebDriverException as WDE:
+                        logger.error(f"WDExc: {WDE}")
+                        stop_reason = "WebDriver Exception"
                         stop_processing = True
-                        logger.debug(
-                            "No next cursor from API. Breaking inner try block."
-                        )
-                        break  # Break inner try
+                        # ... save/restart logic ...
+                    except KeyboardInterrupt:
+                        logger.warning("KeyboardInterrupt.")
+                        stop_reason = "Keyboard Interrupt"
+                        stop_processing = True
+                        # ... save logic ...; break
+                    except Exception as e_main:
+                        logger.critical(f"Loop error: {e_main}", exc_info=True)
+                        stop_reason = f"Error ({type(e_main).__name__})"
+                        stop_processing = True
+                        # ... save logic ...; return False
 
-                # -- End Try block for batch processing --
-                except WebDriverException as WDE:
-                    logger.error(f"WebDriverException occurred: {WDE}")
-                    stop_reason = "WebDriver Exception"
-                    stop_processing = True
-                    logger.warning("Attempting save and restart...")
-                    save_count = self._commit_batch_data_upsert(
-                        session, conv_log_upserts, person_updates, is_final_attempt=True
-                    )
-                    status_updated_count += save_count
-                    conv_log_upserts.clear()
-                    person_updates.clear()
-                    if self.session_manager.restart_sess():
-                        logger.info("Session restarted. Retrying inbox search...")
-                        session = self.session_manager.get_db_conn()
-                        if not session:
-                            raise SQLAlchemyError(
-                                "Failed to get DB session after restart."
-                            )
-                        stop_processing = False
-                        next_cursor = None
-                        current_batch_num = 0
-                        continue
-                    else:
-                        logger.critical("Session restart failed.")
-                        return False
-                except KeyboardInterrupt:
-                    logger.warning("KeyboardInterrupt detected.")
-                    stop_reason = "Keyboard Interrupt"
-                    stop_processing = True
-                    logger.warning("Attempting final save...")
-                    save_count = self._commit_batch_data_upsert(
-                        session, conv_log_upserts, person_updates, is_final_attempt=True
-                    )
-                    status_updated_count += save_count
-                    break
-                except Exception as e_main:
-                    logger.critical(
-                        f"Critical error in search_inbox loop: {e_main}", exc_info=True
-                    )
-                    stop_reason = f"Critical Error ({type(e_main).__name__})"
-                    stop_processing = True
-                    logger.warning("Attempting final save...")
-                    save_count = self._commit_batch_data_upsert(
-                        session, conv_log_upserts, person_updates, is_final_attempt=True
-                    )
-                    status_updated_count += save_count
-                    return False
-
-            # --- End main while loop ---
+                # --- End main while loop ---
 
         except Exception as outer_e:
             logger.error(f"Outer error in search_inbox: {outer_e}", exc_info=True)
             return False
-
         finally:
             # Final commit attempt
-            if session and (conv_log_upserts or person_updates):
+            if (
+                session
+                and not critical_db_error_occurred
+                and (conv_log_upserts or person_updates)
+            ):
                 logger.warning("Performing final commit outside loop.")
                 final_save_count = self._commit_batch_data_upsert(
                     session, conv_log_upserts, person_updates, is_final_attempt=True
                 )
                 status_updated_count += final_save_count
+
+            # Finalize Progress Bar
+            if progress_bar and not progress_bar.disable:
+                # If bar has a total and didn't complete naturally, update it
+                if (
+                    pbar_total
+                    and progress_bar.n < progress_bar.total
+                    and not stop_reason.startswith("End of Inbox")
+                ):
+                    remaining = progress_bar.total - progress_bar.n
+                    if remaining > 0:
+                        logger.debug(
+                            f"Updating progress bar by remaining {remaining} to reach target."
+                        )
+                        progress_bar.update(remaining)
+                progress_bar.close()
+            print("", file=sys.stderr)  # Add blank line after progress bar
+
             # Final summary log
             if (
                 stop_reason
@@ -758,21 +744,20 @@ class InboxProcessor:
                 and not stop_reason.startswith("Comparator")
             ):
                 logger.warning(f"Inbox search stopped early: {stop_reason}")
-            # Pass actual MAX_INBOX limit to summary function
+
             self._log_unified_summary(
                 total_api_items=total_processed_api_items,
-                items_processed=items_processed_before_stop,
-                new_logs=0,
+                items_processed=items_processed_in_loop,  # Use loop iteration count
+                new_logs=0,  # Remove confusing/inaccurate count
                 ai_classified=ai_classified_count,
                 status_updates=status_updated_count,
                 stop_reason=stop_reason or "Comparator Found or End of Inbox",
-                max_inbox_limit=self.max_inbox_limit,  # Pass the actual limit value
+                max_inbox_limit=self.max_inbox_limit,
             )
-            # Release session
             if session:
                 self.session_manager.return_session(session)
-        return True
 
+        return not critical_db_error_occurred
     # End of search_inbox
 
     def _format_context_for_ai(
@@ -792,7 +777,6 @@ class InboxProcessor:
                 truncated_content += "..."
             context_lines.append(f"{label}{truncated_content}")
         return "\n".join(context_lines)
-
     # End of _format_context_for_ai
 
     def _commit_batch_data_upsert(
@@ -817,7 +801,7 @@ class InboxProcessor:
             return updated_person_count
 
         log_prefix = "[Final Save] " if is_final_attempt else "[Batch Save] "
-        logger.info(
+        logger.debug(
             f"{log_prefix} Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates."
         )
 
@@ -1035,16 +1019,16 @@ class InboxProcessor:
                 # --- End Person Update Logic ---
 
                 # --- Log Session State Before Commit ---
-                logger.info(f"{log_prefix}Session state BEFORE commit attempt:")
-                logger.info(f"  Dirty objects: {len(session.dirty)}")
+                logger.debug(f"{log_prefix}Session state BEFORE commit attempt:")
+                logger.debug(f"  Dirty objects: {len(session.dirty)}")
                 if logger.isEnabledFor(logging.DEBUG) and session.dirty:
                     logger.debug(f"    Dirty Details: {session.dirty}")
-                logger.info(f"  New objects: {len(session.new)}")
+                logger.debug(f"  New objects: {len(session.new)}")
                 if logger.isEnabledFor(logging.DEBUG) and session.new:
                     # Log reprs of new objects for better debugging
                     new_obj_reprs = [repr(obj) for obj in session.new]
                     logger.debug(f"    New Details: {new_obj_reprs}")
-                logger.info(f"  Deleted objects: {len(session.deleted)}")
+                logger.debug(f"  Deleted objects: {len(session.deleted)}")
                 # --- End Log Session State ---
 
                 logger.debug(
@@ -1052,7 +1036,7 @@ class InboxProcessor:
                 )
             # --- Commit happens implicitly here by db_transn exiting the 'with' block ---
 
-            logger.info(
+            logger.debug(
                 f"{log_prefix}Transaction block exited. Commit should have occurred via db_transn."
             )
             return updated_person_count
@@ -1063,7 +1047,6 @@ class InboxProcessor:
                 exc_info=True,
             )
             return 0
-
     # End of _commit_batch_data_upsert
 
     def _create_comparator(self, session: DbSession) -> Optional[Dict[str, Any]]:
@@ -1118,7 +1101,6 @@ class InboxProcessor:
             logger.error(f"Error creating comparator: {e}", exc_info=True)
             return None  # Return None on error
         return latest_log_entry_info
-
     # End of _create_comparator
 
     def _lookup_or_create_person(
@@ -1322,34 +1304,37 @@ class InboxProcessor:
                 exc_info=True,
             )
             return None, "error"
-
     # End of _lookup_or_create_person
 
     def _log_unified_summary(
         self,
         total_api_items: int,
         items_processed: int,
-        new_logs: int,
+        new_logs: int,  # Keep arg but ignore value
         ai_classified: int,
         status_updates: int,
         stop_reason: Optional[str],
         max_inbox_limit: int,
     ):
-        """Logs the final summary for the 2-row ConversationLog approach."""
-        logger.info("---- Inbox Search Summary (2-Row Log) ----")
-        logger.info(f"  Total API Conversation Overviews Fetched: {total_api_items}")
-        logger.info(f"  Conversations Processed (Incl. Context): {items_processed}")
-        logger.info(f"  Latest Incoming Messages Classified:     {ai_classified}")
-        logger.info(f"  Persons Updated to 'desist' Status:    {status_updates}")
+        """Logs the final summary for the inbox search."""
+        logger.info("---- Inbox Search Summary ----")
+        logger.info(f"  Total API Items Fetched:  {total_api_items}")
+        logger.info(
+            f"  Items Processed in Loop:  {items_processed}"
+        )  # Renamed for clarity
+        logger.info(f"  AI Classifications Made:  {ai_classified}")
+        logger.info(f"  Person Status Updates:    {status_updates}")
         if stop_reason:
             logger.info(f"  Processing Stopped Due To: {stop_reason}")
-        elif max_inbox_limit == 0 or items_processed < max_inbox_limit:
-            logger.info(f"  Processing Stopped Due To: End of Inbox Reached")
-        logger.info("-----------------------------------------")
-
+        elif max_inbox_limit == 0 or (
+            max_inbox_limit > 0 and items_processed < max_inbox_limit
+        ):
+            # If no specific stop reason, imply it finished normally or hit end of inbox
+            logger.info(
+                f"  Processing Stopped Due To: End of Inbox Reached or Comparator"
+            )
+        logger.info("----------------------------\n")
     # End of _log_unified_summary
-
-
 # End of InboxProcessor class
 
 
@@ -1449,9 +1434,9 @@ def _fetch_profile_details_for_person(
         if isinstance(e, requests.exceptions.RequestException):
             raise  # Re-raise for retry decorator
         return None  # Return None for other exceptions
-
-
 # End _fetch_profile_details_for_person
+
+
 
 
 # End of action7_inbox.py

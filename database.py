@@ -74,8 +74,6 @@ class PersonStatusEnum(enum.Enum):  # Added Enum for status
     ARCHIVE = "ARCHIVE"  # Set after sending Desist ACK (Future), skip messaging
     BLOCKED = "BLOCKED"  # Set MANUALLY by user, skip messaging
     DEAD = "DEAD"  # Set MANUALLY by user, skip messaging
-
-
 # --- Model Definitions ---
 
 
@@ -83,7 +81,9 @@ class ConversationLog(Base):
     __tablename__ = "conversation_log"
     conversation_id = Column(String, primary_key=True, index=True)
     direction = Column(
-        SQLEnum(MessageDirectionEnum, name="message_direction_enum_v5"),
+        SQLEnum(
+            MessageDirectionEnum, name="message_direction_enum_v5"
+        ),  # Ensure enum name matches migration if used
         primary_key=True,
     )
     people_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
@@ -98,7 +98,8 @@ class ConversationLog(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    person = relationship("Person", backref="conversation_log_entries")  # Uses backref
+    # *** MODIFIED: Use back_populates instead of backref ***
+    person = relationship("Person", back_populates="conversation_log_entries")
     message_type = relationship("MessageType")
     __table_args__ = (
         Index(
@@ -108,9 +109,8 @@ class ConversationLog(Base):
             "latest_timestamp",
         ),
         Index("ix_conversation_log_timestamp", "latest_timestamp"),
+        # PrimaryKeyConstraint added implicitly by primary_key=True on two columns
     )
-
-
 # End ConversationLog
 
 
@@ -119,8 +119,6 @@ class MessageType(Base):
     id = Column(Integer, primary_key=True)
     type_name = Column(String, unique=True, nullable=False)
     # messages relationship removed as MessageHistory is removed
-
-
 # End MessageType
 
 
@@ -150,8 +148,6 @@ class DnaMatch(Base):
         nullable=False,
     )
     person = relationship("Person", back_populates="dna_match")
-
-
 # End DnaMatch
 
 
@@ -179,8 +175,6 @@ class FamilyTree(Base):
         nullable=False,
     )
     person = relationship("Person", back_populates="family_tree")
-
-
 # End FamilyTree
 
 
@@ -222,17 +216,22 @@ class Person(Base):
         "FamilyTree",
         back_populates="person",
         uselist=False,
-        cascade="all, delete, delete-orphan",
+        cascade="all, delete-orphan",
+        # passive_deletes=True, # REMOVED
     )
     dna_match = relationship(
         "DnaMatch",
         back_populates="person",
         uselist=False,
-        cascade="all, delete, delete-orphan",
+        cascade="all, delete-orphan",
+        # passive_deletes=True, # REMOVED
     )
-    # conversation_log_entries created by backref
-
-
+    conversation_log_entries = relationship(
+        "ConversationLog",
+        back_populates="person",
+        cascade="all, delete-orphan",
+        # passive_deletes=True # REMOVED
+    )
 # End Person
 
 # ----------------------------------------------------------------------
@@ -302,8 +301,6 @@ def db_transn(session: Session):
             f"--- db_transn finally block reached (Session: {id(session)}). Returning connection to pool is handled elsewhere. ---"
         )
         # Removed session.close() - should be done by caller using return_session
-
-
 # end db_transn
 
 # ==================== CRUD OPERATIONS ====================
@@ -412,8 +409,6 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
         logger.critical(f"Unexpected error create_person {log_ref}: {e}", exc_info=True)
         session.rollback() if session.is_active else None
         return 0
-
-
 # End create_person
 
 
@@ -502,8 +497,6 @@ def create_dna_match(
     except Exception as e:
         logger.error(f"Unexpected error create_dna_match {log_ref}: {e}", exc_info=True)
         return "error"
-
-
 # End create_dna_match
 
 
@@ -571,8 +564,6 @@ def create_family_tree(
             f"Unexpected error create_family_tree {log_ref}: {e}", exc_info=True
         )
         return "error"
-
-
 # End create_family_tree
 
 # ----------------------------------------------------------------------
@@ -600,8 +591,6 @@ def get_person_by_profile_id_and_username(
             f"Error retrieving person by profile_id/username: {e}", exc_info=True
         )
         return None
-
-
 # end get_person_by_profile_id_and_username
 
 
@@ -617,8 +606,6 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
             f"Error retrieving person by profile_id '{profile_id}': {e}", exc_info=True
         )
         return None
-
-
 # end of get_person_by_profile_id
 
 
@@ -648,8 +635,6 @@ def get_person_and_dna_match(
             exc_info=True,
         )
         return None, None
-
-
 # end of get_person_and_dna_match
 
 
@@ -731,8 +716,6 @@ def find_existing_person(
         )
         return None
     return person
-
-
 # end of find_existing_person
 
 
@@ -751,8 +734,6 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
     except Exception as e:
         logger.error(f"Error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
-
-
 # end of get_person_by_uuid
 
 # ----------------------------------------------------------------------
@@ -951,8 +932,6 @@ def create_or_update_person(
             f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
         )
         return None, "error"
-
-
 # End create_or_update_person
 
 
@@ -1061,8 +1040,6 @@ def update_person(
         )
         session.rollback() if session.is_active else None
         return False
-
-
 # End of update_person
 
 # ----------------------------------------------------------------------
@@ -1103,8 +1080,6 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         )
         session.rollback() if session.is_active else None
         return False
-
-
 # End of delete_person
 
 
@@ -1179,8 +1154,6 @@ def delete_database(
             )
             raise last_error or OSError(f"Failed to delete {db_path}")
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")
-
-
 # End of delete_database
 
 # ----------------------------------------------------------------------
@@ -1206,8 +1179,6 @@ def backup_database(session_manager=None):
             f"Error backing up DB from '{db_path}' to '{backup_path}': {e}",
             exc_info=True,
         )
-
-
 # End of backup_database
 
 # ----------------------------------------------------------------------
