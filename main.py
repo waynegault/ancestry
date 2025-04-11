@@ -758,9 +758,9 @@ def all_but_first_actn(
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.warning("Closing main DB connections before delete-all-but-first...")
+            logger.debug("Closing main DB connections before delete-all-but-first...")
             session_manager.cls_db_conn(keep_db=False)
-            logger.info("Main DB pool closed.")
+            logger.debug("Main DB pool closed.")
         else:
             logger.warning(
                 "No main session manager passed to all_but_first_actn to close."
