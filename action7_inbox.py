@@ -262,7 +262,7 @@ class InboxProcessor:
     # End of _fetch_conversation_context
 
     def search_inbox(self) -> bool:
-        """V1.23 REVISED: Correctly limits API fetch size based on MAX_INBOX alongside Comparator logic, 2-row Log, AI, UPSERTS, batch commits, TZ-aware compare."""
+        """V1.23 REVISED: Correctly limits API fetch size based on MAX_INBOX alongside Comparator logic, 2-row Log, AI, UPSERTS, batch commits, TZ-aware compare. DIAGNOSTIC LOGGING ADDED."""
         # --- Initialization ---
         ai_classified_count = 0
         status_updated_count = 0
@@ -341,6 +341,30 @@ class InboxProcessor:
                         )
                     )
 
+                    # *** DIAGNOSTIC LOGGING START ***
+                    logger.debug(f"--- DIAG: API Batch Result ---")
+                    logger.debug(
+                        f"--- DIAG: Type(all_conversations_batch): {type(all_conversations_batch)}"
+                    )
+                    if isinstance(all_conversations_batch, list):
+                        logger.debug(
+                            f"--- DIAG: Len(all_conversations_batch): {len(all_conversations_batch)}"
+                        )
+                        if all_conversations_batch:
+                            logger.debug(
+                                f"--- DIAG: First item preview: {str(all_conversations_batch[0])[:200]}..."
+                            )
+                        else:
+                            logger.debug("--- DIAG: all_conversations_batch is empty.")
+                    else:
+                        logger.debug(
+                            f"--- DIAG: all_conversations_batch value: {all_conversations_batch}"
+                        )
+                    logger.debug(
+                        f"--- DIAG: next_cursor_from_api: {next_cursor_from_api}"
+                    )
+                    # *** DIAGNOSTIC LOGGING END ***
+
                     if all_conversations_batch is None:
                         stop_reason = "API Error Fetching Batch"
                         stop_processing = True
@@ -418,6 +442,16 @@ class InboxProcessor:
 
                     # Process Batch
                     for conversation_info in all_conversations_batch:
+
+                        # *** DIAGNOSTIC LOGGING START ***
+                        logger.debug(
+                            f"--- DIAG: >>> Entering conversation processing loop for item <<<"
+                        )
+                        logger.debug(
+                            f"--- DIAG: Processing conversation_info: {conversation_info}"
+                        )
+                        # *** DIAGNOSTIC LOGGING END ***
+
                         # --- Check MAX_INBOX Limit ---
                         # This check is now more of a safety fallback, as the API limit calculation should prevent exceeding it.
                         if (
@@ -655,7 +689,6 @@ class InboxProcessor:
                         break  # Break inner try
 
                 # -- End Try block for batch processing --
-                # ...(Exception handling unchanged)...
                 except WebDriverException as WDE:
                     logger.error(f"WebDriverException occurred: {WDE}")
                     stop_reason = "WebDriver Exception"
@@ -770,14 +803,16 @@ class InboxProcessor:
         is_final_attempt: bool = False,
     ) -> int:
         """
-        V1.21 REVISED: Helper function to UPSERT ConversationLog entries and update Person statuses.
-        - Uses explicit query/update/add for ConversationLog.
+        V1.22 REVISED: Uses session.add_all() for new logs, explicit add for updates.
+        - Collects new ConversationLog objects in a list.
+        - Uses session.add_all() after the loop to add all new logs.
         - Explicitly adds modified existing_log objects back to session.
         - Removes intermediate flushes, relies on final db_transn commit.
-        - Logs session state before commit attempt.
         """
         updated_person_count = 0
         processed_logs_count = 0
+        new_logs_to_add: List[ConversationLog] = []  # Initialize list for new logs
+
         if not log_upserts and not person_updates:
             return updated_person_count
 
@@ -898,9 +933,9 @@ class InboxProcessor:
                                         f"    Explicitly added modified existing_log to session."
                                     )
                             else:
-                                # Insert New Record
+                                # Create New Record Object
                                 logger.debug(
-                                    f"{log_prefix} Creating new log entry for {conv_id}/{direction_enum.name}..."
+                                    f"{log_prefix} Creating new log entry object for {conv_id}/{direction_enum.name}..."
                                 )
                                 new_log_data = update_data.copy()
                                 new_log_data["conversation_id"] = conv_id
@@ -911,9 +946,10 @@ class InboxProcessor:
                                     )
                                     continue
                                 new_log_obj = ConversationLog(**new_log_data)
-                                session.add(new_log_obj)
+                                # *** Append to list instead of adding directly ***
+                                new_logs_to_add.append(new_log_obj)
                                 logger.debug(
-                                    f"    New ConversationLog added to session for {conv_id}/{direction_enum.name}."
+                                    f"    New ConversationLog object added to list for {conv_id}/{direction_enum.name}."
                                 )
 
                             processed_logs_count += 1
@@ -926,6 +962,20 @@ class InboxProcessor:
                     logger.debug(
                         f"{log_prefix}Finished processing {processed_logs_count} log entries."
                     )
+
+                    # *** Add all collected new logs AFTER the loop ***
+                    if new_logs_to_add:
+                        logger.debug(
+                            f"{log_prefix}Adding {len(new_logs_to_add)} new ConversationLog objects to session using add_all()..."
+                        )
+                        session.add_all(new_logs_to_add)
+                        logger.debug(
+                            f"{log_prefix}session.add_all() called for new logs."
+                        )
+                    else:
+                        logger.debug(
+                            f"{log_prefix}No new ConversationLog objects to add."
+                        )
                 # --- End ConversationLog Logic ---
 
                 # --- Person Update Logic (Keep bulk_update_mappings) ---
@@ -991,7 +1041,9 @@ class InboxProcessor:
                     logger.debug(f"    Dirty Details: {session.dirty}")
                 logger.info(f"  New objects: {len(session.new)}")
                 if logger.isEnabledFor(logging.DEBUG) and session.new:
-                    logger.debug(f"    New Details: {session.new}")
+                    # Log reprs of new objects for better debugging
+                    new_obj_reprs = [repr(obj) for obj in session.new]
+                    logger.debug(f"    New Details: {new_obj_reprs}")
                 logger.info(f"  Deleted objects: {len(session.deleted)}")
                 # --- End Log Session State ---
 

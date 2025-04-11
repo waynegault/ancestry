@@ -841,7 +841,6 @@ def main():
                 # --- Modified Handling for Action 2 ---
                 # Now pass the current session_manager to exec_actn
                 exec_actn(reset_db_actn, session_manager, choice, close_sess=False)
-                logger.info("Re-initializing main SessionManager after reset...")
                 session_manager = SessionManager()  # Recreate for subsequent actions
                 # --- End Modified Handling for Action 2 ---
             elif choice == "3":
