@@ -258,9 +258,9 @@ def db_transn(session: Session):
         logger.debug(
             f"--- Exiting db_transn block successfully (Session: {id(session)}) ---"
         )
-        logger.info(f"Attempting commit... (Session: {id(session)})")
+        logger.debug(f"Attempting commit... (Session: {id(session)})")
         session.commit()
-        logger.info(f"Commit successful. (Session: {id(session)})")
+        logger.debug(f"Commit successful. (Session: {id(session)})")
         # --- End Explicit Commit Logging ---
     except SQLAlchemyError as e:
         # --- Explicit Rollback Logging ---
@@ -1135,7 +1135,7 @@ def delete_database(
                 os.remove(db_path)
                 time.sleep(0.1)
                 if not db_path.exists():
-                    logger.info(f"'{db_path}' deleted successfully.")
+                    logger.debug(f"'{db_path}' deleted successfully.")
                     return
                 else:
                     logger.warning(
@@ -1149,7 +1149,7 @@ def delete_database(
                 return
         except PermissionError as e:
             logger.warning(
-                f"PermissionError deleting '{db_path}' (Attempt {attempt + 1}): {e}. File locked?"
+                f"Can't delete database after try {attempt + 1}. File locked?"
             )
             last_error = e
         except OSError as e:
@@ -1171,11 +1171,11 @@ def delete_database(
             last_error = e
         if attempt < max_attempts - 1:
             wait_time = 2**attempt
-            logger.info(f"Waiting {wait_time} seconds before next delete attempt...")
+            logger.debug(f"Waiting {wait_time} seconds before next delete attempt...")
             time.sleep(wait_time)
         else:
-            logger.critical(
-                f"Failed to delete database '{db_path}' after {max_attempts} attempts. Last error: {last_error or 'Unknown'}"
+            logger.warning(
+                f"Failed to delete database after {max_attempts} tries."
             )
             raise last_error or OSError(f"Failed to delete {db_path}")
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")

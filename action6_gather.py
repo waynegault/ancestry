@@ -261,7 +261,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
                 desc="Gathering Matches",
                 unit=" match",
                 ncols=100,
-                bar_format="{percentage:3.0f}%|{bar}|",
+                bar_format="{percentage:<3.0f}%|{bar}|",
                 file=sys.stderr,
                 leave=True,
             )
@@ -3015,7 +3015,7 @@ def _log_coord_summary(
     logger.info(f"  Total Updated Matches: {total_updated}")
     logger.info(f"  Total Skipped Matches: {total_skipped}")
     logger.info(f"  Total Errors:          {total_errors}")
-    logger.info("------------------------------------")
+    logger.info("------------------------------------\n")
 
 
 # end of _log_coord_summary

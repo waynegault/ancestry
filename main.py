@@ -191,7 +191,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         if needs_browser and session_manager:
             # --- Phase 1: Ensure Driver is Live ---
             if not session_manager.driver_live:
-                logger.info(
+                logger.debug(
                     f"Driver not live for {action_name}. Starting driver (Phase 1)..."
                 )
                 start_ok = session_manager.start_sess(
@@ -200,14 +200,14 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
                 if not start_ok:
                     raise Exception("Driver Start Failed (Phase 1)")
                 session_started_by_exec = True
-                logger.info(f"Driver started successfully for {action_name}.")
+                logger.debug(f"Driver started successfully for {action_name}.")
             else:
                 logger.debug(f"Driver already live for {action_name}.")
 
             # --- Phase 2: Ensure Session is Ready (if needed) ---
             if needs_ready_session:  # Check the flag determined above
                 if not session_manager.session_ready:
-                    logger.info(
+                    logger.debug(
                         f"Session not ready for {action_name}. Ensuring readiness (Phase 2)..."
                     )
                     ready_ok = session_manager.ensure_session_ready(
@@ -216,7 +216,7 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
                     if not ready_ok:
                         raise Exception("Session Readiness Failed (Phase 2)")
                     session_made_ready_by_exec = True
-                    logger.info(f"Session ready for {action_name}.")
+                    logger.debug(f"Session ready for {action_name}.")
                 else:
                     logger.debug(f"Session already ready for {action_name}.")
             elif action_name == "check_login_actn":
@@ -321,9 +321,11 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         mem_after = process.memory_info().rss / (1024 * 1024)
         mem_used = mem_after - mem_before
 
+        print(" ")
+
         # Restore old footer style
         if action_result is False:
-            logger.error(
+            logger.debug(
                 f"Action {choice} ({action_name}) reported a failure (returned False or exception occurred).\n"
             )
 
@@ -436,27 +438,27 @@ def reset_db_actn(session_manager: SessionManager, *args):
     try:
         # --- 1. Close main pool FIRST ---
         if session_manager:
-            logger.warning("Closing main DB connections before database deletion...")
+            logger.debug("Closing main DB connections before database deletion...")
             session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
-            logger.info("Main DB pool closed.")
+            logger.debug("Main DB pool closed.")
         else:
             logger.warning("No main session manager passed to reset_db_actn to close.")
 
         # --- 2. Delete the Database File ---
-        logger.info(f"Attempting to delete database file: {db_path}...")
+        logger.debug(f"Attempting to delete database file: {db_path}...")
         try:
             # Call delete_database function from the database module
             database.delete_database(None, db_path)  # Pass None for session_manager
-            logger.info(f"Database file '{db_path.name}' deleted successfully.")
+            logger.debug(f"Database file '{db_path.name}' deleted successfully.")
         except Exception as del_err:
             logger.critical(
-                f"Failed to delete database file '{db_path.name}': {del_err}. Reset aborted.",
+                f"Failed to delete database file '{db_path.name}'. Reset aborted.",
                 exc_info=True,
             )
             return False  # Critical failure if deletion fails
 
         # --- 3. Re-initialize DB Schema and Seed ---
-        logger.info("Re-initializing database schema and seeding MessageTypes...")
+        logger.debug("Re-initializing database schema and seeding MessageTypes...")
         # Use a temporary SessionManager to handle creation on the now non-existent file path
         temp_manager = SessionManager()
         try:
@@ -501,7 +503,7 @@ def reset_db_actn(session_manager: SessionManager, *args):
                         recreation_session.query(func.count(MessageType.id)).scalar()
                         or 0
                     )
-                    logger.info(
+                    logger.debug(
                         f"MessageType seeding OK. Total types in new DB: {count}"
                     )
                 else:
@@ -576,9 +578,9 @@ def restore_db_actn(
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.warning("Closing main DB connections before restore...")
+            logger.debug("Closing main DB connections before restore...")
             session_manager.cls_db_conn(keep_db=False)
-            logger.info("Main DB pool closed.")
+            logger.debug("Main DB pool closed.")
         else:
             logger.warning(
                 "No main session manager passed to restore_db_actn to close."
@@ -607,8 +609,6 @@ def restore_db_actn(
     finally:
         logger.debug("DB restore action finished.")
     return success
-
-
 # end of Action 4
 
 

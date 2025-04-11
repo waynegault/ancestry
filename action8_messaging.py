@@ -289,7 +289,7 @@ def _commit_messaging_batch(
     if not logs_to_add and not person_updates:
         return True
 
-    logger.info(
+    logger.debug(
         f"Attempting batch commit (Batch {batch_num}): {len(logs_to_add)} logs, {len(person_updates)} persons..."
     )
 
@@ -318,7 +318,7 @@ def _commit_messaging_batch(
             logger.debug(f"  New objects: {len(session.new)}")
             logger.debug(f"  Deleted objects: {len(session.deleted)}")
 
-        logger.info(f"Batch commit successful (Batch {batch_num}).")
+        logger.debug(f"Batch commit successful (Batch {batch_num}).")
         return True
 
     except IntegrityError as ie:
@@ -725,7 +725,7 @@ def _process_single_person(
         if config_instance.APP_MODE == "dry_run":
             message_status = "typed (dry_run)"
             effective_conv_id = existing_conversation_id or f"dryrun_{uuid.uuid4()}"
-            logger.info(
+            logger.debug(
                 f"Dry Run: Would send '{message_to_send_key}' ({send_reason}) to {log_prefix}"
             )
         elif config_instance.APP_MODE in ["production", "testing"]:
@@ -821,8 +821,8 @@ def _process_single_person(
 
 def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
-    V14.66: Sends messages based on ConversationLog state and Person status.
-    - Simplified progress bar display.
+    V14.71: Sends messages based on ConversationLog state and Person status.
+    - Adjusts progress bar total post-loop to match iterations completed if exited early.
     """
     # --- Step 1: Prerequisites Checks ---
     # ...(unchanged)...
@@ -852,6 +852,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     db_commit_batch_size = config_instance.BATCH_SIZE
     max_to_send = config_instance.MAX_INBOX
     overall_success = True
+    pbar_total = 0  # Use this specifically for the tqdm total
 
     try:
         # --- Step 3: Get DB Session ---
@@ -861,8 +862,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 raise Exception("DB Session Error")
 
             # --- Step 4: Pre-fetch Data ---
-            # ...(prefetch logic and validation unchanged)...
-            logger.info("--- Starting Pre-fetching for Action 8 (Messaging) ---")
+            # ...(prefetch unchanged)...
+            logger.debug("--- Starting Pre-fetching for Action 8 (Messaging) ---")
             (
                 message_type_map,
                 candidate_persons,
@@ -876,52 +877,61 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 or latest_out_log_map is None
             ):
                 raise Exception("Prefetching failed")
-            if not candidate_persons:
+
+            total_candidates = len(candidate_persons) if candidate_persons else 0
+            if total_candidates == 0:
                 logger.info("No candidates found meeting criteria. Finishing.")
                 overall_success = True
-                total_candidates = 0
             else:
-                total_candidates = len(candidate_persons)
-            logger.info("--- Pre-fetching Finished ---")
+                # Set pbar_total to the maximum possible iterations
+                pbar_total = total_candidates
+                logger.debug(
+                    f"PBar Total initially set to {pbar_total} (total candidates)."
+                )
 
+            logger.debug("--- Pre-fetching Finished ---")
             logger.debug(
-                f"--- DIAG: About to enter tqdm loop (Total Candidates: {total_candidates}) ---"
+                f"--- DIAG: About to enter tqdm loop (Total Candidates: {total_candidates}, Initial PBar Total: {pbar_total}) ---"
             )
 
             # --- Step 5: Main Processing Loop with Progress Bar ---
-            if total_candidates > 0:
+            if pbar_total > 0 and candidate_persons:
+                logger.info("Progress...\n")
                 with logging_redirect_tqdm():
                     logger.debug("--- DIAG: Entered logging_redirect_tqdm context ---")
                     try:
-                        # *** SIMPLIFIED TQDM INITIALIZATION ***
                         progress_bar = tqdm(
-                            total=total_candidates,
-                            desc="Sending Messages",  # Keep description
-                            unit=" match",
+                            total=pbar_total,  # Use initial total_candidates
+                            desc="Processing Candidates",
+                            unit=" candidate",
                             ncols=100,
                             bar_format="{percentage:3.0f}%|{bar}|",  # Simplified format
                             leave=True,
-                            # postfix={"Sent":0,"Ack":0,"Skip":0,"Err":0} # REMOVED postfix init
                         )
                         logger.debug(
-                            "--- DIAG: tqdm progress bar initialized (simplified format) ---"
+                            f"--- DIAG: tqdm progress bar initialized (Total={pbar_total}) ---"
                         )
                     except Exception as tqdm_e:
-                        logger.error(
-                            f"--- DIAG: Error initializing tqdm: {tqdm_e} ---",
-                            exc_info=True,
-                        )
                         raise tqdm_e
 
+                    processed_in_loop = 0
                     for person in candidate_persons:
-                        # ...(Loop checks and _process_single_person call unchanged)...
+
+                        # Check for critical DB error flag
                         if critical_db_error_occurred:
                             break
+
+                        # Check Send Limit BEFORE processing but AFTER potentially updating bar
                         if (
-                            max_to_send != 0
+                            max_to_send > 0
                             and (sent_count + acked_count) >= max_to_send
                         ):
+                            logger.debug(
+                                f"Reached MAX_INBOX limit ({max_to_send}). Stopping loop."
+                            )
                             break
+
+                        # Process the individual person
                         new_log, person_update, status = _process_single_person(
                             db_session,
                             session_manager,
@@ -931,10 +941,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             message_type_map,
                         )
 
-                        # ...(Tally results unchanged)...
+                        # Tally results
                         if status == "sent":
                             sent_count += 1
-                            # Tally counts internally
                         elif status == "acked":
                             acked_count += 1
                         elif status == "skipped":
@@ -947,15 +956,16 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         if person_update:
                             person_updates[person_update[0]] = person_update[1]
 
-                        # Update progress bar display (only update count, no postfix)
-                        # progress_bar.set_postfix(Sent=sent_count, Ack=acked_count, Skip=skipped_count, Err=error_count, refresh=True) # REMOVED set_postfix
+                        # Update progress bar count
                         progress_bar.update(1)
+                        processed_in_loop += 1  # Track actual iterations
 
-                        # ...(Commit logic unchanged)...
+                        # Commit periodically
                         if (
                             len(db_logs_to_add) + len(person_updates)
                             >= db_commit_batch_size
                         ):
+                            # ...(commit logic unchanged)...
                             batch_num += 1
                             commit_ok = _commit_messaging_batch(
                                 db_session, db_logs_to_add, person_updates, batch_num
@@ -972,8 +982,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                 break
 
                     # --- End Main Person Loop ---
-                    if progress_bar:
-                        progress_bar.close()
+                    # Closing and final adjustment happens in finally
 
             else:
                 logger.info("Skipping processing loop as there are no candidates.")
@@ -991,37 +1000,50 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
     except Exception as outer_e:
         # --- Step 7: Handle Outer Exceptions ---
-        # ...(Exception handling unchanged)...
         logger.critical(
             f"CRITICAL: Unhandled error during message processing: {outer_e}",
             exc_info=True,
         )
-        if progress_bar and not progress_bar.disable:
-            progress_bar.close()
         overall_success = False
     finally:
-        # --- Step 8: Final Summary Logging ---
-        # ...(Summary logging unchanged, still reports detailed counts)...
-        processed_count = sent_count + acked_count + skipped_count + error_count
-        if progress_bar and processed_count < total_candidates:
-            processed_count = progress_bar.n
-
-        if critical_db_error_occurred:
-            remaining_unprocessed = total_candidates - processed_count
-            if remaining_unprocessed > 0:
-                logger.warning(
-                    f"Adding {remaining_unprocessed} unprocessed items to error count due to critical DB abort."
+        # --- Step 8: Finalize Progress Bar & Log Summary ---
+        processed_count_actual = 0
+        if progress_bar:
+            processed_count_actual = progress_bar.n
+            # --- Adjust total to match actual iterations if loop exited early ---
+            if not progress_bar.disable and progress_bar.n < progress_bar.total:
+                logger.debug(
+                    f"Loop finished early at {progress_bar.n}/{progress_bar.total}. Adjusting bar total."
                 )
-                error_count += remaining_unprocessed
-                processed_count += remaining_unprocessed
+                progress_bar.total = progress_bar.n  # Set total to current count
+                # Force a refresh to show 100% visually based on new total
+                progress_bar.refresh()
+
+            progress_bar.close()  # Close after potential adjustment
+            print("", file=sys.stderr)  # Add blank line after progress bar
+        else:
+            processed_count_actual = (
+                sent_count + acked_count + skipped_count + error_count
+            )
+
+        # Calculate summary counts based on tallies
+        error_count_final = error_count
+        # Adjust error count only if aborted by critical DB error
+        if critical_db_error_occurred:
+            if total_candidates > processed_count_actual:
+                unaccounted = total_candidates - processed_count_actual
+                logger.warning(
+                    f"Adding {unaccounted} unaccounted candidates (due to DB error exit) to error count for summary."
+                )
+                error_count_final += unaccounted
 
         logger.info("--- Message Sending Summary ----")
-        logger.info(f"  Potential Candidates (Active/Desist): {total_candidates}")
-        logger.info(f"  Processed in Detail:       {processed_count}")
+        logger.info(f"  Potential Candidates:        {total_candidates}")
+        logger.info(f"  Processed (Iterated):      {processed_count_actual}")
         logger.info(f"  Standard Messages Sent/DryRun: {sent_count}")
         logger.info(f"  Desist ACKs Sent/DryRun:   {acked_count}")
         logger.info(f"  Skipped (Policy/Rule/Status): {skipped_count}")
-        logger.info(f"  Errors (API/DB/etc.):    {error_count}")
+        logger.info(f"  Errors (API/DB/Unaccounted): {error_count_final}")
         logger.info(f"  Overall Success:           {overall_success}")
         logger.info("---------------------------------\n")
 
