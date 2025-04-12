@@ -1,7 +1,9 @@
+# config.py
+
 #!/usr/bin/env python3
 
 # config.py
-# V14.34: Added Token Bucket configuration options.
+# V14.35: Added MAX_PRODUCTIVE_TO_PROCESS limit.
 
 import os
 import logging
@@ -114,7 +116,7 @@ class Config_Class(BaseConfig):
     LOG_LEVEL: str = "INFO"
     RETRY_STATUS_CODES: Tuple[int, ...] = (429, 500, 502, 503, 504)
     DB_POOL_SIZE = 10
-    MESSAGE_TRUNCATION_LENGTH: int = 300 # characters
+    MESSAGE_TRUNCATION_LENGTH: int = 300  # characters
     CHECK_JS_ERRORS_ACTN_6: bool = False
     USER_AGENTS: list[str] = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -128,6 +130,11 @@ class Config_Class(BaseConfig):
     # --- Token Bucket Defaults (Added) ---
     TOKEN_BUCKET_CAPACITY: float = 10.0  # Allow bursting up to 10 requests
     TOKEN_BUCKET_FILL_RATE: float = 2.0  # Add 2 tokens per second (avg rate limit)
+
+    # --- Action-Specific Processing Limits ---
+    MAX_PAGES: int = 0  # Limit Action 6 (0 = unlimited)
+    MAX_INBOX: int = 0  # Limit Action 7/8 (0 = unlimited)
+    MAX_PRODUCTIVE_TO_PROCESS: int = 0  # Limit Action 9 (0 = unlimited)
 
     def __init__(self):
         self._load_values()
@@ -143,8 +150,12 @@ class Config_Class(BaseConfig):
         self.TREE_NAME: str = self._get_string_env("TREE_NAME", "")
         self.MY_PROFILE_ID: Optional[str] = self._get_string_env("MY_PROFILE_ID", "")
         self.MS_GRAPH_CLIENT_ID: str = self._get_string_env("MS_GRAPH_CLIENT_ID", "")
-        self.MS_GRAPH_TENANT_ID: str = self._get_string_env("MS_GRAPH_TENANT_ID", "common") # Default 'common', override via .env
-        self.MS_TODO_LIST_NAME: str = self._get_string_env("MS_TODO_LIST_NAME", "Tasks") # Default to "Tasks"
+        self.MS_GRAPH_TENANT_ID: str = self._get_string_env(
+            "MS_GRAPH_TENANT_ID", "common"
+        )  # Default 'common', override via .env
+        self.MS_TODO_LIST_NAME: str = self._get_string_env(
+            "MS_TODO_LIST_NAME", "Tasks"
+        )  # Default to "Tasks"
 
         # === Paths & Files ===
         log_dir_name = self._get_string_env("LOG_DIR", "Logs")
@@ -181,10 +192,19 @@ class Config_Class(BaseConfig):
 
         # === Application Behavior ===
         self.APP_MODE: str = self._get_string_env("APP_MODE", "dry_run")
-        self.MAX_PAGES: int = self._get_int_env("MAX_PAGES", 0)
+        self.MAX_PAGES: int = self._get_int_env(
+            "MAX_PAGES", self.MAX_PAGES
+        )  # Load from env or use class default
         self.MAX_RETRIES: int = self._get_int_env("MAX_RETRIES", 5)
-        self.MAX_INBOX: int = self._get_int_env("MAX_INBOX", 0)
+        self.MAX_INBOX: int = self._get_int_env(
+            "MAX_INBOX", self.MAX_INBOX
+        )  # Load from env or use class default
         self.BATCH_SIZE: int = self._get_int_env("BATCH_SIZE", 50)
+        # <<< --- ADD Loading for the new limit --- >>>
+        self.MAX_PRODUCTIVE_TO_PROCESS: int = self._get_int_env(
+            "MAX_PRODUCTIVE_TO_PROCESS", self.MAX_PRODUCTIVE_TO_PROCESS
+        )
+        # <<< --- END ADD Loading --- >>>
 
         # === Database ===
         self.DB_POOL_SIZE: int = self._get_int_env("DB_POOL_SIZE", self.DB_POOL_SIZE)
@@ -266,6 +286,7 @@ class Config_Class(BaseConfig):
         parsed_base_url = urlparse(self.BASE_URL)
         origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
         self.API_CONTEXTUAL_HEADERS: Dict[str, Dict[str, Optional[str]]] = {
+            # <<< --- No changes needed to API_CONTEXTUAL_HEADERS --- >>>
             # ... (Existing contextual headers remain unchanged) ...
             "CSRF Token API": {
                 "Accept": "application/json",
@@ -378,6 +399,12 @@ class Config_Class(BaseConfig):
         logger.info(
             f"Config Loaded: BASE_URL='{self.BASE_URL}', DB='{self.DATABASE_FILE.name}', TREE='{self.TREE_NAME or 'N/A'}'"
         )
+        # <<< --- ADD Logging for the new limit --- >>>
+        max_prod_log = f"Max Productive: {self.MAX_PRODUCTIVE_TO_PROCESS if self.MAX_PRODUCTIVE_TO_PROCESS > 0 else 'Unlimited'}"
+        logger.info(
+            f"Processing Limits: MaxPages={self.MAX_PAGES if self.MAX_PAGES > 0 else 'Unlimited'}, MaxInbox={self.MAX_INBOX if self.MAX_INBOX > 0 else 'Unlimited'}, {max_prod_log}"
+        )
+        # <<< --- END ADD Logging --- >>>
         if not self.ANCESTRY_USERNAME or not self.ANCESTRY_PASSWORD:
             logger.warning("Ancestry credentials missing!")
         logger.debug("Config loading complete.\n")
@@ -388,12 +415,13 @@ class Config_Class(BaseConfig):
         logger.info(f"  To-Do List Name: '{self.MS_TODO_LIST_NAME}'")
         logger.info("----------------------")
 
-# End of _load_values
+    # End of _load_values
 
 
 # End of Config_Class
 
 
+# <<< SeleniumConfig class remains unchanged >>>
 class SeleniumConfig(BaseConfig):
     """Configuration specific to Selenium WebDriver settings."""
 
@@ -474,42 +502,64 @@ class SeleniumConfig(BaseConfig):
         logger.debug(f"Async Script Timeout: {self.ASYNC_SCRIPT_TIMEOUT}s")
         logger.info(f"API Request Timeout (requests lib): {self.API_TIMEOUT}s")
 
+    # End of _load_values
+
     # --- WebDriverWait Factory Methods ---
     def default_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
         return WebDriverWait(
             driver, timeout if timeout is not None else self.ELEMENT_TIMEOUT
         )
 
+    # End of default_wait
+
     def page_load_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
         return WebDriverWait(
             driver, timeout if timeout is not None else self.PAGE_TIMEOUT
         )
 
+    # End of page_load_wait
+
     def short_wait(self, driver, timeout: int = 5) -> WebDriverWait:
         return WebDriverWait(driver, timeout)
+
+    # End of short_wait
 
     def long_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
         return WebDriverWait(
             driver, timeout if timeout is not None else self.TWO_FA_CODE_ENTRY_TIMEOUT
         )
 
+    # End of long_wait
+
     def logged_in_check_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.LOGGED_IN_CHECK_TIMEOUT)
+
+    # End of logged_in_check_wait
 
     def element_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.ELEMENT_TIMEOUT)
 
+    # End of element_wait
+
     def page_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.PAGE_TIMEOUT)
+
+    # End of page_wait
 
     def modal_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.MODAL_TIMEOUT)
 
+    # End of modal_wait
+
     def dna_list_page_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.DNA_LIST_PAGE_TIMEOUT)
 
+    # End of dna_list_page_wait
+
     def new_tab_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.NEW_TAB_TIMEOUT)
+
+    # End of new_tab_wait
 
 
 # End of SeleniumConfig
@@ -517,5 +567,11 @@ class SeleniumConfig(BaseConfig):
 # --- Singleton Instances ---
 config_instance = Config_Class()
 selenium_config = SeleniumConfig()
+
+
+
+
+
+
 
 # --- End of config.py ---

@@ -34,6 +34,7 @@ from sqlalchemy.orm import sessionmaker
 from action6_gather import coord as coord_action_func, nav_to_list
 from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
+from action9_process_productive import process_productive_messages
 from chromedriver import cleanup_webdrv
 from config import config_instance, selenium_config
 from database import (
@@ -88,15 +89,16 @@ def menu():
         level_name = config_instance.LOG_LEVEL.upper()
 
     print(f"(Log Level: {level_name})\n")
+    print("0. Delete all rows except the first")
     print("1. Run Actions 6, 7, and 8 Sequentially")
     print("2. Reset Database")
     print("3. Backup Database")
     print("4. Restore Database")
-    print("5. Check Login Status")  # Updated Menu Text
+    print("5. Check Login Status")  
     print("6. Gather Matches [start page]")
     print("7. Search Inbox")
     print("8. Send Messages")
-    print("9. Delete all rows except the first")
+    print("9. Process Productive Messages")
     print("")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
@@ -343,6 +345,64 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
 # --- Action Functions
 
 
+# Action 0 (all_but_first_actn)
+def all_but_first_actn(
+    session_manager: SessionManager, *args
+):  # Added session_manager back
+    """
+    Action to delete all 'people' rows except the first. Browserless.
+    Closes the provided main session pool FIRST.
+    Creates a temporary SessionManager for the delete operation.
+    """
+    temp_manager = None  # Initialize
+    session = None
+    success = False
+    try:
+        # --- Close main pool FIRST ---
+        if session_manager:
+            logger.debug("Closing main DB connections before delete-all-but-first...")
+            session_manager.cls_db_conn(keep_db=False)
+            logger.debug("Main DB pool closed.")
+        else:
+            logger.warning(
+                "No main session manager passed to all_but_first_actn to close."
+            )
+        # --- End closing main pool ---
+
+        logger.info("Deleting all but first person record...")
+        # Create a temporary SessionManager for this specific operation
+        temp_manager = SessionManager()
+        session = temp_manager.get_db_conn()
+        if session is None:
+            raise Exception("Failed to get DB session via temporary manager.")
+
+        with db_transn(session) as sess:
+            first = sess.query(Person).order_by(Person.id.asc()).first()
+            if not first:
+                logger.info("People table empty.")
+                return True
+            logger.debug(f"Keeping ID: {first.id} ({first.username})")
+            to_delete = sess.query(Person).filter(Person.id != first.id).all()
+            if not to_delete:
+                logger.info("Only one person found.")
+            else:
+                logger.debug(f"Deleting {len(to_delete)} people...")
+                for i, person in enumerate(to_delete):
+                    # logger.debug(f"Deleting {i+1}/{len(to_delete)}: {person.username} (ID: {person.id})") # Can be verbose
+                    sess.delete(person)
+                logger.info(f"Deleted {len(to_delete)} people.")
+        success = True
+    except Exception as e:
+        logger.error(f"Error during deletion: {e}", exc_info=True)
+    finally:
+        if temp_manager:
+            if session:
+                temp_manager.return_session(session)
+            temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
+        logger.debug("Delete action finished.")
+    return success
+# end of action 0 (all_but_first_actn)
+
 # Action 1
 def run_actions_6_7_8_action(session_manager, *args):
     """
@@ -416,8 +476,6 @@ def run_actions_6_7_8_action(session_manager, *args):
             f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
         )
         return False
-
-
 # End Action 1
 
 
@@ -539,8 +597,6 @@ def reset_db_actn(session_manager: SessionManager, *args):
         logger.debug("Reset DB action finished.")
 
     return reset_successful
-
-
 # end of Action 2 (reset_db_actn)
 
 
@@ -558,8 +614,6 @@ def backup_db_actn(
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
-
-
 # end of Action 3
 
 
@@ -645,8 +699,6 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
     else:  # Status is None
         logger.error("Login verification failed (critical error during check).")
         return False
-
-
 # End Action 5
 
 
@@ -674,8 +726,6 @@ def coord_action(session_manager, config_instance, start=1):
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
-
-
 # End of coord_action
 
 
@@ -700,8 +750,6 @@ def srch_inbox_actn(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
-
-
 # End of srch_inbox_actn
 
 
@@ -738,67 +786,10 @@ def send_messages_action(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
-
-
 # End of send_messages_action
 
 
-# Action 9 (all_but_first_actn)
-def all_but_first_actn(
-    session_manager: SessionManager, *args
-):  # Added session_manager back
-    """
-    Action to delete all 'people' rows except the first. Browserless.
-    Closes the provided main session pool FIRST.
-    Creates a temporary SessionManager for the delete operation.
-    """
-    temp_manager = None  # Initialize
-    session = None
-    success = False
-    try:
-        # --- Close main pool FIRST ---
-        if session_manager:
-            logger.debug("Closing main DB connections before delete-all-but-first...")
-            session_manager.cls_db_conn(keep_db=False)
-            logger.debug("Main DB pool closed.")
-        else:
-            logger.warning(
-                "No main session manager passed to all_but_first_actn to close."
-            )
-        # --- End closing main pool ---
-
-        logger.info("Deleting all but first person record...")
-        # Create a temporary SessionManager for this specific operation
-        temp_manager = SessionManager()
-        session = temp_manager.get_db_conn()
-        if session is None:
-            raise Exception("Failed to get DB session via temporary manager.")
-
-        with db_transn(session) as sess:
-            first = sess.query(Person).order_by(Person.id.asc()).first()
-            if not first:
-                logger.info("People table empty.")
-                return True
-            logger.debug(f"Keeping ID: {first.id} ({first.username})")
-            to_delete = sess.query(Person).filter(Person.id != first.id).all()
-            if not to_delete:
-                logger.info("Only one person found.")
-            else:
-                logger.debug(f"Deleting {len(to_delete)} people...")
-                for i, person in enumerate(to_delete):
-                    # logger.debug(f"Deleting {i+1}/{len(to_delete)}: {person.username} (ID: {person.id})") # Can be verbose
-                    sess.delete(person)
-                logger.info(f"Deleted {len(to_delete)} people.")
-        success = True
-    except Exception as e:
-        logger.error(f"Error during deletion: {e}", exc_info=True)
-    finally:
-        if temp_manager:
-            if session:
-                temp_manager.return_session(session)
-            temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
-        logger.debug("Delete action finished.")
-    return success
+# Action 9
 
 
 # end of Action 9
@@ -835,28 +826,21 @@ def main():
             choice = menu()
             print("")
             # --- Action Dispatching ---
-            if choice == "1":
+            if choice=="0": 
+                exec_actn(all_but_first_actn, session_manager, choice, close_sess=False)
+                session_manager = SessionManager()  
+            elif choice == "1":
                 exec_actn(run_actions_6_7_8_action, session_manager, choice)
             elif choice == "2":
-                # --- Modified Handling for Action 2 ---
-                # Now pass the current session_manager to exec_actn
                 exec_actn(reset_db_actn, session_manager, choice, close_sess=False)
-                session_manager = SessionManager()  # Recreate for subsequent actions
-                # --- End Modified Handling for Action 2 ---
+                session_manager = SessionManager() 
             elif choice == "3":
-                # --- Modified Handling for Action 3 ---
-                # Pass session_manager (though backup_db_actn might not use it)
                 exec_actn(backup_db_actn, session_manager, choice, close_sess=False)
-                # --- End Modified Handling for Action 3 ---
             elif choice == "4":
-                # --- Modified Handling for Action 4 ---
-                # Pass the current session_manager to exec_actn
                 exec_actn(restore_db_actn, session_manager, choice, close_sess=False)
                 logger.info("Re-initializing main SessionManager after restore...")
-                session_manager = SessionManager()  # Recreate for subsequent actions
-                # --- End Modified Handling for Action 4 ---
+                session_manager = SessionManager() 
             elif choice == "5":
-                # Action 5 now only checks status, keep session open by default
                 exec_actn(check_login_actn, session_manager, choice, close_sess=False)
             elif choice.startswith("6"):
                 parts = choice.split()
@@ -867,7 +851,6 @@ def main():
                         start_val = start_arg if start_arg > 0 else 1
                     except ValueError:
                         logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
-                # Pass session_manager, config_instance and start_val correctly
                 exec_actn(
                     coord_action, session_manager, "6", True, config_instance, start_val
                 )
@@ -876,16 +859,7 @@ def main():
             elif choice == "8":
                 exec_actn(send_messages_action, session_manager, choice)
             elif choice == "9":
-                # --- Modified Handling for Action 9 ---
-                # Pass the current session_manager to exec_actn
-                exec_actn(all_but_first_actn, session_manager, choice, close_sess=False)
-                logger.info(
-                    "Re-initializing main SessionManager after delete-all-but-first..."
-                )
-                session_manager = SessionManager()  # Recreate for subsequent actions
-                # --- End Modified Handling for Action 9 ---
-
-            # --- Meta Options ---
+                exec_actn(process_productive_messages, session_manager, choice)
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")
                 if logger and logger.handlers:
