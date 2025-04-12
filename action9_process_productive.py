@@ -279,12 +279,13 @@ def _commit_action9_batch(
 
 def process_productive_messages(session_manager: SessionManager) -> bool:
     """
-    V0.5: Calls real AI function extract_and_suggest_tasks.
+    V0.7: Uses shared MSAL instance with persistent cache.
     Processes messages marked as PRODUCTIVE by Action 7.
     Extracts info, creates tasks (honoring dry_run), sends ack, archives person.
     Applies MAX_PRODUCTIVE_TO_PROCESS limit if set.
+    Implements batch database commits.
     """
-    # Basic validation of SessionManager and its state
+    # --- Basic validation of SessionManager and its state ---
     if not session_manager or not session_manager.my_profile_id:
         logger.error("Action 9 requires SessionManager with profile ID.")
         return False
@@ -292,10 +293,10 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         logger.error("Action 9 requires a live WebDriver session.")
         return False
 
-    logger.debug("--- Starting Action 9: Process Productive Messages ---")
+    logger.info("--- Starting Action 9: Process Productive Messages ---")
     my_pid_lower = session_manager.my_profile_id.lower()
 
-    # Initialize counters and state variables
+    # --- Initialize counters and state variables ---
     overall_success = True
     processed_count = 0
     tasks_created_count = 0
@@ -304,24 +305,26 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
     error_count = 0
     skipped_count = 0
     total_candidates = 0
+    # MS Graph state (token/list_id are cached per run)
     ms_graph_token: Optional[str] = None
     ms_list_id: Optional[str] = None
     ms_list_name = config_instance.MS_TODO_LIST_NAME
-    ms_auth_attempted = False
+    ms_auth_attempted = False  # Track if we've tried auth this run
     batch_num = 0
     critical_db_error_occurred = False
 
-    # Setup for batch database commits
+    # --- Setup for batch database commits ---
     logs_to_add: List[Dict[str, Any]] = []
     person_updates: Dict[int, PersonStatusEnum] = {}
     batch_size = config_instance.BATCH_SIZE
+    # Ensure batch size is positive for triggering logic
     commit_threshold = batch_size if batch_size > 0 else float("inf")
     logger.debug(f"Action 9 Batch Commit Threshold: {commit_threshold}")
 
-    # Get processing limit from config
+    # --- Get processing limit from config ---
     limit = config_instance.MAX_PRODUCTIVE_TO_PROCESS
 
-    # Load and validate necessary message templates
+    # --- Load and validate necessary message templates ---
     message_templates = _load_templates_for_action9()
     if not message_templates or ACKNOWLEDGEMENT_MESSAGE_TYPE not in message_templates:
         logger.error("Failed to load required message templates. Aborting.")
@@ -330,13 +333,13 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
     db_session = None  # Initialize db_session outside try/finally
     try:
-        # Get a database session
+        # --- Get a database session ---
         db_session = session_manager.get_db_conn()
         if not db_session:
             logger.error("Failed to get DB session for Action 9.")
             return False  # Cannot proceed without DB session
 
-        # Get the MessageType ID for acknowledgements (required for logging)
+        # --- Get the MessageType ID for acknowledgements (required for logging) ---
         ack_msg_type_obj = (
             db_session.query(MessageType)
             .filter(MessageType.type_name == ACKNOWLEDGEMENT_MESSAGE_TYPE)
@@ -354,7 +357,6 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
         # --- Query Database for Candidate Persons ---
         logger.debug("Querying for candidate Persons (Status ACTIVE)...")
-
         # Subquery to efficiently find the latest IN message timestamp per person
         latest_in_log_subq = (
             db_session.query(
@@ -365,7 +367,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             .group_by(ConversationLog.people_id)
             .subquery("latest_in_sub")
         )
-        # Subquery to efficiently find the latest OUT message timestamp per person (optional, but used for ACK check)
+        # Subquery to efficiently find the latest OUT message timestamp per person
         latest_out_log_subq = (
             db_session.query(
                 ConversationLog.people_id,
@@ -375,42 +377,34 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             .group_by(ConversationLog.people_id)
             .subquery("latest_out_sub")
         )
-
         # Main query to find ACTIVE persons whose latest IN message is PRODUCTIVE
         candidates_query = (
             db_session.query(Person)
             .options(
-                # Eager load all conversation logs for the person for easier access later
                 joinedload(Person.conversation_log_entries).options(
                     joinedload(ConversationLog.message_type)
-                )  # Include message type name for checking
+                )
             )
-            # Join with subquery to filter based on the latest IN message timestamp
             .outerjoin(latest_in_log_subq, Person.id == latest_in_log_subq.c.people_id)
             .outerjoin(
                 latest_out_log_subq, Person.id == latest_out_log_subq.c.people_id
-            )  # Optional join for OUT timestamp check
+            )
             .join(
                 ConversationLog,
                 and_(
                     Person.id == ConversationLog.people_id,
                     ConversationLog.direction == MessageDirectionEnum.IN,
-                    ConversationLog.latest_timestamp
-                    == latest_in_log_subq.c.max_in_ts,  # Ensure we join based on the latest IN log
+                    ConversationLog.latest_timestamp == latest_in_log_subq.c.max_in_ts,
                 ),
             )
-            # Filter conditions
-            .filter(Person.status == PersonStatusEnum.ACTIVE)  # Must be ACTIVE
-            .filter(
-                ConversationLog.ai_sentiment == PRODUCTIVE_SENTIMENT
-            )  # Latest IN must be PRODUCTIVE
-            .order_by(Person.id)  # Consistent processing order
+            .filter(Person.status == PersonStatusEnum.ACTIVE)
+            .filter(ConversationLog.ai_sentiment == PRODUCTIVE_SENTIMENT)
+            .order_by(Person.id)
         )
-
         # Apply the processing limit if configured
         if limit > 0:
             candidates_query = candidates_query.limit(limit)
-            logger.debug(
+            logger.info(
                 f"Processing max {limit} productive candidates due to MAX_PRODUCTIVE_TO_PROCESS setting."
             )
 
@@ -419,7 +413,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         total_candidates = len(candidates)  # Get count after limit is applied
 
         if not candidates:
-            logger.debug(
+            logger.info(
                 "No ACTIVE persons found with latest IN message marked as PRODUCTIVE."
             )
             # Ensure session is returned if we exit early
@@ -427,7 +421,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                 session_manager.return_session(db_session)
             return True  # No work to do is considered success
 
-        logger.debug(
+        logger.info(
             f"Found {total_candidates} candidates with productive messages to process."
         )
 
@@ -451,7 +445,6 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     logger.warning(
                         f"Skipping remaining candidates due to previous DB commit error."
                     )
-                    # Mark remaining as errors for summary
                     error_count += total_candidates - processed_count + 1
                     break  # Stop processing loop
 
@@ -467,11 +460,9 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     latest_in_ts = datetime.min.replace(tzinfo=timezone.utc)
                     latest_out_ts = datetime.min.replace(tzinfo=timezone.utc)
                     for log in person.conversation_log_entries:
-                        # Ensure timestamps are timezone-aware for comparison
                         log_ts = log.latest_timestamp
                         if log_ts and log_ts.tzinfo is None:
                             log_ts = log_ts.replace(tzinfo=timezone.utc)
-
                         if log.direction == MessageDirectionEnum.IN:
                             if log_ts and log_ts > latest_in_ts:
                                 latest_in_ts, latest_in_log = log_ts, log
@@ -480,13 +471,12 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                 latest_out_ts, latest_out_log = log_ts, log
 
                     # --- Sanity Checks & Skip Conditions ---
-                    # Ensure latest IN log is indeed PRODUCTIVE (query should guarantee this, but double-check)
                     if (
                         not latest_in_log
                         or latest_in_log.ai_sentiment != PRODUCTIVE_SENTIMENT
                     ):
                         logger.warning(
-                            f"Skipping {log_prefix}: Latest IN log not found or not PRODUCTIVE (query/load error?)."
+                            f"Skipping {log_prefix}: Latest IN log not found/productive."
                         )
                         skipped_count += 1
                         continue
@@ -502,30 +492,22 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                             > latest_in_log.latest_timestamp
                         ):
                             ack_already_sent = True
-
                     if ack_already_sent:
-                        logger.debug(
-                            f"Skipping {log_prefix}: Acknowledgement already sent after last productive message."
-                        )
-                        # If ACK was sent but person is still ACTIVE (maybe previous update failed?), stage archival now.
+                        logger.debug(f"Skipping {log_prefix}: ACK already sent.")
                         if person.status == PersonStatusEnum.ACTIVE:
                             logger.warning(
-                                f"{log_prefix}: ACK sent but status still ACTIVE. Staging archival now."
+                                f"{log_prefix}: ACK sent but status ACTIVE. Staging archive."
                             )
-                            person_updates[person.id] = (
-                                PersonStatusEnum.ARCHIVE
-                            )  # Stage update
-                            archived_count += 1  # Increment count of staged archival
+                            person_updates[person.id] = PersonStatusEnum.ARCHIVE
+                            archived_count += 1
                         skipped_count += 1
-                        continue  # Skip further processing for this person
+                        continue
 
                     # --- Get Message Context for AI ---
                     logger.debug(f"Processing {log_prefix}: Getting message context...")
                     context_logs = _get_message_context(db_session, person.id)
                     if not context_logs:
-                        logger.warning(
-                            f"Skipping {log_prefix}: Failed to retrieve message context."
-                        )
+                        logger.warning(f"Skipping {log_prefix}: Failed context.")
                         skipped_count += 1
                         continue
                     formatted_context = _format_context_for_ai_extraction(
@@ -540,25 +522,23 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         formatted_context, session_manager
                     )
 
-                    # Process AI response, default values if fails
+                    # Process AI response
                     extracted_data, suggested_tasks, summary_for_ack = (
                         {},
                         [],
                         "your message",
                     )
-                    if ai_response:  # Check if response is not None (AI call succeeded)
+                    if ai_response:
                         extracted_data = ai_response.get("extracted_data", {})
                         suggested_tasks = ai_response.get("suggested_tasks", [])
-                        # Validate types just in case AI response is malformed
                         if not isinstance(extracted_data, dict):
                             extracted_data = {}
                         if not isinstance(suggested_tasks, list):
                             suggested_tasks = []
-                        logger.debug(
+                        logger.info(
                             f"{log_prefix}: AI suggested {len(suggested_tasks)} tasks."
                         )
-
-                        # Build a user-friendly summary for the acknowledgement message
+                        # Build summary
                         summary_parts = []
                         if extracted_data.get("mentioned_names"):
                             summary_parts.append(
@@ -584,25 +564,18 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         logger.warning(
                             f"{log_prefix}: AI extraction call failed or returned invalid data."
                         )
-                        # Proceed with generic ack, don't count as error unless sending fails
 
                     # --- MS Graph Task Creation (Honoring Dry Run) ---
                     if suggested_tasks:
-                        # Authenticate Graph API if needed (only once per run ideally)
+                        # Authenticate Graph API if needed (uses shared persistent cache)
                         if not ms_graph_token and not ms_auth_attempted:
-                            logger.debug(
+                            logger.info(
                                 "Attempting MS Graph authentication (Device Flow)..."
                             )
                             try:
-                                # Create MSAL app instance for auth flow
-                                ms_graph_app = msal.PublicClientApplication(
-                                    config_instance.MS_GRAPH_CLIENT_ID,
-                                    authority=ms_graph_utils.AUTHORITY,
-                                )
+                                # Call function which uses shared MSAL instance
                                 ms_graph_token = (
-                                    ms_graph_utils.acquire_token_device_flow(
-                                        ms_graph_app
-                                    )
+                                    ms_graph_utils.acquire_token_device_flow()
                                 )
                                 ms_auth_attempted = True  # Mark that we tried
                                 if not ms_graph_token:
@@ -611,24 +584,23 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                     )
                             except Exception as auth_err:
                                 logger.error(
-                                    f"MS Graph auth error: {auth_err}", exc_info=True
+                                    f"Error during MS Graph auth: {auth_err}",
+                                    exc_info=True,
                                 )
                                 ms_auth_attempted = True
 
                         # Get To-Do List ID if needed (cache within run)
                         if ms_graph_token and not ms_list_id:
-                            logger.debug(
+                            logger.info(
                                 f"Looking up MS To-Do List ID for '{ms_list_name}'..."
                             )
                             ms_list_id = ms_graph_utils.get_todo_list_id(
                                 ms_graph_token, ms_list_name
                             )
                             if not ms_list_id:
-                                logger.error(
-                                    f"Failed find MS List '{ms_list_name}'."
-                                )  # Will skip task creation below
+                                logger.error(f"Failed find MS List '{ms_list_name}'.")
 
-                        # Create tasks if authenticated, list found, and not in dry run
+                        # Create tasks if possible AND NOT IN DRY RUN
                         if ms_graph_token and ms_list_id:
                             if config_instance.APP_MODE == "dry_run":
                                 logger.info(
@@ -640,7 +612,6 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                 )
                                 for task_desc in suggested_tasks:
                                     task_title = f"Ancestry Follow-up: {person.username} (#{person.id})"
-                                    # Construct task body with context
                                     task_body = f"AI Suggested Task based on message from {person.username} (#{person.id}):\n\n{task_desc}\n\nRelated Profile ID: {person.profile_id}\nConversation ID: {latest_in_log.conversation_id}"
                                     task_ok = ms_graph_utils.create_todo_task(
                                         ms_graph_token,
@@ -653,12 +624,10 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                     else:
                                         logger.warning(
                                             f"{log_prefix}: Failed create task: '{task_desc}'"
-                                        )  # Log failure but continue
-                        elif (
-                            suggested_tasks
-                        ):  # Log why tasks skipped if they were suggested
-                            logger.debug(
-                                f"{log_prefix}: Skipping task creation (MS Graph Auth/List ID missing)."
+                                        )
+                        elif suggested_tasks:
+                            logger.warning(
+                                f"{log_prefix}: Skipping task creation (MS Graph Auth/List ID missing or failed)."
                             )
 
                     # --- (Optional) Ancestry Tree Search Placeholder ---
@@ -677,11 +646,10 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         logger.error(
                             f"{log_prefix}: ACK formatting error: {fmt_e}. Using generic."
                         )
-                        message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\nWarmest regards,\n\nWayne"  # Fallback
+                        message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\nWarmest regards,\n\nWayne"
 
                     # --- Send Acknowledgement via API ---
-                    logger.debug(f"Processing {log_prefix}: Sending acknowledgement...")
-                    # Use conversation ID from the latest IN log to reply in the same thread
+                    logger.info(f"Processing {log_prefix}: Sending acknowledgement...")
                     conv_id_to_use = latest_in_log.conversation_id
                     send_status, _ = _send_message_via_api(
                         session_manager,
@@ -693,64 +661,57 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
                     # --- Stage Database Updates (Conditionally) ---
                     if send_status in ("delivered OK", "typed (dry_run)"):
-                        logger.debug(
+                        logger.info(
                             f"{log_prefix}: Staging DB updates after ACK ({send_status})."
                         )
-                        acks_sent_count += 1  # Count successfully sent/simulated ACKs
+                        acks_sent_count += 1
 
-                        # Prepare data dictionary for the new OUT log entry
+                        # Prepare Log data dict for batching
                         log_data = {
                             "conversation_id": conv_id_to_use,
-                            "direction": MessageDirectionEnum.OUT.value,  # Store the string value 'OUT'
+                            "direction": MessageDirectionEnum.OUT.value,  # Store string value
                             "people_id": person.id,
                             "latest_message_content": message_text[
                                 : config_instance.MESSAGE_TRUNCATION_LENGTH
                             ],
                             "latest_timestamp": datetime.now(timezone.utc),
-                            "message_type_id": ack_msg_type_id,  # Use the fetched ID
-                            "script_message_status": send_status,  # Record 'delivered OK' or 'typed (dry_run)'
+                            "message_type_id": ack_msg_type_id,
+                            "script_message_status": send_status,
                             "updated_at": datetime.now(timezone.utc),
-                            "ai_sentiment": None,  # Not applicable for outgoing script messages
+                            "ai_sentiment": None,
                         }
-                        logs_to_add.append(
-                            log_data
-                        )  # Add dict to list for batch commit
+                        logs_to_add.append(log_data)
 
-                        # Stage the Person status update to ARCHIVE
+                        # Stage Person status update
                         person_updates[person.id] = PersonStatusEnum.ARCHIVE
-                        archived_count += 1  # Count successfully staged archival
-
+                        archived_count += 1
                     else:
-                        # If sending ACK failed, log error and mark this person's processing as failed
                         logger.error(
                             f"{log_prefix}: Failed send ACK (Status: {send_status}). No DB changes staged."
                         )
                         error_count += 1
-                        person_success = False  # Mark person processing as failed
+                        person_success = False
 
                     # --- Trigger Batch Commit if Threshold Reached ---
-                    current_staged_count = len(
-                        logs_to_add
-                    )  # Count only logs, as person update dict uses ID as key
-                    if current_staged_count >= commit_threshold:
+                    # Check size of logs_to_add, as person_updates might contain duplicates if staging archive fails then succeeds
+                    current_staged_log_count = len(logs_to_add)
+                    if current_staged_log_count >= commit_threshold:
                         batch_num += 1
-                        logger.debug(
-                            f"Commit threshold {commit_threshold} reached. Committing Batch {batch_num}..."
+                        logger.info(
+                            f"Commit threshold {commit_threshold} reached ({current_staged_log_count} logs). Committing Batch {batch_num}..."
                         )
                         commit_ok = _commit_action9_batch(
                             db_session, logs_to_add, person_updates, batch_num
                         )
                         if commit_ok:
-                            # Clear collections ONLY if commit succeeded
                             logs_to_add.clear()
-                            person_updates.clear()
+                            person_updates.clear()  # Clear both on success
                         else:
-                            # If commit fails, stop processing to avoid further errors
                             logger.critical(
                                 f"CRITICAL: Batch commit {batch_num} FAILED. Stopping further processing."
                             )
-                            critical_db_error_occurred = True  # Set flag
-                            overall_success = False  # Mark overall run as failed
+                            critical_db_error_occurred = True
+                            overall_success = False
                             break  # Exit the main processing loop
 
                 # --- Catch errors during individual person processing ---
@@ -760,19 +721,16 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         exc_info=True,
                     )
                     error_count += 1
-                    person_success = False  # Mark person processing as failed
+                    person_success = False
 
                 # --- Update overall success flag and progress bar ---
                 finally:
                     if not person_success:
-                        overall_success = (
-                            False  # If any person fails, overall run fails
-                        )
+                        overall_success = False
                     progress_bar.update(1)
             # --- End Main Person Processing Loop ---
 
         # --- Final Commit (after loop finishes or breaks) ---
-        # Commit any remaining staged changes if no critical DB error occurred
         if not critical_db_error_occurred and (logs_to_add or person_updates):
             batch_num += 1
             logger.info(f"Committing final batch (Batch {batch_num})...")
@@ -781,13 +739,12 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             )
             if not final_commit_ok:
                 logger.error("Final batch commit FAILED.")
-                overall_success = False  # Mark overall failure if final commit fails
+                overall_success = False
             else:
-                # Clear collections after successful final commit
                 logs_to_add.clear()
                 person_updates.clear()
 
-    # --- Catch errors outside the main loop (e.g., DB connection, initial query) ---
+    # --- Catch errors outside the main loop ---
     except Exception as outer_e:
         logger.critical(
             f"Unhandled exception in process_productive_messages: {outer_e}",
@@ -803,14 +760,12 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         # Log final summary statistics
         print(" ")  # Newline after progress bar
         logger.info("--- Action 9 Summary ----")
-        # Calculate final error count, including those skipped due to DB error
         final_processed = processed_count
         final_errors = error_count
         if critical_db_error_occurred:
             logger.warning(
                 f"Summary reflects state *before* processing stopped due to DB error."
             )
-            # Add unprocessed candidates to error count if loop stopped early
             final_errors += total_candidates - processed_count
 
         logger.info(f"  Candidates Queried (w/ limit): {total_candidates}")
