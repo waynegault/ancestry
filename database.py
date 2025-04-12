@@ -271,10 +271,10 @@ CREATE_VIEW_SQL = text(
 @event.listens_for(Base.metadata, "after_create")
 def _create_views(target, connection, **kw):
     """Listener function to create database views after tables are created."""
-    logger.info("Executing CREATE VIEW statement for 'messages'...")
+    logger.debug("Executing CREATE VIEW statement for 'messages'...")
     try:
         connection.execute(CREATE_VIEW_SQL)
-        logger.info(
+        logger.debug(
             "Database view 'messages' created or already exists."
         )
     except Exception as e:

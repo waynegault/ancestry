@@ -275,7 +275,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
                         # Minimize the window
                         driver.minimize_window()
-                        logger.info("Browser window minimized.")
+                        logger.debug("Browser window minimized.")
                     except WebDriverException as win_e:
                         logger.warning(f"Could not minimize window: {win_e}")
                     except Exception as min_e:
