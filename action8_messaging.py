@@ -554,7 +554,7 @@ def _process_single_person(
                 logger.debug(f"Skipping {log_prefix}: Desist ACK already sent.")
                 raise StopIteration("skipped")
             else:
-                logger.info(f"Action required for {log_prefix}: Send Desist ACK.")
+                logger.debug(f"Action required for {log_prefix}: Send Desist ACK.")
                 message_to_send_key = "User_Requested_Desist"
                 send_reason = "DESIST Acknowledgment"
 
@@ -772,7 +772,7 @@ def _process_single_person(
                 # Only update status if message was actually delivered (or dry run)
                 and message_status in ("delivered OK", "typed (dry_run)")
             ):
-                logger.info(
+                logger.debug(
                     f"Staging Person status update to ARCHIVE for {log_prefix} (ACK sent/dry-run)."
                 )
                 person_update = (person.id, PersonStatusEnum.ARCHIVE)

@@ -54,8 +54,8 @@ from my_selectors import (
 from utils import (
     SessionManager,
     is_elem_there,
-    log_in,  # Keep log_in import for now, SessionManager uses it internally
-    login_status,  # Keep login_status import, SessionManager uses it internally
+    log_in,  
+    login_status,  
     nav_to_page,
     retry,
 )

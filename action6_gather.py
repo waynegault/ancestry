@@ -17,13 +17,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse
+import traceback
 
 # Third-party imports (alphabetical by package)
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup, Tag
 
-# NOTE: Removed 'from cachetools import Cache'
+from cachetools import Cache
+from diskcache.core import ENOVAL 
 from requests.adapters import HTTPAdapter
 from requests.cookies import RequestsCookieJar
 from requests.exceptions import ConnectionError, HTTPError, RequestException
@@ -45,11 +47,9 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 # Local application imports (alphabetical by module)
-# --- CORRECTED: Only import what's needed from cache.py ---
-from cache import cache as global_cache  # Use the global diskcache instance
+from cache import cache as global_cache 
 from cache import cache_result
 
-# --- End Correction ---
 from config import config_instance, selenium_config
 from database import (
     DnaMatch,
@@ -77,12 +77,7 @@ from utils import (
     urljoin,
 )
 
-# --- REMOVED Cache Fallback Initialization Block ---
-# The following block was causing the issue and has been removed:
-# if global_cache is None or not isinstance(global_cache, Cache):
-#     from cachetools import Cache # Import Cache to resolve unbound error
-#     global_cache = Cache(maxsize=1000) # Initialize with a default cache if not set
-# --- END REMOVED Block ---
+
 
 #################################################################################
 # 1. Setup & Verification
@@ -209,9 +204,11 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
             # NOTE: Pass the actual global_cache object if get_matches needs it,
             # but it shouldn't need it directly if cache_result is used inside get_matches.
             # Pass db_session instead.
-            matches_on_page, fetched_total_pages = get_matches(
-                session_manager, db_session_for_page, start_page
-            )
+            result = get_matches(session_manager, db_session_for_page, start_page)
+            if result is None:
+                matches_on_page, fetched_total_pages = [], None
+            else:
+                matches_on_page, fetched_total_pages = result
             db_connection_errors = 0  # Reset counter on success
         except ConnectionError as init_conn_e:
             logger.critical(
@@ -1915,30 +1912,271 @@ def _do_match(
 
 def get_matches(
     session_manager: SessionManager,
-    db_session: SqlAlchemySession,  # db_session is passed but not used here
+    db_session: SqlAlchemySession,
     current_page: int = 1,
 ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[int]]:
     """
-    V14.35: Fetches match list data for a single page. Fixes IndexError on first_name extraction.
+    V14.38: Fetches match list data. Fixes NameError in outer exception block, adds traceback import.
+    Initializes total_pages. Makes refinement loop more robust.
     """
-    # ... (initialization, API calls, etc. - unchanged) ...
+    # Initialize variables
+    total_pages: Optional[int] = None  # <<< Initialize total_pages
+    if not isinstance(session_manager, SessionManager):
+        logger.error("Invalid SessionManager passed to get_matches.")
+        return None, None
+    driver = session_manager.driver
+    if not driver:
+        logger.error("WebDriver not initialized in get_matches.")
+        return None, None
+    if not session_manager.my_uuid:
+        logger.error("SessionManager my_uuid not initialized in get_matches.")
+        return None, None
+    if not session_manager.is_sess_valid():
+        logger.error("get_matches: Session invalid at start.")
+        return None, None
+
+    my_uuid = session_manager.my_uuid
+    specific_csrf_token = None
+    found_token_name = None
+    csrf_token_cookie_name = "_dnamatches-matchlistui-x-csrf-token"
+    fallback_csrf_cookie_name = "_csrf"
+    in_tree_ids: Set[str] = set()
+
     try:
-        # ... (CSRF handling, API call, response processing - unchanged) ...
+        # --- CSRF Token Retrieval ---
+        logger.debug(
+            f"Waiting for match list element '{MATCH_ENTRY_SELECTOR}' before reading CSRF cookies..."
+        )
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, MATCH_ENTRY_SELECTOR))
+            )
+            logger.debug("Match list element found.")
+            time.sleep(0.5)
+        except TimeoutException:
+            logger.warning(
+                f"Timeout waiting for match list element '{MATCH_ENTRY_SELECTOR}'. Cookie read might fail."
+            )
+        except Exception as wait_e:
+            logger.warning(f"Error waiting for match list element: {wait_e}.")
 
-        # Fetch in-tree status
-        # ... (cache check, API call for in-tree status - unchanged) ...
+        logger.debug(f"Attempting to read CSRF cookies...")
+        for cookie_name in [csrf_token_cookie_name, fallback_csrf_cookie_name]:
+            try:
+                cookie_obj = driver.get_cookie(cookie_name)
+                if (
+                    cookie_obj
+                    and isinstance(cookie_obj, dict)
+                    and "value" in cookie_obj
+                    and cookie_obj["value"]
+                ):
+                    specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
+                    found_token_name = cookie_name
+                    logger.debug(f"Read CSRF token from cookie '{found_token_name}'.")
+                    break
+            except NoSuchCookieException:
+                continue
+            except WebDriverException as cookie_e:
+                logger.warning(
+                    f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
+                )
+                raise ConnectionError(
+                    f"WebDriver error getting CSRF cookie: {cookie_e}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error getting cookie '{cookie_name}': {e}",
+                    exc_info=True,
+                )
+                continue
 
-        # Refine match data
+        if not specific_csrf_token:
+            logger.debug(f"CSRF token not found via get_cookie. Trying fallback...")
+            all_cookies = get_driver_cookies(driver)
+            if all_cookies:
+                for cookie_name in [csrf_token_cookie_name, fallback_csrf_cookie_name]:
+                    if cookie_name in all_cookies and all_cookies[cookie_name]:
+                        specific_csrf_token = unquote(all_cookies[cookie_name]).split(
+                            "|"
+                        )[0]
+                        found_token_name = cookie_name
+                        logger.debug(
+                            f"Read CSRF token via fallback ('{found_token_name}')."
+                        )
+                        break
+            else:
+                logger.warning("Fallback get_driver_cookies also failed.")
+
+        if not specific_csrf_token:
+            logger.error(
+                "Failed to obtain a valid CSRF token. Cannot call Match List API."
+            )
+            return None, None
+        # --- End CSRF ---
+
+        # --- API Call for Match List ---
+        match_list_url = urljoin(
+            config_instance.BASE_URL,
+            f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
+        )
+        chrome_version = "125"  # Example, keep dynamic if needed
+        user_agent = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_version}.0.0.0 Safari/537.36"
+        sec_ch_ua = f'"Google Chrome";v="{chrome_version}", "Not-A.Brand";v="8", "Chromium";v="{chrome_version}"'
+        match_list_headers = {
+            "User-Agent": user_agent,
+            "accept": "application/json",
+            "Referer": urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
+            "x-csrf-token": specific_csrf_token,
+            "sec-ch-ua": sec_ch_ua,
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+            # Origin removed by _api_req for this description
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "dnt": "1",
+        }
+        api_response = _api_req(
+            url=match_list_url,
+            driver=driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=match_list_headers,
+            use_csrf_token=False,
+            api_description="Match List API",  # Triggers special handling in _api_req
+        )
+        # --- End API Call ---
+
+        # --- Process API Response ---
+        if api_response is None:
+            logger.warning(
+                f"No response/error from match list API page {current_page}."
+            )
+            return None, None
+        if not isinstance(api_response, dict):
+            logger.error(
+                f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
+            )
+            return None, None
+
+        total_pages_raw = api_response.get("totalPages")
+        if total_pages_raw is not None:
+            try:
+                total_pages = int(total_pages_raw)
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
+        else:
+            logger.warning("totalPages missing from response.")
+
+        match_data_list = api_response.get("matchList", [])
+        if not match_data_list:
+            logger.info(f"No matches found in 'matchList' page {current_page}.")
+            return [], total_pages
+        # --- End Process API Response ---
+
+        # --- Filter Matches (SampleID Check) ---
+        valid_matches_for_processing: List[Dict[str, Any]] = []
+        skipped_sampleid_count = 0
+        for m in match_data_list:
+            if isinstance(m, dict) and m.get("sampleId"):
+                valid_matches_for_processing.append(m)
+            else:
+                skipped_sampleid_count += 1
+                logger.warning(
+                    f"Skipping raw match missing 'sampleId' page {current_page}."
+                )
+        if skipped_sampleid_count > 0:
+            logger.warning(
+                f"Skipped {skipped_sampleid_count} matches page {current_page} (missing 'sampleId')."
+            )
+        if not valid_matches_for_processing:
+            logger.warning(f"No valid matches page {current_page}.")
+            return [], total_pages  # Return empty list and potentially None total_pages
+        # --- End Filter Matches ---
+
+        # --- Fetch In-Tree Status ---
+        sample_ids_on_page = [
+            match["sampleId"].upper() for match in valid_matches_for_processing
+        ]
+        cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
+
+        # Use get with default=ENOVAL to distinguish miss from None value
+        cached_in_tree = global_cache.get(cache_key_tree, default=ENOVAL, retry=True)
+
+        if cached_in_tree is not ENOVAL and isinstance(cached_in_tree, set):
+            in_tree_ids = cached_in_tree
+            logger.debug(f"Loaded {len(in_tree_ids)} in-tree IDs from cache.")
+        else:
+            if cached_in_tree is not ENOVAL:
+                logger.warning(
+                    f"Cache hit for {cache_key_tree}, but type is {type(cached_in_tree)}, not set. Refetching."
+                )
+
+            if not session_manager.is_sess_valid():
+                logger.error(f"In-Tree Check: Session invalid page {current_page}.")
+            else:
+                in_tree_url = urljoin(
+                    config_instance.BASE_URL,
+                    f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
+                )
+                logger.debug(f"Fetching in-tree status page {current_page}...")
+                in_tree_headers = {
+                    "X-CSRF-Token": specific_csrf_token,
+                    "Content-Type": "application/json",
+                    "User-Agent": user_agent,
+                    "Referer": urljoin(
+                        config_instance.BASE_URL, "/discoveryui-matches/list/"
+                    ),
+                    "Origin": config_instance.BASE_URL.rstrip("/"),
+                    "Accept": "application/json",
+                }
+                response_in_tree = _api_req(
+                    url=in_tree_url,
+                    driver=driver,
+                    session_manager=session_manager,
+                    method="POST",
+                    json_data={"sampleIds": sample_ids_on_page},
+                    headers=in_tree_headers,
+                    use_csrf_token=False,
+                    api_description="In-Tree Status Check",
+                )
+                if isinstance(response_in_tree, list):
+                    in_tree_ids = {
+                        item.upper()
+                        for item in response_in_tree
+                        if isinstance(item, str)
+                    }
+                    try:
+                        global_cache.set(
+                            cache_key_tree,
+                            in_tree_ids,
+                            expire=config_instance.CACHE_TIMEOUT,
+                        )
+                        logger.debug(
+                            f"Fetched/cached {len(in_tree_ids)} in-tree IDs page {current_page}."
+                        )
+                    except Exception as cache_write_err:
+                        logger.error(
+                            f"Error writing to cache for key {cache_key_tree}: {cache_write_err}"
+                        )
+                else:
+                    logger.warning(
+                        f"In-Tree Status Check API failed/unexpected page {current_page}. Resp: {response_in_tree}"
+                    )
+        # --- End Fetch In-Tree ---
+
+        # --- Refine Match Data ---
         refined_matches: List[Dict[str, Any]] = []
-        for match in valid_matches_for_processing:
+        for match_index, match in enumerate(
+            valid_matches_for_processing
+        ):  # Use enumerate for better logging
             try:
                 profile = match.get("matchProfile", {})
                 relationship = match.get("relationship", {})
-                if "sampleId" not in match:
-                    logger.warning(f"Skip refinement missing sampleId: {match}")
-                    continue # Skip this match entirely
-
+                # Sample ID check removed as list comprehension ensures it exists
                 sample_id_upper = match["sampleId"].upper()
+
                 profile_user_id = profile.get("userId")
                 profile_user_id_upper = (
                     str(profile_user_id).upper() if profile_user_id else None
@@ -1946,13 +2184,15 @@ def get_matches(
                 raw_display_name = profile.get("displayName")
                 match_username = format_name(raw_display_name)
 
-                # --- MODIFICATION: Safer first_name extraction ---
-                first_name = None # Default to None
+                # --- Refined first_name extraction (V14.36 logic) ---
+                first_name = None
                 if match_username and match_username != "Valued Relative":
-                    name_parts = match_username.split()
-                    if name_parts: # Check if split result is not empty
-                        first_name = name_parts[0]
-                # --- END MODIFICATION ---
+                    trimmed_username = match_username.strip()
+                    if trimmed_username:
+                        name_parts = trimmed_username.split()
+                        if name_parts:
+                            first_name = name_parts[0]
+                # --- End first_name extraction ---
 
                 admin_profile_id_hint = match.get("adminId")
                 admin_username_hint = match.get("adminName")
@@ -1961,10 +2201,9 @@ def get_matches(
                     f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
                 )
 
-                # Assemble the refined data dictionary
                 refined_match_data = {
                     "username": match_username,
-                    "first_name": first_name, # Use the safely derived first_name
+                    "first_name": first_name,
                     "initials": profile.get("displayInitials", "??").upper(),
                     "gender": match.get("gender"),
                     "profile_id": profile_user_id_upper,
@@ -1981,52 +2220,67 @@ def get_matches(
                 }
                 refined_matches.append(refined_match_data)
 
-            # --- Catch block adjusted to log context ---
-            except IndexError as ie:
+            # --- Inner Exception Handling (Catching errors during refinement) ---
+            except (IndexError, KeyError, TypeError, ValueError) as refine_err:
+                # Catch specific, potentially recoverable errors during refinement
                 logger.error(
-                    f"IndexError refining match page {current_page}: {ie}. Data: {match}",
-                    exc_info=True, # Include traceback for debugging
+                    f"Refinement error on page {current_page} for match {match_index+1} (UUID: {match.get('uuid', 'N/A')}): {type(refine_err).__name__} - {refine_err}. Skipping this match.",
+                    exc_info=False,  # Keep log cleaner for skippable errors
                 )
-                # Decide how to handle - skip this match or stop the whole process?
-                # Skipping the match seems safer to allow processing of other pages.
-                # Raise if debugging is needed immediately. For now, let's raise.
-                raise # Re-raise to be caught by the outer critical error handler in coord
-            except Exception as refine_e:
+                logger.debug(f"Problematic match data: {match}")
+                # Continue to the next match instead of raising
+                continue
+            except Exception as critical_refine_err:
+                # Catch unexpected errors during refinement and raise them
                 logger.error(
-                    f"Error refining match page {current_page}: {refine_e}. Data: {match}",
-                    exc_info=True,
+                    f"CRITICAL unexpected error refining match page {current_page}, match {match_index+1} (UUID: {match.get('uuid', 'N/A')}): {critical_refine_err}",
+                    exc_info=True,  # Log full traceback for critical errors
                 )
-                # Also raise other critical errors during refinement
-                raise
-            # --- End Catch block adjustment ---
+                logger.debug(f"Problematic match data: {match}")
+                raise critical_refine_err  # Re-raise to be caught by the outer handler
+            # --- End Inner Exception Handling ---
 
         logger.debug(
-            f"Processed page {current_page}: Raw={len(match_data_list)}, Refined={len(refined_matches)}"
+            f"Successfully refined {len(refined_matches)} matches on page {current_page}."
         )
-        return refined_matches, total_pages
+        return refined_matches, total_pages  # Return refined list and total_pages
 
-    # ... (Outer exception handling - unchanged) ...
-    except ConnectionError as e:
-        logger.error(f"Network/Conn error page {current_page}: {e}", exc_info=False)
-        raise e
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error page {current_page}: {e}", exc_info=True)
-        return None, None
-    except NoSuchCookieException as e:
-        logger.critical(f"Critical: No CSRF cookie. {e}", exc_info=True)
-        return None, None
-    except WebDriverException as e:
-        logger.error(f"WD error get_matches page {current_page}: {e}", exc_info=True)
-        if session_manager and not session_manager.is_sess_valid():
-            logger.error("Session invalid during WDExc.")
+    # --- Outer Exception Handling ---
+    except (
+        ConnectionError,
+        RequestException,
+        NoSuchCookieException,
+        WebDriverException,
+    ) as known_err:
+        logger.error(
+            f"Known error get_matches page {current_page}: {type(known_err).__name__} - {known_err}",
+            exc_info=False,
+        )
+        if isinstance(known_err, ConnectionError):
+            raise known_err
         return None, None
     except Exception as e:
-        # Ensure critical error is logged before returning None
+        # --- MODIFICATION: Robust outer exception logging ---
+        exc_type, exc_value, tb = (
+            sys.exc_info()
+        )  # Use different name than imported module
+        # Log basic info without traceback first
         logger.critical(
-            f"Critical error get_matches page {current_page}: {e}", exc_info=True
+            f"CRITICAL outer error get_matches page {current_page}: {exc_type.__name__} - {exc_value}"
         )
-        return None, None
-# end get_matches
+        # Optionally log traceback separately if needed, more robustly
+        try:
+            tb_lines = traceback.format_exception(exc_type, exc_value, tb)
+            logger.debug("Traceback:\n" + "".join(tb_lines))
+        except Exception as log_tb_err:
+            logger.error(
+                f"Could not format traceback during critical error logging: {log_tb_err}"
+            )
+        # --- END MODIFICATION ---
+        return None, None  # <<< Return None, None in outer exception block
+
+
+# End of get_matches
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))

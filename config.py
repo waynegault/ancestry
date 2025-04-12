@@ -114,7 +114,7 @@ class Config_Class(BaseConfig):
     LOG_LEVEL: str = "INFO"
     RETRY_STATUS_CODES: Tuple[int, ...] = (429, 500, 502, 503, 504)
     DB_POOL_SIZE = 10
-    MESSAGE_TRUNCATION_LENGTH: int = 100
+    MESSAGE_TRUNCATION_LENGTH: int = 300 # characters
     CHECK_JS_ERRORS_ACTN_6: bool = False
     USER_AGENTS: list[str] = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
