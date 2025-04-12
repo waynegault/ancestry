@@ -340,21 +340,25 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
 
 
 # Action 0 (all_but_first_actn)
-def all_but_first_actn(
-    session_manager: SessionManager, *args
-):  # Added session_manager back
+def all_but_first_actn(session_manager: SessionManager, *args):
     """
-    Action to delete all 'people' rows except the first. Browserless.
+    V1.1: Modified to delete all people except the one with a specific profile_id.
+    Action to delete all 'people' rows except the specified one. Browserless.
     Closes the provided main session pool FIRST.
     Creates a temporary SessionManager for the delete operation.
     """
+    # Define the specific profile ID to keep (ensure it's uppercase for comparison)
+    profile_id_to_keep = "08FA6E79-0006-0000-0000-000000000000".upper()
+
     temp_manager = None  # Initialize
     session = None
     success = False
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.debug("Closing main DB connections before delete-all-but-first...")
+            logger.debug(
+                f"Closing main DB connections before deleting people (except {profile_id_to_keep})..."
+            )
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
         else:
@@ -363,7 +367,9 @@ def all_but_first_actn(
             )
         # --- End closing main pool ---
 
-        logger.info("Deleting all but first person record...")
+        logger.info(
+            f"Deleting all person records except Profile ID: {profile_id_to_keep}..."
+        )
         # Create a temporary SessionManager for this specific operation
         temp_manager = SessionManager()
         session = temp_manager.get_db_conn()
@@ -371,29 +377,60 @@ def all_but_first_actn(
             raise Exception("Failed to get DB session via temporary manager.")
 
         with db_transn(session) as sess:
-            first = sess.query(Person).order_by(Person.id.asc()).first()
-            if not first:
-                logger.info("People table empty.")
-                return True
-            logger.debug(f"Keeping ID: {first.id} ({first.username})")
-            to_delete = sess.query(Person).filter(Person.id != first.id).all()
+            # Optional: Verify the person to keep actually exists
+            person_kept = (
+                sess.query(Person)
+                .filter(Person.profile_id == profile_id_to_keep)
+                .first()
+            )
+            if not person_kept:
+                logger.warning(
+                    f"Person with Profile ID {profile_id_to_keep} not found in the database. No records will be deleted."
+                )
+                return (
+                    True  # Or False depending on desired behavior if keeper not found
+                )
+
+            logger.debug(
+                f"Keeping Person ID: {person_kept.id} (ProfileID: {person_kept.profile_id}, User: {person_kept.username})"
+            )
+
+            # Query for all people *not* matching the profile_id_to_keep
+            to_delete = (
+                sess.query(Person).filter(Person.profile_id != profile_id_to_keep).all()
+            )
+
             if not to_delete:
-                logger.info("Only one person found.")
+                logger.info(
+                    f"No other person records found to delete besides {profile_id_to_keep}."
+                )
             else:
                 logger.debug(f"Deleting {len(to_delete)} people...")
+                # Delete the queried people
+                # Consider potential performance issues with large deletes - might need batching for huge tables
+                deleted_count = 0
                 for i, person in enumerate(to_delete):
-                    # logger.debug(f"Deleting {i+1}/{len(to_delete)}: {person.username} (ID: {person.id})") # Can be verbose
+                    # Log details of who is being deleted
+                    logger.debug(
+                        f" Deleting {i+1}/{len(to_delete)}: ID={person.id}, ProfileID={person.profile_id}, User={person.username}"
+                    )
                     sess.delete(person)
-                logger.info(f"Deleted {len(to_delete)} people.")
-        success = True
+                    deleted_count += 1
+                logger.info(f"Deleted {deleted_count} people.")
+        success = True  # Mark success if transaction completes
+
     except Exception as e:
-        logger.error(f"Error during deletion: {e}", exc_info=True)
+        logger.error(
+            f"Error during deletion (except {profile_id_to_keep}): {e}", exc_info=True
+        )
+        success = False  # Explicitly mark failure
     finally:
+        # Clean up the temporary session manager and its resources
         if temp_manager:
             if session:
                 temp_manager.return_session(session)
             temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
-        logger.debug("Delete action finished.")
+        logger.debug(f"Delete action (except {profile_id_to_keep}) finished.")
     return success
 # end of action 0 (all_but_first_actn)
 
@@ -817,21 +854,54 @@ def main():
         while True:
             choice = menu()
             print("")
+
+            # --- Confirmation dictionary ---
+            confirm_actions = {
+                "0": "Delete all people except specific profile ID",
+                "2": "COMPLETELY reset the database (deletes current data)",
+                "4": "Restore database from backup (overwrites current data)",
+            }
+
+            # --- Confirmation Check ---
+            if choice in confirm_actions:
+                action_desc = confirm_actions[choice]
+                # Use input() for confirmation prompt
+                confirm = (
+                    input(
+                        f"⚠️ Are you sure you want to {action_desc}? This cannot be undone. (yes/no): "
+                    )
+                    .strip()
+                    .lower()
+                )
+                if confirm not in ["yes", "y"]:
+                    print("Action cancelled.\n")
+                    continue  # Go back to the menu
+
             # --- Action Dispatching ---
-            if choice=="0": 
+            if choice == "0":
+                # Confirmation handled above
                 exec_actn(all_but_first_actn, session_manager, choice, close_sess=False)
-                session_manager = SessionManager()  
+                session_manager = (
+                    SessionManager()
+                )  # Recreate after potentially disruptive action
             elif choice == "1":
                 exec_actn(run_actions_6_7_8_action, session_manager, choice)
             elif choice == "2":
+                # Confirmation handled above
                 exec_actn(reset_db_actn, session_manager, choice, close_sess=False)
-                session_manager = SessionManager() 
+                session_manager = (
+                    SessionManager()
+                )  # Recreate after potentially disruptive action
             elif choice == "3":
+                # Backup is generally safe, no confirmation needed unless desired
                 exec_actn(backup_db_actn, session_manager, choice, close_sess=False)
             elif choice == "4":
+                # Confirmation handled above
                 exec_actn(restore_db_actn, session_manager, choice, close_sess=False)
                 logger.info("Re-initializing main SessionManager after restore...")
-                session_manager = SessionManager() 
+                session_manager = (
+                    SessionManager()
+                )  # Recreate after potentially disruptive action
             elif choice == "5":
                 exec_actn(check_login_actn, session_manager, choice, close_sess=False)
             elif choice.startswith("6"):
@@ -852,6 +922,7 @@ def main():
                 exec_actn(send_messages_action, session_manager, choice)
             elif choice == "9":
                 exec_actn(process_productive_messages, session_manager, choice)
+            # --- Meta Options ---
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")
                 if logger and logger.handlers:
@@ -887,11 +958,13 @@ def main():
                 print("Exiting.")
                 break
             else:
-                print("Invalid choice.\n")
+                # Handle invalid choices *after* confirmation checks
+                if choice not in confirm_actions:  # Avoid double 'invalid' message
+                    print("Invalid choice.\n")
 
             # --- Check if driver became live during the action ---
             if (
-                session_manager  # Check if session_manager exists (wasn't None)
+                session_manager  # Check if session_manager exists
                 and hasattr(session_manager, "driver_live")
                 and session_manager.driver_live
             ):
@@ -907,19 +980,17 @@ def main():
             print(f"CRITICAL ERROR (no logger): {e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
     finally:
-        # Use session_manager if initialized (it might be None after Action 2/4/9)
+        # <<< Finally block remains the same >>>
         if "session_manager" in locals() and session_manager:
-            # --- Corrected Check for final cleanup log message ---
             should_log_cleanup = False
-            if was_driver_live:  # Check if driver was *ever* live during the run
+            if was_driver_live:
                 should_log_cleanup = True
             elif (
                 session_manager
                 and hasattr(session_manager, "driver_live")
                 and session_manager.driver_live
-            ):  # Check if *currently* live
+            ):
                 should_log_cleanup = True
-            # --- End Corrected Check ---
 
             if should_log_cleanup:
                 log_msg = "Performing final browser cleanup..."
@@ -928,15 +999,10 @@ def main():
                 else:
                     print(log_msg, file=sys.stderr)
 
-            # close_sess handles driver quit and DB pool dispose safely
-            session_manager.close_sess(
-                keep_db=False
-            )  # Ensure DB pool is closed on final exit
+            session_manager.close_sess(keep_db=False)
 
         elif not ("session_manager" in locals() and session_manager):
-            logger.info(
-                "Session Manager was None during final cleanup (expected after reset/restore/delete)."
-            )
+            logger.info("Session Manager was None during final cleanup.")
 
         if "logger" in globals() and logger:
             logger.info("--- Main program execution finished ---")
@@ -954,4 +1020,3 @@ if __name__ == "__main__":
 
 
 # end of main.py
-
