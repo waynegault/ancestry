@@ -2793,20 +2793,68 @@ def _send_message_via_api(
     existing_conv_id: Optional[str],
     log_prefix: str,
 ) -> Tuple[Optional[str], Optional[str]]:
-    """Sends a message using the appropriate API endpoint (create or existing)."""
-    # Step 1: Get required IDs
-    MY_PROFILE_ID_LOWER = session_manager.my_profile_id.lower() if session_manager.my_profile_id else None
-    MY_PROFILE_ID_UPPER = session_manager.my_profile_id.upper() if session_manager.my_profile_id else None
+    """
+    V1.1: Added specific handling for 'testing' mode.
+    Sends a message using the appropriate API endpoint (create or existing).
+    In 'dry_run', simulates send and returns 'typed (dry_run)'.
+    In 'testing', simulates send and returns 'skipped (testing_mode)'.
+    In 'production', sends message and returns 'delivered OK' or error status.
+    """
+    # --- Step 1: Get required IDs & Determine Mode ---
+    MY_PROFILE_ID_LOWER = (
+        session_manager.my_profile_id.lower() if session_manager.my_profile_id else None
+    )
+    MY_PROFILE_ID_UPPER = (
+        session_manager.my_profile_id.upper() if session_manager.my_profile_id else None
+    )
+    # Ensure recipient ID is valid before proceeding
+    if not person or not person.profile_id:
+        logger.error(
+            f"Cannot send message: Invalid Person object or missing profile ID for {log_prefix}."
+        )
+        return "send_error (invalid_recipient)", None
     recipient_profile_id_upper = person.profile_id.upper()
-    is_initial = not existing_conv_id
 
-    # Step 2: Determine API URL, payload, and description based on whether it's an initial message
+    # Check prerequisite IDs
+    if not MY_PROFILE_ID_LOWER or not MY_PROFILE_ID_UPPER:
+        logger.error(f"Cannot send message: Own profile ID missing for {log_prefix}.")
+        return "send_error (missing_own_id)", None
+
+    is_initial = not existing_conv_id
+    app_mode = config_instance.APP_MODE
+
+    # --- Step 1.5: Handle Dry Run and Testing Modes ---
+    if app_mode == "dry_run":
+        message_status = "typed (dry_run)"
+        # Still need to determine potential conversation ID for logging consistency
+        effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
+        logger.debug(f"Dry Run: Message send simulation for {log_prefix} successful.")
+        return message_status, effective_conv_id
+    elif app_mode == "testing":
+        message_status = "skipped (testing_mode)"
+        effective_conv_id = (
+            existing_conv_id or f"testing_{uuid.uuid4()}"
+        )  # Use different prefix for testing
+        logger.debug(f"Testing Mode: Skipping actual message send for {log_prefix}.")
+        # Proceed to return this status, database updates will occur in Action 9 based on this.
+        return message_status, effective_conv_id
+    # --- End Dry Run/Testing Handling ---
+
+    # --- Proceed with Production send logic ---
+    if app_mode != "production":
+        logger.error(
+            f"Logic Error: Reached production send logic in mode '{app_mode}' for {log_prefix}."
+        )
+        return "send_error (internal_mode_error)", None
+
+    # Step 2: Determine API URL, payload, and description
     send_api_url: str = ""
     payload: Dict[str, Any] = {}
     send_api_desc: str = ""
     api_headers = {}
 
     if is_initial:
+        # Logic for creating a new conversation
         send_api_url = urljoin(
             config_instance.BASE_URL.rstrip("/") + "/",
             "app-api/express/v2/conversations/message",
@@ -2815,27 +2863,32 @@ def _send_message_via_api(
         payload = {
             "content": message_text,
             "author": MY_PROFILE_ID_LOWER,
-            "index": 0,
-            "created": 0,
+            "index": 0,  # Seems required, value might not matter? Use 0.
+            "created": 0,  # Placeholder, API might set real value.
             "conversation_members": [
-                {"user_id": recipient_profile_id_upper.lower(), "family_circles": []},
+                {
+                    "user_id": recipient_profile_id_upper.lower(),
+                    "family_circles": [],
+                },  # Ensure recipient ID is lower case here based on observed API behavior
                 {"user_id": MY_PROFILE_ID_LOWER},
             ],
         }
     elif existing_conv_id:
+        # Logic for sending to an existing conversation
         send_api_url = urljoin(
             config_instance.BASE_URL.rstrip("/") + "/",
             f"app-api/express/v2/conversations/{existing_conv_id}",
         )
         send_api_desc = "Send Message API (Existing Conv)"
         payload = {"content": message_text, "author": MY_PROFILE_ID_LOWER}
-    else:  # Should not happen if logic is correct
+    else:
         logger.error(f"Logic Error: Cannot determine API URL/payload for {log_prefix}.")
         return "send_error (api_prep_failed)", None
 
     # Step 3: Prepare Headers
     ctx_headers = config_instance.API_CONTEXTUAL_HEADERS.get(send_api_desc, {})
     api_headers = ctx_headers.copy()
+    # Ensure ancestry-userid is set correctly using UPPERCASE ID
     if "ancestry-userid" in api_headers and MY_PROFILE_ID_UPPER:
         api_headers["ancestry-userid"] = MY_PROFILE_ID_UPPER
 
@@ -2846,22 +2899,24 @@ def _send_message_via_api(
         session_manager=session_manager,
         method="POST",
         json_data=payload,
-        use_csrf_token=False,
+        use_csrf_token=False,  # CSRF not typically needed for these express APIs
         headers=api_headers,
         api_description=send_api_desc,
         force_requests=True,  # Use requests for messaging API
     )
 
     # Step 5: Validate the API response
-    message_status = "send_error (unknown)"  # Default status
+    message_status = "send_error (unknown)"  # Default status for production failure
     new_conversation_id_from_api = None
     post_ok = False
     api_conv_id = None
     api_author = None
 
     if api_response is not None:
-        if is_initial:  # Validation for creating a new conversation
-            if isinstance(api_response, dict) and "conversation_id" in api_response:
+        # Check if the response indicates success (e.g., status code 200 or 201)
+        # _api_req now only returns dict/str on success, or the Response object on failure
+        if isinstance(api_response, dict):  # Successful response parsed as JSON
+            if is_initial:  # Validation for creating a new conversation
                 api_conv_id = str(api_response.get("conversation_id"))
                 msg_details = api_response.get("message", {})
                 api_author = (
@@ -2869,7 +2924,6 @@ def _send_message_via_api(
                     if isinstance(msg_details, dict)
                     else None
                 )
-                # Check if conversation ID is present and author matches our ID
                 if api_conv_id and api_author == MY_PROFILE_ID_UPPER:
                     post_ok = True
                     new_conversation_id_from_api = api_conv_id
@@ -2877,14 +2931,8 @@ def _send_message_via_api(
                     logger.error(
                         f"API initial response invalid (values) for {log_prefix}. ConvID: {api_conv_id}, Author: {api_author}"
                     )
-            else:
-                logger.error(
-                    f"API call ({send_api_desc}) unexpected format (initial) for {log_prefix}. Resp:{api_response}"
-                )
-        else:  # Validation for sending to an existing conversation
-            if isinstance(api_response, dict) and "author" in api_response:
+            else:  # Validation for sending to an existing conversation
                 api_author = str(api_response.get("author", "")).upper()
-                # Check if author matches our ID
                 if api_author == MY_PROFILE_ID_UPPER:
                     post_ok = True
                     new_conversation_id_from_api = existing_conv_id  # Reuse existing ID
@@ -2892,18 +2940,30 @@ def _send_message_via_api(
                     logger.error(
                         f"API follow-up author validation failed for {log_prefix}."
                     )
-            else:
-                logger.error(
-                    f"API call ({send_api_desc}) unexpected format (follow-up) for {log_prefix}. Resp:{api_response}"
-                )
+        elif isinstance(
+            api_response, requests.Response
+        ):  # _api_req returned the Response object on failure
+            message_status = f"send_error (http_{api_response.status_code})"
+            logger.error(
+                f"API POST ({send_api_desc}) for {log_prefix} failed with status {api_response.status_code}."
+            )
+        else:  # Unexpected success type from _api_req (e.g., string)
+            logger.error(
+                f"API call ({send_api_desc}) unexpected success format for {log_prefix}. Type:{type(api_response)}, Resp:{api_response}"
+            )
+            message_status = "send_error (unexpected_format)"
 
         # Step 6: Determine final status based on validation
         if post_ok:
             message_status = "delivered OK"
             logger.debug(f"Message send to {log_prefix} ACCEPTED by API.")
-        else:
+        elif (
+            message_status == "send_error (unknown)"
+        ):  # Only overwrite if not already set by Response object handling
             message_status = "send_error (validation_failed)"
-            logger.warning(f"API POST validation failed for {log_prefix}.")
+            logger.warning(
+                f"API POST validation failed for {log_prefix} after receiving unexpected success response."
+            )
     else:  # Handle case where _api_req returned None (e.g., connection error after retries)
         message_status = "send_error (post_failed)"
         logger.error(
@@ -4488,7 +4548,7 @@ def _pre_navigation_checks(
             logger.error("On login page, but no SessionManager provided for re-login.")
             return False
     return True  # Passed pre-checks
-# End ofnav_to_page
+# end _pre_navigation_checks
 
 
 def _check_post_nav_redirects(post_nav_url: str) -> bool:

@@ -105,8 +105,6 @@ def menu():
     print("q. Exit")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
-
-
 # End of menu
 
 
@@ -145,8 +143,6 @@ def clear_log_file():
     except Exception as e:
         logger.warning(f"Error clearing log '{log_path}': {e}", exc_info=True)
     return cleared, log_path
-
-
 # End of clear_log_file
 
 
@@ -337,8 +333,6 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
         logger.info(f"Memory used: {mem_used:.1f} MB")
         logger.info("--------------------------------------\n")
         # End Restore old footer style
-
-
 # End of exec_actn
 
 
@@ -790,8 +784,6 @@ def send_messages_action(session_manager, *args):
 
 
 # Action 9
-
-
 # end of Action 9
 
 
@@ -954,8 +946,6 @@ def main():
                 file=sys.stderr,
             )
         print("\nExecution finished.")
-
-
 # end main
 
 # --- Entry Point ---
@@ -964,3 +954,4 @@ if __name__ == "__main__":
 
 
 # end of main.py
+
