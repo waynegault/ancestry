@@ -1,6 +1,3 @@
-# ms_graph_utils.py
-# V1.1: Added persistent token cache using msal.SerializableTokenCache
-
 import os
 import json
 import logging
@@ -16,7 +13,9 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-CLIENT_ID: Optional[str] = os.getenv("CLIENT_ID") or os.getenv("MS_GRAPH_CLIENT_ID")
+# <<< MODIFIED: Only use MS_GRAPH_CLIENT_ID >>>
+CLIENT_ID: Optional[str] = os.getenv("MS_GRAPH_CLIENT_ID")
+# <<< END MODIFICATION >>>
 TENANT_ID: Optional[str] = os.getenv("MS_GRAPH_TENANT_ID")
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID or 'consumers'}"
 SCOPES = ["Tasks.ReadWrite", "User.Read"]
@@ -63,6 +62,7 @@ atexit.register(save_cache_on_exit)
 
 # --- Shared MSAL App Instance ---
 msal_app_instance: Optional[msal.PublicClientApplication] = None
+# <<< MODIFIED: Check CLIENT_ID and update error message >>>
 if CLIENT_ID:
     msal_app_instance = msal.PublicClientApplication(
         CLIENT_ID,
@@ -73,19 +73,24 @@ if CLIENT_ID:
         "Initialized shared MSAL PublicClientApplication with persistent cache."
     )
 else:
-    logger.error("Cannot initialize shared MSAL app: CLIENT_ID is missing.")
+    logger.error(
+        "Cannot initialize shared MSAL app: MS_GRAPH_CLIENT_ID is missing or empty in environment variables."
+    )
+# <<< END MODIFICATION >>>
 # --- End Shared Instance ---
 
 
-def acquire_token_device_flow() -> Optional[str]:  # Removed 'app' parameter
+def acquire_token_device_flow() -> Optional[str]:
     """
     V1.1: Acquires an access token using the device code flow.
     Uses the shared, persistent MSAL app instance.
     """
     if not msal_app_instance:
+        # <<< MODIFIED: Update error message >>>
         logger.error(
-            "MSAL app not initialized (missing Client ID?). Cannot acquire token."
+            "MSAL app not initialized (missing MS_GRAPH_CLIENT_ID?). Cannot acquire token."
         )
+        # <<< END MODIFICATION >>>
         return None
 
     app = msal_app_instance  # Use the shared instance
@@ -101,8 +106,6 @@ def acquire_token_device_flow() -> Optional[str]:  # Removed 'app' parameter
             return result["access_token"]
         else:
             logger.info("Silent token acquisition failed, attempting device flow.")
-            # If silent fails, remove potentially bad account from cache?
-            # app.remove_account(account) # Optional: Be careful with this
 
     # Fallback to device flow
     logger.debug("Initiating device flow...")
@@ -255,8 +258,12 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)-4d] %(message)s",
     )
     logger.info("--- Testing ms_graph_utils with Persistent Cache ---")
-    if not msal_app_instance:  # Check if app instance was created
-        logger.critical("MSAL App could not be initialized. Check CLIENT_ID.")
+    # <<< MODIFIED: Update error message check >>>
+    if not msal_app_instance:
+        logger.critical(
+            "MSAL App could not be initialized. Check MS_GRAPH_CLIENT_ID in environment variables."
+        )
+    # <<< END MODIFICATION >>>
     else:
         # Acquire token (will use cache or prompt for device flow)
         token = acquire_token_device_flow()
@@ -265,12 +272,12 @@ if __name__ == "__main__":
                 "Authentication successful (using persistent cache or device flow)."
             )
             # Example: Get list ID (optional test)
-            # list_name_test = os.getenv("MS_TODO_LIST_NAME", "Tasks")
-            # list_id_test = get_todo_list_id(token, list_name_test)
-            # if list_id_test:
-            #     logger.info(f"Successfully retrieved list ID for '{list_name_test}'.")
-            # else:
-            #     logger.error(f"Failed to retrieve list ID for '{list_name_test}'.")
+            list_name_test = os.getenv("MS_TODO_LIST_NAME", "Tasks")
+            list_id_test = get_todo_list_id(token, list_name_test)
+            if list_id_test:
+                logger.info(f"Successfully retrieved list ID for '{list_name_test}'.")
+            else:
+                logger.error(f"Failed to retrieve list ID for '{list_name_test}'.")
         else:
             logger.error("Authentication failed.")
     logger.info("--- MS Graph Utils Test Finished ---")
