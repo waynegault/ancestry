@@ -15,7 +15,7 @@ import traceback
 import warnings
 from pathlib import Path
 from urllib.parse import urljoin
-from typing import Optional, Any  # Added Any
+from typing import Optional, Any  
 
 # --- Third-party imports  ---
 from selenium.webdriver.remote.remote_connection import RemoteConnection
@@ -44,6 +44,9 @@ from database import (
     delete_database,
     MessageType,
     Person,
+    ConversationLog,
+    DnaMatch,
+    FamilyTree,
 )
 import database
 from logging_config import logger, setup_logging
@@ -342,8 +345,9 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
 # Action 0 (all_but_first_actn)
 def all_but_first_actn(session_manager: SessionManager, *args):
     """
-    V1.1: Modified to delete all people except the one with a specific profile_id.
-    Action to delete all 'people' rows except the specified one. Browserless.
+    V1.2: Modified to delete records from people, conversation_log,
+          dna_match, and family_tree, except for the person with a
+          specific profile_id. Leaves message_types untouched. Browserless.
     Closes the provided main session pool FIRST.
     Creates a temporary SessionManager for the delete operation.
     """
@@ -357,7 +361,7 @@ def all_but_first_actn(session_manager: SessionManager, *args):
         # --- Close main pool FIRST ---
         if session_manager:
             logger.debug(
-                f"Closing main DB connections before deleting people (except {profile_id_to_keep})..."
+                f"Closing main DB connections before deleting data (except {profile_id_to_keep})..."
             )
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
@@ -368,7 +372,7 @@ def all_but_first_actn(session_manager: SessionManager, *args):
         # --- End closing main pool ---
 
         logger.info(
-            f"Deleting all person records except Profile ID: {profile_id_to_keep}..."
+            f"Deleting data for all people except Profile ID: {profile_id_to_keep}..."
         )
         # Create a temporary SessionManager for this specific operation
         temp_manager = SessionManager()
@@ -377,46 +381,88 @@ def all_but_first_actn(session_manager: SessionManager, *args):
             raise Exception("Failed to get DB session via temporary manager.")
 
         with db_transn(session) as sess:
-            # Optional: Verify the person to keep actually exists
-            person_kept = (
-                sess.query(Person)
+            # 1. Find the ID of the person to keep
+            person_to_keep = (
+                sess.query(Person.id, Person.username)
                 .filter(Person.profile_id == profile_id_to_keep)
                 .first()
             )
-            if not person_kept:
+
+            if not person_to_keep:
                 logger.warning(
-                    f"Person with Profile ID {profile_id_to_keep} not found in the database. No records will be deleted."
+                    f"Person with Profile ID {profile_id_to_keep} not found. No records will be deleted."
                 )
-                return (
-                    True  # Or False depending on desired behavior if keeper not found
-                )
+                return True  # Exit gracefully if the keeper doesn't exist
 
+            person_id_to_keep = person_to_keep.id
             logger.debug(
-                f"Keeping Person ID: {person_kept.id} (ProfileID: {person_kept.profile_id}, User: {person_kept.username})"
+                f"Keeping Person ID: {person_id_to_keep} (ProfileID: {profile_id_to_keep}, User: {person_to_keep.username})"
             )
 
-            # Query for all people *not* matching the profile_id_to_keep
-            to_delete = (
-                sess.query(Person).filter(Person.profile_id != profile_id_to_keep).all()
+            # --- Perform Deletions ---
+            deleted_counts = {
+                "conversation_log": 0,
+                "dna_match": 0,
+                "family_tree": 0,
+                "people": 0,
+            }
+
+            # 2. Delete from conversation_log
+            logger.debug(
+                f"Deleting from conversation_log where people_id != {person_id_to_keep}..."
+            )
+            result_conv = (
+                sess.query(ConversationLog)
+                .filter(ConversationLog.people_id != person_id_to_keep)
+                .delete(synchronize_session=False)
+            )
+            deleted_counts["conversation_log"] = (
+                result_conv if result_conv is not None else 0
+            )
+            logger.info(
+                f"Deleted {deleted_counts['conversation_log']} conversation_log records."
             )
 
-            if not to_delete:
+            # 3. Delete from dna_match
+            logger.debug(
+                f"Deleting from dna_match where people_id != {person_id_to_keep}..."
+            )
+            result_dna = (
+                sess.query(DnaMatch)
+                .filter(DnaMatch.people_id != person_id_to_keep)
+                .delete(synchronize_session=False)
+            )
+            deleted_counts["dna_match"] = result_dna if result_dna is not None else 0
+            logger.info(f"Deleted {deleted_counts['dna_match']} dna_match records.")
+
+            # 4. Delete from family_tree
+            logger.debug(
+                f"Deleting from family_tree where people_id != {person_id_to_keep}..."
+            )
+            result_ft = (
+                sess.query(FamilyTree)
+                .filter(FamilyTree.people_id != person_id_to_keep)
+                .delete(synchronize_session=False)
+            )
+            deleted_counts["family_tree"] = result_ft if result_ft is not None else 0
+            logger.info(f"Deleted {deleted_counts['family_tree']} family_tree records.")
+
+            # 5. Delete from people
+            logger.debug(f"Deleting from people where id != {person_id_to_keep}...")
+            result_people = (
+                sess.query(Person)
+                .filter(Person.id != person_id_to_keep)
+                .delete(synchronize_session=False)
+            )
+            deleted_counts["people"] = result_people if result_people is not None else 0
+            logger.info(f"Deleted {deleted_counts['people']} people records.")
+
+            total_deleted = sum(deleted_counts.values())
+            if total_deleted == 0:
                 logger.info(
-                    f"No other person records found to delete besides {profile_id_to_keep}."
+                    f"No records found to delete besides Person ID {person_id_to_keep}."
                 )
-            else:
-                logger.debug(f"Deleting {len(to_delete)} people...")
-                # Delete the queried people
-                # Consider potential performance issues with large deletes - might need batching for huge tables
-                deleted_count = 0
-                for i, person in enumerate(to_delete):
-                    # Log details of who is being deleted
-                    logger.debug(
-                        f" Deleting {i+1}/{len(to_delete)}: ID={person.id}, ProfileID={person.profile_id}, User={person.username}"
-                    )
-                    sess.delete(person)
-                    deleted_count += 1
-                logger.info(f"Deleted {deleted_count} people.")
+
         success = True  # Mark success if transaction completes
 
     except Exception as e:
