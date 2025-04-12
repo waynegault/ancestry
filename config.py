@@ -136,11 +136,16 @@ class Config_Class(BaseConfig):
 
     def _load_values(self):
         logger.debug("Loading configuration settings...")
+
         # === Credentials & Identifiers ===
         self.ANCESTRY_USERNAME: str = self._get_string_env("ANCESTRY_USERNAME", "")
         self.ANCESTRY_PASSWORD: str = self._get_string_env("ANCESTRY_PASSWORD", "")
         self.TREE_NAME: str = self._get_string_env("TREE_NAME", "")
         self.MY_PROFILE_ID: Optional[str] = self._get_string_env("MY_PROFILE_ID", "")
+        self.MS_GRAPH_CLIENT_ID: str = self._get_string_env("MS_GRAPH_CLIENT_ID", "")
+        self.MS_GRAPH_TENANT_ID: str = self._get_string_env("MS_GRAPH_TENANT_ID", "common") # Default 'common', override via .env
+        self.MS_TODO_LIST_NAME: str = self._get_string_env("MS_TODO_LIST_NAME", "Tasks") # Default to "Tasks"
+
         # === Paths & Files ===
         log_dir_name = self._get_string_env("LOG_DIR", "Logs")
         data_dir_name = self._get_string_env("DATA_DIR", "Data")
@@ -158,6 +163,7 @@ class Config_Class(BaseConfig):
             "GEDCOM_FILE_PATH", None
         )
         self.CACHE_DIR_PATH: Path = self.CACHE_DIR
+
         # === URLs ===
         self.BASE_URL: str = self._get_string_env(
             "BASE_URL", "https://www.ancestry.co.uk/"
@@ -172,14 +178,17 @@ class Config_Class(BaseConfig):
             self.API_BASE_URL = urljoin(self.BASE_URL, self.API_BASE_URL_PATH)
         else:
             self.API_BASE_URL = None
+
         # === Application Behavior ===
         self.APP_MODE: str = self._get_string_env("APP_MODE", "dry_run")
         self.MAX_PAGES: int = self._get_int_env("MAX_PAGES", 0)
         self.MAX_RETRIES: int = self._get_int_env("MAX_RETRIES", 5)
         self.MAX_INBOX: int = self._get_int_env("MAX_INBOX", 0)
         self.BATCH_SIZE: int = self._get_int_env("BATCH_SIZE", 50)
+
         # === Database ===
         self.DB_POOL_SIZE: int = self._get_int_env("DB_POOL_SIZE", self.DB_POOL_SIZE)
+
         # === Caching ===
         self.CACHE_TIMEOUT: int = self._get_int_env("CACHE_TIMEOUT", 3600)
 
@@ -373,7 +382,13 @@ class Config_Class(BaseConfig):
             logger.warning("Ancestry credentials missing!")
         logger.debug("Config loading complete.\n")
 
-    # End of _load_values
+        logger.info("--- MS Graph Config ---")
+        logger.info(f"  Client ID Loaded: {'Yes' if self.MS_GRAPH_CLIENT_ID else 'No'}")
+        logger.info(f"  Tenant ID: {self.MS_GRAPH_TENANT_ID}")
+        logger.info(f"  To-Do List Name: '{self.MS_TODO_LIST_NAME}'")
+        logger.info("----------------------")
+
+# End of _load_values
 
 
 # End of Config_Class

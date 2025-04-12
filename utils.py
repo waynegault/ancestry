@@ -63,6 +63,7 @@ import cloudscraper
 
 # --- Local application imports ---
 from my_selectors import *
+from database import Person 
 from config import config_instance, selenium_config
 from database import Base, MessageType
 from logging_config import setup_logging, logger
@@ -96,8 +97,6 @@ def force_user_agent(driver, user_agent):
         logger.warning(
             f"force_user_agent: Error while setting user agent: {e}", exc_info=True
         )
-
-
 # End of force_user_agent
 
 
@@ -117,8 +116,6 @@ def parse_cookie(cookie_string):
         key, value = key_value_pair
         cookies[key] = value
     return cookies
-
-
 # end parse_cookie
 
 
@@ -138,8 +135,6 @@ def extract_text(element, selector):
         return text.strip() if text else ""
     except NoSuchElementException:
         return ""
-
-
 # End of extract_text
 
 
@@ -171,8 +166,6 @@ def extract_attribute(element, selector, attribute):
             f"Error extracting attribute '{attribute}' from selector '{selector}': {e}"
         )
         return ""
-
-
 # End of extract_attribute
 
 
@@ -228,8 +221,6 @@ def get_tot_page(driver):
             f"Error getting total pages: {e}", exc_info=True
         )  # Log full traceback for unexpected
         return 1
-
-
 # End of get_tot_page
 
 
@@ -242,8 +233,6 @@ def ordinal_case(text: str) -> str:
         return match.group(1) + match.group(2).lower()
 
     return re.sub(r"(\d+)(st|nd|rd|th)", lower_suffix, text, flags=re.IGNORECASE)
-
-
 # end ordinal case
 
 
@@ -264,8 +253,6 @@ def is_elem_there(driver, by, value, wait=None):  # Use None default for wait
     except Exception as e:  # Catch other potential errors
         logger.error(f"Error checking element presence for '{value}': {e}")
         return False
-
-
 # End of is_elem_there
 
 
@@ -292,8 +279,6 @@ def format_name(name: Optional[str]) -> str:
         # Log error and return a safe default
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
         return "Valued Relative"  # Fallback on error
-
-
 # END OF format_name
 
 
@@ -336,8 +321,6 @@ class MatchData:
     # Fetched using getladder API for 'in_my_tree' matches
     relationship_path: Optional[str] = None  # Raw HTML or processed path from ladder
     actual_relationship: Optional[str] = None  # e.g., "Mother", "1st cousin 1x removed"
-
-
 # End Datamatch class
 
 
@@ -386,8 +369,6 @@ def retry(MAX_RETRIES=None, BACKOFF_FACTOR=None, MAX_DELAY=None):
         return wrapper
 
     return decorator
-
-
 # end retry
 
 
@@ -518,8 +499,6 @@ def retry_api(
         return wrapper
 
     return decorator
-
-
 # End of retry_api
 
 
@@ -553,8 +532,6 @@ def ensure_browser_open(func):
         return func(session_manager, *args, **kwargs)
 
     return wrapper
-
-
 # End of ensure_browser_open
 
 
@@ -593,8 +570,6 @@ def time_wait(wait_description):
         return wrapper
 
     return decorator
-
-
 # End of time_wait
 
 
@@ -769,8 +744,6 @@ class DynamicRateLimiter:
     def is_throttled(self) -> bool:
         """Returns True if the last action resulted in throttling feedback."""
         return self.last_throttled
-
-
 #
 # end of class DynamicRateLimiter
 
@@ -890,7 +863,6 @@ class SessionManager:
             )
             self.scraper = None  # Ensure scraper is None if init fails
         # --- END Cloudscraper Initialization ---
-
     # end of __init__
 
     def start_sess(self, action_name: Optional[str] = None) -> bool:
@@ -976,7 +948,6 @@ class SessionManager:
             )
             self.close_sess()
             return False
-
     # end start_sess (Phase 1)
 
     def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:
@@ -1140,7 +1111,6 @@ class SessionManager:
             f"Session readiness check FAILED after {max_readiness_attempts} attempts."
         )
         return False
-
     # end ensure_session_ready (Phase 2)
 
     def _reset_logged_flags(self):
@@ -1149,7 +1119,6 @@ class SessionManager:
         self._uuid_logged = False
         self._tree_id_logged = False
         self._owner_logged = False
-
     # end _reset_logged_flags
 
     def _initialize_db_engine_and_session(self):
@@ -1301,7 +1270,6 @@ class SessionManager:
             self.engine = None  # Ensure engine is None on failure
             self.Session = None  # Ensure Session is None on failure
             raise e
-
     # end _initialize_db_engine_and_session
 
     def _check_and_handle_url(self) -> bool:
@@ -1368,7 +1336,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Unexpected error during URL check: {e}", exc_info=True)
             return False
-
     # end _check_and_handle_url
 
     def _retrieve_identifiers(self) -> bool:
@@ -1425,7 +1392,6 @@ class SessionManager:
             logger.debug("No TREE_NAME configured, skipping tree ID retrieval/logging.")
 
         return all_ok
-
     # end _retrieve_identifiers
 
     def _retrieve_tree_owner(self):
@@ -1449,7 +1415,6 @@ class SessionManager:
             self._owner_logged = True
         elif not self.my_tree_id:
             logger.debug("Skipping tree owner retrieval (no tree ID).\n")
-
     # end _retrieve_tree_owner
 
     @retry_api()  # Add retry decorator
@@ -1506,7 +1471,6 @@ class SessionManager:
 
         # Return the valid token (don't cache here, let start_sess handle setting self.csrf_token)
         return csrf_token_val
-
     # end get_csrf
 
     def get_cookies(
@@ -1579,7 +1543,6 @@ class SessionManager:
 
         logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
         return False
-
     # end get_cookies
 
     def _sync_cookies(self):
@@ -1647,10 +1610,7 @@ class SessionManager:
                 )
         except Exception as e:
             logger.error(f"Unexpected error during cookie sync: {e}", exc_info=True)
-
     # end _sync_cookies
-
-    # --- Removed inner Cache class ---
 
     def return_session(self, session: Session):
         """Closes the session, returning the underlying connection to the pool."""
@@ -1661,7 +1621,6 @@ class SessionManager:
                 session.close()
             except Exception as e:
                 logger.error(f"Error closing session {session_id}: {e}", exc_info=True)
-
     # end return_session
 
     def get_db_conn(self) -> Optional[Session]:
@@ -1715,7 +1674,6 @@ class SessionManager:
             self.Session = None
             self._db_init_attempted = False  # Allow re-init attempt
             return None
-
     # End of get_db_conn
 
     @contextlib.contextmanager
@@ -1751,7 +1709,6 @@ class SessionManager:
             # Ensure session is closed/returned regardless of success/failure
             if session:
                 self.return_session(session)
-
     # End of get_db_conn_context method
 
     def cls_db_conn(self, keep_db: bool = True):
@@ -1792,7 +1749,6 @@ class SessionManager:
             self.engine = None
             self.Session = None
             self._db_init_attempted = False  # Reset flag
-
     # End of cls_db_conn
 
     @retry_api()  # Add retry decorator
@@ -1835,7 +1791,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
             return None
-
     # end get_my_profileId
 
     @retry_api()  # Add retry decorator
@@ -1870,7 +1825,6 @@ class SessionManager:
         else:
             logger.error("Failed to get header/dna data via _api_req.")
             return None
-
     # end of get_my_uuid
 
     @retry_api()  # Add retry decorator
@@ -1935,7 +1889,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error fetching/parsing Header Trees API: {e}", exc_info=True)
             return None
-
     # End of get_my_tree_id
 
     @retry_api()  # Add retry decorator
@@ -1988,7 +1941,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error fetching/parsing Tree Owner API: {e}", exc_info=True)
             return None
-
     # End of get_tree_owner
 
     def verify_sess(self):
@@ -2007,7 +1959,6 @@ class SessionManager:
         else:  # login_ok is None (critical error)
             logger.error("Session verification failed critically.")
             return False
-
     # End of verify_sess
 
     def _verify_api_login_status(self) -> Optional[bool]:
@@ -2093,7 +2044,6 @@ class SessionManager:
                 exc_info=True,
             )
             return None  # Critical error state
-
     # end _verify_api_login_status
 
     @retry_api()  # Use retry_api decorator
@@ -2123,7 +2073,6 @@ class SessionManager:
         else:
             logger.error("Failed to get header/dna data.")
             return False
-
     # end get_header
 
     def _validate_sess_cookies(self, required_cookies: List[str]) -> bool:  # Type hint
@@ -2148,14 +2097,12 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Unexpected error validating cookies: {e}", exc_info=True)
             return False
-
     # End of _validate_sess_cookies
 
     def is_sess_logged_in(self) -> bool:  # Return bool only
         """DEPRECATED: Use login_status() instead. Checks session validity AND login using UI element verification ONLY."""
         logger.warning("is_sess_logged_in is deprecated. Use login_status() instead.")
         return login_status(self) is True  # Delegate to new function, return bool
-
     # End is_sess_logged_in
 
     def is_sess_valid(self) -> bool:  # Type hint return
@@ -2189,7 +2136,6 @@ class SessionManager:
                 f"Unexpected error checking session validity: {e}", exc_info=True
             )
             return False
-
     # End of is_sess_valid
 
     def close_sess(self, keep_db: bool = False):  # Added keep_db flag
@@ -2216,7 +2162,6 @@ class SessionManager:
             self.cls_db_conn(keep_db=False)  # Call helper to dispose engine
         else:
             logger.debug("Keeping DB connection pool alive (keep_db=True).")
-
     # End of close_sess
 
     def restart_sess(
@@ -2262,7 +2207,6 @@ class SessionManager:
                 "Driver instance missing after successful session restart report."
             )
             return False
-
     # End of restart_sess
 
     @ensure_browser_open
@@ -2312,7 +2256,6 @@ class SessionManager:
                 f"An unexpected error occurred in make_tab: {e}", exc_info=True
             )
             return None
-
     # End of make_tab
 
     def check_js_errors(self):
@@ -2383,10 +2326,7 @@ class SessionManager:
             logger.error(
                 f"Unexpected error checking for Javascript errors: {e}", exc_info=True
             )
-
     # end of check_js_errors
-
-
 # end SessionManager
 
 
@@ -2668,8 +2608,6 @@ def _api_req(
         f"{api_description}: Exited retry loop unexpectedly. Last Exception: {last_exception}."
     )
     return None
-
-
 # End of _api_req
 
 
@@ -2751,8 +2689,6 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
     except Exception as e:
         logger.error(f"Unexpected error generating UBE Header: {e}", exc_info=True)
         return None
-
-
 # End of make_ube
 
 
@@ -2785,8 +2721,6 @@ def make_newrelic(
     except Exception as e:
         logger.error(f"Error generating NewRelic header: {e}", exc_info=True)
         return None
-
-
 # End of make_newrelic
 
 
@@ -2804,8 +2738,6 @@ def make_traceparent(
     except Exception as e:
         logger.error(f"Error generating traceparent header: {e}", exc_info=True)
         return None
-
-
 # End of make_traceparent
 
 
@@ -2824,8 +2756,6 @@ def make_tracestate(
     except Exception as e:
         logger.error(f"Error generating tracestate header: {e}", exc_info=True)
         return None
-
-
 # End of make_tracestate
 
 
@@ -2853,10 +2783,136 @@ def get_driver_cookies(
     except Exception as e:
         logger.error(f"Unexpected error getting driver cookies: {e}", exc_info=True)
         return {}
-
-
 # End of get_driver_cookies
 
+
+def _send_message_via_api(
+    session_manager: SessionManager,
+    person: Person,
+    message_text: str,
+    existing_conv_id: Optional[str],
+    log_prefix: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Sends a message using the appropriate API endpoint (create or existing)."""
+    # Step 1: Get required IDs
+    MY_PROFILE_ID_LOWER = session_manager.my_profile_id.lower() if session_manager.my_profile_id else None
+    MY_PROFILE_ID_UPPER = session_manager.my_profile_id.upper() if session_manager.my_profile_id else None
+    recipient_profile_id_upper = person.profile_id.upper()
+    is_initial = not existing_conv_id
+
+    # Step 2: Determine API URL, payload, and description based on whether it's an initial message
+    send_api_url: str = ""
+    payload: Dict[str, Any] = {}
+    send_api_desc: str = ""
+    api_headers = {}
+
+    if is_initial:
+        send_api_url = urljoin(
+            config_instance.BASE_URL.rstrip("/") + "/",
+            "app-api/express/v2/conversations/message",
+        )
+        send_api_desc = "Create Conversation API"
+        payload = {
+            "content": message_text,
+            "author": MY_PROFILE_ID_LOWER,
+            "index": 0,
+            "created": 0,
+            "conversation_members": [
+                {"user_id": recipient_profile_id_upper.lower(), "family_circles": []},
+                {"user_id": MY_PROFILE_ID_LOWER},
+            ],
+        }
+    elif existing_conv_id:
+        send_api_url = urljoin(
+            config_instance.BASE_URL.rstrip("/") + "/",
+            f"app-api/express/v2/conversations/{existing_conv_id}",
+        )
+        send_api_desc = "Send Message API (Existing Conv)"
+        payload = {"content": message_text, "author": MY_PROFILE_ID_LOWER}
+    else:  # Should not happen if logic is correct
+        logger.error(f"Logic Error: Cannot determine API URL/payload for {log_prefix}.")
+        return "send_error (api_prep_failed)", None
+
+    # Step 3: Prepare Headers
+    ctx_headers = config_instance.API_CONTEXTUAL_HEADERS.get(send_api_desc, {})
+    api_headers = ctx_headers.copy()
+    if "ancestry-userid" in api_headers and MY_PROFILE_ID_UPPER:
+        api_headers["ancestry-userid"] = MY_PROFILE_ID_UPPER
+
+    # Step 4: Make the API call using _api_req helper
+    api_response = _api_req(
+        url=send_api_url,
+        driver=session_manager.driver,
+        session_manager=session_manager,
+        method="POST",
+        json_data=payload,
+        use_csrf_token=False,
+        headers=api_headers,
+        api_description=send_api_desc,
+        force_requests=True,  # Use requests for messaging API
+    )
+
+    # Step 5: Validate the API response
+    message_status = "send_error (unknown)"  # Default status
+    new_conversation_id_from_api = None
+    post_ok = False
+    api_conv_id = None
+    api_author = None
+
+    if api_response is not None:
+        if is_initial:  # Validation for creating a new conversation
+            if isinstance(api_response, dict) and "conversation_id" in api_response:
+                api_conv_id = str(api_response.get("conversation_id"))
+                msg_details = api_response.get("message", {})
+                api_author = (
+                    str(msg_details.get("author", "")).upper()
+                    if isinstance(msg_details, dict)
+                    else None
+                )
+                # Check if conversation ID is present and author matches our ID
+                if api_conv_id and api_author == MY_PROFILE_ID_UPPER:
+                    post_ok = True
+                    new_conversation_id_from_api = api_conv_id
+                else:
+                    logger.error(
+                        f"API initial response invalid (values) for {log_prefix}. ConvID: {api_conv_id}, Author: {api_author}"
+                    )
+            else:
+                logger.error(
+                    f"API call ({send_api_desc}) unexpected format (initial) for {log_prefix}. Resp:{api_response}"
+                )
+        else:  # Validation for sending to an existing conversation
+            if isinstance(api_response, dict) and "author" in api_response:
+                api_author = str(api_response.get("author", "")).upper()
+                # Check if author matches our ID
+                if api_author == MY_PROFILE_ID_UPPER:
+                    post_ok = True
+                    new_conversation_id_from_api = existing_conv_id  # Reuse existing ID
+                else:
+                    logger.error(
+                        f"API follow-up author validation failed for {log_prefix}."
+                    )
+            else:
+                logger.error(
+                    f"API call ({send_api_desc}) unexpected format (follow-up) for {log_prefix}. Resp:{api_response}"
+                )
+
+        # Step 6: Determine final status based on validation
+        if post_ok:
+            message_status = "delivered OK"
+            logger.debug(f"Message send to {log_prefix} ACCEPTED by API.")
+        else:
+            message_status = "send_error (validation_failed)"
+            logger.warning(f"API POST validation failed for {log_prefix}.")
+    else:  # Handle case where _api_req returned None (e.g., connection error after retries)
+        message_status = "send_error (post_failed)"
+        logger.error(
+            f"API POST ({send_api_desc}) for {log_prefix} failed (No response/Retries exhausted)."
+        )
+
+    # Step 7: Return the final status and potentially the new conversation ID
+    return message_status, new_conversation_id_from_api
+# End of _send_message_via_api
 
 # ----------------------------------------------------------------------------
 # Login
@@ -3038,8 +3094,6 @@ def handle_twoFA(session_manager: SessionManager) -> bool:
     except Exception as e:
         logger.error(f"Unexpected error during 2FA handling: {e}", exc_info=True)
         return False
-
-
 # End of handle_twoFA
 
 
@@ -3214,8 +3268,6 @@ def enter_creds(driver: WebDriver) -> bool:  # Type hint driver and return
     except Exception as e:
         logger.error(f"Unexpected error entering credentials: {e}", exc_info=True)
         return False
-
-
 # End of enter_creds
 
 
@@ -3373,8 +3425,6 @@ def consent(driver: WebDriver) -> bool:  # Type hint driver and return
 
     # Ensure a return value for all code paths
     return False
-
-
 # End of consent
 
 
@@ -3605,8 +3655,6 @@ def log_in(session_manager: "SessionManager") -> str:  # Return specific status 
     except Exception as e:
         logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
         return "LOGIN_FAILED_UNEXPECTED"
-
-
 # End of log_in
 
 
@@ -3751,8 +3799,6 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:
             f"CRITICAL Unexpected error during login_status check: {e}", exc_info=True
         )
         return None
-
-
 # End of login_status
 
 
@@ -3790,8 +3836,6 @@ def is_browser_open(driver: Optional[WebDriver]) -> bool:  # Type hint driver
     except Exception as e:
         logger.error(f"Unexpected error checking browser status: {e}", exc_info=True)
         return False
-
-
 # End of is_browser_open
 
 
@@ -3949,8 +3993,6 @@ def restore_sess(driver: WebDriver) -> bool:  # Type hint driver & return
     else:
         logger.debug("No session state found in cache to restore.")
         return False
-
-
 # end of restore_sess
 
 
@@ -4054,8 +4096,6 @@ def save_state(driver: WebDriver):
         logger.error(f"Unexpected error saving sessionStorage: {e}", exc_info=True)
 
     # logger.debug(f"Session state save attempt finished for domain: {domain}.") # Less verbose
-
-
 # End of save_state
 
 
@@ -4118,8 +4158,6 @@ def close_tabs(driver: WebDriver):  # Type hint driver
             logger.error("Session invalid during close_tabs.")
     except Exception as e:
         logger.error(f"Unexpected error in close_tabs: {e}", exc_info=True)
-
-
 # end close_tabs
 
 
@@ -4404,8 +4442,6 @@ def nav_to_page(
     except Exception:
         logger.error("Could not retrieve final URL after failure.")
     return False
-
-
 # End of nav_to_page
 
 
@@ -4452,8 +4488,6 @@ def _pre_navigation_checks(
             logger.error("On login page, but no SessionManager provided for re-login.")
             return False
     return True  # Passed pre-checks
-
-
 # End ofnav_to_page
 
 
@@ -4468,8 +4502,6 @@ def _check_post_nav_redirects(post_nav_url: str) -> bool:
         logger.warning("Redirected back to login page immediately after navigation.")
         return True  # Indicates redirect occurred
     return False
-
-
 # end _check_post_nav_redirects
 
 
@@ -4486,8 +4518,6 @@ def _check_for_unavailability(
             )
             return action, wait_time
     return None, 0
-
-
 # End of_check_for_unavailability
 
 
@@ -4707,8 +4737,6 @@ def main():
             logger.info("--- Utils.py standalone test run PASSED ---")
         else:
             logger.error("--- Utils.py standalone test run FAILED ---")
-
-
 # End of main
 
 if __name__ == "__main__":

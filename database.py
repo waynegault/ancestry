@@ -1294,16 +1294,22 @@ if __name__ == "__main__":
                         messages_data = json.load(f)
 
                     if isinstance(messages_data, dict):
+
+                        # --- Ensure all required types are defined ---
+                        required_types = set(messages_data.keys())
+
                         # Use transaction context manager for seeding
                         with db_transn(seed_session) as sess:
-                            existing_types = {
-                                t.type_name
-                                for t in sess.query(MessageType.type_name).all()
-                            }
+                            existing_types_query = sess.query(MessageType.type_name).all()
+                            existing_types = {name for (name,) in existing_types_query}
+
                             types_to_add = []
-                            for name in messages_data:
+                            # Use required_types set for seeding check
+                            for name in required_types:
                                 if name not in existing_types:
                                     types_to_add.append(MessageType(type_name=name))
+                            # --- End seeding check ---
+
                             if types_to_add:
                                 sess.add_all(types_to_add)
                                 standalone_logger.debug(
@@ -1311,8 +1317,9 @@ if __name__ == "__main__":
                                 )
                             else:
                                 standalone_logger.debug(
-                                    "All message types from messages.json already exist in DB."
+                                    "All required message types already exist in DB."
                                 )
+                                
                         # Query count after commit (implicit in db_transn exit)
                         final_count = (
                             seed_session.query(func.count(MessageType.id)).scalar() or 0

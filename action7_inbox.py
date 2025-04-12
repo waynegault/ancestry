@@ -1039,7 +1039,7 @@ class InboxProcessor:
             logger.debug(
                 f"{log_prefix}Transaction block exited. Commit should have occurred via db_transn."
             )
-            return updated_person_count
+            return True
 
         except Exception as commit_err:
             logger.error(
