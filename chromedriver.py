@@ -163,11 +163,10 @@ def close_tabs(driver):
 
 def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
     """
-    V1.1 REVISED: Initializes undetected_chromedriver with options from SeleniumConfig.
+    V1.2 REVISED: Initializes undetected_chromedriver and minimizes the window if not headless.
     - Handles Path objects, None values, and retries initialization internally.
     - Recreates options object on each retry attempt.
-    - Removed incompatible experimental options.
-    - Removed redundant error check for 'useAutomationExtension'.
+    - Adds driver.minimize_window() for non-headless mode.
     """
     config = selenium_config  # Use selenium_config instance
 
@@ -188,14 +187,13 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         # --- Create FRESH Options object INSIDE the loop ---
         options = uc.ChromeOptions()
 
-        # Configure Headless Mode
+        # --- Configure Options (Headless, User Data, Profile, Browser Path, Stability, User-Agent, Popups) ---
+        # (This configuration part remains the same as your previous version V1.1)
         if config.HEADLESS_MODE:
             logger.info("Configuring headless mode.")
             options.add_argument("--headless=new")
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
-
-        # Configure User Data and Profile Directory
         user_data_dir_path = config.CHROME_USER_DATA_DIR
         if user_data_dir_path:
             user_data_dir_str = str(user_data_dir_path.resolve())
@@ -205,8 +203,6 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         if profile_dir_str:
             options.add_argument(f"--profile-directory={profile_dir_str}")
             logger.debug(f"Using profile directory: {profile_dir_str}")
-
-        # Configure Browser Executable Path
         browser_path_obj = config.CHROME_BROWSER_PATH
         if browser_path_obj:
             browser_path_str = str(browser_path_obj.resolve())
@@ -219,31 +215,26 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 )
         else:
             logger.debug("No explicit browser path specified, using system default.")
-
-        # Configure Stability & Stealth Options
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins-discovery")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-infobars")
-        options.add_argument("--disable-dev-shm-usage")  # Duplicate, keep one
+        # options.add_argument("--disable-dev-shm-usage") # Duplicate removed
         if not config.HEADLESS_MODE:
-            options.add_argument("--start-maximized")
-
-        # Configure User-Agent
+            options.add_argument(
+                "--start-maximized"
+            )  # Start maximized initially if not headless
         user_agent = random.choice(config_instance.USER_AGENTS)
         options.add_argument(f"--user-agent={user_agent}")
         logger.debug(f"Setting User-Agent:\n{user_agent}")
-
-        # Configure Popup Blocking
         options.add_argument("--disable-popup-blocking")
+        # --- End Configure Options ---
 
         # --- Attempt Driver Initialization ---
         try:
-            chrome_kwargs = {"options": options}  # Pass the fresh options object
-
-            # Handle ChromeDriver Path
+            chrome_kwargs = {"options": options}
             driver_path_obj = config.CHROME_DRIVER_PATH
             if driver_path_obj:
                 driver_path_str = str(driver_path_obj.resolve())
@@ -273,15 +264,38 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                     "Network.setUserAgentOverride", {"userAgent": user_agent}
                 )
                 logger.debug("User-Agent override applied via CDP.")
+
+                # --- MODIFICATION: Minimize Window ---
                 if not config.HEADLESS_MODE:
-                    set_win_size(driver)
+                    logger.debug("Attempting to minimize window (non-headless mode)...")
+                    try:
+                        # Optional: Set size/position *before* minimizing if desired
+                        # set_win_size(driver)
+                        # logger.debug("Window size/position set.")
+
+                        # Minimize the window
+                        driver.minimize_window()
+                        logger.info("Browser window minimized.")
+                    except WebDriverException as win_e:
+                        logger.warning(f"Could not minimize window: {win_e}")
+                    except Exception as min_e:
+                        logger.error(
+                            f"Unexpected error minimizing window: {min_e}",
+                            exc_info=True,
+                        )
+                # --- END MODIFICATION ---
+
                 driver.set_page_load_timeout(config.PAGE_TIMEOUT)
                 driver.set_script_timeout(config.ASYNC_SCRIPT_TIMEOUT)
+
                 if len(driver.window_handles) > 1:
                     logger.debug(
                         f"Multiple tabs ({len(driver.window_handles)}) detected after init. Closing extras."
                     )
-                    close_tabs(driver)
+                    close_tabs(
+                        driver
+                    )  # Ensure close_tabs is defined in this file or imported
+
                 return driver  # SUCCESS!
 
             except WebDriverException as post_init_err:
@@ -318,7 +332,6 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 logger.error(
                     f"ChromeDriver/Chrome version mismatch (attempt {attempt_num}): {e}."
                 )
-            # --- REMOVED Check for 'useautomationextension' as option is removed ---
             else:
                 logger.warning(
                     f"WebDriverException during init attempt {attempt_num}: {e}"

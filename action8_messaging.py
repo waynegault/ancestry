@@ -49,6 +49,7 @@ from sqlalchemy.sql import select
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+
 # Local application imports
 from cache import cache_result
 from config import config_instance, selenium_config
@@ -806,13 +807,10 @@ def _process_single_person(
 
 def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
-    V14.71: Sends messages based on ConversationLog state and Person status.
-    - Fetches required data using _prefetch_messaging_data.
-    - Iterates through candidates, calling _process_single_person.
-    - Collects log entries and person updates for batch commit.
-    - Handles Person status updates (ACTIVE -> ARCHIVE after ACK).
+    V14.73: Sends messages based on ConversationLog state and Person status.
+    - Simplifies tqdm progress bar format.
     """
-    # --- Step 1: Prerequisites Checks ---
+    # --- Step 1 & 2: Prerequisites & Initialization (Unchanged) ---
     if not session_manager:
         logger.error("SM required.")
         return False
@@ -826,26 +824,20 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         logger.error("Message templates failed.")
         return False
 
-    # --- Step 2: Initialization ---
     sent_count, acked_count, skipped_count, error_count = 0, 0, 0, 0
     db_logs_to_add: List[ConversationLog] = []
-    person_updates: Dict[int, PersonStatusEnum] = (
-        {}
-    )  # Maps person_id -> new Status Enum
-    progress_bar = None
+    person_updates: Dict[int, PersonStatusEnum] = {}
     total_candidates = 0
     critical_db_error_occurred = False
     batch_num = 0
     db_commit_batch_size = config_instance.BATCH_SIZE
-    max_to_send = config_instance.MAX_INBOX  # Max standard + ACK messages combined
+    max_to_send = config_instance.MAX_INBOX
     overall_success = True
-    pbar_total = 0
-    processed_in_loop = 0  # Track actual loop iterations
+    processed_in_loop = 0
 
     try:
-        # --- Step 3: Get DB Session & Pre-fetch Data ---
+        # --- Step 3: Get DB Session & Pre-fetch Data (Unchanged) ---
         with session_manager.get_db_conn_context() as db_session:
-            logger.debug("--- DIAG: Entered DB Session context manager ---")
             if not db_session:
                 raise Exception("DB Session Error")
 
@@ -857,14 +849,14 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 latest_out_log_map,
             ) = _prefetch_messaging_data(db_session)
 
-            if (  # Check if any prefetch failed
+            if (
                 message_type_map is None
                 or candidate_persons is None
                 or latest_in_log_map is None
                 or latest_out_log_map is None
             ):
                 logger.error("Prefetching essential data failed. Aborting.")
-                return False  # Indicate failure
+                return False
 
             total_candidates = len(candidate_persons)
             if total_candidates == 0:
@@ -873,61 +865,42 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 )
                 overall_success = True
             else:
-                pbar_total = total_candidates
-                logger.debug(
-                    f"PBar Total initially set to {pbar_total} (total candidates)."
+                logger.info(
+                    f"Found {total_candidates} potential candidates to process."
                 )
 
             logger.debug("--- Pre-fetching Finished ---")
-            logger.debug(
-                f"--- DIAG: About to enter tqdm loop (Total Candidates: {total_candidates}, Initial PBar Total: {pbar_total}) ---"
-            )
 
             # --- Step 4: Main Processing Loop with Progress Bar ---
-            if pbar_total > 0:
+            if total_candidates > 0:
+                # --- MODIFICATION: Simplified tqdm bar_format ---
+                tqdm_args = {
+                    "total": total_candidates,
+                    "desc": None,  # Remove description prefix
+                    "unit": " candidate",  # Keep unit for clarity if needed, or remove
+                    "ncols": 100,
+                    "leave": True,
+                    "bar_format": "{percentage:3.0f}%|{bar}|",  # Simplified format
+                }
+                # --- END MODIFICATION ---
+
+                # Log "Progress..." before starting the bar
                 logger.info("Progress...\n")
-                with logging_redirect_tqdm():
-                    logger.debug("--- DIAG: Entered logging_redirect_tqdm context ---")
-                    try:
-                        progress_bar = tqdm(
-                            total=pbar_total,
-                            desc="Processing Candidates",
-                            unit=" candidate",
-                            ncols=100,
-                            bar_format="{percentage:3.0f}%|{bar}|",  # Simplified format
-                            leave=True,
-                        )
-                        logger.debug(
-                            f"--- DIAG: tqdm progress bar initialized (Total={pbar_total}) ---"
-                        )
-                    except Exception as tqdm_e:
-                        logger.error(f"Failed to initialize progress bar: {tqdm_e}")
-                        progress_bar = None  # Continue without bar
 
+                with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                     for person in candidate_persons:
-                        processed_in_loop += 1  # Increment loop counter at the start
-
-                        # Check for critical DB error flag
+                        processed_in_loop += 1
                         if critical_db_error_occurred:
-                            logger.warning(
-                                "Aborting loop due to previous critical DB error."
-                            )
                             break
-
-                        # Check Send Limit BEFORE processing
-                        # Limit applies to successfully sent standard messages AND ACKs
                         if (
                             max_to_send > 0
                             and (sent_count + acked_count) >= max_to_send
                         ):
-                            logger.info(
-                                f"Reached MAX_INBOX limit ({max_to_send}) for sent/acked messages. Stopping loop."
-                            )
                             break
 
                         # Process the individual person
                         new_log, person_update, status = _process_single_person(
-                            db_session,  # Pass session for potential OUT log updates
+                            db_session,
                             session_manager,
                             person,
                             latest_in_log_map.get(person.id),
@@ -935,33 +908,31 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             message_type_map,
                         )
 
-                        # Tally results based on status string
+                        # Tally results
                         if status == "sent":
                             sent_count += 1
                         elif status == "acked":
                             acked_count += 1
                         elif status == "skipped":
                             skipped_count += 1
-                        else:  # status == "error"
+                        else:
                             error_count += 1
-                            overall_success = False  # Mark run as failed if any error
+                            overall_success = False
 
                         # Collect data for batch commit
-                        if new_log:  # Only add if a *new* log object was created
+                        if new_log:
                             db_logs_to_add.append(new_log)
-                        if person_update:  # Collect person status updates
-                            # person_update is (person_id, PersonStatusEnum.ARCHIVE)
+                        if person_update:
                             person_updates[person_update[0]] = person_update[1]
 
                         # Update progress bar AFTER processing
                         if progress_bar:
                             progress_bar.update(1)
 
-                        # Commit periodically or if data threshold reached
+                        # Commit periodically
                         if (
                             len(db_logs_to_add) + len(person_updates)
-                            >= db_commit_batch_size
-                        ):
+                        ) >= db_commit_batch_size:
                             batch_num += 1
                             commit_ok = _commit_messaging_batch(
                                 db_session, db_logs_to_add, person_updates, batch_num
@@ -975,15 +946,18 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                                 )
                                 critical_db_error_occurred = True
                                 overall_success = False
-                                break  # Exit inner loop on critical commit failure
+                                break
                     # --- End Main Person Loop ---
             else:
                 logger.info("Skipping processing loop as there are no candidates.")
+            # --- End conditional tqdm block ---
 
             # --- Step 5: Final Commit ---
             if not critical_db_error_occurred and (db_logs_to_add or person_updates):
                 batch_num += 1
-                logger.info(f"Performing final commit (Batch {batch_num})...")
+                logger.info(
+                    f"Performing final commit (Batch {batch_num})..."
+                )  # Keep this log
                 final_commit_ok = _commit_messaging_batch(
                     db_session, db_logs_to_add, person_updates, batch_num
                 )
@@ -999,20 +973,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         )
         overall_success = False
     finally:
-        # --- Step 7: Finalize Progress Bar & Log Summary ---
-        if progress_bar:
-            # Adjust total to match actual iterations if loop exited early
-            if not progress_bar.disable and progress_bar.n < progress_bar.total:
-                logger.debug(
-                    f"Loop finished early at {progress_bar.n}/{progress_bar.total}. Adjusting bar total."
-                )
-                progress_bar.total = progress_bar.n  # Set total to current count
-                progress_bar.refresh()  # Force refresh
+        # --- Step 7: Finalize Progress Bar & Log Summary (Summary logic unchanged) ---
+        # No need to manually close progress_bar due to 'with' statement
 
-            progress_bar.close()
-            print("", file=sys.stderr)  # Add blank line after progress bar
-
-        # Calculate final error count, accounting for early exit due to DB error
         error_count_final = error_count
         if critical_db_error_occurred and total_candidates > processed_in_loop:
             unaccounted = total_candidates - processed_in_loop
@@ -1020,7 +983,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 f"Adding {unaccounted} unaccounted candidates (due to DB error exit) to error count for summary."
             )
             error_count_final += unaccounted
-
+        print(" ")
         logger.info("--- Message Sending Summary ----")
         logger.info(f"  Potential Candidates:        {total_candidates}")
         logger.info(f"  Processed (Iterated):      {processed_in_loop}")
@@ -1030,7 +993,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         logger.info(f"  Errors (API/DB/Unaccounted): {error_count_final}")
         logger.info(f"  Overall Success:           {overall_success}")
         logger.info("---------------------------------\n")
+
     return overall_success
+
+
 # End of send_messages_to_matches
 
 #####################################################
