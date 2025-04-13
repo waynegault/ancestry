@@ -914,7 +914,7 @@ def main():
                 # Use input() for confirmation prompt
                 confirm = (
                     input(
-                        f"⚠️ Are you sure you want to {action_desc}? This cannot be undone. (yes/no): "
+                        f"⚠️ Are you sure you want to {action_desc}? This cannot be undone. (yes/no): \n"
                     )
                     .strip()
                     .lower()

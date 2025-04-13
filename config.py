@@ -109,6 +109,9 @@ class Config_Class(BaseConfig):
     """Main configuration class loading settings."""
 
     # --- Constants / Fixed Settings ---
+    TESTING_PROFILE_ID: Optional[str] = (
+        "08FA6E79-0006-0000-0000-000000000000"  # Default Test ID
+    )
     INITIAL_DELAY: float = 0.5  # Base delay when not waiting for tokens
     MAX_DELAY: float = 60.0  # Max sleep time in any case
     BACKOFF_FACTOR: float = 1.8  # Multiplier for base delay on throttling
@@ -156,6 +159,28 @@ class Config_Class(BaseConfig):
         self.MS_TODO_LIST_NAME: str = self._get_string_env(
             "MS_TODO_LIST_NAME", "Tasks"
         )  # Default to "Tasks"
+
+        # === Testing Specific Configuration ===
+        # Load TESTING_PROFILE_ID, using class attribute as default if not set in .env
+        loaded_test_id = self._get_string_env(
+            "TESTING_PROFILE_ID", self.TESTING_PROFILE_ID or ""
+        )
+        if loaded_test_id != self.TESTING_PROFILE_ID:
+            logger.info(
+                f"Loaded TESTING_PROFILE_ID from environment: '{loaded_test_id}'"
+            )
+            self.TESTING_PROFILE_ID = loaded_test_id
+        elif self.TESTING_PROFILE_ID:  # Log if default is used and not None/empty
+            logger.info(
+                f"Using default TESTING_PROFILE_ID: '{self.TESTING_PROFILE_ID}' (Set TESTING_PROFILE_ID in .env to override)"
+            )
+        else:  # Handle case where default might be None/empty
+            logger.warning("TESTING_PROFILE_ID is not set in environment or defaults.")
+            self.TESTING_PROFILE_ID = None  # Ensure it's None if not set
+
+        # Ensure TESTING_PROFILE_ID is uppercase if set
+        if self.TESTING_PROFILE_ID:
+            self.TESTING_PROFILE_ID = self.TESTING_PROFILE_ID.upper()
 
         # === Paths & Files ===
         log_dir_name = self._get_string_env("LOG_DIR", "Logs")
@@ -567,11 +592,6 @@ class SeleniumConfig(BaseConfig):
 # --- Singleton Instances ---
 config_instance = Config_Class()
 selenium_config = SeleniumConfig()
-
-
-
-
-
 
 
 # --- End of config.py ---

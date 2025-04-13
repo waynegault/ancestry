@@ -605,7 +605,7 @@ class InboxProcessor:
 
                 # Commit batch data
                 if conv_log_upserts or person_updates:
-                    logger.info(
+                    logger.debug(
                         f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts)} logs, {len(person_updates)} persons..."
                     )
                     status_updates_this_batch = self._commit_batch_data_upsert(
@@ -758,11 +758,10 @@ class InboxProcessor:
                 # Use tqdm context manager ONLY when there's a limit
                 tqdm_args = {
                     "total": self.max_inbox_limit,
-                    "desc": "Processing Inbox",
                     "unit": " conv",
                     "ncols": 100,
                     "leave": True,  # Keep final bar visible
-                    "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+                    "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt}",
                 }
                 try:
                     with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
@@ -835,7 +834,7 @@ class InboxProcessor:
                 and not stop_reason.startswith("End of Inbox")
                 and not stop_reason.startswith("Comparator")
             ):
-                logger.warning(f"Inbox search stopped early: {stop_reason}")
+                logger.debug(f"Inbox search stopped early: {stop_reason}")
 
             self._log_unified_summary(
                 total_api_items=total_processed_api_items,
@@ -1189,7 +1188,7 @@ class InboxProcessor:
 
             else:
                 logger.info(
-                    "ConversationLog empty. Comparator not created."
+                    "ConversationLog empty. Comparator not created.\n"
                 )  # Use INFO
 
         except Exception as e:
@@ -1353,7 +1352,7 @@ class InboxProcessor:
                         )
                         session.rollback()  # Rollback if flush didn't assign ID
                         return None, "error"
-                    logger.info(
+                    logger.debug(
                         f"Created new Person ID {new_person.id} for {username} ({profile_id})."
                     )
                     return new_person, "new"
@@ -1412,23 +1411,20 @@ class InboxProcessor:
         max_inbox_limit: int,
     ):
         """Logs the final summary for the inbox search."""
-        logger.info("---- Inbox Search Summary ----")
-        logger.info(f"  Total API Items Fetched:  {total_api_items}")
-        logger.info(
-            f"  Items Processed in Loop:  {items_processed}"
-        )  # Renamed for clarity
-        logger.info(f"  AI Classifications Made:  {ai_classified}")
-        logger.info(f"  Person Status Updates:    {status_updates}")
+        print(" ")
+        logger.info("------ Inbox Search Summary ------")
+        logger.info(f"Total API Items Fetched:      {total_api_items}")
+        logger.info(f"Items Processed in Loop:      {items_processed}"        )  
+        logger.info(f"AI Classifications Made:      {ai_classified}")
+        logger.info(f"Person Status Updates:        {status_updates}")
         if stop_reason:
-            logger.info(f"  Processing Stopped Due To: {stop_reason}")
+            logger.info(f"Processing Stopped Due To:    {stop_reason}")
         elif max_inbox_limit == 0 or (
             max_inbox_limit > 0 and items_processed < max_inbox_limit
         ):
-            # If no specific stop reason, imply it finished normally or hit end of inbox
-            logger.info(
-                f"  Processing Stopped Due To: End of Inbox Reached or Comparator"
+            logger.info(f"Processing Stopped Due To:    End Reached"
             )
-        logger.info("----------------------------\n")
+        logger.info("----------------------------------\n")
     # End of _log_unified_summary
 # End of InboxProcessor class
 

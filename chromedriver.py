@@ -111,8 +111,6 @@ def reset_preferences_file():
     except Exception as e:
         logger.error(f"Unexpected error in reset_preferences_file: {e}", exc_info=True)
         raise
-
-
 # End of reset_preferences_file
 
 
@@ -136,8 +134,6 @@ def set_win_size(driver):
         )
     except Exception as e:
         logger.error(f"Failed to set window size and position: {e}", exc_info=True)
-
-
 # End of set_win_size
 
 
@@ -156,8 +152,6 @@ def close_tabs(driver):
         logger.warning("Attempted to close or switch to a tab that no longer exists.")
     except Exception as e:
         logger.error(f"Error in close_tabs: {e}", exc_info=True)
-
-
 # end close_tabs
 
 
@@ -362,8 +356,6 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
     logger.error("Exited WebDriver initialization loop unexpectedly.")
     return None
-
-
 # End of init_webdvr
 
 
@@ -394,8 +386,6 @@ def cleanup_webdrv():
 
     except Exception as e:
         logger.error(f"Error during cleanup: {e}", exc_info=True)
-
-
 # end of cleanup_webdr
 
 
