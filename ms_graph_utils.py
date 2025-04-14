@@ -1,121 +1,150 @@
 # File: ms_graph_utils.py
-# V1.3: Reorganized structure, enhanced comments, early CLIENT_ID check.
 
-import os
+"""
+ms_graph_utils.py - Microsoft Graph API Interaction Utilities
+
+Provides functions for authenticating with Microsoft Graph using MSAL (Microsoft
+Authentication Library) via the device code flow, managing a persistent token cache,
+finding To-Do list IDs, and creating tasks within a specified list. Reads client ID
+and tenant ID configuration from environment variables.
+"""
+
+# --- Standard library imports ---
+import atexit  # For saving cache on exit
 import json
 import logging
+import os
+import sys  # Not strictly needed now, but kept if used later
 import time
-import sys
-from typing import Optional, Dict, Any
-import msal
-import requests
-from dotenv import load_dotenv
-import atexit
-from config import config_instance  # Required for DATA_DIR
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+# --- Third-party imports ---
+import msal  # MSAL library for authentication
+import requests  # For making Graph API calls
+from dotenv import load_dotenv  # To load .env file
+
+# --- Local application imports ---
+from config import config_instance  # Required for DATA_DIR to store cache
+from logging_config import logger  # Use configured application logger
 
 # --- Initial Setup ---
+# Step 1: Load environment variables from .env file
 load_dotenv()
-logger = logging.getLogger(__name__)  # Use module-specific logger for utils
+logger.debug("Loaded environment variables for MS Graph utils.")
 
 # --- Core Configuration Loading ---
+# Step 2: Load required MS Graph configuration
 logger.debug("Loading MS Graph configuration from environment...")
-# Load Client ID (Required) - Standardized to MS_GRAPH_CLIENT_ID
+# Client ID (Application ID) registered in Azure AD/Microsoft Entra ID
 CLIENT_ID: Optional[str] = os.getenv("MS_GRAPH_CLIENT_ID")
-# Load Tenant ID (Optional - defaults to 'consumers' for multi-tenant/personal accounts)
-TENANT_ID: Optional[str] = os.getenv("MS_GRAPH_TENANT_ID")
+# Tenant ID (Directory ID). Defaults to 'consumers' for multi-tenant apps / personal accounts.
+# Use 'common' for multi-tenant work/school/personal, or specific tenant ID.
+TENANT_ID: Optional[str] = os.getenv(
+    "MS_GRAPH_TENANT_ID", "consumers"
+)  # Default to consumers
 
-# --- Early Exit if Client ID is Missing ---
+# --- Critical Check: Client ID is Required ---
 if not CLIENT_ID:
     logger.critical(
         "CRITICAL ERROR: MS_GRAPH_CLIENT_ID not found in environment variables (.env). MS Graph functionality disabled."
     )
-    # Set dependent variables to None to prevent errors later if script continues
-    msal_app_instance = None
+    msal_app_instance = None  # Ensure dependent vars are None
     AUTHORITY = None
 else:
-    # --- Derive Dependent Configuration ---
-    # Construct Authority URL based on Tenant ID or default to 'consumers'
-    AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID or 'consumers'}"
-    logger.info(f"MS Graph Using Client ID: {CLIENT_ID}")
-    logger.info(f"MS Graph Using Authority URL: {AUTHORITY}")
+    # Step 3: Construct Authority URL based on Tenant ID
+    AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+    logger.info(f"MS Graph Config: Client ID = {CLIENT_ID}")
+    logger.info(f"MS Graph Config: Authority URL = {AUTHORITY}")
 
-# Define required API scopes and the Graph API endpoint
+# Step 4: Define required API scopes (permissions)
 SCOPES = [
-    "Tasks.ReadWrite",
-    "User.Read",
-]  # Permissions needed for To-Do tasks and reading user profile
-GRAPH_API_ENDPOINT = "https://graph.microsoft.com/v1.0"
+    "Tasks.ReadWrite",  # Permission to read and write user's tasks
+    "User.Read",  # Permission to read basic user profile info (e.g., name)
+]
+# Step 5: Define base Graph API endpoint
+GRAPH_API_ENDPOINT = "https://graph.microsoft.com/v1.0"  # Use v1.0 endpoint
 
 # --- Persistent Token Cache Setup ---
 logger.debug("Setting up persistent MSAL token cache...")
-CACHE_FILENAME = "ms_graph_cache.bin"  # File to store cached tokens
-CACHE_FILEPATH = config_instance.DATA_DIR / CACHE_FILENAME  # Full path within DATA_DIR
+CACHE_FILENAME = "ms_graph_cache.bin"  # Name of the cache file
+# Ensure DATA_DIR exists before constructing path
+try:
+    config_instance.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_FILEPATH = config_instance.DATA_DIR / CACHE_FILENAME
+    logger.info(f"MSAL token cache path set to: {CACHE_FILEPATH}")
+except Exception as dir_err:
+    logger.error(
+        f"Could not create DATA_DIR for MSAL cache: {dir_err}. Cache will be in-memory only."
+    )
+    CACHE_FILEPATH = None  # Set path to None if directory fails
 
-# Initialize the serializable cache object
+# Step 6: Initialize MSAL Serializable Token Cache
 persistent_cache = msal.SerializableTokenCache()
 
-# Attempt to load existing cache from file on script startup
-try:
-    if CACHE_FILEPATH.exists():
-        logger.debug(f"Loading MSAL cache from: {CACHE_FILEPATH}")
-        persistent_cache.deserialize(CACHE_FILEPATH.read_text(encoding="utf-8"))
-        logger.info("MSAL token cache loaded successfully.")
-    else:
-        logger.debug("MSAL cache file not found. Starting with empty cache.")
-except Exception as e:
-    logger.warning(
-        f"Failed to load MSAL cache from {CACHE_FILEPATH}: {e}. Starting with empty cache."
-    )
+# Step 7: Attempt to load existing cache from file (if path available)
+if CACHE_FILEPATH:
+    try:
+        if CACHE_FILEPATH.exists():
+            logger.debug(f"Loading MSAL cache from: {CACHE_FILEPATH}")
+            persistent_cache.deserialize(CACHE_FILEPATH.read_text(encoding="utf-8"))
+            logger.info("MSAL token cache loaded successfully.")
+        else:
+            logger.info("MSAL cache file not found. Starting with empty cache.")
+    except Exception as e:
+        logger.warning(
+            f"Failed to load MSAL cache from {CACHE_FILEPATH}: {e}. Starting with empty cache."
+        )
 
 
+# Step 8: Define function to save cache on script exit
 def save_cache_on_exit():
-    """atexit handler: Saves the MSAL token cache to a file if it has changed."""
+    """atexit handler: Saves the MSAL token cache to file if it changed."""
+    # Check if cache path is valid and cache object exists
+    if not CACHE_FILEPATH or not persistent_cache:
+        logger.debug("Skipping MSAL cache save: Cache path or object unavailable.")
+        return
+
     logger.info("Executing save_cache_on_exit via atexit...")
     try:
-        state_changed = persistent_cache.has_state_changed
-        logger.debug(f"Cache 'has_state_changed' flag is: {state_changed}")
-        if state_changed:
-            logger.info(f"MSAL cache has changed. Attempting save to: {CACHE_FILEPATH}")
-            # Ensure the Data directory exists
+        # Check if cache state actually changed since loading/last save
+        if persistent_cache.has_state_changed:
+            logger.info(f"MSAL cache has changed. Saving to: {CACHE_FILEPATH}")
+            # Ensure directory exists again (paranoid check)
             CACHE_FILEPATH.parent.mkdir(parents=True, exist_ok=True)
+            # Serialize and write cache data
             cache_data_to_save = persistent_cache.serialize()
             logger.debug(
                 f"Serialized cache data length: {len(cache_data_to_save)} bytes."
             )
-            if len(cache_data_to_save) < 10:
-                logger.warning(
-                    "Serialized cache data seems very small. Potential issue?"
-                )
-
             CACHE_FILEPATH.write_text(cache_data_to_save, encoding="utf-8")
-            logger.info(f"Successfully wrote cache data to {CACHE_FILEPATH}.")
-            # Reset flag after successful save prevents re-saving if script exits abnormally later
-            persistent_cache.has_state_changed = False
+            logger.info("Successfully saved MSAL token cache.")
+            # Optional: Reset flag manually after save if needed, though MSAL might handle this.
+            # persistent_cache.has_state_changed = False
         else:
-            logger.info("MSAL cache unchanged. No save needed.")
+            logger.info("MSAL cache unchanged since last load/save. No save needed.")
     except Exception as e:
-        # Log error but allow script exit to continue
         logger.error(
             f"Failed to save MSAL cache to {CACHE_FILEPATH}: {e}", exc_info=True
         )
 
-# End save_cache_on_exit
 
-# Register the save function to run when the script exits cleanly
+# End of save_cache_on_exit
+
+# Step 9: Register the save function with atexit
 atexit.register(save_cache_on_exit)
 logger.debug("Registered MSAL cache save function with atexit.")
 
-# --- Shared MSAL App Instance Initialization ---
-# This instance will be used by acquire_token_device_flow
+# Step 10: Initialize Shared MSAL Public Client Application instance
 msal_app_instance: Optional[msal.PublicClientApplication] = None
-if CLIENT_ID and AUTHORITY:  # Check if config loaded okay
+if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
     try:
         msal_app_instance = msal.PublicClientApplication(
-            CLIENT_ID,
+            client_id=CLIENT_ID,  # Pass client_id explicitly
             authority=AUTHORITY,
             token_cache=persistent_cache,  # Link the persistent cache
         )
-        logger.debug(
+        logger.info(
             "Initialized shared MSAL PublicClientApplication with persistent cache."
         )
     except Exception as msal_init_e:
@@ -124,239 +153,258 @@ if CLIENT_ID and AUTHORITY:  # Check if config loaded okay
         )
         msal_app_instance = None  # Ensure it's None on failure
 
-
 # --- Core Authentication and API Functions ---
 
 
 def acquire_token_device_flow() -> Optional[str]:
     """
     Acquires an MS Graph API access token using the device code flow.
-    It prioritizes silent acquisition using the persistent cache, falling back
-    to the interactive device flow if needed.
+    Prioritizes silent acquisition from cache, falls back to interactive flow.
 
     Returns:
         The access token string if successful, otherwise None.
     """
-    # Step 1: Check if MSAL App was initialized successfully
+    # Step 1: Check if MSAL App instance is available
     if not msal_app_instance:
         logger.error(
-            "MSAL app not initialized (check MS_GRAPH_CLIENT_ID). Cannot acquire token."
+            "MSAL app instance not initialized (check CLIENT_ID). Cannot acquire token."
         )
         return None
-
     app = msal_app_instance  # Use the shared instance
 
-    # Step 2: Attempt Silent Token Acquisition from Cache
+    # Step 2: Attempt Silent Token Acquisition (from cache)
     account = None
     accounts = app.get_accounts()  # Get accounts known to the cache
     if accounts:
         logger.info(
-            f"Account(s) found in cache ({len(accounts)}). Attempting silent acquisition for the first account."
+            f"Account(s) found in cache ({len(accounts)}). Attempting silent token acquisition..."
         )
-        account = accounts[0]  # Use the first cached account (common case)
+        account = accounts[0]  # Use the first account found
         result = app.acquire_token_silent(SCOPES, account=account)
-        # Check if silent acquisition was successful
+        # Step 2a: Check silent result
         if result and "access_token" in result:
             logger.info("Access token acquired silently from cache.")
-            return result["access_token"]
+            return result["access_token"]  # Return cached token
         else:
             logger.info(
-                "Silent token acquisition failed (token expired or needs refresh)."
+                "Silent token acquisition failed (likely expired or needs refresh)."
             )
-            # Optional: Could attempt to remove the account if silent fails consistently
-            # app.remove_account(account)
-            # logger.info("Removed potentially stale account from cache.")
+            # Optional: Could remove account if silent fails: app.remove_account(account)
 
     # Step 3: Fallback to Interactive Device Code Flow
-    logger.info("Attempting interactive device flow...")
-    flow = app.initiate_device_flow(scopes=SCOPES)
+    logger.info("Initiating interactive device flow...")
+    try:
+        flow = app.initiate_device_flow(scopes=SCOPES)
+    except Exception as flow_init_e:
+        logger.error(f"Error initiating device flow: {flow_init_e}", exc_info=True)
+        return None
 
-    # Check if flow initiation failed
+    # Step 3a: Check if flow initiation failed (e.g., config error)
     if "user_code" not in flow:
-        err_desc = flow.get("error_description", "Unknown error")
+        err_desc = flow.get("error_description", "Unknown error during flow initiation")
         logger.error(f"Failed to create device flow. Response: {err_desc}")
         return None
 
-    # Step 3a: Display instructions for the user
-    # Using print for direct user visibility during interactive phase
-    print(
-        f"\n--- MS GRAPH AUTH REQUIRED ---\n"
-        f"To sign in, use a web browser to open the page:\n{flow['verification_uri']}\n"
-        f"and enter the code: {flow['user_code']}\n"
-        f"Waiting for you to authenticate in the browser...\n"
-        f"------------------------------"
-    )
-    timeout_seconds = flow.get("expires_in", 900)  # Default 15 minutes
+    # Step 3b: Display user instructions (use print for immediate visibility)
+    print("\n" + "=" * 40)
+    print(" MS GRAPH AUTHENTICATION REQUIRED")
+    print("=" * 40)
+    print(f"1. Open a web browser to: {flow['verification_uri']}")
+    print(f"2. Enter the code: {flow['user_code']}")
+    print(f"3. Sign in with your Microsoft account and grant permissions.")
+    print(f"   (Waiting for authentication in browser...)")
+    print("=" * 40 + "\n")
+    timeout_seconds = flow.get("expires_in", 900)  # Get timeout from response
     logger.info(
-        f"Device flow initiated. Waiting for user authentication ({timeout_seconds}s timeout)..."
+        f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout)."
     )
 
-    # Step 3b: Wait for user to authenticate in browser
-    # This call blocks until the user completes the flow, it times out, or an error occurs.
-    result = app.acquire_token_by_device_flow(flow)
+    # Step 3c: Wait for user authentication (blocking call)
+    try:
+        result = app.acquire_token_by_device_flow(
+            flow
+        )  # This waits for completion/timeout
+    except Exception as flow_acquire_e:
+        # Catch errors during the waiting/acquisition phase
+        logger.error(
+            f"Error acquiring token via device flow: {flow_acquire_e}", exc_info=True
+        )
+        result = None  # Ensure result is None on exception
 
-    # Step 4: Process the result of the device flow attempt
+    # Step 4: Process device flow result
     if result and "access_token" in result:
         logger.info("Access token acquired successfully via device flow.")
-        # Log authenticated user info if available in the token claims
-        if "id_token_claims" in result:
-            user_info = result["id_token_claims"].get("preferred_username") or result[
-                "id_token_claims"
-            ].get("name")
-            if user_info:
-                logger.info(f"Authenticated as: {user_info}")
-        # Mark the cache as changed so it gets saved on exit
-        persistent_cache.has_state_changed = True
-        logger.debug("Marked persistent cache as changed.")
-        return result["access_token"]
+        # Log user info if available
+        user_info = result.get("id_token_claims", {}).get(
+            "preferred_username"
+        ) or result.get("id_token_claims", {}).get("name", "Unknown User")
+        logger.info(f"Authenticated as: {user_info}")
+        # Mark cache as changed *only* after successful interactive flow
+        if persistent_cache:
+            persistent_cache.has_state_changed = True
+        logger.debug("Marked persistent token cache as changed.")
+        return result["access_token"]  # Return the newly acquired token
     elif result and "error_description" in result:
-        # Log specific error from Microsoft identity platform
+        # Log specific error message from MS identity platform
         logger.error(
-            f"Failed to acquire token via device flow: {result.get('error_description')}"
+            f"Failed to acquire token via device flow: {result.get('error_description', 'No description provided')}"
         )
         return None
     else:
-        # Handle timeout or other unexpected result structures
+        # Handle timeout or other unexpected failures
         logger.error(
             f"Device flow failed, timed out, or returned unexpected result: {result}"
         )
         return None
-# end acquire_token_device_flow
+
+
+# End of acquire_token_device_flow
 
 
 def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
     """
-    Finds the ID of a specific Microsoft To-Do list by its display name.
+    Finds the ID of a specific Microsoft To-Do list by its display name using MS Graph API.
 
     Args:
-        access_token: A valid MS Graph API access token.
+        access_token: A valid MS Graph API access token with Tasks.ReadWrite scope.
         list_name: The exact display name of the To-Do list to find.
 
     Returns:
         The ID string of the list if found, otherwise None.
     """
-    # Step 1: Validate input
+    # Step 1: Validate inputs
     if not access_token:
-        logger.error("Cannot get list ID: Access token is missing.")
+        logger.error("Cannot get list ID: Access token missing.")
         return None
     if not list_name:
-        logger.error("Cannot get list ID: Target list name is missing.")
+        logger.error("Cannot get list ID: Target list name missing.")
         return None
 
-    # Step 2: Prepare the request
+    # Step 2: Prepare API request details
     headers = {"Authorization": f"Bearer {access_token}"}
-    # Use OData filter to find the list by name efficiently
+    # Use OData $filter for efficient server-side filtering by display name
     list_query_url = (
         f"{GRAPH_API_ENDPOINT}/me/todo/lists?$filter=displayName eq '{list_name}'"
     )
-    logger.info(f"Querying Graph API for To-Do list named '{list_name}'...")
+    logger.info(f"Querying MS Graph API for To-Do list named '{list_name}'...")
     logger.debug(f"List query URL: {list_query_url}")
 
-    # Step 3: Execute the API request and handle potential errors
+    # Step 3: Execute the API request
     try:
-        response = requests.get(list_query_url, headers=headers, timeout=30)
-        # Check for HTTP errors (4xx, 5xx)
-        response.raise_for_status()
+        response = requests.get(
+            list_query_url, headers=headers, timeout=30
+        )  # 30s timeout
+        response.raise_for_status()  # Raise HTTPError for bad status codes (4xx, 5xx)
 
         # Step 4: Parse the JSON response
         lists_data = response.json()
 
-        # Step 5: Process the results
-        # The response contains a 'value' list of matching lists
-        if lists_data and "value" in lists_data and len(lists_data["value"]) > 0:
-            # Assuming list names are unique enough for the purpose, take the first match
+        # Step 5: Process the result list ('value' key contains the list of lists)
+        if (
+            lists_data
+            and "value" in lists_data
+            and isinstance(lists_data["value"], list)
+            and len(lists_data["value"]) > 0
+        ):
+            # Assume the first match is the desired one (list names should ideally be unique)
             first_match = lists_data["value"][0]
             list_id = first_match.get("id")
             if list_id:
-                logger.info(f"Found list '{list_name}' with ID: {list_id}")
-                return list_id
+                logger.info(f"Found To-Do list '{list_name}' with ID: {list_id}")
+                return list_id  # Return the found ID
             else:
-                # This shouldn't happen if the API response is valid
                 logger.error(
-                    f"List '{list_name}' found, but 'id' field is missing in the response item: {first_match}"
+                    f"List '{list_name}' found, but 'id' field missing in API response item: {first_match}"
                 )
-                return None
+                return None  # Data structure error
         else:
-            # List not found or empty response
+            # List not found or response format incorrect
             logger.error(
                 f"Microsoft To-Do list named '{list_name}' not found for the authenticated user."
             )
-            logger.debug(f"Response from list query: {lists_data}")
-            return None
+            logger.debug(f"API response for list query: {lists_data}")
+            return None  # List not found
 
-    # Handle specific exceptions during the process
+    # Step 6: Handle potential errors
     except requests.exceptions.RequestException as e:
-        logger.error(f"Network or HTTP error querying To-Do lists: {e}", exc_info=True)
+        logger.error(
+            f"Network or HTTP error querying To-Do lists: {e}", exc_info=False
+        )  # Less verbose for common errors
+        if hasattr(e, "response") and e.response is not None:
+            logger.debug(f"Error response content: {e.response.text[:500]}")
         return None
     except json.JSONDecodeError as e:
         logger.error(f"Error decoding JSON response from list query: {e}")
-        # Log the raw response text if decoding fails
-        logger.debug(f"Response content that failed decoding: {response.text}")
+        logger.debug(
+            f"Response content that failed JSON decoding: {response.text[:500]}"
+        )
         return None
     except Exception as e:
-        # Catch any other unexpected errors
-        logger.error(f"Unexpected error getting list ID: {e}", exc_info=True)
+        logger.error(f"Unexpected error getting To-Do list ID: {e}", exc_info=True)
         return None
-# end get_todo_list_id
+
+
+# End of get_todo_list_id
 
 
 def create_todo_task(
     access_token: str, list_id: str, task_title: str, task_body: Optional[str] = None
 ) -> bool:
     """
-    Creates a new task in a specified Microsoft To-Do list.
+    Creates a new task in a specified Microsoft To-Do list using MS Graph API.
 
     Args:
-        access_token: A valid MS Graph API access token.
-        list_id: The ID of the target To-Do list.
-        task_title: The title for the new task.
-        task_body: Optional plain text content for the task body.
+        access_token: A valid MS Graph API access token with Tasks.ReadWrite scope.
+        list_id: The ID of the target To-Do list where the task should be created.
+        task_title: The title for the new task (required).
+        task_body: Optional plain text content for the task's body/notes.
 
     Returns:
         True if the task was created successfully, False otherwise.
     """
     # Step 1: Validate inputs
     if not access_token:
-        logger.error("Cannot create task: Access token is missing.")
+        logger.error("Cannot create task: Access token missing.")
         return False
     if not list_id:
-        logger.error("Cannot create task: Target List ID is missing.")
+        logger.error("Cannot create task: Target List ID missing.")
         return False
     if not task_title:
-        logger.error("Cannot create task: Task title is missing.")
+        logger.error("Cannot create task: Task title missing.")
         return False
 
-    # Step 2: Prepare the request
+    # Step 2: Prepare API request details
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",  # Specify content type for POST
+        "Content-Type": "application/json",  # Specify body type
     }
     # Construct the URL for creating tasks within the specific list
     task_create_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists/{list_id}/tasks"
 
     # Step 3: Construct the task data payload (JSON body)
     task_data: Dict[str, Any] = {"title": task_title}
-    # Add body content if provided
+    # Add body if provided
     if task_body:
         task_data["body"] = {
             "content": task_body,
-            "contentType": "text",  # Assuming plain text body content
+            "contentType": "text",  # Specify plain text content type
         }
 
-    logger.info(f"Attempting to create task '{task_title}' in list ID '{list_id}'...")
+    logger.info(
+        f"Attempting to create MS To-Do task '{task_title[:50]}...' in list ID '{list_id}'..."
+    )
     logger.debug(f"Task creation payload: {json.dumps(task_data)}")
 
-    # Step 4: Execute the API request and handle potential errors
+    # Step 4: Execute the POST request
     try:
         response = requests.post(
             task_create_url, headers=headers, json=task_data, timeout=30
         )
-        # Check for HTTP errors (e.g., 400 Bad Request, 401 Unauthorized, 404 List Not Found)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise HTTPError for bad status codes
 
-        # Step 5: Process successful response
-        logger.info(f"Successfully created task '{task_title}'.")
-        # Log the created task details (optional, contains ID, etc.)
+        # Step 5: Process successful response (HTTP 201 Created)
+        logger.info(f"Successfully created task '{task_title[:50]}...'.")
+        # Optional: Log the ID of the created task from the response body
         try:
             logger.debug(f"Create task response details: {response.json()}")
         except json.JSONDecodeError:
@@ -365,58 +413,60 @@ def create_todo_task(
             )
         return True  # Indicate success
 
-    # Handle specific exceptions
+    # Step 6: Handle potential errors
     except requests.exceptions.RequestException as e:
-        logger.error(f"Network or HTTP error creating To-Do task: {e}", exc_info=True)
-        # Log the response body from the error if available
+        logger.error(f"Network or HTTP error creating To-Do task: {e}", exc_info=False)
         if hasattr(e, "response") and e.response is not None:
             try:
-                logger.error(f"Error response content: {e.response.text}")
+                logger.error(f"Error response content: {e.response.text[:500]}")
             except Exception:
-                pass  # Ignore errors logging the error response itself
+                pass
         return False  # Indicate failure
     except Exception as e:
-        # Catch any other unexpected errors
-        logger.error(f"Unexpected error creating task: {e}", exc_info=True)
+        logger.error(f"Unexpected error creating To-Do task: {e}", exc_info=True)
         return False  # Indicate failure
-# end create_todo_task
+
+
+# End of create_todo_task
 
 
 # --- Standalone Test Block ---
 if __name__ == "__main__":
-    # Setup basic logging for testing this module directly
+    # Step 1: Setup basic logging for direct module testing
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)-4d] %(message)s",
     )
-    logger.info("--- Testing ms_graph_utils.py with Persistent Cache ---")
+    logger = logging.getLogger("ms_graph_utils_test")  # Use specific logger name
+    logger.info("--- Testing ms_graph_utils.py ---")
 
-    # Check if MSAL app instance was successfully created earlier
+    # Step 2: Check if MSAL app instance was created (depends on CLIENT_ID)
     if not msal_app_instance:
         logger.critical(
-            "MSAL App could not be initialized. Check MS_GRAPH_CLIENT_ID in environment variables."
+            "MSAL App instance unavailable. Cannot run tests. Check MS_GRAPH_CLIENT_ID."
         )
     else:
-        # Test 1: Acquire Token (will use cache or prompt for device flow)
+        # Step 3: Test Token Acquisition
         logger.info("--- Test 1: Acquiring Access Token ---")
         token = acquire_token_device_flow()
 
         if token:
-            logger.info("Test 1 PASSED: Authentication successful.")
+            logger.info("Test 1 PASSED: Authentication successful (Token acquired).")
 
-            # Test 2: Get To-Do List ID (only if token acquired)
+            # Step 4: Test Get To-Do List ID (only if token acquired)
             logger.info("--- Test 2: Getting To-Do List ID ---")
             list_name_test = os.getenv(
                 "MS_TODO_LIST_NAME", "Tasks"
-            )  # Get target list name
+            )  # Use configured list name or default "Tasks"
+            logger.info(f"Attempting to find list named: '{list_name_test}'")
             list_id_test = get_todo_list_id(token, list_name_test)
 
             if list_id_test:
                 logger.info(
-                    f"Test 2 PASSED: Successfully retrieved list ID for '{list_name_test}'."
+                    f"Test 2 PASSED: Found list '{list_name_test}' with ID: {list_id_test}"
                 )
 
-                # Test 3: Create a Task (only if list ID acquired)
+                # Step 5: Test Task Creation (only if list ID acquired)
                 logger.info("--- Test 3: Creating a Test Task ---")
                 timestamp_test = time.strftime("%Y-%m-%d %H:%M:%S")
                 task_title_test = f"MS Graph Utils Test Task - {timestamp_test}"
@@ -426,21 +476,20 @@ if __name__ == "__main__":
                 )
 
                 if create_success:
-                    logger.info("Test 3 PASSED: Task creation successful.")
+                    logger.info("Test 3 PASSED: Task creation reported successful.")
                 else:
-                    logger.error("Test 3 FAILED: Task creation failed.")
-
-            else:
+                    logger.error("Test 3 FAILED: Task creation reported failure.")
+            else:  # List ID not found
                 logger.error(
-                    f"Test 2 FAILED: Failed to retrieve list ID for '{list_name_test}'. Skipping Test 3."
+                    f"Test 2 FAILED: Could not find list ID for '{list_name_test}'. Skipping Task Creation Test."
                 )
-
-        else:
+        else:  # Token acquisition failed
             logger.error(
                 "Test 1 FAILED: Authentication failed. Skipping further tests."
             )
 
-    # --- Final message regardless of success/failure ---
+    # --- Final message ---
     logger.info("--- MS Graph Utils Test Finished ---")
+# End of standalone test block
 
 # End of ms_graph_utils.py

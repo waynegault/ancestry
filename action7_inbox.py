@@ -2,8 +2,17 @@
 
 # action7_inbox.py
 
+"""
+action7_inbox.py - Process Ancestry Inbox Messages
 
-# Standard library imports
+Fetches conversations from the Ancestry inbox API, compares them with the local
+database (`conversation_log`), identifies new incoming messages, classifies their
+intent using AI (via `ai_interface.py`), and updates the database accordingly.
+Uses batch processing, pagination (cursors), rate limiting, and handles potential
+session invalidity.
+"""
+
+# --- Standard library imports ---
 import enum
 import inspect
 import json
@@ -18,154 +27,257 @@ import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, cast, Set
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, cast
 from urllib.parse import urljoin
 
-# Third-party imports
+# --- Third-party imports ---
 import requests
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
     Enum as SQLEnum,
+    Index,  # Added Index
     Integer,
     String,
     Subquery,
     desc,
     func,
+    inspect as sa_inspect,  # Added inspect
     over,
-    update,
     text,
+    update,
     select as sql_select,
 )
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert  # For UPSERT
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, aliased, joinedload
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from selenium.common.exceptions import WebDriverException
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
+from selenium.common.exceptions import WebDriverException  # For session checks
+from tqdm.auto import tqdm  # Progress bar
+from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
 
-# Local application imports
-from config import config_instance
-from database import (
-    Person,
+# --- Local application imports ---
+from ai_interface import classify_message_intent  # AI classification function
+from config import config_instance  # Configuration singleton
+from database import (  # Database models and utilities
     ConversationLog,
-    MessageType,
-    db_transn,
-    PersonStatusEnum,
     MessageDirectionEnum,
-)  # Import Enums
-from utils import (
-    _api_req,
+    MessageType,  # Import even if not directly used here
+    Person,
+    PersonStatusEnum,
+    db_transn,  # Transaction context manager
+)
+from logging_config import logger  # Use configured logger
+from utils import (  # Core utilities
     DynamicRateLimiter,
     SessionManager,
-    retry,
-    time_wait,
+    _api_req,  # API request helper
+    format_name,  # Name formatting
+    retry,  # Decorators (unused here currently)
     retry_api,
-    format_name,
+    time_wait,
     urljoin,
+    _fetch_profile_details_for_person
 )
-from ai_interface import classify_message_intent
-
-# Initialize logging
-logger = logging.getLogger("logger")
 
 
+# --- Main Class ---
 class InboxProcessor:
-    """V1.19: Processes inbox, uses 2-row ConvLog, contextual AI, UPSERTS, batch commits, handles WebDriverExceptions, detailed commit logging."""
+    """
+    Handles the process of fetching, analyzing, and logging Ancestry inbox conversations.
+    Uses API calls, AI sentiment analysis, and database interactions.
+    """
 
     def __init__(self, session_manager: SessionManager):
-        """Initializes InboxProcessor."""
+        """Initializes the InboxProcessor."""
+        # Step 1: Store SessionManager and Rate Limiter
         self.session_manager = session_manager
-        self.dynamic_rate_limiter = DynamicRateLimiter()
-        self.max_inbox_limit = config_instance.MAX_INBOX
-        # Ensure default_batch_size doesn't exceed max_inbox_limit if set
-        default_batch = min(config_instance.BATCH_SIZE, 30)
-        self.default_batch_size = (
+        self.dynamic_rate_limiter = (
+            session_manager.dynamic_rate_limiter
+        )  # Use manager's limiter
+
+        # Step 2: Load Configuration Settings
+        self.max_inbox_limit = (
+            config_instance.MAX_INBOX
+        )  # Max conversations to process (0=unlimited)
+        # Determine batch size, ensuring it doesn't exceed the overall limit if one is set
+        default_batch = min(
+            config_instance.BATCH_SIZE, 50
+        )  # Default batch size, capped at 50
+        self.api_batch_size = (
             min(default_batch, self.max_inbox_limit)
             if self.max_inbox_limit > 0
             else default_batch
         )
+        # AI Context settings
         self.ai_context_msg_count = config_instance.AI_CONTEXT_MESSAGES_COUNT
-        self.ai_context_max_words = config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS
+        self.ai_context_max_words = (
+            config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS
+        )  # Correct assignment
+
+        # Correct the attribute name in the logging statement
+        logger.debug(
+            f"InboxProcessor initialized: MaxInbox={self.max_inbox_limit}, BatchSize={self.api_batch_size}, AIContext={self.ai_context_msg_count} msgs / {self.ai_context_max_words} words."
+        )
 
     # End of __init__
 
-    @retry_api()
+    # --- Private Helper Methods ---
+
+    @retry_api()  # Apply retry decorator for resilience
     def _get_all_conversations_api(
         self, session_manager: SessionManager, limit: int, cursor: Optional[str] = None
     ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
-        """Retrieves a single batch of conversation overviews with a specific limit."""
+        """
+        Fetches a single batch of conversation overview data from the Ancestry API.
+
+        Args:
+            session_manager: The active SessionManager instance.
+            limit: The maximum number of conversations to fetch in this batch.
+            cursor: The pagination cursor from the previous API response (if any).
+
+        Returns:
+            A tuple containing:
+            - List of processed conversation info dictionaries, or None on failure.
+            - The 'forward_cursor' string for the next page, or None if no more pages.
+
+        Raises:
+            WebDriverException: If the session becomes invalid before the API call.
+        """
+        # Step 1: Validate prerequisites
         if not session_manager or not session_manager.my_profile_id:
+            logger.error(
+                "_get_all_conversations_api: SessionManager or profile ID missing."
+            )
             return None, None
         if not session_manager.is_sess_valid():
-            raise WebDriverException("Session invalid before overview API")
+            logger.error("_get_all_conversations_api: Session invalid before API call.")
+            # Raise exception so retry_api can potentially handle session restart if configured
+            raise WebDriverException(
+                "Session invalid before conversation overview API call"
+            )
+
+        # Step 2: Construct API URL with limit and optional cursor
         my_profile_id = session_manager.my_profile_id
         api_base = urljoin(config_instance.BASE_URL, "/app-api/express/v2/")
-        # logger.debug(f"API call using limit: {limit}") # Log the passed limit
+        # Note: API uses 'limit', not 'batch_size' parameter name
         url = f"{api_base}conversations?q=user:{my_profile_id}&limit={limit}"
         if cursor:
             url += f"&cursor={cursor}"
+        logger.debug(
+            f"Fetching conversation batch: Limit={limit}, Cursor='{cursor or 'None'}'"
+        )
+
+        # Step 3: Make API call using _api_req helper
         try:
             response_data = _api_req(
                 url=url,
-                driver=session_manager.driver,
+                driver=session_manager.driver,  # Pass driver for context/headers
                 session_manager=session_manager,
                 method="GET",
-                use_csrf_token=False,
+                use_csrf_token=False,  # Typically not needed for GET overviews
                 api_description="Get Inbox Conversations",
             )
-            if response_data is None:
+
+            # Step 4: Process API response
+            if response_data is None:  # Indicates failure in _api_req after retries
+                logger.warning("_get_all_conversations_api: _api_req returned None.")
                 return None, None
             if not isinstance(response_data, dict):
                 logger.error(
-                    f"Unexpected API response format: Type {type(response_data)}."
+                    f"_get_all_conversations_api: Unexpected API response format. Type={type(response_data)}, Expected=dict"
                 )
                 return None, None
-            conversations_data = response_data.get("conversations", [])
-            all_conversations: List[Dict[str, Any]] = []
-            if conversations_data:
-                for conv_data in conversations_data:
+
+            # Step 5: Extract conversation data and pagination cursor
+            conversations_raw = response_data.get("conversations", [])
+            all_conversations_processed: List[Dict[str, Any]] = []
+            if isinstance(conversations_raw, list):
+                for conv_data in conversations_raw:
+                    # Extract and process info for each conversation
                     info = self._extract_conversation_info(conv_data, my_profile_id)
                     if info:
-                        all_conversations.append(info)
+                        all_conversations_processed.append(info)
+            else:
+                logger.warning(
+                    "_get_all_conversations_api: 'conversations' key not found or not a list in API response."
+                )
+
             forward_cursor = response_data.get("paging", {}).get("forward_cursor")
-            return all_conversations, forward_cursor
+            logger.debug(
+                f"API call returned {len(all_conversations_processed)} conversations. Next cursor: '{forward_cursor or 'None'}'."
+            )
+
+            # Step 6: Return processed data and cursor
+            return all_conversations_processed, forward_cursor
+
+        # Step 7: Handle exceptions (WebDriverException caught by retry_api, others logged)
         except WebDriverException as e:
-            logger.error(f"WDExc during _get_all_conv_api: {e}")
+            # Re-raise WebDriverException for retry_api to handle potentially
+            logger.error(f"WebDriverException during _get_all_conversations_api: {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in _get_all_conv_api: {e}", exc_info=True)
-            return None, None
+            logger.error(
+                f"Unexpected error in _get_all_conversations_api: {e}", exc_info=True
+            )
+            return None, None  # Return None on unexpected errors
+
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
         self, conv_data: Dict[str, Any], my_profile_id: str
     ) -> Optional[Dict[str, Any]]:
-        """Extracts key info from conversation overview."""
+        """
+        Extracts and formats key information from a single conversation overview dictionary.
+
+        Args:
+            conv_data: The dictionary representing one conversation from the API response.
+            my_profile_id: The profile ID of the script user (to identify the 'other' participant).
+
+        Returns:
+            A dictionary containing 'conversation_id', 'profile_id', 'username',
+            and 'last_message_timestamp', or None if essential data is missing.
+        """
+        # Step 1: Basic validation of input structure
         if not isinstance(conv_data, dict):
             return None
-        conversation_id = str(conv_data.get("id"))
+        conversation_id = str(conv_data.get("id", ""))  # Ensure string
         last_message_data = conv_data.get("last_message", {})
         if not conversation_id or not isinstance(last_message_data, dict):
+            logger.warning(
+                f"Skipping conversation data due to missing ID or last_message: {conv_data}"
+            )
             return None
-        last_msg_ts_unix = last_message_data.get("created")
-        last_msg_ts_aware = None
+
+        # Step 2: Extract and parse last message timestamp
+        last_msg_ts_unix = last_message_data.get("created")  # Unix timestamp (seconds)
+        last_msg_ts_aware: Optional[datetime] = None
         if isinstance(last_msg_ts_unix, (int, float)):
             try:
-                min_ts = 0
-                max_ts = 32503680000
+                # Validate timestamp range (simple check against plausible dates)
+                min_ts, max_ts = 0, 32503680000  # Approx year 1970 to 3000
                 if min_ts <= last_msg_ts_unix <= max_ts:
+                    # Convert to timezone-aware datetime object (UTC)
                     last_msg_ts_aware = datetime.fromtimestamp(
                         last_msg_ts_unix, tz=timezone.utc
                     )
-            except:
-                pass
+                else:
+                    logger.warning(
+                        f"Timestamp {last_msg_ts_unix} out of plausible range for ConvID {conversation_id}."
+                    )
+            except (ValueError, TypeError, OSError) as ts_err:
+                logger.warning(
+                    f"Error converting timestamp {last_msg_ts_unix} for ConvID {conversation_id}: {ts_err}"
+                )
+        # else: logger.debug(f"Timestamp missing or invalid type for ConvID {conversation_id}")
+
+        # Step 3: Identify the 'other' participant's profile ID and username
         username = "Unknown"
-        profile_id = "UNKNOWN"
+        profile_id = "UNKNOWN"  # Default if other participant not found
         other_member_found = False
         members = conv_data.get("members", [])
-        my_pid_str = str(my_profile_id).lower() if my_profile_id else ""
+        my_pid_lower = str(my_profile_id).lower()  # Lowercase for comparison
+
         if isinstance(members, list):
             for member in members:
                 if not isinstance(member, dict):
@@ -174,704 +286,372 @@ class InboxProcessor:
                 member_user_id_str = (
                     str(member_user_id).lower() if member_user_id else ""
                 )
-                if member_user_id_str and member_user_id_str != my_pid_str:
-                    profile_id = str(member_user_id).upper()
-                    username = member.get("display_name", "Unknown")
+                # Check if this member is not the script user
+                if member_user_id_str and member_user_id_str != my_pid_lower:
+                    profile_id = str(
+                        member_user_id
+                    ).upper()  # Store uppercase profile ID
+                    username = member.get("display_name", "Unknown")  # Get display name
                     other_member_found = True
-                    break
+                    break  # Assume only one other participant per conversation
+        if not other_member_found:
+            logger.warning(
+                f"Could not identify other participant in ConvID {conversation_id}. Members: {members}"
+            )
+
+        # Step 4: Return the structured dictionary
         return {
             "conversation_id": conversation_id,
-            "profile_id": profile_id,
-            "username": username,
-            "last_message_timestamp": last_msg_ts_aware,
+            "profile_id": profile_id,  # Profile ID of the other person
+            "username": username,  # Display name of the other person
+            "last_message_timestamp": last_msg_ts_aware,  # Aware datetime object or None
         }
+
     # End of _extract_conversation_info
 
-    @retry_api(max_retries=2)
+    @retry_api(max_retries=2)  # Allow retries for fetching context
     def _fetch_conversation_context(
         self, conversation_id: str
     ) -> Optional[List[Dict[str, Any]]]:
-        """Fetches the last N messages (context) for a conversation."""
+        """
+        Fetches the last N messages (defined by config) for a specific conversation ID
+        to provide context for AI classification.
+
+        Args:
+            conversation_id: The ID of the conversation to fetch context for.
+
+        Returns:
+            A list of message dictionaries (sorted oldest to newest), or None on failure.
+            Each dictionary contains 'content', 'author' (lowercase), 'timestamp' (aware datetime),
+            and 'conversation_id'.
+
+        Raises:
+            WebDriverException: If the session becomes invalid during the API call.
+        """
+        # Step 1: Validate inputs and session state
         if not conversation_id:
+            logger.warning("_fetch_conversation_context: No conversation_id provided.")
             return None
         if not self.session_manager or not self.session_manager.my_profile_id:
+            logger.error(
+                "_fetch_conversation_context: SessionManager or profile ID missing."
+            )
             return None
         if not self.session_manager.is_sess_valid():
-            raise WebDriverException(
-                f"Session invalid fetching context conv {conversation_id}"
+            logger.error(
+                f"_fetch_conversation_context: Session invalid fetching context for ConvID {conversation_id}."
             )
+            raise WebDriverException(
+                f"Session invalid fetching context ConvID {conversation_id}"
+            )
+
+        # Step 2: Construct API URL and Headers
         context_messages: List[Dict[str, Any]] = []
         api_base = urljoin(config_instance.BASE_URL, "/app-api/express/v2/")
-        limit = self.ai_context_msg_count
+        limit = self.ai_context_msg_count  # Get limit from config
         api_description = "Fetch Conversation Context"
-        headers = {
-            "accept": "*/*",
-            "ancestry-clientpath": "express-fe",
-            "referer": urljoin(config_instance.BASE_URL, "/messaging/"),
-        }
-        if self.session_manager.my_profile_id:
+        # Prepare headers (using contextual headers where possible)
+        headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {}).copy()
+        # Ensure ancestry-userid is set correctly
+        if "ancestry-userid" in headers:
             headers["ancestry-userid"] = self.session_manager.my_profile_id.upper()
+        # Construct URL
         url = f"{api_base}conversations/{conversation_id}/messages?limit={limit}"
+        logger.debug(
+            f"Fetching context (last {limit} msgs) for ConvID {conversation_id}..."
+        )
+
+        # Step 3: Make API call and apply rate limiting wait first
         try:
+            # Apply rate limit wait *before* the call
             wait_time = self.dynamic_rate_limiter.wait()
+            # Optional: log wait time if significant
+            # if wait_time > 0.1: logger.debug(f"Rate limit wait for context fetch: {wait_time:.2f}s")
+
             response_data = _api_req(
                 url=url,
                 driver=self.session_manager.driver,
                 session_manager=self.session_manager,
                 method="GET",
                 headers=headers,
-                use_csrf_token=False,
+                use_csrf_token=False,  # Not typically needed
                 api_description=api_description,
             )
+
+            # Step 4: Process the response
             if not isinstance(response_data, dict):
                 logger.warning(
-                    f"{api_description}: Bad response {type(response_data)} conv {conversation_id}."
+                    f"{api_description}: Bad response type {type(response_data)} for ConvID {conversation_id}."
                 )
-                return None
+                return None  # Failed fetch
+
             messages_batch = response_data.get("messages", [])
             if not isinstance(messages_batch, list):
                 logger.warning(
-                    f"{api_description}: 'messages' not list conv {conversation_id}."
+                    f"{api_description}: 'messages' key not a list for ConvID {conversation_id}."
                 )
-                return None
+                return None  # Invalid structure
+
+            # Step 5: Extract and format message details
             for msg_data in messages_batch:
                 if not isinstance(msg_data, dict):
-                    continue
+                    continue  # Skip invalid entries
                 ts_unix = msg_data.get("created")
-                msg_timestamp = None
+                msg_timestamp: Optional[datetime] = None
                 if isinstance(ts_unix, (int, float)):
                     try:
-                        msg_timestamp = datetime.fromtimestamp(ts_unix, tz=timezone.utc)
-                    except:
-                        pass
+                        msg_timestamp = datetime.fromtimestamp(
+                            ts_unix, tz=timezone.utc
+                        )  # Convert to aware datetime
+                    except Exception as ts_err:
+                        logger.warning(
+                            f"Error parsing timestamp {ts_unix} in ConvID {conversation_id}: {ts_err}"
+                        )
+
+                # Prepare standardized message dictionary
                 processed_msg = {
-                    "content": str(msg_data.get("content", "")),
-                    "author": str(msg_data.get("author", "")).lower(),
-                    "timestamp": msg_timestamp,
-                    "conversation_id": conversation_id,
+                    "content": str(msg_data.get("content", "")),  # Ensure string
+                    "author": str(
+                        msg_data.get("author", "")
+                    ).lower(),  # Store author ID lowercase
+                    "timestamp": msg_timestamp,  # Store aware datetime or None
+                    "conversation_id": conversation_id,  # Add conversation ID for context
                 }
                 context_messages.append(processed_msg)
+
+            # Step 6: Sort messages by timestamp (oldest first) for correct context order
             return sorted(
                 context_messages,
-                key=lambda x: x["timestamp"]
+                # Provide default datetime for sorting if timestamp is None
+                key=lambda x: x.get("timestamp")
                 or datetime.min.replace(tzinfo=timezone.utc),
             )
+
+        # Step 7: Handle exceptions
         except WebDriverException as e:
-            logger.error(f"WDExc fetch context conv {conversation_id}: {e}")
-            raise
+            logger.error(
+                f"WebDriverException fetching context for ConvID {conversation_id}: {e}"
+            )
+            raise  # Re-raise for retry_api
         except Exception as e:
             logger.error(
-                f"Error fetch context conv {conversation_id}: {e}", exc_info=True
+                f"Unexpected error fetching context for ConvID {conversation_id}: {e}",
+                exc_info=True,
             )
-            return None
+            return None  # Return None on unexpected errors
+
     # End of _fetch_conversation_context
-
-    def _process_inbox_loop(
-        self,
-        session: DbSession,
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
-        my_pid_lower: str,
-        progress_bar: Optional[tqdm],  # Accept progress bar instance (or None)
-    ) -> Tuple[Optional[str], int, int, int, int]:
-        """
-        Internal helper containing the main inbox processing loop.
-        Returns stop_reason, total_api_items, ai_classified_count, status_updated_count, items_processed_before_stop.
-        """
-        # Re-initialize counters/state specific to the loop run
-        ai_classified_count = 0
-        status_updated_count = 0
-        total_processed_api_items = 0
-        items_processed_before_stop = 0
-        stop_reason = None
-        next_cursor: Optional[str] = None
-        current_batch_num = 0
-        conv_log_upserts: List[Dict[str, Any]] = []
-        person_updates: Dict[int, Dict[str, Any]] = {}
-        stop_processing = False
-
-        while not stop_processing:
-            try:  # Inner try for batch processing
-                if not self.session_manager.is_sess_valid():
-                    raise WebDriverException("Session invalid before overview batch")
-
-                # Calculate API Limit
-                current_limit = self.default_batch_size
-                if self.max_inbox_limit > 0:
-                    remaining_allowed = (
-                        self.max_inbox_limit - items_processed_before_stop
-                    )
-                    if remaining_allowed <= 0:
-                        stop_reason = f"Inbox Limit ({self.max_inbox_limit}) Pre-Fetch"
-                        stop_processing = True
-                        break
-                    current_limit = min(self.default_batch_size, remaining_allowed)
-
-                # Fetch API Batch
-                all_conversations_batch, next_cursor_from_api = (
-                    self._get_all_conversations_api(
-                        self.session_manager,
-                        limit=current_limit,
-                        cursor=next_cursor,
-                    )
-                )
-
-                if all_conversations_batch is None:
-                    stop_reason = "API Error Fetching Batch"
-                    stop_processing = True
-                    break
-
-                batch_api_item_count = len(all_conversations_batch)
-                total_processed_api_items += batch_api_item_count
-
-                if batch_api_item_count == 0:
-                    if not next_cursor_from_api:
-                        stop_reason = "End of Inbox Reached (Empty Batch, No Cursor)"
-                        stop_processing = True
-                    else:
-                        logger.debug(
-                            "API returned empty batch but provided cursor. Continuing fetch."
-                        )
-                        next_cursor = next_cursor_from_api
-                        continue
-                # Apply rate limiter delay if items were fetched
-                wait_duration = self.dynamic_rate_limiter.wait()
-                if wait_duration > 0.1:
-                    logger.debug(f"API batch wait: {wait_duration:.2f}s")
-
-                current_batch_num += 1
-
-                # --- Pre-fetch Persons and Logs (Unchanged) ---
-                batch_conv_ids = [
-                    c["conversation_id"]
-                    for c in all_conversations_batch
-                    if c.get("conversation_id")
-                ]
-                batch_profile_ids = {
-                    c.get("profile_id", "").upper()
-                    for c in all_conversations_batch
-                    if c.get("profile_id") and c.get("profile_id") != "UNKNOWN"
-                }
-                existing_persons_map: Dict[str, Person] = {}
-                existing_conv_logs: Dict[Tuple[str, str], ConversationLog] = {}
-                if batch_profile_ids:
-                    try:
-                        persons = (
-                            session.query(Person)
-                            .filter(Person.profile_id.in_(batch_profile_ids))
-                            .all()
-                        )
-                        existing_persons_map = {
-                            p.profile_id: p for p in persons if p.profile_id
-                        }
-                    except SQLAlchemyError as db_err:
-                        logger.error(f"Bulk Person lookup failed: {db_err}")
-                if batch_conv_ids:
-                    try:
-                        logs = (
-                            session.query(ConversationLog)
-                            .filter(ConversationLog.conversation_id.in_(batch_conv_ids))
-                            .all()
-                        )
-                        existing_conv_logs = {
-                            (log.conversation_id, log.direction.name): log
-                            for log in logs
-                            if log.direction
-                        }
-                    except SQLAlchemyError as db_err:
-                        logger.error(f"ConvLog lookup failed: {db_err}")
-                # --- End Pre-fetch ---
-
-                # --- Process Batch ---
-                for conversation_info in all_conversations_batch:
-                    # Check MAX_INBOX Limit
-                    if (
-                        self.max_inbox_limit > 0
-                        and items_processed_before_stop >= self.max_inbox_limit
-                    ):
-                        if not stop_reason:
-                            stop_reason = f"Inbox Limit ({self.max_inbox_limit})"
-                        stop_processing = True
-                        break  # Break inner loop
-
-                    items_processed_before_stop += 1
-                    # --- Update progress bar ONLY if it exists ---
-                    if progress_bar:
-                        progress_bar.update(1)
-                    # --- End progress bar update ---
-
-                    profile_id_upper = conversation_info.get(
-                        "profile_id", "UNKNOWN"
-                    ).upper()
-                    api_conv_id = conversation_info.get("conversation_id")
-                    api_latest_ts = conversation_info.get("last_message_timestamp")
-
-                    if not api_conv_id or profile_id_upper == "UNKNOWN":
-                        logger.debug(
-                            f"Skipping item {items_processed_before_stop}: Invalid ConvID/ProfileID."
-                        )
-                        continue
-
-                    # --- Comparator/Fetch Logic (Unchanged) ---
-                    needs_fetch = False
-                    if comp_conv_id and api_conv_id == comp_conv_id:
-                        stop_processing = True
-                        if comp_ts and api_latest_ts and api_latest_ts > comp_ts:
-                            needs_fetch = True
-                    else:
-                        db_log_in = existing_conv_logs.get((api_conv_id, "IN"))
-                        db_log_out = existing_conv_logs.get((api_conv_id, "OUT"))
-                        min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
-                        db_latest_ts_in = min_aware_dt
-                        if db_log_in and db_log_in.latest_timestamp:
-                            ts_in = db_log_in.latest_timestamp
-                            if isinstance(ts_in, datetime):
-                                db_latest_ts_in = (
-                                    ts_in.replace(tzinfo=timezone.utc)
-                                    if ts_in.tzinfo is None
-                                    else ts_in.astimezone(timezone.utc)
-                                )
-                        db_latest_ts_out = min_aware_dt
-                        if db_log_out and db_log_out.latest_timestamp:
-                            ts_out = db_log_out.latest_timestamp
-                            if isinstance(ts_out, datetime):
-                                db_latest_ts_out = (
-                                    ts_out.replace(tzinfo=timezone.utc)
-                                    if ts_out.tzinfo is None
-                                    else ts_out.astimezone(timezone.utc)
-                                )
-                        db_latest_overall_for_conv = max(
-                            db_latest_ts_in, db_latest_ts_out
-                        )
-                        if api_latest_ts and api_latest_ts > db_latest_overall_for_conv:
-                            needs_fetch = True
-                        elif not db_log_in and not db_log_out:
-                            needs_fetch = True
-                    # --- End Comparator/Fetch Logic ---
-
-                    if not needs_fetch:
-                        if stop_processing:
-                            break
-                        continue
-
-                    # --- Fetch Context & Process (Unchanged logic within) ---
-                    if not self.session_manager.is_sess_valid():
-                        raise WebDriverException(
-                            f"Session invalid fetch context conv {api_conv_id}"
-                        )
-                    context_messages = self._fetch_conversation_context(api_conv_id)
-                    if context_messages is None:
-                        logger.error(
-                            f"Failed context fetch conv {api_conv_id}. Skipping item."
-                        )
-                        continue
-
-                    person, person_status_flag = self._lookup_or_create_person(
-                        session,
-                        profile_id_upper,
-                        conversation_info.get("username", "Unknown"),
-                        api_conv_id,
-                        existing_person_arg=existing_persons_map.get(profile_id_upper),
-                    )
-                    if not person or not person.id:
-                        logger.error(
-                            f"Failed person lookup/create conv {api_conv_id}. Skipping item."
-                        )
-                        continue
-                    people_id = person.id
-
-                    latest_ctx_in: Optional[Dict] = None
-                    latest_ctx_out: Optional[Dict] = None
-                    for msg in reversed(context_messages):
-                        author_lower = msg.get("author", "")
-                        if author_lower != my_pid_lower and latest_ctx_in is None:
-                            latest_ctx_in = msg
-                        elif author_lower == my_pid_lower and latest_ctx_out is None:
-                            latest_ctx_out = msg
-                        if latest_ctx_in and latest_ctx_out:
-                            break
-
-                    ai_sentiment_result: Optional[str] = None
-                    # Process IN Row
-                    if latest_ctx_in and latest_ctx_in.get("timestamp"):
-                        ctx_ts_in_aware = latest_ctx_in.get("timestamp")
-                        db_ts_in_for_compare = min_aware_dt  # Recalculate compare TS based on CURRENT state
-                        if (
-                            api_conv_id,
-                            "IN",
-                        ) in existing_conv_logs and existing_conv_logs[
-                            (api_conv_id, "IN")
-                        ].latest_timestamp:
-                            ts_in_db = existing_conv_logs[
-                                (api_conv_id, "IN")
-                            ].latest_timestamp
-                            if isinstance(ts_in_db, datetime):
-                                db_ts_in_for_compare = (
-                                    ts_in_db.replace(tzinfo=timezone.utc)
-                                    if ts_in_db.tzinfo is None
-                                    else ts_in_db.astimezone(timezone.utc)
-                                )
-                        if ctx_ts_in_aware and ctx_ts_in_aware > db_ts_in_for_compare:
-                            formatted_context = self._format_context_for_ai(
-                                context_messages, my_pid_lower
-                            )
-                            if not self.session_manager.is_sess_valid():
-                                raise WebDriverException(
-                                    f"Session invalid AI call conv {api_conv_id}"
-                                )
-                            ai_sentiment_result = classify_message_intent(
-                                formatted_context, self.session_manager
-                            )
-                            ai_classified_count += 1
-                            if ai_sentiment_result in ("DESIST", "UNINTERESTED"):
-                                logger.debug(
-                                    f"AI Classified conv {api_conv_id} (PID {people_id}) as '{ai_sentiment_result}'. Marking for 'desist'."
-                                )
-                                if people_id not in person_updates:
-                                    person_updates[people_id] = {}
-                                person_updates[people_id][
-                                    "status"
-                                ] = PersonStatusEnum.DESIST
-                            upsert_data_in = (
-                                {  # ... (build upsert data dict - unchanged) ... }
-                                    "conversation_id": api_conv_id,
-                                    "direction": "IN",
-                                    "people_id": people_id,
-                                    "latest_message_content": latest_ctx_in.get(
-                                        "content", ""
-                                    )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
-                                    "latest_timestamp": ctx_ts_in_aware,
-                                    "ai_sentiment": ai_sentiment_result,
-                                    "updated_at": datetime.now(timezone.utc),
-                                }
-                            )
-                            upsert_data_in = {
-                                k: v
-                                for k, v in upsert_data_in.items()
-                                if v is not None or k == "ai_sentiment"
-                            }
-                            conv_log_upserts.append(upsert_data_in)
-
-                    # Process OUT Row
-                    if latest_ctx_out and latest_ctx_out.get("timestamp"):
-                        ctx_ts_out_aware = latest_ctx_out.get("timestamp")
-                        db_ts_out_for_compare = min_aware_dt  # Recalculate compare TS based on CURRENT state
-                        if (
-                            api_conv_id,
-                            "OUT",
-                        ) in existing_conv_logs and existing_conv_logs[
-                            (api_conv_id, "OUT")
-                        ].latest_timestamp:
-                            ts_out_db = existing_conv_logs[
-                                (api_conv_id, "OUT")
-                            ].latest_timestamp
-                            if isinstance(ts_out_db, datetime):
-                                db_ts_out_for_compare = (
-                                    ts_out_db.replace(tzinfo=timezone.utc)
-                                    if ts_out_db.tzinfo is None
-                                    else ts_out_db.astimezone(timezone.utc)
-                                )
-                        if (
-                            ctx_ts_out_aware
-                            and ctx_ts_out_aware > db_ts_out_for_compare
-                        ):
-                            upsert_data_out = (
-                                {  # ... (build upsert data dict - unchanged) ... }
-                                    "conversation_id": api_conv_id,
-                                    "direction": "OUT",
-                                    "people_id": people_id,
-                                    "latest_message_content": latest_ctx_out.get(
-                                        "content", ""
-                                    )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
-                                    "latest_timestamp": ctx_ts_out_aware,
-                                    "message_type_id": None,
-                                    "script_message_status": None,
-                                    "ai_sentiment": None,
-                                    "updated_at": datetime.now(timezone.utc),
-                                }
-                            )
-                            upsert_data_out = {
-                                k: v
-                                for k, v in upsert_data_out.items()
-                                if v is not None
-                                or k in ["message_type_id", "script_message_status"]
-                            }
-                            conv_log_upserts.append(upsert_data_out)
-                    # --- End Context Process ---
-
-                    if stop_processing:
-                        break  # Break inner loop
-                # --- End Inner Loop (for conversation_info...) ---
-
-                # Commit batch data
-                if conv_log_upserts or person_updates:
-                    logger.debug(
-                        f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts)} logs, {len(person_updates)} persons..."
-                    )
-                    status_updates_this_batch = self._commit_batch_data_upsert(
-                        session, conv_log_upserts, person_updates
-                    )
-                    status_updated_count += status_updates_this_batch
-                    conv_log_upserts.clear()
-                    person_updates.clear()
-                    logger.debug(
-                        f"Batch commit finished (Batch {current_batch_num}). Updated {status_updates_this_batch} persons."
-                    )
-
-                # Check stop flag *after* commit
-                if stop_processing:
-                    if not stop_reason:
-                        stop_reason = "Comparator Found"
-                    logger.debug(f"Stop flag set ({stop_reason}). Breaking outer loop.")
-                    break  # Break outer loop (while not stop_processing)
-
-                next_cursor = next_cursor_from_api
-                if not next_cursor:
-                    stop_reason = "End of Inbox Reached"
-                    stop_processing = True
-                    logger.debug("No next cursor from API. Breaking inner try block.")
-                    break  # Break inner try
-
-            # --- Exception Handling for the Batch ---
-            except WebDriverException as WDE:
-                logger.error(f"WebDriverException occurred: {WDE}")
-                stop_reason = "WebDriver Exception"
-                stop_processing = True  # Stop processing after handling
-                logger.warning("Attempting save and restart...")
-                save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
-                )
-                status_updated_count += save_count
-                conv_log_upserts.clear()
-                person_updates.clear()  # Clear after saving
-                # Return from helper to signal failure to outer function
-                return (
-                    stop_reason,
-                    total_processed_api_items,
-                    ai_classified_count,
-                    status_updated_count,
-                    items_processed_before_stop,
-                )
-
-            except KeyboardInterrupt:
-                logger.warning("KeyboardInterrupt detected.")
-                stop_reason = "Keyboard Interrupt"
-                stop_processing = True
-                logger.warning("Attempting final save...")
-                save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
-                )
-                status_updated_count += save_count
-                conv_log_upserts.clear()
-                person_updates.clear()  # Clear after saving
-                break  # Break loop
-
-            except Exception as e_main:
-                logger.critical(
-                    f"Critical error in search_inbox loop: {e_main}", exc_info=True
-                )
-                stop_reason = f"Critical Error ({type(e_main).__name__})"
-                stop_processing = True
-                logger.warning("Attempting final save...")
-                save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
-                )
-                status_updated_count += save_count
-                conv_log_upserts.clear()
-                person_updates.clear()  # Clear after saving
-                # Return from helper to signal failure
-                return (
-                    stop_reason,
-                    total_processed_api_items,
-                    ai_classified_count,
-                    status_updated_count,
-                    items_processed_before_stop,
-                )
-        # --- End While Loop ---
-
-        # Loop finished normally or broke due to KI/Limit/Comparator/API End
-        # Perform final commit if any data remains (e.g., from last partial batch before KI)
-        if conv_log_upserts or person_updates:
-            logger.warning("Performing final commit at end of processing loop.")
-            final_save_count = self._commit_batch_data_upsert(
-                session, conv_log_upserts, person_updates, is_final_attempt=True
-            )
-            status_updated_count += final_save_count
-
-        return (
-            stop_reason,
-            total_processed_api_items,
-            ai_classified_count,
-            status_updated_count,
-            items_processed_before_stop,
-        )
-    # End of _process_inbox_loop
-
-    def search_inbox(self) -> bool:
-        """
-        V1.25 REVISED: Conditionally initializes tqdm only when max_inbox_limit > 0.
-        - Uses 2-row ConversationLog, limits API fetch, comparator logic, AI, UPSERTS, batch commits, TZ-aware compare.
-        """
-        # --- Initialization ---
-        ai_classified_count = 0
-        status_updated_count = 0
-        total_processed_api_items = 0
-        items_processed_before_stop = 0
-        self.max_inbox_limit = config_instance.MAX_INBOX
-        stop_reason = ""
-        next_cursor: Optional[str] = None
-        current_batch_num = 0
-        conv_log_upserts: List[Dict[str, Any]] = []
-        person_updates: Dict[int, Dict[str, Any]] = {}
-        stop_processing = False
-        # No progress_bar initialization here
-
-        if not self.session_manager or not self.session_manager.my_profile_id:
-            logger.error("Session manager or profile ID missing.")
-            return False
-        my_pid_lower = self.session_manager.my_profile_id.lower()
-
-        session = None
-        try:
-            session = self.session_manager.get_db_conn()
-            if not session:
-                raise SQLAlchemyError("Failed to get DB session.")
-
-            # --- Get Comparator ---
-            comparator_info = self._create_comparator(session)
-            comp_conv_id: Optional[str] = None
-            comp_ts: Optional[datetime] = None
-            if comparator_info:
-                comp_conv_id = comparator_info.get("conversation_id")
-                comp_ts = comparator_info.get("latest_timestamp")
-            # --- End Get Comparator ---
-
-            max_inbox_str = (
-                str(self.max_inbox_limit) if self.max_inbox_limit > 0 else "Unlimited"
-            )
-            logger.debug(
-                f"Starting inbox search (MAX_INBOX={max_inbox_str}, Comparator Logic, 2-Row Log, Contextual AI)..."
-            )
-
-            # --- Conditional Progress Bar Scope ---
-            if self.max_inbox_limit > 0:
-                # Use tqdm context manager ONLY when there's a limit
-                tqdm_args = {
-                    "total": self.max_inbox_limit,
-                    "unit": " conv",
-                    "ncols": 100,
-                    "leave": True,  # Keep final bar visible
-                    "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt}",
-                }
-                try:
-                    with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-                        # Pass progress_bar instance to the processing function
-                        (
-                            stop_reason,
-                            total_processed_api_items,
-                            ai_classified_count,
-                            status_updated_count,
-                            items_processed_before_stop,
-                        ) = self._process_inbox_loop(
-                            session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
-                        )
-                except Exception as pbar_err:
-                    logger.error(
-                        f"Error occurred within tqdm context manager block: {pbar_err}",
-                        exc_info=True,
-                    )
-                    # Attempt final save outside the context if needed (though _process_inbox_loop should handle it)
-                    if session and (
-                        conv_log_upserts or person_updates
-                    ):  # Check lists directly as they might not be cleared inside loop on error
-                        logger.warning("Performing final commit after tqdm error.")
-                        final_save_count = self._commit_batch_data_upsert(
-                            session,
-                            conv_log_upserts,
-                            person_updates,
-                            is_final_attempt=True,
-                        )
-                        status_updated_count += final_save_count
-                    return False  # Indicate failure
-            else:
-                # No limit, run the loop directly without tqdm
-                logger.info("MAX_INBOX is 0 (unlimited), running without progress bar.")
-                # Pass None for progress_bar
-                (
-                    stop_reason,
-                    total_processed_api_items,
-                    ai_classified_count,
-                    status_updated_count,
-                    items_processed_before_stop,
-                ) = self._process_inbox_loop(
-                    session, comp_conv_id, comp_ts, my_pid_lower, None
-                )
-            # --- End Conditional Progress Bar Scope ---
-
-        except Exception as outer_e:
-            logger.error(
-                f"Outer error in search_inbox setup/wrapper: {outer_e}", exc_info=True
-            )
-            return False  # Failure occurred before or outside the main loop
-
-        finally:
-            # Final commit attempt (if loop exited unexpectedly without commit inside _process_inbox_loop)
-            # Check lists directly as loop variables might not be accurate if exception happened early
-            if session and (conv_log_upserts or person_updates):
-                logger.warning("Performing final commit check in outer finally block.")
-                # This commit might be redundant if _process_inbox_loop handled its final commit,
-                # but it's a safeguard against unexpected exits.
-                final_save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
-                )
-                status_updated_count += (
-                    final_save_count  # Add any updates from this final attempt
-                )
-
-            # Final summary log
-            if (
-                stop_reason
-                and not stop_reason.startswith("End of Inbox")
-                and not stop_reason.startswith("Comparator")
-            ):
-                logger.debug(f"Inbox search stopped early: {stop_reason}")
-
-            self._log_unified_summary(
-                total_api_items=total_processed_api_items,
-                items_processed=items_processed_before_stop,
-                new_logs=0,  # Placeholder
-                ai_classified=ai_classified_count,
-                status_updates=status_updated_count,
-                stop_reason=stop_reason or "Comparator Found or End of Inbox",
-                max_inbox_limit=self.max_inbox_limit,
-            )
-            # Release session
-            if session:
-                self.session_manager.return_session(session)
-
-        # Check if the process was stopped due to an error reported by the loop
-        was_successful = "error" not in (stop_reason or "").lower()
-        return was_successful
-    # End of search_inbox
 
     def _format_context_for_ai(
         self, context_messages: List[Dict], my_pid_lower: str
     ) -> str:
-        """Formats the last N messages for the AI prompt."""
+        """
+        Formats a list of message dictionaries (sorted oldest to newest) into a
+        single string suitable for the AI classification prompt. Truncates long messages.
+
+        Args:
+            context_messages: List of processed message dictionaries.
+            my_pid_lower: The script user's profile ID (lowercase) to label messages correctly.
+
+        Returns:
+            A formatted string representing the conversation history.
+        """
+        # Step 1: Initialize list for formatted lines
         context_lines = []
-        for (
-            msg
-        ) in (
-            context_messages
-        ):  # Assumes context_messages is already last N, sorted OLD->NEW
-            label = "USER: " if msg.get("author", "") != my_pid_lower else "SCRIPT: "
+        # Step 2: Iterate through messages (assumed sorted oldest to newest)
+        for msg in context_messages:
+            # Step 2a: Determine label (SCRIPT or USER)
+            author_lower = msg.get("author", "")
+            label = "SCRIPT: " if author_lower == my_pid_lower else "USER: "
+            # Step 2b: Get and truncate message content
             content = msg.get("content", "")
-            truncated_content = " ".join(content.split()[: self.ai_context_max_words])
-            if len(content.split()) > self.ai_context_max_words:
-                truncated_content += "..."
+            words = content.split()
+            if len(words) > self.ai_context_max_words:
+                # Truncate by word count and add ellipsis
+                truncated_content = " ".join(words[: self.ai_context_max_words]) + "..."
+            else:
+                truncated_content = content
+            # Step 2c: Append formatted line
             context_lines.append(f"{label}{truncated_content}")
+        # Step 3: Join lines into a single string
         return "\n".join(context_lines)
+
     # End of _format_context_for_ai
+
+    def _lookup_or_create_person(
+        self,
+        session: DbSession,
+        profile_id: str,  # Already uppercase
+        username: str,
+        conversation_id: Optional[str],  # For constructing message link if creating
+        existing_person_arg: Optional[
+            Person
+        ] = None,  # Pass prefetched Person if available
+    ) -> Tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
+        """
+        Looks up a Person by profile_id. If found, checks for updates (username,
+        message_link). If not found, creates a new Person record, fetching additional
+        profile details (first name, contactable, last login) via API if possible.
+
+        Args:
+            session: The active SQLAlchemy database session.
+            profile_id: The profile ID of the person (UPPERCASE).
+            username: The display name from the conversation overview.
+            conversation_id: The current conversation ID (used only for logging context).
+            existing_person_arg: The prefetched Person object, if found earlier.
+
+        Returns:
+            A tuple containing:
+            - The found or newly created Person object (or None on error).
+            - A status string: 'new', 'updated', 'skipped', 'error'.
+        """
+        # Step 1: Basic validation
+        if not profile_id or profile_id == "UNKNOWN":
+            logger.warning("_lookup_or_create_person: Invalid profile_id provided.")
+            return None, "error"
+        username_to_use = username or "Unknown"  # Ensure username is not None
+        log_ref = f"ProfileID={profile_id}/User='{username_to_use}' (ConvID: {conversation_id or 'N/A'})"
+
+        person: Optional[Person] = None
+        status: Literal["new", "updated", "skipped", "error"] = (
+            "error"  # Default status
+        )
+
+        # Step 2: Determine if lookup is needed or use prefetched person
+        if existing_person_arg:
+            person = existing_person_arg
+            logger.debug(f"{log_ref}: Using prefetched Person ID {person.id}.")
+        else:
+            # If not prefetched, query DB by profile ID
+            try:
+                logger.debug(
+                    f"{log_ref}: Prefetched person not found. Querying DB by Profile ID..."
+                )
+                person = (
+                    session.query(Person)
+                    .filter(Person.profile_id == profile_id)
+                    .first()
+                )
+            except SQLAlchemyError as e:
+                logger.error(
+                    f"DB error looking up Person {log_ref}: {e}", exc_info=True
+                )
+                return None, "error"  # DB error during lookup
+
+        # Step 3: Process based on whether person was found
+        if person:
+            # --- Person Exists: Check for Updates ---
+            updated = False
+            # Update username only if current is 'Unknown' or different (use formatted name)
+            formatted_username = format_name(username_to_use)
+            if person.username == "Unknown" or person.username != formatted_username:
+                logger.debug(
+                    f"Updating username for {log_ref} from '{person.username}' to '{formatted_username}'."
+                )
+                person.username = formatted_username
+                updated = True
+            # Update message link if missing or different
+            correct_message_link = urljoin(
+                config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
+            )
+            if person.message_link != correct_message_link:
+                logger.debug(f"Updating message link for {log_ref}.")
+                person.message_link = correct_message_link
+                updated = True
+            # Optional: Add logic here to fetch details and update other fields if they are NULL
+
+            if updated:
+                person.updated_at = datetime.now(timezone.utc)  # Set update timestamp
+                try:
+                    session.add(person)  # Ensure updates are staged
+                    session.flush()  # Apply update within the transaction
+                    status = "updated"
+                    logger.debug(
+                        f"Successfully staged updates for Person {log_ref} (ID: {person.id})."
+                    )
+                except (IntegrityError, SQLAlchemyError) as upd_err:
+                    logger.error(
+                        f"DB error flushing update for Person {log_ref}: {upd_err}"
+                    )
+                    session.rollback()  # Rollback on flush error
+                    return None, "error"
+            else:
+                status = "skipped"  # No updates needed
+                # logger.debug(f"No updates needed for existing Person {log_ref} (ID: {person.id}).")
+
+        else:
+            # --- Person Not Found: Create New ---
+            logger.debug(f"Person {log_ref} not found. Creating new record...")
+            # Fetch additional details via API before creating
+            profile_details = _fetch_profile_details_for_person(
+                self.session_manager, profile_id
+            )
+
+            # Prepare data for new Person object
+            new_person_data = {
+                "profile_id": profile_id.upper(),
+                "username": format_name(username_to_use),  # Use formatted username
+                "message_link": urljoin(
+                    config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
+                ),
+                "status": PersonStatusEnum.ACTIVE,  # Default status
+                # Initialize other fields to defaults or None
+                "first_name": None,
+                "contactable": True,
+                "last_logged_in": None,
+                "administrator_profile_id": None,
+                "administrator_username": None,
+                "gender": None,
+                "birth_year": None,
+                "in_my_tree": False,
+                "uuid": None,  # UUID might be added later by Action 6
+            }
+            # Populate with fetched details if available
+            if profile_details:
+                logger.debug(
+                    f"Populating new person {log_ref} with fetched profile details."
+                )
+                new_person_data["first_name"] = profile_details.get("first_name")
+                new_person_data["contactable"] = bool(
+                    profile_details.get("contactable", False)
+                )  # Default False if fetch fails
+                new_person_data["last_logged_in"] = profile_details.get(
+                    "last_logged_in_dt"
+                )
+            else:
+                logger.warning(
+                    f"Could not fetch profile details for new person {log_ref}. Using defaults."
+                )
+
+            # Create and add the new Person
+            try:
+                new_person = Person(**new_person_data)
+                session.add(new_person)
+                session.flush()  # Flush to get ID assigned immediately
+                if new_person.id is None:
+                    logger.error(
+                        f"ID not assigned after flush for new person {log_ref}! Rolling back."
+                    )
+                    session.rollback()
+                    return None, "error"
+                person = new_person  # Assign the newly created person object
+                status = "new"
+                logger.debug(f"Created new Person ID {person.id} for {log_ref}.")
+            except (IntegrityError, SQLAlchemyError) as create_err:
+                logger.error(f"DB error creating Person {log_ref}: {create_err}")
+                session.rollback()  # Rollback on creation error
+                return None, "error"
+            except Exception as e:
+                logger.critical(
+                    f"Unexpected error creating Person {log_ref}: {e}", exc_info=True
+                )
+                session.rollback()
+                return None, "error"
+
+        # Step 4: Return the person object and status
+        return person, status
+
+    # End of _lookup_or_create_person
 
     def _commit_batch_data_upsert(
         self,
@@ -881,62 +661,56 @@ class InboxProcessor:
         is_final_attempt: bool = False,
     ) -> int:
         """
-        V1.22 REVISED: Uses session.add_all() for new logs, explicit add for updates.
-        - Collects new ConversationLog objects in a list.
-        - Uses session.add_all() after the loop to add all new logs.
-        - Explicitly adds modified existing_log objects back to session.
-        - Removes intermediate flushes, relies on final db_transn commit.
+        Commits a batch of ConversationLog upserts and Person status updates to the database.
+        Uses SQLAlchemy ORM for individual log upserts and bulk_update_mappings for persons.
+
+        Args:
+            session: The active SQLAlchemy database session.
+            log_upserts: List of dictionaries, each containing data for a ConversationLog entry.
+            person_updates: Dictionary mapping Person ID to a dictionary of fields to update (e.g., {'status': PersonStatusEnum.DESIST}).
+            is_final_attempt: Flag indicating if this is the last commit attempt (e.g., during error handling).
+
+        Returns:
+            The number of Person records successfully updated in this batch.
         """
+        # Step 1: Initialization
         updated_person_count = 0
         processed_logs_count = 0
-        new_logs_to_add: List[ConversationLog] = []  # Initialize list for new logs
 
+        # Step 2: Check if there's data to commit
         if not log_upserts and not person_updates:
-            return updated_person_count
+            return updated_person_count  # Nothing to do
 
         log_prefix = "[Final Save] " if is_final_attempt else "[Batch Save] "
         logger.debug(
             f"{log_prefix} Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates."
         )
 
-        # --- Log Data Before Commit (Keep for debugging) ---
-        # ... (logging data remains the same) ...
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"{log_prefix}--- Log Upsert Data ---")
-            for item in log_upserts:
-                log_item_repr = {
-                    k: (
-                        str(v)[:50] + "..." if isinstance(v, str) and len(v) > 50 else v
-                    )
-                    for k, v in item.items()
-                }
-                logger.debug(f"  {log_item_repr}")
-            logger.debug(f"{log_prefix}--- Person Update Data ---")
-            for pid, data in person_updates.items():
-                logger.debug(f"  PersonID {pid}: {data}")
-            logger.debug(f"{log_prefix}--- End Data ---")
+        # Optional: Log data being committed (useful for debugging)
+        # if logger.isEnabledFor(logging.DEBUG): ... log data ...
 
+        # Step 3: Perform DB operations within a transaction context
         try:
-            # Use the main transaction context manager for the entire batch
-            with db_transn(session):
+            # Use the db_transn context manager to handle commit/rollback
+            with db_transn(session) as sess:  # Use the passed session
                 logger.debug(f"{log_prefix}Entered transaction block.")
 
-                # --- ConversationLog Explicit Upsert Logic ---
+                # --- Step 3a: ConversationLog Upsert Logic ---
                 if log_upserts:
                     logger.debug(
                         f"{log_prefix}Processing {len(log_upserts)} ConversationLog entries..."
                     )
                     for data in log_upserts:
                         try:
+                            # Extract keys and validate
                             conv_id = data.get("conversation_id")
                             direction_str = data.get("direction")
-
-                            # Validate and Convert Direction
                             if not conv_id or not direction_str:
                                 logger.error(
                                     f"{log_prefix}Missing conv_id/direction: {data}. Skip."
                                 )
                                 continue
+                            # Convert direction string to Enum
                             try:
                                 direction_enum = MessageDirectionEnum(direction_str)
                             except ValueError:
@@ -947,6 +721,7 @@ class InboxProcessor:
 
                             # Prepare data dictionary for update/insert
                             ts_val = data.get("latest_timestamp")
+                            # Ensure timestamp is aware UTC datetime
                             aware_timestamp = None
                             if isinstance(ts_val, datetime):
                                 aware_timestamp = (
@@ -960,11 +735,17 @@ class InboxProcessor:
                                 )
                                 continue
 
+                            # Select fields to update/insert (exclude keys, include nullable specifics)
                             update_data = {
                                 k: v
                                 for k, v in data.items()
                                 if k
-                                not in ["conversation_id", "direction", "updated_at"]
+                                not in [
+                                    "conversation_id",
+                                    "direction",
+                                    "created_at",
+                                    "updated_at",
+                                ]
                                 and (
                                     v is not None
                                     or k
@@ -978,60 +759,41 @@ class InboxProcessor:
                             update_data["updated_at"] = datetime.now(timezone.utc)
                             update_data["latest_timestamp"] = aware_timestamp
 
-                            # Query for existing record
+                            # Query for existing record (within the transaction)
                             existing_log = (
-                                session.query(ConversationLog)
+                                sess.query(ConversationLog)
                                 .filter_by(
                                     conversation_id=conv_id, direction=direction_enum
                                 )
+                                .with_for_update()
                                 .first()
-                            )  # No with_for_update needed if single worker
+                            )  # Lock row
 
                             if existing_log:
                                 # Update Existing Record
-                                logger.debug(
-                                    f"{log_prefix} Updating existing log for {conv_id}/{direction_enum.name}..."
-                                )
+                                # logger.debug(f"{log_prefix} Updating existing log for {conv_id}/{direction_enum.name}...")
                                 has_changes = False
                                 for key, value in update_data.items():
                                     if getattr(existing_log, key) != value:
                                         setattr(existing_log, key, value)
                                         has_changes = True
-                                if not has_changes:
-                                    logger.debug(
-                                        f"    No actual changes needed for {conv_id}/{direction_enum.name}."
-                                    )
-                                else:
-                                    logger.debug(
-                                        f"    Changes staged for {conv_id}/{direction_enum.name}."
-                                    )
-                                    # *** Explicitly add modified object back to session ***
-                                    session.add(existing_log)
-                                    logger.debug(
-                                        f"    Explicitly added modified existing_log to session."
-                                    )
+                                # if has_changes: logger.debug(f"    Changes staged for {conv_id}/{direction_enum.name}.")
                             else:
                                 # Create New Record Object
-                                logger.debug(
-                                    f"{log_prefix} Creating new log entry object for {conv_id}/{direction_enum.name}..."
-                                )
+                                # logger.debug(f"{log_prefix} Creating new log entry object for {conv_id}/{direction_enum.name}...")
                                 new_log_data = update_data.copy()
                                 new_log_data["conversation_id"] = conv_id
                                 new_log_data["direction"] = direction_enum
                                 if "people_id" not in new_log_data:
                                     logger.error(
-                                        f"{log_prefix} Missing 'people_id' for new log {conv_id}/{direction_enum.name}. Skip."
+                                        f"{log_prefix} Missing 'people_id' new log {conv_id}/{direction_enum.name}. Skip."
                                     )
                                     continue
                                 new_log_obj = ConversationLog(**new_log_data)
-                                # *** Append to list instead of adding directly ***
-                                new_logs_to_add.append(new_log_obj)
-                                logger.debug(
-                                    f"    New ConversationLog object added to list for {conv_id}/{direction_enum.name}."
-                                )
+                                sess.add(new_log_obj)  # Add new object to session
+                                # logger.debug(f"    New ConversationLog object added to session for {conv_id}/{direction_enum.name}.")
 
                             processed_logs_count += 1
-
                         except Exception as inner_log_exc:
                             logger.error(
                                 f"{log_prefix} Error processing single log item (data: {data}): {inner_log_exc}",
@@ -1041,64 +803,39 @@ class InboxProcessor:
                         f"{log_prefix}Finished processing {processed_logs_count} log entries."
                     )
 
-                    # *** Add all collected new logs AFTER the loop ***
-                    if new_logs_to_add:
-                        logger.debug(
-                            f"{log_prefix}Adding {len(new_logs_to_add)} new ConversationLog objects to session using add_all()..."
-                        )
-                        session.add_all(new_logs_to_add)
-                        logger.debug(
-                            f"{log_prefix}session.add_all() called for new logs."
-                        )
-                    else:
-                        logger.debug(
-                            f"{log_prefix}No new ConversationLog objects to add."
-                        )
-                # --- End ConversationLog Logic ---
-
-                # --- Person Update Logic (Keep bulk_update_mappings) ---
+                # --- Step 3b: Person Update Logic (Bulk Update) ---
                 if person_updates:
-                    update_values = []
+                    update_mappings = []
                     logger.debug(
                         f"{log_prefix}Preparing {len(person_updates)} Person status updates..."
                     )
-                    for pid, data in person_updates.items():
-                        status_val = data.get("status")
-                        enum_value = None
+                    for pid, update_fields in person_updates.items():
+                        # Prepare mapping for bulk update (must include 'id')
+                        update_map = {
+                            "id": pid,
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                        # Process status update specifically
+                        status_val = update_fields.get("status")
                         if isinstance(status_val, PersonStatusEnum):
-                            enum_value = status_val
-                        elif isinstance(status_val, str):
-                            try:
-                                enum_value = PersonStatusEnum(status_val.upper())
-                            except ValueError:
-                                logger.warning(
-                                    f"Invalid status string '{status_val}' for Person ID {pid}. Skip."
-                                )
-                                continue
+                            update_map["status"] = (
+                                status_val.value
+                            )  # Use Enum value for bulk update
+                            update_mappings.append(update_map)
+                            # logger.debug(f"  Prep update Person ID {pid}: status -> {status_val.name}")
                         else:
                             logger.warning(
-                                f"Invalid status type for Person ID {pid}: {type(status_val)}. Skip."
+                                f"Invalid status type '{type(status_val)}' provided for Person ID {pid}. Skipping update."
                             )
-                            continue
 
+                    # Perform bulk update if any valid mappings were created
+                    if update_mappings:
                         logger.debug(
-                            f"  Prep update Person ID {pid}: status -> {enum_value.name}"
-                        )
-                        update_values.append(
-                            {
-                                "id": pid,
-                                "status": enum_value,
-                                "updated_at": datetime.now(timezone.utc),
-                            }
-                        )
-
-                    if update_values:
-                        logger.debug(
-                            f"{log_prefix}Attempting bulk update mappings for {len(update_values)} persons..."
+                            f"{log_prefix}Attempting bulk update mappings for {len(update_mappings)} persons..."
                         )
                         try:
-                            session.bulk_update_mappings(Person, update_values)
-                            updated_person_count = len(update_values)
+                            sess.bulk_update_mappings(Person, update_mappings)
+                            updated_person_count = len(update_mappings)
                             logger.debug(
                                 f"{log_prefix}Bulk update mappings called for {updated_person_count} persons."
                             )
@@ -1107,53 +844,57 @@ class InboxProcessor:
                                 f"{log_prefix} Error during bulk_update_mappings: {bulk_err}",
                                 exc_info=True,
                             )
-                            raise  # Re-raise to trigger rollback
+                            raise  # Re-raise to trigger transaction rollback
                     else:
-                        logger.warning(f"{log_prefix}No valid person updates prepared.")
-                # --- End Person Update Logic ---
+                        logger.warning(
+                            f"{log_prefix}No valid person updates prepared for bulk operation."
+                        )
+                # --- End Person Update ---
 
-                # --- Log Session State Before Commit ---
-                logger.debug(f"{log_prefix}Session state BEFORE commit attempt:")
-                logger.debug(f"  Dirty objects: {len(session.dirty)}")
-                if logger.isEnabledFor(logging.DEBUG) and session.dirty:
-                    logger.debug(f"    Dirty Details: {session.dirty}")
-                logger.debug(f"  New objects: {len(session.new)}")
-                if logger.isEnabledFor(logging.DEBUG) and session.new:
-                    # Log reprs of new objects for better debugging
-                    new_obj_reprs = [repr(obj) for obj in session.new]
-                    logger.debug(f"    New Details: {new_obj_reprs}")
-                logger.debug(f"  Deleted objects: {len(session.deleted)}")
-                # --- End Log Session State ---
-
-                logger.debug(
-                    f"{log_prefix}Exiting transaction block (commit attempt follows)."
-                )
-            # --- Commit happens implicitly here by db_transn exiting the 'with' block ---
-
+                # Log session state before implicit commit (optional)
+                # logger.debug(f"{log_prefix}Session state before commit: Dirty={len(sess.dirty)}, New={len(sess.new)}")
+                logger.debug(f"{log_prefix}Exiting transaction block (commit follows).")
+            # --- Commit happens implicitly here when 'with db_transn' exits ---
             logger.debug(
-                f"{log_prefix}Transaction block exited. Commit should have occurred via db_transn."
+                f"{log_prefix}Transaction block exited. Commit successful via db_transn."
             )
-            return True
+            return updated_person_count  # Return count of updated persons
 
-        except Exception as commit_err:
+        # Step 4: Handle exceptions during commit process
+        except (IntegrityError, SQLAlchemyError) as db_commit_err:
+            # db_transn context manager handles rollback
             logger.error(
-                f"{log_prefix}Commit/Processing FAILED inside helper: {commit_err}",
+                f"{log_prefix}DB Commit FAILED: {db_commit_err}", exc_info=True
+            )
+            return 0  # Return 0 updated persons on failure
+        except Exception as commit_err:
+            # db_transn context manager handles rollback
+            logger.error(
+                f"{log_prefix}Unexpected Commit/Processing FAILED: {commit_err}",
                 exc_info=True,
             )
-            return 0
+            return 0  # Return 0 updated persons on failure
+
     # End of _commit_batch_data_upsert
 
     def _create_comparator(self, session: DbSession) -> Optional[Dict[str, Any]]:
         """
-        V1.21 REVISED: Finds the ConversationLog entry with the latest timestamp.
+        Finds the most recent ConversationLog entry (highest timestamp) in the database
+        to use as a comparison point for stopping inbox processing early.
+
+        Args:
+            session: The active SQLAlchemy database session.
 
         Returns:
             A dictionary {'conversation_id': str, 'latest_timestamp': datetime}
-            or None if the ConversationLog table is empty.
+            representing the comparator entry, or None if the table is empty or an error occurs.
+            Timestamp is guaranteed to be timezone-aware (UTC).
         """
-        latest_log_entry_info = None
+        latest_log_entry_info: Optional[Dict[str, Any]] = None
+        logger.debug("Creating comparator by finding latest ConversationLog entry...")
         try:
-            # Find the log entry with the maximum timestamp
+            # Step 1: Query for the entry with the maximum timestamp
+            # Order by descending timestamp, handle NULLs last, take the first result
             latest_entry = (
                 session.query(
                     ConversationLog.conversation_id, ConversationLog.latest_timestamp
@@ -1162,10 +903,12 @@ class InboxProcessor:
                 .first()
             )
 
+            # Step 2: Process the result if found
             if latest_entry:
-                # Ensure the timestamp is timezone-aware (assuming UTC)
+                log_conv_id = latest_entry.conversation_id
                 log_timestamp = latest_entry.latest_timestamp
-                aware_timestamp = None
+                # Ensure the timestamp is timezone-aware UTC
+                aware_timestamp: Optional[datetime] = None
                 if isinstance(log_timestamp, datetime):
                     aware_timestamp = (
                         log_timestamp.replace(tzinfo=timezone.utc)
@@ -1173,9 +916,10 @@ class InboxProcessor:
                         else log_timestamp.astimezone(timezone.utc)
                     )
 
-                if latest_entry.conversation_id and aware_timestamp:
+                # Step 3: Validate data and create comparator dictionary
+                if log_conv_id and aware_timestamp:
                     latest_log_entry_info = {
-                        "conversation_id": latest_entry.conversation_id,
+                        "conversation_id": log_conv_id,
                         "latest_timestamp": aware_timestamp,
                     }
                     logger.debug(
@@ -1183,349 +927,729 @@ class InboxProcessor:
                     )
                 else:
                     logger.warning(
-                        f"Found latest log entry, but data invalid: ConvID={latest_entry.conversation_id}, TS={log_timestamp}"
+                        f"Found latest log entry, but data invalid/missing timestamp: ConvID={log_conv_id}, Raw TS={log_timestamp}"
                     )
-
             else:
+                # Step 4: Log if table is empty
                 logger.info(
-                    "ConversationLog empty. Comparator not created.\n"
-                )  # Use INFO
+                    "ConversationLog table appears empty. Comparator not created."
+                )
 
+        # Step 5: Handle errors during query
         except Exception as e:
-            logger.error(f"Error creating comparator: {e}", exc_info=True)
+            logger.error(f"Error creating comparator from database: {e}", exc_info=True)
             return None  # Return None on error
+
+        # Step 6: Return the comparator info dictionary or None
         return latest_log_entry_info
+
     # End of _create_comparator
 
-    def _lookup_or_create_person(
-        self,
-        session: DbSession,
-        profile_id: str,
-        username: str,
-        conversation_id: Optional[
-            str
-        ],  # Keep conversation_id for message link construction
-        existing_person_arg: Optional[Person] = None,
-    ) -> Tuple[Optional[Person], Literal["new", "skipped", "error", "updated"]]:
+    # --- Main Public Method ---
+    def search_inbox(self) -> bool:
         """
-        V1.21 REVISED: Looks up or creates a Person.
-        - Fetches profile details (FirstName, IsContactable, LastLoginDate) via helper
-          when CREATING a new Person record.
-        """
-        if not profile_id or profile_id == "UNKNOWN":
-            logger.warning("_lookup_or_create_person: Invalid profile_id provided.")
-            return None, "error"
-        if not username:
-            username = "Unknown"  # Default username if missing
+        Main method to search the Ancestry inbox.
+        Fetches conversations page by page, compares with the database,
+        identifies new/updated conversations, fetches context for new incoming
+        messages, classifies intent using AI, and updates the database in batches.
+        Uses a comparator to potentially stop early if previously seen messages are reached.
+        Handles session validity checks and includes a progress bar if MAX_INBOX is set.
 
-        username_lower = username.lower()
-        correct_message_link: Optional[str] = None
+        Returns:
+            True if the process completed without critical errors, False otherwise.
+        """
+        # --- Step 1: Initialization ---
+        logger.debug("--- Starting Action 7: Search Inbox ---")
+        # Counters and state for this run
+        ai_classified_count = 0
+        status_updated_count = 0  # Person status updates (e.g., to DESIST)
+        total_processed_api_items = 0  # Conversations returned by API
+        items_processed_before_stop = 0  # Conversations actually processed in loop
+        stop_reason: Optional[str] = None  # Reason for stopping early
+        overall_success = True  # Assume success until error
+
+        # Validate session manager state
+        if not self.session_manager or not self.session_manager.my_profile_id:
+            logger.error("search_inbox: Session manager or profile ID missing.")
+            return False
+        my_pid_lower = self.session_manager.my_profile_id.lower()
+
+        # --- Step 2: Get DB Session and Comparator ---
+        session: Optional[DbSession] = None
         try:
-            # Use profile_id for the message link target
-            correct_message_link = urljoin(
-                config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
+            session = self.session_manager.get_db_conn()
+            if not session:
+                logger.critical("search_inbox: Failed to get DB session. Aborting.")
+                return False
+
+            # Get the comparator (latest message in DB)
+            comparator_info = self._create_comparator(session)
+            comp_conv_id: Optional[str] = None
+            comp_ts: Optional[datetime] = None  # Comparator timestamp (aware)
+            if comparator_info:
+                comp_conv_id = comparator_info.get("conversation_id")
+                comp_ts = comparator_info.get("latest_timestamp")
+            # --- End Get Comparator ---
+
+            # --- Step 3: Setup and Run Main Loop ---
+            max_inbox_str = (
+                str(self.max_inbox_limit) if self.max_inbox_limit > 0 else "Unlimited"
             )
-        except Exception as url_e:
-            logger.warning(f"Error constructing msg link for {profile_id}: {url_e}")
+            logger.debug(
+                f"Starting inbox search (MaxInbox={max_inbox_str}, BatchSize={self.api_batch_size}, Comparator={comp_conv_id or 'None'})..."
+            )
 
-        person: Optional[Person] = None
-        lookup_needed = existing_person_arg is None
+            # Decide whether to use progress bar based on limit
+            use_progress_bar = self.max_inbox_limit > 0
 
-        try:
-            if lookup_needed:
-                # Query by profile_id only, as username might change or be inaccurate in overview
-                person = (
-                    session.query(Person)
-                    .filter(Person.profile_id == profile_id.upper())
-                    .first()
-                )
-            else:
-                person = existing_person_arg  # Use the one passed from prefetch
-
-            if person:
-                # --- EXISTING PERSON ---
-                updated = False
-                # Update username only if current one is "Unknown" or differs significantly
-                # (Avoid overwriting potentially more accurate list username with older DB one)
-                if (
-                    person.username == "Unknown"
-                    or person.username.lower() != username_lower
-                ):
-                    # Maybe add more sophisticated name comparison if needed
-                    person.username = (
-                        username  # Update with potentially newer username from overview
-                    )
-                    updated = True
-                # Update message link if missing or different
-                current_link = person.message_link
-                if (
-                    correct_message_link is not None
-                    and current_link != correct_message_link
-                ):
-                    person.message_link = correct_message_link
-                    updated = True
-
-                # Optional: Update other fields if missing?
-                # You could call _fetch_profile_details_for_person here too and update if
-                # fields like first_name, contactable, last_logged_in are NULL in the DB.
-                # Example (add this block if desired):
-                # if person.first_name is None or person.contactable is None or person.last_logged_in is None:
-                #      logger.debug(f"Existing person {profile_id} missing details. Fetching profile...")
-                #      profile_details = _fetch_profile_details_for_person(self.session_manager, profile_id)
-                #      if profile_details:
-                #          if person.first_name is None and profile_details.get("first_name"):
-                #              person.first_name = profile_details["first_name"]; updated = True
-                #          if person.contactable is None and profile_details.get("contactable") is not None:
-                #              person.contactable = profile_details["contactable"]; updated = True
-                #          if person.last_logged_in is None and profile_details.get("last_logged_in_dt"):
-                #              person.last_logged_in = profile_details["last_logged_in_dt"]; updated = True
-
-                if updated:
-                    person.updated_at = datetime.now(timezone.utc)
-                    logger.debug(
-                        f"Updated existing Person record for {profile_id}/{username}"
-                    )
-                    # Ensure the updated object is managed by the session
-                    session.add(person)
-                    return person, "updated"
-                else:
-                    logger.debug(
-                        f"Skipped update for existing Person {profile_id}/{username} (no changes detected)."
-                    )
-                    return person, "skipped"
-            else:
-                # --- NEW PERSON ---
-                logger.debug(
-                    f"Person with profile ID {profile_id.upper()} not found. Attempting to create..."
-                )
-                # Fetch additional details before creating
-                profile_details = _fetch_profile_details_for_person(
-                    self.session_manager, profile_id
-                )
-
-                # Prepare data for new Person object
-                new_person_data = {
-                    "profile_id": profile_id.upper(),
-                    "username": username,  # Use username from conversation overview
-                    "message_link": correct_message_link,
-                    "status": PersonStatusEnum.ACTIVE,  # Default status
-                    "first_name": None,  # Default
-                    "contactable": True,  # Default assumption
-                    "last_logged_in": None,  # Default
-                    # Other fields like gender, birth_year, admin info will be None unless fetched
-                    "administrator_profile_id": None,
-                    "administrator_username": None,
-                    "gender": None,
-                    "birth_year": None,
-                    "in_my_tree": False,  # Default, can be updated by Action 6 if run later
+            # --- Conditional Execution with or without Progress Bar ---
+            if use_progress_bar:
+                # Run with tqdm context manager
+                tqdm_args = {
+                    "total": self.max_inbox_limit,
+                    "desc": "",
+                    "unit": " conv",
+                    "ncols": 100,
+                    "leave": True,
+                    "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt}",
                 }
+                logger.info(f"Processing up to {self.max_inbox_limit} inbox items...\n")
+                with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
+                    # Call internal loop function, passing the progress bar instance
+                    (
+                        stop_reason,
+                        total_processed_api_items,
+                        ai_classified_count,
+                        status_updated_count,
+                        items_processed_before_stop,
+                    ) = self._process_inbox_loop(
+                        session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+                    )
+            else:
+                # Run without tqdm progress bar
+                # Call internal loop function, passing None for the progress bar
+                (
+                    stop_reason,
+                    total_processed_api_items,
+                    ai_classified_count,
+                    status_updated_count,
+                    items_processed_before_stop,
+                ) = self._process_inbox_loop(
+                    session,
+                    comp_conv_id,
+                    comp_ts,
+                    my_pid_lower,
+                    None,  # Pass None for progress_bar
+                )
+            # --- End Conditional Execution ---
 
-                if profile_details:
-                    logger.debug(
-                        f"Populating new person {profile_id} with fetched profile details."
-                    )
-                    new_person_data["first_name"] = profile_details.get("first_name")
-                    # Ensure contactable defaults to False if API returns None, otherwise use API value
-                    new_person_data["contactable"] = (
-                        profile_details.get("contactable", False)
-                        if profile_details.get("contactable") is not None
-                        else False
-                    )
-                    new_person_data["last_logged_in"] = profile_details.get(
-                        "last_logged_in_dt"
-                    )
-                else:
-                    logger.warning(
-                        f"Could not fetch profile details for new person {profile_id}. Using defaults."
-                    )
+            # Check if loop stopped due to an error state
+            if stop_reason and "error" in stop_reason.lower():
+                overall_success = False
 
-                # Create and add the new Person
-                new_person = Person(**new_person_data)
-                session.add(new_person)
-                # Flush here to get the new_person.id assigned immediately
-                # This is useful if subsequent operations in the same batch need the ID
-                try:
-                    session.flush()
-                    if new_person.id is None:
-                        logger.error(
-                            f"ID not assigned after flush for {username} ({profile_id})!"
-                        )
-                        session.rollback()  # Rollback if flush didn't assign ID
-                        return None, "error"
-                    logger.debug(
-                        f"Created new Person ID {new_person.id} for {username} ({profile_id})."
-                    )
-                    return new_person, "new"
-                except (
-                    IntegrityError
-                ) as ie:  # Catch potential duplicate profile_id on flush
-                    session.rollback()
-                    logger.error(
-                        f"IntegrityError creating Person {username} ({profile_id}): {ie}. Rolling back.",
-                        exc_info=False,
-                    )
-                    # Attempt to refetch the person that caused the conflict
-                    conflicting_person = (
-                        session.query(Person)
-                        .filter(Person.profile_id == profile_id.upper())
-                        .first()
-                    )
-                    if conflicting_person:
-                        logger.warning(
-                            f"Returning conflicting Person ID {conflicting_person.id} instead."
-                        )
-                        return (
-                            conflicting_person,
-                            "skipped",
-                        )  # Treat as skipped as it already exists
-                    return None, "error"
-                except SQLAlchemyError as e_flush:
-                    logger.error(
-                        f"DB error during flush for new person {username} ({profile_id}): {e_flush}"
-                    )
-                    session.rollback()
-                    return None, "error"
-
-        except SQLAlchemyError as e:
-            logger.error(
-                f"DB error in _lookup_or_create_person for {username} ({profile_id}): {e}"
-            )
-            # Rollback might be needed depending on session state, but let db_transn handle it usually
-            return None, "error"
-        except Exception as e:
+        # --- Step 4: Handle Outer Exceptions ---
+        except Exception as outer_e:
             logger.critical(
-                f"Unexpected error in _lookup_or_create_person {username} ({profile_id}): {e}",
+                f"CRITICAL error during search_inbox execution: {outer_e}",
                 exc_info=True,
             )
-            return None, "error"
-    # End of _lookup_or_create_person
+            overall_success = False
+
+        # --- Step 5: Final Logging and Cleanup ---
+        finally:
+            # Log summary of the run
+            final_stop_reason = stop_reason or (
+                "Comparator/End Reached" if overall_success else "Unknown"
+            )
+            self._log_unified_summary(
+                total_api_items=total_processed_api_items,
+                items_processed=items_processed_before_stop,
+                new_logs=0,  # Not tracked directly in this version's summary
+                ai_classified=ai_classified_count,
+                status_updates=status_updated_count,
+                stop_reason=final_stop_reason,
+                max_inbox_limit=self.max_inbox_limit,
+            )
+            # Release the database session
+            if session:
+                self.session_manager.return_session(session)
+            logger.info("--- Finished Action 7: Search Inbox ---")
+
+        # Step 6: Return overall success status
+        return overall_success
+
+    # End of search_inbox
+
+    def _process_inbox_loop(
+        self,
+        session: DbSession,
+        comp_conv_id: Optional[str],
+        comp_ts: Optional[datetime],  # Aware datetime
+        my_pid_lower: str,
+        progress_bar: Optional[tqdm],  # Accept progress bar instance
+    ) -> Tuple[Optional[str], int, int, int, int]:
+        """
+        Internal helper: Contains the main loop for fetching and processing inbox batches.
+
+        Args:
+            session: The active SQLAlchemy database session.
+            comp_conv_id: Conversation ID of the comparator message.
+            comp_ts: Timestamp of the comparator message (UTC aware).
+            my_pid_lower: Lowercase profile ID of the script user.
+            progress_bar: Optional tqdm instance to update.
+
+        Returns:
+            Tuple: (stop_reason, total_api_items, ai_classified_count,
+                    status_updated_count, items_processed_before_stop)
+        """
+        # Step 1: Initialize loop-specific state
+        ai_classified_count = 0
+        status_updated_count = 0
+        total_processed_api_items = 0
+        items_processed_before_stop = 0
+        stop_reason: Optional[str] = None
+        next_cursor: Optional[str] = None
+        current_batch_num = 0
+        # Lists to accumulate data for batch commits
+        conv_log_upserts: List[Dict[str, Any]] = []
+        person_updates: Dict[int, Dict[str, Any]] = (
+            {}
+        )  # Store Person updates: {person_id: {'status': Enum}}
+        stop_processing = False
+        min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
+
+        # Step 2: Main loop - continues until stop condition met
+        while not stop_processing:
+            try:  # Inner try for handling exceptions within a single batch iteration
+                # Step 2a: Check session validity before each API call
+                if not self.session_manager.is_sess_valid():
+                    logger.error("Session became invalid during inbox processing loop.")
+                    raise WebDriverException(
+                        "Session invalid before overview batch fetch"
+                    )
+
+                # Step 2b: Calculate API Limit for this batch, considering overall limit
+                current_limit = self.api_batch_size
+                if self.max_inbox_limit > 0:
+                    remaining_allowed = (
+                        self.max_inbox_limit - items_processed_before_stop
+                    )
+                    if remaining_allowed <= 0:
+                        # Stop *before* fetching if limit already reached
+                        stop_reason = f"Inbox Limit ({self.max_inbox_limit})"
+                        stop_processing = True
+                        break
+                    current_limit = min(self.api_batch_size, remaining_allowed)
+
+                # Step 2c: Fetch a batch of conversations from API
+                all_conversations_batch, next_cursor_from_api = (
+                    self._get_all_conversations_api(
+                        self.session_manager, limit=current_limit, cursor=next_cursor
+                    )
+                )
+
+                # Step 2d: Handle API failure
+                if all_conversations_batch is None:
+                    logger.error(
+                        "API call to fetch conversation batch failed critically."
+                    )
+                    stop_reason = "API Error Fetching Batch"
+                    stop_processing = True
+                    break
+
+                # Step 2e: Process fetched batch
+                batch_api_item_count = len(all_conversations_batch)
+                total_processed_api_items += batch_api_item_count
+                current_batch_num += 1
+                logger.debug(
+                    f"Processing Batch {current_batch_num} ({batch_api_item_count} items)..."
+                )
+
+                # Handle empty batch result
+                if batch_api_item_count == 0:
+                    if (
+                        not next_cursor_from_api
+                    ):  # No items AND no next cursor = end of inbox
+                        stop_reason = "End of Inbox Reached (Empty Batch, No Cursor)"
+                        stop_processing = True
+                        break
+                    else:  # Empty batch BUT cursor exists (API might sometimes do this)
+                        logger.debug(
+                            "API returned empty batch but provided cursor. Continuing fetch."
+                        )
+                        next_cursor = next_cursor_from_api
+                        continue  # Fetch next batch
+
+                # Apply rate limiter delay after successful fetch
+                # wait_duration = self.dynamic_rate_limiter.wait()
+                # if wait_duration > 0.1: logger.debug(f"API batch fetch wait: {wait_duration:.2f}s")
+
+                # Step 2f: Pre-fetch existing Person and ConversationLog data for the batch
+                batch_conv_ids = [
+                    c["conversation_id"]
+                    for c in all_conversations_batch
+                    if c.get("conversation_id")
+                ]
+                batch_profile_ids = {
+                    c.get("profile_id", "").upper()
+                    for c in all_conversations_batch
+                    if c.get("profile_id") and c.get("profile_id") != "UNKNOWN"
+                }
+                existing_persons_map: Dict[str, Person] = {}
+                existing_conv_logs: Dict[Tuple[str, str], ConversationLog] = (
+                    {}
+                )  # Key: (conv_id, direction_enum.name)
+                try:
+                    if batch_profile_ids:
+                        persons = (
+                            session.query(Person)
+                            .filter(Person.profile_id.in_(batch_profile_ids))
+                            .all()
+                        )
+                        existing_persons_map = {
+                            p.profile_id: p for p in persons if p.profile_id
+                        }
+                    if batch_conv_ids:
+                        logs = (
+                            session.query(ConversationLog)
+                            .filter(ConversationLog.conversation_id.in_(batch_conv_ids))
+                            .all()
+                        )
+                        # Ensure timestamps are aware before putting in map
+                        for log in logs:
+                            if (
+                                log.latest_timestamp
+                                and log.latest_timestamp.tzinfo is None
+                            ):
+                                log.latest_timestamp = log.latest_timestamp.replace(
+                                    tzinfo=timezone.utc
+                                )
+                        existing_conv_logs = {
+                            (log.conversation_id, log.direction.name): log
+                            for log in logs
+                            if log.direction
+                        }
+                except SQLAlchemyError as db_err:
+                    logger.error(
+                        f"DB prefetch failed for Batch {current_batch_num}: {db_err}"
+                    )
+                    # Decide whether to skip batch or abort run - Abort for now
+                    stop_reason = "DB Prefetch Error"
+                    stop_processing = True
+                    break
+
+                # Step 2g: Process each conversation in the batch
+                for conversation_info in all_conversations_batch:
+                    # --- Check Max Inbox Limit ---
+                    if (
+                        self.max_inbox_limit > 0
+                        and items_processed_before_stop >= self.max_inbox_limit
+                    ):
+                        if not stop_reason:
+                            stop_reason = f"Inbox Limit ({self.max_inbox_limit})"
+                        stop_processing = True
+                        break  # Break inner conversation loop
+
+                    items_processed_before_stop += 1
+                    if progress_bar:
+                        progress_bar.update(1)  # Update progress for this item
+
+                    # Extract key info
+                    profile_id_upper = conversation_info.get(
+                        "profile_id", "UNKNOWN"
+                    ).upper()
+                    api_conv_id = conversation_info.get("conversation_id")
+                    api_latest_ts_aware = conversation_info.get(
+                        "last_message_timestamp"
+                    )  # Already aware from _extract
+
+                    if not api_conv_id or profile_id_upper == "UNKNOWN":
+                        logger.debug(
+                            f"Skipping item {items_processed_before_stop}: Invalid ConvID/ProfileID."
+                        )
+                        continue
+
+                    # --- Comparator Logic & Fetch Decision ---
+                    needs_fetch = False
+                    # Check 1: Is this the comparator conversation?
+                    if comp_conv_id and api_conv_id == comp_conv_id:
+                        stop_processing = (
+                            True  # Found comparator, plan to stop after this item
+                        )
+                        # Fetch only if API timestamp is newer than comparator timestamp
+                        if (
+                            comp_ts
+                            and api_latest_ts_aware
+                            and api_latest_ts_aware > comp_ts
+                        ):
+                            needs_fetch = True
+                        else:
+                            # Comparator found, timestamp not newer or invalid -> stop and don't fetch
+                            if not stop_reason:
+                                stop_reason = "Comparator Found (No Change)"
+                            break  # Stop processing immediately after comparator check passes
+
+                    # Check 2: Not comparator, compare API timestamp with DB timestamps
+                    else:
+                        db_log_in = existing_conv_logs.get(
+                            (api_conv_id, MessageDirectionEnum.IN.name)
+                        )
+                        db_log_out = existing_conv_logs.get(
+                            (api_conv_id, MessageDirectionEnum.OUT.name)
+                        )
+                        # Get latest *overall* timestamp from DB for this conversation (ensure aware)
+                        db_latest_ts_in = (
+                            db_log_in.latest_timestamp
+                            if db_log_in and db_log_in.latest_timestamp
+                            else min_aware_dt
+                        )
+                        db_latest_ts_out = (
+                            db_log_out.latest_timestamp
+                            if db_log_out and db_log_out.latest_timestamp
+                            else min_aware_dt
+                        )
+                        db_latest_overall_for_conv = max(
+                            db_latest_ts_in, db_latest_ts_out
+                        )
+                        # Fetch if API timestamp is newer OR if no DB logs exist at all
+                        if (
+                            api_latest_ts_aware
+                            and api_latest_ts_aware > db_latest_overall_for_conv
+                        ):
+                            needs_fetch = True
+                        elif not db_log_in and not db_log_out:  # No record in DB yet
+                            needs_fetch = True
+                    # --- End Comparator Logic ---
+
+                    # Skip if no fetch needed
+                    if not needs_fetch:
+                        # logger.debug(f"Skipping ConvID {api_conv_id}: No fetch needed (up-to-date).")
+                        if stop_processing:
+                            break  # Break inner loop if comparator was hit
+                        continue  # Move to next conversation
+
+                    # --- Fetch Context & Process Message ---
+                    if (
+                        not self.session_manager.is_sess_valid()
+                    ):  # Check session before fetch
+                        raise WebDriverException(
+                            f"Session invalid before fetching context for ConvID {api_conv_id}"
+                        )
+                    context_messages = self._fetch_conversation_context(api_conv_id)
+                    if context_messages is None:
+                        logger.error(
+                            f"Failed to fetch context for ConvID {api_conv_id}. Skipping item."
+                        )
+                        continue  # Skip this conversation if context fetch fails
+
+                    # --- Lookup/Create Person ---
+                    person, person_op_status = self._lookup_or_create_person(
+                        session,
+                        profile_id_upper,
+                        conversation_info.get("username", "Unknown"),
+                        api_conv_id,
+                        existing_person_arg=existing_persons_map.get(
+                            profile_id_upper
+                        ),  # Pass prefetched if available
+                    )
+                    if not person or not person.id:
+                        logger.error(
+                            f"Failed person lookup/create for ConvID {api_conv_id}. Skipping item."
+                        )
+                        continue  # Cannot proceed without person record
+                    people_id = person.id
+
+                    # --- Process Fetched Context Messages ---
+                    latest_ctx_in: Optional[Dict] = None
+                    latest_ctx_out: Optional[Dict] = None
+                    # Find the latest IN and OUT message from the fetched context
+                    for msg in reversed(context_messages):  # Iterate newest first
+                        author_lower = msg.get("author", "")
+                        if author_lower != my_pid_lower and latest_ctx_in is None:
+                            latest_ctx_in = msg
+                        elif author_lower == my_pid_lower and latest_ctx_out is None:
+                            latest_ctx_out = msg
+                        if latest_ctx_in and latest_ctx_out:
+                            break  # Stop when both found
+
+                    ai_sentiment_result: Optional[str] = None
+                    # --- Process IN Row ---
+                    if latest_ctx_in:
+                        ctx_ts_in_aware = latest_ctx_in.get(
+                            "timestamp"
+                        )  # Already aware
+                        # Compare context timestamp with DB timestamp *for IN direction*
+                        db_ts_in_for_compare = existing_conv_logs.get(
+                            (api_conv_id, MessageDirectionEnum.IN.name), None
+                        )
+                        db_latest_ts_in_compare = (
+                            db_ts_in_for_compare.latest_timestamp
+                            if db_ts_in_for_compare
+                            and db_ts_in_for_compare.latest_timestamp
+                            else min_aware_dt
+                        )
+                        # Process only if context message is newer than DB record for IN
+                        if (
+                            ctx_ts_in_aware
+                            and ctx_ts_in_aware > db_latest_ts_in_compare
+                        ):
+                            # Prepare context for AI
+                            formatted_context = self._format_context_for_ai(
+                                context_messages, my_pid_lower
+                            )
+                            # Call AI for classification
+                            if (
+                                not self.session_manager.is_sess_valid()
+                            ):  # Check session before AI call
+                                raise WebDriverException(
+                                    f"Session invalid before AI classification call for ConvID {api_conv_id}"
+                                )
+                            ai_sentiment_result = classify_message_intent(
+                                formatted_context, self.session_manager
+                            )
+                            if ai_sentiment_result:
+                                ai_classified_count += (
+                                    1  # Count successful classifications
+                                )
+                            else:
+                                logger.warning(
+                                    f"AI classification failed for ConvID {api_conv_id}."
+                                )
+
+                            # Prepare data for ConversationLog upsert (IN row)
+                            upsert_data_in = {
+                                "conversation_id": api_conv_id,
+                                "direction": MessageDirectionEnum.IN.name,  # Use Enum name
+                                "people_id": people_id,
+                                "latest_message_content": latest_ctx_in.get(
+                                    "content", ""
+                                )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
+                                "latest_timestamp": ctx_ts_in_aware,
+                                "ai_sentiment": ai_sentiment_result,  # Store AI result
+                                # Fields below are typically null for IN rows
+                                "message_type_id": None,
+                                "script_message_status": None,
+                            }
+                            # Filter out None values unless specifically allowed (like ai_sentiment)
+                            upsert_data_in = {
+                                k: v
+                                for k, v in upsert_data_in.items()
+                                if v is not None or k == "ai_sentiment"
+                            }
+                            conv_log_upserts.append(upsert_data_in)
+
+                            # Stage Person status update if AI classified as DESIST/UNINTERESTED
+                            if ai_sentiment_result in ("DESIST", "UNINTERESTED"):
+                                logger.debug(
+                                    f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as '{ai_sentiment_result}'. Staging status update to DESIST."
+                                )
+                                if people_id not in person_updates:
+                                    person_updates[people_id] = {}
+                                person_updates[people_id][
+                                    "status"
+                                ] = PersonStatusEnum.DESIST  # Use Enum object
+
+                    # --- Process OUT Row ---
+                    if latest_ctx_out:
+                        ctx_ts_out_aware = latest_ctx_out.get(
+                            "timestamp"
+                        )  # Already aware
+                        # Compare context timestamp with DB timestamp *for OUT direction*
+                        db_ts_out_for_compare = existing_conv_logs.get(
+                            (api_conv_id, MessageDirectionEnum.OUT.name), None
+                        )
+                        db_latest_ts_out_compare = (
+                            db_ts_out_for_compare.latest_timestamp
+                            if db_ts_out_for_compare
+                            and db_ts_out_for_compare.latest_timestamp
+                            else min_aware_dt
+                        )
+                        # Process only if context message is newer than DB record for OUT
+                        if (
+                            ctx_ts_out_aware
+                            and ctx_ts_out_aware > db_latest_ts_out_compare
+                        ):
+                            # Prepare data for ConversationLog upsert (OUT row)
+                            upsert_data_out = {
+                                "conversation_id": api_conv_id,
+                                "direction": MessageDirectionEnum.OUT.name,
+                                "people_id": people_id,
+                                "latest_message_content": latest_ctx_out.get(
+                                    "content", ""
+                                )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
+                                "latest_timestamp": ctx_ts_out_aware,
+                                # Fields below are typically null unless script sent last message (handled by Action 8)
+                                "ai_sentiment": None,  # AI sentiment not applicable to OUT messages
+                                "message_type_id": None,
+                                "script_message_status": None,
+                            }
+                            upsert_data_out = {
+                                k: v
+                                for k, v in upsert_data_out.items()
+                                if v is not None
+                                or k in ["message_type_id", "script_message_status"]
+                            }
+                            conv_log_upserts.append(upsert_data_out)
+                    # --- End Context Processing ---
+
+                    # Check stop flag again after processing item (if comparator was hit)
+                    if stop_processing:
+                        break  # Break inner conversation loop
+
+                # --- End Inner Loop (Processing conversations in batch) ---
+
+                # --- Commit Batch Data ---
+                if conv_log_upserts or person_updates:
+                    logger.debug(
+                        f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts)} logs, {len(person_updates)} persons..."
+                    )
+                    updates_committed = self._commit_batch_data_upsert(
+                        session, conv_log_upserts, person_updates
+                    )
+                    status_updated_count += (
+                        updates_committed  # Add count of persons updated
+                    )
+                    conv_log_upserts.clear()  # Clear lists after commit attempt
+                    person_updates.clear()
+                    logger.debug(
+                        f"Batch commit finished (Batch {current_batch_num}). Persons updated: {updates_committed}."
+                    )
+
+                # Step 2h: Check stop flag *after* potential commit
+                if stop_processing:
+                    if not stop_reason:
+                        stop_reason = (
+                            "Comparator Found"  # Set reason if not already set
+                        )
+                    logger.debug(
+                        f"Stop flag set ({stop_reason}). Breaking outer processing loop."
+                    )
+                    break  # Break outer while loop
+
+                # Step 2i: Prepare for next batch iteration
+                next_cursor = next_cursor_from_api
+                if not next_cursor:  # End of inbox reached
+                    stop_reason = "End of Inbox Reached (No Next Cursor)"
+                    stop_processing = True
+                    logger.debug("No next cursor from API. Ending processing.")
+                    break  # Break outer while loop
+
+            # --- Step 3: Handle Exceptions During Batch Processing ---
+            except WebDriverException as wde:
+                logger.error(
+                    f"WebDriverException occurred during inbox loop (Batch {current_batch_num}): {wde}"
+                )
+                stop_reason = "WebDriver Exception"
+                stop_processing = True  # Stop processing
+                # Attempt final save before exiting loop
+                logger.warning("Attempting final save due to WebDriverException...")
+                final_save_count = self._commit_batch_data_upsert(
+                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                )
+                status_updated_count += final_save_count
+                # Do not clear lists here, let finally block handle it if needed
+            except KeyboardInterrupt:
+                logger.warning("KeyboardInterrupt detected during inbox loop.")
+                stop_reason = "Keyboard Interrupt"
+                stop_processing = True  # Stop processing
+                # Attempt final save
+                logger.warning("Attempting final save due to KeyboardInterrupt...")
+                final_save_count = self._commit_batch_data_upsert(
+                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                )
+                status_updated_count += final_save_count
+                # Do not clear lists
+                break  # Exit loop
+            except Exception as e_main:
+                logger.critical(
+                    f"Critical error in inbox processing loop (Batch {current_batch_num}): {e_main}",
+                    exc_info=True,
+                )
+                stop_reason = f"Critical Error ({type(e_main).__name__})"
+                stop_processing = True  # Stop processing
+                # Attempt final save
+                logger.warning("Attempting final save due to critical error...")
+                final_save_count = self._commit_batch_data_upsert(
+                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                )
+                status_updated_count += final_save_count
+                # Do not clear lists
+                # Return from helper to signal failure to outer function
+                return (
+                    stop_reason,
+                    total_processed_api_items,
+                    ai_classified_count,
+                    status_updated_count,
+                    items_processed_before_stop,
+                )
+
+        # --- End Main Loop (while not stop_processing) ---
+
+        # Step 4: Perform final commit if loop finished normally or stopped early (e.g., limit)
+        # This catches any remaining data not committed in the last batch.
+        if not stop_reason or stop_reason in (
+            "Comparator Found",
+            "Comparator Found (No Change)",
+            f"Inbox Limit ({self.max_inbox_limit})",
+            "End of Inbox Reached (Empty Batch, No Cursor)",
+            "End of Inbox Reached (No Next Cursor)",
+        ):
+            if conv_log_upserts or person_updates:
+                logger.info("Performing final commit at end of processing loop...")
+                final_save_count = self._commit_batch_data_upsert(
+                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                )
+                status_updated_count += final_save_count
+
+        # Step 5: Return results from the loop execution
+        return (
+            stop_reason,
+            total_processed_api_items,
+            ai_classified_count,
+            status_updated_count,
+            items_processed_before_stop,
+        )
+
+    # End of _process_inbox_loop
 
     def _log_unified_summary(
         self,
         total_api_items: int,
         items_processed: int,
-        new_logs: int,  # Keep arg but ignore value
+        new_logs: int,
         ai_classified: int,
         status_updates: int,
         stop_reason: Optional[str],
         max_inbox_limit: int,
     ):
-        """Logs the final summary for the inbox search."""
-        print(" ")
+        """Logs a unified summary of the inbox search process."""
+        # Step 1: Print header
+        print(" ")  # Add spacing
         logger.info("------ Inbox Search Summary ------")
-        logger.info(f"Total API Items Fetched:      {total_api_items}")
-        logger.info(f"Items Processed in Loop:      {items_processed}"        )  
-        logger.info(f"AI Classifications Made:      {ai_classified}")
-        logger.info(f"Person Status Updates:        {status_updates}")
-        if stop_reason:
-            logger.info(f"Processing Stopped Due To:    {stop_reason}")
-        elif max_inbox_limit == 0 or (
-            max_inbox_limit > 0 and items_processed < max_inbox_limit
-        ):
-            logger.info(f"Processing Stopped Due To:    End Reached"
-            )
-        logger.info("----------------------------------\n")
+        # Step 2: Log key metrics
+        logger.info(f"  API Conversations Fetched:    {total_api_items}")
+        logger.info(f"  Conversations Processed:      {items_processed}")
+        # logger.info(f"  New/Updated Log Entries:    {new_logs}") # Removed as upsert logic complicates exact counts
+        logger.info(f"  AI Classifications Attempted: {ai_classified}")
+        logger.info(f"  Person Status Updates Made:   {status_updates}")
+        # Step 3: Log stopping reason
+        final_reason = stop_reason
+        if not stop_reason:
+            # Infer reason if not explicitly set
+            if max_inbox_limit == 0 or items_processed < max_inbox_limit:
+                final_reason = "End of Inbox Reached or Comparator Match"
+            else:
+                final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
+        logger.info(f"  Processing Stopped Due To:    {final_reason}")
+        # Step 4: Print footer
+        logger.info("----------------------------------\n")  # Add newline
+
     # End of _log_unified_summary
+
+
 # End of InboxProcessor class
 
-
-@retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
-def _fetch_profile_details_for_person(
-    session_manager: SessionManager, profile_id: str
-) -> Optional[Dict[str, Any]]:
-    """
-    Fetches profile details (FirstName, IsContactable, LastLoginDate) for a given profile ID.
-    """
-    if not profile_id or profile_id == "UNKNOWN":
-        logger.warning("Cannot fetch profile details: Invalid profile_id provided.")
-        return None
-    if not session_manager or not session_manager.is_sess_valid():
-        logger.error(
-            f"Profile details fetch: WebDriver session invalid for Profile ID {profile_id}."
-        )
-        # Don't raise ConnectionError here, just return None as it might be called when session is closing
-        return None
-
-    profile_url = urljoin(
-        config_instance.BASE_URL,
-        f"/app-api/express/v1/profiles/details?userId={profile_id.upper()}",
-    )
-    api_desc_profile = "Profile Details API (Action 7)"
-    profile_data = {}
-
-    try:
-        profile_response = _api_req(
-            url=profile_url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            method="GET",
-            use_csrf_token=False,
-            api_description=api_desc_profile,
-            # Referer might be less critical here, but could use messaging page if needed
-            # referer_url=urljoin(config_instance.BASE_URL, "/messaging/"),
-        )
-
-        if profile_response and isinstance(profile_response, dict):
-            logger.debug(f"Fetched /profiles/details for {profile_id} OK.")
-
-            # Extract FirstName
-            raw_first_name = profile_response.get("FirstName")
-            profile_data["first_name"] = (
-                format_name(raw_first_name) if raw_first_name else None
-            )
-
-            # Extract IsContactable
-            contactable_val = profile_response.get("IsContactable")
-            profile_data["contactable"] = (
-                bool(contactable_val) if contactable_val is not None else False
-            )  # Default False if missing
-
-            # Extract and parse LastLoginDate
-            last_login_str = profile_response.get("LastLoginDate")
-            last_login_dt = None
-            if last_login_str:
-                try:
-                    if last_login_str.endswith("Z"):
-                        last_login_dt = datetime.fromisoformat(
-                            last_login_str.replace("Z", "+00:00")
-                        )
-                    else:
-                        dt_naive = datetime.fromisoformat(last_login_str)
-                        last_login_dt = (
-                            dt_naive.replace(tzinfo=timezone.utc)
-                            if dt_naive.tzinfo is None
-                            else dt_naive.astimezone(timezone.utc)
-                        )
-                    profile_data["last_logged_in_dt"] = last_login_dt
-                except (ValueError, TypeError) as date_parse_err:
-                    logger.warning(
-                        f"Could not parse LastLoginDate '{last_login_str}' for {profile_id}: {date_parse_err}"
-                    )
-                    profile_data["last_logged_in_dt"] = None
-            else:
-                profile_data["last_logged_in_dt"] = None
-
-            return profile_data  # Return extracted data
-        else:
-            logger.warning(
-                f"Failed to get valid /profiles/details response for {profile_id}. Type: {type(profile_response)}"
-            )
-            return None  # Return None on failure
-
-    except ConnectionError as conn_err:
-        logger.error(
-            f"ConnectionError fetching /profiles/details for {profile_id}: {conn_err}",
-            exc_info=False,
-        )
-        raise  # Re-raise for retry decorator
-    except Exception as e:
-        logger.error(
-            f"Error fetching /profiles/details for {profile_id}: {e}", exc_info=True
-        )
-        if isinstance(e, requests.exceptions.RequestException):
-            raise  # Re-raise for retry decorator
-        return None  # Return None for other exceptions
-# End _fetch_profile_details_for_person
-
+# --- Standalone Execution / Helper ---
+# Note: _fetch_profile_details_for_person moved to utils.py for broader use
 
 # End of action7_inbox.py

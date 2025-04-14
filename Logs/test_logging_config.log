@@ -1,0 +1,11 @@
+21:14:47 INF [logging_ <module> 396 ] Log file should be: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Logs\test_logging_config.log
+21:14:47 INF [logging_ <module> 398 ] Test INFO log (1) - Should appear on console/file.
+21:14:47 WAR [logging_ <module> 399 ] Test WARNING log (1) - Should appear on console/file.
+21:14:47 INF [logging_ <module> 400 ] Multi-line
+                                      test message
+                                      with different indents.
+21:14:47 INF [logging_ <module> 405 ] --- Logging state after toggle to DEBUG ---
+21:14:47 DEB [logging_ <module> 406 ] Test DEBUG log (2) - Should NOW appear on console/file.
+21:14:47 INF [logging_ <module> 407 ] Test INFO log (2)
+21:14:47 INF [logging_ <module> 412 ] --- Logging state after toggle back to INFO ---
+21:14:47 INF [logging_ <module> 414 ] Test INFO log (3)

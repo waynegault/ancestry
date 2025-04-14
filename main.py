@@ -68,7 +68,7 @@ from utils import (
 def menu():
     """Display the main menu and return the user's choice."""
     print("Main Menu")
-    print("=" * 13)
+    print("=" * 17)
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
@@ -166,9 +166,9 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
     mem_before = process.memory_info().rss / (1024 * 1024)
 
     # --- Restore Header Style ---
-    logger.info("--------------------------------------")
+    logger.info("------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("--------------------------------------\n")
+    logger.info("------------------------------------------\n")
     # --- End Restore Header Style ---
 
     action_result = None
@@ -330,11 +330,11 @@ def exec_actn(action_func, session_manager, choice, close_sess=True, *args):
                 f"Action {choice} ({action_name}) reported a failure (returned False or exception occurred).\n"
             )
 
-        logger.info("--------------------------------------")
+        logger.info("------------------------------------------")
         logger.info(f"Action {choice} ({action_name}) finished.")
         logger.info(f"Duration: {formatted_duration}")
         logger.info(f"Memory used: {mem_used:.1f} MB")
-        logger.info("--------------------------------------\n")
+        logger.info("------------------------------------------\n")
         # End Restore old footer style
 # End of exec_actn
 
@@ -649,7 +649,7 @@ def reset_db_actn(session_manager: SessionManager, *args):
 
             reset_successful = True
             logger.info(
-                "Database reset (delete, recreate, seed) completed successfully."
+                "Database reset completed successfully."
             )
 
         except Exception as recreate_err:
@@ -718,7 +718,7 @@ def restore_db_actn(
             )
         # --- End closing main pool ---
 
-        logger.info(f"Restoring DB from: {backup_path}")
+        logger.debug(f"Restoring DB from: {backup_path}")
         if not backup_path.exists():
             logger.error(f"Backup not found: {backup_path}.")
             return False
@@ -754,7 +754,7 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
         logger.error("SessionManager required for check_login_actn.")
         return False
 
-    logger.info("Verifying login status...")
+    logger.debug("Verifying login status...")
 
     # Phase 1 (Driver Start) is handled by exec_actn if needed.
     # We only need to check if driver is live before proceeding.
@@ -904,8 +904,8 @@ def main():
             # --- Confirmation dictionary ---
             confirm_actions = {
                 "0": "Delete all people except specific profile ID",
-                "2": "COMPLETELY reset the database (deletes current data)",
-                "4": "Restore database from backup (overwrites current data)",
+                "2": "COMPLETELY reset the database (deletes data)",
+                "4": "Restore database from backup (overwrites data)",
             }
 
             # --- Confirmation Check ---
@@ -914,7 +914,7 @@ def main():
                 # Use input() for confirmation prompt
                 confirm = (
                     input(
-                        f"⚠️ Are you sure you want to {action_desc}? This cannot be undone. (yes/no): \n"
+                        f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): "
                     )
                     .strip()
                     .lower()
@@ -922,6 +922,8 @@ def main():
                 if confirm not in ["yes", "y"]:
                     print("Action cancelled.\n")
                     continue  # Go back to the menu
+                else:
+                    print(" ")
 
             # --- Action Dispatching ---
             if choice == "0":
@@ -944,7 +946,6 @@ def main():
             elif choice == "4":
                 # Confirmation handled above
                 exec_actn(restore_db_actn, session_manager, choice, close_sess=False)
-                logger.info("Re-initializing main SessionManager after restore...")
                 session_manager = (
                     SessionManager()
                 )  # Recreate after potentially disruptive action
