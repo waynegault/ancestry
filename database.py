@@ -27,7 +27,7 @@ import traceback # Explicit import for potential future use
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 # --- Third-party imports ---
 from sqlalchemy import (
@@ -359,7 +359,7 @@ def db_transn(session: Session):
 # CRUD Operations (Adapted from user version, using new schema)
 # ----------------------------------------------------------------------
 
-# --- Create/Insert ---
+# --- Create ---
 
 def create_person(session: Session, person_data: Dict[str, Any]) -> int:
     """
@@ -471,10 +471,10 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
 # End of create_person
 
 
-def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["created", "skipped", "error"]:
+def create_or_update_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["created", "updated", "skipped", "error"]:
     """
-    Creates a DnaMatch record for a given Person ID if one doesn't already exist.
-    Validates required fields and data types.
+    Creates a new DnaMatch record or updates an existing one for a given Person ID.
+    Compares incoming data with existing record to determine if update is needed.
 
     Args:
         session: The SQLAlchemy Session object.
@@ -482,89 +482,115 @@ def create_dna_match(session: Session, match_data: Dict[str, Any]) -> Literal["c
 
     Returns:
         'created' if a new record was added.
-        'skipped' if a record already exists for the people_id.
+        'updated' if an existing record was modified.
+        'skipped' if the record exists and no changes were needed.
         'error' if validation fails or a database error occurs.
     """
     # Step 1: Validate people_id
     people_id = match_data.get("people_id")
-    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}" # Include UUID if available for context
+    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}"
     if not people_id or not isinstance(people_id, int) or people_id <= 0:
-        logger.error(f"create_dna_match: Invalid people_id {log_ref}.")
+        logger.error(f"create_or_update_dna_match: Invalid people_id {log_ref}.")
         return "error"
 
-    # Step 2: Validate required non-numeric fields
-    required_keys = ("compare_link", "predicted_relationship")
-    if not all(key in match_data and match_data[key] for key in required_keys):
-        logger.error(f"create_dna_match: Missing required non-numeric DNA data for {log_ref}. Data: {match_data}")
-        return "error"
-
-    # Step 3: Validate required numeric fields (cM_DNA)
+    # Step 2: Validate and prepare incoming data
+    validated_data: Dict[str, Any] = {"people_id": people_id}
     try:
+        # Required fields
+        validated_data["compare_link"] = match_data["compare_link"]
+        validated_data["predicted_relationship"] = match_data["predicted_relationship"]
         cm_dna_val = int(match_data["cM_DNA"])
         if cm_dna_val < 0: raise ValueError("cM cannot be negative")
+        validated_data["cM_DNA"] = cm_dna_val
     except (KeyError, ValueError, TypeError) as e:
-        logger.error(f"create_dna_match: Invalid cM_DNA '{match_data.get('cM_DNA')}' for {log_ref}: {e}")
+        logger.error(f"create_or_update_dna_match: Missing/Invalid required data for {log_ref}: {e}")
         return "error"
 
-    # Step 4: Validate optional numeric fields with helper function
+    # Optional numeric fields validation helper
     def validate_optional_numeric(key: str, value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
-        """Helper to validate and convert optional numeric values."""
         if value is None: return None
         try:
-            # Reject purely non-numeric strings early
-            if isinstance(value, str) and not value.replace(".", "", 1).isdigit():
-                 logger.warning(f"Non-numeric string '{value}' provided for {key} in {log_ref}. Treating as None.")
-                 return None
+            if isinstance(value, str) and not value.replace(".", "", 1).isdigit(): return None
             return float(value) if allow_float else int(value)
-        except (TypeError, ValueError):
-            logger.warning(f"Invalid numeric value '{value}' for {key} in {log_ref}. Treating as None.")
-            return None
-    # End of validate_optional_numeric
+        except (TypeError, ValueError): return None
 
-    shared_segments_val = validate_optional_numeric("shared_segments", match_data.get("shared_segments"))
-    longest_segment_val = validate_optional_numeric("longest_shared_segment", match_data.get("longest_shared_segment"), allow_float=True)
-    meiosis_val = validate_optional_numeric("meiosis", match_data.get("meiosis"))
+    # Populate validated_data with optional fields
+    validated_data["shared_segments"] = validate_optional_numeric("shared_segments", match_data.get("shared_segments"))
+    validated_data["longest_shared_segment"] = validate_optional_numeric("longest_shared_segment", match_data.get("longest_shared_segment"), allow_float=True)
+    validated_data["meiosis"] = validate_optional_numeric("meiosis", match_data.get("meiosis"))
+    validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side", False))
+    validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side", False))
 
-    # Step 5: Check if DnaMatch record already exists
+    # Step 3: Check if DnaMatch record exists
     try:
-        existing_dna_match = session.query(DnaMatch.id).filter_by(people_id=people_id).scalar()
+        existing_dna_match = session.query(DnaMatch).filter_by(people_id=people_id).first()
+
         if existing_dna_match:
-            logger.debug(f"Existing 'dna_match' found for {log_ref}. Skipping creation.")
-            return "skipped"
+            # Step 4: UPDATE existing record if changes detected
+            updated = False
+            for field, new_value in validated_data.items():
+                # Skip people_id comparison
+                if field == 'people_id': continue
+                old_value = getattr(existing_dna_match, field, None)
+
+                # Handle float comparison with tolerance
+                if isinstance(new_value, float) or isinstance(old_value, float):
+                    # Treat None as 0.0 for comparison to avoid errors, but check explicitly
+                    old_float = float(old_value) if old_value is not None else None
+                    new_float = float(new_value) if new_value is not None else None
+                    if old_float is None and new_float is not None:
+                         value_changed = True
+                    elif old_float is not None and new_float is None:
+                         value_changed = True
+                    elif old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01: # Tolerance
+                         value_changed = True
+                    else: # Both None or difference within tolerance
+                         value_changed = False
+                # Handle boolean comparison carefully
+                elif isinstance(new_value, bool) or isinstance(old_value, bool):
+                     value_changed = bool(old_value) != bool(new_value)
+                # General comparison for other types
+                elif old_value != new_value:
+                    value_changed = True
+                else:
+                    value_changed = False
+
+                if value_changed:
+                    logger.debug(f"  DNA Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')")
+                    setattr(existing_dna_match, field, new_value)
+                    updated = True
+
+            if updated:
+                existing_dna_match.updated_at = datetime.now(timezone.utc) # Update timestamp
+                logger.debug(f"Updating existing DnaMatch record for {log_ref}.")
+                # No need to session.add() for updates if object fetched within session
+                return "updated"
+            else:
+                logger.debug(f"Existing DnaMatch found for {log_ref}, no changes needed. Skipping.")
+                return "skipped"
         else:
-            # Step 6: Create and add the new DnaMatch record
+            # Step 5: Create new record
             logger.debug(f"Creating new DnaMatch record for {log_ref}.")
-            new_dna_match = DnaMatch(
-                people_id=people_id,
-                compare_link=match_data["compare_link"],
-                cM_DNA=cm_dna_val,
-                predicted_relationship=match_data["predicted_relationship"],
-                shared_segments=shared_segments_val,
-                longest_shared_segment=longest_segment_val,
-                meiosis=meiosis_val,
-                from_my_fathers_side=bool(match_data.get("from_my_fathers_side", False)),
-                from_my_mothers_side=bool(match_data.get("from_my_mothers_side", False)),
-            )
+            new_dna_match = DnaMatch(**validated_data)
             session.add(new_dna_match)
             logger.debug(f"DnaMatch record added to session for {log_ref}.")
             return "created"
 
-    # Step 7: Handle database errors
-    except IntegrityError as ie: # Should not happen with unique=True on people_id if pre-check works
+    # Step 6: Handle database errors
+    except IntegrityError as ie: # Should not happen if unique=True on people_id logic correct
         session.rollback()
-        logger.error(f"IntegrityError create_dna_match {log_ref}: {ie}.", exc_info=False)
+        logger.error(f"IntegrityError create/update DNA Match {log_ref}: {ie}.", exc_info=False)
         return "error"
     except SQLAlchemyError as e:
-        logger.error(f"DB error create_dna_match {log_ref}: {e}", exc_info=True)
-        # Rollback should happen in the calling context manager (db_transn)
+        logger.error(f"DB error create/update DNA Match {log_ref}: {e}", exc_info=True)
         return "error"
     except Exception as e:
-        logger.error(f"Unexpected error create_dna_match {log_ref}: {e}", exc_info=True)
+        logger.error(f"Unexpected error create/update DNA Match {log_ref}: {e}", exc_info=True)
         return "error"
-# End of create_dna_match
+# End of create_or_update_dna_match
 
 
-def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["created", "updated", "skipped", "error"]:
+def create_or_update_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["created", "updated", "skipped", "error"]:
     """
     Creates or updates a FamilyTree record for a given Person ID.
     Compares existing data with provided data to determine if an update is needed.
@@ -588,13 +614,13 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
     # Step 2: Prepare log reference and incoming data dictionary
     cfpid_val = tree_data.get("cfpid")
     log_ref = f"PersonID={people_id}, CFPID={cfpid_val or 'N/A'}"
-    # Filter only valid columns for the FamilyTree model
+    # Filter only valid columns for the FamilyTree model from input
     valid_tree_args = {
         col.name: tree_data.get(col.name)
         for col in FamilyTree.__table__.columns
         if col.name in tree_data and col.name not in ('id', 'created_at', 'updated_at')
     }
-    # Ensure people_id is included if not already present
+    # Ensure people_id is included
     valid_tree_args["people_id"] = people_id
 
     # Step 3: Check if FamilyTree record exists
@@ -605,18 +631,18 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
             # Step 4: Update existing record if changes detected
             updated = False
             for field, new_value in valid_tree_args.items():
-                # Skip people_id comparison as it's the key
-                if field == 'people_id': continue
+                if field == 'people_id': continue # Skip key comparison
                 old_value = getattr(existing_tree, field, None)
-                # Compare values, handling None appropriately
-                if (new_value != old_value) or (new_value is None and old_value is not None) or (new_value is not None and old_value is None):
+                # Compare values, treating None consistently
+                if old_value != new_value:
+                    logger.debug(f"  Tree Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')")
                     setattr(existing_tree, field, new_value)
                     updated = True
 
             if updated:
                 existing_tree.updated_at = datetime.now(timezone.utc) # Update timestamp
                 logger.debug(f"Updating existing FamilyTree record for {log_ref}.")
-                # No need to session.add() for updates if object fetched within session
+                # No need to session.add() for updates
                 return "updated"
             else:
                 logger.debug(f"Existing FamilyTree record found for {log_ref}, no changes needed. Skipping.")
@@ -630,20 +656,255 @@ def create_family_tree(session: Session, tree_data: Dict[str, Any]) -> Literal["
             return "created"
 
     # Step 6: Handle database errors
-    except TypeError as te: # Catch errors if invalid keys passed to constructor
-        logger.critical(f"TypeError create/update FT {log_ref}: {te}. Args: {valid_tree_args}", exc_info=True)
+    except TypeError as te:
+        logger.critical(f"TypeError create/update FamilyTree {log_ref}: {te}. Args: {valid_tree_args}", exc_info=True)
         return "error"
-    except IntegrityError as ie: # Should not happen if unique people_id logic correct
+    except IntegrityError as ie:
         session.rollback()
-        logger.error(f"IntegrityError create/update FT {log_ref}: {ie}", exc_info=False)
+        logger.error(f"IntegrityError create/update FamilyTree {log_ref}: {ie}", exc_info=False)
         return "error"
     except SQLAlchemyError as e:
-        logger.error(f"SQLAlchemyError create/update FT {log_ref}: {e}", exc_info=True)
+        logger.error(f"SQLAlchemyError create/update FamilyTree {log_ref}: {e}", exc_info=True)
         return "error"
     except Exception as e:
-        logger.critical(f"Unexpected error create_family_tree {log_ref}: {e}", exc_info=True)
+        logger.critical(f"Unexpected error create_or_update_family_tree {log_ref}: {e}", exc_info=True)
         return "error"
-# End of create_family_tree
+# End of create_or_update_family_tree
+
+
+def create_or_update_person(
+    session: Session, person_data: Dict[str, Any]
+) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
+    """
+    Creates a new Person or updates an existing one based primarily on UUID.
+    Handles data preparation, status enum conversion, and timezone awareness for dates.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        person_data: Dictionary containing data for the person. Must include 'uuid'
+                     and 'username'. Other keys match Person model attributes.
+
+    Returns:
+        A tuple containing:
+        - The created or updated Person object (or None on error).
+        - A status string: 'created', 'updated', 'skipped', 'error'.
+    """
+    # Step 1: Extract and validate mandatory identifiers
+    uuid_raw = person_data.get("uuid")
+    uuid_val = str(uuid_raw).upper() if uuid_raw else None
+    username_val = person_data.get("username")
+    if not uuid_val or not username_val:
+        logger.error(
+            f"Cannot create/update person: UUID or Username missing. Data: {person_data}"
+        )
+        return None, "error"
+
+    # Step 2: Prepare log reference
+    profile_id_val = (
+        str(person_data.get("profile_id")).upper()
+        if person_data.get("profile_id")
+        else None
+    )
+    log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
+
+    try:
+        # Step 3: Attempt to find the person definitively by UUID
+        # Use with_for_update() if optimistic locking is needed and supported by DB dialect
+        existing_person = (
+            session.query(Person).filter(Person.uuid == uuid_val).first()
+        )  # .with_for_update()
+
+        if existing_person:
+            # --- Step 4: UPDATE existing person ---
+            person_update_needed = False  # Flag to track if any field actually changed
+            logger.debug(
+                f"{log_ref}: Updating existing Person ID {existing_person.id}."
+            )
+
+            # Step 4a: Define fields to compare and potentially update
+            fields_to_update = {
+                "profile_id": profile_id_val,  # Update Profile ID if provided and different
+                "username": username_val,  # Update username
+                "administrator_profile_id": (
+                    person_data.get("administrator_profile_id").upper()
+                    if person_data.get("administrator_profile_id")
+                    else None
+                ),
+                "administrator_username": person_data.get("administrator_username"),
+                "message_link": person_data.get("message_link"),
+                "in_my_tree": bool(person_data.get("in_my_tree", False)),
+                "first_name": person_data.get("first_name"),
+                "gender": person_data.get("gender"),
+                "birth_year": person_data.get("birth_year"),
+                "contactable": bool(
+                    person_data.get("contactable", True)
+                ),  # Ensure boolean
+                "last_logged_in": person_data.get("last_logged_in"),
+                "status": person_data.get("status"),  # Allow status update
+            }
+
+            # Step 4b: Iterate and compare fields
+            for key, new_value in fields_to_update.items():
+                current_value = getattr(existing_person, key, None)
+                value_changed = False
+
+                # Handle specific comparisons and type conversions
+                if key == "last_logged_in":
+                    # Compare datetimes timezone-aware (UTC) and ignore microseconds
+                    current_dt_utc = None
+                    if isinstance(current_value, datetime):
+                        current_dt_utc = (
+                            current_value.astimezone(timezone.utc)
+                            if current_value.tzinfo
+                            else current_value.replace(tzinfo=timezone.utc)
+                        ).replace(microsecond=0)
+                    new_dt_utc = None
+                    if isinstance(new_value, datetime):
+                        new_dt_utc = (
+                            new_value.astimezone(timezone.utc)
+                            if new_value.tzinfo
+                            else new_value.replace(tzinfo=timezone.utc)
+                        ).replace(microsecond=0)
+
+                    if (
+                        new_dt_utc != current_dt_utc
+                    ):  # Handles None comparison correctly
+                        value_changed = True
+                        # Value to set is the original new_value (which might have tz info)
+                        value_to_set = (
+                            new_value if isinstance(new_value, datetime) else None
+                        )
+                    else:
+                        value_to_set = current_value  # Keep existing if unchanged
+
+                elif key == "status":
+                    # Convert new status to Enum for comparison/setting
+                    current_enum = current_value  # Already an Enum
+                    new_enum = None
+                    if isinstance(new_value, PersonStatusEnum):
+                        new_enum = new_value
+                    elif new_value is not None:  # Try converting string/other
+                        try:
+                            new_enum = PersonStatusEnum(str(new_value).upper())
+                        except ValueError:
+                            logger.warning(
+                                f"Invalid status value '{new_value}' for update {log_ref}. Skipping status update."
+                            )
+                            continue
+                    if new_enum is not None and new_enum != current_enum:
+                        value_changed = True
+                        value_to_set = new_enum
+                    else:
+                        value_to_set = current_value
+
+                elif key == "birth_year":
+                    # Only update birth year if new value is valid int and current is None
+                    if new_value is not None and current_value is None:
+                        try:
+                            value_to_set = int(new_value)
+                            value_changed = True
+                        except (ValueError, TypeError):
+                            logger.warning(
+                                f"Invalid birth_year '{new_value}' for update {log_ref}. Skipping."
+                            )
+                            continue
+                    else:
+                        value_to_set = current_value  # Keep existing
+
+                elif key == "gender":
+                    # Only update gender if new value is valid ('f'/'m') and current is None
+                    if (
+                        new_value is not None
+                        and current_value is None
+                        and isinstance(new_value, str)
+                        and new_value.lower() in ("f", "m")
+                    ):
+                        value_to_set = new_value.lower()
+                        value_changed = True
+                    else:
+                        value_to_set = current_value
+
+                # General comparison for other fields
+                else:
+                    # Ensure boolean comparisons work correctly
+                    if isinstance(current_value, bool) or isinstance(new_value, bool):
+                        if bool(current_value) != bool(new_value):
+                            value_changed = True
+                            value_to_set = bool(new_value)
+                        else:
+                            value_to_set = current_value
+                    # Standard comparison for other types
+                    elif current_value != new_value:
+                        value_changed = True
+                        value_to_set = new_value
+                    else:
+                        value_to_set = current_value
+
+                # Apply the update if value changed
+                if value_changed:
+                    setattr(existing_person, key, value_to_set)
+                    person_update_needed = True
+                    # logger.debug(f"  Updating {key} for Person {existing_person.id}") # Verbose log
+
+            # Step 4c: Set updated_at timestamp if any field changed
+            if person_update_needed:
+                existing_person.updated_at = datetime.now(timezone.utc)
+                session.flush()  # Apply updates to DB session state
+                return existing_person, "updated"
+            else:
+                logger.debug(f"{log_ref}: No updates needed for existing person.")
+                return existing_person, "skipped"
+        else:
+            # --- Step 5: CREATE new person ---
+            logger.debug(f"{log_ref}: Creating new Person.")
+            # Use the helper function for creation
+            new_person_id = create_person(session, person_data)
+            if new_person_id > 0:
+                # Fetch the newly created object to return it
+                new_person_obj = session.get(Person, new_person_id)
+                if new_person_obj:
+                    return new_person_obj, "created"
+                else:
+                    # This indicates a problem if create_person returned an ID but get() failed
+                    logger.error(
+                        f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report."
+                    )
+                    # Rollback might be needed if state is inconsistent
+                    try:
+                        session.rollback()
+                    except Exception:
+                        pass
+                    return None, "error"
+            else:
+                # create_person already logged the error
+                logger.error(f"create_person helper failed for {log_ref}.")
+                return None, "error"
+
+    # --- Step 6: Handle Exceptions ---
+    except IntegrityError as ie:
+        session.rollback()
+        logger.error(
+            f"IntegrityError processing person {log_ref}: {ie}. Rolling back.",
+            exc_info=False,
+        )
+        return None, "error"
+    except SQLAlchemyError as e:
+        try:
+            session.rollback()  # Attempt rollback on DB errors
+        except Exception:
+            pass
+        logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
+        return None, "error"
+    except Exception as e:
+        try:
+            session.rollback()  # Attempt rollback on unexpected errors
+        except Exception:
+            pass
+        logger.critical(
+            f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
+        )
+        return None, "error"
+# End of create_or_update_person
 
 
 # --- Retrieve ---
@@ -835,297 +1096,6 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
 # End of get_person_by_uuid
 
 
-# --- Update ---
-
-def create_or_update_person(session: Session, person_data: Dict[str, Any]) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
-    """
-    Creates a new Person or updates an existing one based primarily on UUID.
-    Handles data preparation, status enum conversion, and timezone awareness for dates.
-
-    Args:
-        session: The SQLAlchemy Session object.
-        person_data: Dictionary containing data for the person. Must include 'uuid'
-                     and 'username'. Other keys match Person model attributes.
-
-    Returns:
-        A tuple containing:
-        - The created or updated Person object (or None on error).
-        - A status string: 'created', 'updated', 'skipped', 'error'.
-    """
-    # Step 1: Extract and validate mandatory identifiers
-    uuid_raw = person_data.get("uuid")
-    uuid_val = str(uuid_raw).upper() if uuid_raw else None
-    username_val = person_data.get("username")
-    if not uuid_val or not username_val:
-        logger.error(f"Cannot create/update person: UUID or Username missing. Data: {person_data}")
-        return None, "error"
-
-    # Step 2: Prepare log reference
-    profile_id_val = str(person_data.get("profile_id")).upper() if person_data.get("profile_id") else None
-    log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
-
-    try:
-        # Step 3: Attempt to find the person definitively by UUID
-        # Use with_for_update() if optimistic locking is needed and supported by DB dialect
-        existing_person = session.query(Person).filter(Person.uuid == uuid_val).first() # .with_for_update()
-
-        if existing_person:
-            # --- Step 4: UPDATE existing person ---
-            person_update_needed = False # Flag to track if any field actually changed
-            logger.debug(f"{log_ref}: Updating existing Person ID {existing_person.id}.")
-
-            # Step 4a: Define fields to compare and potentially update
-            fields_to_update = {
-                "profile_id": profile_id_val, # Update Profile ID if provided and different
-                "username": username_val, # Update username
-                "administrator_profile_id": (person_data.get("administrator_profile_id").upper() if person_data.get("administrator_profile_id") else None),
-                "administrator_username": person_data.get("administrator_username"),
-                "message_link": person_data.get("message_link"),
-                "in_my_tree": bool(person_data.get("in_my_tree", False)),
-                "first_name": person_data.get("first_name"),
-                "gender": person_data.get("gender"),
-                "birth_year": person_data.get("birth_year"),
-                "contactable": bool(person_data.get("contactable", True)), # Ensure boolean
-                "last_logged_in": person_data.get("last_logged_in"),
-                "status": person_data.get("status"), # Allow status update
-            }
-
-            # Step 4b: Iterate and compare fields
-            for key, new_value in fields_to_update.items():
-                current_value = getattr(existing_person, key, None)
-                value_changed = False
-
-                # Handle specific comparisons and type conversions
-                if key == "last_logged_in":
-                    # Compare datetimes timezone-aware (UTC) and ignore microseconds
-                    current_dt_utc = None
-                    if isinstance(current_value, datetime):
-                        current_dt_utc = (current_value.astimezone(timezone.utc) if current_value.tzinfo else current_value.replace(tzinfo=timezone.utc)).replace(microsecond=0)
-                    new_dt_utc = None
-                    if isinstance(new_value, datetime):
-                        new_dt_utc = (new_value.astimezone(timezone.utc) if new_value.tzinfo else new_value.replace(tzinfo=timezone.utc)).replace(microsecond=0)
-
-                    if new_dt_utc != current_dt_utc: # Handles None comparison correctly
-                        value_changed = True
-                        # Value to set is the original new_value (which might have tz info)
-                        value_to_set = new_value if isinstance(new_value, datetime) else None
-                    else:
-                         value_to_set = current_value # Keep existing if unchanged
-
-                elif key == "status":
-                    # Convert new status to Enum for comparison/setting
-                    current_enum = current_value # Already an Enum
-                    new_enum = None
-                    if isinstance(new_value, PersonStatusEnum):
-                        new_enum = new_value
-                    elif new_value is not None: # Try converting string/other
-                        try: new_enum = PersonStatusEnum(str(new_value).upper())
-                        except ValueError: logger.warning(f"Invalid status value '{new_value}' for update {log_ref}. Skipping status update."); continue
-                    if new_enum is not None and new_enum != current_enum:
-                        value_changed = True
-                        value_to_set = new_enum
-                    else:
-                         value_to_set = current_value
-
-                elif key == "birth_year":
-                    # Only update birth year if new value is valid int and current is None
-                    if new_value is not None and current_value is None:
-                         try: value_to_set = int(new_value); value_changed = True
-                         except (ValueError, TypeError): logger.warning(f"Invalid birth_year '{new_value}' for update {log_ref}. Skipping."); continue
-                    else:
-                         value_to_set = current_value # Keep existing
-
-                elif key == "gender":
-                    # Only update gender if new value is valid ('f'/'m') and current is None
-                    if new_value is not None and current_value is None and isinstance(new_value, str) and new_value.lower() in ('f','m'):
-                        value_to_set = new_value.lower()
-                        value_changed = True
-                    else:
-                         value_to_set = current_value
-
-                # General comparison for other fields
-                else:
-                    # Ensure boolean comparisons work correctly
-                    if isinstance(current_value, bool) or isinstance(new_value, bool):
-                         if bool(current_value) != bool(new_value):
-                              value_changed = True
-                              value_to_set = bool(new_value)
-                         else:
-                              value_to_set = current_value
-                    # Standard comparison for other types
-                    elif current_value != new_value:
-                         value_changed = True
-                         value_to_set = new_value
-                    else:
-                         value_to_set = current_value
-
-                # Apply the update if value changed
-                if value_changed:
-                    setattr(existing_person, key, value_to_set)
-                    person_update_needed = True
-                    # logger.debug(f"  Updating {key} for Person {existing_person.id}") # Verbose log
-
-            # Step 4c: Set updated_at timestamp if any field changed
-            if person_update_needed:
-                existing_person.updated_at = datetime.now(timezone.utc)
-                session.flush() # Apply updates to DB session state
-                return existing_person, "updated"
-            else:
-                logger.debug(f"{log_ref}: No updates needed for existing person.")
-                return existing_person, "skipped"
-        else:
-            # --- Step 5: CREATE new person ---
-            logger.debug(f"{log_ref}: Creating new Person.")
-            # Use the helper function for creation
-            new_person_id = create_person(session, person_data)
-            if new_person_id > 0:
-                # Fetch the newly created object to return it
-                new_person_obj = session.get(Person, new_person_id)
-                if new_person_obj:
-                    return new_person_obj, "created"
-                else:
-                    # This indicates a problem if create_person returned an ID but get() failed
-                    logger.error(f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report.")
-                    # Rollback might be needed if state is inconsistent
-                    try: session.rollback()
-                    except Exception: pass
-                    return None, "error"
-            else:
-                # create_person already logged the error
-                logger.error(f"create_person helper failed for {log_ref}.")
-                return None, "error"
-
-    # --- Step 6: Handle Exceptions ---
-    except IntegrityError as ie:
-        session.rollback()
-        logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
-        return None, "error"
-    except SQLAlchemyError as e:
-        try: session.rollback() # Attempt rollback on DB errors
-        except Exception: pass
-        logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
-        return None, "error"
-    except Exception as e:
-        try: session.rollback() # Attempt rollback on unexpected errors
-        except Exception: pass
-        logger.critical(f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True)
-        return None, "error"
-# End of create_or_update_person
-
-
-# Note: update_person is less used now create_or_update_person exists, but kept.
-def update_person(session: Session, profile_id: str, username: str, update_data: Dict[str, Any]) -> bool:
-    """
-    Updates specific fields of an existing Person record identified by profile_id and username.
-
-    Args:
-        session: The SQLAlchemy Session object.
-        profile_id: The profile ID of the person to update (case-insensitive).
-        username: The username of the person to update (case-sensitive).
-        update_data: A dictionary where keys are Person attribute names and values
-                     are the new values.
-
-    Returns:
-        True if the person was found and updated (or no update needed), False if
-        the person was not found or an error occurred.
-    """
-    # Step 1: Validate inputs
-    if not profile_id or not username:
-        logger.warning("update_person: profile_id and username required.")
-        return False
-    log_ref = f"ProfileID={profile_id}/User='{username}'"
-
-    # Step 2: Find the person
-    try:
-        person = session.query(Person).filter(
-            func.upper(Person.profile_id) == profile_id.upper(),
-            Person.username == username
-        ).first()
-
-        if not person:
-            logger.warning(f"update_person: Person {log_ref} not found.")
-            return False # Return False if person doesn't exist
-
-        # Step 3: Apply updates
-        updated = False
-        allowed_fields = {col.name for col in Person.__table__.columns if col.name not in ('id', 'created_at', 'updated_at')}
-
-        for key, value in update_data.items():
-            if key in allowed_fields:
-                current_value = getattr(person, key, None)
-                value_to_set = value # Value to potentially set
-                value_changed = False
-
-                # Handle specific types/conversions before comparison
-                if key == "status":
-                    # Convert incoming value to Enum for comparison/setting
-                    current_enum = current_value # Already an Enum
-                    new_enum = None
-                    if isinstance(value, PersonStatusEnum): new_enum = value
-                    elif value is not None:
-                        try: new_enum = PersonStatusEnum(str(value).upper())
-                        except ValueError: logger.warning(f"Invalid status value '{value}' for update {log_ref}. Skipping."); continue
-                    if new_enum is not None and new_enum != current_enum:
-                        value_changed = True
-                        value_to_set = new_enum
-                elif key == "last_logged_in":
-                    # Compare datetimes timezone-aware (UTC), ignoring microseconds
-                    current_dt_utc = None
-                    if isinstance(current_value, datetime):
-                         current_dt_utc = (current_value.astimezone(timezone.utc) if current_value.tzinfo else current_value.replace(tzinfo=timezone.utc)).replace(microsecond=0)
-                    new_dt_utc = None
-                    if isinstance(value, datetime):
-                         new_dt_utc = (value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)).replace(microsecond=0)
-                    if new_dt_utc != current_dt_utc: value_changed = True
-                elif key in ("profile_id", "administrator_profile_id", "uuid"):
-                     # Ensure case consistency for comparison/setting
-                     if value is not None and str(current_value).upper() != str(value).upper():
-                          value_changed = True
-                          value_to_set = str(value).upper()
-                elif isinstance(current_value, bool):
-                     if bool(current_value) != bool(value):
-                          value_changed = True
-                          value_to_set = bool(value)
-                # General comparison
-                elif current_value != value:
-                     value_changed = True
-
-                # Apply the update if needed
-                if value_changed:
-                    setattr(person, key, value_to_set)
-                    updated = True
-                    # logger.debug(f"  Updating field '{key}' for {log_ref}") # Verbose
-            else:
-                logger.warning(f"Attempted update non-allowed/unknown attribute '{key}' on Person ID {person.id}.")
-
-        # Step 4: Update timestamp and flush if changes were made
-        if updated:
-            person.updated_at = datetime.now(timezone.utc)
-            session.flush() # Apply changes to the session
-            logger.debug(f"Person record updated for {log_ref}.")
-        else:
-             logger.debug(f"No updates applied for Person {log_ref}.")
-
-        return True # Return True indicating success (found and processed)
-
-    # Step 5: Handle database errors
-    except IntegrityError as ie:
-        # This might occur if updating profile_id/uuid clashes with another record
-        session.rollback()
-        logger.error(f"IntegrityError updating person {log_ref}: {ie}.", exc_info=False)
-        return False
-    except SQLAlchemyError as e:
-        logger.error(f"DB error updating person {log_ref}: {e}", exc_info=True)
-        try: session.rollback()
-        except Exception: pass
-        return False
-    # Step 6: Handle unexpected errors
-    except Exception as e:
-        logger.critical(f"Unexpected error update_person {log_ref}: {e}", exc_info=True)
-        try: session.rollback()
-        except Exception: pass
-        return False
-# End of update_person
 
 
 # --- Delete ---

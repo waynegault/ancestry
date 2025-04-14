@@ -15,6 +15,7 @@ behavioral parameters, and Selenium options. Includes contextual headers for API
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -197,12 +198,13 @@ class Config_Class(BaseConfig):
     MAX_PAGES: int = 0
     MAX_INBOX: int = 0
     MAX_PRODUCTIVE_TO_PROCESS: int = 0
+    TREE_SEARCH_METHOD: str = "GEDCOM" # Default search method
 
     # --- Initializer ---
     def __init__(self):
         """Initializes the Config_Class by loading values."""
         self._load_values()
-
+        self._validate_critical_configs()
     # End of __init__
 
     def _load_values(self):
@@ -580,6 +582,19 @@ class Config_Class(BaseConfig):
         }
         # --- End API Contextual Headers ---
 
+        # === Tree Search Method ===
+        loaded_search_method = self._get_string_env(
+            "TREE_SEARCH_METHOD", self.TREE_SEARCH_METHOD
+        ).upper()
+        if loaded_search_method in ["GEDCOM", "API", "NONE"]:
+            self.TREE_SEARCH_METHOD = loaded_search_method
+            logger.info(f"Tree Search Method set to: {self.TREE_SEARCH_METHOD}")
+        else:
+            logger.warning(
+                f"Invalid TREE_SEARCH_METHOD '{loaded_search_method}' in config. Defaulting to 'GEDCOM'."
+            )
+            self.TREE_SEARCH_METHOD = "GEDCOM"
+
         # === Final Logging of Key Config Values ===
         logger.info(
             f"Config Loaded: BASE_URL='{self.BASE_URL}', DB='{self.DATABASE_FILE.name}', TREE='{self.TREE_NAME or 'N/A'}'"
@@ -605,6 +620,63 @@ class Config_Class(BaseConfig):
         logger.info("----------------------")
         logger.debug("Application config loading complete.\n")
     # End of _load_values
+
+    def _validate_critical_configs(self):
+        """Validates essential configuration values after loading."""
+        logger.debug("Validating critical configuration settings...")
+        errors_found = []
+
+        # Validate Ancestry Credentials
+        if not self.ANCESTRY_USERNAME:
+            errors_found.append("ANCESTRY_USERNAME is missing or empty.")
+        if not self.ANCESTRY_PASSWORD:
+            errors_found.append("ANCESTRY_PASSWORD is missing or empty.")
+
+        # Validate AI Provider Configuration
+        if self.AI_PROVIDER == "deepseek" and not self.DEEPSEEK_API_KEY:
+            errors_found.append(
+                "AI_PROVIDER is 'deepseek' but DEEPSEEK_API_KEY is missing."
+            )
+        elif self.AI_PROVIDER == "gemini" and not self.GOOGLE_API_KEY:
+            errors_found.append(
+                "AI_PROVIDER is 'gemini' but GOOGLE_API_KEY is missing."
+            )
+        elif not self.AI_PROVIDER:
+            logger.warning(
+                "AI_PROVIDER is not configured. AI features will be disabled."
+            )
+        elif self.AI_PROVIDER not in ["deepseek", "gemini"]:
+            logger.warning(
+                f"AI_PROVIDER '{self.AI_PROVIDER}' is not recognized. AI features may not work."
+            )
+
+        # Validate MS Graph Client ID (Needed for Action 9 task creation)
+        # Only make it critical if Action 9 is likely to be used? For now, just check if empty.
+        if not self.MS_GRAPH_CLIENT_ID:
+            logger.warning(
+                "MS_GRAPH_CLIENT_ID is missing. MS To-Do task creation (Action 9) will fail authentication."
+            )
+            # Decide if this should be fatal - maybe not if user doesn't intend to use Action 9?
+            # errors_found.append("MS_GRAPH_CLIENT_ID is missing (required for Action 9 task creation).")
+
+        # Add other critical checks here if needed (e.g., database path validity)
+
+        if errors_found:
+            for error in errors_found:
+                logger.critical(f"CONFIG VALIDATION FAILED: {error}")
+            # Option 1: Raise an exception to halt execution
+            raise ValueError(
+                "Critical configuration missing. Please check .env file and documentation."
+            )
+            # Option 2: Exit directly (less clean, but avoids further execution)
+            # sys.exit("Critical configuration missing. Exiting.")
+            # Option 3: Set an internal flag and let main.py check it (more complex)
+            # self._is_valid = False
+        else:
+            logger.info("Critical configuration settings validated successfully.")
+    # End of _validate_critical_configs
+
+
 # End of Config_Class class
 
 

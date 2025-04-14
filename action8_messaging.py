@@ -335,14 +335,14 @@ def determine_next_message_type(
 
 
 def _commit_messaging_batch(
-    session: Session,  # Use Session type hint
-    logs_to_add: List[ConversationLog],  # Expecting ConversationLog objects now
+    session: Session,
+    logs_to_add: List[ConversationLog],  # List of ConversationLog OBJECTS
     person_updates: Dict[int, PersonStatusEnum],  # Dict of {person_id: new_status_enum}
     batch_num: int,
 ) -> bool:
     """
-    Commits a batch of new ConversationLog entries and Person status updates
-    to the database within a single transaction. Uses UPSERT logic for logs.
+    Commits a batch of ConversationLog entries (OUT direction) and Person status updates
+    to the database. Uses bulk insert for new logs and individual updates for existing ones.
 
     Args:
         session: The active SQLAlchemy database session.
@@ -365,75 +365,186 @@ def _commit_messaging_batch(
     # Step 2: Perform DB operations within a transaction context
     try:
         with db_transn(session) as sess:  # Use the provided session in the transaction
-            processed_logs_count = 0
+            log_inserts_data = []
+            log_updates_to_process = (
+                []
+            )  # List to hold tuples: (existing_log_obj, new_log_obj)
 
-            # --- Step 2a: ConversationLog Upsert Logic ---
+            # --- Step 2a: Prepare ConversationLog data: Separate Inserts and Updates ---
             if logs_to_add:
                 logger.debug(
-                    f" Upserting {len(logs_to_add)} ConversationLog entries..."
+                    f" Preparing {len(logs_to_add)} ConversationLog entries for upsert..."
                 )
-                for log_object in logs_to_add:  # Iterate through OBJECTS
-                    try:
-                        # Extract keys for query/logging
-                        conv_id = log_object.conversation_id
-                        direction_enum = log_object.direction
-                        people_id = log_object.people_id  # Use for context
-
-                        if not conv_id or not direction_enum or not people_id:
-                            logger.error(
-                                f"Invalid log object data (Msg Batch {batch_num}): Missing key info for PersonID {people_id}. Skipping."
-                            )
-                            continue
-
-                        # Query for existing record within the transaction
-                        existing_log = (
-                            sess.query(ConversationLog)
-                            .filter_by(
-                                conversation_id=conv_id, direction=direction_enum
-                            )
-                            .with_for_update()
-                            .first()
-                        )  # Lock row
-
-                        if existing_log:
-                            # UPDATE: Copy relevant attributes from new object to existing
-                            # logger.debug(f"  Updating existing log for {conv_id}/{direction_enum.name} (PersonID: {people_id})")
-                            existing_log.latest_message_content = (
-                                log_object.latest_message_content
-                            )
-                            existing_log.latest_timestamp = log_object.latest_timestamp
-                            existing_log.message_type_id = log_object.message_type_id
-                            existing_log.script_message_status = (
-                                log_object.script_message_status
-                            )
-                            existing_log.ai_sentiment = (
-                                log_object.ai_sentiment
-                            )  # Usually None for OUT, but update anyway
-                            existing_log.updated_at = datetime.now(
-                                timezone.utc
-                            )  # Always update timestamp
-                        else:
-                            # INSERT: Add the new object (already prepared) to the session
-                            # logger.debug(f"  Adding new log object for {conv_id}/{direction_enum.name} (PersonID: {people_id})")
-                            # Ensure the object is associated with *this* session
-                            sess.add(log_object)
-
-                        processed_logs_count += 1
-                    except Exception as inner_log_exc:
-                        # Log error processing single log but continue with batch
-                        conv_id_err = getattr(log_object, "conversation_id", "N/A")
-                        dir_err = getattr(log_object, "direction", "N/A")
+                # Extract unique keys from the input OBJECTS
+                log_keys_to_check = set()
+                valid_log_objects = []  # Store objects that have valid keys
+                for log_obj in logs_to_add:
+                    if log_obj.conversation_id and log_obj.direction:
+                        log_keys_to_check.add(
+                            (log_obj.conversation_id, log_obj.direction)
+                        )
+                        valid_log_objects.append(log_obj)
+                    else:
                         logger.error(
-                            f" Error processing single log item (Msg Batch {batch_num}) (ConvID: {conv_id_err}, Dir: {dir_err}): {inner_log_exc}",
-                            exc_info=True,
+                            f"Invalid log object data (Msg Batch {batch_num}): Missing key info. Skipping log object."
                         )
 
-                logger.debug(
-                    f" Finished processing {processed_logs_count} log entries for upsert."
-                )
-            # --- End Log Upsert ---
+                # Query for existing logs matching the keys in this batch
+                existing_logs_map: Dict[
+                    Tuple[str, MessageDirectionEnum], ConversationLog
+                ] = {}
+                if log_keys_to_check:
+                    existing_logs = (
+                        sess.query(ConversationLog)
+                        .filter(
+                            tuple_(
+                                ConversationLog.conversation_id,
+                                ConversationLog.direction,
+                            ).in_([(cid, denum) for cid, denum in log_keys_to_check])
+                        )
+                        .all()
+                    )
+                    existing_logs_map = {
+                        (log.conversation_id, log.direction): log
+                        for log in existing_logs
+                        if log.direction
+                    }
+                    logger.debug(
+                        f" Prefetched {len(existing_logs_map)} existing ConversationLog entries for batch."
+                    )
 
-            # --- Step 2b: Person Status Updates (Bulk Update) ---
+                # Process each valid log object
+                for log_object in valid_log_objects:
+                    log_key = (log_object.conversation_id, log_object.direction)
+                    existing_log = existing_logs_map.get(log_key)
+
+                    if existing_log:
+                        # Prepare for individual update by pairing existing and new objects
+                        log_updates_to_process.append((existing_log, log_object))
+                    else:
+                        # Prepare for bulk insert by converting object to dict
+                        try:
+                            insert_map = {
+                                c.key: getattr(log_object, c.key)
+                                for c in sa_inspect(log_object).mapper.column_attrs
+                                # Include None values as they might be valid states (e.g., ai_sentiment for OUT)
+                            }
+                            # Ensure Enums are handled if needed (SQLAlchemy mapping usually handles this)
+                            if isinstance(
+                                insert_map.get("direction"), MessageDirectionEnum
+                            ):
+                                insert_map["direction"] = insert_map["direction"].value
+                            # Ensure timestamp is added if missing (should be set by caller)
+                            if (
+                                "latest_timestamp" not in insert_map
+                                or insert_map["latest_timestamp"] is None
+                            ):
+                                logger.warning(
+                                    f"Timestamp missing for new log ConvID {log_object.conversation_id}. Setting to now."
+                                )
+                                insert_map["latest_timestamp"] = datetime.now(
+                                    timezone.utc
+                                )
+                            elif isinstance(insert_map["latest_timestamp"], datetime):
+                                # Ensure TZ aware UTC
+                                ts_val = insert_map["latest_timestamp"]
+                                insert_map["latest_timestamp"] = (
+                                    ts_val.astimezone(timezone.utc)
+                                    if ts_val.tzinfo
+                                    else ts_val.replace(tzinfo=timezone.utc)
+                                )
+
+                            log_inserts_data.append(insert_map)
+                        except Exception as prep_err:
+                            logger.error(
+                                f"Error preparing new log object for bulk insert (Msg Batch {batch_num}, ConvID: {log_object.conversation_id}): {prep_err}",
+                                exc_info=True,
+                            )
+
+                # --- Execute Bulk Insert ---
+                if log_inserts_data:
+                    logger.debug(
+                        f" Attempting bulk insert for {len(log_inserts_data)} ConversationLog entries..."
+                    )
+                    try:
+                        sess.bulk_insert_mappings(ConversationLog, log_inserts_data)
+                        logger.debug(
+                            f" Bulk insert mappings called for {len(log_inserts_data)} logs."
+                        )
+                    except IntegrityError as ie:
+                        logger.warning(
+                            f"IntegrityError during bulk insert (likely duplicate ConvID/Direction): {ie}. Some logs might not have been inserted."
+                        )
+                        # Need robust handling if this occurs - maybe skip or attempt update?
+                    except Exception as bulk_err:
+                        logger.error(
+                            f"Error during ConversationLog bulk insert (Msg Batch {batch_num}): {bulk_err}",
+                            exc_info=True,
+                        )
+                        raise  # Rollback transaction
+
+                # --- Perform Individual Updates ---
+                updated_individually_count = 0
+                if log_updates_to_process:
+                    logger.debug(
+                        f" Processing {len(log_updates_to_process)} individual ConversationLog updates..."
+                    )
+                    for existing_log, new_data_obj in log_updates_to_process:
+                        try:
+                            has_changes = False
+                            # Compare relevant fields from the new object against the existing one
+                            fields_to_compare = [
+                                "latest_message_content",
+                                "latest_timestamp",
+                                "message_type_id",
+                                "script_message_status",
+                                "ai_sentiment",
+                            ]
+                            for field in fields_to_compare:
+                                new_value = getattr(new_data_obj, field, None)
+                                old_value = getattr(existing_log, field, None)
+                                # Handle timestamp comparison carefully (aware)
+                                if field == "latest_timestamp":
+                                    old_ts_aware = (
+                                        old_value.astimezone(timezone.utc)
+                                        if isinstance(old_value, datetime)
+                                        and old_value.tzinfo
+                                        else (
+                                            old_value.replace(tzinfo=timezone.utc)
+                                            if isinstance(old_value, datetime)
+                                            else None
+                                        )
+                                    )
+                                    new_ts_aware = (
+                                        new_value.astimezone(timezone.utc)
+                                        if isinstance(new_value, datetime)
+                                        and new_value.tzinfo
+                                        else (
+                                            new_value.replace(tzinfo=timezone.utc)
+                                            if isinstance(new_value, datetime)
+                                            else None
+                                        )
+                                    )
+                                    if new_ts_aware != old_ts_aware:
+                                        setattr(existing_log, field, new_ts_aware)
+                                        has_changes = True
+                                elif new_value != old_value:
+                                    setattr(existing_log, field, new_value)
+                                    has_changes = True
+                            # Update timestamp if any changes occurred
+                            if has_changes:
+                                existing_log.updated_at = datetime.now(timezone.utc)
+                                updated_individually_count += 1
+                        except Exception as update_err:
+                            logger.error(
+                                f"Error updating individual log ConvID {existing_log.conversation_id}/{existing_log.direction}: {update_err}",
+                                exc_info=True,
+                            )
+                    logger.debug(
+                        f" Finished {updated_individually_count} individual log updates."
+                    )
+
+            # --- Step 2b: Person Status Updates (Bulk Update - remains the same) ---
             if person_updates:
                 update_mappings = []
                 logger.debug(
@@ -445,21 +556,18 @@ def _commit_messaging_batch(
                             f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update."
                         )
                         continue
-                    # logger.debug(f"  Prep update Person ID {pid}: status -> {status_enum.name}")
                     update_mappings.append(
                         {
                             "id": pid,
-                            "status": status_enum,  # Pass Enum for bulk update mapping
+                            "status": status_enum,
                             "updated_at": datetime.now(timezone.utc),
                         }
                     )
-                # Perform bulk update if valid mappings exist
                 if update_mappings:
                     logger.debug(
                         f" Updating {len(update_mappings)} Person statuses via bulk..."
                     )
                     sess.bulk_update_mappings(Person, update_mappings)
-            # --- End Person Update ---
 
             logger.debug(
                 f" Exiting transaction block (Msg Batch {batch_num}, commit follows)."
@@ -468,17 +576,14 @@ def _commit_messaging_batch(
         logger.debug(f"Batch commit successful (Msg Batch {batch_num}).")
         return True
 
-    # Step 3: Handle specific DB errors during commit
+    # Step 3/4: Handle exceptions during commit
     except IntegrityError as ie:
-        # db_transn context manager handles rollback
         logger.error(
             f"DB UNIQUE constraint error during messaging batch commit (Batch {batch_num}): {ie}",
             exc_info=False,
         )
         return False
-    # Step 4: Handle other potential errors during commit
     except Exception as e:
-        # db_transn context manager handles rollback
         logger.error(
             f"Error committing messaging batch (Batch {batch_num}): {e}", exc_info=True
         )

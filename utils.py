@@ -128,8 +128,6 @@ def force_user_agent(driver: WebDriver, user_agent: str):
     except Exception as e:
         # Step 3: Log any errors during the process
         logger.warning(f"Error setting User-Agent via CDP: {e}", exc_info=True)
-
-
 # End of force_user_agent
 
 
@@ -168,8 +166,6 @@ def parse_cookie(cookie_string: str) -> Dict[str, str]:
 
     # Step 4: Return the parsed cookies
     return cookies
-
-
 # End of parse_cookie
 
 
@@ -203,8 +199,6 @@ def extract_text(element: Any, selector: str) -> str:
             f"Error extracting text using selector '{selector}': {e}", exc_info=False
         )
         return ""
-
-
 # End of extract_text
 
 
@@ -255,8 +249,6 @@ def extract_attribute(element: Any, selector: str, attribute: str) -> str:
             exc_info=False,
         )
         return ""
-
-
 # End of extract_attribute
 
 
@@ -326,8 +318,6 @@ def get_tot_page(driver: WebDriver) -> int:
         # Catch any other unexpected errors
         logger.error(f"Unexpected error getting total pages: {e}", exc_info=True)
         return 1
-
-
 # End of get_tot_page
 
 
@@ -360,8 +350,6 @@ def ordinal_case(text: str) -> str:
     # Pattern: (\d+) matches one or more digits (captured in group 1)
     #          (st|nd|rd|th) matches the ordinal suffix (case-insensitive, captured in group 2)
     return re.sub(r"(\d+)(st|nd|rd|th)", lower_suffix, text, flags=re.IGNORECASE)
-
-
 # End of ordinal_case
 
 
@@ -400,8 +388,6 @@ def is_elem_there(
     except Exception as e:
         logger.error(f"Error checking element presence for '{value}' ({by}): {e}")
         return False
-
-
 # End of is_elem_there
 
 
@@ -440,61 +426,7 @@ def format_name(name: Optional[str]) -> str:
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
         # Return a safe default on error
         return "Valued Relative"
-
-
 # End of format_name
-
-
-@dataclass
-class MatchData:
-    """
-    Represents the collected data for a single DNA match, aggregating information
-    from various sources (match list, APIs, tree details).
-    """
-
-    # --- Core Identifiers (Usually from initial match list) ---
-    guid: str  # Match's test GUID (e.g., 6EAC8EC1-...)
-    display_name: str  # Match's display name (e.g., "Frances Mchardy")
-    image_url: Optional[str] = None  # URL of the match's profile image
-
-    # --- DNA Match Details (From initial list or details API) ---
-    shared_cm: Optional[float] = None  # Shared Centimorgans
-    shared_segments: Optional[int] = None  # Number of shared segments
-    last_login_str: Optional[str] = (
-        None  # Raw string like "Logged in today", "Sep 2023"
-    )
-
-    # --- Predicted Relationship (From matchProbabilityData API) ---
-    confidence: Optional[float] = None  # Probability score from API
-    predicted_relationship: Optional[str] = None  # e.g., "1st–2nd cousin"
-
-    # --- Links (Constructed or from list) ---
-    compare_link: Optional[str] = None  # Link to comparison page
-    message_link: Optional[str] = None  # Link to message the match
-
-    # --- Tree Related Info ---
-    in_my_tree: bool = field(
-        default=False
-    )  # Set after checking matchesInTree API or list hint
-
-    # --- Details Primarily from Badge/Ladder APIs (if in_my_tree=True) ---
-    match_tree_id: Optional[str] = None  # The ID of *their* linked tree (if available)
-    cfpid: Optional[str] = (
-        None  # The person ID (PID) within *their* tree (if available)
-    )
-    view_in_tree_link: Optional[str] = (
-        None  # Link to view them in *my* tree (constructed)
-    )
-    facts_link: Optional[str] = None  # Link to facts page in *my* tree (constructed)
-    relationship_path: Optional[str] = (
-        None  # Raw HTML or processed path from ladder API
-    )
-    actual_relationship: Optional[str] = (
-        None  # e.g., "Mother", "1st cousin 1x removed" (from ladder API)
-    )
-
-
-# End of MatchData class
 
 
 # ------------------------------
@@ -568,8 +500,6 @@ def retry(
 
     # End of decorator
     return decorator
-
-
 # End of retry
 
 
@@ -707,8 +637,6 @@ def retry_api(
 
     # End of decorator
     return decorator
-
-
 # End of retry_api
 
 
@@ -754,8 +682,6 @@ def ensure_browser_open(func: Callable) -> Callable:
 
     # End of wrapper
     return wrapper
-
-
 # End of ensure_browser_open
 
 
@@ -809,8 +735,6 @@ def time_wait(wait_description: str) -> Callable:
 
     # End of decorator
     return decorator
-
-
 # End of time_wait
 
 
@@ -1036,8 +960,6 @@ class DynamicRateLimiter:
         return self.last_throttled
 
     # End of is_throttled
-
-
 # End of DynamicRateLimiter class
 
 
@@ -1153,7 +1075,6 @@ class SessionManager:
 
         # Step 9: Log SessionManager creation
         logger.debug(f"SessionManager instance created: ID={id(self)}")
-
     # End of __init__
 
     def start_sess(self, action_name: Optional[str] = None) -> bool:
@@ -1255,7 +1176,6 @@ class SessionManager:
             )
             self.close_sess()  # Clean up
             return False
-
     # End of start_sess
 
     def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:
@@ -1432,7 +1352,6 @@ class SessionManager:
             f"Session readiness check FAILED after {max_readiness_attempts} attempts."
         )
         return False  # Failed after all retries
-
     # End of ensure_session_ready
 
     def _reset_logged_flags(self):
@@ -1441,7 +1360,6 @@ class SessionManager:
         self._uuid_logged = False
         self._tree_id_logged = False
         self._owner_logged = False
-
     # End of _reset_logged_flags
 
     def _initialize_db_engine_and_session(self):
@@ -1578,7 +1496,6 @@ class SessionManager:
             self.engine = None
             self.Session = None
             raise e  # Re-raise the critical error
-
     # End of _initialize_db_engine_and_session
 
     def _check_and_handle_url(self) -> bool:
@@ -1639,7 +1556,6 @@ class SessionManager:
 
         # Step 5: Return success
         return True
-
     # End of _check_and_handle_url
 
     def _retrieve_identifiers(self) -> bool:
@@ -1707,7 +1623,6 @@ class SessionManager:
 
         # --- Step 4: Return overall success status ---
         return all_ok
-
     # End of _retrieve_identifiers
 
     def _retrieve_tree_owner(self):
@@ -1739,7 +1654,6 @@ class SessionManager:
             logger.debug(
                 "Skipping tree owner retrieval (no tree ID).\n"
             )  
-
     # End of _retrieve_tree_owner
 
     @retry_api()  # Add retry decorator for resilience
@@ -1806,7 +1720,6 @@ class SessionManager:
             )
             logger.debug(f"Response data received: {response_data}")
             return None
-
     # End of get_csrf
 
     def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
@@ -1898,7 +1811,6 @@ class SessionManager:
 
         logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
         return False
-
     # End of get_cookies
 
     def _sync_cookies(self):
@@ -1997,7 +1909,6 @@ class SessionManager:
                 f"Skipped {skipped_count} cookies during sync due to format/errors."
             )
         logger.debug(f"Successfully synced {synced_count} cookies to requests session.")
-
     # End of _sync_cookies
 
     def return_session(self, session: Session):
@@ -2025,7 +1936,6 @@ class SessionManager:
                 )
         else:
             logger.warning("Attempted to return a None DB session.")
-
     # End of return_session
 
     def get_db_conn(self) -> Optional[Session]:
@@ -2092,7 +2002,6 @@ class SessionManager:
             self.Session = None
             self._db_init_attempted = False  # Allow re-init attempt
             return None
-
     # End of get_db_conn
 
     @contextlib.contextmanager
@@ -2163,7 +2072,6 @@ class SessionManager:
                 )
             else:
                 logger.debug("DB Context Manager: No valid session to return.")
-
     # End of get_db_conn_context
 
     def cls_db_conn(self, keep_db: bool = True):
@@ -2210,7 +2118,6 @@ class SessionManager:
             self.engine = None
             self.Session = None
             self._db_init_attempted = False  # Reset flag to allow re-initialization
-
     # End of cls_db_conn
 
     @retry_api()  # Add retry decorator
@@ -2265,7 +2172,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
             return None
-
     # End of get_my_profileId
 
     @retry_api()  # Add retry decorator
@@ -2314,7 +2220,6 @@ class SessionManager:
                 "Failed to get header/dna data via _api_req (returned None or error response)."
             )
             return None
-
     # End of get_my_uuid
 
     @retry_api()  # Add retry decorator
@@ -2399,7 +2304,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error fetching/parsing Header Trees API: {e}", exc_info=True)
             return None
-
     # End of get_my_tree_id
 
     @retry_api()  # Add retry decorator
@@ -2477,7 +2381,6 @@ class SessionManager:
                 exc_info=True,
             )
             return None
-
     # End of get_tree_owner
 
     def verify_sess(self) -> bool:
@@ -2505,7 +2408,6 @@ class SessionManager:
                 "Session verification failed critically (login_status returned None)."
             )
             return False
-
     # End of verify_sess
 
     def _verify_api_login_status(self) -> Optional[bool]:
@@ -2601,7 +2503,6 @@ class SessionManager:
                 f"Unexpected error during {api_description}: {e}", exc_info=True
             )
             return None  # Critical error state
-
     # End of _verify_api_login_status
 
     @retry_api()  # Add retry decorator
@@ -2646,7 +2547,6 @@ class SessionManager:
                 "Failed to get header/dna data via _api_req (returned None or error response)."
             )
             return False
-
     # End of get_header
 
     def _validate_sess_cookies(self, required_cookies: List[str]) -> bool:
@@ -2690,14 +2590,12 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Unexpected error validating cookies: {e}", exc_info=True)
             return False
-
     # End of _validate_sess_cookies
 
     def is_sess_logged_in(self) -> bool:
         """DEPRECATED: Use login_status() instead."""
         logger.warning("is_sess_logged_in is deprecated. Use login_status() instead.")
         return login_status(self) is True  # Delegate and return boolean
-
     # End of is_sess_logged_in
 
     def is_sess_valid(self) -> bool:
@@ -2752,7 +2650,6 @@ class SessionManager:
                 f"Unexpected error checking session validity: {e}", exc_info=True
             )
             return False
-
     # End of is_sess_valid
 
     def close_sess(self, keep_db: bool = False):
@@ -2788,7 +2685,6 @@ class SessionManager:
             self.cls_db_conn(keep_db=False)  # Calls helper to dispose engine
         else:
             logger.debug("Keeping DB connection pool alive (keep_db=True).")
-
     # End of close_sess
 
     def restart_sess(self, url: Optional[str] = None) -> bool:
@@ -2848,7 +2744,6 @@ class SessionManager:
                 "Driver instance missing after successful session restart report."
             )
             return False
-
     # End of restart_sess
 
     @ensure_browser_open  # Decorator ensures browser is open before execution
@@ -2918,7 +2813,6 @@ class SessionManager:
                 f"An unexpected error occurred in make_tab: {e}", exc_info=True
             )
             return None
-
     # End of make_tab
 
     def check_js_errors(self):
@@ -2997,10 +2891,7 @@ class SessionManager:
             logger.debug(
                 f"Updated last_js_error_check time to: {self.last_js_error_check}"
             )
-
     # End of check_js_errors
-
-
 # End of SessionManager class
 
 
@@ -3008,9 +2899,6 @@ class SessionManager:
 # Stand alone functions
 # ----------------------------------------------------------------------------
 
-
-# Note: Comments added explaining Match List API specific handling rationale.
-# Note: Added placeholder comment regarding potential base header refactoring.
 def _api_req(
     url: str,
     driver: Optional[WebDriver],
@@ -3390,8 +3278,6 @@ def _api_req(
         f"{api_description}: Exited retry loop unexpectedly. Last Exception: {last_exception}."
     )
     return None
-
-
 # End of _api_req
 
 
@@ -3399,6 +3285,11 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
     """
     Generates the 'ancestry-context-ube' header value based on current browser state.
     Ensures the 'correlatedSessionId' matches the current 'ANCSESSIONID' cookie.
+
+    NOTE: The structure and specific values (screen names, vendors) used here are
+    based on observed browser requests to Ancestry as of the time of writing.
+    This header's format or required content may change without notice, potentially
+    breaking API calls that rely on it.
 
     Args:
         driver: The active Selenium WebDriver instance.
@@ -3443,9 +3334,7 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
     # Step 3: Define UBE payload components
     # Using static eventId based on observed cURL examples
     event_id = "00000000-0000-0000-0000-000000000000"
-    correlated_id = str(
-        uuid.uuid4()
-    )  # Generate a unique ID for this specific view/event
+    correlated_id = str(uuid.uuid4())
     # Standard screen names based on observation
     screen_name_standard = "ancestry : uk : en : dna-matches-ui : match-list : 1"
     screen_name_legacy = "ancestry uk : dnamatches-matchlistui : list"
@@ -3472,10 +3361,9 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
         # logger.debug(f"Generated UBE Header: {encoded_payload[:30]}...") # Optional log
         return encoded_payload
     except Exception as e:
+        # Existing error logging is sufficient
         logger.error(f"Error encoding UBE header data: {e}", exc_info=True)
         return None
-
-
 # End of make_ube
 
 
@@ -3483,6 +3371,10 @@ def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]:
     """
     Generates the 'newrelic' header value (used for performance monitoring).
     Does not require the driver instance but kept for consistent signature.
+
+    NOTE: The structure and specific IDs (account, app, tk) used here are
+    based on observed browser requests to Ancestry as of the time of writing.
+    This header's format or required content may change without notice.
 
     Args:
         driver: WebDriver instance (ignored).
@@ -3518,10 +3410,9 @@ def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]:
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
         return encoded_payload
     except Exception as e:
+        # Existing error logging is sufficient
         logger.error(f"Error generating NewRelic header: {e}", exc_info=True)
         return None
-
-
 # End of make_newrelic
 
 
@@ -3529,6 +3420,11 @@ def make_traceparent(driver: Optional[WebDriver]) -> Optional[str]:
     """
     Generates the 'traceparent' header value according to W3C Trace Context spec.
     Does not require the driver instance but kept for consistent signature.
+
+    NOTE: While this follows the W3C standard, the specific IDs generated are
+    random for each call. Ancestry might perform additional validation or expect
+    correlation with other headers (like newrelic or tracestate) in ways not
+    fully replicated here.
 
     Args:
         driver: WebDriver instance (ignored).
@@ -3547,10 +3443,9 @@ def make_traceparent(driver: Optional[WebDriver]) -> Optional[str]:
         traceparent = f"{version}-{trace_id}-{parent_id}-{flags}"
         return traceparent
     except Exception as e:
+        # Existing error logging is sufficient
         logger.error(f"Error generating traceparent header: {e}", exc_info=True)
         return None
-
-
 # End of make_traceparent
 
 
@@ -3559,6 +3454,10 @@ def make_tracestate(driver: Optional[WebDriver]) -> Optional[str]:
     Generates the 'tracestate' header value (W3C Trace Context), potentially
     including vendor-specific information (e.g., New Relic).
     Does not require the driver instance but kept for consistent signature.
+
+    NOTE: The format used here (`tk@nr=...`) is based on observed New Relic vendor
+    state in Ancestry requests. This format, the specific IDs, or the requirement
+    for this header might change without notice.
 
     Args:
         driver: WebDriver instance (ignored).
@@ -3580,10 +3479,9 @@ def make_tracestate(driver: Optional[WebDriver]) -> Optional[str]:
         tracestate = f"{tk}@nr=0-1-{account_id}-{app_id}-{span_id}----{timestamp}"
         return tracestate
     except Exception as e:
+        # Existing error logging is sufficient
         logger.error(f"Error generating tracestate header: {e}", exc_info=True)
         return None
-
-
 # End of make_tracestate
 
 
@@ -3622,12 +3520,9 @@ def get_driver_cookies(driver: WebDriver) -> Dict[str, str]:
     except Exception as e:
         logger.error(f"Unexpected error getting driver cookies: {e}", exc_info=True)
         return {}
-
-
 # End of get_driver_cookies
 
 
-# Note: Constants used for message status defined at the top of the file.
 def _send_message_via_api(
     session_manager: SessionManager,
     person: Person,
@@ -4624,273 +4519,6 @@ def is_browser_open(driver: Optional[WebDriver]) -> bool:
         logger.error(f"Unexpected error checking browser status: {e}", exc_info=True)
         return False
 # End of is_browser_open
-
-
-# Note: This function potentially duplicates state saving in SessionManager if used elsewhere.
-# Consider consolidating state saving logic if needed. Currently kept for potential standalone use.
-def restore_sess(driver: WebDriver) -> bool:
-    """
-    Restores session state (cookies, local storage, session storage) from cached
-    files specific to the current domain. Performs a hard refresh after restoration.
-
-    Args:
-        driver: The active Selenium WebDriver instance.
-
-    Returns:
-        True if any state was successfully restored and refreshed, False otherwise.
-    """
-    # Step 1: Validate driver
-    if not driver:
-        logger.error("Cannot restore session: WebDriver is None.")
-        return False
-
-    # Step 2: Determine domain and cache directory
-    cache_dir = config_instance.CACHE_DIR
-    domain = ""
-    try:
-        current_url = driver.current_url
-        parsed_url = urlparse(current_url)
-        # Extract domain, remove www., ignore port
-        domain = parsed_url.netloc.replace("www.", "").split(":")[0]
-        if not domain: raise ValueError("Could not extract valid domain from current URL")
-    except Exception as e:
-        logger.error(f"Could not parse current URL for session restore: {e}. Using fallback.")
-        try:
-            # Fallback to using BASE_URL domain
-            parsed_base = urlparse(config_instance.BASE_URL)
-            domain = parsed_base.netloc.replace("www.", "").split(":")[0]
-            if not domain: raise ValueError("Could not extract domain from BASE_URL")
-            logger.warning(f"Falling back to base URL domain for restore: {domain}")
-        except Exception as base_e:
-            logger.critical(f"Could not determine domain from base URL either: {base_e}. Cannot restore.")
-            return False
-
-    logger.debug(f"Attempting to restore session state from cache for domain: {domain}...")
-    cache_dir.mkdir(parents=True, exist_ok=True) # Ensure cache dir exists
-
-    restored_something = False # Flag to track if anything was restored
-
-    # Step 3: Helper function for safe JSON reading
-    def safe_json_read(filename: str) -> Optional[Any]:
-        """Reads JSON safely from a file in the cache directory."""
-        filepath = cache_dir / filename
-        if filepath.exists():
-            try:
-                with filepath.open("r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError, UnicodeDecodeError) as e:
-                logger.warning(f"Skipping restore from '{filepath.name}' (read/decode error): {e}")
-                return None
-            except Exception as e:
-                logger.error(f"Unexpected error reading '{filepath.name}': {e}", exc_info=True)
-                return None
-        return None # File doesn't exist
-    # End of safe_json_read
-
-    # Step 4: Restore Cookies
-    cookies_file = f"session_cookies_{domain}.json"
-    cookies = safe_json_read(cookies_file)
-    if cookies and isinstance(cookies, list):
-        try:
-            logger.debug(f"Restoring {len(cookies)} cookies from cache...")
-            driver.delete_all_cookies() # Clear existing browser cookies first
-            count = 0
-            for cookie in cookies:
-                # Basic validation of cookie structure before adding
-                if isinstance(cookie, dict) and "name" in cookie and "value" in cookie and "domain" in cookie:
-                    try:
-                        # Remove unsupported 'expiry' if present (Selenium uses 'expires')
-                        if 'expiry' in cookie: del cookie['expiry']
-                        # Handle potential 'expires' format if needed (requests uses integer timestamp)
-                        if 'expires' in cookie and not isinstance(cookie['expires'], (int, float, type(None))):
-                             logger.warning(f"Skipping cookie '{cookie.get('name', '??')}' due to invalid 'expires' format: {cookie['expires']}")
-                             continue
-
-                        driver.add_cookie(cookie)
-                        count += 1
-                    except WebDriverException as add_e:
-                        logger.warning(f"Skipping cookie '{cookie.get('name', '??')}' during add: {add_e}")
-                else:
-                     logger.warning(f"Skipping cookie with invalid format: {cookie}")
-            logger.debug(f"Added {count} valid cookies from cache.")
-            restored_something = True
-        except WebDriverException as e:
-            logger.error(f"WebDriver error during cookie restore: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error during cookie restore: {e}", exc_info=True)
-    elif cookies is not None: # File existed but content was invalid
-        logger.warning(f"Cookie cache file '{cookies_file}' has invalid format (expected list).")
-
-    # Step 5: Restore Local Storage
-    local_storage_file = f"session_local_storage_{domain}.json"
-    local_storage = safe_json_read(local_storage_file)
-    if local_storage and isinstance(local_storage, dict):
-        try:
-            logger.debug(f"Restoring {len(local_storage)} items into localStorage...")
-            # JavaScript to clear and repopulate localStorage
-            script = """
-                 var data = arguments[0]; localStorage.clear();
-                 for (var key in data) { if (data.hasOwnProperty(key)) {
-                     try { localStorage.setItem(key, data[key]); }
-                     catch (e) { console.warn('Failed localStorage setItem:', key, e); }
-                 }} return localStorage.length;"""
-            restored_count = driver.execute_script(script, local_storage)
-            logger.debug(f"localStorage restored ({restored_count} items set).")
-            restored_something = True
-        except WebDriverException as e:
-            logger.error(f"Error restoring localStorage via JS: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error restoring localStorage: {e}", exc_info=True)
-    elif local_storage is not None:
-        logger.warning(f"localStorage cache file '{local_storage_file}' has invalid format (expected dict).")
-
-    # Step 6: Restore Session Storage
-    session_storage_file = f"session_session_storage_{domain}.json"
-    session_storage = safe_json_read(session_storage_file)
-    if session_storage and isinstance(session_storage, dict):
-        try:
-            logger.debug(f"Restoring {len(session_storage)} items into sessionStorage...")
-            # JavaScript to clear and repopulate sessionStorage
-            script = """
-                 var data = arguments[0]; sessionStorage.clear();
-                 for (var key in data) { if (data.hasOwnProperty(key)) {
-                     try { sessionStorage.setItem(key, data[key]); }
-                     catch (e) { console.warn('Failed sessionStorage setItem:', key, e); }
-                 }} return sessionStorage.length;"""
-            restored_count = driver.execute_script(script, session_storage)
-            logger.debug(f"sessionStorage restored ({restored_count} items set).")
-            restored_something = True
-        except WebDriverException as e:
-            logger.error(f"Error restoring sessionStorage via JS: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error restoring sessionStorage: {e}", exc_info=True)
-    elif session_storage is not None:
-        logger.warning(f"sessionStorage cache file '{session_storage_file}' has invalid format (expected dict).")
-
-    # Step 7: Perform hard refresh if any state was restored
-    if restored_something:
-        logger.info("Session state restored from cache. Performing hard refresh...")
-        try:
-            driver.refresh()
-            # Wait for page to reload completely after refresh
-            WebDriverWait(driver, selenium_config.PAGE_TIMEOUT).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-            logger.debug("Hard refresh completed after restore.")
-        except TimeoutException:
-            logger.warning("Timeout waiting for page load after hard refresh.")
-        except WebDriverException as e:
-            logger.warning(f"Error during hard refresh: {e}")
-        return True # Indicate success even if refresh had minor issues
-    else:
-        logger.debug("No session state found in cache to restore.")
-        return False # Nothing was restored
-# End of restore_sess
-
-
-# Note: This function potentially duplicates state saving in SessionManager if used elsewhere.
-# Consider consolidating state saving logic if needed. Currently kept for potential standalone use.
-def save_state(driver: WebDriver):
-    """
-    Saves the current session state (cookies, local storage, session storage)
-    to domain-specific JSON files in the cache directory.
-
-    Args:
-        driver: The active Selenium WebDriver instance.
-    """
-    # Step 1: Check if browser session is valid
-    if not is_browser_open(driver):
-        logger.warning("Browser session invalid/closed. Skipping session state save.")
-        return
-
-    # Step 2: Determine domain and cache directory
-    cache_dir = config_instance.CACHE_DIR
-    domain = ""
-    try:
-        current_url = driver.current_url
-        parsed_url = urlparse(current_url)
-        domain = parsed_url.netloc.replace("www.", "").split(":")[0]
-        if not domain: raise ValueError("Could not extract domain from current URL")
-    except Exception as e:
-        logger.error(f"Could not parse current URL for saving state: {e}. Using fallback.")
-        try:
-            parsed_base = urlparse(config_instance.BASE_URL)
-            domain = parsed_base.netloc.replace("www.", "").split(":")[0]
-            if not domain: raise ValueError("Could not extract domain from BASE_URL")
-            logger.warning(f"Falling back to base URL domain for saving state: {domain}")
-        except Exception as base_e:
-            logger.critical(f"Could not determine domain from base URL either: {base_e}. Cannot save state.")
-            return
-
-    logger.debug(f"Saving session state for domain: {domain}")
-    cache_dir.mkdir(parents=True, exist_ok=True) # Ensure cache dir exists
-
-    # Step 3: Helper function for safe JSON writing
-    def safe_json_write(data: Any, filename: str) -> bool:
-        """Writes data safely to a JSON file in the cache directory."""
-        filepath = cache_dir / filename
-        try:
-            with filepath.open("w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2) # Use indent for readability
-            return True
-        except (TypeError, IOError, UnicodeEncodeError) as e:
-            logger.error(f"Error writing JSON to '{filepath.name}': {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error writing JSON to '{filepath.name}': {e}", exc_info=True)
-            return False
-    # End of safe_json_write
-
-    # Step 4: Save Cookies
-    cookies_file = f"session_cookies_{domain}.json"
-    try:
-        cookies = driver.get_cookies()
-        if cookies is not None: # Check if driver returned cookies
-            if safe_json_write(cookies, cookies_file):
-                logger.debug(f"Cookies saved ({len(cookies)} items).")
-        else:
-            logger.warning("Could not retrieve cookies from driver (returned None).")
-    except WebDriverException as e:
-        logger.error(f"Error getting cookies for saving: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error saving cookies: {e}", exc_info=True)
-
-    # Step 5: Save Local Storage
-    local_storage_file = f"session_local_storage_{domain}.json"
-    try:
-        # Execute JS to get localStorage content as a dictionary
-        local_storage = driver.execute_script(
-            "return window.localStorage ? {...window.localStorage} : {};" # Return empty dict if null
-        )
-        if local_storage: # Check if not empty/null
-            if safe_json_write(local_storage, local_storage_file):
-                logger.debug(f"localStorage saved ({len(local_storage)} items).")
-        else:
-            logger.debug("localStorage not available or empty, not saved.")
-    except WebDriverException as e:
-        logger.error(f"Error getting localStorage via JS: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error saving localStorage: {e}", exc_info=True)
-
-    # Step 6: Save Session Storage
-    session_storage_file = f"session_session_storage_{domain}.json"
-    try:
-        # Execute JS to get sessionStorage content as a dictionary
-        session_storage = driver.execute_script(
-            "return window.sessionStorage ? {...window.sessionStorage} : {};" # Return empty dict if null
-        )
-        if session_storage: # Check if not empty/null
-            if safe_json_write(session_storage, session_storage_file):
-                logger.debug(f"sessionStorage saved ({len(session_storage)} items).")
-        else:
-            logger.debug("sessionStorage not available or empty, not saved.")
-    except WebDriverException as e:
-        logger.error(f"Error getting sessionStorage via JS: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error saving sessionStorage: {e}", exc_info=True)
-
-    # logger.debug(f"Session state save attempt finished for domain: {domain}.") # Optional summary log
-# End of save_state
 
 
 def close_tabs(driver: WebDriver):
