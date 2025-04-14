@@ -70,8 +70,9 @@ from database import (  # Database models and utilities
     MessageType,
     Person,
     PersonStatusEnum,
-    RoleType,  # Currently unused enum
-    db_transn,  # Transaction context manager
+    RoleType,
+    db_transn,
+    commit_bulk_data,
 )
 from logging_config import logger  # Use configured logger
 from utils import (  # Core utilities
@@ -179,7 +180,6 @@ def load_message_templates() -> Dict[str, str]:
             f"CRITICAL: Unexpected error loading messages.json: {e}", exc_info=True
         )
         return {}
-
 
 # End of load_message_templates
 
@@ -325,8 +325,6 @@ def determine_next_message_type(
     else:
         logger.debug(f"  Final Decision: Skip ({skip_reason}).")
     return next_type
-
-
 # End of determine_next_message_type
 
 # ------------------------------------------------------------------------------
@@ -588,8 +586,6 @@ def _commit_messaging_batch(
             f"Error committing messaging batch (Batch {batch_num}): {e}", exc_info=True
         )
         return False
-
-
 # End of _commit_messaging_batch
 
 
@@ -747,8 +743,6 @@ def _prefetch_messaging_data(
             f"Unexpected error during messaging pre-fetching: {e}", exc_info=True
         )
         return None, None, None, None
-
-
 # End of _prefetch_messaging_data
 
 
@@ -1011,7 +1005,7 @@ def _process_single_person(
 
         # --- Step 5: Send/Simulate Message ---
         if send_message_flag:
-            logger.info(
+            logger.debug(
                 f"Processing {log_prefix}: Sending/Simulating '{message_to_send_key}' ({send_reason})..."
             )
             # Determine existing conversation ID (prefer OUT log, fallback IN log)
@@ -1130,8 +1124,6 @@ def _process_single_person(
             f"Unexpected critical error processing {log_prefix}: {e}", exc_info=True
         )
         return None, None, "error"  # Return None, None, 'error'
-
-
 # End of _process_single_person
 
 
@@ -1145,6 +1137,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     Main function for Action 8.
     Fetches eligible candidates, determines the appropriate message to send (if any)
     based on rules and history, sends/simulates the message, and updates the database.
+    Uses the unified commit_bulk_data function.
 
     Args:
         session_manager: The active SessionManager instance.
@@ -1171,13 +1164,13 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     sent_count, acked_count, skipped_count, error_count = 0, 0, 0, 0
     processed_in_loop = 0
     # Lists for batch DB operations
-    db_logs_to_add: List[ConversationLog] = []  # Store prepared Log OBJECTS
+    db_logs_to_add_dicts: List[Dict[str, Any]] = []  # Store prepared Log DICTIONARIES
     person_updates: Dict[int, PersonStatusEnum] = (
         {}
     )  # Store {person_id: new_status_enum}
     # Configuration
     total_candidates = 0
-    critical_db_error_occurred = False
+    critical_db_error_occurred = False  # Track if a commit fails critically
     batch_num = 0
     db_commit_batch_size = max(
         1, config_instance.BATCH_SIZE
@@ -1191,7 +1184,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     try:
         db_session = session_manager.get_db_conn()
         if not db_session:
-            raise Exception("Action 8: Failed to get DB Session.")
+            # Log critical error if session cannot be obtained
+            logger.critical("Action 8: Failed to get DB Session. Aborting.")
+            # Ensure cleanup if needed, though SessionManager handles pool
+            return False  # Abort if DB session fails
 
         # Prefetch all data needed for processing loop
         (message_type_map, candidate_persons, latest_in_log_map, latest_out_log_map) = (
@@ -1217,20 +1213,23 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             )
             # No candidates is considered a successful run
         else:
-            logger.info(
-                f"Found {total_candidates} to process.\n"
-            )
+            logger.info(f"Action 8: Found {total_candidates} candidates to process.")
+            # Log limit if applicable
+            if max_messages_to_send_this_run > 0:
+                logger.info(
+                    f"Action 8: Will send/ack a maximum of {max_messages_to_send_this_run} messages this run.\n"
+                )
 
         # --- Step 3: Main Processing Loop ---
         if total_candidates > 0:
             # Setup progress bar
             tqdm_args = {
                 "total": total_candidates,
-                "desc": "",  # Add space after desc
+                "desc": "",  # Add space after desc for alignment
                 "unit": " person",
-                "ncols": 100,
-                "leave": True,
-                "bar_format": "{desc}{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",  # Include postfix
+                "dynamic_ncols": True,
+                "leave": True, 
+                "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
             }
             logger.debug("Processing candidates...")
             with logging_redirect_tqdm(), tqdm(
@@ -1239,6 +1238,18 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 for person in candidate_persons:
                     processed_in_loop += 1
                     if critical_db_error_occurred:
+                        # Update bar for remaining skipped items due to critical error
+                        remaining_to_skip = total_candidates - processed_in_loop + 1
+                        skipped_count += remaining_to_skip
+                        if progress_bar:
+                            progress_bar.update(remaining_to_skip)
+                            progress_bar.set_postfix(
+                                Sent=sent_count,
+                                ACK=acked_count,
+                                Skip=skipped_count,
+                                Err=error_count,
+                                refresh=True,
+                            )
                         break  # Stop if previous batch commit failed
 
                     # --- Check Max Send Limit ---
@@ -1247,97 +1258,186 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         max_messages_to_send_this_run > 0
                         and current_sent_total >= max_messages_to_send_this_run
                     ):
-                        logger.info(
-                            f"Message sending limit ({max_messages_to_send_this_run}) reached. Stopping."
+                        # Only log the limit message once
+                        if not hasattr(progress_bar, "limit_logged"):
+                            logger.info(
+                                f"Message sending limit ({max_messages_to_send_this_run}) reached. Skipping remaining."
+                            )
+                            setattr(
+                                progress_bar, "limit_logged", True
+                            )  # Mark as logged
+                        # Increment skipped count for this specific skipped item
+                        skipped_count += 1
+                        # Update postfix and bar, then continue to next person
+                        if progress_bar:
+                            progress_bar.set_postfix(
+                                Sent=sent_count,
+                                ACK=acked_count,
+                                Skip=skipped_count,
+                                Err=error_count,
+                                refresh=False,
+                            )
+                            progress_bar.update(1)
+                        continue  # Skip processing this person
+
+                    # --- Process Single Person ---
+                    # _process_single_person still returns a ConversationLog object or None
+                    new_log_object, person_update_tuple, status = (
+                        _process_single_person(
+                            db_session,
+                            session_manager,
+                            person,
+                            latest_in_log_map.get(person.id),
+                            latest_out_log_map.get(person.id),
+                            message_type_map,
                         )
-                        # Update counts for remaining skipped items
-                        remaining_to_skip = total_candidates - processed_in_loop + 1
-                        skipped_count += remaining_to_skip
-                        progress_bar.update(
-                            remaining_to_skip
-                        )  # Update bar for remaining
+                    )
+
+                    # --- Tally Results & Collect DB Updates ---
+                    log_dict_to_add: Optional[Dict[str, Any]] = None
+                    if new_log_object:
+                        try:
+                            # Convert the SQLAlchemy object attributes to a dictionary
+                            log_dict_to_add = {
+                                c.key: getattr(new_log_object, c.key)
+                                for c in sa_inspect(new_log_object).mapper.column_attrs
+                                if hasattr(new_log_object, c.key)  # Ensure attr exists
+                            }
+                            # Ensure required keys for commit_bulk_data are present and correct type
+                            if not all(
+                                k in log_dict_to_add
+                                for k in [
+                                    "conversation_id",
+                                    "direction",
+                                    "people_id",
+                                    "latest_timestamp",
+                                ]
+                            ):
+                                raise ValueError(
+                                    "Missing required keys in log object conversion"
+                                )
+                            if not isinstance(
+                                log_dict_to_add["latest_timestamp"], datetime
+                            ):
+                                raise ValueError(
+                                    "Invalid timestamp type in log object conversion"
+                                )
+                            # Pass Enum directly for direction, commit func handles it
+                            log_dict_to_add["direction"] = new_log_object.direction
+                            # Normalize timestamp just in case
+                            ts_val = log_dict_to_add["latest_timestamp"]
+                            log_dict_to_add["latest_timestamp"] = (
+                                ts_val.astimezone(timezone.utc)
+                                if ts_val.tzinfo
+                                else ts_val.replace(tzinfo=timezone.utc)
+                            )
+
+                        except Exception as conversion_err:
+                            logger.error(
+                                f"Failed to convert ConversationLog object to dict for {person.id}: {conversion_err}",
+                                exc_info=True,
+                            )
+                            log_dict_to_add = None  # Prevent adding malformed data
+                            status = "error"  # Treat as error if conversion fails
+
+                    # Update counters and collect data based on status
+                    if status == "sent":
+                        sent_count += 1
+                        if log_dict_to_add:
+                            db_logs_to_add_dicts.append(log_dict_to_add)
+                    elif status == "acked":
+                        acked_count += 1
+                        if log_dict_to_add:
+                            db_logs_to_add_dicts.append(log_dict_to_add)
+                        if person_update_tuple:
+                            person_updates[person_update_tuple[0]] = (
+                                person_update_tuple[1]
+                            )
+                    elif status.startswith("skipped"):
+                        skipped_count += 1
+                        # If skipped due to filter/rules, still add the log entry if one was prepared
+                        # This logs the skip reason in the script_message_status field.
+                        if log_dict_to_add:
+                            db_logs_to_add_dicts.append(log_dict_to_add)
+                    else:  # status == "error" or unexpected
+                        error_count += 1
+                        overall_success = False
+
+                    # Update progress bar postfix data AND advance bar
+                    if progress_bar:
                         progress_bar.set_postfix(
                             Sent=sent_count,
                             ACK=acked_count,
                             Skip=skipped_count,
                             Err=error_count,
-                            refresh=True,
+                            refresh=False,
                         )
-                        break  # Exit processing loop
-
-                    # --- Process Single Person ---
-                    new_log, person_update, status = _process_single_person(
-                        db_session,
-                        session_manager,
-                        person,
-                        latest_in_log_map.get(person.id),
-                        latest_out_log_map.get(person.id),
-                        message_type_map,
-                    )
-
-                    # --- Tally Results & Collect DB Updates ---
-                    if status == "sent":
-                        sent_count += 1
-                        if new_log:
-                            db_logs_to_add.append(new_log)
-                    elif status == "acked":
-                        acked_count += 1
-                        if new_log:
-                            db_logs_to_add.append(new_log)
-                        if person_update:
-                            person_updates[person_update[0]] = person_update[1]
-                    elif status.startswith("skipped"):
-                        skipped_count += 1
-                    else:  # status == "error" or unexpected
-                        error_count += 1
-                        overall_success = False  # Mark run as failed if errors occur
-
-                    # Update progress bar postfix data AND advance bar
-                    progress_bar.set_postfix(
-                        Sent=sent_count,
-                        ACK=acked_count,
-                        Skip=skipped_count,
-                        Err=error_count,
-                        refresh=False,
-                    )
-                    progress_bar.update(1)
+                        progress_bar.update(1)
 
                     # --- Commit Batch Periodically ---
                     if (
-                        len(db_logs_to_add) + len(person_updates)
+                        len(db_logs_to_add_dicts) + len(person_updates)
                     ) >= db_commit_batch_size:
                         batch_num += 1
-                        commit_ok = _commit_messaging_batch(
-                            db_session, db_logs_to_add, person_updates, batch_num
+                        logger.debug(
+                            f"Commit threshold reached ({len(db_logs_to_add_dicts)} logs). Committing Action 8 Batch {batch_num}..."
                         )
-                        if commit_ok:
-                            db_logs_to_add.clear()
-                            person_updates.clear()  # Clear lists on success
-                        else:  # Commit failed critically
+                        # --- CALL NEW FUNCTION ---
+                        try:
+                            logs_committed_count, persons_updated_count = (
+                                commit_bulk_data(
+                                    session=db_session,
+                                    log_upserts=db_logs_to_add_dicts,  # Pass list of dicts
+                                    person_updates=person_updates,
+                                    context=f"Action 8 Batch {batch_num}",
+                                )
+                            )
+                            # Commit successful (no exception raised)
+                            db_logs_to_add_dicts.clear()
+                            person_updates.clear()
+                            logger.debug(
+                                f"Action 8 Batch {batch_num} commit finished (Logs Processed: {logs_committed_count}, Persons Updated: {persons_updated_count})."
+                            )
+                        except Exception as commit_e:
+                            # commit_bulk_data should handle internal errors and logging,
+                            # but catch here to set critical flag and stop loop.
                             logger.critical(
-                                f"CRITICAL: Messaging batch commit {batch_num} FAILED. Aborting processing."
+                                f"CRITICAL: Messaging batch commit {batch_num} FAILED: {commit_e}",
+                                exc_info=True,
                             )
                             critical_db_error_occurred = True
                             overall_success = False
                             break  # Stop processing loop
+
                 # --- End Main Person Loop ---
         # --- End Conditional Processing Block (if total_candidates > 0) ---
 
         # --- Step 4: Final Commit ---
-        if not critical_db_error_occurred and (db_logs_to_add or person_updates):
+        if not critical_db_error_occurred and (db_logs_to_add_dicts or person_updates):
             batch_num += 1
             logger.debug(
                 f"Performing final commit for remaining items (Batch {batch_num})..."
             )
-            final_commit_ok = _commit_messaging_batch(
-                db_session, db_logs_to_add, person_updates, batch_num
-            )
-            if not final_commit_ok:
-                logger.error("Final messaging batch commit FAILED.")
-                overall_success = False
-            else:
-                db_logs_to_add.clear()
+            try:
+                # --- CALL NEW FUNCTION ---
+                final_logs_saved, final_persons_updated = commit_bulk_data(
+                    session=db_session,
+                    log_upserts=db_logs_to_add_dicts,
+                    person_updates=person_updates,
+                    context="Action 8 Final Save",
+                )
+                # Commit successful
+                db_logs_to_add_dicts.clear()
                 person_updates.clear()
+                logger.debug(
+                    f"Action 8 Final commit executed (Logs Processed: {final_logs_saved}, Persons Updated: {final_persons_updated})."
+                )
+            except Exception as final_commit_e:
+                logger.error(
+                    f"Final Action 8 batch commit FAILED: {final_commit_e}",
+                    exc_info=True,
+                )
+                overall_success = False
 
     # --- Step 5: Handle Outer Exceptions ---
     except Exception as outer_e:
@@ -1352,35 +1452,27 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             session_manager.return_session(db_session)  # Ensure session is returned
 
         # Log Summary
-        error_count_final = error_count
-        # Add candidates unprocessed due to critical error or limit to error/skipped count
-        if (
-            critical_db_error_occurred
-            or (
-                max_messages_to_send_this_run > 0
-                and (sent_count + acked_count) >= max_messages_to_send_this_run
-            )
-        ) and total_candidates > processed_in_loop:
+        # Adjust final skipped count if loop was stopped early by critical error
+        if critical_db_error_occurred and total_candidates > processed_in_loop:
             unprocessed_count = total_candidates - processed_in_loop
             logger.warning(
-                f"Adding {unprocessed_count} unprocessed candidates to skipped count due to early stop."
+                f"Adding {unprocessed_count} unprocessed candidates to skipped count due to DB commit failure."
             )
-            skipped_count += unprocessed_count  # Count as skipped in final summary
+            skipped_count += unprocessed_count
 
         print(" ")  # Spacer
         logger.info("--- Action 8: Message Sending Summary ---")
-        logger.info(f"  Candidates Processed:               {processed_in_loop}/{total_candidates}"     )
+        logger.info(f"  Candidates Considered:              {total_candidates}")
+        logger.info(f"  Candidates Processed in Loop:       {processed_in_loop}")
         logger.info(f"  Template Messages Sent/Simulated:   {sent_count}")
         logger.info(f"  Desist ACKs Sent/Simulated:         {acked_count}")
-        logger.info(f"  Skipped (Rules/Filter/Limit):       {skipped_count}")
-        logger.info(f"  Errors during processing:           {error_count}"  )
+        logger.info(f"  Skipped (Rules/Filter/Limit/Error): {skipped_count}")
+        logger.info(f"  Errors during processing/sending:   {error_count}")
         logger.info(f"  Overall Action Success:             {overall_success}")
         logger.info("-----------------------------------------\n")
 
     # Step 7: Return overall success status
     return overall_success
-
-
 # End of send_messages_to_matches
 
 
@@ -1445,8 +1537,6 @@ def main():
         logger.info(
             f"--- Action 8 Standalone Test Finished (Overall Success: {action_success}) ---"
         )
-
-
 # End of main
 
 if __name__ == "__main__":

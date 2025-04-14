@@ -23,7 +23,7 @@ import re
 import shutil
 import sys
 import time
-import traceback # Explicit import for potential future use
+import traceback
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,15 +39,16 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    PrimaryKeyConstraint, # Explicit import if needed, usually implicit
+    PrimaryKeyConstraint, 
     String,
     Text,
-    UniqueConstraint, # Explicit import if needed
+    UniqueConstraint,  
     create_engine,
     event,
     func,
-    inspect as sa_inspect, # Alias to avoid conflict with stdlib inspect
+    inspect as sa_inspect,
     text,
+    tuple_,
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import (
@@ -59,8 +60,8 @@ from sqlalchemy.orm import (
 )
 
 # --- Local application imports ---
-from config import config_instance # Use configured instance
-from logging_config import logger # Use configured logger
+from config import config_instance
+from logging_config import logger
 
 
 # ----------------------------------------------------------------------
@@ -1095,7 +1096,325 @@ def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
         return None
 # End of get_person_by_uuid
 
+# --- Update ---
 
+
+def commit_bulk_data(
+    session: Session,
+    log_upserts: List[Dict[str, Any]],  # List of dicts for ConversationLog
+    person_updates: Dict[int, PersonStatusEnum],  # Dict of {person_id: status_enum}
+    context: str = "Bulk Commit",  # Optional context for logging
+) -> Tuple[int, int]:
+    """
+    Commits a batch of ConversationLog upserts and Person status updates to the database
+    using bulk operations where feasible (bulk insert logs, bulk update persons).
+    Existing ConversationLog records are updated individually due to composite key constraints
+    with standard bulk update mechanisms.
+
+    Args:
+        session: The active SQLAlchemy database session.
+        log_upserts: List of dictionaries, each containing data for a ConversationLog entry.
+                     Required keys: 'conversation_id', 'direction' (enum or value), 'people_id', 'latest_timestamp'.
+                     Optional keys match ConversationLog model.
+        person_updates: Dictionary mapping Person ID to their new PersonStatusEnum.
+        context: A string describing the calling context for logging purposes.
+
+    Returns:
+        A tuple containing:
+        - Number of log entries successfully processed (inserted or updated).
+        - Number of Person records successfully updated.
+    """
+    # Step 1: Initialization
+    processed_logs_count = 0
+    updated_person_count = 0
+    log_inserts_mappings = []  # For bulk insert
+    log_updates_to_process = []  # List of tuples: (existing_log_obj, new_data_dict)
+
+    # Step 2: Check if there's data to commit
+    if not log_upserts and not person_updates:
+        logger.debug(f"{context}: No data provided for commit.")
+        return 0, 0
+
+    log_prefix = f"[{context}] "
+    logger.debug(
+        f"{log_prefix}Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates."
+    )
+
+    # Step 3: Perform DB operations within a transaction context
+    try:
+        # Use the db_transn context manager to handle commit/rollback
+        with db_transn(session) as sess:
+            logger.debug(f"{log_prefix}Entered transaction block.")
+
+            # --- Step 3a: Prepare ConversationLog Data ---
+            if log_upserts:
+                logger.debug(
+                    f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries..."
+                )
+                # Extract unique composite keys for querying existing logs
+                log_keys_to_check: Set[Tuple[str, MessageDirectionEnum]] = set()
+                valid_log_data_list = (
+                    []
+                )  # Store data dicts that pass initial validation
+
+                for data in log_upserts:
+                    conv_id = data.get("conversation_id")
+                    direction_input = data.get("direction")
+                    people_id = data.get("people_id")
+                    ts_val = data.get("latest_timestamp")
+
+                    # Basic validation
+                    if not all(
+                        [
+                            conv_id,
+                            direction_input,
+                            people_id,
+                            isinstance(ts_val, datetime),
+                        ]
+                    ):
+                        logger.error(
+                            f"{log_prefix}Skipping invalid log data (missing keys/ts): ConvID={conv_id}, Dir={direction_input}, PID={people_id}, TS={ts_val}"
+                        )
+                        continue
+
+                    # Normalize direction to Enum
+                    try:
+                        if isinstance(direction_input, MessageDirectionEnum):
+                            direction_enum = direction_input
+                        else:  # Assume string value like 'IN' or 'OUT'
+                            direction_enum = MessageDirectionEnum(
+                                str(direction_input).upper()
+                            )
+                    except ValueError:
+                        logger.error(
+                            f"{log_prefix}Invalid direction '{direction_input}' in log data ConvID {conv_id}. Skipping."
+                        )
+                        continue
+
+                    # Normalize timestamp to aware UTC
+                    aware_timestamp = (
+                        ts_val.astimezone(timezone.utc)
+                        if ts_val.tzinfo
+                        else ts_val.replace(tzinfo=timezone.utc)
+                    )
+                    data["latest_timestamp"] = (
+                        aware_timestamp  # Update dict with normalized ts
+                    )
+
+                    log_keys_to_check.add((conv_id, direction_enum))
+                    data["direction"] = (
+                        direction_enum  # Update dict with normalized enum
+                    )
+                    valid_log_data_list.append(data)
+
+                # Query for existing logs matching the keys in this batch
+                existing_logs_map: Dict[
+                    Tuple[str, MessageDirectionEnum], ConversationLog
+                ] = {}
+                if log_keys_to_check:
+                    existing_logs = (
+                        sess.query(ConversationLog)
+                        .filter(
+                            tuple_(
+                                ConversationLog.conversation_id,
+                                ConversationLog.direction,
+                            ).in_([(cid, denum) for cid, denum in log_keys_to_check])
+                        )
+                        .all()
+                    )
+                    existing_logs_map = {
+                        (log.conversation_id, log.direction): log
+                        for log in existing_logs
+                        if log.direction  # Ensure direction is not None
+                    }
+                    logger.debug(
+                        f"{log_prefix}Prefetched {len(existing_logs_map)} existing ConversationLog entries."
+                    )
+
+                # Process each valid log data dictionary: separate inserts/updates
+                for data in valid_log_data_list:
+                    conv_id = data["conversation_id"]  # Known to exist from validation
+                    direction_enum = data["direction"]  # Known to be Enum
+                    log_key = (conv_id, direction_enum)
+                    existing_log = existing_logs_map.get(log_key)
+
+                    # Prepare data dictionary for insert/update (excluding keys handled separately)
+                    map_data = {
+                        k: v
+                        for k, v in data.items()
+                        if k
+                        not in [
+                            "conversation_id",
+                            "direction",
+                            "created_at",
+                            "updated_at",
+                        ]
+                        # Allow specific None values if needed by model/logic
+                        and (
+                            v is not None
+                            or k
+                            in [
+                                "ai_sentiment",
+                                "message_type_id",
+                                "script_message_status",
+                            ]
+                        )
+                    }
+                    # Ensure timestamp is set (already normalized)
+                    map_data["latest_timestamp"] = data["latest_timestamp"]
+
+                    if existing_log:
+                        # Prepare for individual update
+                        log_updates_to_process.append((existing_log, map_data))
+                    else:
+                        # Prepare for bulk insert
+                        insert_map = map_data.copy()
+                        insert_map["conversation_id"] = conv_id
+                        # Map Enum to its value for bulk insertion if ORM doesn't handle it automatically
+                        insert_map["direction"] = direction_enum.value
+                        log_inserts_mappings.append(insert_map)
+
+                # --- Execute Bulk Insert for ConversationLog ---
+                if log_inserts_mappings:
+                    logger.debug(
+                        f"{log_prefix}Attempting bulk insert for {len(log_inserts_mappings)} ConversationLog entries..."
+                    )
+                    try:
+                        sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)
+                        processed_logs_count += len(log_inserts_mappings)
+                        logger.debug(
+                            f"{log_prefix}Bulk insert successful for {len(log_inserts_mappings)} logs."
+                        )
+                    except IntegrityError as ie:
+                        logger.warning(
+                            f"{log_prefix}IntegrityError during bulk insert (likely duplicate): {ie}. Some logs may not have inserted."
+                        )
+                    except Exception as bulk_insert_err:
+                        logger.error(
+                            f"{log_prefix}Error during ConversationLog bulk insert: {bulk_insert_err}",
+                            exc_info=True,
+                        )
+                        raise  # Re-raise to trigger transaction rollback
+
+                # --- Perform Individual Updates for ConversationLog ---
+                # Rationale: bulk_update_mappings requires the single primary key 'id',
+                # which we don't have readily available for the composite key based input data.
+                updated_individually_count = 0
+                if log_updates_to_process:
+                    logger.debug(
+                        f"{log_prefix}Processing {len(log_updates_to_process)} individual ConversationLog updates..."
+                    )
+                    for existing_log, update_data_dict in log_updates_to_process:
+                        try:
+                            has_changes = False
+                            # Compare relevant fields from the new data dict against the existing obj
+                            for field, new_value in update_data_dict.items():
+                                # Skip people_id as it shouldn't change for an existing log
+                                if field == "people_id":
+                                    continue
+                                old_value = getattr(existing_log, field, None)
+                                # Handle timestamp comparison (already aware UTC)
+                                if field == "latest_timestamp":
+                                    if new_value != old_value:
+                                        has_changes = True
+                                # Compare other fields
+                                elif new_value != old_value:
+                                    has_changes = True
+                                # Update attribute if changed
+                                if has_changes:
+                                    setattr(existing_log, field, new_value)
+                                    # Reset flag for next field check
+                                    # This needs correction: only set has_changes=True ONCE if any field changes.
+                                    # Correct logic: Keep track if *any* change happened
+                            # Check if *any* change was detected across all fields
+                            any_field_changed = False
+                            for field, new_value in update_data_dict.items():
+                                if field == "people_id":
+                                    continue
+                                old_value = getattr(existing_log, field, None)
+                                if field == "latest_timestamp":
+                                    if new_value != old_value:
+                                        any_field_changed = True
+                                        break
+                                elif new_value != old_value:
+                                    any_field_changed = True
+                                    break
+
+                            if any_field_changed:
+                                setattr(
+                                    existing_log,
+                                    "updated_at",
+                                    datetime.now(timezone.utc),
+                                )
+                                updated_individually_count += 1
+                                # logger.debug(f"{log_prefix} Updated log {existing_log.conversation_id}/{existing_log.direction.name}")
+                        except Exception as update_err:
+                            logger.error(
+                                f"{log_prefix}Error updating individual log {existing_log.conversation_id}/{existing_log.direction.name}: {update_err}",
+                                exc_info=True,
+                            )
+                    processed_logs_count += updated_individually_count
+                    logger.debug(
+                        f"{log_prefix}Finished {updated_individually_count} individual log updates."
+                    )
+
+            # --- Step 3b: Person Update Logic (Bulk Update) ---
+            if person_updates:
+                person_update_mappings = []
+                logger.debug(
+                    f"{log_prefix}Preparing {len(person_updates)} Person status updates..."
+                )
+                for pid, status_enum in person_updates.items():
+                    if not isinstance(pid, int) or pid <= 0:
+                        logger.warning(
+                            f"Invalid Person ID '{pid}' in updates. Skipping."
+                        )
+                        continue
+                    if not isinstance(status_enum, PersonStatusEnum):
+                        logger.warning(
+                            f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update."
+                        )
+                        continue
+                    person_update_mappings.append(
+                        {
+                            "id": pid,
+                            "status": status_enum,  # Pass Enum directly, SQLAlchemy handles it
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    )
+
+                if person_update_mappings:
+                    logger.debug(
+                        f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons..."
+                    )
+                    try:
+                        sess.bulk_update_mappings(Person, person_update_mappings)
+                        updated_person_count = len(person_update_mappings)
+                        logger.debug(
+                            f"{log_prefix}Bulk update successful for {updated_person_count} persons."
+                        )
+                    except Exception as bulk_person_err:
+                        logger.error(
+                            f"{log_prefix}Error during Person bulk update: {bulk_person_err}",
+                            exc_info=True,
+                        )
+                        raise  # Re-raise to trigger transaction rollback
+                else:
+                    logger.warning(
+                        f"{log_prefix}No valid Person updates prepared for bulk operation."
+                    )
+
+            logger.debug(f"{log_prefix}Exiting transaction block (commit follows).")
+        # --- Commit happens implicitly here when 'with db_transn' exits ---
+        logger.debug(f"{log_prefix}Transaction committed successfully via db_transn.")
+        return processed_logs_count, updated_person_count
+
+    # Step 4: Handle exceptions during commit process
+    except Exception as commit_err:
+        # db_transn handles rollback logging, just log overall failure here
+        logger.error(f"{log_prefix}DB Commit FAILED: {commit_err}", exc_info=True)
+        return 0, 0  # Return 0 counts on failure
+# End of commit_bulk_data
 
 
 # --- Delete ---

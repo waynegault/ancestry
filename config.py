@@ -407,180 +407,29 @@ class Config_Class(BaseConfig):
         default_list_referer = urljoin(self.BASE_URL, "/discoveryui-matches/list/")
 
         self.API_CONTEXTUAL_HEADERS: Dict[str, Dict[str, Optional[str]]] = {
-            # --- Headers for CSRF Token Retrieval ---
-            "CSRF Token API": {
-                "Accept": "application/json",  # Expect JSON, though API returns text
-                "Referer": default_list_referer,
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                # No Origin needed
-            },
-            "CSRF Token API Test": {  # For standalone test
-                "Accept": "application/json",  # Expect JSON, though API returns text
-                "Referer": default_list_referer,
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-            },
             # --- Headers for User Identifier APIs ---
-            "Get my profile_id": {
-                "Accept": "application/json, text/plain, */*",
-                "ancestry-clientpath": "p13n-js",
-                "Referer": self.BASE_URL,  # Referer is base URL
-                # No Origin needed
-            },
-            "Get UUID API": {  # header/dna endpoint
-                "Accept": "application/json",
-                "Referer": self.BASE_URL,
-                # No Origin needed
-            },
-            "API Login Verification (header/dna)": {  # Used by login_status
-                "Accept": "application/json",
-                "Referer": self.BASE_URL,
-                # No Origin needed
-            },
-            # --- Headers for Tree Information APIs ---
-            "Header Trees API": {  # Used for getting tree ID from name
-                "Accept": "*/*",  # Accepts anything
-                "Referer": self.BASE_URL,
-                # No Origin needed
-            },
-            "Tree Owner Name API": {
-                "Accept": "application/json, text/plain, */*",
-                "ancestry-clientpath": "Browser:meexp-uhome",  # Specific client path
-                "Referer": self.BASE_URL,
-                # No Origin needed
-            },
-            # --- Headers for Match List & Details APIs (Action 6) ---
-            "Match List API": {  # Specific endpoint with special handling in _api_req
-                "Accept": "application/json",
-                "Referer": default_list_referer,
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                "cache-control": "no-cache",  # Explicitly disable cache
-                "pragma": "no-cache",
-                "priority": "u=1, i",  # Browser priority hint
-                # Origin header removed by _api_req for this specific call
-                # X-CSRF-Token added by _api_req based on specific cookie read in get_matches
-            },
-            "In-Tree Status Check": {  # POST request
-                "Accept": "application/json",
-                "Content-Type": "application/json",  # Specify JSON payload
-                "Referer": default_list_referer,
-                "Origin": origin_header_value,  # Requires Origin
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                # X-CSRF-Token added by _api_req based on specific cookie read in get_matches
-            },
-            "Match Details API (Batch)": {  # GET details for a single match
-                "Accept": "application/json",
-                "Referer": None,  # Referer set dynamically in calling function (_fetch_combined_details)
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                # No Origin needed
-            },
-            "Badge Details API (Batch)": {  # GET badge details for a single match
-                "Accept": "application/json",
-                "Referer": default_list_referer,
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                # No Origin needed
-            },
-            "Match Probability API (Cloudscraper)": {  # POST probability via Scraper
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Referer": default_list_referer,
-                "Origin": origin_header_value,
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                # X-CSRF-Token added dynamically in _fetch_batch_relationship_prob
-                # User-Agent added dynamically in _fetch_batch_relationship_prob
-            },
-            "Get Ladder API (Batch)": {  # Used by Action 6 to get relationship path
-                "Accept": "*/*",  # Accepts anything (JSONP response)
-                "Referer": None,  # Referer set dynamically in _fetch_batch_ladder
-                # No Origin needed
-            },
-            # --- Headers for Profile Details API (Used by Action 7/9/utils) ---
-            "Profile Details API (Batch)": {  # Used by Action 6 _fetch_combined_details
-                "accept": "application/json",
-                "ancestry-clientpath": "express-fe",  # Specific client path
-                "cache-control": "no-cache",
-                "pragma": "no-cache",
-                "sec-fetch-dest": "empty",
-                "sec-fetch-mode": "cors",
-                "sec-fetch-site": "same-origin",
-                "priority": "u=1, i",
-                "Referer": None,  # Set dynamically based on context (e.g., compare page)
-                "ancestry-userid": None,  # Added dynamically by _api_req using session_manager.my_profile_id
-                # No Origin needed
-            },
-            "Profile Details API (Action 7)": {  # Used by Action 7 _fetch_profile_details_for_person
-                "accept": "application/json",
-                "ancestry-clientpath": "express-fe",
-                "cache-control": "no-cache",
-                "pragma": "no-cache",
-                "sec-fetch-dest": "empty",
-                "sec-fetch-mode": "cors",
-                "sec-fetch-site": "same-origin",
-                "priority": "u=1, i",
-                "Referer": urljoin(
-                    self.BASE_URL, "/messaging/"
-                ),  # Referer is messaging page
-                "ancestry-userid": None,  # Added dynamically by _api_req
-                # No Origin needed
-            },
+            "Get my profile_id": {"ancestry-clientpath": "p13n-js"},
+            "Tree Owner Name API": {"ancestry-clientpath": "Browser:meexp-uhome"},
+
+            # --- Headers for Profile Details API ---
+            "Profile Details API (Batch)": {"ancestry-clientpath": "express-fe"},
+            "Profile Details API (Action 7)": {"ancestry-clientpath": "express-fe"},
+
             # --- Headers for Messaging APIs (Action 7/8/9) ---
-            "Create Conversation API": {  # POST to create new thread
-                "Accept": "*/*",
-                "Content-Type": "application/json",
-                "ancestry-clientpath": "express-fe",
-                "Origin": origin_header_value,  # Requires Origin
-                "Referer": urljoin(self.BASE_URL, "/messaging/"),
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                "cache-control": "no-cache",
-                "pragma": "no-cache",
-                "priority": "u=1, i",
-                "ancestry-userid": None,  # Added dynamically by _api_req
-            },
-            "Send Message API (Existing Conv)": {  # POST to existing thread
-                "Accept": "*/*",
-                "Content-Type": "application/json",
-                "ancestry-clientpath": "express-fe",
-                "Origin": origin_header_value,  # Requires Origin
-                "Referer": urljoin(self.BASE_URL, "/messaging/"),
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                "cache-control": "no-cache",
-                "pragma": "no-cache",
-                "priority": "u=1, i",
-                "ancestry-userid": None,  # Added dynamically by _api_req
-            },
-            "Get Inbox Conversations": {  # GET conversation list overview
-                "Accept": "*/*",
-                "ancestry-clientpath": "express-fe",
-                "Referer": urljoin(self.BASE_URL, "/messaging/"),
-                "ancestry-userid": None,  # Added dynamically by _api_req
-                # No Origin needed
-            },
-            "Fetch Conversation Context": {  # GET messages within a conversation
-                "accept": "*/*",
-                "ancestry-clientpath": "express-fe",
-                "referer": urljoin(self.BASE_URL, "/messaging/"),
-                "ancestry-userid": None,  # Added dynamically by _api_req
-                # No Origin needed
-            },
+            "Create Conversation API": {"ancestry-clientpath": "express-fe"},
+            "Send Message API (Existing Conv)": {"ancestry-clientpath": "express-fe"},
+            "Get Inbox Conversations": {"ancestry-clientpath": "express-fe"},
+            "Fetch Conversation Context": {"ancestry-clientpath": "express-fe"},
+
+            # --- APIs Where Context Might Still Be Useful (But Minimal) ---
+            # These likely don't *strictly* need context anymore, but kept for potential minor differences
+            "CSRF Token API": {},  # No special headers needed beyond defaults
+            "Get UUID API": {},  # No special headers needed beyond defaults
+            "Header Trees API": {},  # No special headers needed beyond defaults
+            "Match Details API (Batch)": {},  # No special headers needed beyond defaults
+            "Badge Details API (Batch)": {},  # No special headers needed beyond defaults
+            "Get Ladder API (Batch)": {},  # No special headers needed beyond defaults
         }
-        # --- End API Contextual Headers ---
 
         # === Tree Search Method ===
         loaded_search_method = self._get_string_env(
@@ -626,54 +475,94 @@ class Config_Class(BaseConfig):
         logger.debug("Validating critical configuration settings...")
         errors_found = []
 
-        # Validate Ancestry Credentials
+        # === Credentials ===
         if not self.ANCESTRY_USERNAME:
-            errors_found.append("ANCESTRY_USERNAME is missing or empty.")
+            errors_found.append("ANCESTRY_USERNAME is missing or empty in .env file.")
         if not self.ANCESTRY_PASSWORD:
-            errors_found.append("ANCESTRY_PASSWORD is missing or empty.")
+            errors_found.append("ANCESTRY_PASSWORD is missing or empty in .env file.")
 
-        # Validate AI Provider Configuration
-        if self.AI_PROVIDER == "deepseek" and not self.DEEPSEEK_API_KEY:
-            errors_found.append(
-                "AI_PROVIDER is 'deepseek' but DEEPSEEK_API_KEY is missing."
+        # === AI Provider & Keys ===
+        # Check AI provider validity first
+        if self.AI_PROVIDER not in ["deepseek", "gemini", ""]:  # Allow empty provider
+            logger.warning(
+                f"AI_PROVIDER '{self.AI_PROVIDER}' is not recognized (expected 'deepseek', 'gemini', or empty). AI features may fail."
             )
-        elif self.AI_PROVIDER == "gemini" and not self.GOOGLE_API_KEY:
-            errors_found.append(
-                "AI_PROVIDER is 'gemini' but GOOGLE_API_KEY is missing."
-            )
+            # Not making this fatal, as user might not intend to use AI
+
+        # Check keys based on selected provider
+        elif self.AI_PROVIDER == "deepseek":
+            if not self.DEEPSEEK_API_KEY:
+                errors_found.append(
+                    "AI_PROVIDER is 'deepseek' but DEEPSEEK_API_KEY is missing in .env file."
+                )
+            if not self.DEEPSEEK_AI_BASE_URL:
+                # Base URL is technically optional if using standard OpenAI endpoint via DeepSeek key,
+                # but usually needed for DeepSeek. Add warning, not error.
+                logger.warning(
+                    "DEEPSEEK_AI_BASE_URL is not set in .env file. Ensure this is intended if using DeepSeek."
+                )
+        elif self.AI_PROVIDER == "gemini":
+            if not self.GOOGLE_API_KEY:
+                errors_found.append(
+                    "AI_PROVIDER is 'gemini' but GOOGLE_API_KEY is missing in .env file."
+                )
         elif not self.AI_PROVIDER:
-            logger.warning(
-                "AI_PROVIDER is not configured. AI features will be disabled."
-            )
-        elif self.AI_PROVIDER not in ["deepseek", "gemini"]:
-            logger.warning(
-                f"AI_PROVIDER '{self.AI_PROVIDER}' is not recognized. AI features may not work."
+            logger.info(
+                "AI_PROVIDER is not set. AI-dependent features (Actions 7 & 9 sentiment/extraction) will be skipped or may fail if attempted."
             )
 
-        # Validate MS Graph Client ID (Needed for Action 9 task creation)
-        # Only make it critical if Action 9 is likely to be used? For now, just check if empty.
+        # === MS Graph (Optional Feature - Action 9 Tasks) ===
+        # Only warn if Client ID is missing, as MS Graph tasks are optional
         if not self.MS_GRAPH_CLIENT_ID:
             logger.warning(
-                "MS_GRAPH_CLIENT_ID is missing. MS To-Do task creation (Action 9) will fail authentication."
+                "MS_GRAPH_CLIENT_ID is missing in .env file. MS To-Do task creation (Action 9) will fail authentication."
             )
-            # Decide if this should be fatal - maybe not if user doesn't intend to use Action 9?
-            # errors_found.append("MS_GRAPH_CLIENT_ID is missing (required for Action 9 task creation).")
+        # No need to validate tenant ID or list name as critically here
 
-        # Add other critical checks here if needed (e.g., database path validity)
+        # === Database Path ===
+        # Check if the database file path seems valid (e.g., parent dir exists)
+        try:
+            db_parent_dir = self.DATABASE_FILE.parent
+            if not db_parent_dir.exists():
+                # Try creating it, maybe it's just missing
+                try:
+                    db_parent_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(
+                        f"Created missing parent directory for database: {db_parent_dir}"
+                    )
+                except OSError as mkdir_err:
+                    errors_found.append(
+                        f"Parent directory for DATABASE_FILE ('{db_parent_dir}') does not exist and could not be created: {mkdir_err}"
+                    )
+            elif not db_parent_dir.is_dir():
+                errors_found.append(
+                    f"Parent path for DATABASE_FILE ('{db_parent_dir}') exists but is not a directory."
+                )
+            # We don't check if the file itself exists here, as SQLAlchemy creates it.
+        except Exception as path_err:
+            errors_found.append(
+                f"Error checking DATABASE_FILE path ('{self.DATABASE_FILE}'): {path_err}"
+            )
 
+        # === Testing Profile ID (If mode is 'testing') ===
+        if self.APP_MODE == "testing" and not self.TESTING_PROFILE_ID:
+            errors_found.append(
+                "APP_MODE is 'testing' but TESTING_PROFILE_ID is not set in .env file or defaults."
+            )
+
+        # === Report Errors or Success ===
         if errors_found:
+            logger.critical("--- CRITICAL CONFIGURATION ERRORS ---")
             for error in errors_found:
-                logger.critical(f"CONFIG VALIDATION FAILED: {error}")
-            # Option 1: Raise an exception to halt execution
+                logger.critical(f" - {error}")
+            logger.critical("---------------------------------------")
+            # Raise a specific error to halt execution cleanly
             raise ValueError(
-                "Critical configuration missing. Please check .env file and documentation."
+                "Critical configuration(s) missing or invalid. Please check .env file and logs, then restart."
             )
-            # Option 2: Exit directly (less clean, but avoids further execution)
-            # sys.exit("Critical configuration missing. Exiting.")
-            # Option 3: Set an internal flag and let main.py check it (more complex)
-            # self._is_valid = False
         else:
             logger.info("Critical configuration settings validated successfully.")
+
     # End of _validate_critical_configs
 
 
@@ -868,10 +757,123 @@ class SeleniumConfig(BaseConfig):
 
 # --- Create Singleton Instances ---
 # These instances are created when the module is imported and can be accessed globally.
-config_instance = Config_Class()
-selenium_config = SeleniumConfig()
+# Wrap this in a try...except to handle validation errors during standalone testing
+try:
+    config_instance = Config_Class()
+    selenium_config = SeleniumConfig()
+    _config_valid = True  # Flag to indicate successful load
+except ValueError as config_err:
+    # Log the specific validation error message raised by _validate_critical_configs
+    logger.critical(f"CONFIG VALIDATION FAILED during initial load: {config_err}")
+    # Set instances to None so the test block knows loading failed
+    config_instance = None
+    selenium_config = None
+    _config_valid = False
+except Exception as general_err:
+    # Catch any other unexpected errors during instantiation
+    logger.critical(
+        f"UNEXPECTED ERROR during config instantiation: {general_err}", exc_info=True
+    )
+    config_instance = None
+    selenium_config = None
+    _config_valid = False
+
 
 # --- Log Module Load ---
-logger.debug("config.py loaded and configuration instances created.")
+if _config_valid:
+    logger.debug("config.py loaded and configuration instances created successfully.")
+else:
+    logger.error(
+        "config.py loaded, but configuration instance creation FAILED validation."
+    )
+
+# --- Standalone Test Block ---
+if __name__ == "__main__":
+    print(f"\n--- Running {__file__} standalone test ---")
+
+    # Check if config loading was successful before trying to print values
+    if not _config_valid or config_instance is None or selenium_config is None:
+        print("\nERROR: Configuration loading failed during module import.")
+        print("Please check the log output above for critical configuration errors.")
+        print("Standalone test cannot proceed.")
+    else:
+        # --- Proceed with printing config values if loading succeeded ---
+        print("\n--- General Config (config_instance) ---")
+        print(f"  APP_MODE: {config_instance.APP_MODE}")
+        print(f"  LOG_LEVEL: {config_instance.LOG_LEVEL}")
+        print(f"  BASE_URL: {config_instance.BASE_URL}")
+        print(
+            f"  USERNAME: {config_instance.ANCESTRY_USERNAME[:3]}***"
+            if config_instance.ANCESTRY_USERNAME
+            else "Not Set"
+        )  # Mask username
+        print(
+            f"  PASSWORD: {'*' * len(config_instance.ANCESTRY_PASSWORD) if config_instance.ANCESTRY_PASSWORD else 'Not Set'}"
+        )  # Mask password
+        print(f"  DATABASE_FILE: {config_instance.DATABASE_FILE}")
+        print(f"  LOG_DIR: {config_instance.LOG_DIR}")
+        print(f"  DATA_DIR: {config_instance.DATA_DIR}")
+        print(f"  CACHE_DIR: {config_instance.CACHE_DIR}")
+        print(f"  GEDCOM_FILE_PATH: {config_instance.GEDCOM_FILE_PATH or 'Not Set'}")
+        print(f"  TREE_NAME: {config_instance.TREE_NAME or 'Not Set'}")
+        print(
+            f"  MY_PROFILE_ID (Env): {os.getenv('MY_PROFILE_ID', 'Not Set')}"
+        )  # Show if set in env
+        print(
+            f"  TESTING_PROFILE_ID: {config_instance.TESTING_PROFILE_ID or 'Not Set'}"
+        )
+        print(f"  MAX_PAGES: {config_instance.MAX_PAGES}")
+        print(f"  MAX_INBOX: {config_instance.MAX_INBOX}")
+        print(f"  MAX_PRODUCTIVE: {config_instance.MAX_PRODUCTIVE_TO_PROCESS}")
+        print(f"  BATCH_SIZE: {config_instance.BATCH_SIZE}")
+        print(f"  CACHE_TIMEOUT: {config_instance.CACHE_TIMEOUT}s")
+        print(f"  RETRY_CODES: {config_instance.RETRY_STATUS_CODES}")
+        print(f"  TREE_SEARCH_METHOD: {config_instance.TREE_SEARCH_METHOD}")
+
+        print("\n--- AI Config ---")
+        print(f"  AI_PROVIDER: {config_instance.AI_PROVIDER or 'Not Set'}")
+        if config_instance.AI_PROVIDER == "deepseek":
+            print(f"  DEEPSEEK_MODEL: {config_instance.DEEPSEEK_AI_MODEL}")
+            print(f"  DEEPSEEK_BASE_URL: {config_instance.DEEPSEEK_AI_BASE_URL}")
+            print(
+                f"  DEEPSEEK_API_KEY: {'Set' if config_instance.DEEPSEEK_API_KEY else 'Not Set'}"
+            )
+        elif config_instance.AI_PROVIDER == "gemini":
+            print(f"  GOOGLE_MODEL: {config_instance.GOOGLE_AI_MODEL}")
+            print(
+                f"  GOOGLE_API_KEY: {'Set' if config_instance.GOOGLE_API_KEY else 'Not Set'}"
+            )
+        print(f"  AI Context Msgs: {config_instance.AI_CONTEXT_MESSAGES_COUNT}")
+        print(f"  AI Context Words: {config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS}")
+
+        print("\n--- MS Graph Config ---")
+        print(
+            f"  MS_GRAPH_CLIENT_ID: {'Set' if config_instance.MS_GRAPH_CLIENT_ID else 'Not Set'}"
+        )
+        print(f"  MS_GRAPH_TENANT_ID: {config_instance.MS_GRAPH_TENANT_ID}")
+        print(f"  MS_TODO_LIST_NAME: {config_instance.MS_TODO_LIST_NAME}")
+
+        print("\n--- Selenium Config (selenium_config) ---")
+        print(f"  HEADLESS_MODE: {selenium_config.HEADLESS_MODE}")
+        print(
+            f"  CHROME_DRIVER_PATH: {selenium_config.CHROME_DRIVER_PATH or 'Managed by UC'}"
+        )
+        print(
+            f"  CHROME_BROWSER_PATH: {selenium_config.CHROME_BROWSER_PATH or 'System Default'}"
+        )
+        print(f"  CHROME_USER_DATA_DIR: {selenium_config.CHROME_USER_DATA_DIR}")
+        print(f"  PROFILE_DIR: {selenium_config.PROFILE_DIR}")
+        print(f"  ELEMENT_TIMEOUT: {selenium_config.ELEMENT_TIMEOUT}s")
+        print(f"  PAGE_TIMEOUT: {selenium_config.PAGE_TIMEOUT}s")
+        print(f"  API_TIMEOUT: {selenium_config.API_TIMEOUT}s")
+        print(f"  CHROME_MAX_RETRIES: {selenium_config.CHROME_MAX_RETRIES}")
+        print(f"  CHROME_RETRY_DELAY: {selenium_config.CHROME_RETRY_DELAY}s")
+
+        print(
+            f"\n--- Standalone Test Complete ({'OK' if _config_valid else 'FAILED - Check Logs'}) ---"
+        )
+# End of config.py standalone test block
+
+
 
 # --- End of config.py ---

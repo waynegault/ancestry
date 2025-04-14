@@ -49,31 +49,32 @@ from sqlalchemy import (
     update,
     select as sql_select,
 )
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert  # For UPSERT
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, aliased, joinedload
-from selenium.common.exceptions import WebDriverException  # For session checks
-from tqdm.auto import tqdm  # Progress bar
-from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
+from selenium.common.exceptions import WebDriverException  
+from tqdm.auto import tqdm 
+from tqdm.contrib.logging import logging_redirect_tqdm 
 
 # --- Local application imports ---
-from ai_interface import classify_message_intent  # AI classification function
-from config import config_instance  # Configuration singleton
-from database import (  # Database models and utilities
+from ai_interface import classify_message_intent 
+from config import config_instance 
+from database import (  
     ConversationLog,
     MessageDirectionEnum,
-    MessageType,  # Import even if not directly used here
+    MessageType,  
     Person,
     PersonStatusEnum,
-    db_transn,  # Transaction context manager
+    db_transn,
+    commit_bulk_data,
 )
-from logging_config import logger  # Use configured logger
-from utils import (  # Core utilities
+from logging_config import logger  
+from utils import (  
     DynamicRateLimiter,
     SessionManager,
-    _api_req,  # API request helper
-    format_name,  # Name formatting
-    retry,  # Decorators (unused here currently)
+    _api_req,  
+    format_name, 
+    retry,
     retry_api,
     time_wait,
     urljoin,
@@ -119,7 +120,6 @@ class InboxProcessor:
         logger.debug(
             f"InboxProcessor initialized: MaxInbox={self.max_inbox_limit}, BatchSize={self.api_batch_size}, AIContext={self.ai_context_msg_count} msgs / {self.ai_context_max_words} words."
         )
-
     # End of __init__
 
     # --- Private Helper Methods ---
@@ -221,7 +221,6 @@ class InboxProcessor:
                 f"Unexpected error in _get_all_conversations_api: {e}", exc_info=True
             )
             return None, None  # Return None on unexpected errors
-
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
@@ -306,7 +305,6 @@ class InboxProcessor:
             "username": username,  # Display name of the other person
             "last_message_timestamp": last_msg_ts_aware,  # Aware datetime object or None
         }
-
     # End of _extract_conversation_info
 
     @retry_api(max_retries=2)  # Allow retries for fetching context
@@ -439,7 +437,6 @@ class InboxProcessor:
                 exc_info=True,
             )
             return None  # Return None on unexpected errors
-
     # End of _fetch_conversation_context
 
     def _format_context_for_ai(
@@ -475,7 +472,6 @@ class InboxProcessor:
             context_lines.append(f"{label}{truncated_content}")
         # Step 3: Join lines into a single string
         return "\n".join(context_lines)
-
     # End of _format_context_for_ai
 
     def _lookup_or_create_person(
@@ -650,271 +646,7 @@ class InboxProcessor:
 
         # Step 4: Return the person object and status
         return person, status
-
     # End of _lookup_or_create_person
-
-    def _commit_batch_data_upsert(
-        self,
-        session: DbSession,
-        log_upserts: List[Dict],  # List of data dictionaries for logs
-        person_updates: Dict[int, Dict],
-        is_final_attempt: bool = False,
-    ) -> int:
-        """
-        Commits a batch of ConversationLog upserts and Person status updates to the database
-        using bulk operations for efficiency.
-
-        Args:
-            session: The active SQLAlchemy database session.
-            log_upserts: List of dictionaries, each containing data for a ConversationLog entry.
-            person_updates: Dictionary mapping Person ID to a dictionary of fields to update (e.g., {'status': PersonStatusEnum.DESIST}).
-            is_final_attempt: Flag indicating if this is the last commit attempt (e.g., during error handling).
-
-        Returns:
-            The number of Person records successfully updated in this batch.
-        """
-        # Step 1: Initialization
-        updated_person_count = 0
-        processed_logs_count = 0
-        log_inserts = []
-        log_updates = []
-
-        # Step 2: Check if there's data to commit
-        if not log_upserts and not person_updates:
-            return updated_person_count  # Nothing to do
-
-        log_prefix = "[Final Save] " if is_final_attempt else "[Batch Save] "
-        logger.debug(
-            f"{log_prefix} Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates."
-        )
-
-        # Step 3: Perform DB operations within a transaction context
-        try:
-            # Use the db_transn context manager to handle commit/rollback
-            with db_transn(session) as sess:  # Use the passed session
-                logger.debug(f"{log_prefix}Entered transaction block.")
-
-                # --- Step 3a: Separate ConversationLog data into Inserts and Updates ---
-                if log_upserts:
-                    logger.debug(
-                        f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for bulk ops..."
-                    )
-                    # Extract unique keys for querying existing logs
-                    log_keys_to_check = set()
-                    for data in log_upserts:
-                        conv_id = data.get("conversation_id")
-                        direction_str = data.get("direction")
-                        if conv_id and direction_str:
-                            try:
-                                direction_enum = MessageDirectionEnum(direction_str)
-                                log_keys_to_check.add((conv_id, direction_enum))
-                            except ValueError:
-                                logger.error(
-                                    f"{log_prefix}Invalid direction '{direction_str}' in log data {conv_id}. Skipping."
-                                )
-                                continue
-
-                    # Query for existing logs matching the keys in this batch
-                    existing_logs_map: Dict[
-                        Tuple[str, MessageDirectionEnum], ConversationLog
-                    ] = {}
-                    if log_keys_to_check:
-                        existing_logs = (
-                            sess.query(ConversationLog)
-                            .filter(
-                                # Create composite key expressions for filtering
-                                tuple_(
-                                    ConversationLog.conversation_id,
-                                    ConversationLog.direction,
-                                ).in_(
-                                    [
-                                        (cid, denum) for cid, denum in log_keys_to_check
-                                    ]  # Pass list of tuples
-                                )
-                            )
-                            .all()
-                        )
-                        existing_logs_map = {
-                            (log.conversation_id, log.direction): log
-                            for log in existing_logs
-                            if log.direction
-                        }
-
-                    # Process each log data dictionary
-                    for data in log_upserts:
-                        conv_id = data.get("conversation_id")
-                        direction_str = data.get("direction")
-                        if not conv_id or not direction_str:
-                            continue  # Already logged error if invalid
-
-                        try:
-                            direction_enum = MessageDirectionEnum(direction_str)
-                            log_key = (conv_id, direction_enum)
-
-                            # Prepare data dictionary for insert/update
-                            ts_val = data.get("latest_timestamp")
-                            aware_timestamp = None
-                            if isinstance(ts_val, datetime):
-                                aware_timestamp = (
-                                    ts_val.astimezone(timezone.utc)
-                                    if ts_val.tzinfo
-                                    else ts_val.replace(tzinfo=timezone.utc)
-                                )
-                            if not aware_timestamp:
-                                logger.error(
-                                    f"{log_prefix} Missing/invalid timestamp {conv_id}/{direction_enum.name}. Skip."
-                                )
-                                continue
-
-                            # Select fields for mapping (exclude keys, allow specific nulls)
-                            map_data = {
-                                k: v
-                                for k, v in data.items()
-                                if k
-                                not in [
-                                    "conversation_id",
-                                    "direction",
-                                    "created_at",
-                                    "updated_at",
-                                ]
-                                and (
-                                    v is not None
-                                    or k
-                                    in [
-                                        "ai_sentiment",
-                                        "message_type_id",
-                                        "script_message_status",
-                                    ]
-                                )
-                            }
-                            map_data["latest_timestamp"] = (
-                                aware_timestamp  # Use prepared aware timestamp
-                            )
-
-                            # Add to insert or update list
-                            existing_log = existing_logs_map.get(log_key)
-                            if existing_log:
-                                # Prepare for bulk update (needs primary key 'id' - which isn't composite)
-                                # Need to map composite keys back to simple ID for bulk update
-                                # WORKAROUND: For SQLite/simplicity, continue individual updates for now
-                                # Revisit if performance is critical with a different DB or more complex logic
-                                # logger.debug(f"{log_prefix} Updating existing log (individual) for {conv_id}/{direction_enum.name}...")
-                                map_data["updated_at"] = datetime.now(timezone.utc)
-                                has_changes = False
-                                for key, value in map_data.items():
-                                    if getattr(existing_log, key) != value:
-                                        setattr(existing_log, key, value)
-                                        has_changes = True
-                                if has_changes:
-                                    setattr(
-                                        existing_log,
-                                        "updated_at",
-                                        datetime.now(timezone.utc),
-                                    )
-                                # log_updates.append(update_map) # For bulk update
-                            else:
-                                # Prepare for bulk insert
-                                # logger.debug(f"{log_prefix} Preparing new log for bulk insert: {conv_id}/{direction_enum.name}...")
-                                insert_map = map_data.copy()
-                                insert_map["conversation_id"] = conv_id
-                                insert_map["direction"] = direction_enum
-                                if "people_id" not in insert_map:
-                                    logger.error(
-                                        f"{log_prefix} Missing 'people_id' new log {conv_id}/{direction_enum.name}. Skip insert."
-                                    )
-                                    continue
-                                # created_at handled by default
-                                log_inserts.append(insert_map)
-                            processed_logs_count += 1
-                        except Exception as inner_log_exc:
-                            logger.error(
-                                f"{log_prefix} Error preparing single log item (data: {data}): {inner_log_exc}",
-                                exc_info=True,
-                            )
-
-                    # --- Execute Bulk Operations ---
-                    if log_inserts:
-                        logger.debug(
-                            f"{log_prefix}Attempting bulk insert for {len(log_inserts)} ConversationLog entries..."
-                        )
-                        try:
-                            sess.bulk_insert_mappings(ConversationLog, log_inserts)
-                            logger.debug(f"{log_prefix}Bulk insert successful.")
-                        except Exception as bulk_insert_err:
-                            logger.error(
-                                f"{log_prefix}Error during ConversationLog bulk_insert_mappings: {bulk_insert_err}",
-                                exc_info=True,
-                            )
-                            raise  # Re-raise to trigger transaction rollback
-                    # NOTE: Bulk update skipped due to complexity with composite keys mapping to single ID for bulk_update_mappings
-                    # Individual updates for existing logs happen above within the loop for now.
-                    logger.debug(
-                        f"{log_prefix}Finished preparing/processing {processed_logs_count} log entries."
-                    )
-
-                # --- Step 3b: Person Update Logic (Bulk Update - remains the same) ---
-                if person_updates:
-                    update_mappings = []
-                    logger.debug(
-                        f"{log_prefix}Preparing {len(person_updates)} Person status updates..."
-                    )
-                    for pid, update_fields in person_updates.items():
-                        update_map = {
-                            "id": pid,
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                        status_val = update_fields.get("status")
-                        if isinstance(status_val, PersonStatusEnum):
-                            update_map["status"] = status_val  # Pass Enum directly
-                            update_mappings.append(update_map)
-                        else:
-                            logger.warning(
-                                f"Invalid status type '{type(status_val)}' for Person ID {pid}. Skipping update."
-                            )
-
-                    if update_mappings:
-                        logger.debug(
-                            f"{log_prefix}Attempting bulk update mappings for {len(update_mappings)} persons..."
-                        )
-                        try:
-                            sess.bulk_update_mappings(Person, update_mappings)
-                            updated_person_count = len(update_mappings)
-                            logger.debug(
-                                f"{log_prefix}Bulk update mappings called for {updated_person_count} persons."
-                            )
-                        except Exception as bulk_err:
-                            logger.error(
-                                f"{log_prefix} Error during Person bulk_update_mappings: {bulk_err}",
-                                exc_info=True,
-                            )
-                            raise  # Re-raise to trigger transaction rollback
-                    else:
-                        logger.warning(
-                            f"{log_prefix}No valid person updates prepared for bulk operation."
-                        )
-                # --- End Person Update ---
-
-                logger.debug(f"{log_prefix}Exiting transaction block (commit follows).")
-            # --- Commit happens implicitly here when 'with db_transn' exits ---
-            logger.debug(
-                f"{log_prefix}Transaction block exited. Commit successful via db_transn."
-            )
-            return updated_person_count
-
-        # Step 4: Handle exceptions during commit process
-        except (IntegrityError, SQLAlchemyError) as db_commit_err:
-            logger.error(
-                f"{log_prefix}DB Commit FAILED: {db_commit_err}", exc_info=True
-            )
-            return 0
-        except Exception as commit_err:
-            logger.error(
-                f"{log_prefix}Unexpected Commit/Processing FAILED: {commit_err}",
-                exc_info=True,
-            )
-            return 0
-
-    # End of _commit_batch_data_upsert
 
     def _create_comparator(self, session: DbSession) -> Optional[Dict[str, Any]]:
         """
@@ -981,10 +713,10 @@ class InboxProcessor:
 
         # Step 6: Return the comparator info dictionary or None
         return latest_log_entry_info
-
     # End of _create_comparator
 
-    # --- Main Public Method ---
+    # --- Main Public Methods ---
+
     def search_inbox(self) -> bool:
         """
         Main method to search the Ancestry inbox.
@@ -1042,19 +774,28 @@ class InboxProcessor:
             use_progress_bar = self.max_inbox_limit > 0
 
             # --- Conditional Execution with or without Progress Bar ---
+
             if use_progress_bar:
                 # Run with tqdm context manager
                 tqdm_args = {
                     "total": self.max_inbox_limit,
-                    "desc": "",
+                    "desc": "",  # Explicitly empty description
                     "unit": " conv",
-                    "ncols": 100,
-                    "leave": True,
-                    "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt}",
+                    # "ncols": 100,  # Keep fixed width
+                    "dynamic_ncols": True,
+                    "leave": True,  # Keep the bar after completion
+                    "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
+                    # "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt}",
+                    "file": sys.stderr,
+                    # "dynamic_ncols": False,
+                    # "ascii": True,
                 }
                 logger.info(f"Processing up to {self.max_inbox_limit} inbox items...\n")
                 with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-                    # Call internal loop function, passing the progress bar instance
+                    # Keep the set_postfix call in _process_inbox_loop if desired,
+                    # but it won't display with this bar_format.
+                    # If you want postfix, add it back to bar_format:
+                    # "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {postfix}",
                     (
                         stop_reason,
                         total_processed_api_items,
@@ -1071,17 +812,15 @@ class InboxProcessor:
                     stop_reason,
                     total_processed_api_items,
                     ai_classified_count,
-                    status_updated_count,
+                    status_updated_count,  
                     items_processed_before_stop,
-                ) = self._process_inbox_loop(
+                ) = self._process_inbox_loop( 
                     session,
                     comp_conv_id,
                     comp_ts,
                     my_pid_lower,
-                    None,  # Pass None for progress_bar
+                    None, 
                 )
-            # --- End Conditional Execution ---
-
             # Check if loop stopped due to an error state
             if stop_reason and "error" in stop_reason.lower():
                 overall_success = False
@@ -1100,23 +839,23 @@ class InboxProcessor:
             final_stop_reason = stop_reason or (
                 "Comparator/End Reached" if overall_success else "Unknown"
             )
+            # Use updated status_updated_count which now correctly tracks Person updates
             self._log_unified_summary(
                 total_api_items=total_processed_api_items,
                 items_processed=items_processed_before_stop,
-                new_logs=0,  # Not tracked directly in this version's summary
+                new_logs=0,  # Can no longer accurately track upserts easily, set to 0
                 ai_classified=ai_classified_count,
-                status_updates=status_updated_count,
+                status_updates=status_updated_count,  # This count is correct
                 stop_reason=final_stop_reason,
                 max_inbox_limit=self.max_inbox_limit,
             )
             # Release the database session
             if session:
                 self.session_manager.return_session(session)
-            logger.info("--- Finished Action 7: Search Inbox ---")
 
         # Step 6: Return overall success status
         return overall_success
-
+        # End of search_inbox
     # End of search_inbox
 
     def _process_inbox_loop(
@@ -1126,7 +865,7 @@ class InboxProcessor:
         comp_ts: Optional[datetime],  # Aware datetime
         my_pid_lower: str,
         progress_bar: Optional[tqdm],  # Accept progress bar instance
-    ) -> Tuple[Optional[str], int, int, int, int]:
+    ) -> Tuple[Optional[str], int, int, int, int]:  # <-- Removed logs_processed_count
         """
         Internal helper: Contains the main loop for fetching and processing inbox batches.
 
@@ -1143,19 +882,20 @@ class InboxProcessor:
         """
         # Step 1: Initialize loop-specific state
         ai_classified_count = 0
-        status_updated_count = 0
+        status_updated_count = 0  # Tracks Person updates
         total_processed_api_items = 0
         items_processed_before_stop = 0
+        logs_processed_in_run = 0 
+        skipped_count_this_loop = 0
+        error_count_this_loop = 0 
         stop_reason: Optional[str] = None
         next_cursor: Optional[str] = None
         current_batch_num = 0
         # Lists to accumulate data for batch commits
-        conv_log_upserts: List[Dict[str, Any]] = []
-        person_updates: Dict[int, Dict[str, Any]] = (
-            {}
-        )  # Store Person updates: {person_id: {'status': Enum}}
+        conv_log_upserts_dicts: List[Dict[str, Any]] = []  # <-- Store dicts now
+        person_updates: Dict[int, PersonStatusEnum] = {}
         stop_processing = False
-        min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
+        min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
 
         # Step 2: Main loop - continues until stop condition met
         while not stop_processing:
@@ -1290,8 +1030,11 @@ class InboxProcessor:
                         break  # Break inner conversation loop
 
                     items_processed_before_stop += 1
+
+                    # Update progress bar immediately
+
                     if progress_bar:
-                        progress_bar.update(1)  # Update progress for this item
+                        progress_bar.update(1)
 
                     # Extract key info
                     profile_id_upper = conversation_info.get(
@@ -1363,6 +1106,7 @@ class InboxProcessor:
                     # Skip if no fetch needed
                     if not needs_fetch:
                         # logger.debug(f"Skipping ConvID {api_conv_id}: No fetch needed (up-to-date).")
+                        skipped_count_this_loop += 1
                         if stop_processing:
                             break  # Break inner loop if comparator was hit
                         continue  # Move to next conversation
@@ -1376,6 +1120,7 @@ class InboxProcessor:
                         )
                     context_messages = self._fetch_conversation_context(api_conv_id)
                     if context_messages is None:
+                        error_count_this_loop += 1
                         logger.error(
                             f"Failed to fetch context for ConvID {api_conv_id}. Skipping item."
                         )
@@ -1392,6 +1137,7 @@ class InboxProcessor:
                         ),  # Pass prefetched if available
                     )
                     if not person or not person.id:
+                        error_count_this_loop += 1
                         logger.error(
                             f"Failed person lookup/create for ConvID {api_conv_id}. Skipping item."
                         )
@@ -1455,38 +1201,34 @@ class InboxProcessor:
                                     f"AI classification failed for ConvID {api_conv_id}."
                                 )
 
-                            # Prepare data for ConversationLog upsert (IN row)
-                            upsert_data_in = {
+                            # Prepare data DICTIONARY for ConversationLog upsert (IN row)
+                            # Ensure required keys for commit_bulk_data are present
+                            upsert_dict_in = {
                                 "conversation_id": api_conv_id,
-                                "direction": MessageDirectionEnum.IN.name,  # Use Enum name
+                                "direction": MessageDirectionEnum.IN,  # Pass Enum here, commit func can handle
                                 "people_id": people_id,
                                 "latest_message_content": latest_ctx_in.get(
                                     "content", ""
                                 )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
-                                "latest_timestamp": ctx_ts_in_aware,
+                                "latest_timestamp": ctx_ts_in_aware,  # Already aware UTC
                                 "ai_sentiment": ai_sentiment_result,  # Store AI result
-                                # Fields below are typically null for IN rows
                                 "message_type_id": None,
                                 "script_message_status": None,
                             }
-                            # Filter out None values unless specifically allowed (like ai_sentiment)
-                            upsert_data_in = {
-                                k: v
-                                for k, v in upsert_data_in.items()
-                                if v is not None or k == "ai_sentiment"
-                            }
-                            conv_log_upserts.append(upsert_data_in)
+                            # Add dict to list for batch commit
+                            conv_log_upserts_dicts.append(
+                                upsert_dict_in
+                            )  # <-- Store dict
 
                             # Stage Person status update if AI classified as DESIST/UNINTERESTED
                             if ai_sentiment_result in ("DESIST", "UNINTERESTED"):
                                 logger.debug(
                                     f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as '{ai_sentiment_result}'. Staging status update to DESIST."
                                 )
-                                if people_id not in person_updates:
-                                    person_updates[people_id] = {}
-                                person_updates[people_id][
-                                    "status"
-                                ] = PersonStatusEnum.DESIST  # Use Enum object
+                                # --- CORRECTED LOGIC ---
+                                # Directly assign the Enum value to the person ID key
+                                person_updates[people_id] = PersonStatusEnum.DESIST
+                                # --- END CORRECTION ---
 
                     # --- Process OUT Row ---
                     if latest_ctx_out:
@@ -1508,28 +1250,33 @@ class InboxProcessor:
                             ctx_ts_out_aware
                             and ctx_ts_out_aware > db_latest_ts_out_compare
                         ):
-                            # Prepare data for ConversationLog upsert (OUT row)
-                            upsert_data_out = {
+                            # Prepare data DICTIONARY for ConversationLog upsert (OUT row)
+                            upsert_dict_out = {
                                 "conversation_id": api_conv_id,
-                                "direction": MessageDirectionEnum.OUT.name,
+                                "direction": MessageDirectionEnum.OUT,  # Pass Enum
                                 "people_id": people_id,
                                 "latest_message_content": latest_ctx_out.get(
                                     "content", ""
                                 )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
-                                "latest_timestamp": ctx_ts_out_aware,
-                                # Fields below are typically null unless script sent last message (handled by Action 8)
-                                "ai_sentiment": None,  # AI sentiment not applicable to OUT messages
-                                "message_type_id": None,
-                                "script_message_status": None,
+                                "latest_timestamp": ctx_ts_out_aware,  # Already aware UTC
+                                "ai_sentiment": None,
+                                "message_type_id": None,  # Should be updated by Action 8 if script sent last
+                                "script_message_status": None,  # Should be updated by Action 8
                             }
-                            upsert_data_out = {
-                                k: v
-                                for k, v in upsert_data_out.items()
-                                if v is not None
-                                or k in ["message_type_id", "script_message_status"]
-                            }
-                            conv_log_upserts.append(upsert_data_out)
+                            # Add dict to list for batch commit
+                            conv_log_upserts_dicts.append(
+                                upsert_dict_out
+                            )  # <-- Store dict
                     # --- End Context Processing ---
+
+                    if progress_bar:
+                        progress_bar.set_postfix(
+                            AI=ai_classified_count, # AI classifications this run
+                            Archived=status_updated_count, # Persons archived this run
+                            Skip=skipped_count_this_loop, # Skipped in this loop
+                            Err=error_count_this_loop, # Errors in this loop
+                            refresh=True # Use refresh=True for immediate update
+                        )
 
                     # Check stop flag again after processing item (if comparator was hit)
                     if stop_processing:
@@ -1538,20 +1285,29 @@ class InboxProcessor:
                 # --- End Inner Loop (Processing conversations in batch) ---
 
                 # --- Commit Batch Data ---
-                if conv_log_upserts or person_updates:
+                if conv_log_upserts_dicts or person_updates:
                     logger.debug(
-                        f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts)} logs, {len(person_updates)} persons..."
+                        f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts_dicts)} logs, {len(person_updates)} persons..."
                     )
-                    updates_committed = self._commit_batch_data_upsert(
-                        session, conv_log_upserts, person_updates
+                    # --- CALL NEW FUNCTION ---
+                    logs_committed_count, persons_updated_count = commit_bulk_data(
+                        session=session,
+                        log_upserts=conv_log_upserts_dicts,  # Pass list of dicts
+                        person_updates=person_updates,
+                        context=f"Action 7 Batch {current_batch_num}",
                     )
+                    # --- Update counters ---
                     status_updated_count += (
-                        updates_committed  # Add count of persons updated
+                        persons_updated_count  # Track person updates
                     )
-                    conv_log_upserts.clear()  # Clear lists after commit attempt
+                    logs_processed_in_run += (
+                        logs_committed_count  # Track logs processed
+                    )
+                    # --- Clear lists ---
+                    conv_log_upserts_dicts.clear()
                     person_updates.clear()
                     logger.debug(
-                        f"Batch commit finished (Batch {current_batch_num}). Persons updated: {updates_committed}."
+                        f"Batch commit finished (Batch {current_batch_num}). Logs Processed: {logs_committed_count}, Persons Updated: {persons_updated_count}."
                     )
 
                 # Step 2h: Check stop flag *after* potential commit
@@ -1560,9 +1316,6 @@ class InboxProcessor:
                         stop_reason = (
                             "Comparator Found"  # Set reason if not already set
                         )
-                    logger.debug(
-                        f"Stop flag set ({stop_reason}). Breaking outer processing loop."
-                    )
                     break  # Break outer while loop
 
                 # Step 2i: Prepare for next batch iteration
@@ -1575,6 +1328,7 @@ class InboxProcessor:
 
             # --- Step 3: Handle Exceptions During Batch Processing ---
             except WebDriverException as wde:
+                error_count_this_loop += 1
                 logger.error(
                     f"WebDriverException occurred during inbox loop (Batch {current_batch_num}): {wde}"
                 )
@@ -1582,24 +1336,36 @@ class InboxProcessor:
                 stop_processing = True  # Stop processing
                 # Attempt final save before exiting loop
                 logger.warning("Attempting final save due to WebDriverException...")
-                final_save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                # --- CALL NEW FUNCTION ---
+                final_logs_saved, final_persons_updated = commit_bulk_data(
+                    session=session,
+                    log_upserts=conv_log_upserts_dicts,
+                    person_updates=person_updates,
+                    context="Action 7 Final Save (WebDriverException)",
                 )
-                status_updated_count += final_save_count
-                # Do not clear lists here, let finally block handle it if needed
+                status_updated_count += final_persons_updated
+                logs_processed_in_run += final_logs_saved
+                # Break loop after final save attempt
+                break
             except KeyboardInterrupt:
                 logger.warning("KeyboardInterrupt detected during inbox loop.")
                 stop_reason = "Keyboard Interrupt"
                 stop_processing = True  # Stop processing
                 # Attempt final save
                 logger.warning("Attempting final save due to KeyboardInterrupt...")
-                final_save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                # --- CALL NEW FUNCTION ---
+                final_logs_saved, final_persons_updated = commit_bulk_data(
+                    session=session,
+                    log_upserts=conv_log_upserts_dicts,
+                    person_updates=person_updates,
+                    context="Action 7 Final Save (Interrupt)",
                 )
-                status_updated_count += final_save_count
-                # Do not clear lists
-                break  # Exit loop
+                status_updated_count += final_persons_updated
+                logs_processed_in_run += final_logs_saved
+                # Break loop after final save attempt
+                break
             except Exception as e_main:
+                error_count_this_loop += 1
                 logger.critical(
                     f"Critical error in inbox processing loop (Batch {current_batch_num}): {e_main}",
                     exc_info=True,
@@ -1608,11 +1374,15 @@ class InboxProcessor:
                 stop_processing = True  # Stop processing
                 # Attempt final save
                 logger.warning("Attempting final save due to critical error...")
-                final_save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                # --- CALL NEW FUNCTION ---
+                final_logs_saved, final_persons_updated = commit_bulk_data(
+                    session=session,
+                    log_upserts=conv_log_upserts_dicts,
+                    person_updates=person_updates,
+                    context="Action 7 Final Save (Critical Error)",
                 )
-                status_updated_count += final_save_count
-                # Do not clear lists
+                status_updated_count += final_persons_updated
+                logs_processed_in_run += final_logs_saved
                 # Return from helper to signal failure to outer function
                 return (
                     stop_reason,
@@ -1624,23 +1394,31 @@ class InboxProcessor:
 
         # --- End Main Loop (while not stop_processing) ---
 
-        # Step 4: Perform final commit if loop finished normally or stopped early (e.g., limit)
-        # This catches any remaining data not committed in the last batch.
-        if not stop_reason or stop_reason in (
-            "Comparator Found",
-            "Comparator Found (No Change)",
-            f"Inbox Limit ({self.max_inbox_limit})",
-            "End of Inbox Reached (Empty Batch, No Cursor)",
-            "End of Inbox Reached (No Next Cursor)",
+        # Step 4: Perform final commit if loop finished normally or stopped early
+        if (
+            not stop_reason
+            or stop_reason
+            in (  # Only commit if loop ended somewhat gracefully
+                "Comparator Found",
+                "Comparator Found (No Change)",
+                f"Inbox Limit ({self.max_inbox_limit})",
+                "End of Inbox Reached (Empty Batch, No Cursor)",
+                "End of Inbox Reached (No Next Cursor)",
+            )
         ):
-            if conv_log_upserts or person_updates:
+            if conv_log_upserts_dicts or person_updates:
                 logger.info("Performing final commit at end of processing loop...")
-                final_save_count = self._commit_batch_data_upsert(
-                    session, conv_log_upserts, person_updates, is_final_attempt=True
+                # --- CALL NEW FUNCTION ---
+                final_logs_saved, final_persons_updated = commit_bulk_data(
+                    session=session,
+                    log_upserts=conv_log_upserts_dicts,
+                    person_updates=person_updates,
+                    context="Action 7 Final Save (Normal Exit)",
                 )
-                status_updated_count += final_save_count
+                status_updated_count += final_persons_updated
+                logs_processed_in_run += final_logs_saved
 
-        # Step 5: Return results from the loop execution
+        # Step 5: Return results from the loop execution (modified tuple)
         return (
             stop_reason,
             total_processed_api_items,
@@ -1648,7 +1426,6 @@ class InboxProcessor:
             status_updated_count,
             items_processed_before_stop,
         )
-
     # End of _process_inbox_loop
 
     def _log_unified_summary(
@@ -1663,7 +1440,7 @@ class InboxProcessor:
     ):
         """Logs a unified summary of the inbox search process."""
         # Step 1: Print header
-        print(" ")  # Add spacing
+        print(" ")
         logger.info("------ Inbox Search Summary ------")
         # Step 2: Log key metrics
         logger.info(f"  API Conversations Fetched:    {total_api_items}")
@@ -1682,7 +1459,6 @@ class InboxProcessor:
         logger.info(f"  Processing Stopped Due To:    {final_reason}")
         # Step 4: Print footer
         logger.info("----------------------------------\n")  # Add newline
-
     # End of _log_unified_summary
 
 

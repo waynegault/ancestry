@@ -127,8 +127,6 @@ def save_cache_on_exit():
         logger.error(
             f"Failed to save MSAL cache to {CACHE_FILEPATH}: {e}", exc_info=True
         )
-
-
 # End of save_cache_on_exit
 
 # Step 9: Register the save function with atexit
@@ -257,13 +255,13 @@ def acquire_token_device_flow() -> Optional[str]:
         )
         return None
 
-
 # End of acquire_token_device_flow
 
 
 def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
     """
     Finds the ID of a specific Microsoft To-Do list by its display name using MS Graph API.
+    Includes specific handling for common HTTP errors.
 
     Args:
         access_token: A valid MS Graph API access token with Tasks.ReadWrite scope.
@@ -272,17 +270,13 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
     Returns:
         The ID string of the list if found, otherwise None.
     """
-    # Step 1: Validate inputs
-    if not access_token:
-        logger.error("Cannot get list ID: Access token missing.")
-        return None
-    if not list_name:
-        logger.error("Cannot get list ID: Target list name missing.")
+    # Step 1: Validate inputs (Unchanged)
+    if not access_token or not list_name:
+        logger.error("Cannot get list ID: Access token or list name missing.")
         return None
 
-    # Step 2: Prepare API request details
+    # Step 2: Prepare API request details (Unchanged)
     headers = {"Authorization": f"Bearer {access_token}"}
-    # Use OData $filter for efficient server-side filtering by display name
     list_query_url = (
         f"{GRAPH_API_ENDPOINT}/me/todo/lists?$filter=displayName eq '{list_name}'"
     )
@@ -291,59 +285,71 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
 
     # Step 3: Execute the API request
     try:
-        response = requests.get(
-            list_query_url, headers=headers, timeout=30
-        )  # 30s timeout
-        response.raise_for_status()  # Raise HTTPError for bad status codes (4xx, 5xx)
+        response = requests.get(list_query_url, headers=headers, timeout=30)
+        response.raise_for_status()  # Raise HTTPError for bad status codes
 
-        # Step 4: Parse the JSON response
+        # Step 4: Parse the JSON response (Unchanged)
         lists_data = response.json()
 
-        # Step 5: Process the result list ('value' key contains the list of lists)
+        # Step 5: Process the result list (Unchanged)
         if (
             lists_data
             and "value" in lists_data
             and isinstance(lists_data["value"], list)
             and len(lists_data["value"]) > 0
         ):
-            # Assume the first match is the desired one (list names should ideally be unique)
             first_match = lists_data["value"][0]
             list_id = first_match.get("id")
             if list_id:
                 logger.info(f"Found To-Do list '{list_name}' with ID: {list_id}")
-                return list_id  # Return the found ID
+                return list_id
             else:
                 logger.error(
-                    f"List '{list_name}' found, but 'id' field missing in API response item: {first_match}"
+                    f"List '{list_name}' found, but 'id' field missing: {first_match}"
                 )
-                return None  # Data structure error
+                return None
         else:
-            # List not found or response format incorrect
-            logger.error(
-                f"Microsoft To-Do list named '{list_name}' not found for the authenticated user."
-            )
+            logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
             logger.debug(f"API response for list query: {lists_data}")
-            return None  # List not found
+            return None
 
-    # Step 6: Handle potential errors
-    except requests.exceptions.RequestException as e:
-        logger.error(
-            f"Network or HTTP error querying To-Do lists: {e}", exc_info=False
-        )  # Less verbose for common errors
-        if hasattr(e, "response") and e.response is not None:
-            logger.debug(f"Error response content: {e.response.text[:500]}")
+    # --- Step 6: Handle potential errors (REVISED) ---
+    except requests.exceptions.HTTPError as http_err:
+        status_code = http_err.response.status_code
+        # Log specific common errors
+        if status_code in [401, 403]:
+            logger.error(
+                f"MS Graph Auth Error ({status_code}) querying To-Do lists. Token expired or invalid permissions? Error: {http_err}"
+            )
+        elif status_code == 404:
+            # This shouldn't happen with a $filter query unless the base endpoint is wrong
+            logger.error(
+                f"MS Graph Not Found Error (404) querying To-Do lists. Base API endpoint correct? Error: {http_err}"
+            )
+        else:  # Log other HTTP errors
+            logger.error(f"HTTP error querying To-Do lists: {http_err}", exc_info=False)
+        # Log response body for debugging
+        try:
+            logger.debug(f"Error response content: {http_err.response.text[:500]}")
+        except Exception:
+            pass
         return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON response from list query: {e}")
-        logger.debug(
-            f"Response content that failed JSON decoding: {response.text[:500]}"
-        )
+    except requests.exceptions.RequestException as req_err:
+        # Network errors, timeouts, etc.
+        logger.error(f"Network error querying To-Do lists: {req_err}", exc_info=False)
+        return None
+    except json.JSONDecodeError as json_err:
+        # Error parsing the response (shouldn't happen on success)
+        logger.error(f"Error decoding JSON response from list query: {json_err}")
+        if "response" in locals() and hasattr(
+            response, "text"
+        ):  # Check if response exists
+            logger.debug(f"Response content causing JSON error: {response.text[:500]}")
         return None
     except Exception as e:
+        # Catch-all for unexpected errors
         logger.error(f"Unexpected error getting To-Do list ID: {e}", exc_info=True)
         return None
-
-
 # End of get_todo_list_id
 
 
@@ -352,6 +358,7 @@ def create_todo_task(
 ) -> bool:
     """
     Creates a new task in a specified Microsoft To-Do list using MS Graph API.
+    Includes specific handling for common HTTP errors.
 
     Args:
         access_token: A valid MS Graph API access token with Tasks.ReadWrite scope.
@@ -362,33 +369,24 @@ def create_todo_task(
     Returns:
         True if the task was created successfully, False otherwise.
     """
-    # Step 1: Validate inputs
-    if not access_token:
-        logger.error("Cannot create task: Access token missing.")
-        return False
-    if not list_id:
-        logger.error("Cannot create task: Target List ID missing.")
-        return False
-    if not task_title:
-        logger.error("Cannot create task: Task title missing.")
+    # Step 1: Validate inputs (Unchanged)
+    if not access_token or not list_id or not task_title:
+        logger.error(
+            "Cannot create task: Access token, List ID, or Task title missing."
+        )
         return False
 
-    # Step 2: Prepare API request details
+    # Step 2: Prepare API request details (Unchanged)
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",  # Specify body type
+        "Content-Type": "application/json",
     }
-    # Construct the URL for creating tasks within the specific list
     task_create_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists/{list_id}/tasks"
 
-    # Step 3: Construct the task data payload (JSON body)
+    # Step 3: Construct the task data payload (Unchanged)
     task_data: Dict[str, Any] = {"title": task_title}
-    # Add body if provided
     if task_body:
-        task_data["body"] = {
-            "content": task_body,
-            "contentType": "text",  # Specify plain text content type
-        }
+        task_data["body"] = {"content": task_body, "contentType": "text"}
 
     logger.info(
         f"Attempting to create MS To-Do task '{task_title[:50]}...' in list ID '{list_id}'..."
@@ -402,31 +400,43 @@ def create_todo_task(
         )
         response.raise_for_status()  # Raise HTTPError for bad status codes
 
-        # Step 5: Process successful response (HTTP 201 Created)
+        # Step 5: Process successful response (HTTP 201 Created) (Unchanged)
         logger.info(f"Successfully created task '{task_title[:50]}...'.")
-        # Optional: Log the ID of the created task from the response body
         try:
             logger.debug(f"Create task response details: {response.json()}")
         except json.JSONDecodeError:
-            logger.debug(
-                "Create task response body was not valid JSON (but status was OK)."
-            )
-        return True  # Indicate success
+            logger.debug("Create task response body not valid JSON (but status OK).")
+        return True
 
-    # Step 6: Handle potential errors
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network or HTTP error creating To-Do task: {e}", exc_info=False)
-        if hasattr(e, "response") and e.response is not None:
-            try:
-                logger.error(f"Error response content: {e.response.text[:500]}")
-            except Exception:
-                pass
-        return False  # Indicate failure
+    # --- Step 6: Handle potential errors (REVISED) ---
+    except requests.exceptions.HTTPError as http_err:
+        status_code = http_err.response.status_code
+        if status_code in [401, 403]:
+            logger.error(
+                f"MS Graph Auth Error ({status_code}) creating task. Token expired/invalid permissions? Error: {http_err}"
+            )
+        elif status_code == 400:
+            logger.error(
+                f"MS Graph Bad Request (400) creating task. Payload invalid? Error: {http_err}"
+            )
+        elif status_code == 404:
+            logger.error(
+                f"MS Graph Not Found Error (404) creating task. List ID '{list_id}' invalid? Error: {http_err}"
+            )
+        else:
+            logger.error(f"HTTP error creating To-Do task: {http_err}", exc_info=False)
+        # Log response body for debugging
+        try:
+            logger.error(f"Error response content: {http_err.response.text[:500]}")
+        except Exception:
+            pass
+        return False
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Network error creating To-Do task: {req_err}", exc_info=False)
+        return False
     except Exception as e:
         logger.error(f"Unexpected error creating To-Do task: {e}", exc_info=True)
-        return False  # Indicate failure
-
-
+        return False
 # End of create_todo_task
 
 
