@@ -13,3 +13,7 @@
 /logs/ancestry.log
 /logs/ancestry.log.1
 /test.py
+/gedcom_processor.log
+/gedcom_analysis.log
+/Logs/gedcom_interrogator.log
+/Logs/ancestry.log
