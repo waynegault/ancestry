@@ -1535,21 +1535,334 @@ def initialize_session():
 
 
 # ...existing code...
-# --- Import robust API logic from temp.py ---
-from temp import (
-    AncestryAPISearch,
-    display_raw_relationship_ladder,
-    initialize_session,
-    session_manager,
-)
+# --- Ancestry API Integration (moved from temp.py) ---
+from utils import SessionManager, _api_req
+import html
+from bs4 import BeautifulSoup
 
-# Import the ladder parser from action6_gather
-from action6_gather import _fetch_batch_ladder
+# Create a standalone session_manager that can authenticate itself
+session_manager = SessionManager()
+
+
+def initialize_session():
+    """Initialize the session with proper authentication for standalone usage"""
+    global session_manager
+    if not session_manager.driver_live:
+        print("Initializing browser session...")
+        session_manager.ensure_driver_live()
+    if not session_manager.session_ready:
+        print("Authenticating with Ancestry...")
+        success = session_manager.ensure_session_ready()
+        if not success:
+            print(
+                "Failed to authenticate with Ancestry. Please login manually when the browser opens."
+            )
+            input("Press Enter after you've logged in manually...")
+        else:
+            print("Authentication successful.")
+    if not session_manager.my_tree_id:
+        print("Loading tree information...")
+        session_manager._retrieve_identifiers()
+        if not session_manager.my_tree_id:
+            print("WARNING: Could not load tree ID. Some functionality may be limited.")
+        else:
+            print(f"Tree ID loaded successfully: {session_manager.my_tree_id}")
+    return session_manager.session_ready
+
+
+class AncestryAPISearch:
+    def __init__(self, session_manager: SessionManager):
+        self.session_manager = session_manager
+        self.base_url = "https://www.ancestry.co.uk"
+
+    def _get_tree_id(self):
+        if not self.session_manager.my_tree_id:
+            self.session_manager._retrieve_identifiers()
+        return self.session_manager.my_tree_id
+
+    def _extract_display_name(self, person: dict) -> str:
+        names = person.get("Names") or person.get("names")
+        if names and isinstance(names, list) and names:
+            given = names[0].get("g") or ""
+            surname = names[0].get("s") or ""
+            full_name = f"{given} {surname}".strip()
+            if full_name:
+                return full_name
+        given = person.get("gname") or ""
+        surname = person.get("sname") or ""
+        if given or surname:
+            return f"{given} {surname}".strip()
+        return str(person.get("pid") or person.get("id") or "(Unknown)")
+
+    def search_by_name(self, name: str, limit: int = 10) -> list[dict]:
+        import urllib.parse
+
+        tree_id = self._get_tree_id()
+        if not tree_id:
+            return []
+        base_url = self.base_url
+        query = name.strip()
+        tags = ""
+        persons_url = f"{base_url}/api/treesui-list/trees/{tree_id}/persons?name={urllib.parse.quote(query)}&tags={tags}&page=1&limit={limit}&fields=EVENTS,GENDERS,KINSHIP,NAMES,PHOTO,RELATIONS,TAGS&isGetFullPersonObject=false"
+        try:
+            persons_response = _api_req(
+                url=persons_url,
+                driver=self.session_manager.driver,
+                session_manager=self.session_manager,
+                method="GET",
+                headers=None,
+                use_csrf_token=False,
+                api_description="Ancestry Search by Name",
+                referer_url=f"{base_url}/family-tree/tree/{tree_id}/family",
+                timeout=20,
+            )
+            if not persons_response or not isinstance(persons_response, list):
+                return []
+            return persons_response
+        except Exception:
+            return []
+
+    def format_person_details(self, person: dict) -> str:
+        name = self._extract_display_name(person)
+        gender = None
+        if "Genders" in person and person["Genders"]:
+            gender = person["Genders"][0].get("g")
+        elif "gender" in person:
+            gender = person["gender"]
+        gender_str = f"Gender: {gender}" if gender else "Gender: Unknown"
+        birth_info = ""
+        events = person.get("Events") or person.get("events") or []
+        for event in events:
+            if (
+                event.get("t", "").lower() == "birth"
+                or event.get("type", "").lower() == "birth"
+            ):
+                date = event.get("d") or event.get("date") or event.get("nd")
+                place = event.get("p") or event.get("place")
+                birth_info = f"Birth: {date or '?'} in {place or '?'}"
+                break
+        pid = person.get("pid") or person.get("id") or person.get("gid", {}).get("v")
+        pid_str = f"Person ID: {pid}" if pid else ""
+        lines = [f"Name: {name}", gender_str]
+        if birth_info:
+            lines.append(birth_info)
+        if pid_str:
+            lines.append(pid_str)
+        return "\n".join(lines)
+
+    def get_relationship_ladder(self, person_id: str):
+        import re, json, time
+
+        tree_id = self._get_tree_id()
+        if not tree_id or not person_id:
+            return {"error": "Missing tree_id or person_id."}
+        url = f"{self.base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/getladder?callback=jQuery1234567890_1234567890&_={int(time.time()*1000)}"
+        try:
+            response = _api_req(
+                url=url,
+                driver=self.session_manager.driver,
+                session_manager=self.session_manager,
+                method="GET",
+                headers=None,
+                use_csrf_token=False,
+                api_description="Ancestry Relationship Ladder",
+                referer_url=f"{self.base_url}/family-tree/tree/{tree_id}/family",
+                timeout=20,
+            )
+            if isinstance(response, str):
+                match = re.search(r"\\((\{.*\})\\)", response, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                    first_brace = json_str.find("{")
+                    last_brace = json_str.rfind("}")
+                    if (
+                        first_brace != -1
+                        and last_brace != -1
+                        and last_brace > first_brace
+                    ):
+                        json_str = json_str[first_brace : last_brace + 1]
+                        json_str = bytes(json_str, "utf-8").decode("unicode_escape")
+                        try:
+                            ladder_json = json.loads(json_str)
+                        except Exception:
+                            return {"error": "JSON decode failed."}
+                        if isinstance(ladder_json, dict) and "html" in ladder_json:
+                            return self.parse_ancestry_ladder_html(ladder_json["html"])
+                        else:
+                            return {"error": "No 'html' key in ladder JSON."}
+                    else:
+                        return {
+                            "error": "Could not extract JSON object from JSONP response."
+                        }
+                else:
+                    return {"error": "Could not parse JSONP response."}
+            elif isinstance(response, dict):
+                return response
+            else:
+                return {"error": "Unexpected response type."}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def format_ladder_details(self, ladder_data) -> str:
+        if not ladder_data:
+            return "No relationship ladder data available."
+        if isinstance(ladder_data, dict):
+            if "error" in ladder_data:
+                return f"Error: {ladder_data['error']}"
+            rel = ladder_data.get("actual_relationship")
+            path = ladder_data.get("relationship_path")
+            out = []
+            if rel:
+                out.append(f"Relationship: {rel}")
+            if path:
+                out.append(f"Path:\n{path}")
+            return "\n".join(out) if out else str(ladder_data)
+        return str(ladder_data)
+
+    def parse_ancestry_ladder_html(self, html):
+        soup = BeautifulSoup(html, "html.parser")
+        ladder_data = {}
+        rel_elem = soup.select_one(
+            "ul.textCenter > li:first-child > i > b"
+        ) or soup.select_one("ul.textCenter > li > i > b")
+        if rel_elem:
+            ladder_data["actual_relationship"] = rel_elem.get_text(strip=True).title()
+        path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
+        path_list = []
+        for i, item in enumerate(path_items):
+            name_text = ""
+            desc_text = ""
+            name_container = item.find("a") or item.find("b")
+            if name_container:
+                name_text = name_container.get_text(strip=True)
+            if i > 0:
+                desc_element = item.find("i")
+                if desc_element:
+                    desc_text = desc_element.get_text(strip=True)
+            if name_text:
+                path_list.append(
+                    f"{name_text} ({desc_text})" if desc_text else name_text
+                )
+        if path_list:
+            ladder_data["relationship_path"] = "\n↓\n".join(path_list)
+        return ladder_data
+
+
+def display_raw_relationship_ladder(raw_content):
+    print("\n=== RELATIONSHIP TO WAYNE GORDON GAULT (API) ===")
+    if not raw_content or not isinstance(raw_content, str):
+        print("No relationship content available.")
+        return
+    import re, json
+
+    # --- Extract JSON from JSONP if needed ---
+    json_str = None
+    # Try to extract JSON object from JSONP callback
+    match = re.search(r"\((\{.*\})\)", raw_content, re.DOTALL)
+    if match:
+        json_str = match.group(1)
+    else:
+        # Fallback: try to find 'html":"' and extract from there
+        html_start = raw_content.find('html":"')
+        if html_start != -1:
+            html_start += len('html":"')
+            html_escaped = raw_content[html_start:]
+            end_quote = html_escaped.find('"}')
+            if end_quote != -1:
+                html_escaped = html_escaped[:end_quote]
+            else:
+                html_escaped = html_escaped
+            # Try to decode and parse as HTML
+            try:
+                html_unescaped = bytes(html_escaped, "utf-8").decode("unicode_escape")
+                html_unescaped = html.unescape(html_unescaped)
+                soup = BeautifulSoup(html_unescaped, "html.parser")
+                rel_elem = soup.select_one(
+                    "ul.textCenter > li:first-child > i > b"
+                ) or soup.select_one("ul.textCenter > li > i > b")
+                if rel_elem:
+                    actual_relationship = rel_elem.get_text(strip=True).title()
+                    print(f"Relationship: {actual_relationship}")
+                else:
+                    print("Relationship: (not found)")
+                path_items = soup.select(
+                    'ul.textCenter > li:not([class*="iconArrowDown"])'
+                )
+                path_list = []
+                for item in path_items:
+                    name_container = item.find("a") or item.find("b")
+                    name_text = (
+                        name_container.get_text(strip=True) if name_container else ""
+                    )
+                    desc_elem = item.find("i")
+                    desc_text = desc_elem.get_text(strip=True) if desc_elem else ""
+                    if name_text:
+                        if desc_text:
+                            path_list.append(f"{name_text} ({desc_text})")
+                        else:
+                            path_list.append(name_text)
+                if path_list:
+                    print("Path:")
+                    for i, p in enumerate(path_list):
+                        print(f"  {p}")
+                        if i < len(path_list) - 1:
+                            print("  ↓")
+                else:
+                    print("No relationship path found.")
+            except Exception:
+                print("Could not decode relationship ladder HTML.")
+            return
+    if not json_str:
+        print("Could not extract relationship ladder JSON from the API response.")
+        return
+    try:
+        ladder_json = json.loads(json_str)
+        html_escaped = ladder_json.get("html")
+        if not html_escaped:
+            print("No relationship ladder HTML found in JSON.")
+            return
+        html_unescaped = bytes(html_escaped, "utf-8").decode("unicode_escape")
+        html_unescaped = html.unescape(html_unescaped)
+        soup = BeautifulSoup(html_unescaped, "html.parser")
+        rel_elem = soup.select_one(
+            "ul.textCenter > li:first-child > i > b"
+        ) or soup.select_one("ul.textCenter > li > i > b")
+        if rel_elem:
+            actual_relationship = rel_elem.get_text(strip=True).title()
+            print(f"Relationship: {actual_relationship}")
+        else:
+            print("Relationship: (not found)")
+        path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
+        path_list = []
+        for item in path_items:
+            name_container = item.find("a") or item.find("b")
+            name_text = name_container.get_text(strip=True) if name_container else ""
+            desc_elem = item.find("i")
+            desc_text = desc_elem.get_text(strip=True) if desc_elem else ""
+            if name_text:
+                if desc_text:
+                    path_list.append(f"{name_text} ({desc_text})")
+                else:
+                    path_list.append(name_text)
+        if path_list:
+            print("Path:")
+            for i, p in enumerate(path_list):
+                print(f"  {p}")
+                if i < len(path_list) - 1:
+                    print("  ↓")
+        else:
+            print("No relationship path found.")
+    except Exception as e:
+        print(f"Could not parse relationship ladder JSON: {e}")
 
 
 # ...existing code...
+
+from action6_gather import _fetch_batch_ladder
+
+
 def handle_api_report():
-    """Handler for Option 2 - API Report (Ancestry Online) using robust API logic from temp.py, now using action6's ladder parser."""
+    """Handler for Option 2 - API Report (Ancestry Online) using robust API logic."""
     print("\n--- Person Details & Relationship to WGG (API) ---")
     if not initialize_session():
         print("Failed to initialize session. Cannot proceed with API operations.")
@@ -1575,7 +1888,6 @@ def handle_api_report():
         selected_person = persons[choice - 1]
         print("\n=== PERSON DETAILS ===")
         print(api_search.format_person_details(selected_person))
-
         wgg_name = "Wayne Gordon Gault"
         wgg_results = api_search.search_by_name(wgg_name)
         if not wgg_results:
@@ -1594,27 +1906,24 @@ def handle_api_report():
                 )
             )
 
-        wgg_id = extract_id(wgg_person)
         selected_id = extract_id(selected_person)
-
-        if not wgg_id or not selected_id:
-            print("\nCould not determine IDs for relationship lookup.")
-            return
-
         tree_id = api_search._get_tree_id()
-        if not tree_id:
-            print("Could not determine tree ID.")
+        if not selected_id or not tree_id:
+            print("Could not determine CFPID or tree ID for relationship lookup.")
             return
-
-        print("\nLooking up relationship information...")
-        # Use action6's robust ladder parser
+        print("\nLooking up relationship information (robust)...")
         ladder_result = _fetch_batch_ladder(session_manager, selected_id, tree_id)
-        if ladder_result and ladder_result.get("relationship_path"):
-            print("\nRelationship Path:")
-            print(ladder_result["relationship_path"])
+        if ladder_result and (
+            ladder_result.get("actual_relationship")
+            or ladder_result.get("relationship_path")
+        ):
+            print("\nRelationship Path (via action6 robust parser):")
+            if ladder_result.get("actual_relationship"):
+                print(f"Relationship: {ladder_result['actual_relationship']}")
+            if ladder_result.get("relationship_path"):
+                print(f"Path:\n{ladder_result['relationship_path']}")
         else:
             print("No relationship path could be determined.")
-
     except ValueError:
         print("Invalid selection. Please enter a number.")
     except Exception as e:
@@ -1624,9 +1933,6 @@ def handle_api_report():
             f"Error in handle_api_report: {e}", exc_info=True
         )
         print(f"Error: {type(e).__name__}: {e}")
-
-
-# ...existing code...
 
 
 # REVISED: Main function with simplified logic
@@ -1779,84 +2085,77 @@ def main():
 def handle_gedcom_report(
     reader, wayne_gault_indi, wayne_gault_id_gedcom, max_results=3
 ):
-    """Handler for Option 1 - GEDCOM Report."""
-    logger.info("\n--- GEDCOM Report ---")
+    """Handler for Option 1 - GEDCOM Report (now with unified input/output style)."""
+    print("\n--- Person Details & Relationship to WGG (GEDCOM) ---")
     if not wayne_gault_indi or not wayne_gault_id_gedcom:
-        logger.info(
-            "ERROR: Wayne Gordon Gault (reference person) not found in local GEDCOM."
-        )
-        logger.info("Cannot calculate relationships accurately.")
-        # Allow proceeding without relationship calculation? Or return? Returning for now.
-        return  # End of function handle_gedcom_report
+        print("ERROR: Wayne Gordon Gault (reference person) not found in local GEDCOM.")
+        print("Cannot calculate relationships accurately.")
+        return
 
-    # --- Prompt for search criteria ---
-    logger.info("\nEnter search criteria for the person of interest:")
-    first_name = input(" First Name (optional): ").strip() or None
-    surname = input(" Surname (optional): ").strip() or None
-    dob_str = input(" Birth Date/Year (optional): ").strip() or None
-    pob = input(" Birth Place (optional): ").strip() or None
-    dod_str = input(" Death Date/Year (optional): ").strip() or None
-    pod = input(" Death Place (optional): ").strip() or None
-    gender = input(" Gender (M/F, optional): ").strip() or None
-    if gender:
-        gender = gender[0].lower() if gender[0].lower() in ["m", "f"] else None
+    # Unified input prompt
+    query = input("\nEnter search (First name, Last name, or both): ").strip()
+    if not query:
+        print("Search cancelled.")
+        return
+    # Simple split for fuzzy search
+    parts = query.split()
+    first_name = parts[0] if len(parts) > 0 else None
+    surname = parts[1] if len(parts) > 1 else None
+    dob_str = None
+    pob = None
+    dod_str = None
+    pod = None
+    gender = None
 
-    if not any([first_name, surname, dob_str, pob, dod_str, pod, gender]):
-        logger.info("\nNo search criteria entered. Report cancelled.")
-        return  # End of function handle_gedcom_report
-
-    # --- Find potential matches using fuzzy search ---
     matches = find_potential_matches(
         reader, first_name, surname, dob_str, pob, dod_str, pod, gender
     )
-
     if not matches:
-        logger.info("\nNo potential matches found in GEDCOM based on criteria.")
-        return  # End of function handle_gedcom_report
-
-    # --- Auto-select if only one match ---
-    if len(matches) == 1:
-        selected_match = matches[0]
-    else:
-        for i, match in enumerate(matches[:max_results]):
-            # Display name, dates, and reasons for better selection context
-            b_info = f"b. {match['birth_date']}" if match["birth_date"] != "N/A" else ""
-            d_info = f"d. {match['death_date']}" if match["death_date"] != "N/A" else ""
-            date_info = (
-                f" ({', '.join(filter(None, [b_info, d_info]))})"
-                if b_info or d_info
-                else ""
-            )
-            logger.info(
-                f"  {i+1}. {match['name']}{date_info} (Score: {match['score']}, {match['reasons']})"
-            )
-        try:
-            choice = int(input("\nSelect person (or 0 to cancel): "))
-            if choice < 1 or choice > len(matches[:max_results]):
-                logger.info("Selection cancelled or invalid.")
-                return  # End of function handle_gedcom_report
-            selected_match = matches[choice - 1]
-        except ValueError:
-            logger.error("Invalid selection. Please enter a number.")
-            return
-        except Exception as e:
-            logger.error(f"Error in handle_gedcom_report: {e}", exc_info=True)
-            logger.info(f"An error occurred: {type(e).__name__}: {e}")
-            return
-
-    selected_id = extract_and_fix_id(selected_match["id"])
-    if not selected_id:
-        logger.info("ERROR: Invalid ID in selected match.")
+        print("\nNo matches found in GEDCOM.")
         return
-    selected_indi = find_individual_by_id(reader, selected_id)
-    if not selected_indi:
-        logger.info("ERROR: Could not retrieve individual record from GEDCOM.")
-        return
-    display_gedcom_family_details(reader, selected_indi)
-    relationship_path = get_relationship_path(
-        reader, selected_id, wayne_gault_id_gedcom
-    )
-    logger.info(f"\n{relationship_path}")
+    print(f"\nFound {len(matches)} potential matches:")
+    for i, match in enumerate(matches[:max_results]):
+        print(f"  {i+1}. {match['name']}")
+    try:
+        choice = int(input("\nSelect person (or 0 to cancel): "))
+        if choice < 1 or choice > len(matches[:max_results]):
+            print("Selection cancelled or invalid.")
+            return
+        selected_match = matches[choice - 1]
+        selected_id = extract_and_fix_id(selected_match["id"])
+        if not selected_id:
+            print("ERROR: Invalid ID in selected match.")
+            return
+        selected_indi = find_individual_by_id(reader, selected_id)
+        if not selected_indi:
+            print("ERROR: Could not retrieve individual record from GEDCOM.")
+            return
+        # --- Unified person details output ---
+        print("\n=== PERSON DETAILS ===")
+        print(f"Name: {selected_match['name']}")
+        print(
+            f"Birth: {selected_match['birth_date']} in {selected_match['birth_place']}"
+        )
+        print(
+            f"Death: {selected_match['death_date']} in {selected_match['death_place']}"
+        )
+        print(f"Person ID: {selected_id}")
+        # --- Unified relationship path output ---
+        print("\nLooking up relationship information...")
+        relationship_path = get_relationship_path(
+            reader, selected_id, wayne_gault_id_gedcom
+        )
+        print("\nRelationship Path:")
+        print(relationship_path.strip())
+    except ValueError:
+        print("Invalid selection. Please enter a number.")
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).error(
+            f"Error in handle_gedcom_report: {e}", exc_info=True
+        )
+        print(f"Error: {type(e).__name__}: {e}")
 
 
 # End of function handle_gedcom_report
