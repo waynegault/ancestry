@@ -447,3 +447,30 @@
 16:32:13 INF [gedcom_i initiali 1507] Authentication successful.
 16:32:13 INF [gedcom_i handle_a 1554] 
                                       Enter search criteria for the person of interest:
+16:33:34 INF [gedcom_i main     1756] --- GEDCOM Interrogator Script Starting (v7.36) ---
+16:33:34 INF [gedcom_i main     1768] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+16:33:34 INF [gedcom_i main     1770] GEDCOM loaded successfully.
+16:33:34 INF [gedcom_i build_in 55  ] [Cache] Building INDI index...
+16:33:38 INF [gedcom_i build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.48s.
+16:33:38 INF [gedcom_i main     1774] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+16:33:38 INF [gedcom_i main     1783] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+16:33:38 INF [gedcom_i menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+16:33:38 INF [gedcom_i menu     1401] ===================================
+16:33:38 INF [gedcom_i menu     1402] 1. GEDCOM Report (Local File)
+16:33:38 INF [gedcom_i menu     1403] 2. API Report (Ancestry Online)
+16:33:38 INF [gedcom_i menu     1404] ----------------------------------
+16:33:38 INF [gedcom_i menu     1405] t. Toggle Log Level (Current: DEBUG)
+16:33:38 INF [gedcom_i menu     1408] q. Quit
+16:33:38 INF [gedcom_i menu     1409] ===================================
+16:33:43 INF [gedcom_i handle_a 1539] 
+                                      --- API Report ---
+16:33:43 INF [gedcom_i initiali 1488] Initializing browser session...
+16:33:52 INF [utils    _retriev 1607] My profile id: 07BDD45E-0006-0000-0000-000000000000
+16:33:53 INF [utils    _retriev 1621] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+16:33:54 INF [utils    _retriev 1642] My tree id: 175946702
+16:33:55 INF [utils    _retriev 1670] Tree Owner Name: Wayne Gault.
+                                      
+16:33:55 INF [gedcom_i initiali 1507] Authentication successful.
+16:33:55 INF [gedcom_i handle_a 1554] 
+                                      Enter search criteria for the person of interest:
