@@ -1534,214 +1534,99 @@ def initialize_session():
 # End of function initialize_session
 
 
+# ...existing code...
+# --- Import robust API logic from temp.py ---
+from temp import (
+    AncestryAPISearch,
+    display_raw_relationship_ladder,
+    initialize_session,
+    session_manager,
+)
+
+# Import the ladder parser from action6_gather
+from action6_gather import _fetch_batch_ladder
+
+
+# ...existing code...
 def handle_api_report():
-    """Handler for Option 2 - API Report with robust context and authentication (matches action6_gather.py)."""
-    logger.info("\n--- API Report ---")
-    if not API_UTILS_AVAILABLE:
-        logger.error(
-            "API functionality is disabled because the 'utils' module could not be loaded."
-        )
-        return
-
-    # --- Initialize API Session ---
+    """Handler for Option 2 - API Report (Ancestry Online) using robust API logic from temp.py, now using action6's ladder parser."""
+    print("\n--- Person Details & Relationship to WGG (API) ---")
     if not initialize_session():
-        logger.error(
-            "Failed to initialize session. Cannot proceed with API operations."
-        )
+        print("Failed to initialize session. Cannot proceed with API operations.")
         return
+    api_search = AncestryAPISearch(session_manager)
+    query = input("\nEnter search (First name, Last name, or both): ").strip()
+    if not query:
+        print("Search cancelled.")
+        return
+    persons = api_search.search_by_name(query)
+    if not persons:
+        print("\nNo matches found in Ancestry API.")
+        return
+    print(f"\nFound {len(persons)} potential matches:")
+    for i, person in enumerate(persons[:5]):
+        name_display = api_search._extract_display_name(person)
+        print(f"  {i+1}. {name_display}")
+    try:
+        choice = int(input("\nSelect person (or 0 to cancel): "))
+        if choice < 1 or choice > len(persons[:5]):
+            print("Selection cancelled or invalid.")
+            return
+        selected_person = persons[choice - 1]
+        print("\n=== PERSON DETAILS ===")
+        print(api_search.format_person_details(selected_person))
 
-    # --- Prompt for search criteria ---
-    logger.info("\nEnter search criteria for the person of interest:")
-    first_name = input(" First Name (optional): ").strip() or ""
-    surname = input(" Surname (optional): ").strip() or ""
-    if not (first_name or surname):
-        logger.error(
-            "API search requires at least First Name or Surname. Report cancelled."
-        )
-        return
+        wgg_name = "Wayne Gordon Gault"
+        wgg_results = api_search.search_by_name(wgg_name)
+        if not wgg_results:
+            print(f"\nReference person '{wgg_name}' not found in Ancestry API.")
+            return
+        wgg_person = wgg_results[0]
 
-    # --- Robust context setup: navigate to DNA match list page, extract CSRF, sync cookies ---
-    my_uuid = getattr(session_manager, "my_uuid", None)
-    if not my_uuid:
-        session_manager._retrieve_identifiers()
-        my_uuid = getattr(session_manager, "my_uuid", None)
-    if not my_uuid:
-        logger.error("No my_uuid available in session_manager.")
-        return
-    base_url = getattr(
-        config_instance, "BASE_URL", "https://www.ancestry.co.uk"
-    ).rstrip("/")
-    match_list_url = f"{base_url}/discoveryui-matches/list/{my_uuid}"
-    try:
-        from utils import nav_to_page
+        def extract_id(person):
+            return (
+                person.get("pid")
+                or person.get("id")
+                or (
+                    person.get("gid", {}).get("v")
+                    if isinstance(person.get("gid"), dict)
+                    else None
+                )
+            )
 
-        logger.debug(f"Navigating to match list page: {match_list_url}")
-        nav_ok = nav_to_page(
-            session_manager.driver,
-            match_list_url,
-            selector="body",
-            session_manager=session_manager,
-        )
-        logger.debug(f"Navigation result: {nav_ok}")
-        current_url = (
-            session_manager.driver.current_url if session_manager.driver else None
-        )
-        logger.debug(f"Current browser URL after navigation: {current_url}")
-        if (
-            not nav_ok
-            or not current_url
-            or "/discoveryui-matches/list/" not in current_url
-        ):
-            logger.error(
-                f"Navigation did not reach match list page. Current URL: {current_url}"
-            )
+        wgg_id = extract_id(wgg_person)
+        selected_id = extract_id(selected_person)
+
+        if not wgg_id or not selected_id:
+            print("\nCould not determine IDs for relationship lookup.")
             return
-    except Exception as nav_e:
-        logger.error(f"Navigation to match list page failed: {nav_e}")
-        return
-    # 2. Extract CSRF token using session_manager.get_csrf (matches action6_gather)
-    csrf_token = None
-    try:
-        # Log all cookies for debugging
-        all_cookies = (
-            session_manager.driver.get_cookies() if session_manager.driver else []
-        )
-        logger.debug(f"All cookies in browser: {all_cookies}")
-        csrf_token = (
-            session_manager.get_csrf() if hasattr(session_manager, "get_csrf") else None
-        )
-        logger.debug(f"CSRF token from get_csrf(): {csrf_token}")
-        # Fallback: try to extract from cookie directly if get_csrf fails
-        if not csrf_token:
-            cookie_obj = session_manager.driver.get_cookie(
-                "_dnamatches-matchlistui-x-csrf-token"
-            )
-            logger.debug(f"_dnamatches-matchlistui-x-csrf-token cookie: {cookie_obj}")
-            if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
-                csrf_token = urllib.parse.unquote(cookie_obj["value"]).split("|")[0]
-                logger.debug(f"CSRF token extracted from cookie: {csrf_token}")
-    except Exception as csrf_e:
-        logger.warning(f"Could not extract CSRF token from cookie: {csrf_e}")
-    if not csrf_token:
-        logger.error(
-            "Failed to extract CSRF token from browser cookies. Please ensure you are on the DNA match list page and logged in. API calls will not work."
-        )
-        return
-    # 3. Sync cookies from Selenium to requests session using utils
-    try:
-        logger.debug("Syncing cookies from Selenium to requests session...")
-        session_manager._sync_cookies()
-        logger.debug("Cookie sync complete.")
-    except Exception as sync_e:
-        logger.warning(f"Cookie sync failed: {sync_e}")
-    # 4. Prepare headers for API calls (use browser User-Agent, Referer, Origin)
-    referer = match_list_url
-    parsed_base_url = urllib.parse.urlparse(base_url)
-    origin = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
-    try:
-        user_agent = session_manager.driver.execute_script(
-            "return navigator.userAgent;"
-        )
-    except Exception:
-        user_agent = random.choice(
-            getattr(config_instance, "USER_AGENTS", ["Mozilla/5.0"])
-        )
-    common_headers = {
-        "x-csrf-token": csrf_token,
-        "Accept": "application/json",
-        "Referer": referer,
-        "Origin": origin,
-        "User-Agent": user_agent,
-    }
-    # --- Use person-picker/suggest API ---
-    tree_id = session_manager.my_tree_id
-    if not tree_id:
-        session_manager._retrieve_identifiers()
-        tree_id = session_manager.my_tree_id
-    if not tree_id:
-        logger.error("No tree_id available in session_manager.")
-        return
-    suggest_url = (
-        f"{base_url}/api/person-picker/suggest/{tree_id}?"
-        f"partialFirstName={urllib.parse.quote(first_name)}&partialLastName={urllib.parse.quote(surname)}"
-    )
-    try:
-        suggest_response = _api_req(
-            url=suggest_url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            method="GET",
-            headers=common_headers,
-            api_description="Person Picker Suggest API",
-            referer_url=referer,
-            timeout=15,
-        )
-        if not isinstance(suggest_response, list) or not suggest_response:
-            logger.info("No matches found in Ancestry API suggest endpoint.")
+
+        tree_id = api_search._get_tree_id()
+        if not tree_id:
+            print("Could not determine tree ID.")
             return
-        person = suggest_response[0]
-        tree_id = person.get("TreeId")
-        person_id = person.get("PersonId")
-        if not (tree_id and person_id):
-            logger.error(
-                "Could not extract TreeId and PersonId from suggest API response."
-            )
-            return
-    except Exception as e:
-        logger.error(f"API /person-picker/suggest failed: {e}")
-        return
-    # --- Use person-card API ---
-    person_card_url = (
-        f"{base_url}/api/search-results/person-card/tree/{tree_id}/person/{person_id}"
-    )
-    try:
-        person_card = _api_req(
-            url=person_card_url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            method="GET",
-            headers=common_headers,
-            api_description="Person Card API",
-            referer_url=referer,
-            timeout=15,
-        )
-        if not isinstance(person_card, dict):
-            logger.error("Person card API did not return a valid result.")
-            return
-        # Display details
-        logger.info("--- Individual Details (API) ---")
-        logger.info(f" Name: {person_card.get('name', 'Unknown')}")
-        logger.info(f"   Birth: {person_card.get('birth', '')}")
-        logger.info(f"   Death: {person_card.get('death', '')}")
-        logger.info(f"   Person ID: {person_card.get('personId', '')}")
-        # Parents
-        logger.info("\n Parents:")
-        father = person_card.get("father")
-        mother = person_card.get("mother")
-        if father:
-            logger.info(f"  - {father.get('name', '')} ({father.get('lifeSpan', '')})")
-        if mother:
-            logger.info(f"  - {mother.get('name', '')} ({mother.get('lifeSpan', '')})")
-        if not (father or mother):
-            logger.info("  (None found)")
-        # Spouse
-        logger.info("\n Spouse(s):")
-        spouse = person_card.get("selectedSpouse")
-        if spouse:
-            logger.info(f"  - {spouse.get('name', '')}")
+
+        print("\nLooking up relationship information...")
+        # Use action6's robust ladder parser
+        ladder_result = _fetch_batch_ladder(session_manager, selected_id, tree_id)
+        if ladder_result and ladder_result.get("relationship_path"):
+            print("\nRelationship Path:")
+            print(ladder_result["relationship_path"])
         else:
-            logger.info("  (None found)")
-        # Children
-        logger.info("\n Children:")
-        children = spouse.get("children", []) if spouse else []
-        if children:
-            for child in children:
-                logger.info(f"  - {child.get('name', '')}")
-        else:
-            logger.info("  (None found)")
+            print("No relationship path could be determined.")
+
+    except ValueError:
+        print("Invalid selection. Please enter a number.")
     except Exception as e:
-        logger.error(f"API /search-results/person-card failed: {e}")
-        return
+        import logging
+
+        logging.getLogger(__name__).error(
+            f"Error in handle_api_report: {e}", exc_info=True
+        )
+        print(f"Error: {type(e).__name__}: {e}")
+
+
+# ...existing code...
 
 
 # REVISED: Main function with simplified logic

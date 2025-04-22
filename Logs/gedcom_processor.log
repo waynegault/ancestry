@@ -474,3 +474,54 @@
 16:33:55 INF [gedcom_i initiali 1507] Authentication successful.
 16:33:55 INF [gedcom_i handle_a 1554] 
                                       Enter search criteria for the person of interest:
+17:15:49 INF [gedcom_i main     1655] --- GEDCOM Interrogator Script Starting (v7.36) ---
+17:15:49 INF [gedcom_i main     1667] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+17:15:49 INF [gedcom_i main     1669] GEDCOM loaded successfully.
+17:15:49 INF [gedcom_i build_in 55  ] [Cache] Building INDI index...
+17:15:53 INF [gedcom_i build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.42s.
+17:15:53 INF [gedcom_i main     1673] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+17:15:53 INF [gedcom_i main     1682] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+17:15:53 INF [gedcom_i menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+17:15:53 INF [gedcom_i menu     1401] ===================================
+17:15:53 INF [gedcom_i menu     1402] 1. GEDCOM Report (Local File)
+17:15:53 INF [gedcom_i menu     1403] 2. API Report (Ancestry Online)
+17:15:53 INF [gedcom_i menu     1404] ----------------------------------
+17:15:53 INF [gedcom_i menu     1405] t. Toggle Log Level (Current: DEBUG)
+17:15:53 INF [gedcom_i menu     1408] q. Quit
+17:15:53 INF [gedcom_i menu     1409] ===================================
+17:16:16 INF [utils    _retriev 1607] My profile id: 07BDD45E-0006-0000-0000-000000000000
+17:16:17 INF [utils    _retriev 1621] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+17:16:18 INF [utils    _retriev 1642] My tree id: 175946702
+17:16:19 INF [utils    _retriev 1670] Tree Owner Name: Wayne Gault.
+                                      
+17:18:46 ERR [utils    _api_req 3172] Ancestry Relationship Ladder: OK (200), but JSON decode FAILED: Expecting value: line 1 column 1 (char 0)
+                                      Content: jQuery1234567890_1234567890({"html":"\u003cul class=\"textCenter\"\u003e \u003cli\u003e\u003cb\u003eFraser Gault\u003c/b\u003e 1941-\u003cbr /\u003e\u003ci\u003e\u003cb\u003euncle\u003c/b\u003e\u003c/i\u003e\u003c/li\u003e \u003cli aria-hidden=\"true\" class=\"icon iconArrowDown\"\u003e\u003c/li\u003e \u003cli\u003e\u003ca class=\"relative\" href=\"https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560714\"\u003eDerrick Wardie Gault 1943-\u003c/a\u003e\u003cbr /\u003e\u003
+17:18:46 INF [gedcom_i display_ 1946] 
+                                      --- Relationship to Wayne Gordon Gault (API) ---
+17:18:46 ERR [gedcom_i display_ 1952] No relationship content available or invalid format.
+17:30:47 INF [gedcom_i main     1641] --- GEDCOM Interrogator Script Starting (v7.36) ---
+17:30:47 INF [gedcom_i main     1653] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+17:30:47 INF [gedcom_i main     1655] GEDCOM loaded successfully.
+17:30:47 INF [gedcom_i build_in 55  ] [Cache] Building INDI index...
+17:30:54 INF [gedcom_i main     1641] --- GEDCOM Interrogator Script Starting (v7.36) ---
+17:30:54 INF [gedcom_i main     1653] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+17:30:54 INF [gedcom_i main     1655] GEDCOM loaded successfully.
+17:30:54 INF [gedcom_i build_in 55  ] [Cache] Building INDI index...
+17:30:58 INF [gedcom_i build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.43s.
+17:30:58 INF [gedcom_i main     1659] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+17:30:58 INF [gedcom_i main     1668] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+17:30:58 INF [gedcom_i menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+17:30:58 INF [gedcom_i menu     1401] ===================================
+17:30:58 INF [gedcom_i menu     1402] 1. GEDCOM Report (Local File)
+17:30:58 INF [gedcom_i menu     1403] 2. API Report (Ancestry Online)
+17:30:58 INF [gedcom_i menu     1404] ----------------------------------
+17:30:58 INF [gedcom_i menu     1405] t. Toggle Log Level (Current: DEBUG)
+17:30:58 INF [gedcom_i menu     1408] q. Quit
+17:30:58 INF [gedcom_i menu     1409] ===================================
+17:32:15 INF [utils    _retriev 1607] My profile id: 07BDD45E-0006-0000-0000-000000000000
+17:32:16 INF [utils    _retriev 1621] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+17:32:17 INF [utils    _retriev 1642] My tree id: 175946702
+17:32:18 INF [utils    _retriev 1670] Tree Owner Name: Wayne Gault.
+                                      
