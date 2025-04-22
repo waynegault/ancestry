@@ -807,7 +807,6 @@ class DynamicRateLimiter:
             f"RateLimiter Init: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, "
             f"InitialDelay={self.initial_delay:.2f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
         )
-
     # End of __init__
 
     def _refill_tokens(self):
@@ -826,7 +825,6 @@ class DynamicRateLimiter:
         self.last_refill_time = now
         # Optional: Debug log for refill details
         # logger.debug(f"Refilled tokens. Current: {self.tokens:.2f}/{self.capacity:.1f} (Added: {tokens_to_add:.2f})")
-
     # End of _refill_tokens
 
     def wait(self) -> float:
@@ -895,7 +893,6 @@ class DynamicRateLimiter:
 
         # Step 6: Return the actual sleep duration
         return sleep_duration
-
     # End of wait
 
     def reset_delay(self):
@@ -909,7 +906,6 @@ class DynamicRateLimiter:
             )
         # Step 3: Reset throttle flag as well
         self.last_throttled = False
-
     # End of reset_delay
 
     def decrease_delay(self):
@@ -933,7 +929,6 @@ class DynamicRateLimiter:
                 )
         # Step 4: Reset throttle flag after any successful action (decrease or no change)
         self.last_throttled = False
-
     # End of decrease_delay
 
     def increase_delay(self):
@@ -953,13 +948,11 @@ class DynamicRateLimiter:
         )
         # Step 4: Set the throttle flag
         self.last_throttled = True
-
     # End of increase_delay
 
     def is_throttled(self) -> bool:
         """Returns True if the rate limiter increased delay due to recent throttling feedback."""
         return self.last_throttled
-
     # End of is_throttled
 # End of DynamicRateLimiter class
 
@@ -3238,7 +3231,6 @@ def _api_req(
         f"{api_description}: Exited retry loop unexpectedly. Last Exception: {last_exception}."
     )
     return None
-
 # End of _api_req
 
 def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
@@ -3326,7 +3318,6 @@ def make_ube(driver: Optional[WebDriver]) -> Optional[str]:
         return None
 # End of make_ube
 
-
 def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]:
     """
     Generates the 'newrelic' header value (used for performance monitoring).
@@ -3374,7 +3365,6 @@ def make_newrelic(driver: Optional[WebDriver]) -> Optional[str]:
         logger.error(f"Error generating NewRelic header: {e}", exc_info=True)
         return None
 # End of make_newrelic
-
 
 def make_traceparent(driver: Optional[WebDriver]) -> Optional[str]:
     """
@@ -3632,7 +3622,6 @@ def _send_message_via_api(
         logger.error(f"{log_prefix}: API POST ({send_api_desc}) failed (No response/Retries exhausted).")
 
     return message_status, new_conversation_id_from_api
-# End of _send_message_via_api
 # End of _send_message_via_api
 
 
@@ -4771,8 +4760,6 @@ def nav_to_page(
 # End of nav_to_page
 
 
-# Note: Removed _pre_navigation_checks and _check_post_nav_redirects as their
-# logic was integrated more directly into the revised nav_to_page function.
 
 def _check_for_unavailability(
     driver: WebDriver, selectors: Dict[str, Tuple[str, int]]

@@ -22,6 +22,7 @@ import time
 import json  # Added for API response parsing
 import requests
 import urllib.parse
+from utils import SessionManager
 import html  # Added for unescaping
 from bs4 import BeautifulSoup  # Added for HTML parsing
 
@@ -29,12 +30,19 @@ from bs4 import BeautifulSoup  # Added for HTML parsing
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import local modules
+from logging_config import setup_logging
+
+# Setup logging using centralized config
+logger = setup_logging(log_file="gedcom_processor.log", log_level="INFO")
 
 # Global cache for family relationships and individual lookup
 FAMILY_MAPS_CACHE = None
 FAMILY_MAPS_BUILD_TIME = 0
 INDI_INDEX = {}  # Index for ID -> Individual object
 INDI_INDEX_BUILD_TIME = 0  # Track build time
+
+# Always define GEDCOM_LIB_AVAILABLE at the top
+GEDCOM_LIB_AVAILABLE = False
 
 
 # --- Add function to build the individual index ---
@@ -170,24 +178,11 @@ def find_individual_by_id(reader, norm_id):
 # End of function find_individual_by_id
 
 # --- Third-party Imports ---
-# Setup logging handlers
-log_file_handler = logging.FileHandler(
-    "gedcom_processor.log", mode="a", encoding="utf-8"
-)
-log_stream_handler = logging.StreamHandler(sys.stderr)
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,  # Default level
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    handlers=[log_file_handler, log_stream_handler],
-)
-logger = logging.getLogger(__name__)  # Get logger for this module
-
 try:
     from ged4py.parser import GedcomReader
     from ged4py.model import Individual, Record, Name  # Use Name type
 
-    GEDCOM_LIB_AVAILABLE = True
+    GEDCOM_LIB_AVAILABLE = True  # Ensure this is set on successful import
 except ImportError:
     logger.error("`ged4py` library not found.")
     logger.error("Please install it: pip install ged4py")
@@ -206,19 +201,6 @@ except Exception as import_err:
     GEDCOM_LIB_AVAILABLE = False  # type: ignore
 
 # --- Local Application Imports ---
-# Setup logging handlers
-log_file_handler = logging.FileHandler(
-    "gedcom_processor.log", mode="a", encoding="utf-8"
-)
-log_stream_handler = logging.StreamHandler(sys.stderr)
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,  # Default level
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    handlers=[log_file_handler, log_stream_handler],
-)
-logger = logging.getLogger(__name__)  # Get logger for this module
-
 try:
     # Attempt to import SessionManager and _api_req from utils
     from utils import (
@@ -261,19 +243,6 @@ else:
 
 try:
     from config import config_instance
-
-    # Setup logging handlers
-    log_file_handler = logging.FileHandler(
-        "gedcom_processor.log", mode="a", encoding="utf-8"
-    )
-    log_stream_handler = logging.StreamHandler(sys.stderr)
-    # Configure root logger
-    logging.basicConfig(
-        level=logging.INFO,  # Default level
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        handlers=[log_file_handler, log_stream_handler],
-    )
-    logger = logging.getLogger(__name__)  # Get logger for this module
 except ImportError as e_config:
     logger.error(f"Failed to import local config module: {e_config}")
     logger.error("Ensure config.py exists.")
@@ -783,7 +752,8 @@ def _get_ancestors_map(reader, start_id_norm):
         # Add valid parents to the queue if not visited
         for parent_indi in parents:
             if (
-                _is_individual(parent_indi)
+                parent_indi is not None
+                and _is_individual(parent_indi)
                 and hasattr(parent_indi, "xref_id")
                 and parent_indi.xref_id
             ):
@@ -838,7 +808,12 @@ def _build_relationship_path_str(reader, start_id_norm, end_id_norm):
             mother = getattr(current_indi, "mother", None)
             parents = [father, mother]
             for parent_indi in parents:
-                if _is_individual(parent_indi) and parent_indi.xref_id:
+                if (
+                    parent_indi is not None
+                    and _is_individual(parent_indi)
+                    and hasattr(parent_indi, "xref_id")
+                    and parent_indi.xref_id
+                ):
                     parent_id = _normalize_id(parent_indi.xref_id)
                     if parent_id and parent_id not in visited:
                         visited.add(parent_id)
@@ -1559,809 +1534,214 @@ def initialize_session():
 # End of function initialize_session
 
 
-class AncestryAPISearch:
-    """Class to handle searching the Ancestry API for person information."""
-
-    def __init__(self):
-        """Initialize with a SessionManager instance."""
-        global session_manager
-        self.session_manager = session_manager
-        self.base_url = "https://www.ancestry.co.uk"  # TODO: Make configurable?
-
-    # End of function __init__
-
-    def _get_tree_id(self):
-        """Ensures tree_id is loaded in the session_manager and returns it."""
-        if not self.session_manager.my_tree_id:
-            self.session_manager._retrieve_identifiers()
-        return self.session_manager.my_tree_id
-
-    # End of function _get_tree_id
-
-    def _extract_person_id(self, person: dict) -> Optional[str]:
-        """Extracts the primary Person ID (CFPID) from various API response fields."""
-        # Prefer 'id' (often the CFPID in list/search results)
-        person_id = person.get("id")
-        if person_id:
-            return str(person_id)
-        # Fallback to 'pid'
-        person_id = person.get("pid")
-        if person_id:
-            return str(person_id)
-        # Fallback to 'gid.v' if present
-        gid = person.get("gid")
-        if isinstance(gid, dict):
-            person_id = gid.get("v")
-            if person_id:
-                return str(person_id)
-        # Fallback to AssertionId if this is a fact target person (unlikely needed here)
-        person_id = person.get("AssertionId")
-        if person_id:
-            return str(person_id)
-
-        logger.warning(
-            f"Could not extract Person ID (CFPID) from person data: {person}"
-        )
-        return None
-
-    # End of function _extract_person_id
-
-    def _extract_display_name(self, person: dict) -> str:
-        """Tries various fields to get a display name from API person data."""
-        # Try preferredName structure first
-        preferred_name = person.get("preferredName")
-        if preferred_name and isinstance(preferred_name, dict):
-            given = preferred_name.get("givenName", "")
-            surname = preferred_name.get("surname", "")
-            full_name = f"{given} {surname}".strip()
-            if full_name:
-                return format_name(full_name)
-
-        # Try Names list (often used in DNA match contexts)
-        names = person.get("Names") or person.get("names")
-        if names and isinstance(names, list) and names:
-            given = names[0].get("g") or ""
-            surname = names[0].get("s") or ""
-            full_name = f"{given} {surname}".strip()
-            if full_name:
-                return format_name(full_name)
-
-        # Fallbacks to direct fields
-        given = person.get("gname") or person.get("givenName") or ""
-        surname = person.get("sname") or person.get("surname") or ""
-        if given or surname:
-            return format_name(f"{given} {surname}".strip())
-
-        # Final fallback to FullName or ID
-        full_name_field = person.get("FullName")  # Common in facts API
-        if full_name_field:
-            return format_name(full_name_field)
-
-        # Fallback to ID if no name found
-        person_id = self._extract_person_id(person)
-        return f"Unknown ({person_id})" if person_id else "(Unknown)"
-
-    # End of function _extract_display_name
-
-    def suggest_persons(self, first_name: str, last_name: str, limit: int = 10) -> list:
-        import difflib
-
-        if not API_UTILS_AVAILABLE:
-            return [{"error": "API utilities missing"}]
-        tree_id = self._get_tree_id()
-        if not tree_id:
-            logger.error("API Search: No tree_id available in session_manager.")
-            return []
-        base_url = self.base_url
-        # Use fn and ln parameters for best results
-        persons_url = (
-            f"{base_url}/api/treesui-list/trees/{tree_id}/persons"
-            f"?fn={urllib.parse.quote(first_name)}"
-            f"&ln={urllib.parse.quote(last_name)}"
-            f"&limit=50&fields=NAMES,EVENTS"
-        )
-        referer = f"{base_url}/family-tree/tree/{tree_id}/family"
-        try:
-            persons_response = _api_req(
-                url=persons_url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                api_description="API Search by fn/ln",
-                referer_url=referer,
-                timeout=15,
-            )
-            if not isinstance(persons_response, list):
-                logger.info("API /persons returned no results.")
-                return []
-            # Fuzzy match using difflib if needed
-            search_name = f"{first_name} {last_name}".lower().strip()
-            candidates = [
-                (self._extract_display_name(p), p)
-                for p in persons_response
-                if isinstance(p, dict)
-            ]
-            names = [n.lower() for n, _ in candidates]
-            close = difflib.get_close_matches(search_name, names, n=limit, cutoff=0.6)
-            results = (
-                [p for n, p in candidates if n.lower() in close]
-                if close
-                else [p for _, p in candidates][:limit]
-            )
-            if results:
-                logger.info(
-                    f"API search found {len(results)} close matches for '{search_name}'."
-                )
-            else:
-                logger.info(f"API search found no close matches for '{search_name}'.")
-            return results
-        except Exception as e:
-            logger.error(f"API /persons failed: {e}")
-            return []
-
-    # ...existing code...
-
-    def get_person_details(self, person_id: str) -> dict:
-        """Fetch full person details from /persons endpoint using PersonId."""
-        if not API_UTILS_AVAILABLE:
-            return {"error": "API utilities missing"}
-        tree_id = self._get_tree_id()
-        if not tree_id or not person_id:
-            return {"error": "Missing tree_id or person_id for details fetch."}
-        base_url = self.base_url
-        # Use the persons endpoint with name param as fallback, but prefer direct lookup if available
-        persons_url = f"{base_url}/api/treesui-list/trees/{tree_id}/persons?name=&tags=&page=1&limit=10&fields=EVENTS,GENDERS,KINSHIP,NAMES,PHOTO,RELATIONS,TAGS&isGetFullPersonObject=false"
-        referer = f"{base_url}/family-tree/tree/{tree_id}/family"
-        try:
-            response = _api_req(
-                url=persons_url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                api_description="API Person Details",
-                referer_url=referer,
-                timeout=30,
-            )
-            if not response or not isinstance(response, list):
-                if isinstance(response, dict) and "error" in response:
-                    logger.error(f"API Person Details failed: {response['error']}")
-                    return {}
-                logger.warning(
-                    f"API Person Details: Invalid response format. Type: {type(response)}"
-                )
-                return {}
-            # Find the person with the matching pid
-            for person in response:
-                if isinstance(person, dict) and str(person.get("pid")) == str(
-                    person_id
-                ):
-                    return person
-            logger.warning(
-                f"API Person Details: No match for pid {person_id} in response."
-            )
-            return {}
-        except Exception as e:
-            logger.error(
-                f"API Person Details: Error fetching details: {e}", exc_info=True
-            )
-            return {}
-
-    def search_by_name(self, name: str, limit: int = 10) -> list[dict]:
-        """Searches for people in the user's tree by name via API."""
-        if not API_UTILS_AVAILABLE:
-            return [{"error": "API utilities missing"}]
-
-        tree_id = self._get_tree_id()
-        if not tree_id:
-            logger.error("API Search: No tree_id available in session_manager.")
-            return []
-        base_url = self.base_url
-        query = name.strip()
-        tags = ""  # Tags not used currently
-        persons_url = f"{base_url}/api/treesui-list/trees/{tree_id}/persons?name={urllib.parse.quote(query)}&tags={tags}&page=1&limit={limit}&fields=EVENTS,GENDERS,KINSHIP,NAMES,PHOTO,RELATIONS,TAGS&isGetFullPersonObject=false"
-        referer = f"{base_url}/family-tree/tree/{tree_id}/family"
-        try:
-            persons_response = _api_req(
-                url=persons_url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                api_description="API Search by Name",
-                referer_url=referer,
-                timeout=30,
-            )
-            if not persons_response or not isinstance(persons_response, list):
-                if isinstance(persons_response, dict) and "error" in persons_response:
-                    logger.error(f"API Search failed: {persons_response['error']}")
-                    return []
-                logger.warning(
-                    f"API Search: Invalid response format for '{query}'. Type: {type(persons_response)}"
-                )
-                return []
-            logger.info(
-                f"API Search: Found {len(persons_response)} results for '{query}'."
-            )
-            return persons_response
-        except Exception as search_err:
-            logger.error(
-                f"API Search: Error fetching persons for '{query}': {search_err}",
-                exc_info=True,
-            )
-            return []
-
-    def format_person_details(self, person: dict) -> str:
-        """Formats core details from an Ancestry API person dict for display."""
-        name = self._extract_display_name(person)
-        gender = None
-        # Try various gender fields
-        if (
-            "Genders" in person
-            and person["Genders"]
-            and isinstance(person["Genders"][0], dict)
-        ):
-            gender = person["Genders"][0].get("g")
-        elif "gender" in person:
-            gender = person["gender"]
-        elif "Gender" in person:
-            gender = person["Gender"]  # Check facts API field
-        gender_str = f"Gender: {gender}" if gender else "Gender: Unknown"
-
-        # Try to get birth event details
-        birth_info = ""
-        events = (
-            person.get("Events")
-            or person.get("events")
-            or person.get("PersonFacts")
-            or []
-        )  # Check facts API list too
-        for event in events:
-            if isinstance(event, dict):
-                type_str = (
-                    event.get("t", "").lower()
-                    or event.get("type", "").lower()
-                    or event.get("TypeString", "").lower()
-                )
-                if type_str == "birth":
-                    date_str = (
-                        event.get("d") or event.get("date") or event.get("DateString")
-                    )  # Raw string date
-                    place_str = (
-                        event.get("p") or event.get("place") or event.get("PlaceString")
-                    )  # Raw string place
-
-                    # Prefer normalized/structured date/place if available (from /facts mainly)
-                    norm_date = event.get("Date")  # May be dict
-                    norm_place = event.get("Place")  # May be dict
-
-                    if isinstance(norm_date, dict):
-                        date_display = (
-                            norm_date.get("Display") or date_str or "(Date unknown)"
-                        )
-                    else:
-                        date_display = date_str or "(Date unknown)"
-
-                    if isinstance(norm_place, dict):
-                        place_display = (
-                            norm_place.get("Display") or place_str or "(Place unknown)"
-                        )
-                    else:
-                        place_display = place_str or "(Place unknown)"
-
-                    birth_info = f"Birth: {date_display} in {place_display}"
-                    break  # Stop after finding first birth event
-
-        # Try to get death event details (similar logic to birth)
-        death_info = ""
-        for event in events:
-            if isinstance(event, dict):
-                type_str = (
-                    event.get("t", "").lower()
-                    or event.get("type", "").lower()
-                    or event.get("TypeString", "").lower()
-                )
-                if type_str == "death":
-                    date_str = (
-                        event.get("d") or event.get("date") or event.get("DateString")
-                    )
-                    place_str = (
-                        event.get("p") or event.get("place") or event.get("PlaceString")
-                    )
-                    norm_date = event.get("Date")
-                    norm_place = event.get("Place")
-
-                    if isinstance(norm_date, dict):
-                        date_display = (
-                            norm_date.get("Display") or date_str or "(Date unknown)"
-                        )
-                    else:
-                        date_display = date_str or "(Date unknown)"
-
-                    if isinstance(norm_place, dict):
-                        place_display = (
-                            norm_place.get("Display") or place_str or "(Place unknown)"
-                        )
-                    else:
-                        place_display = place_str or "(Place unknown)"
-
-                    death_info = f"Death: {date_display} in {place_display}"
-                    break
-
-        # Get Person ID (CFPID)
-        pid = self._extract_person_id(person)
-        pid_str = f"Person ID: {pid}" if pid else ""
-
-        # Compose output lines
-        lines = [f" Name: {name}", f"   {gender_str}"]
-        if birth_info:
-            lines.append(f"   {birth_info}")
-        if death_info:
-            lines.append(f"   {death_info}")  # Add death info if found
-        if pid_str:
-            lines.append(f"   {pid_str}")
-        return "\n".join(lines)
-
-    # End of function format_person_details
-
-    def get_person_facts(self, person_id: str, tree_id: str) -> Dict[str, Any]:
-        """Fetches data from the /facts API endpoint for a specific person."""
-        if not API_UTILS_AVAILABLE:
-            return {"error": "API utilities missing"}
-        if not person_id or not tree_id:
-            return {"error": "Missing person_id or tree_id for facts fetch."}
-        # Construct the specific URL - user id needed here
-        if not self.session_manager.my_profile_id:
-            logger.error(
-                "Cannot fetch facts: Missing own profile ID (user ID) in session manager."
-            )
-            return {"error": "Missing required user ID for facts API call."}
-        facts_url = f"{self.base_url}/family-tree/person/facts/user/{self.session_manager.my_profile_id}/tree/{tree_id}/person/{person_id}"
-        referer = f"{self.base_url}/family-tree/person/tree/{tree_id}/person/{person_id}"  # Referer is person page
-
-        logger.debug(f"Fetching /facts API for Person {person_id} in Tree {tree_id}...")
-        try:
-            response = _api_req(
-                url=facts_url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                headers={},  # Contextual headers added by _api_req
-                use_csrf_token=False,  # No CSRF usually needed
-                api_description="Person Facts API",
-                referer_url=referer,
-                # No force_text_response needed, expect JSON
-            )
-            # Check response validity
-            if isinstance(response, dict) and "data" in response:
-                logger.debug(f"Successfully fetched /facts for Person {person_id}.")
-                data = response.get("data", {})
-                if isinstance(data, dict):
-                    return data
-                else:
-                    logger.error("Facts API returned non-dict data.")
-                    return {}
-            elif (
-                isinstance(response, dict) and "error" in response
-            ):  # Handle error dict from dummy _api_req
-                logger.error(f"Facts API failed: {response['error']}")
-                return response
-            elif isinstance(response, requests.Response):  # Handle HTTP errors
-                logger.warning(
-                    f"Facts API failed for {person_id}. Status: {response.status_code}. Body: {response.text[:200]}"
-                )
-                return {"error": f"Facts API failed with status {response.status_code}"}
-            else:  # Handle None or other types
-                logger.warning(
-                    f"Facts API returned unexpected data type: {type(response)}"
-                )
-                return {
-                    "error": f"Facts API returned unexpected data type: {type(response)}"
-                }
-        except Exception as e:
-            logger.error(
-                f"Error fetching facts for Person {person_id}: {e}", exc_info=True
-            )
-            return {"error": f"Exception during facts API call: {type(e).__name__}"}
-
-    # End of function get_person_facts
-
-    def get_relationship_ladder(self, person_id: str) -> Union[str, Dict]:
-        """
-        Fetches relationship ladder, robustly handling JSONP and returning raw text
-        or dict on success/error.
-        """
-        if not API_UTILS_AVAILABLE:
-            return {"error": "API utilities missing"}
-        tree_id = self._get_tree_id()
-        if not tree_id or not person_id:
-            return {
-                "error": "Missing tree_id or person_id."
-            }  # Return dict for error clarity
-
-        # Unique callback and timestamp for URL
-        callback_param = f"jQuery{int(time.time() * 1000)}_{int(time.time() * 1000)}"
-        timestamp_param = int(time.time() * 1000)
-        url = f"{self.base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/getladder?callback={callback_param}&_={timestamp_param}"
-        referer_url = f"{self.base_url}/family-tree/tree/{tree_id}/family"  # Generic family page referer
-
-        logger.debug(f"Fetching /getladder API for Person {person_id}...")
-        try:
-            response = _api_req(
-                url=url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                headers=None,  # Use default/contextual headers
-                use_csrf_token=False,  # No CSRF usually needed
-                api_description="Ancestry Relationship Ladder",  # Context for _api_req
-                referer_url=referer_url,
-                timeout=20,
-                force_text_response=True,  # MUST be true to get raw JSONP
-            )
-            # Handle error dict from dummy _api_req
-            if isinstance(response, dict) and "error" in response:
-                logger.error(f"Ladder API failed: {response['error']}")
-                return response
-
-            # Return the raw response (string) or None/Response object on error
-            # The caller (display_raw_relationship_ladder) will handle parsing
-            return (
-                response
-                if response
-                else {"error": "Ladder API call failed or returned empty."}
-            )
-
-        except Exception as e:
-            logger.error(
-                f"Exception fetching relationship ladder for {person_id}: {e}",
-                exc_info=True,
-            )
-            return {"error": f"Exception during ladder API call: {type(e).__name__}"}
-
-    # End of function get_relationship_ladder
-
-
-# End of class AncestryAPISearch
-
-
-# REVISED: Handler for API Report (v7.36 - with Auto-Select & Query Fix)
 def handle_api_report():
-    """Handler for Option 2 - API Report with auto-selection attempt."""
+    """Handler for Option 2 - API Report with robust context and authentication (matches action6_gather.py)."""
     logger.info("\n--- API Report ---")
     if not API_UTILS_AVAILABLE:
         logger.error(
             "API functionality is disabled because the 'utils' module could not be loaded."
         )
-        return  # End of function handle_api_report
+        return
 
     # --- Initialize API Session ---
     if not initialize_session():
         logger.error(
             "Failed to initialize session. Cannot proceed with API operations."
         )
-        return  # End of function handle_api_report
+        return
 
-    # Ensure session_manager is passed to the API search class
-    api_search = (
-        AncestryAPISearch()
-    )  # Remove argument, use global session_manager inside class
-
-    # --- Prompt for search criteria (Aligned with GEDCOM) ---
+    # --- Prompt for search criteria ---
     logger.info("\nEnter search criteria for the person of interest:")
     first_name = input(" First Name (optional): ").strip() or ""
     surname = input(" Surname (optional): ").strip() or ""
-    dob_str = input(" Birth Date/Year (optional): ").strip() or None
-    pob = input(" Birth Place (optional): ").strip() or None
-    dod_str = input(" Death Date/Year (optional): ").strip() or None
-    pod = input(" Death Place (optional): ").strip() or None
-    target_gender = input(" Gender (M/F, optional): ").strip() or None
-    if target_gender:
-        target_gender = (
-            target_gender[0].lower() if target_gender[0].lower() in ["m", "f"] else None
-        )
-
-    # --- Construct Name Query CORRECTLY ---
-    query_parts = [
-        p for p in [first_name, surname] if p
-    ]  # Create list of non-empty parts
-    query_name = " ".join(query_parts)  # Join parts with a space
-
-    if not query_name:  # Check if name is still empty after combining
+    if not (first_name or surname):
         logger.error(
             "API search requires at least First Name or Surname. Report cancelled."
         )
-        return  # End of function handle_api_report
-
-    # --- Explain API Search Limitation ---
-    logger.info(f"INFO: Searching Ancestry API using Name: '{query_name}'.")
-    logger.info(
-        "      Other criteria (dates, places, gender) will be used to help select the best match."
-    )
-
-    # --- Find Matches using the Corrected Name Query ---
-    persons = api_search.suggest_persons(first_name, surname)
-    # Defensive: ensure persons is a list
-    if not isinstance(persons, list):
-        logger.error("API did not return a list of persons.")
         return
-    if not persons:
-        logger.info(f"No matches found in Ancestry API for '{query_name}'.")
-        return  # End of function handle_api_report
-    # Check if the only result is an error dict
-    if len(persons) == 1 and isinstance(persons[0], dict) and "error" in persons[0]:
-        logger.error(f"API Search Error: {persons[0]['error']}")
-        return  # End of function handle_api_report
 
-    # --- Auto-Selection Logic ---
-    selected_person = None
-    auto_selected = False
-    max_results_api = 5  # Limit processing/display for selection
-    # Defensive: check for None in top_persons
-    top_persons = [p for p in persons[:max_results_api] if isinstance(p, dict)]
-
-    if len(top_persons) == 1:
-        selected_person = top_persons[0]
-        auto_selected = True
-        logger.info(
-            f"Found 1 match. Automatically selected: {api_search._extract_display_name(selected_person)}"
-        )
-    elif len(top_persons) > 1:
-        # Try to score based on birth year and gender
-        target_birth_year: Optional[int] = None
-        birth_dt = _parse_date(dob_str) if dob_str else None
-        if birth_dt:
-            target_birth_year = birth_dt.year
-
-        scored_persons = []
-        for i, person_data in enumerate(top_persons):
-            score = 0
-            person_birth_year = None
-            person_gender = None
-
-            # Extract birth year from API Events
-            events = person_data.get("Events") or person_data.get("events") or []
-            for event in events:
-                # Check event is a dictionary before accessing keys
-                if isinstance(event, dict) and (
-                    event.get("t", "").lower() == "birth"
-                    or event.get("type", "").lower() == "birth"
-                ):
-                    date_dict = event.get("d") or event.get("date")
-                    # Check date_dict is a dictionary before accessing keys
-                    if isinstance(date_dict, dict):
-                        api_year_str = date_dict.get("normalizedDate") or date_dict.get(
-                            "sortDate"
-                        )  # Prefer normalized
-                        if (
-                            api_year_str
-                            and isinstance(api_year_str, str)
-                            and len(api_year_str) >= 4
-                            and api_year_str[:4].isdigit()
-                        ):
-                            try:
-                                person_birth_year = int(api_year_str[:4])
-                                break  # Found year
-                            except ValueError:
-                                logger.debug(
-                                    f"Could not convert potential year '{api_year_str[:4]}' to int."
-                                )
-                        elif date_dict.get("yearInt"):  # Fallback to yearInt
-                            year_int_val = date_dict.get("yearInt")
-                            if isinstance(year_int_val, int):
-                                person_birth_year = year_int_val
-                                break
-                            elif (
-                                isinstance(year_int_val, str) and year_int_val.isdigit()
-                            ):
-                                try:
-                                    person_birth_year = int(year_int_val)
-                                    break
-                                except ValueError:
-                                    logger.debug(
-                                        f"Could not convert yearInt string '{year_int_val}' to int."
-                                    )
-
-            # Extract gender from API Genders
-            genders = person_data.get("Genders") or []
-            if genders and isinstance(genders[0], dict):
-                person_gender = genders[0].get("g")  # Usually 'm' or 'f'
-
-            # Calculate score
-            if (
-                target_birth_year
-                and person_birth_year
-                and abs(target_birth_year - person_birth_year) <= 1
-            ):  # +/- 1 year match
-                score += 5
-            if (
-                target_gender
-                and person_gender
-                and target_gender == person_gender.lower()
-            ):
-                score += 3
-
-            scored_persons.append(
-                {
-                    "person": person_data,
-                    "score": score,
-                    "birth_year": person_birth_year,
-                    "gender": person_gender,
-                }
-            )
-
-        # Sort by score descending
-        scored_persons.sort(key=lambda x: x["score"], reverse=True)
-
-        # Check for a clear winner
-        # Defensive: check scored_persons is not empty before accessing [0]
-        if (
-            scored_persons
-            and scored_persons[0]["score"] > 0
-            and (
-                len(scored_persons) == 1
-                or scored_persons[0]["score"] >= scored_persons[1]["score"] + 3
-            )
-        ):
-            selected_person = scored_persons[0]["person"]
-            auto_selected = True
-            logger.info(
-                f"Automatically selected best match based on criteria: {api_search._extract_display_name(selected_person)}"
-            )
-            logger.debug(
-                f"Auto-select scores: Top={scored_persons[0]['score']}, Next={(scored_persons[1]['score'] if len(scored_persons)>1 else 'N/A')}"
-            )
-        else:
-            # Fallback to manual selection
-            logger.debug(
-                "Auto-select conditions not met. Falling back to manual selection."
-            )
-            logger.info(
-                f"Found {len(persons)} potential matches for '{query_name}'. Please select:"
-            )
-            for i, scored_p in enumerate(scored_persons):  # Display scored top N
-                p_data = scored_p["person"]
-                name_display = api_search._extract_display_name(p_data)
-                year_info = (
-                    f" (b. {scored_p['birth_year']})" if scored_p["birth_year"] else ""
-                )
-                gender_info = f" ({scored_p['gender']})" if scored_p["gender"] else ""
-                score_info = f" (Score: {scored_p['score']})"
-                logger.info(
-                    f"  {i+1}. {name_display}{year_info}{gender_info}{score_info}"
-                )
-
-            try:
-                choice = int(
-                    input(
-                        f"\nSelect person (1-{len(scored_persons)}, or 0 to cancel): "
-                    )
-                )
-                if 0 < choice <= len(scored_persons):
-                    selected_person = scored_persons[choice - 1]["person"]
-                else:
-                    logger.info("Selection cancelled or invalid.")
-                    return  # End of function handle_api_report
-            except ValueError:
-                logger.error("Invalid selection. Please enter a number.")
-                return  # End of function handle_api_report
-
-    # --- Proceed with the selected person ---
-    # Defensive: check selected_person is not None
-    if not selected_person:
-        logger.info("No person selected.")  # Should be handled above, but safeguard
-        return  # End of function handle_api_report
-
+    # --- Robust context setup: navigate to DNA match list page, extract CSRF, sync cookies ---
+    my_uuid = getattr(session_manager, "my_uuid", None)
+    if not my_uuid:
+        session_manager._retrieve_identifiers()
+        my_uuid = getattr(session_manager, "my_uuid", None)
+    if not my_uuid:
+        logger.error("No my_uuid available in session_manager.")
+        return
+    base_url = getattr(
+        config_instance, "BASE_URL", "https://www.ancestry.co.uk"
+    ).rstrip("/")
+    match_list_url = f"{base_url}/discoveryui-matches/list/{my_uuid}"
     try:
-        # Extract Person ID (CFPID) needed for facts/ladder APIs
-        selected_person_id = api_search._extract_person_id(selected_person)
-        if not selected_person_id:
-            logger.error(
-                "Could not determine Person ID (CFPID) for the selected individual."
-            )
-            return  # End of function handle_api_report
+        from utils import nav_to_page
 
-        # Display Core Person Details (API)
-        logger.info(
-            "--- Individual Details (API) ---\n"
-            + api_search.format_person_details(selected_person)
+        logger.debug(f"Navigating to match list page: {match_list_url}")
+        nav_ok = nav_to_page(
+            session_manager.driver,
+            match_list_url,
+            selector="body",
+            session_manager=session_manager,
         )
-
-        # Fetch and Display Family Structure (API /facts)
-        tree_id = api_search._get_tree_id()
-        if not tree_id:
-            logger.error("Could not determine Tree ID. Cannot fetch family details.")
-        else:
-            logger.info("--- Family Structure (API) ---")
-            logger.info("(Note: Shows names and life ranges from API /facts data)")
-            family_data = api_search.get_person_facts(selected_person_id, tree_id)
-            if family_data and "error" not in family_data:
-                family_section = family_data.get("personResearch", {}).get(
-                    "PersonFamily", {}
-                )
-
-                # Helper to format relative display
-                def _format_api_relative(relative_dict):
-                    if not isinstance(relative_dict, dict):
-                        return "  - (Invalid Relative Data)"  # Safeguard
-                    name = format_name(relative_dict.get("FullName"))  # Use formatter
-                    life = (
-                        relative_dict.get("LifeRange", "").replace("–", "-").strip()
-                    )  # Clean range
-                    return f"  - {name} ({life})" if life else f"  - {name}"
-
-                # Display Parents
-                logger.info("\n Parents:")
-                fathers = family_section.get("Fathers", [])
-                mothers = family_section.get("Mothers", [])
-                if fathers or mothers:
-                    for p in fathers:
-                        logger.info(_format_api_relative(p))
-                    for p in mothers:
-                        logger.info(_format_api_relative(p))
-                else:
-                    logger.info("  (None found in API data)")
-
-                # Display Siblings (includes half-siblings if API separates them)
-                logger.info("\n Siblings:")
-                siblings = family_section.get("Siblings", [])
-                half_siblings = family_section.get(
-                    "HalfSiblings", []
-                )  # Check if API provides this
-                all_siblings = siblings + half_siblings
-                if all_siblings:
-                    # Sort siblings by birth date if available, otherwise by name
-                    all_siblings.sort(
-                        key=lambda s: (
-                            s.get("BirthDate", "9999"),
-                            s.get("FullName", ""),
-                        )
-                    )
-                    for s in all_siblings:
-                        logger.info(_format_api_relative(s))
-                else:
-                    logger.info("  (None found in API data)")
-
-                # Display Spouses
-                logger.info("\n Spouse(s):")
-                spouses = family_section.get("Spouses", [])
-                if spouses:
-                    for s in spouses:
-                        logger.info(_format_api_relative(s))
-                else:
-                    logger.info("  (None found in API data)")
-
-                # Display Children (API nests children list)
-                logger.info("\n Children:")
-                children_nested = family_section.get("Children", [])  # List of lists
-                all_children = [
-                    child for sublist in children_nested for child in sublist
-                ]
-                if all_children:
-                    # Sort children by birth date if available, otherwise by name
-                    all_children.sort(
-                        key=lambda c: (
-                            c.get("BirthDate", "9999"),
-                            c.get("FullName", ""),
-                        )
-                    )
-                    for c in all_children:
-                        logger.info(_format_api_relative(c))
-                else:
-                    logger.info("  (None found in API data)")
-
-            elif family_data and "error" in family_data:
-                logger.error(f"Error fetching family data: {family_data['error']}")
-            else:
-                logger.error("Could not retrieve family data from API.")
-
-        # Display Relationship Ladder (API)
-        ladder_response = api_search.get_relationship_ladder(selected_person_id)
-        display_raw_relationship_ladder(ladder_response)
-
+        logger.debug(f"Navigation result: {nav_ok}")
+        current_url = (
+            session_manager.driver.current_url if session_manager.driver else None
+        )
+        logger.debug(f"Current browser URL after navigation: {current_url}")
+        if (
+            not nav_ok
+            or not current_url
+            or "/discoveryui-matches/list/" not in current_url
+        ):
+            logger.error(
+                f"Navigation did not reach match list page. Current URL: {current_url}"
+            )
+            return
+    except Exception as nav_e:
+        logger.error(f"Navigation to match list page failed: {nav_e}")
+        return
+    # 2. Extract CSRF token using session_manager.get_csrf (matches action6_gather)
+    csrf_token = None
+    try:
+        # Log all cookies for debugging
+        all_cookies = (
+            session_manager.driver.get_cookies() if session_manager.driver else []
+        )
+        logger.debug(f"All cookies in browser: {all_cookies}")
+        csrf_token = (
+            session_manager.get_csrf() if hasattr(session_manager, "get_csrf") else None
+        )
+        logger.debug(f"CSRF token from get_csrf(): {csrf_token}")
+        # Fallback: try to extract from cookie directly if get_csrf fails
+        if not csrf_token:
+            cookie_obj = session_manager.driver.get_cookie(
+                "_dnamatches-matchlistui-x-csrf-token"
+            )
+            logger.debug(f"_dnamatches-matchlistui-x-csrf-token cookie: {cookie_obj}")
+            if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
+                csrf_token = urllib.parse.unquote(cookie_obj["value"]).split("|")[0]
+                logger.debug(f"CSRF token extracted from cookie: {csrf_token}")
+    except Exception as csrf_e:
+        logger.warning(f"Could not extract CSRF token from cookie: {csrf_e}")
+    if not csrf_token:
+        logger.error(
+            "Failed to extract CSRF token from browser cookies. Please ensure you are on the DNA match list page and logged in. API calls will not work."
+        )
+        return
+    # 3. Sync cookies from Selenium to requests session using utils
+    try:
+        logger.debug("Syncing cookies from Selenium to requests session...")
+        session_manager._sync_cookies()
+        logger.debug("Cookie sync complete.")
+    except Exception as sync_e:
+        logger.warning(f"Cookie sync failed: {sync_e}")
+    # 4. Prepare headers for API calls (use browser User-Agent, Referer, Origin)
+    referer = match_list_url
+    parsed_base_url = urllib.parse.urlparse(base_url)
+    origin = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
+    try:
+        user_agent = session_manager.driver.execute_script(
+            "return navigator.userAgent;"
+        )
+    except Exception:
+        user_agent = random.choice(
+            getattr(config_instance, "USER_AGENTS", ["Mozilla/5.0"])
+        )
+    common_headers = {
+        "x-csrf-token": csrf_token,
+        "Accept": "application/json",
+        "Referer": referer,
+        "Origin": origin,
+        "User-Agent": user_agent,
+    }
+    # --- Use person-picker/suggest API ---
+    tree_id = session_manager.my_tree_id
+    if not tree_id:
+        session_manager._retrieve_identifiers()
+        tree_id = session_manager.my_tree_id
+    if not tree_id:
+        logger.error("No tree_id available in session_manager.")
+        return
+    suggest_url = (
+        f"{base_url}/api/person-picker/suggest/{tree_id}?"
+        f"partialFirstName={urllib.parse.quote(first_name)}&partialLastName={urllib.parse.quote(surname)}"
+    )
+    try:
+        suggest_response = _api_req(
+            url=suggest_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=common_headers,
+            api_description="Person Picker Suggest API",
+            referer_url=referer,
+            timeout=15,
+        )
+        if not isinstance(suggest_response, list) or not suggest_response:
+            logger.info("No matches found in Ancestry API suggest endpoint.")
+            return
+        person = suggest_response[0]
+        tree_id = person.get("TreeId")
+        person_id = person.get("PersonId")
+        if not (tree_id and person_id):
+            logger.error(
+                "Could not extract TreeId and PersonId from suggest API response."
+            )
+            return
     except Exception as e:
-        logger.error(f"Error in handle_api_report after selection: {e}", exc_info=True)
-
-
-# End of function handle_api_report
+        logger.error(f"API /person-picker/suggest failed: {e}")
+        return
+    # --- Use person-card API ---
+    person_card_url = (
+        f"{base_url}/api/search-results/person-card/tree/{tree_id}/person/{person_id}"
+    )
+    try:
+        person_card = _api_req(
+            url=person_card_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=common_headers,
+            api_description="Person Card API",
+            referer_url=referer,
+            timeout=15,
+        )
+        if not isinstance(person_card, dict):
+            logger.error("Person card API did not return a valid result.")
+            return
+        # Display details
+        logger.info("--- Individual Details (API) ---")
+        logger.info(f" Name: {person_card.get('name', 'Unknown')}")
+        logger.info(f"   Birth: {person_card.get('birth', '')}")
+        logger.info(f"   Death: {person_card.get('death', '')}")
+        logger.info(f"   Person ID: {person_card.get('personId', '')}")
+        # Parents
+        logger.info("\n Parents:")
+        father = person_card.get("father")
+        mother = person_card.get("mother")
+        if father:
+            logger.info(f"  - {father.get('name', '')} ({father.get('lifeSpan', '')})")
+        if mother:
+            logger.info(f"  - {mother.get('name', '')} ({mother.get('lifeSpan', '')})")
+        if not (father or mother):
+            logger.info("  (None found)")
+        # Spouse
+        logger.info("\n Spouse(s):")
+        spouse = person_card.get("selectedSpouse")
+        if spouse:
+            logger.info(f"  - {spouse.get('name', '')}")
+        else:
+            logger.info("  (None found)")
+        # Children
+        logger.info("\n Children:")
+        children = spouse.get("children", []) if spouse else []
+        if children:
+            for child in children:
+                logger.info(f"  - {child.get('name', '')}")
+        else:
+            logger.info("  (None found)")
+    except Exception as e:
+        logger.error(f"API /search-results/person-card failed: {e}")
+        return
 
 
 # REVISED: Main function with simplified logic
