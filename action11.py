@@ -4,12 +4,9 @@ from logging_config import setup_logging
 from utils import SessionManager, AncestryAPISearch, initialize_session
 
 
-def run_action11():
+def run_action11(session_manager, config_instance, *args):
     logger = setup_logging(log_file="gedcom_processor.log", log_level="INFO")
-    if not initialize_session():
-        print("Failed to initialize session. Cannot proceed with API operations.")
-        return
-    api_search = AncestryAPISearch(SessionManager())
+    api_search = AncestryAPISearch(session_manager)
     print("\n--- Person Details & Relationship to WGG (API) ---")
     print("\nEnter as many details as you know. Leave blank to skip a field.")
     first_name = input("First name: ").strip() or None
@@ -31,73 +28,11 @@ def run_action11():
         return
 
     # Score and filter candidates using additional fields
-    def score_api_candidate(person):
-        score = 0
-        reasons = []
-        display_name = api_search._extract_display_name(person).lower()
-        if first_name and first_name.lower() in display_name:
-            score += 10
-            reasons.append("First name match")
-        if surname and surname.lower() in display_name:
-            score += 10
-            reasons.append("Surname match")
-        api_gender = None
-        if "Genders" in person and person["Genders"]:
-            api_gender = person["Genders"][0].get("g", "").lower()
-        elif "gender" in person:
-            api_gender = str(person["gender"]).lower()
-        if gender and api_gender and gender == api_gender[0]:
-            score += 5
-            reasons.append(f"Gender match ({api_gender})")
-        elif gender and api_gender and gender != api_gender[0]:
-            score -= 5
-            reasons.append(f"Gender mismatch ({api_gender})")
-        events = person.get("Events") or person.get("events") or []
-        birth_date = None
-        birth_place = None
-        for event in events:
-            if (
-                event.get("t", "").lower() == "birth"
-                or event.get("type", "").lower() == "birth"
-            ):
-                birth_date = event.get("d") or event.get("date") or event.get("nd")
-                birth_place = (
-                    event.get("p")
-                    or event.get("place")
-                    or (event.get("pl") if "pl" in event else None)
-                )
-                if isinstance(birth_place, dict):
-                    birth_place = birth_place.get("v") or birth_place.get("name")
-                if not birth_place:
-                    birth_place = "?"
-                break
-        if dob_str and birth_date and dob_str in str(birth_date):
-            score += 8
-            reasons.append(f"Birth date match ({birth_date})")
-        if pob and birth_place and pob.lower() in birth_place.lower():
-            score += 4
-            reasons.append(f"Place of birth match ({birth_place})")
-        death_date = None
-        death_place = None
-        for event in events:
-            if (
-                event.get("t", "").lower() == "death"
-                or event.get("type", "").lower() == "death"
-            ):
-                death_date = event.get("d") or event.get("date") or event.get("nd")
-                death_place = event.get("p") or event.get("place")
-                break
-        if dod_str and death_date and dod_str in str(death_date):
-            score += 4
-            reasons.append(f"Death date match ({death_date})")
-        if pod and death_place and pod.lower() in death_place.lower():
-            score += 2
-            reasons.append(f"Place of death match ({death_place})")
-        return score, ", ".join(reasons)
+    from utils import score_api_candidate
 
     scored = []
     for person in persons:
-        score, reasons = score_api_candidate(person)
+        score, reasons = score_api_candidate(person, first_name, surname, dob_str, pob, gender, dod_str, pod, api_search)
         scored.append((score, reasons, person))
     scored.sort(reverse=True, key=lambda x: x[0])
     shortlist = scored[:5]
@@ -209,24 +144,7 @@ def run_action11():
         print(f"Link in Tree: (unavailable)")
 
     # --- Fetch and show family details (parents, spouses, children) if available ---
-    def fetch_facts_json(profile_id, tree_id, person_id):
-        from utils import _api_req
-
-        url = f"https://www.ancestry.co.uk/family-tree/person/facts/user/{profile_id}/tree/{tree_id}/person/{person_id}"
-        try:
-            return _api_req(
-                url=url,
-                driver=api_search.session_manager.driver,
-                session_manager=api_search.session_manager,
-                method="GET",
-                headers=None,
-                use_csrf_token=False,
-                api_description="Ancestry Facts JSON Endpoint",
-                referer_url=f"https://www.ancestry.co.uk/family-tree/tree/{tree_id}/family",
-                timeout=20,
-            )
-        except Exception:
-            return None
+    from utils import fetch_facts_json
 
     profile_id = (
         getattr(api_search.session_manager, "my_profile_id", None)
@@ -236,29 +154,11 @@ def run_action11():
     person_id = ancestry_id
     facts_json = None
     if profile_id and tree_id and person_id:
-        facts_json = fetch_facts_json(profile_id, tree_id, person_id)
+        facts_json = fetch_facts_json(profile_id, tree_id, person_id, session_manager, session_manager.driver)
     if facts_json and isinstance(facts_json, dict):
         family = facts_json.get("family") or facts_json.get("Family")
 
-        def print_family_section(label, people):
-            print(f"\n{label}:")
-            if people:
-                for rel in people:
-                    name = (
-                        rel.get("displayName")
-                        or rel.get("fullName")
-                        or rel.get("name")
-                        or rel.get("gname")
-                        or rel.get("sname")
-                        or rel.get("id")
-                        or "(Unknown)"
-                    )
-                    life = rel.get("birthDate") or rel.get("birth") or ""
-                    if rel.get("deathDate") or rel.get("death"):
-                        life += f" - {rel.get('deathDate') or rel.get('death')}"
-                    print(f"  - {name}{f' ({life})' if life else ''}")
-            else:
-                print("  (None found)")
+        from utils import print_family_section
 
         if family:
             print_family_section("Parents", family.get("parents", []))
@@ -267,12 +167,10 @@ def run_action11():
         else:
             print("  (Family details not available in facts JSON response.)")
     else:
-        facts_url = f"https://www.ancestry.co.uk/family-tree/person/facts/user/{profile_id}/tree/{tree_id}/person/{person_id}"
+        facts_url = f"https://www.ancestry.co.uk/family-tree/person/tree/{tree_id}/person/{person_id}/facts"
         print(
             "\n(Family details could not be retrieved. You can view full family details in your browser:"
         )
         print(f"  {facts_url}\n")
 
 
-if __name__ == "__main__":
-    run_action11()

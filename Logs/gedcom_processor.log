@@ -1367,3 +1367,404 @@
 17:11:30 INF [main     exec_act 332 ] Memory used: 2.1 MB
 17:11:30 INF [main     exec_act 333 ] ------------------------------------------
                                       
+17:22:24 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+17:22:24 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+17:22:24 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+17:22:24 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+17:22:24 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+17:22:24 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+17:22:24 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+17:22:56 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+17:22:56 INF [main     exec_act 191 ] Action 5: Starting check_login_actn...
+17:22:56 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+17:23:10 INF [main     check_lo 784 ] Login verification successful (already logged in).
+17:23:10 INF [main     exec_act 329 ] ------------------------------------------
+17:23:10 INF [main     exec_act 330 ] Action 5 (check_login_actn) finished.
+17:23:10 INF [main     exec_act 331 ] Duration: 0 hr 0 min 13.96 sec
+17:23:10 INF [main     exec_act 332 ] Memory used: 3.0 MB
+17:23:10 INF [main     exec_act 333 ] ------------------------------------------
+                                      
+17:23:58 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+17:23:58 INF [main     exec_act 191 ] Action 6: Starting coord_action...
+17:23:58 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+17:23:59 ERR [main     exec_act 266 ] Exception during action coord_action: coord_action() takes from 2 to 3 positional arguments but 4 were given
+17:23:59 WAR [main     exec_act 275 ] Action 'coord_action' failed or raised exception. Closing session.
+17:23:59 INF [main     exec_act 329 ] ------------------------------------------
+17:23:59 INF [main     exec_act 330 ] Action 6 (coord_action) finished.
+17:23:59 INF [main     exec_act 331 ] Duration: 0 hr 0 min 1.08 sec
+17:23:59 INF [main     exec_act 332 ] Memory used: 0.0 MB
+17:23:59 INF [main     exec_act 333 ] ------------------------------------------
+                                      
+17:30:32 INF [main     main     1088] Performing final cleanup...
+17:30:32 INF [main     main     1116] --- Main program execution finished ---
+17:30:32 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+17:30:32 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+17:30:32 INF [cache    close_ca 263 ] DiskCache connection closed.
+17:30:41 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+17:30:41 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+17:30:41 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+17:30:41 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+17:30:41 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+17:30:41 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+17:30:42 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+17:30:50 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+17:30:50 INF [main     exec_act 191 ] Action 6: Starting coord_action...
+17:30:50 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+17:31:09 INF [action6_ coord    235 ] Total pages found: 783
+17:31:09 INF [action6_ coord    254 ] Processing 1 pages (approx. 20 matches) from page 1 to 1.
+                                      
+17:31:10 INF [action6_ _log_coo 2574] ---- Gather Matches Final Summary ----
+17:31:10 INF [action6_ _log_coo 2576] Total Pages Processed: 1
+17:31:10 INF [action6_ _log_coo 2577] Total New Added:     0
+17:31:10 INF [action6_ _log_coo 2578] Total Updated:       0
+17:31:10 INF [action6_ _log_coo 2579] Total Skipped:       20
+17:31:10 INF [action6_ _log_coo 2580] Total Errors:        0
+17:31:10 INF [action6_ _log_coo 2582] ------------------------------------
+                                      
+17:31:10 INF [main     coord_ac 817 ] Gathering matches OK.
+17:31:10 INF [main     exec_act 329 ] ------------------------------------------
+17:31:10 INF [main     exec_act 330 ] Action 6 (coord_action) finished.
+17:31:10 INF [main     exec_act 331 ] Duration: 0 hr 0 min 19.56 sec
+17:31:10 INF [main     exec_act 332 ] Memory used: 3.1 MB
+17:31:10 INF [main     exec_act 333 ] ------------------------------------------
+                                      
+17:31:27 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+17:31:27 INF [main     exec_act 191 ] Action 7: Starting srch_inbox_actn...
+17:31:27 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+17:31:28 INF [action7_ search_i 793 ] Processing up to 5 inbox items...
+                                      
+17:32:12 INF [action7_ _log_uni 1444] ------ Inbox Search Summary ------
+17:32:12 INF [action7_ _log_uni 1446] API Conversations Fetched:    5
+17:32:12 INF [action7_ _log_uni 1447] Conversations Processed:      5
+17:32:12 INF [action7_ _log_uni 1449] AI Classifications Attempted: 5
+17:32:12 INF [action7_ _log_uni 1450] Person Status Updates Made:   3
+17:32:12 INF [action7_ _log_uni 1459] Processing Stopped Due To:    Inbox Limit (5)
+17:32:12 INF [action7_ _log_uni 1461] ----------------------------------
+                                      
+17:32:12 INF [main     srch_inb 843 ] Inbox search OK.
+17:32:12 INF [main     exec_act 329 ] ------------------------------------------
+17:32:12 INF [main     exec_act 330 ] Action 7 (srch_inbox_actn) finished.
+17:32:12 INF [main     exec_act 331 ] Duration: 0 hr 0 min 45.16 sec
+17:32:12 INF [main     exec_act 332 ] Memory used: 8.6 MB
+17:32:12 INF [main     exec_act 333 ] ------------------------------------------
+                                      
+19:05:29 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+19:05:29 INF [main     exec_act 191 ] Action 10: Starting run_action10...
+19:05:29 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+19:05:53 INF [gedcom   display_ 867 ] Name: Fraser Gault
+19:05:53 INF [gedcom   display_ 869 ] Born: 15/6/1941 in Banff, Banffshire, Scotland
+19:05:53 INF [gedcom   display_ 874 ] 
+                                      Parents:
+19:05:55 INF [gedcom   display_ 877 ] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+19:05:55 INF [gedcom   display_ 877 ] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+19:05:55 INF [gedcom   display_ 882 ] 
+                                      Siblings:
+19:05:58 INF [gedcom   display_ 885 ] - Derrick Wardie Gault (b. 16 MAY 1943)
+19:05:58 INF [gedcom   display_ 885 ] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+19:05:58 INF [gedcom   display_ 885 ] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+19:05:58 INF [gedcom   display_ 885 ] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+19:05:58 INF [gedcom   display_ 885 ] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+19:05:58 INF [gedcom   display_ 885 ] - William 'Billy' George Gault (b. 07/05/1947)
+19:05:58 INF [gedcom   display_ 885 ] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+19:05:58 INF [gedcom   display_ 885 ] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+19:05:58 INF [gedcom   display_ 885 ] - Helen Gault (b. 20/2/1933)
+19:05:58 INF [gedcom   display_ 885 ] - Thomas Gault (b. 1929, d. 1929)
+19:05:58 INF [gedcom   display_ 890 ] 
+                                      Spouse(s):
+19:06:00 INF [gedcom   display_ 893 ] - Nellie Mason Smith
+19:06:00 INF [gedcom   display_ 898 ] 
+                                      Children:
+19:06:02 INF [gedcom   display_ 901 ] - David Gault
+19:06:02 INF [gedcom   display_ 901 ] - Caroline Gault
+19:06:02 INF [gedcom   display_ 901 ] - Barry Gault
+19:06:06 INF [main     exec_act 329 ] ------------------------------------------
+19:06:06 INF [main     exec_act 330 ] Action 10 (run_action10) finished.
+19:06:06 INF [main     exec_act 331 ] Duration: 0 hr 0 min 36.91 sec
+19:06:06 INF [main     exec_act 332 ] Memory used: 151.7 MB
+19:06:06 INF [main     exec_act 333 ] ------------------------------------------
+                                      
+19:08:09 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+19:08:09 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+19:08:09 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+19:08:09 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+19:08:09 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+19:08:09 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+19:08:10 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+19:08:23 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+19:08:23 INF [main     exec_act 191 ] Action 10: Starting run_action10...
+19:08:23 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+19:09:25 INF [gedcom   display_ 867 ] Name: Fraser Gault
+19:09:25 INF [gedcom   display_ 869 ] Born: 15/6/1941 in Banff, Banffshire, Scotland
+19:09:25 INF [gedcom   display_ 874 ] 
+                                      Parents:
+19:09:27 INF [gedcom   display_ 877 ] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+19:09:27 INF [gedcom   display_ 877 ] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+19:09:27 INF [gedcom   display_ 882 ] 
+                                      Siblings:
+19:09:30 INF [gedcom   display_ 885 ] - Derrick Wardie Gault (b. 16 MAY 1943)
+19:09:30 INF [gedcom   display_ 885 ] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+19:09:30 INF [gedcom   display_ 885 ] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+19:09:30 INF [gedcom   display_ 885 ] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+19:09:30 INF [gedcom   display_ 885 ] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+19:09:30 INF [gedcom   display_ 885 ] - William 'Billy' George Gault (b. 07/05/1947)
+19:09:30 INF [gedcom   display_ 885 ] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+19:09:30 INF [gedcom   display_ 885 ] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+19:09:30 INF [gedcom   display_ 885 ] - Helen Gault (b. 20/2/1933)
+19:09:30 INF [gedcom   display_ 885 ] - Thomas Gault (b. 1929, d. 1929)
+19:09:30 INF [gedcom   display_ 890 ] 
+                                      Spouse(s):
+19:09:32 INF [gedcom   display_ 893 ] - Nellie Mason Smith
+19:09:32 INF [gedcom   display_ 898 ] 
+                                      Children:
+19:09:34 INF [gedcom   display_ 901 ] - David Gault
+19:09:34 INF [gedcom   display_ 901 ] - Caroline Gault
+19:09:34 INF [gedcom   display_ 901 ] - Barry Gault
+19:09:38 INF [main     exec_act 330 ] ------------------------------------------
+19:09:38 INF [main     exec_act 331 ] Action 10 (run_action10) finished.
+19:09:38 INF [main     exec_act 332 ] Duration: 0 hr 1 min 14.23 sec
+19:09:38 INF [main     exec_act 333 ] Memory used: 143.6 MB
+19:09:38 INF [main     exec_act 334 ] ------------------------------------------
+                                      
+19:17:32 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+19:17:32 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+19:17:32 INF [action8_ main     1494] --- Starting Action 8 Standalone Test ---
+19:17:32 INF [action8_ main     1495] APP_MODE: testing
+19:17:32 INF [action8_ main     1511] Attempting session start (Phase 1 & 2)...
+19:17:32 DEB [database _create_ 310 ] Executing CREATE VIEW statement for 'messages' view...
+19:17:32 DEB [database _create_ 313 ] Database view 'messages' created or already exists.
+19:17:32 DEB [chromedr init_web 177 ] WebDriver initialization attempt 1/3...
+19:17:32 DEB [chromedr init_web 195 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:17:32 DEB [chromedr init_web 199 ] Using profile directory: Default
+19:17:32 DEB [chromedr init_web 205 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:17:32 DEB [chromedr init_web 225 ] Setting User-Agent:
+                                      Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+19:17:32 DEB [chromedr init_web 236 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:17:32 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:17:33 ERR [chromedr init_web 337 ] Unexpected error during WebDriver init attempt 1: [WinError 183] Cannot create a file when that file already exists: 'C:\\Users\\wayne\\appdata\\roaming\\undetected_chromedriver\\undetected\\chromedriver-win32\\chromedriver.exe' -> 'C:\\Users\\wayne\\appdata\\roaming\\undetected_chromedriver\\undetected_chromedriver.exe'
+19:17:33 INF [chromedr init_web 347 ] Waiting 5 seconds before retrying initialization...
+19:17:34 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:17:34 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+19:17:34 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+19:17:34 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:17:38 DEB [chromedr init_web 177 ] WebDriver initialization attempt 2/3...
+19:17:38 DEB [chromedr init_web 195 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:17:38 DEB [chromedr init_web 199 ] Using profile directory: Default
+19:17:38 DEB [chromedr init_web 205 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:17:38 DEB [chromedr init_web 225 ] Setting User-Agent:
+                                      Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+19:17:38 DEB [chromedr init_web 236 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:18:40 ERR [chromedr init_web 322 ] Failed to connect/start Chrome (attempt 2): Message: session not created: cannot connect to chrome at 127.0.0.1:10906
+                                      from chrome not reachable
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00CD7FD3+60707]
+                                      GetHandleVerifier [0x00CD8014+60772]
+                                      (No symbol) [0x00B004FE]
+                                      (No symbol) [0x00AF425A]
+                                      (No symbol) [0x00B38CC6]
+                                      (No symbol) [0x00B2F58F]
+                                      (No symbol) [0x00B2F3C6]
+                                      (No symbol) [0x00B78D63]
+                                      (No symbol) [0x00B7877A]
+                                      (No symbol) [0x00B6CE46]
+                                      (No symbol) [0x00B3C5D3]
+                                      (No symbol) [0x00B3D424]
+                                      GetHandleVerifier [0x00F1BAB3+2435075]
+                                      GetHandleVerifier [0x00F17053+2416035]
+                                      GetHandleVerifier [0x00F333FC+2531660]
+                                      GetHandleVerifier [0x00CEF0A5+155125]
+                                      GetHandleVerifier [0x00CF5A4D+182173]
+                                      GetHandleVerifier [0x00CDF8A8+91640]
+                                      GetHandleVerifier [0x00CDFA50+92064]
+                                      GetHandleVerifier [0x00CCA510+4704]
+                                      BaseThreadInitThunk [0x75185D49+25]
+                                      RtlInitializeExceptionChain [0x776FCF0B+107]
+                                      RtlGetAppContainerNamedObjectPath [0x776FCE91+561]
+                                      
+19:18:40 INF [chromedr init_web 347 ] Waiting 5 seconds before retrying initialization...
+19:18:45 DEB [chromedr init_web 177 ] WebDriver initialization attempt 3/3...
+19:18:45 DEB [chromedr init_web 195 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+19:18:45 DEB [chromedr init_web 199 ] Using profile directory: Default
+19:18:45 DEB [chromedr init_web 205 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+19:18:45 DEB [chromedr init_web 225 ] Setting User-Agent:
+                                      Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36
+19:18:45 DEB [chromedr init_web 236 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+19:19:47 ERR [chromedr init_web 322 ] Failed to connect/start Chrome (attempt 3): Message: session not created: cannot connect to chrome at 127.0.0.1:10159
+                                      from chrome not reachable
+                                      Stacktrace:
+                                      GetHandleVerifier [0x00CD7FD3+60707]
+                                      GetHandleVerifier [0x00CD8014+60772]
+                                      (No symbol) [0x00B004FE]
+                                      (No symbol) [0x00AF425A]
+                                      (No symbol) [0x00B38CC6]
+                                      (No symbol) [0x00B2F58F]
+                                      (No symbol) [0x00B2F3C6]
+                                      (No symbol) [0x00B78D63]
+                                      (No symbol) [0x00B7877A]
+                                      (No symbol) [0x00B6CE46]
+                                      (No symbol) [0x00B3C5D3]
+                                      (No symbol) [0x00B3D424]
+                                      GetHandleVerifier [0x00F1BAB3+2435075]
+                                      GetHandleVerifier [0x00F17053+2416035]
+                                      GetHandleVerifier [0x00F333FC+2531660]
+                                      GetHandleVerifier [0x00CEF0A5+155125]
+                                      GetHandleVerifier [0x00CF5A4D+182173]
+                                      GetHandleVerifier [0x00CDF8A8+91640]
+                                      GetHandleVerifier [0x00CDFA50+92064]
+                                      GetHandleVerifier [0x00CCA510+4704]
+                                      BaseThreadInitThunk [0x75185D49+25]
+                                      RtlInitializeExceptionChain [0x776FCF0B+107]
+                                      RtlGetAppContainerNamedObjectPath [0x776FCE91+561]
+                                      
+19:19:47 CRI [chromedr init_web 352 ] Failed to initialize WebDriver after 3 attempts.
+19:19:47 CRI [action8_ main     1526] Failed Phase 1 (Driver Start). Cannot run messaging.
+19:19:47 INF [action8_ main     1534] Closing session manager in finally block...
+19:19:47 INF [action8_ main     1537] --- Action 8 Standalone Test Finished (Overall Success: False) ---
+19:19:47 DEB [cache    close_ca 261 ] Closing DiskCache connection...
+19:19:47 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:31:15 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:31:15 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:37:08 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:37:59 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+19:37:59 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+19:37:59 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+19:37:59 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+19:37:59 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+19:37:59 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+19:38:00 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+19:58:02 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+19:58:02 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+19:58:02 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+19:58:02 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+19:58:02 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+19:58:02 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+19:58:02 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+19:58:12 CRI [main     main     1079] Critical error in main: run_action11() missing 2 required positional arguments: 'session_manager' and 'config_instance'
+19:58:12 INF [main     main     1089] Performing final cleanup...
+19:58:12 INF [main     main     1117] --- Main program execution finished ---
+19:58:12 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+19:58:12 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+19:58:12 INF [cache    close_ca 263 ] DiskCache connection closed.
+19:59:52 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+19:59:52 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+19:59:52 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+19:59:52 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+19:59:52 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+19:59:52 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+19:59:53 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:00:00 CRI [main     main     1079] Critical error in main: run_action11() missing 2 required positional arguments: 'session_manager' and 'config_instance'
+20:00:00 INF [main     main     1089] Performing final cleanup...
+20:00:00 INF [main     main     1117] --- Main program execution finished ---
+20:00:00 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+20:00:00 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+20:00:00 INF [cache    close_ca 263 ] DiskCache connection closed.
+20:00:55 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+20:00:55 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+20:00:55 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:00:55 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+20:00:55 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:00:55 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+20:00:56 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:01:06 INF [main     main     1044] Console log level toggled to: DEBUG
+20:01:14 CRI [main     main     1080] Critical error in main: run_action11() missing 2 required positional arguments: 'session_manager' and 'config_instance'
+20:01:14 INF [main     main     1090] Performing final cleanup...
+20:01:14 DEB [main     main     1114] Session Manager was None during final cleanup.
+20:01:14 INF [main     main     1118] --- Main program execution finished ---
+20:01:14 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+20:01:14 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+20:01:14 DEB [cache    close_ca 261 ] Closing DiskCache connection...
+20:01:14 INF [cache    close_ca 263 ] DiskCache connection closed.
+20:02:38 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+20:02:38 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+20:02:38 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:02:38 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+20:02:38 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:02:38 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+20:02:38 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:02:45 INF [main     main     1045] Console log level toggled to: DEBUG
+20:02:50 CRI [main     main     1081] Critical error in main: run_action11() missing 2 required positional arguments: 'session_manager' and 'config_instance'
+20:02:50 INF [main     main     1091] Performing final cleanup...
+20:02:50 DEB [main     main     1115] Session Manager was None during final cleanup.
+20:02:50 INF [main     main     1119] --- Main program execution finished ---
+20:02:50 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+20:02:50 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+20:02:50 DEB [cache    close_ca 261 ] Closing DiskCache connection...
+20:02:50 INF [cache    close_ca 263 ] DiskCache connection closed.
+20:04:46 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+20:04:46 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+20:04:46 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:04:46 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+20:04:46 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:04:46 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+20:04:47 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:05:06 INF [main     exec_act 190 ] ------------------------------------------
+20:05:06 INF [main     exec_act 191 ] Action 11: Starting run_action11...
+20:05:06 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+20:05:42 ERR [main     exec_act 269 ] Exception during action run_action11: fetch_facts_json() missing 2 required positional arguments: 'session_manager' and 'driver'
+20:05:42 WAR [main     exec_act 278 ] Action 'run_action11' failed or raised exception. Closing session.
+20:05:42 INF [main     exec_act 332 ] ------------------------------------------
+20:05:42 INF [main     exec_act 333 ] Action 11 (run_action11) finished.
+20:05:42 INF [main     exec_act 334 ] Duration: 0 hr 0 min 35.71 sec
+20:05:42 INF [main     exec_act 335 ] Memory used: 2.5 MB
+20:05:42 INF [main     exec_act 336 ] ------------------------------------------
+                                      
+20:06:02 INF [main     main     1091] Performing final cleanup...
+20:06:02 INF [main     main     1119] --- Main program execution finished ---
+20:06:02 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+20:06:02 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+20:06:02 INF [cache    close_ca 263 ] DiskCache connection closed.
+20:06:56 INF [action8_ <module> 93  ] Action 8 Initializing: APP_MODE is testing
+20:06:56 INF [action8_ <module> 104 ] Action 8 Using minimum message interval: 0:00:10
+20:06:56 INF [ms_graph <module> 57  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:06:56 INF [ms_graph <module> 58  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/consumers
+20:06:56 INF [ms_graph <module> 75  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:06:56 INF [ms_graph <module> 91  ] MSAL token cache loaded successfully.
+20:06:56 INF [ms_graph <module> 145 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:07:01 INF [main     main     1045] Console log level toggled to: DEBUG
+20:07:04 INF [main     exec_act 190 ] ------------------------------------------
+20:07:04 INF [main     exec_act 191 ] Action 11: Starting run_action11...
+20:07:04 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+20:07:04 DEB [database _create_ 310 ] Executing CREATE VIEW statement for 'messages' view...
+20:07:04 DEB [database _create_ 313 ] Database view 'messages' created or already exists.
+20:07:04 DEB [chromedr init_web 177 ] WebDriver initialization attempt 1/3...
+20:07:04 DEB [chromedr init_web 195 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+20:07:04 DEB [chromedr init_web 199 ] Using profile directory: Default
+20:07:04 DEB [chromedr init_web 205 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+20:07:04 DEB [chromedr init_web 225 ] Setting User-Agent:
+                                      Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+20:07:04 DEB [chromedr init_web 236 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+20:07:06 DEB [chromedr init_web 251 ] WebDriver instance created successfully (attempt 1).
+20:07:06 DEB [chromedr init_web 260 ] User-Agent override applied via CDP.
+20:07:06 DEB [chromedr init_web 264 ] Attempting to minimize window (non-headless mode)...
+20:07:06 DEB [chromedr init_web 272 ] Browser window minimized.
+20:07:35 INF [main     exec_act 332 ] ------------------------------------------
+20:07:35 INF [main     exec_act 333 ] Action 11 (run_action11) finished.
+20:07:35 INF [main     exec_act 334 ] Duration: 0 hr 0 min 31.28 sec
+20:07:35 INF [main     exec_act 335 ] Memory used: 2.3 MB
+20:07:35 INF [main     exec_act 336 ] ------------------------------------------
+                                      

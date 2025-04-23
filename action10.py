@@ -24,29 +24,16 @@ import utils
 
 
 def run_action10():
-    logger = setup_logging(log_file="gedcom_processor.log", log_level="INFO")
-    print("\n------------------------------------------")
-    print("Action 10: GEDCOM Report (Local File)")
-    print("------------------------------------------\n")
     if not GEDCOM_LIB_AVAILABLE or GedcomReader is None:
         print("ged4py library unavailable. Cannot run GEDCOM report.")
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
     gedcom_path_str = getattr(config_instance, "GEDCOM_FILE_PATH", None)
     if not gedcom_path_str:
         print("GEDCOM_FILE_PATH not set in config.")
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
     gedcom_path = Path(gedcom_path_str)
     if not gedcom_path.is_file():
         print(f"GEDCOM not found: {gedcom_path}")
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
     reader = GedcomReader(str(gedcom_path))
     build_indi_index(reader)
@@ -64,11 +51,7 @@ def run_action10():
         print(
             "Wayne Gordon Gault (reference person) not found in local GEDCOM. Cannot calculate relationships."
         )
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
-    print("\n--- Person Details & Relationship to WGG (GEDCOM) ---")
     print("\nEnter as many details as you know. Leave blank to skip a field.")
     first_name = input("First name: ").strip() or None
     surname = input("Surname (or maiden name): ").strip() or None
@@ -84,9 +67,6 @@ def run_action10():
     )
     if not matches:
         print("\nNo matches found in GEDCOM.")
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
     print(f"\nFound {len(matches)} potential matches:")
     for i, match in enumerate(matches):
@@ -107,30 +87,18 @@ def run_action10():
             choice = int(input("\nSelect person (or 0 to cancel): "))
             if choice < 1 or choice > len(matches):
                 print("Selection cancelled or invalid.")
-                print("\n------------------------------------------")
-                print("Action 10 finished.")
-                print("------------------------------------------\n")
                 return
             selected_match = matches[choice - 1]
         except Exception as e:
             print(f"Error: {type(e).__name__}: {e}")
-            print("\n------------------------------------------")
-            print("Action 10 finished.")
-            print("------------------------------------------\n")
             return
     selected_id = extract_and_fix_id(selected_match["id"])
     if not selected_id:
         print("ERROR: Invalid ID in selected match.")
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
     selected_indi = find_individual_by_id(reader, selected_id)
     if not selected_indi:
         print("ERROR: Could not retrieve individual record from GEDCOM.")
-        print("\n------------------------------------------")
-        print("Action 10 finished.")
-        print("------------------------------------------\n")
         return
     print("\n=== PERSON DETAILS ===")
     print(f"Name: {selected_match['name']}")
@@ -156,15 +124,11 @@ def run_action10():
     else:
         print(f"Link in Tree: (unavailable)")
     display_gedcom_family_details(reader, selected_indi)
-    print("\nLooking up relationship information...")
     relationship_path = get_relationship_path(
         reader, selected_id, wayne_gault_id_gedcom
     )
-    print("\nRelationship Path:")
+    print("\nRelationship Path:\n")
     print(relationship_path.strip())
-    print("\n------------------------------------------")
-    print("Action 10 finished.")
-    print("------------------------------------------\n")
 
 
 if __name__ == "__main__":

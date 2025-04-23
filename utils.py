@@ -119,6 +119,123 @@ SEND_ERROR_API_PREP_FAILED = "send_error (api_prep_failed)"
 SEND_ERROR_UNEXPECTED_FORMAT = "send_error (unexpected_format)"
 SEND_ERROR_VALIDATION_FAILED = "send_error (validation_failed)"
 SEND_ERROR_POST_FAILED = "send_error (post_failed)"
+
+
+def score_api_candidate(person, first_name, surname, dob_str, pob, gender, dod_str, pod, api_search):
+    """
+    Score and explain how well a person from the API matches the search criteria.
+    Returns (score, reasons_string).
+    """
+    score = 0
+    reasons = []
+    display_name = api_search._extract_display_name(person).lower()
+    if first_name and first_name.lower() in display_name:
+        score += 10
+        reasons.append("First name match")
+    if surname and surname.lower() in display_name:
+        score += 10
+        reasons.append("Surname match")
+    api_gender = None
+    if "Genders" in person and person["Genders"]:
+        api_gender = person["Genders"][0].get("g", "").lower()
+    elif "gender" in person:
+        api_gender = str(person["gender"]).lower()
+    if gender and api_gender and gender == api_gender[0]:
+        score += 5
+        reasons.append(f"Gender match ({api_gender})")
+    elif gender and api_gender and gender != api_gender[0]:
+        score -= 5
+        reasons.append(f"Gender mismatch ({api_gender})")
+    events = person.get("Events") or person.get("events") or []
+    birth_date = None
+    birth_place = None
+    for event in events:
+        if (
+            event.get("t", "").lower() == "birth"
+            or event.get("type", "").lower() == "birth"
+        ):
+            birth_date = event.get("d") or event.get("date") or event.get("nd")
+            birth_place = (
+                event.get("p")
+                or event.get("place")
+                or (event.get("pl") if "pl" in event else None)
+            )
+            if isinstance(birth_place, dict):
+                birth_place = birth_place.get("v") or birth_place.get("name")
+            if not birth_place:
+                birth_place = "?"
+            break
+    if dob_str and birth_date and dob_str in str(birth_date):
+        score += 8
+        reasons.append(f"Birth date match ({birth_date})")
+    if pob and birth_place and pob.lower() in birth_place.lower():
+        score += 4
+        reasons.append(f"Place of birth match ({birth_place})")
+    death_date = None
+    death_place = None
+    for event in events:
+        if (
+            event.get("t", "").lower() == "death"
+            or event.get("type", "").lower() == "death"
+        ):
+            death_date = event.get("d") or event.get("date") or event.get("nd")
+            death_place = event.get("p") or event.get("place")
+            break
+    if dod_str and death_date and dod_str in str(death_date):
+        score += 4
+        reasons.append(f"Death date match ({death_date})")
+    if pod and death_place and pod.lower() in death_place.lower():
+        score += 2
+        reasons.append(f"Place of death match ({death_place})")
+    return score, ", ".join(reasons)
+
+
+def fetch_facts_json(profile_id, tree_id, person_id, session_manager, driver):
+    """
+    Fetch the facts JSON for a person from the Ancestry API.
+    Returns the parsed JSON dict or None on failure.
+    """
+    from utils import _api_req
+    url = f"https://www.ancestry.co.uk/family-tree/person/facts/user/{profile_id}/tree/{tree_id}/person/{person_id}"
+    try:
+        return _api_req(
+            url=url,
+            driver=driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=None,
+            use_csrf_token=False,
+            api_description="Ancestry Facts JSON Endpoint",
+            referer_url=f"https://www.ancestry.co.uk/family-tree/tree/{tree_id}/family",
+            timeout=20,
+        )
+    except Exception:
+        return None
+
+
+def print_family_section(label, people):
+    """
+    Print a formatted section for family members (parents, spouses, children).
+    """
+    print(f"\n{label}:")
+    if people:
+        for rel in people:
+            name = (
+                rel.get("displayName")
+                or rel.get("fullName")
+                or rel.get("name")
+                or rel.get("gname")
+                or rel.get("sname")
+                or rel.get("id")
+                or "(Unknown)"
+            )
+            life = rel.get("birthDate") or rel.get("birth") or ""
+            if rel.get("deathDate") or rel.get("death"):
+                life += f" - {rel.get('deathDate') or rel.get('death')}"
+            print(f"  - {name}{f' ({life})' if life else ''}")
+    else:
+        print("  (None found)")
+
 SEND_ERROR_UNKNOWN = "send_error (unknown)"
 SEND_SUCCESS_DELIVERED = "delivered OK"
 SEND_SUCCESS_DRY_RUN = "typed (dry_run)"

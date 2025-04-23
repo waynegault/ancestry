@@ -187,7 +187,7 @@ def exec_actn(
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
 
-    logger.info("\n------------------------------------------")
+    logger.info("------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
     logger.info("------------------------------------------\n")
 
@@ -231,7 +231,9 @@ def exec_actn(
 
         # --- Execute Action ---
         # Prepare arguments for action function call
+        print("DEBUG: action_func type:", type(action_func))
         func_sig = inspect.signature(action_func)
+        print("DEBUG: action_func signature:", func_sig)
         pass_config = "config_instance" in func_sig.parameters
         pass_session_manager = "session_manager" in func_sig.parameters
 
@@ -243,13 +245,14 @@ def exec_actn(
         final_args.extend(args)
 
         # Handle keyword args specifically for coord_action_func
-        if action_name == "coord_action_func" and "start" in func_sig.parameters:
+        if action_name in ("coord_action_func", "coord_action") and "start" in func_sig.parameters:
             start_val = 1
             int_args = [a for a in args if isinstance(a, int)]
             if int_args:
                 start_val = int_args[-1]
             kwargs_for_action = {"start": start_val}
             # Prepare coord_action_func specific positional args
+
             coord_args = []
             if pass_session_manager:
                 coord_args.append(session_manager)
@@ -1016,7 +1019,7 @@ def main():
             elif choice == "10":
                 exec_actn(run_action10, session_manager, choice)
             elif choice == "11":
-                run_action11()
+                exec_actn(run_action11, session_manager, choice)
             # --- Meta Options ---
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")
