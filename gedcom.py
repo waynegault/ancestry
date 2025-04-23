@@ -22,15 +22,24 @@ import time
 import json  # Added for API response parsing
 import requests
 import urllib.parse
-from utils import SessionManager
+from utils import SessionManager, _api_req
 import html  # Added for unescaping
 from bs4 import BeautifulSoup  # Added for HTML parsing
+from dotenv import load_dotenv
+import html
+from bs4 import BeautifulSoup
+from logging_config import setup_logging
+from rapidfuzz import fuzz, process  # For robust fuzzy matching
+
+# Create a standalone session_manager that can authenticate itself
+global session_manager
+session_manager = SessionManager()
+
 
 # Add parent directory to sys.path to import from sibling directories
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 # Import local modules
-from logging_config import setup_logging
+
 
 # Setup logging using centralized config
 logger = setup_logging(log_file="gedcom_processor.log", log_level="INFO")
@@ -44,138 +53,10 @@ INDI_INDEX_BUILD_TIME = 0  # Track build time
 # Always define GEDCOM_LIB_AVAILABLE at the top
 GEDCOM_LIB_AVAILABLE = False
 
+# Load environment variables
+load_dotenv()
+MY_TREE_ID = os.getenv("MY_TREE_ID")
 
-# --- Add function to build the individual index ---
-def build_indi_index(reader):
-    """Builds a dictionary mapping normalized ID to Individual object."""
-    global INDI_INDEX, INDI_INDEX_BUILD_TIME
-    if INDI_INDEX:  # Avoid rebuilding
-        return  # End of function build_indi_index
-    start_time = time.time()
-    logger.info("[Cache] Building INDI index...")
-    count = 0
-    for indi in reader.records0("INDI"):
-        if _is_individual(indi) and indi.xref_id:
-            norm_id = _normalize_id(indi.xref_id)
-            if norm_id:
-                INDI_INDEX[norm_id] = indi
-                count += 1
-    elapsed = time.time() - start_time
-    INDI_INDEX_BUILD_TIME = elapsed
-    logger.info(f"[Cache] INDI index built with {count} individuals in {elapsed:.2f}s.")
-
-
-# End of function build_indi_index
-
-
-# --- Function to build family relationship maps ---
-def build_family_maps(reader):
-    """Builds id_to_parents and id_to_children maps for all individuals."""
-    start_time = time.time()
-    id_to_parents = {}
-    id_to_children = {}
-    fam_count = 0
-    indi_count = 0
-    # Iterate through family records
-    for fam in reader.records0("FAM"):
-        fam_count += 1
-        if not _is_record(fam):
-            continue
-        # Get husband and wife IDs
-        husband = fam.sub_tag("HUSB")
-        wife = fam.sub_tag("WIFE")
-        parents = set()
-        if _is_individual(husband) and husband.xref_id:
-            parent_id_h = _normalize_id(husband.xref_id)
-            if parent_id_h:
-                parents.add(parent_id_h)
-        if _is_individual(wife) and wife.xref_id:
-            parent_id_w = _normalize_id(wife.xref_id)
-            if parent_id_w:
-                parents.add(parent_id_w)
-        # Process children
-        for child in fam.sub_tags("CHIL"):
-            if _is_individual(child) and child.xref_id:
-                child_id = _normalize_id(child.xref_id)
-                if child_id:
-                    # Map child to parents
-                    id_to_parents.setdefault(child_id, set()).update(parents)
-                    # Map parents to child
-                    for parent_id in parents:
-                        if parent_id:  # Ensure parent ID is valid
-                            id_to_children.setdefault(parent_id, set()).add(child_id)
-    # Count individuals (optional, for logging context)
-    for indi in reader.records0("INDI"):
-        indi_count += 1
-    elapsed = time.time() - start_time
-    logger.debug(
-        f"[PROFILE] Family maps built: {fam_count} FAMs, {indi_count} INDI, {len(id_to_parents)} child->parents, {len(id_to_children)} parent->children in {elapsed:.2f}s"
-    )
-    global FAMILY_MAPS_BUILD_TIME
-    FAMILY_MAPS_BUILD_TIME = elapsed
-    return id_to_parents, id_to_children
-
-
-# End of function build_family_maps
-
-
-# --- Top-level helpers for ID extraction and lookup (used by all menu actions) ---
-def extract_and_fix_id(raw_id):
-    """
-    Cleans and validates a raw ID string (e.g., '@I123@', 'F45').
-    Returns the normalized ID (e.g., 'I123', 'F45') or None if invalid.
-    """
-    if not raw_id or not isinstance(raw_id, str):
-        return None
-    # Strip leading/trailing whitespace and '@' symbols, convert to uppercase
-    id_clean = raw_id.strip().strip("@").upper()
-    # Regex 1: Match standard GEDCOM IDs (I, F, S, T, N, M, C, X, O followed by numbers/letters/hyphens)
-    m = re.match(r"^([IFSTNMCXO][0-9A-Z\-]+)$", id_clean)
-    if m:
-        return m.group(1)
-    # Regex 2 (Fallback): Find first occurrence of a standard prefix followed by digits
-    m2 = re.search(r"([IFSTNMCXO][0-9]+)", id_clean)
-    if m2:
-        logger.debug(
-            f"extract_and_fix_id: Used fallback regex for '{raw_id}' -> '{m2.group(1)}'"
-        )
-        return m2.group(1)
-    # If no match, return None
-    logger.warning(f"extract_and_fix_id: Could not extract valid ID from '{raw_id}'")
-    return None
-
-
-# End of function extract_and_fix_id
-
-
-def find_individual_by_id(reader, norm_id):
-    """Finds an individual by normalized ID using the pre-built index."""
-    global INDI_INDEX
-    if not norm_id:
-        logger.warning("find_individual_by_id called with invalid norm_id: None")
-        return None
-    if not INDI_INDEX:
-        # Fallback if index isn't built (shouldn't happen in normal flow)
-        logger.warning("INDI_INDEX not built, falling back to linear scan.")
-        for indi in reader.records0("INDI"):
-            if _is_individual(indi) and hasattr(indi, "xref_id"):
-                current_norm_id = _normalize_id(indi.xref_id)
-                if current_norm_id == norm_id:
-                    return indi
-        logger.warning(
-            f"Individual with normalized ID {norm_id} not found via linear scan."
-        )
-        return None
-    # Use the pre-built index for O(1) lookup
-    found_indi = INDI_INDEX.get(norm_id)
-    if not found_indi:
-        logger.debug(
-            f"Individual with normalized ID {norm_id} not found in INDI_INDEX."
-        )
-    return found_indi
-
-
-# End of function find_individual_by_id
 
 # --- Third-party Imports ---
 try:
@@ -200,46 +81,6 @@ except Exception as import_err:
     Name = None
     GEDCOM_LIB_AVAILABLE = False  # type: ignore
 
-# --- Local Application Imports ---
-try:
-    # Attempt to import SessionManager and _api_req from utils
-    from utils import (
-        SessionManager as UtilsSessionManager,
-        _api_req,
-    )
-except ImportError as e_utils:
-    logger.warning(f"Could not import from 'utils' module: {e_utils}")
-    logger.warning("API functionality will be disabled.")
-
-    # Define dummy classes/functions if utils is missing, to avoid NameErrors later
-    class SessionManager:
-        def __init__(self):
-            self.driver_live = False
-            self.session_ready = False
-            self.my_tree_id = None
-            self.my_profile_id = None
-            self.driver = None
-
-        def ensure_driver_live(self):
-            pass
-
-        def ensure_session_ready(self):
-            return False
-
-        def check_session_status(self):
-            pass
-
-        def _retrieve_identifiers(self):
-            pass
-
-    def _api_req(*args, **kwargs):
-        logger.error("API request attempted but 'utils' module is missing.")
-        return {"error": "'utils' module unavailable"}
-
-    # Set API_AVAILABLE flag or similar if needed later
-    API_UTILS_AVAILABLE = False
-else:
-    API_UTILS_AVAILABLE = True
 
 try:
     from config import config_instance
@@ -258,467 +99,30 @@ except ImportError as e_config:
     logger.warning("Using fallback logger and dummy config.")
 
 # --- Helper Functions ---
+from utils import (
+    _is_individual,
+    _is_record,
+    _is_name,
+    _normalize_id,
+    _get_full_name,
+    _parse_date,
+    _clean_display_date,
+    _get_event_info,
+    build_indi_index,
+    build_family_maps,
+    extract_and_fix_id,
+    find_individual_by_id,
+    format_life_dates,
+    format_full_life_details,
+    format_relative_info,
+    _find_family_records_where_individual_is_child,
+    _find_family_records_where_individual_is_parent,
+    get_related_individuals,
+)
 
-
-def _is_individual(obj):
-    """Checks if object is an Individual safely handling None values"""
-    # Check if the object is not None and if its type name is 'Individual'
-    return obj is not None and type(obj).__name__ == "Individual"
-
-
-# End of function _is_individual
-
-
-def _is_record(obj):
-    """Checks if object is a Record safely handling None values"""
-    # Check if the object is not None and if its type name is 'Record'
-    return obj is not None and type(obj).__name__ == "Record"
-
-
-# End of function _is_record
-
-
-def _is_name(obj):
-    """Checks if object is a Name safely handling None values"""
-    # Check if the object is not None and if its type name is 'Name'
-    return obj is not None and type(obj).__name__ == "Name"
-
-
-# End of function _is_name
-
-
-def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
-    """Normalizes INDI/FAM etc IDs (e.g., '@I123@' -> 'I123')."""
-    if xref_id and isinstance(xref_id, str):
-        # Match standard GEDCOM ID format (leading char + digits/chars/hyphen), allowing optional @ symbols
-        match = re.match(r"^@?([IFSTNMCXO][0-9A-Z\-]+)@?$", xref_id.strip().upper())
-        if match:
-            return match.group(1)
-    # Return None if input is invalid or doesn't match format
-    return None
-
-
-# End of function _normalize_id
-
-
-def _get_full_name(indi) -> str:
-    """Safely gets formatted name using Name.format(). Handles None/errors."""
-    if not _is_individual(indi):
-        return "Unknown (Not Individual)"
-    try:
-        name_rec = indi.name  # Access the name record
-        if _is_name(name_rec):
-            # Use the ged4py Name object's format method
-            formatted_name = name_rec.format()
-            # Clean up extra spaces and apply title case
-            cleaned_name = " ".join(formatted_name.split()).title()
-            # Remove trailing GEDCOM surname slashes (e.g., /Smith/)
-            cleaned_name = re.sub(r"\s*/([^/]+)/\s*$", r" \1", cleaned_name).strip()
-            # Return cleaned name or a placeholder if empty
-            return cleaned_name if cleaned_name else "Unknown (Empty Name)"
-        elif name_rec is None:
-            return "Unknown (No Name Tag)"
-        else:
-            # Log warning if .name attribute is not a Name object
-            indi_id_log = _normalize_id(indi.xref_id) if indi.xref_id else "Unknown ID"
-            logger.warning(
-                f"Indi @{indi_id_log}@ unexpected .name type: {type(name_rec)}"
-            )
-            return f"Unknown (Type {type(name_rec).__name__})"
-    except AttributeError:
-        # Handle cases where .name attribute might be missing
-        return "Unknown (Attr Error)"
-    except Exception as e:
-        # Catch any other unexpected errors during name formatting
-        indi_id_log = _normalize_id(indi.xref_id) if indi.xref_id else "Unknown ID"
-        logger.error(
-            f"Error formatting name for @{indi_id_log}@: {e}",
-            exc_info=False,  # Set to True for full traceback if needed
-        )
-        return "Unknown (Error)"
-
-
-# End of function _get_full_name
-
-
-def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
-    """Attempts to parse various GEDCOM date string formats into datetime objects."""
-    if not date_str or not isinstance(date_str, str):
-        return None
-    original_date_str = date_str
-    # Preprocessing: uppercase, remove qualifiers, ranges, slashes, parentheses
-    date_str = date_str.strip().upper()
-    clean_date_str = re.sub(r"^(ABT|EST|BEF|AFT|BET|FROM|TO)\s+", "", date_str).strip()
-    clean_date_str = re.sub(
-        r"(\s+(AND|&)\s+\d{4}.*|\s+TO\s+\d{4}.*)", "", clean_date_str
-    ).strip()  # Remove date ranges
-    clean_date_str = re.sub(
-        r"/\d*$", "", clean_date_str
-    ).strip()  # Remove trailing slashes
-    clean_date_str = re.sub(
-        r"\s*\(.*\)\s*", "", clean_date_str
-    ).strip()  # Remove content in parentheses
-    # Define supported date formats
-    formats = ["%d %b %Y", "%d %B %Y", "%b %Y", "%B %Y", "%Y"]
-    # Attempt parsing with each format
-    for fmt in formats:
-        try:
-            # Special check for year-only format to avoid parsing non-digits
-            if fmt == "%Y" and not clean_date_str.isdigit():
-                continue
-            dt = datetime.strptime(clean_date_str, fmt)
-            # Return date as UTC timezone-aware object
-            return dt.replace(tzinfo=timezone.utc)
-        except (ValueError, AttributeError):
-            # Ignore parsing errors for this format and try the next
-            continue
-        except Exception as e:
-            # Log unexpected errors during parsing attempt
-            logger.debug(
-                f"Date parsing err for '{original_date_str}' (clean:'{clean_date_str}', fmt:'{fmt}'): {e}"
-            )
-            continue
-    # Return None if no format matched
-    return None
-
-
-# End of function _parse_date
-
-
-def _clean_display_date(raw_date_str: str) -> str:
-    """Removes surrounding brackets if date exists, handles empty brackets."""
-    if raw_date_str == "N/A":
-        return raw_date_str
-    cleaned = raw_date_str.strip()
-    # Remove surrounding parentheses only if they enclose the entire string
-    cleaned = re.sub(r"^\((.+)\)$", r"\1", cleaned).strip()
-    # Return "N/A" if the string is empty after cleaning
-    return cleaned if cleaned else "N/A"
-
-
-# End of function _clean_display_date
-
-
-def _get_event_info(individual, event_tag: str) -> Tuple[Optional[datetime], str, str]:
-    """Gets date/place for an event using tag.value. Handles non-string dates."""
-    date_obj: Optional[datetime] = None
-    date_str: str = "N/A"
-    place_str: str = "N/A"
-    indi_id_log = "Invalid/Unknown"
-    # Validate input individual object
-    if _is_individual(individual) and individual.xref_id:
-        indi_id_log = (
-            _normalize_id(individual.xref_id) or f"Unnormalized({individual.xref_id})"
-        )
-    else:
-        logger.warning(f"_get_event_info invalid input: type {type(individual)}")
-        return date_obj, date_str, place_str
-    try:
-        # Find the event record (e.g., BIRT, DEAT)
-        event_record = individual.sub_tag(event_tag)
-        if event_record:
-            # Get Date sub-tag
-            date_tag = event_record.sub_tag("DATE")
-            if date_tag and hasattr(date_tag, "value"):
-                raw_date_val = date_tag.value
-                # Process date value based on its type
-                if isinstance(raw_date_val, str):
-                    processed_date_str = raw_date_val.strip()
-                    date_str = processed_date_str if processed_date_str else "N/A"
-                    date_obj = _parse_date(date_str)  # Attempt to parse into datetime
-                elif raw_date_val is not None:  # Handle non-string but non-None values
-                    date_str = str(raw_date_val)
-                    date_obj = _parse_date(date_str)
-            # Get Place sub-tag
-            place_tag = event_record.sub_tag("PLAC")
-            if place_tag and hasattr(place_tag, "value"):
-                raw_place_val = place_tag.value
-                # Process place value
-                if isinstance(raw_place_val, str):
-                    processed_place_str = raw_place_val.strip()
-                    place_str = processed_place_str if processed_place_str else "N/A"
-                elif raw_place_val is not None:
-                    place_str = str(raw_place_val)
-    except AttributeError:
-        # Ignore errors if tags/attributes are missing
-        pass
-    except Exception as e:
-        # Log unexpected errors
-        logger.error(
-            f"Unexpected error accessing event {event_tag} for @{indi_id_log}@: {e}",
-            exc_info=True,
-        )
-    return date_obj, date_str, place_str
-
-
-# End of function _get_event_info
-
-
-# --- New helper functions for handling events and formatting ---
-def format_life_dates(indi) -> str:
-    """Returns a formatted string with birth and death dates."""
-    # Get birth and death info
-    b_date_obj, b_date_str, b_place = _get_event_info(indi, "BIRT")
-    d_date_obj, d_date_str, d_place = _get_event_info(indi, "DEAT")
-    # Clean the display strings (remove parentheses etc.)
-    b_date_str_cleaned = _clean_display_date(b_date_str)
-    d_date_str_cleaned = _clean_display_date(d_date_str)
-    # Format birth and death parts
-    birth_info = f"b. {b_date_str_cleaned}" if b_date_str_cleaned != "N/A" else ""
-    death_info = f"d. {d_date_str_cleaned}" if d_date_str_cleaned != "N/A" else ""
-    # Combine parts if they exist
-    life_parts = [info for info in [birth_info, death_info] if info]
-    # Return formatted string (e.g., "(b. 1900, d. 1980)") or empty string
-    return f" ({', '.join(life_parts)})" if life_parts else ""
-
-
-# End of function format_life_dates
-
-
-def format_full_life_details(indi) -> Tuple[str, str]:
-    """Returns formatted birth and death details (date and place) for display."""
-    # Get birth event details
-    b_date_obj, b_date_str, b_place = _get_event_info(indi, "BIRT")
-    b_date_str_cleaned = _clean_display_date(b_date_str)
-    # Format birth string
-    birth_info = (
-        f"Born: {b_date_str_cleaned if b_date_str_cleaned != 'N/A' else '(Date unknown)'} "
-        f"in {b_place if b_place != 'N/A' else '(Place unknown)'}"
-    )
-    # Get death event details
-    d_date_obj, d_date_str, d_place = _get_event_info(indi, "DEAT")
-    d_date_str_cleaned = _clean_display_date(d_date_str)
-    death_info = ""
-    # Format death string only if death date exists
-    if d_date_str_cleaned != "N/A":
-        death_info = (
-            f"   Died: {d_date_str_cleaned} "
-            f"in {d_place if d_place != 'N/A' else '(Place unknown)'}"
-        )
-    return birth_info, death_info
-
-
-# End of function format_full_life_details
-
-
-def format_relative_info(relative) -> str:
-    """Formats information about a relative (name and life dates) for display."""
-    if not _is_individual(relative):
-        return "  - (Invalid Relative Data)"
-    # Get relative's full name
-    rel_name = _get_full_name(relative)
-    # Get formatted life dates (b. date, d. date)
-    life_info = format_life_dates(relative)
-    # Combine into a display string
-    return f"  - {rel_name}{life_info}"
-
-
-# End of function format_relative_info
 
 # --- Core Data Retrieval Functions ---
 
-
-def _find_family_records_where_individual_is_child(reader, target_id):
-    """Helper function to find family records where an individual is listed as a child."""
-    parent_families = []
-    # Iterate through all FAM records
-    for family_record in reader.records0("FAM"):
-        if not _is_record(family_record):
-            continue
-        # Check children in the current family
-        children_in_fam = family_record.sub_tags("CHIL")
-        if children_in_fam:
-            for child in children_in_fam:
-                # If child matches target ID, add the family record and break inner loop
-                if _is_individual(child) and _normalize_id(child.xref_id) == target_id:
-                    parent_families.append(family_record)
-                    break
-    return parent_families
-
-
-# End of function _find_family_records_where_individual_is_child
-
-
-def _find_family_records_where_individual_is_parent(reader, target_id):
-    """Helper function to find family records where an individual is listed as a parent (HUSB or WIFE)."""
-    parent_families = []
-    # Iterate through all FAM records
-    for family_record in reader.records0("FAM"):
-        if not _is_record(family_record) or not family_record.xref_id:
-            continue
-        # Get husband and wife records
-        husband = family_record.sub_tag("HUSB")
-        wife = family_record.sub_tag("WIFE")
-        # Check if target ID matches either parent
-        is_target_husband = (
-            _is_individual(husband) and _normalize_id(husband.xref_id) == target_id
-        )
-        is_target_wife = (
-            _is_individual(wife) and _normalize_id(wife.xref_id) == target_id
-        )
-        # If target is a parent in this family, add the record along with role flags
-        if is_target_husband or is_target_wife:
-            parent_families.append((family_record, is_target_husband, is_target_wife))
-    return parent_families
-
-
-# End of function _find_family_records_where_individual_is_parent
-
-
-def get_related_individuals(reader, individual, relationship_type: str) -> List:
-    """Gets parents, spouses, children, or siblings using family record lookups."""
-    related_individuals: List = []
-    unique_related_ids: Set[str] = set()
-
-    # Validate inputs
-    if not reader:
-        logger.error("get_related_individuals: No reader.")
-        return related_individuals
-    if not _is_individual(individual) or not individual.xref_id:
-        logger.warning(f"get_related_individuals: Invalid input individual.")
-        return related_individuals
-
-    # Normalize the target individual's ID
-    target_id = _normalize_id(individual.xref_id)
-    if not target_id:
-        logger.warning(
-            f"get_related_individuals: Cannot normalize target ID {individual.xref_id}"
-        )
-        return related_individuals
-    # target_name = _get_full_name(individual) # For logging if needed
-
-    try:
-        if relationship_type == "parents":
-            logger.debug(f"Finding parents for {target_id}...")
-            # Find families where the target is a child
-            parent_families = _find_family_records_where_individual_is_child(
-                reader, target_id
-            )
-            potential_parents = []
-            # Extract parents (HUSB, WIFE) from those families
-            for family_record in parent_families:
-                husband = family_record.sub_tag("HUSB")
-                wife = family_record.sub_tag("WIFE")
-                if _is_individual(husband):
-                    potential_parents.append(husband)
-                if _is_individual(wife):
-                    potential_parents.append(wife)
-            # Add unique parents to the result list
-            for parent in potential_parents:
-                if parent is not None and hasattr(parent, "xref_id") and parent.xref_id:
-                    parent_id = _normalize_id(parent.xref_id)
-                    if parent_id and parent_id not in unique_related_ids:
-                        related_individuals.append(parent)
-                        unique_related_ids.add(parent_id)
-            logger.debug(
-                f"Added {len(unique_related_ids)} unique parents for {target_id}."
-            )
-
-        elif relationship_type == "siblings":
-            logger.debug(f"Finding siblings for {target_id}...")
-            # Find families where the target is a child
-            parent_families = _find_family_records_where_individual_is_child(
-                reader, target_id
-            )
-            potential_siblings = []
-            # Collect all children from those families
-            for fam in parent_families:
-                fam_children = fam.sub_tags("CHIL")
-                if fam_children:
-                    potential_siblings.extend(
-                        c for c in fam_children if _is_individual(c)
-                    )
-            # Add unique siblings (excluding the target) to the result list
-            for sibling in potential_siblings:
-                if (
-                    sibling is not None
-                    and hasattr(sibling, "xref_id")
-                    and sibling.xref_id
-                ):
-                    sibling_id = _normalize_id(sibling.xref_id)
-                    if (
-                        sibling_id
-                        and sibling_id not in unique_related_ids
-                        and sibling_id != target_id
-                    ):
-                        related_individuals.append(sibling)
-                        unique_related_ids.add(sibling_id)
-            logger.debug(
-                f"Added {len(unique_related_ids)} unique siblings for {target_id}."
-            )
-
-        elif relationship_type in ["spouses", "children"]:
-            # Find families where the target is a parent
-            parent_families = _find_family_records_where_individual_is_parent(
-                reader, target_id
-            )
-            if relationship_type == "spouses":
-                logger.debug(f"Finding spouses for {target_id}...")
-                # Extract the *other* parent from each family
-                for family_record, is_target_husband, is_target_wife in parent_families:
-                    other_spouse = None
-                    if is_target_husband:
-                        other_spouse = family_record.sub_tag("WIFE")
-                    elif is_target_wife:
-                        other_spouse = family_record.sub_tag("HUSB")
-                    # Add unique spouses to the result list
-                    if (
-                        other_spouse is not None
-                        and _is_individual(other_spouse)
-                        and hasattr(other_spouse, "xref_id")
-                        and other_spouse.xref_id
-                    ):
-                        spouse_id = _normalize_id(other_spouse.xref_id)
-                        if spouse_id and spouse_id not in unique_related_ids:
-                            related_individuals.append(other_spouse)
-                            unique_related_ids.add(spouse_id)
-                logger.debug(
-                    f"Added {len(unique_related_ids)} unique spouses for {target_id}."
-                )
-            else:  # relationship_type == "children"
-                logger.debug(f"Finding children for {target_id}...")
-                # Extract all children from each family where target is a parent
-                for family_record, _, _ in parent_families:
-                    children_list = family_record.sub_tags("CHIL")
-                    if children_list:
-                        for child in children_list:
-                            # Add unique children to the result list
-                            if (
-                                child is not None
-                                and _is_individual(child)
-                                and hasattr(child, "xref_id")
-                                and child.xref_id
-                            ):
-                                child_id = _normalize_id(child.xref_id)
-                                if child_id and child_id not in unique_related_ids:
-                                    related_individuals.append(child)
-                                    unique_related_ids.add(child_id)
-                logger.debug(
-                    f"Added {len(unique_related_ids)} unique children for {target_id}."
-                )
-        else:
-            logger.warning(
-                f"Unknown relationship type requested: '{relationship_type}'"
-            )
-
-    # Catch potential errors during record access
-    except AttributeError as ae:
-        logger.error(
-            f"AttributeError finding {relationship_type} for {target_id}: {ae}",
-            exc_info=True,
-        )
-    except Exception as e:
-        logger.error(
-            f"Unexpected error finding {relationship_type} for {target_id}: {e}",
-            exc_info=True,
-        )
-
-    # Sort the results by ID for consistent display ordering
-    related_individuals.sort(key=lambda x: (_normalize_id(x.xref_id) or ""))
-    return related_individuals
-
-
-# End of function get_related_individuals
 
 # --- Relationship Path Functions ---
 
@@ -1367,6 +771,44 @@ def find_potential_matches(
             )
             continue  # Do not add to fuzzy_results
         # ...existing code for fuzzy scoring (as before, but only if not exact)...
+        # --- Fuzzy Name Matching ---
+        fuzzy_name_score = 0
+        fuzzy_first = 0
+        fuzzy_surname = 0
+        FUZZY_NAME_THRESHOLD = 70  # Lowered from 80 to 70 for more tolerant matching
+        FUZZY_PLACE_THRESHOLD = 70
+        if target_first_name_lower and indi_first_name:
+            fuzzy_first = fuzz.ratio(target_first_name_lower, indi_first_name)
+        if target_surname_lower and indi_surname:
+            fuzzy_surname = fuzz.ratio(target_surname_lower, indi_surname)
+        if fuzzy_first >= FUZZY_NAME_THRESHOLD:
+            score += 10
+            match_reasons.append(f"Fuzzy First Name ({fuzzy_first})")
+        if fuzzy_surname >= FUZZY_NAME_THRESHOLD:
+            score += 10
+            match_reasons.append(f"Fuzzy Surname ({fuzzy_surname})")
+        if (
+            fuzzy_first >= FUZZY_NAME_THRESHOLD
+            and fuzzy_surname >= FUZZY_NAME_THRESHOLD
+        ):
+            score += 10
+            match_reasons.append("Strong Fuzzy Name Match")
+        # ...existing code for gender, year, place, etc...
+        # --- Fuzzy Place Matching ---
+        if target_pob_lower and birth_place_str_ged != "N/A":
+            fuzzy_pob = fuzz.partial_ratio(
+                target_pob_lower, birth_place_str_ged.lower()
+            )
+            if fuzzy_pob >= FUZZY_PLACE_THRESHOLD:
+                score += 3
+                match_reasons.append(f"Fuzzy POB ({fuzzy_pob})")
+        if target_pod_lower and death_place_str_ged != "N/A":
+            fuzzy_pod = fuzz.partial_ratio(
+                target_pod_lower, death_place_str_ged.lower()
+            )
+            if fuzzy_pod >= FUZZY_PLACE_THRESHOLD:
+                score += 3
+                match_reasons.append(f"Fuzzy POD ({fuzzy_pod})")
         # ...existing code for fuzzy scoring, append to fuzzy_results if score > 0...
         # ...existing code...
     # If any exact matches, only consider those, sorted by score, then birth year/date
@@ -1464,86 +906,6 @@ def display_gedcom_family_details(reader, individual):
 # End of function display_gedcom_family_details
 
 
-# Create a standalone session_manager that can authenticate itself
-# Place this near where API functions are defined or used
-if API_UTILS_AVAILABLE:
-    session_manager = UtilsSessionManager()
-else:
-    # If utils isn't available, create a dummy session_manager
-    # so the code doesn't crash trying to access it.
-    session_manager = SessionManager()  # Uses the dummy class defined earlier
-    logger.warning("API Utils unavailable, using dummy SessionManager.")
-
-
-# Add standalone authentication function
-def initialize_session():
-    """Initialize the session with proper authentication for standalone usage"""
-    if not API_UTILS_AVAILABLE:
-        logger.error("Cannot initialize session: API utilities are missing.")
-        return False
-
-    global session_manager
-    # Ensure Selenium driver is running
-    if not session_manager.driver_live:
-        logger.info("Initializing browser session...")
-        session_manager.ensure_driver_live()  # Starts driver if needed
-
-    # Ensure authenticated session is ready
-    if not session_manager.session_ready:
-        success = session_manager.ensure_session_ready()  # Handles login/cookie loading
-        if not success:
-            logger.warning("Failed to authenticate with Ancestry automatically.")
-            logger.warning("Please login manually when the browser opens.")
-            input("Press Enter after you've logged in manually...")
-            # Re-check session readiness after manual login attempt
-            if hasattr(session_manager, "check_session_status") and callable(
-                getattr(session_manager, "check_session_status", None)
-            ):
-                session_manager.check_session_status()
-            if not session_manager.session_ready:
-                logger.error("Session still not ready after manual login attempt.")
-                return False  # Authentication failed
-        else:
-            logger.info("Authentication successful.")
-
-    # Ensure tree_id is loaded (needed for some API calls)
-    if not session_manager.my_tree_id:
-        logger.info("Loading tree information...")
-        session_manager._retrieve_identifiers()  # Fetches tree ID, user ID etc.
-        if not session_manager.my_tree_id:
-            # Log warning but allow proceeding as not all calls need tree ID
-            logger.warning(
-                "Could not load tree ID. Some API functionality might be limited."
-            )
-        else:
-            logger.info(f"Tree ID loaded successfully: {session_manager.my_tree_id}")
-    # Ensure profile ID is loaded (needed for /facts)
-    if not session_manager.my_profile_id:
-        logger.info("Loading user profile ID...")
-        session_manager._retrieve_identifiers()
-        if not session_manager.my_profile_id:
-            logger.error("Could not load user profile ID. Facts API will fail.")
-            # Optionally return False here if facts are critical
-        else:
-            logger.info(f"User Profile ID loaded: {session_manager.my_profile_id}")
-
-    # Return True if session appears ready
-    return session_manager.session_ready
-
-
-# End of function initialize_session
-
-
-# ...existing code...
-# --- Ancestry API Integration (moved from temp.py) ---
-from utils import SessionManager, _api_req
-import html
-from bs4 import BeautifulSoup
-
-# Create a standalone session_manager that can authenticate itself
-session_manager = SessionManager()
-
-
 def initialize_session():
     """Initialize the session with proper authentication for standalone usage"""
     global session_manager
@@ -1568,6 +930,9 @@ def initialize_session():
         else:
             print(f"Tree ID loaded successfully: {session_manager.my_tree_id}")
     return session_manager.session_ready
+
+
+# End of function initialize_session
 
 
 class AncestryAPISearch:
@@ -1748,127 +1113,27 @@ class AncestryAPISearch:
         return ladder_data
 
 
-def display_raw_relationship_ladder(raw_content):
-    print("\n=== RELATIONSHIP TO WAYNE GORDON GAULT (API) ===")
-    if not raw_content or not isinstance(raw_content, str):
-        print("No relationship content available.")
-        return
-    import re, json
-
-    # --- Extract JSON from JSONP if needed ---
-    json_str = None
-    # Try to extract JSON object from JSONP callback
-    match = re.search(r"\((\{.*\})\)", raw_content, re.DOTALL)
-    if match:
-        json_str = match.group(1)
-    else:
-        # Fallback: try to find 'html":"' and extract from there
-        html_start = raw_content.find('html":"')
-        if html_start != -1:
-            html_start += len('html":"')
-            html_escaped = raw_content[html_start:]
-            end_quote = html_escaped.find('"}')
-            if end_quote != -1:
-                html_escaped = html_escaped[:end_quote]
-            else:
-                html_escaped = html_escaped
-            # Try to decode and parse as HTML
-            try:
-                html_unescaped = bytes(html_escaped, "utf-8").decode("unicode_escape")
-                html_unescaped = html.unescape(html_unescaped)
-                soup = BeautifulSoup(html_unescaped, "html.parser")
-                rel_elem = soup.select_one(
-                    "ul.textCenter > li:first-child > i > b"
-                ) or soup.select_one("ul.textCenter > li > i > b")
-                if rel_elem:
-                    actual_relationship = rel_elem.get_text(strip=True).title()
-                    print(f"Relationship: {actual_relationship}")
-                else:
-                    print("Relationship: (not found)")
-                path_items = soup.select(
-                    'ul.textCenter > li:not([class*="iconArrowDown"])'
-                )
-                path_list = []
-                for item in path_items:
-                    name_container = item.find("a") or item.find("b")
-                    name_text = (
-                        name_container.get_text(strip=True) if name_container else ""
-                    )
-                    desc_elem = item.find("i")
-                    desc_text = desc_elem.get_text(strip=True) if desc_elem else ""
-                    if name_text:
-                        if desc_text:
-                            path_list.append(f"{name_text} ({desc_text})")
-                        else:
-                            path_list.append(name_text)
-                if path_list:
-                    print("Path:")
-                    for i, p in enumerate(path_list):
-                        print(f"  {p}")
-                        if i < len(path_list) - 1:
-                            print("  ↓")
-                else:
-                    print("No relationship path found.")
-            except Exception:
-                print("Could not decode relationship ladder HTML.")
-            return
-    if not json_str:
-        print("Could not extract relationship ladder JSON from the API response.")
-        return
-    try:
-        ladder_json = json.loads(json_str)
-        html_escaped = ladder_json.get("html")
-        if not html_escaped:
-            print("No relationship ladder HTML found in JSON.")
-            return
-        html_unescaped = bytes(html_escaped, "utf-8").decode("unicode_escape")
-        html_unescaped = html.unescape(html_unescaped)
-        soup = BeautifulSoup(html_unescaped, "html.parser")
-        rel_elem = soup.select_one(
-            "ul.textCenter > li:first-child > i > b"
-        ) or soup.select_one("ul.textCenter > li > i > b")
-        if rel_elem:
-            actual_relationship = rel_elem.get_text(strip=True).title()
-            print(f"Relationship: {actual_relationship}")
-        else:
-            print("Relationship: (not found)")
-        path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
-        path_list = []
-        for item in path_items:
-            name_container = item.find("a") or item.find("b")
-            name_text = name_container.get_text(strip=True) if name_container else ""
-            desc_elem = item.find("i")
-            desc_text = desc_elem.get_text(strip=True) if desc_elem else ""
-            if name_text:
-                if desc_text:
-                    path_list.append(f"{name_text} ({desc_text})")
-                else:
-                    path_list.append(name_text)
-        if path_list:
-            print("Path:")
-            for i, p in enumerate(path_list):
-                print(f"  {p}")
-                if i < len(path_list) - 1:
-                    print("  ↓")
-        else:
-            print("No relationship path found.")
-    except Exception as e:
-        print(f"Could not parse relationship ladder JSON: {e}")
-
-
-# ...existing code...
-
-from action6_gather import _fetch_batch_ladder
-
-
 def handle_api_report():
-    """Handler for Option 2 - API Report (Ancestry Online) using robust API logic."""
+    """Handler for Option 2 - API Report (Ancestry Online) with advanced search and polished output."""
     print("\n--- Person Details & Relationship to WGG (API) ---")
     if not initialize_session():
         print("Failed to initialize session. Cannot proceed with API operations.")
         return
     api_search = AncestryAPISearch(session_manager)
-    query = input("\nEnter search (First name, Last name, or both): ").strip()
+    print("\nEnter as many details as you know. Leave blank to skip a field.")
+    first_name = input("First name: ").strip() or None
+    surname = input("Surname (or maiden name): ").strip() or None
+    dob_str = input("Date of birth (YYYY-MM-DD or year): ").strip() or None
+    pob = input("Place of birth: ").strip() or None
+    gender = input("Gender (M/F, optional): ").strip().lower() or None
+    if gender and gender not in ("m", "f"):
+        gender = None
+    # Optionally allow death info (API may not always provide these)
+    dod_str = input("Date of death (YYYY-MM-DD or year, optional): ").strip() or None
+    pod = input("Place of death (optional): ").strip() or None
+
+    # Build search query for API (use first_name + surname for best match)
+    query = " ".join([x for x in [first_name, surname] if x]).strip()
     if not query:
         print("Search cancelled.")
         return
@@ -1876,66 +1141,290 @@ def handle_api_report():
     if not persons:
         print("\nNo matches found in Ancestry API.")
         return
-    print(f"\nFound {len(persons)} potential matches:")
-    for i, person in enumerate(persons[:5]):
-        name_display = api_search._extract_display_name(person)
-        print(f"  {i+1}. {name_display}")
-    try:
-        choice = int(input("\nSelect person (or 0 to cancel): "))
-        if choice < 1 or choice > len(persons[:5]):
-            print("Selection cancelled or invalid.")
-            return
-        selected_person = persons[choice - 1]
-        print("\n=== PERSON DETAILS ===")
-        print(api_search.format_person_details(selected_person))
-        wgg_name = "Wayne Gordon Gault"
-        wgg_results = api_search.search_by_name(wgg_name)
-        if not wgg_results:
-            print(f"\nReference person '{wgg_name}' not found in Ancestry API.")
-            return
-        wgg_person = wgg_results[0]
 
-        def extract_id(person):
-            return (
-                person.get("pid")
-                or person.get("id")
-                or (
-                    person.get("gid", {}).get("v")
-                    if isinstance(person.get("gid"), dict)
-                    else None
+    # Score and filter candidates using additional fields
+    def score_api_candidate(person):
+        score = 0
+        reasons = []
+        # Name matching
+        display_name = api_search._extract_display_name(person).lower()
+        if first_name and first_name.lower() in display_name:
+            score += 10
+            reasons.append("First name match")
+        if surname and surname.lower() in display_name:
+            score += 10
+            reasons.append("Surname match")
+        # Gender
+        api_gender = None
+        if "Genders" in person and person["Genders"]:
+            api_gender = person["Genders"][0].get("g", "").lower()
+        elif "gender" in person:
+            api_gender = str(person["gender"]).lower()
+        if gender and api_gender and gender == api_gender[0]:
+            score += 5
+            reasons.append(f"Gender match ({api_gender})")
+        elif gender and api_gender and gender != api_gender[0]:
+            score -= 5
+            reasons.append(f"Gender mismatch ({api_gender})")
+        # Birth info
+        events = person.get("Events") or person.get("events") or []
+        birth_date = None
+        birth_place = None
+        for event in events:
+            if (
+                event.get("t", "").lower() == "birth"
+                or event.get("type", "").lower() == "birth"
+            ):
+                birth_date = event.get("d") or event.get("date") or event.get("nd")
+                # Try all possible keys and handle nested dicts for place
+                birth_place = (
+                    event.get("p")
+                    or event.get("place")
+                    or (event.get("pl") if "pl" in event else None)
                 )
-            )
+                if isinstance(birth_place, dict):
+                    birth_place = birth_place.get("v") or birth_place.get("name")
+                if not birth_place:
+                    birth_place = "?"
+                break
+        if dob_str and birth_date and dob_str in str(birth_date):
+            score += 8
+            reasons.append(f"Birth date match ({birth_date})")
+        if pob and birth_place and pob.lower() in birth_place.lower():
+            score += 4
+            reasons.append(f"Place of birth match ({birth_place})")
+        # Death info (rare in API, but check)
+        death_date = None
+        death_place = None
+        for event in events:
+            if (
+                event.get("t", "").lower() == "death"
+                or event.get("type", "").lower() == "death"
+            ):
+                death_date = event.get("d") or event.get("date") or event.get("nd")
+                death_place = event.get("p") or event.get("place")
+                break
+        if dod_str and death_date and dod_str in str(death_date):
+            score += 4
+            reasons.append(f"Death date match ({death_date})")
+        if pod and death_place and pod.lower() in death_place.lower():
+            score += 2
+            reasons.append(f"Place of death match ({death_place})")
+        return score, ", ".join(reasons)
 
-        selected_id = extract_id(selected_person)
-        tree_id = api_search._get_tree_id()
-        if not selected_id or not tree_id:
-            print("Could not determine CFPID or tree ID for relationship lookup.")
-            return
-        print("\nLooking up relationship information (robust)...")
-        ladder_result = _fetch_batch_ladder(session_manager, selected_id, tree_id)
-        if ladder_result and (
-            ladder_result.get("actual_relationship")
-            or ladder_result.get("relationship_path")
+    # Score and sort candidates
+    scored = []
+    for person in persons:
+        score, reasons = score_api_candidate(person)
+        scored.append((score, reasons, person))
+    scored.sort(reverse=True, key=lambda x: x[0])
+    shortlist = scored[:5]
+
+    print(
+        f"\nFound {len(shortlist)} potential match{'es' if len(shortlist) != 1 else ''}:"
+    )
+    for i, (score, reasons, person) in enumerate(shortlist):
+        display_name = api_search._extract_display_name(person)
+        events = person.get("Events") or person.get("events") or []
+        birth_date = birth_place = death_date = death_place = ""
+        for event in events:
+            if (
+                event.get("t", "").lower() == "birth"
+                or event.get("type", "").lower() == "birth"
+            ):
+                birth_date = (
+                    event.get("d") or event.get("date") or event.get("nd") or "?"
+                )
+                birth_place = (
+                    event.get("Place") or event.get("place") or event.get("p") or "?"
+                )
+            if (
+                event.get("t", "").lower() == "death"
+                or event.get("type", "").lower() == "death"
+            ):
+                death_date = (
+                    event.get("d") or event.get("date") or event.get("nd") or "?"
+                )
+                death_place = event.get("p") or event.get("place") or "?"
+        line = f"  {i+1}. {display_name}\n     Born : {birth_date} in {birth_place}"
+        if (death_date and death_date != "?" and death_date.strip()) or (
+            death_place and death_place != "?" and death_place.strip()
         ):
-            print("\nRelationship Path (via action6 robust parser):")
-            if ladder_result.get("actual_relationship"):
-                print(f"Relationship: {ladder_result['actual_relationship']}")
-            if ladder_result.get("relationship_path"):
-                print(f"Path:\n{ladder_result['relationship_path']}")
-        else:
-            print("No relationship path could be determined.")
-    except ValueError:
-        print("Invalid selection. Please enter a number.")
-    except Exception as e:
-        import logging
+            line += f"\n     Died : {death_date} in {death_place}"
+        if reasons:
+            line += f"\n     Reasons: {reasons}"
+        print(line)
+    # Auto-select if only one match or if top match has a unique score
+    if len(shortlist) == 1 or (
+        len(shortlist) > 1 and shortlist[0][0] != shortlist[1][0]
+    ):
+        selected_person = shortlist[0][2]
+        print(f"\nAuto-selected: {api_search._extract_display_name(selected_person)}")
+    else:
+        try:
+            choice = int(input("\nSelect person (or 0 to cancel): "))
+            if choice < 1 or choice > len(shortlist):
+                print("Selection cancelled or invalid.")
+                return
+            selected_person = shortlist[choice - 1][2]
+        except ValueError:
+            print("Invalid selection. Please enter a number.")
+            return
+        except Exception as e:
+            import logging
 
-        logging.getLogger(__name__).error(
-            f"Error in handle_api_report: {e}", exc_info=True
+            logging.getLogger(__name__).error(
+                f"Error in handle_api_report: {e}", exc_info=True
+            )
+            print(f"Error: {type(e).__name__}: {e}")
+            return
+    print("\n=== PERSON DETAILS ===")
+    print(f"Name: {api_search._extract_display_name(selected_person)}")
+    # Gender
+    api_gender = None
+    if "Genders" in selected_person and selected_person["Genders"]:
+        api_gender = selected_person["Genders"][0].get("g")
+    elif "gender" in selected_person:
+        api_gender = selected_person["gender"]
+    print(f"Gender: {api_gender.upper() if api_gender else 'N/A'}")
+    # Birth/Death info
+    events = selected_person.get("Events") or selected_person.get("events") or []
+    birth_date = birth_place = death_date = death_place = None
+    for event in events:
+        # Use the most complete birth event (with place)
+        if (
+            event.get("t", "").lower() == "birth"
+            or event.get("type", "").lower() == "birth"
+        ) or (event.get("TypeString", "").lower() == "birth"):
+            birth_date = (
+                event.get("d")
+                or event.get("date")
+                or event.get("nd")
+                or event.get("Date")
+            )
+            birth_place = event.get("Place") or event.get("place") or event.get("p")
+            if not birth_place and "PlaceGpids" in event and event["PlaceGpids"]:
+                pass
+            if birth_place:
+                break
+    if not birth_place:
+        for event in events:
+            if (
+                event.get("t", "").lower() == "birth"
+                or event.get("type", "").lower() == "birth"
+            ) or (event.get("TypeString", "").lower() == "birth"):
+                birth_place = event.get("Place") or event.get("place") or event.get("p")
+                if birth_place:
+                    break
+    print(
+        f"Birth : {birth_date if birth_date else '?'} in {birth_place if birth_place else '?'}"
+    )
+    # Only print death info if at least one is not missing/blank/?
+    for event in events:
+        if (
+            event.get("t", "").lower() == "death"
+            or event.get("type", "").lower() == "death"
+        ):
+            death_date = event.get("d") or event.get("date") or event.get("nd")
+            death_place = event.get("p") or event.get("place")
+            break
+    if (death_date and str(death_date).strip() and death_date != "?") or (
+        death_place and str(death_place).strip() and death_place != "?"
+    ):
+        print(
+            f"Death : {death_date if death_date else '?'} in {death_place if death_place else '?'}"
         )
-        print(f"Error: {type(e).__name__}: {e}")
+    # Build and display Ancestry link in tree
+    tree_id = api_search._get_tree_id()
+    selected_id = (
+        selected_person.get("pid")
+        or selected_person.get("id")
+        or (
+            selected_person.get("gid", {}).get("v")
+            if isinstance(selected_person.get("gid"), dict)
+            else None
+        )
+    )
+    ancestry_id = (
+        selected_id[1:]
+        if selected_id
+        and selected_id[0] in ("I", "F", "S", "T", "N", "M", "C", "X", "O")
+        else selected_id
+    )
+    if tree_id and ancestry_id:
+        print(
+            f"Link in Tree: https://www.ancestry.co.uk/family-tree/person/tree/{tree_id}/person/{ancestry_id}/facts"
+        )
+    else:
+        print(f"Link in Tree: (unavailable)")
+
+    # --- Fetch and show family details (parents, spouses, children) if available ---
+    # Use the browser facts page JSON endpoint for family details
+    def fetch_facts_json(profile_id, tree_id, person_id):
+        url = f"https://www.ancestry.co.uk/family-tree/person/facts/user/{profile_id}/tree/{tree_id}/person/{person_id}"
+        try:
+            return _api_req(
+                url=url,
+                driver=session_manager.driver,
+                session_manager=session_manager,
+                method="GET",
+                headers=None,
+                use_csrf_token=False,
+                api_description="Ancestry Facts JSON Endpoint",
+                referer_url=f"https://www.ancestry.co.uk/family-tree/tree/{tree_id}/family",
+                timeout=20,
+            )
+        except Exception:
+            return None
+
+    # Extract profile_id, tree_id, person_id
+    profile_id = (
+        getattr(session_manager, "my_profile_id", None)
+        or "07bdd45e-0006-0000-0000-000000000000"
+    )
+    tree_id = api_search._get_tree_id()
+    person_id = ancestry_id
+    facts_json = None
+    if profile_id and tree_id and person_id:
+        facts_json = fetch_facts_json(profile_id, tree_id, person_id)
+    if facts_json and isinstance(facts_json, dict):
+        # Try to extract family details from the JSON structure
+        family = facts_json.get("family") or facts_json.get("Family")
+        if family:
+
+            def print_family_section(label, people):
+                print(f"\n{label}:")
+                if people:
+                    for rel in people:
+                        name = (
+                            rel.get("displayName")
+                            or rel.get("fullName")
+                            or rel.get("name")
+                            or rel.get("gname")
+                            or rel.get("sname")
+                            or rel.get("id")
+                            or "(Unknown)"
+                        )
+                        life = rel.get("birthDate") or rel.get("birth") or ""
+                        if rel.get("deathDate") or rel.get("death"):
+                            life += f" - {rel.get('deathDate') or rel.get('death')}"
+                        print(f"  - {name}{f' ({life})' if life else ''}")
+                else:
+                    print("  (None found)")
+
+            print_family_section("Parents", family.get("parents", []))
+            print_family_section("Spouse(s)", family.get("spouses", []))
+            print_family_section("Children", family.get("children", []))
+        else:
+            print("\n(Family details not available in facts JSON response.)")
+    else:
+        facts_url = f"https://www.ancestry.co.uk/family-tree/person/facts/user/{profile_id}/tree/{tree_id}/person/{person_id}"
+        print(
+            "\n(Family details could not be retrieved. You can view full family details in your browser:"
+        )
+        print(f"  {facts_url}\n")
 
 
-# REVISED: Main function with simplified logic
 def main():
     """Main execution flow: Load GEDCOM, process user choices for reports."""
     reader = None
@@ -1999,12 +1488,7 @@ def main():
                     )
                 # --- ACTION 2: API Report ---
                 elif choice == "2":
-                    if API_UTILS_AVAILABLE:
-                        handle_api_report()  # API handler doesn't need GEDCOM reader/WGG object
-                    else:
-                        logger.info(
-                            "\nAPI functionality is disabled due to missing dependencies ('utils' module)."
-                        )
+                    handle_api_report()  # API handler doesn't need GEDCOM reader/WGG object
 
                 # --- Toggle Log Level ---
                 elif choice == "t":
@@ -2083,29 +1567,27 @@ def main():
 
 # REVISED: Handler for GEDCOM Report
 def handle_gedcom_report(
-    reader, wayne_gault_indi, wayne_gault_id_gedcom, max_results=3
+    reader, wayne_gault_indi, wayne_gault_id_gedcom, max_results=5
 ):
-    """Handler for Option 1 - GEDCOM Report (now with unified input/output style)."""
+    """Handler for Option 1 - GEDCOM Report (now with unified input/output style and advanced search fields)."""
     print("\n--- Person Details & Relationship to WGG (GEDCOM) ---")
     if not wayne_gault_indi or not wayne_gault_id_gedcom:
         print("ERROR: Wayne Gordon Gault (reference person) not found in local GEDCOM.")
         print("Cannot calculate relationships accurately.")
         return
 
-    # Unified input prompt
-    query = input("\nEnter search (First name, Last name, or both): ").strip()
-    if not query:
-        print("Search cancelled.")
-        return
-    # Simple split for fuzzy search
-    parts = query.split()
-    first_name = parts[0] if len(parts) > 0 else None
-    surname = parts[1] if len(parts) > 1 else None
-    dob_str = None
-    pob = None
-    dod_str = None
-    pod = None
-    gender = None
+    # Advanced input prompts for fuzzy search
+    print("\nEnter as many details as you know. Leave blank to skip a field.")
+    first_name = input("First name: ").strip() or None
+    surname = input("Surname (or maiden name): ").strip() or None
+    dob_str = input("Date of birth (YYYY-MM-DD or year): ").strip() or None
+    pob = input("Place of birth: ").strip() or None
+    gender = input("Gender (M/F, optional): ").strip().lower() or None
+    if gender and gender not in ("m", "f"):
+        gender = None
+    # Optionally allow death info
+    dod_str = input("Date of death (YYYY-MM-DD or year, optional): ").strip() or None
+    pod = input("Place of death (optional): ").strip() or None
 
     matches = find_potential_matches(
         reader, first_name, surname, dob_str, pob, dod_str, pod, gender
@@ -2116,46 +1598,78 @@ def handle_gedcom_report(
     print(f"\nFound {len(matches)} potential matches:")
     for i, match in enumerate(matches[:max_results]):
         print(f"  {i+1}. {match['name']}")
-    try:
-        choice = int(input("\nSelect person (or 0 to cancel): "))
-        if choice < 1 or choice > len(matches[:max_results]):
-            print("Selection cancelled or invalid.")
+        print(f"     Born : {match['birth_date']} in {match['birth_place']}")
+        if (match["death_date"] and match["death_date"] != "N/A") or (
+            match["death_place"] and match["death_place"] != "N/A"
+        ):
+            print(f"     Died : {match['death_date']} in {match['death_place']}")
+        print(f"     Reasons: {match['reasons']}")
+    # Auto-select if only one match or if top match has a unique score
+    if len(matches) == 1 or (
+        len(matches) > 1 and matches[0]["score"] != matches[1]["score"]
+    ):
+        selected_match = matches[0]
+        print(f"\nAuto-selected: {selected_match['name']}")
+    else:
+        try:
+            choice = int(input("\nSelect person (or 0 to cancel): "))
+            if choice < 1 or choice > len(matches[:max_results]):
+                print("Selection cancelled or invalid.")
+                return
+            selected_match = matches[choice - 1]
+        except ValueError:
+            print("Invalid selection. Please enter a number.")
             return
-        selected_match = matches[choice - 1]
-        selected_id = extract_and_fix_id(selected_match["id"])
-        if not selected_id:
-            print("ERROR: Invalid ID in selected match.")
-            return
-        selected_indi = find_individual_by_id(reader, selected_id)
-        if not selected_indi:
-            print("ERROR: Could not retrieve individual record from GEDCOM.")
-            return
-        # --- Unified person details output ---
-        print("\n=== PERSON DETAILS ===")
-        print(f"Name: {selected_match['name']}")
-        print(
-            f"Birth: {selected_match['birth_date']} in {selected_match['birth_place']}"
-        )
-        print(
-            f"Death: {selected_match['death_date']} in {selected_match['death_place']}"
-        )
-        print(f"Person ID: {selected_id}")
-        # --- Unified relationship path output ---
-        print("\nLooking up relationship information...")
-        relationship_path = get_relationship_path(
-            reader, selected_id, wayne_gault_id_gedcom
-        )
-        print("\nRelationship Path:")
-        print(relationship_path.strip())
-    except ValueError:
-        print("Invalid selection. Please enter a number.")
-    except Exception as e:
-        import logging
+        except Exception as e:
+            import logging
 
-        logging.getLogger(__name__).error(
-            f"Error in handle_gedcom_report: {e}", exc_info=True
+            logging.getLogger(__name__).error(
+                f"Error in handle_gedcom_report: {e}", exc_info=True
+            )
+            print(f"Error: {type(e).__name__}: {e}")
+            return
+    selected_id = extract_and_fix_id(selected_match["id"])
+    if not selected_id:
+        print("ERROR: Invalid ID in selected match.")
+        return
+    selected_indi = find_individual_by_id(reader, selected_id)
+    if not selected_indi:
+        print("ERROR: Could not retrieve individual record from GEDCOM.")
+        return
+    # --- Polished person details output ---
+    print("\n=== PERSON DETAILS ===")
+    print(f"Name: {selected_match['name']}")
+    print(f"Gender: {gender.upper() if gender else 'N/A'}")
+    print(f"Birth : {selected_match['birth_date']} in {selected_match['birth_place']}")
+    if (selected_match["death_date"] and selected_match["death_date"] != "N/A") or (
+        selected_match["death_place"] and selected_match["death_place"] != "N/A"
+    ):
+        print(
+            f"Death : {selected_match['death_date']} in {selected_match['death_place']}"
         )
-        print(f"Error: {type(e).__name__}: {e}")
+    # Build and display Ancestry link in tree
+    tree_id = MY_TREE_ID or getattr(session_manager, "my_tree_id", None)
+    ancestry_id = (
+        selected_id[1:]
+        if selected_id
+        and selected_id[0] in ("I", "F", "S", "T", "N", "M", "C", "X", "O")
+        else selected_id
+    )
+    if tree_id and ancestry_id:
+        print(
+            f"Link in Tree: https://www.ancestry.co.uk/family-tree/person/tree/{tree_id}/person/{ancestry_id}/facts"
+        )
+    else:
+        print(f"Link in Tree: (unavailable)")
+    # --- Show family details (parents, siblings, spouses, children) ---
+    display_gedcom_family_details(reader, selected_indi)
+    # --- Unified relationship path output ---
+    print("\nLooking up relationship information...")
+    relationship_path = get_relationship_path(
+        reader, selected_id, wayne_gault_id_gedcom
+    )
+    print("\nRelationship Path:")
+    print(relationship_path.strip())
 
 
 # End of function handle_gedcom_report
@@ -2209,8 +1723,6 @@ def format_name(name: Optional[str]) -> str:
     # Apply title casing and strip whitespace
     cleaned_name = name.strip().title()
     # Remove trailing GEDCOM-style surname slashes (e.g., "John /Doe/")
-    cleaned_name = re.sub(r"\s*/([^/]+)/\s*$", r" \1", cleaned_name).strip()
-    # Remove leading/trailing slashes if they exist without spaces
     cleaned_name = re.sub(r"^/", "", cleaned_name).strip()
     cleaned_name = re.sub(r"/$", "", cleaned_name).strip()
     # Replace multiple spaces with a single space

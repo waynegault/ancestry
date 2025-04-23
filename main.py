@@ -15,7 +15,7 @@ import traceback
 import warnings
 from pathlib import Path
 from urllib.parse import urljoin
-from typing import Optional, Any
+from typing import Optional, Any, Tuple
 
 # --- Third-party imports ---
 from selenium.webdriver.remote.remote_connection import RemoteConnection
@@ -66,6 +66,8 @@ from utils import (
     nav_to_page,
     retry,
 )
+from action10 import run_action10
+from action11 import run_action11
 
 
 def menu():
@@ -100,119 +102,115 @@ def menu():
     print("2. Reset Database")
     print("3. Backup Database")
     print("4. Restore Database")
-    print("5. Check Login Status")  
+    print("5. Check Login Status")
     print("6. Gather Matches [start page]")
     print("7. Search Inbox")
     print("8. Send Messages")
     print("9. Process Productive Messages")
+    print("10. GEDCOM Report (Local File)")
+    print("11. API Report (Ancestry Online)")
     print("")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
     print("q. Exit")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
+
+
 # End of menu
 
 
-def clear_log_file():
-    """Finds the FileHandler, closes it, clears the log file."""
-    global logger
+def clear_log_file() -> Tuple[bool, Optional[str]]:
+    """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
     cleared = False
-    handler_to_reopen = None
-    log_path = None
+    log_file_handler: Optional[logging.FileHandler] = None
+    log_file_path: Optional[str] = None
     try:
+        # Step 1: Find the FileHandler in the logger's handlers
         for handler in logger.handlers:
             if isinstance(handler, logging.FileHandler):
-                handler_to_reopen = handler
-                log_path = handler.baseFilename
+                log_file_handler = handler
+                log_file_path = handler.baseFilename  # type: ignore[union-attr]
                 break
-        if handler_to_reopen and log_path:
-            if (
-                hasattr(handler_to_reopen, "flush")
-                and hasattr(handler_to_reopen, "close")
-                and hasattr(handler_to_reopen, "stream")
-                and handler_to_reopen.stream
-            ):
-                handler_to_reopen.flush()
-                handler_to_reopen.close()
-                with open(log_path, "w", encoding="utf-8") as f:
-                    pass
-                cleared = True
-            else:
-                logger.warning(
-                    f"FileHandler '{log_path}' invalid/closed. Skipping clear."
-                )
-    except PermissionError as pe:
-        logger.warning(f"Permission denied clearing log '{log_path}': {pe}")
-    except IOError as e:
-        logger.warning(f"IOError clearing log '{log_path}': {e}")
-    except Exception as e:
-        logger.warning(f"Error clearing log '{log_path}': {e}", exc_info=True)
-    return cleared, log_path
+        if log_file_handler and log_file_path:
+            # Step 2: Flush the handler (ensuring all previous writes are persisted to disk)
+            log_file_handler.flush()  # type: ignore[union-attr]
+            # Step 3: Close the handler (releases resources)
+            log_file_handler.close()  # type: ignore[union-attr]
+            # Step 4: Clear the log file contents
+            with open(log_file_path, "w", encoding="utf-8") as f:
+                pass
+            cleared = True
+    except PermissionError as permission_error:
+        # Handle permission errors when attempting to open the log file
+        logger.warning(
+            f"Permission denied clearing log '{log_file_path}': {permission_error}"
+        )
+    except IOError as io_error:
+        # Handle I/O errors when attempting to open the log file
+        logger.warning(f"IOError clearing log '{log_file_path}': {io_error}")
+    except Exception as error:
+        # Handle any other exceptions during the log clearing process
+        logger.warning(f"Error clearing log '{log_file_path}': {error}", exc_info=True)
+    return cleared, log_file_path
+
+
 # End of clear_log_file
 
 
-def exec_actn(action_func, session_manager, choice, close_sess_after=False, *args):
+def exec_actn(
+    action_func,
+    session_manager: SessionManager,
+    choice: str,
+    close_sess_after: bool = False,
+    *args,
+) -> bool:
     """
-    V3.6 REVISED: Executes an action, ensuring the required session state
+    Executes an action, ensuring the required session state
     (driver live, session ready) is met beforehand using SessionManager methods.
-    Simplified closing logic: Leaves session open unless action fails or close_sess_after=True.
-    """
-    # Use standard library inspect here
-    import inspect as std_inspect
+    Leaves the session open unless action fails or close_sess_after is True.
 
-    log_cleared, cleared_log_path = clear_log_file()
+    Args:
+        action_func: The function representing the action to execute.
+        session_manager: The SessionManager instance to manage session state.
+        choice: The user's choice of action.
+        close_sess_after: Flag to close session after action, defaults to False.
+        *args: Additional arguments to pass to the action function.
+
+    Returns:
+        True if action completed successfully, False otherwise.
+    """
     start_time = time.time()
     action_name = action_func.__name__
-    # --- Performance Logging Setup ---
-    mem_before = 0  # Default value
-    process = None
-    try:
-        process = psutil.Process(os.getpid())
-        mem_before = process.memory_info().rss / (1024 * 1024)
-    except Exception as ps_err:
-        logger.warning(f"Could not get initial memory usage: {ps_err}")
-    # --- End Performance Logging Setup ---
 
-    # --- Restore Header Style ---
-    logger.info("------------------------------------------")
+    # --- Performance Logging Setup ---
+    process = psutil.Process(os.getpid())
+    mem_before = process.memory_info().rss / (1024 * 1024)
+
+    logger.info("\n------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
     logger.info("------------------------------------------\n")
-    # --- End Restore Header Style ---
 
     action_result = None
     action_exception = None  # Store exception if one occurs
 
-    # --- Determine Required Session State ---
-    # Define actions requiring different states
+    # Determine the required session state for the action
+    required_state = "none"  # Default for browserless actions
+    # Actions that are DB-only and do NOT require browser or session
     browserless_actions = [
+        "all_but_first_actn",
         "reset_db_actn",
         "backup_db_actn",
         "restore_db_actn",
-        "all_but_first_actn",
     ]
-    driver_only_actions = [
-        "check_login_actn"
-    ]  # Actions needing driver but not full readiness check
-    # All others assumed to need session_ready
-
-    required_state = "none"  # Default for browserless
-    if action_name in driver_only_actions:
-        required_state = "driver_live"
-    elif action_name not in browserless_actions:
+    if action_name in browserless_actions:
+        required_state = "none"
+    elif action_name not in ["all_but_first_actn"]:
         required_state = "session_ready"
-
-    logger.debug(f"Action '{action_name}' requires session state: '{required_state}'")
 
     try:
         # --- Ensure Required State ---
         state_ok = True
-        # Ensure SessionManager exists before calling methods on it
-        if required_state != "none" and not isinstance(session_manager, SessionManager):
-            raise TypeError(
-                f"SessionManager instance is required for state '{required_state}', but was not provided or invalid."
-            )
-
         if required_state == "driver_live":
             state_ok = session_manager.ensure_driver_live(
                 action_name=f"{action_name} - Setup"
@@ -221,7 +219,6 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
             state_ok = session_manager.ensure_session_ready(
                 action_name=f"{action_name} - Setup"
             )
-        # No setup needed for 'none' state (browserless)
 
         if not state_ok:
             # Log specific state failure before raising generic exception
@@ -233,28 +230,21 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
             )
 
         # --- Execute Action ---
-        # Argument preparation logic (remains the same as previous version)
-        func_sig = std_inspect.signature(action_func)  # Use aliased inspect
+        # Prepare arguments for action function call
+        func_sig = inspect.signature(action_func)
         pass_config = "config_instance" in func_sig.parameters
         pass_session_manager = "session_manager" in func_sig.parameters
 
         final_args = []
         if pass_session_manager:
             final_args.append(session_manager)
-        # Add config_instance only if needed and not already present in *args
         if pass_config:
-            if not any(isinstance(a, type(config_instance)) for a in args):
-                final_args.append(config_instance)
-        final_args.extend(args)  # Add remaining positional args provided to exec_actn
+            final_args.append(config_instance)
+        final_args.extend(args)
 
         # Handle keyword args specifically for coord_action_func
-        target_func_name = action_func.__name__
-        if hasattr(action_func, "__wrapped__"):
-            target_func_name = action_func.__wrapped__.__name__
-
-        if target_func_name == "coord_action_func" and "start" in func_sig.parameters:
+        if action_name == "coord_action_func" and "start" in func_sig.parameters:
             start_val = 1
-            # Find the *last* integer passed in args as the start page
             int_args = [a for a in args if isinstance(a, int)]
             if int_args:
                 start_val = int_args[-1]
@@ -272,22 +262,22 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
             action_result = action_func(*final_args)
 
     except Exception as e:
+        # Log exception details and mark action as failure
         logger.error(f"Exception during action {action_name}: {e}", exc_info=True)
-        action_result = False  # Mark as failure
-        action_exception = e  # Store exception
+        action_result = False
+        action_exception = e
 
     finally:
         # --- Session Closing Logic (Simplified) ---
-        # Close session only if:
-        # 1. The action itself failed (action_result is False or an exception occurred) OR
-        # 2. The caller explicitly requested it via close_sess_after=True.
         should_close = False
         if action_result is False or action_exception is not None:
+            # Close session if action failed or raised exception
             logger.warning(
                 f"Action '{action_name}' failed or raised exception. Closing session."
             )
             should_close = True
         elif close_sess_after:
+            # Close session if explicitly requested
             logger.debug(
                 f"Closing session after '{action_name}' as requested by caller (close_sess_after=True)."
             )
@@ -301,9 +291,9 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
         ):
             logger.debug(f"Closing browser session...")
             # Keep DB pool for browserless actions if closing due to error, else close pool
-            session_manager.close_sess(keep_db=(action_name in browserless_actions))
+            session_manager.close_sess(keep_db=(action_name in ["all_but_first_actn"]))
             logger.debug(
-                f"Browser session closed. DB Pool status: {'Kept' if action_name in browserless_actions else 'Closed'}."
+                f"Browser session closed. DB Pool status: {'Kept' if action_name in ['all_but_first_actn'] else 'Closed'}."
             )
         # Log if session is kept open
         elif (
@@ -319,14 +309,12 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
         minutes, seconds = divmod(remainder, 60)
         formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
         # Recalculate memory usage safely
-        mem_log = "Memory usage unavailable."  # Default
-        if process:  # Check if process object was obtained
-            try:
-                mem_after = process.memory_info().rss / (1024 * 1024)
-                mem_used = mem_after - mem_before
-                mem_log = f"Memory used: {mem_used:.1f} MB"
-            except Exception as mem_err:
-                mem_log = f"Memory usage unavailable: {mem_err}"
+        try:
+            mem_after = process.memory_info().rss / (1024 * 1024)
+            mem_used = mem_after - mem_before
+            mem_log = f"Memory used: {mem_used:.1f} MB"
+        except Exception as mem_err:
+            mem_log = f"Memory usage unavailable: {mem_err}"
 
         print(" ")  # Spacer
 
@@ -343,7 +331,6 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
         logger.info(f"Duration: {formatted_duration}")
         logger.info(mem_log)
         logger.info("------------------------------------------\n")
-        # End Restore old footer style
 
     # --- Return Action Result ---
     # Return True only if action completed without exception AND didn't return False explicitly
@@ -352,6 +339,8 @@ def exec_actn(action_func, session_manager, choice, close_sess_after=False, *arg
         f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}"
     )
     return final_outcome
+
+
 # End of exec_actn
 
 
@@ -494,7 +483,10 @@ def all_but_first_actn(session_manager: SessionManager, *args):
             temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
         logger.debug(f"Delete action (except {profile_id_to_keep}) finished.")
     return success
+
+
 # end of action 0 (all_but_first_actn)
+
 
 # Action 1
 def run_actions_6_7_8_action(session_manager, *args):
@@ -569,6 +561,8 @@ def run_actions_6_7_8_action(session_manager, *args):
             f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
         )
         return False
+
+
 # End Action 1
 
 
@@ -664,9 +658,7 @@ def reset_db_actn(session_manager: SessionManager, *args):
             # --- End Seeding ---
 
             reset_successful = True
-            logger.info(
-                "Database reset completed successfully."
-            )
+            logger.info("Database reset completed successfully.")
 
         except Exception as recreate_err:
             logger.error(
@@ -690,6 +682,8 @@ def reset_db_actn(session_manager: SessionManager, *args):
         logger.debug("Reset DB action finished.")
 
     return reset_successful
+
+
 # end of Action 2 (reset_db_actn)
 
 
@@ -707,6 +701,8 @@ def backup_db_actn(
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
+
+
 # end of Action 3
 
 
@@ -756,6 +752,8 @@ def restore_db_actn(
     finally:
         logger.debug("DB restore action finished.")
     return success
+
+
 # end of Action 4
 
 
@@ -792,6 +790,8 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
     else:  # Status is None
         logger.error("Login verification failed (critical error during check).")
         return False
+
+
 # End Action 5
 
 
@@ -819,6 +819,8 @@ def coord_action(session_manager, config_instance, start=1):
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
+
+
 # End of coord_action
 
 
@@ -843,6 +845,8 @@ def srch_inbox_actn(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
+
+
 # End of srch_inbox_actn
 
 
@@ -879,6 +883,8 @@ def send_messages_action(session_manager, *args):
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
+
+
 # End of send_messages_action
 
 
@@ -1007,6 +1013,10 @@ def main():
                 exec_actn(
                     process_productive_messages, session_manager, choice
                 )  # Keep open
+            elif choice == "10":
+                exec_actn(run_action10, session_manager, choice)
+            elif choice == "11":
+                run_action11()
             # --- Meta Options ---
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")
@@ -1082,7 +1092,8 @@ def main():
         if sm_present:
             try:
                 # Close session, including DB pool, regardless of keep_db flags used earlier
-                session_manager.close_sess(keep_db=False)
+                if session_manager is not None:
+                    session_manager.close_sess(keep_db=False)
                 if logger_present:
                     logger.debug("Session Manager closed in final cleanup.")
                 else:
@@ -1109,6 +1120,8 @@ def main():
                 file=sys.stderr,
             )
         print("\nExecution finished.")
+
+
 # end main
 
 # --- Entry Point ---
