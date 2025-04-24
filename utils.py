@@ -99,12 +99,209 @@ except ImportError:
     Record = None
     Name = None
     GEDCOM_LIB_AVAILABLE = False
-except Exception:
-    GedcomReader = None
-    Individual = None
-    Record = None
-    Name = None
-    GEDCOM_LIB_AVAILABLE = False
+
+# --- Robust GEDCOM helpers (from temp.py) ---
+def _is_individual(obj):
+    """Checks if object is an Individual safely handling None values"""
+    return obj is not None and type(obj).__name__ == "Individual"
+
+def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
+    """Normalizes INDI/FAM etc IDs (e.g., '@I123@' -> 'I123')."""
+    if xref_id and isinstance(xref_id, str):
+        match = re.match(r"^@?([IFSTNMCXO][0-9A-Z\-]+)@?$", xref_id.strip().upper())
+        if match:
+            return match.group(1)
+    return None
+
+def _get_full_name(indi) -> str:
+    """Safely gets formatted name using Name.format(). Handles None/errors."""
+    if not _is_individual(indi):
+        return "Unknown (Not Individual)"
+    try:
+        name_rec = indi.name  # Access the name record
+        if hasattr(name_rec, 'format'):
+            formatted_name = name_rec.format()
+            cleaned_name = " ".join(formatted_name.split()).title()
+            cleaned_name = re.sub(r"\s*/([^/]+)/\s*$", r" \1", cleaned_name).strip()
+            return cleaned_name if cleaned_name else "Unknown (Empty Name)"
+        elif name_rec is None:
+            return "Unknown (No Name Tag)"
+        else:
+            indi_id_log = _normalize_id(indi.xref_id) if hasattr(indi, 'xref_id') and indi.xref_id else "Unknown ID"
+            logger.warning(
+                f"Indi @{indi_id_log}@ unexpected .name type: {type(name_rec)}"
+            )
+            return f"Unknown (Type {type(name_rec).__name__})"
+    except AttributeError:
+        return "Unknown (Attr Error)"
+    except Exception as e:
+        indi_id_log = _normalize_id(indi.xref_id) if hasattr(indi, 'xref_id') and indi.xref_id else "Unknown ID"
+        logger.error(
+            f"Error formatting name for @{indi_id_log}@: {e}",
+            exc_info=False,
+        )
+        return "Unknown (Error)"
+
+def format_life_dates(indi) -> str:
+    """Returns a formatted string with birth and death dates."""
+    b_date_obj, b_date_str, b_place = _get_event_info(indi, "BIRT")
+    d_date_obj, d_date_str, d_place = _get_event_info(indi, "DEAT")
+    b_date_str_cleaned = _clean_display_date(b_date_str)
+    d_date_str_cleaned = _clean_display_date(d_date_str)
+    birth_info = f"b. {b_date_str_cleaned}" if b_date_str_cleaned != "N/A" else ""
+    death_info = f"d. {d_date_str_cleaned}" if d_date_str_cleaned != "N/A" else ""
+    life_parts = [info for info in [birth_info, death_info] if info]
+    return f" ({', '.join(life_parts)})" if life_parts else ""
+
+def format_relative_info(relative) -> str:
+    """Formats information about a relative (name and life dates) for display."""
+    if not _is_individual(relative):
+        return "  - (Invalid Relative Data)"
+    rel_name = _get_full_name(relative)
+    life_info = format_life_dates(relative)
+    return f"  - {rel_name}{life_info}"
+
+
+def _find_family_records_where_individual_is_child(reader, target_id):
+    """Helper function to find family records where an individual is listed as a child."""
+    parent_families = []
+    for family_record in reader.records0("FAM"):
+        if not _is_record(family_record):
+            continue
+        children_in_fam = family_record.sub_tags("CHIL")
+        if children_in_fam:
+            for child in children_in_fam:
+                if _is_individual(child) and _normalize_id(child.xref_id) == target_id:
+                    parent_families.append(family_record)
+                    break
+    return parent_families
+
+
+def _find_family_records_where_individual_is_parent(reader, target_id):
+    """Helper function to find family records where an individual is listed as a parent (HUSB or WIFE)."""
+    parent_families = []
+    for family_record in reader.records0("FAM"):
+        if not _is_record(family_record) or not family_record.xref_id:
+            continue
+        husband = family_record.sub_tag("HUSB")
+        wife = family_record.sub_tag("WIFE")
+        is_target_husband = (
+            _is_individual(husband) and _normalize_id(husband.xref_id) == target_id
+        )
+        is_target_wife = (
+            _is_individual(wife) and _normalize_id(wife.xref_id) == target_id
+        )
+        if is_target_husband or is_target_wife:
+            parent_families.append((family_record, is_target_husband, is_target_wife))
+    return parent_families
+
+
+def get_related_individuals(reader, individual, relationship_type: str) -> list:
+    """Gets parents, spouses, children, or siblings using family record lookups."""
+    related_individuals = []
+    unique_related_ids = set()
+    if not reader:
+        logging.error("get_related_individuals: No reader.")
+        return related_individuals
+    if not _is_individual(individual) or not individual.xref_id:
+        logging.warning(f"get_related_individuals: Invalid input individual.")
+        return related_individuals
+    target_id = _normalize_id(individual.xref_id)
+    if not target_id:
+        logging.warning(
+            f"get_related_individuals: Cannot normalize target ID {individual.xref_id}"
+        )
+        return related_individuals
+    try:
+        if relationship_type == "parents":
+            parent_families = _find_family_records_where_individual_is_child(reader, target_id)
+            potential_parents = []
+            for family_record in parent_families:
+                husband = family_record.sub_tag("HUSB")
+                wife = family_record.sub_tag("WIFE")
+                if _is_individual(husband):
+                    potential_parents.append(husband)
+                if _is_individual(wife):
+                    potential_parents.append(wife)
+            for parent in potential_parents:
+                if parent is not None and hasattr(parent, "xref_id") and parent.xref_id:
+                    parent_id = _normalize_id(parent.xref_id)
+                    if parent_id and parent_id not in unique_related_ids:
+                        related_individuals.append(parent)
+                        unique_related_ids.add(parent_id)
+        elif relationship_type == "siblings":
+            parent_families = _find_family_records_where_individual_is_child(reader, target_id)
+            potential_siblings = []
+            for fam in parent_families:
+                fam_children = fam.sub_tags("CHIL")
+                if fam_children:
+                    potential_siblings.extend(
+                        c for c in fam_children if _is_individual(c)
+                    )
+            for sibling in potential_siblings:
+                if (
+                    sibling is not None
+                    and hasattr(sibling, "xref_id")
+                    and sibling.xref_id
+                ):
+                    sibling_id = _normalize_id(sibling.xref_id)
+                    if (
+                        sibling_id
+                        and sibling_id not in unique_related_ids
+                        and sibling_id != target_id
+                    ):
+                        related_individuals.append(sibling)
+                        unique_related_ids.add(sibling_id)
+        elif relationship_type in ["spouses", "children"]:
+            parent_families = _find_family_records_where_individual_is_parent(reader, target_id)
+            if relationship_type == "spouses":
+                for family_record, is_target_husband, is_target_wife in parent_families:
+                    other_spouse = None
+                    if is_target_husband:
+                        other_spouse = family_record.sub_tag("WIFE")
+                    elif is_target_wife:
+                        other_spouse = family_record.sub_tag("HUSB")
+                    if (
+                        other_spouse is not None
+                        and _is_individual(other_spouse)
+                        and hasattr(other_spouse, "xref_id")
+                        and other_spouse.xref_id
+                    ):
+                        spouse_id = _normalize_id(other_spouse.xref_id)
+                        if spouse_id and spouse_id not in unique_related_ids:
+                            related_individuals.append(other_spouse)
+                            unique_related_ids.add(spouse_id)
+            else:  # relationship_type == "children"
+                for family_record, _, _ in parent_families:
+                    children_list = family_record.sub_tags("CHIL")
+                    if children_list:
+                        for child in children_list:
+                            if (
+                                child is not None
+                                and _is_individual(child)
+                                and hasattr(child, "xref_id")
+                                and child.xref_id
+                            ):
+                                child_id = _normalize_id(child.xref_id)
+                                if child_id and child_id not in unique_related_ids:
+                                    related_individuals.append(child)
+                                    unique_related_ids.add(child_id)
+        else:
+            logging.warning(
+                f"Unknown relationship type requested: '{relationship_type}'"
+            )
+    except AttributeError as ae:
+        logging.error(
+            f"AttributeError finding {relationship_type} for {target_id}: {ae}",
+            exc_info=True,
+        )
+    except Exception as e:
+        logging.error(
+            f"Unexpected error finding {relationship_type} for {target_id}: {e}",
+            exc_info=True,
+        )
+    related_individuals.sort(key=lambda x: (_normalize_id(x.xref_id) or ""))
+    return related_individuals
 
 # --- GEDCOM global indexes (required for GEDCOM helpers) ---
 INDI_INDEX = {}
@@ -274,6 +471,392 @@ def force_user_agent(driver: WebDriver, user_agent: str):
 
 
 # End of force_user_agent
+
+
+    """Builds a map of ancestor IDs to their depth relative to the start ID."""
+    ancestors = {}
+    queue = deque([(start_id_norm, 0)])  # Queue stores (ID, depth)
+    visited = {start_id_norm}
+    if not reader or not start_id_norm:
+        logger.error("_get_ancestors_map: Invalid input.")
+        return ancestors
+    logger.debug(f"_get_ancestors_map: Starting for {start_id_norm}")
+    processed_count = 0
+    while queue:
+        current_id, depth = queue.popleft()
+        ancestors[current_id] = depth
+        processed_count += 1
+        current_indi = find_individual_by_id(reader, current_id)
+        if not current_indi:
+            logger.warning(
+                f"Ancestor map: Could not find individual for ID {current_id}"
+            )
+            continue
+        father = getattr(current_indi, "father", None)
+        mother = getattr(current_indi, "mother", None)
+        parents = [father, mother]
+        for parent_indi in parents:
+            if (
+                parent_indi is not None
+                and _is_individual(parent_indi)
+                and hasattr(parent_indi, "xref_id")
+                and parent_indi.xref_id
+            ):
+                parent_id = _normalize_id(parent_indi.xref_id)
+                if parent_id and parent_id not in visited:
+                    visited.add(parent_id)
+                    queue.append((parent_id, depth + 1))
+    logger.debug(
+        f"_get_ancestors_map for {start_id_norm} finished. Processed {processed_count} individuals. Found {len(ancestors)} ancestors (incl. self)."
+    )
+    return ancestors
+
+
+def _build_relationship_path_str(reader, start_id_norm, end_id_norm):
+    """Builds shortest ancestral path string from start up to end using BFS."""
+    if not reader or not start_id_norm or not end_id_norm:
+        logger.error("_build_relationship_path_str: Invalid input.")
+        return []
+    logger.debug(
+        f"_build_relationship_path_str: Building path {start_id_norm} -> {end_id_norm}"
+    )
+    queue = deque(
+        [(start_id_norm, [])]
+    )  # Queue stores (current_id, path_list_of_names)
+    visited = {start_id_norm}
+    processed_count = 0
+    while queue:
+        current_id, current_path_names = queue.popleft()
+        processed_count += 1
+        current_indi = find_individual_by_id(reader, current_id)
+        current_name = (
+            _get_full_name(current_indi)
+            if current_indi
+            else f"Unknown/Error ({current_id})"
+        )
+        current_full_path = current_path_names + [current_name]
+        if current_id == end_id_norm:
+            logger.debug(
+                f"Path build: Reached target {end_id_norm} after checking {processed_count} nodes. Path found."
+            )
+            return current_full_path
+        if current_indi:
+            father = getattr(current_indi, "father", None)
+            mother = getattr(current_indi, "mother", None)
+            parents = [father, mother]
+            for parent_indi in parents:
+                if (
+                    parent_indi is not None
+                    and _is_individual(parent_indi)
+                    and hasattr(parent_indi, "xref_id")
+                    and parent_indi.xref_id
+                ):
+                    parent_id = _normalize_id(parent_indi.xref_id)
+                    if parent_id and parent_id not in visited:
+                        visited.add(parent_id)
+                        queue.append((parent_id, current_full_path))
+    logger.warning(
+        f"_build_relationship_path_str: Could not find ANCESTRAL path from {start_id_norm} to {end_id_norm} after checking {processed_count} nodes."
+    )
+    return []  # Return empty list if no path found
+
+
+def _find_lca_from_maps(
+    ancestors1: Dict[str, int], ancestors2: Dict[str, int]
+) -> Optional[str]:
+    """Finds Lowest Common Ancestor (LCA) ID from two ancestor maps."""
+    if not ancestors1 or not ancestors2:
+        return None
+    common_ancestor_ids = set(ancestors1.keys()) & set(ancestors2.keys())
+    if not common_ancestor_ids:
+        logger.debug("_find_lca_from_maps: No common ancestors found.")
+        return None
+    lca_candidates: Dict[str, Union[int, float]] = {
+        cid: ancestors1.get(cid, float("inf")) + ancestors2.get(cid, float("inf"))
+        for cid in common_ancestor_ids
+    }
+    if not lca_candidates:
+        return None
+    lca_id = min(lca_candidates.keys(), key=lambda k: lca_candidates[k])
+    logger.debug(
+        f"_find_lca_from_maps: LCA ID: {lca_id} (Depth Sum: {lca_candidates[lca_id]})"
+    )
+    return lca_id
+
+
+def _reconstruct_path(start_id, end_id, meeting_id, visited_fwd, visited_bwd):
+    """Reconstructs the path from start to end via the meeting point using predecessor maps."""
+    path_fwd = []
+    curr = meeting_id
+    while curr is not None:
+        path_fwd.append(curr)
+        curr = visited_fwd.get(curr)
+    path_fwd.reverse()  # Reverse to get path from start to meeting point
+
+    path_bwd = []
+    curr = visited_bwd.get(
+        meeting_id
+    )  # Start from the predecessor of the meeting point in the backward search
+    while curr is not None:
+        path_bwd.append(curr)
+        curr = visited_bwd.get(curr)
+
+    path = path_fwd + path_bwd
+
+    if not path:
+        logger.error("_reconstruct_path: Failed to reconstruct any path.")
+        return []
+    if path[0] != start_id:
+        logger.warning(
+            f"_reconstruct_path: Path doesn't start with start_id ({path[0]} != {start_id}). Prepending."
+        )
+        path.insert(0, start_id)  # Attempt fix
+    if path[-1] != end_id:
+        logger.warning(
+            f"_reconstruct_path: Path doesn't end with end_id ({path[-1]} != {end_id}). Appending."
+        )
+        path.append(end_id)  # Attempt fix
+
+    logger.debug(f"_reconstruct_path: Final reconstructed path IDs: {path}")
+    return path
+
+
+def explain_relationship_path(path_ids, reader, id_to_parents, id_to_children):
+    """Return a human-readable explanation of the relationship path with relationship labels."""
+    if not path_ids or len(path_ids) < 2:
+        return "(No relationship path explanation available)"
+    steps = []
+    for i in range(len(path_ids) - 1):
+        id_a, id_b = path_ids[i], path_ids[i + 1]
+        indi_a = find_individual_by_id(reader, id_a)
+        indi_b = find_individual_by_id(reader, id_b)
+        name_a = _get_full_name(indi_a) if indi_a else f"Unknown ({id_a})"
+        name_b = _get_full_name(indi_b) if indi_b else f"Unknown ({id_b})"
+        rel = "related"
+        label = rel
+        if id_b in id_to_parents.get(id_a, set()):
+            rel = "child"
+            sex_a = getattr(indi_a, "sex", None) if indi_a else None
+            label = "daughter" if sex_a == "F" else "son" if sex_a == "M" else "child"
+        elif id_a in id_to_parents.get(id_b, set()):
+            rel = "parent"
+            sex_b = getattr(indi_b, "sex", None) if indi_b else None
+            label = "mother" if sex_b == "F" else "father" if sex_b == "M" else "parent"
+        elif id_b in id_to_children.get(id_a, set()):
+            rel = "parent"
+            label = "parent"
+        elif id_a in id_to_children.get(id_b, set()):
+            rel = "child"
+            label = "child"
+        steps.append(f"{name_a} is the {label} of {name_b}")
+    return " -> ".join(steps)
+
+
+def fast_bidirectional_bfs(
+    start_id,
+    end_id,
+    id_to_parents,
+    id_to_children,
+    max_depth=20,
+    node_limit=100000,
+    timeout_sec=30,
+    log_progress=False,
+):
+    """Performs bidirectional BFS using maps & predecessors. Returns path as list of IDs."""
+    from time import time as timer
+    start_time = timer()
+    if start_id == end_id:
+        return [start_id]
+    visited_fwd = {start_id: None}
+    visited_bwd = {end_id: None}
+    queue_fwd = deque([start_id])
+    queue_bwd = deque([end_id])
+    found = False
+    meeting_id = None
+    processed = 0
+    while queue_fwd and queue_bwd and not found and processed < node_limit:
+        processed += 1
+        if len(queue_fwd) <= len(queue_bwd):
+            curr = queue_fwd.popleft()
+            neighbors = id_to_parents.get(curr, set()) | id_to_children.get(curr, set())
+            for neighbor in neighbors:
+                if neighbor not in visited_fwd:
+                    visited_fwd[neighbor] = curr
+                    queue_fwd.append(neighbor)
+                if neighbor in visited_bwd:
+                    found = True
+                    meeting_id = neighbor
+                    break
+        else:
+            curr = queue_bwd.popleft()
+            neighbors = id_to_parents.get(curr, set()) | id_to_children.get(curr, set())
+            for neighbor in neighbors:
+                if neighbor not in visited_bwd:
+                    visited_bwd[neighbor] = curr
+                    queue_bwd.append(neighbor)
+                if neighbor in visited_fwd:
+                    found = True
+                    meeting_id = neighbor
+                    break
+        if timer() - start_time > timeout_sec:
+            logger.warning("Bidirectional BFS timed out.")
+            break
+    if found and meeting_id:
+        return _reconstruct_path(start_id, end_id, meeting_id, visited_fwd, visited_bwd)
+    else:
+        logger.warning(
+            f"Bidirectional BFS: No path found between {start_id} and {end_id} after processing {processed} nodes."
+        )
+        return []
+
+
+def get_relationship_path(reader, id1: str, id2: str):
+    """Calculates and formats relationship path using fast bidirectional BFS with pre-built maps."""
+    # Build parent and child maps
+    id_to_parents = {}
+    id_to_children = {}
+    for indi in reader.records0("INDI"):
+        indi_id = _normalize_id(getattr(indi, "xref_id", None))
+        if not indi_id:
+            continue
+        parents = set()
+        children = set()
+        # Parents
+        families_as_child = indi.families_as_child() if callable(getattr(indi, "families_as_child", None)) else getattr(indi, "families_as_child", [])
+        for fam in families_as_child:
+            father = getattr(fam, "husband", None)
+            mother = getattr(fam, "wife", None)
+            if father:
+                parents.add(_normalize_id(getattr(father, "xref_id", None)))
+            if mother:
+                parents.add(_normalize_id(getattr(mother, "xref_id", None)))
+        # Children
+        families_as_parent = indi.families_as_parent() if callable(getattr(indi, "families_as_parent", None)) else getattr(indi, "families_as_parent", [])
+        for fam in families_as_parent:
+            fam_children = fam.children() if callable(getattr(fam, "children", None)) else getattr(fam, "children", [])
+            for child in fam_children:
+                children.add(_normalize_id(getattr(child, "xref_id", None)))
+        id_to_parents[indi_id] = parents
+        id_to_children[indi_id] = children
+    path_ids = fast_bidirectional_bfs(id1, id2, id_to_parents, id_to_children)
+    explanation = explain_relationship_path(path_ids, reader, id_to_parents, id_to_children)
+    return path_ids, explanation
+
+
+def find_potential_matches(
+    reader,
+    first_name: Optional[str],
+    surname: Optional[str],
+    dob_str: Optional[str],  # Birth date string
+    pob: Optional[str],  # Birth place
+    dod_str: Optional[str],  # Death date string (NEW)
+    pod: Optional[str],  # Death place (NEW)
+    gender: Optional[str] = None,
+):
+    """
+    Finds potential matches in GEDCOM based on various criteria including death info.
+    Prioritizes name matches.
+    """
+    matches = []
+    for indi in reader.records0("INDI"):
+        indi_full_name = _get_full_name(indi)
+        birth_date_str_ged = None
+        birth_place_str_ged = None
+        death_date_str_ged = None
+        death_place_str_ged = None
+        # Extract events
+        for event in getattr(indi, "events", []):
+            etype = getattr(event, "tag", "").lower()
+            if etype == "birth":
+                birth_date_str_ged = getattr(event, "date", None)
+                birth_place_str_ged = getattr(event, "place", None)
+            elif etype == "death":
+                death_date_str_ged = getattr(event, "date", None)
+                death_place_str_ged = getattr(event, "place", None)
+        score = 0
+        reasons = []
+        if first_name and first_name.lower() in indi_full_name.lower():
+            score += 10
+            reasons.append("First name match")
+        if surname and surname.lower() in indi_full_name.lower():
+            score += 10
+            reasons.append("Surname match")
+        if dob_str and birth_date_str_ged and dob_str in str(birth_date_str_ged):
+            score += 8
+            reasons.append(f"Birth date match ({birth_date_str_ged})")
+        if pob and birth_place_str_ged and pob.lower() in str(birth_place_str_ged).lower():
+            score += 4
+            reasons.append(f"Place of birth match ({birth_place_str_ged})")
+        if dod_str and death_date_str_ged and dod_str in str(death_date_str_ged):
+            score += 4
+            reasons.append(f"Death date match ({death_date_str_ged})")
+        if pod and death_place_str_ged and pod.lower() in str(death_place_str_ged).lower():
+            score += 2
+            reasons.append(f"Place of death match ({death_place_str_ged})")
+        matches.append(
+            {
+                "id": getattr(indi, "xref_id", None),
+                "name": indi_full_name,
+                "birth_date": birth_date_str_ged,
+                "birth_place": birth_place_str_ged,
+                "death_date": death_date_str_ged,
+                "death_place": death_place_str_ged,
+                "score": score,
+                "reasons": ", ".join(reasons),
+            }
+        )
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    return matches
+
+
+def display_gedcom_family_details(reader, individual):
+    """Helper function to display formatted family details from GEDCOM data."""
+    if not individual:
+        print("No individual selected.")
+        return
+    print(f"\nFamily for {getattr(individual, 'name', '(Unknown)')}:\n")
+    # Parents
+    parents = []
+    for fam in getattr(individual, "families_as_child", []):
+        father = getattr(fam, "husband", None)
+        mother = getattr(fam, "wife", None)
+        if father:
+            parents.append(father)
+        if mother:
+            parents.append(mother)
+    print("Parents:")
+    if parents:
+        for p in parents:
+            print(f"  - {getattr(p, 'name', '(Unknown)')}")
+    else:
+        print("  (None found)")
+    # Spouses
+    spouses = []
+    for fam in getattr(individual, "families_as_parent", []):
+        spouse = (
+            getattr(fam, "wife", None)
+            if getattr(individual, "sex", None) == "M"
+            else getattr(fam, "husband", None)
+        )
+        if spouse:
+            spouses.append(spouse)
+    print("Spouses:")
+    if spouses:
+        for s in spouses:
+            print(f"  - {getattr(s, 'name', '(Unknown)')}")
+    else:
+        print("  (None found)")
+    # Children
+    children = []
+    for fam in getattr(individual, "families_as_parent", []):
+        children.extend(getattr(fam, "children", []))
+    print("Children:")
+    if children:
+        for c in children:
+            print(f"  - {getattr(c, 'name', '(Unknown)')}")
+    else:
+        print("  (None found)")
+
 
 
 def parse_cookie(cookie_string: str) -> Dict[str, str]:
@@ -1114,6 +1697,32 @@ class DynamicRateLimiter:
 
 
 # End of DynamicRateLimiter class
+
+
+def initialize_session():
+    """Initialize the session with proper authentication for standalone usage"""
+    global session_manager
+    if not session_manager.driver_live:
+        print("Initializing browser session...")
+        session_manager.ensure_driver_live()
+    if not session_manager.session_ready:
+        print("Authenticating with Ancestry...")
+        success = session_manager.ensure_session_ready()
+        if not success:
+            print(
+                "Failed to authenticate with Ancestry. Please login manually when the browser opens."
+            )
+            input("Press Enter after you've logged in manually...")
+        else:
+            print("Authentication successful.")
+    if not session_manager.my_tree_id:
+        print("Loading tree information...")
+        session_manager._retrieve_identifiers()
+        if not session_manager.my_tree_id:
+            print("WARNING: Could not load tree ID. Some functionality may be limited.")
+        else:
+            print(f"Tree ID loaded successfully: {session_manager.my_tree_id}")
+    return session_manager.session_ready
 
 
 # ------------------------------
@@ -4426,8 +5035,6 @@ def enter_creds(driver: WebDriver) -> bool:
     except Exception as e:
         logger.error(f"Unexpected error entering credentials: {e}", exc_info=True)
         return False
-
-
 # End of enter_creds
 
 
@@ -4565,8 +5172,6 @@ def consent(driver: WebDriver) -> bool:
 
     # Fallback return, should not be reached if logic is correct
     return False
-
-
 # End of consent
 
 
@@ -4787,8 +5392,6 @@ def log_in(session_manager: SessionManager) -> str:
     except Exception as e:
         logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
         return "LOGIN_FAILED_UNEXPECTED"
-
-
 # End of log_in
 
 
@@ -4809,19 +5412,6 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:
         None: If a critical error occurred preventing status determination.
     """
     logger.debug("Checking login status (API prioritized)...")
-
-    # --- Basic Prerequisites ---
-    # Step 1: Validate SessionManager input
-    if not isinstance(session_manager, SessionManager):
-        logger.error(
-            f"Invalid argument: Expected SessionManager, got {type(session_manager)}."
-        )
-        return None  # Cannot proceed without valid SessionManager
-
-    # Step 2: Check basic WebDriver session validity
-    if not session_manager.is_sess_valid():
-        logger.debug("Login status check: Session invalid or browser closed.")
-        return False  # Definitely not logged in if session is dead
     driver = session_manager.driver
     if driver is None:
         logger.error("Login status check: Driver is None within SessionManager.")
@@ -4931,8 +5521,6 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:
             exc_info=True,
         )
         return None  # Return None on critical unexpected error
-
-
 # End of login_status
 
 
@@ -5626,7 +6214,8 @@ def build_family_maps(reader):
             parent_id_w = _normalize_id(wife.xref_id)
             if parent_id_w:
                 parents.add(parent_id_w)
-        for child in fam.sub_tags("CHIL"):
+        fam_sub_tags = fam.sub_tags("CHIL") if callable(getattr(fam, "sub_tags", None)) else getattr(fam, "sub_tags", [])
+        for child in fam_sub_tags:
             if _is_individual(child) and hasattr(child, "xref_id") and child.xref_id:
                 child_id = _normalize_id(child.xref_id)
                 if child_id:
@@ -5702,12 +6291,11 @@ def format_relative_info(relative) -> str:
     return f"  - {rel_name}{life_info}"
 
 
-def _find_family_records_where_individual_is_child(reader, target_id):
     parent_families = []
     for family_record in reader.records0("FAM"):
         if not _is_record(family_record):
             continue
-        children_in_fam = family_record.sub_tags("CHIL")
+        children_in_fam = family_record.sub_tags("CHIL") if callable(getattr(family_record, "sub_tags", None)) else getattr(family_record, "sub_tags", [])
         if children_in_fam:
             for child in children_in_fam:
                 if _is_individual(child) and _normalize_id(child.xref_id) == target_id:
@@ -5772,11 +6360,11 @@ def get_related_individuals(reader, individual, relationship_type: str) -> List:
             )
             potential_siblings = []
             for fam in parent_families:
-                fam_children = fam.sub_tags("CHIL")
+                fam_children = fam.sub_tags("CHIL") if callable(getattr(fam, "sub_tags", None)) else getattr(fam, "sub_tags", [])
                 if fam_children:
-                    potential_siblings.extend(
-                        c for c in fam_children if _is_individual(c)
-                    )
+                    for child in fam_children:
+                        if _is_individual(child):
+                            potential_siblings.append(child)
             for sibling in potential_siblings:
                 if (
                     sibling is not None
@@ -5814,7 +6402,7 @@ def get_related_individuals(reader, individual, relationship_type: str) -> List:
                             unique_related_ids.add(spouse_id)
             else:
                 for family_record, _, _ in parent_families:
-                    children_list = family_record.sub_tags("CHIL")
+                    children_list = family_record.sub_tags("CHIL") if callable(getattr(family_record, "sub_tags", None)) else getattr(family_record, "sub_tags", [])
                     if children_list:
                         for child in children_list:
                             if (
@@ -5832,6 +6420,7 @@ def get_related_individuals(reader, individual, relationship_type: str) -> List:
     related_individuals.sort(key=lambda x: (_normalize_id(x.xref_id) or ""))
     return related_individuals
 
+# ... (rest of the code remains the same)
 
 # ------------------------------------------------------------------------------------
 # Main function for standalone testing
@@ -6071,28 +6660,6 @@ if __name__ == "__main__":
 # Ensure these are defined at the module level and importable
 __all__ = [
     # ...existing exports...
-    "find_potential_matches",
-    "display_gedcom_family_details",
-    "get_relationship_path",
-    "AncestryAPISearch",
-    "initialize_session",
-    # ...other exports...
-]
-# Re-export key helpers from gedcom_interrogator for use in action10.py and action11.py
-from gedcom import (
-    find_potential_matches,
-    display_gedcom_family_details,
-    get_relationship_path,
-    AncestryAPISearch,
-    initialize_session,
-)
-
-__all__ = [
-    # ...existing exports...
-    "find_potential_matches",
-    "display_gedcom_family_details",
-    "get_relationship_path",
-    "AncestryAPISearch",
-    "initialize_session",
+    # (GEDCOM helpers removed; now in action10.py)
     # ...other exports...
 ]

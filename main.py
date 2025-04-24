@@ -38,6 +38,8 @@ from action6_gather import coord as coord_action_func, nav_to_list
 from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
+from action10 import run_action10
+from action11 import run_action11
 from chromedriver import cleanup_webdrv
 from config import config_instance, selenium_config
 from database import (
@@ -66,8 +68,7 @@ from utils import (
     nav_to_page,
     retry,
 )
-from action10 import run_action10
-from action11 import run_action11
+
 
 
 def menu():
@@ -202,6 +203,7 @@ def exec_actn(
         "reset_db_actn",
         "backup_db_actn",
         "restore_db_actn",
+        "run_action10",  # Action 10 does not require session
     ]
     if action_name in browserless_actions:
         required_state = "none"
@@ -230,10 +232,7 @@ def exec_actn(
             )
 
         # --- Execute Action ---
-        # Prepare arguments for action function call
-        print("DEBUG: action_func type:", type(action_func))
         func_sig = inspect.signature(action_func)
-        print("DEBUG: action_func signature:", func_sig)
         pass_config = "config_instance" in func_sig.parameters
         pass_session_manager = "session_manager" in func_sig.parameters
 
@@ -763,39 +762,29 @@ def restore_db_actn(
 # Action 5 (check_login_actn)
 def check_login_actn(session_manager: SessionManager, *args) -> bool:
     """
-    REVISED V5: Checks login status using login_status.
-    Relies on exec_actn to ensure driver is live (Phase 1) if needed.
-    Does NOT attempt login itself. Does NOT trigger ensure_session_ready. Keeps session open.
+    Action 5: Ensure browser and session readiness (start driver, login, identifiers).
     """
     if not session_manager:
         logger.error("SessionManager required for check_login_actn.")
         return False
 
-    logger.debug("Verifying login status...")
+    logger.debug("Checking driver and session readiness (Action 5)...")
 
-    # Phase 1 (Driver Start) is handled by exec_actn if needed.
-    # We only need to check if driver is live before proceeding.
-    if not session_manager.driver_live:
-        logger.error("Driver not live. Cannot check login status.")
-        # It's possible exec_actn failed Phase 1.
+    # Phase 1: Ensure WebDriver is initialized and on base URL
+    if not session_manager.ensure_driver_live(action_name="check_login_actn - Setup"):
+        logger.error("Failed to start browser session.")
         return False
 
-    # Call login_status directly to check
-    status = login_status(session_manager)
-
-    if status is True:
-        logger.info("Login verification successful (already logged in).")
-        # --- REMOVED: Do not call ensure_session_ready here ---
-        return True
-    elif status is False:
-        logger.warning("Login verification failed (user not logged in).")
-        return False
-    else:  # Status is None
-        logger.error("Login verification failed (critical error during check).")
+    # Phase 2: Ensure full session readiness (login, CSRF, identifiers)
+    if not session_manager.ensure_session_ready(action_name="check_login_actn - Setup"):
+        logger.error("Failed to authenticate with Ancestry.")
         return False
 
+    logger.info("Session is ready. Login verification successful.")
+    return True
 
-# End Action 5
+
+# End of check_login_actn
 
 
 # Action 6 (coord_action wrapper)

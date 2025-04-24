@@ -22,7 +22,8 @@ import time
 import json  # Added for API response parsing
 import requests
 import urllib.parse
-from utils import SessionManager, _api_req
+from session_helpers import SessionManager, initialize_session
+from action11 import _extract_display_name, search_by_name
 import html  # Added for unescaping
 from bs4 import BeautifulSoup  # Added for HTML parsing
 from dotenv import load_dotenv
@@ -128,7 +129,9 @@ from utils import (
 
 
 # --- Robust Ancestor Map (no read_record) ---
-def _get_ancestors_map(reader, start_id_norm):
+# gedcom.py has been deprecated. All essential functions have been migrated to utils.py.
+# This file is safe to remove.
+
     """Builds a map of ancestor IDs to their depth relative to the start ID."""
     ancestors = {}
     queue = deque([(start_id_norm, 0)])  # Queue stores (ID, depth)
@@ -959,130 +962,13 @@ class AncestryAPISearch:
             return f"{given} {surname}".strip()
         return str(person.get("pid") or person.get("id") or "(Unknown)")
 
-    def search_by_name(self, name: str, limit: int = 10) -> list[dict]:
-        import urllib.parse
 
-        tree_id = self._get_tree_id()
-        if not tree_id:
-            return []
-        base_url = self.base_url
-        query = name.strip()
-        tags = ""
-        persons_url = f"{base_url}/api/treesui-list/trees/{tree_id}/persons?name={urllib.parse.quote(query)}&tags={tags}&page=1&limit={limit}&fields=EVENTS,GENDERS,KINSHIP,NAMES,PHOTO,RELATIONS,TAGS&isGetFullPersonObject=false"
-        try:
-            persons_response = _api_req(
-                url=persons_url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                headers=None,
-                use_csrf_token=False,
-                api_description="Ancestry Search by Name",
-                referer_url=f"{base_url}/family-tree/tree/{tree_id}/family",
-                timeout=20,
-            )
-            if not persons_response or not isinstance(persons_response, list):
-                return []
-            return persons_response
-        except Exception:
-            return []
+    # get_relationship_ladder method removed. Use the standalone function in action11.py instead.
+    # Example: from action11 import get_relationship_ladder
 
-    def format_person_details(self, person: dict) -> str:
-        name = self._extract_display_name(person)
-        gender = None
-        if "Genders" in person and person["Genders"]:
-            gender = person["Genders"][0].get("g")
-        elif "gender" in person:
-            gender = person["gender"]
-        gender_str = f"Gender: {gender}" if gender else "Gender: Unknown"
-        birth_info = ""
-        events = person.get("Events") or person.get("events") or []
-        for event in events:
-            if (
-                event.get("t", "").lower() == "birth"
-                or event.get("type", "").lower() == "birth"
-            ):
-                date = event.get("d") or event.get("date") or event.get("nd")
-                place = event.get("p") or event.get("place")
-                birth_info = f"Birth: {date or '?'} in {place or '?'}"
-                break
-        pid = person.get("pid") or person.get("id") or person.get("gid", {}).get("v")
-        pid_str = f"Person ID: {pid}" if pid else ""
-        lines = [f"Name: {name}", gender_str]
-        if birth_info:
-            lines.append(birth_info)
-        if pid_str:
-            lines.append(pid_str)
-        return "\n".join(lines)
 
-    def get_relationship_ladder(self, person_id: str):
-        import re, json, time
-
-        tree_id = self._get_tree_id()
-        if not tree_id or not person_id:
-            return {"error": "Missing tree_id or person_id."}
-        url = f"{self.base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/getladder?callback=jQuery1234567890_1234567890&_={int(time.time()*1000)}"
-        try:
-            response = _api_req(
-                url=url,
-                driver=self.session_manager.driver,
-                session_manager=self.session_manager,
-                method="GET",
-                headers=None,
-                use_csrf_token=False,
-                api_description="Ancestry Relationship Ladder",
-                referer_url=f"{self.base_url}/family-tree/tree/{tree_id}/family",
-                timeout=20,
-            )
-            if isinstance(response, str):
-                match = re.search(r"\\((\{.*\})\\)", response, re.DOTALL)
-                if match:
-                    json_str = match.group(1)
-                    first_brace = json_str.find("{")
-                    last_brace = json_str.rfind("}")
-                    if (
-                        first_brace != -1
-                        and last_brace != -1
-                        and last_brace > first_brace
-                    ):
-                        json_str = json_str[first_brace : last_brace + 1]
-                        json_str = bytes(json_str, "utf-8").decode("unicode_escape")
-                        try:
-                            ladder_json = json.loads(json_str)
-                        except Exception:
-                            return {"error": "JSON decode failed."}
-                        if isinstance(ladder_json, dict) and "html" in ladder_json:
-                            return self.parse_ancestry_ladder_html(ladder_json["html"])
-                        else:
-                            return {"error": "No 'html' key in ladder JSON."}
-                    else:
-                        return {
-                            "error": "Could not extract JSON object from JSONP response."
-                        }
-                else:
-                    return {"error": "Could not parse JSONP response."}
-            elif isinstance(response, dict):
-                return response
-            else:
-                return {"error": "Unexpected response type."}
-        except Exception as e:
-            return {"error": str(e)}
-
-    def format_ladder_details(self, ladder_data) -> str:
-        if not ladder_data:
-            return "No relationship ladder data available."
-        if isinstance(ladder_data, dict):
-            if "error" in ladder_data:
-                return f"Error: {ladder_data['error']}"
-            rel = ladder_data.get("actual_relationship")
-            path = ladder_data.get("relationship_path")
-            out = []
-            if rel:
-                out.append(f"Relationship: {rel}")
-            if path:
-                out.append(f"Path:\n{path}")
-            return "\n".join(out) if out else str(ladder_data)
-        return str(ladder_data)
+    # format_ladder_details method removed. Use the standalone function in action11.py instead.
+    # Example: from action11 import format_ladder_details
 
     def parse_ancestry_ladder_html(self, html):
         soup = BeautifulSoup(html, "html.parser")
@@ -1119,7 +1005,7 @@ def handle_api_report():
     if not initialize_session():
         print("Failed to initialize session. Cannot proceed with API operations.")
         return
-    api_search = AncestryAPISearch(session_manager)
+
     print("\nEnter as many details as you know. Leave blank to skip a field.")
     first_name = input("First name: ").strip() or None
     surname = input("Surname (or maiden name): ").strip() or None
@@ -1137,7 +1023,7 @@ def handle_api_report():
     if not query:
         print("Search cancelled.")
         return
-    persons = api_search.search_by_name(query)
+    persons = search_by_name(session_manager, first_name, surname)
     if not persons:
         print("\nNo matches found in Ancestry API.")
         return
@@ -1147,7 +1033,7 @@ def handle_api_report():
         score = 0
         reasons = []
         # Name matching
-        display_name = api_search._extract_display_name(person).lower()
+        display_name = _extract_display_name(person).lower()
         if first_name and first_name.lower() in display_name:
             score += 10
             reasons.append("First name match")
