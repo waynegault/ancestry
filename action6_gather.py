@@ -13,7 +13,6 @@ within helpers), error handling, and concurrent API fetches using ThreadPoolExec
 """
 
 # --- Standard library imports ---
-import contextlib # For db_transn context manager if used directly (unlikely now)
 import json
 import logging
 import math
@@ -21,12 +20,11 @@ import random
 import re
 import sys
 import time
-import traceback
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
-from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse
+from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # --- Third-party imports ---
 import cloudscraper # For specific API calls if needed, though _api_req preferred
@@ -1899,11 +1897,10 @@ def get_matches(
                 driver=driver, # Still needed for session context by _api_req
                 session_manager=session_manager,
                 method="POST",
-                json_data={"sampleIds": sample_ids_on_page},
+                json={"sampleIds": sample_ids_on_page},
                 headers=in_tree_headers, # Pass the COMPLETE headers dict
                 use_csrf_token=False, # Prevent default CSRF addition
                 api_description="In-Tree Status Check",
-                add_default_origin=False, # Prevent default Origin addition
             )
             # Process the response
             if isinstance(response_in_tree, list):
