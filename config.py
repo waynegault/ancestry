@@ -198,11 +198,12 @@ class Config_Class(BaseConfig):
     MAX_PAGES: int = 0
     MAX_INBOX: int = 0
     MAX_PRODUCTIVE_TO_PROCESS: int = 0
-    TREE_SEARCH_METHOD: str = "GEDCOM" # Default search method
+    TREE_SEARCH_METHOD: str = "GEDCOM"  # Default search method
+    DB_ERROR_PAGE_THRESHOLD: int = 10  # From action6_gather.py
 
     # --- Initializer ---
     def __init__(self):
-        """Initializes the Config_Class by loading values."""
+        """Initializes the Config_Class by loading values and validating criticals."""
         self._load_values()
         self._validate_critical_configs()
     # End of __init__
@@ -220,6 +221,10 @@ class Config_Class(BaseConfig):
         self.MY_PROFILE_ID: Optional[str] = self._get_string_env(
             "MY_PROFILE_ID", ""
         )  # Optional pre-set profile ID
+        # MY_TREE_ID added here
+        self.MY_TREE_ID: Optional[str] = self._get_string_env(
+            "MY_TREE_ID", ""
+        )  # Optional pre-set tree ID
         self.MS_GRAPH_CLIENT_ID: str = self._get_string_env(
             "MS_GRAPH_CLIENT_ID", ""
         )  # Required for MS Graph
@@ -311,6 +316,14 @@ class Config_Class(BaseConfig):
         self.MAX_PRODUCTIVE_TO_PROCESS: int = self._get_int_env(
             "MAX_PRODUCTIVE_TO_PROCESS", self.MAX_PRODUCTIVE_TO_PROCESS
         )  # Limit Action 9
+        # Add DB_ERROR_PAGE_THRESHOLD loading
+        self.DB_ERROR_PAGE_THRESHOLD: int = self._get_int_env(
+            "DB_ERROR_PAGE_THRESHOLD", self.DB_ERROR_PAGE_THRESHOLD
+        )
+        # Add GATHER_THREAD_POOL_WORKERS loading
+        self.GATHER_THREAD_POOL_WORKERS: int = self._get_int_env(
+            "GATHER_THREAD_POOL_WORKERS", 5  # Default 5 if not in .env
+        )
 
         # === Database ===
         self.DB_POOL_SIZE: int = self._get_int_env(
@@ -410,17 +423,28 @@ class Config_Class(BaseConfig):
             # --- Headers for User Identifier APIs ---
             "Get my profile_id": {"ancestry-clientpath": "p13n-js"},
             "Tree Owner Name API": {"ancestry-clientpath": "Browser:meexp-uhome"},
-
             # --- Headers for Profile Details API ---
             "Profile Details API (Batch)": {"ancestry-clientpath": "express-fe"},
             "Profile Details API (Action 7)": {"ancestry-clientpath": "express-fe"},
-
             # --- Headers for Messaging APIs (Action 7/8/9) ---
             "Create Conversation API": {"ancestry-clientpath": "express-fe"},
             "Send Message API (Existing Conv)": {"ancestry-clientpath": "express-fe"},
             "Get Inbox Conversations": {"ancestry-clientpath": "express-fe"},
             "Fetch Conversation Context": {"ancestry-clientpath": "express-fe"},
-
+            # --- Headers for Match List/Details (Action 6) ---
+            # Special handling for Match List API (no Origin, specific Referer) is done in _api_req
+            "Match List API": {"Referer": default_list_referer},
+            "In-Tree Status Check": {  # Add entry for this specific API
+                "Origin": origin_header_value,
+                "Referer": default_list_referer,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            "Match Probability API (Cloudscraper)": {  # Added for Action 6 Cloudscraper call
+                "Accept": "application/json",
+                "Referer": default_list_referer,
+                "Origin": origin_header_value,
+            },
             # --- APIs Where Context Might Still Be Useful (But Minimal) ---
             # These likely don't *strictly* need context anymore, but kept for potential minor differences
             "CSRF Token API": {},  # No special headers needed beyond defaults
@@ -562,9 +586,7 @@ class Config_Class(BaseConfig):
             )
         else:
             logger.info("Critical configuration settings validated successfully.")
-
     # End of _validate_critical_configs
-
 
 # End of Config_Class class
 
@@ -601,6 +623,9 @@ class SeleniumConfig(BaseConfig):
     def __init__(self):
         """Initializes the SeleniumConfig by loading values."""
         self._load_values()
+        # --- MODIFICATION START: Removed non-existent validation call ---
+        # self._validate_selenium_configs() # <-- This line was causing the error and is now removed.
+        # --- MODIFICATION END ---
         logger.debug("Selenium configuration loaded.")
 
     # End of __init__
@@ -873,7 +898,6 @@ if __name__ == "__main__":
             f"\n--- Standalone Test Complete ({'OK' if _config_valid else 'FAILED - Check Logs'}) ---"
         )
 # End of config.py standalone test block
-
 
 
 # --- End of config.py ---

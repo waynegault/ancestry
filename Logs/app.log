@@ -1,0 +1,77 @@
+11:30:43 DEB [chromedr init_web 177 ] WebDriver initialization attempt 1/3...
+11:30:43 DEB [chromedr init_web 195 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+11:30:43 DEB [chromedr init_web 199 ] Using profile directory: Default
+11:30:43 DEB [chromedr init_web 205 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+11:30:43 DEB [chromedr init_web 225 ] Setting User-Agent:
+                                      Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+11:30:43 DEB [chromedr init_web 236 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+11:30:45 DEB [chromedr init_web 251 ] WebDriver instance created successfully (attempt 1).
+11:30:45 DEB [chromedr init_web 260 ] User-Agent override applied via CDP.
+11:30:45 DEB [chromedr init_web 264 ] Attempting to minimize window (non-headless mode)...
+11:30:45 DEB [chromedr init_web 272 ] Browser window minimized.
+11:30:45 INF [chromedr main     403 ] WebDriver initialized successfully.
+11:31:50 DEB [chromedr cleanup_ 401 ] Cleaned 11 chrome processes.
+11:31:50 DEB [chromedr init_web 175 ] WebDriver initialization attempt 1/3...
+11:31:50 DEB [chromedr init_web 192 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+11:31:50 DEB [chromedr init_web 196 ] Using profile directory: Default
+11:31:50 DEB [chromedr init_web 202 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+11:31:50 DEB [chromedr init_web 219 ] Setting User-Agent:
+                                      Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36
+11:31:50 DEB [chromedr init_web 230 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+11:31:52 DEB [chromedr init_web 251 ] WebDriver instance object potentially created (attempt 1).
+11:31:52 DEB [chromedr init_web 259 ] User-Agent override applied via CDP.
+11:31:52 DEB [chromedr init_web 262 ] Attempting to minimize window (non-headless mode)...
+11:31:52 DEB [chromedr init_web 265 ] Browser window minimized.
+11:31:52 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+11:31:52 INF [chromedr main     425 ] WebDriver initialized successfully.
+20:51:29 INF [temp2    test_mat 81  ] --- Starting Standalone MatchList API Test (Cloudscraper + UBE Header V2 Debug) ---
+20:51:29 INF [temp2    test_mat 92  ] Initializing SessionManager...
+20:51:29 DEB [utils    __init__ 1120] Initialized shared requests.Session with HTTPAdapter.
+20:51:29 DEB [utils    __init__ 1134] Initialized shared cloudscraper instance with retry strategy.
+20:51:29 DEB [utils    __init__ 936 ] RateLimiter Init: Capacity=10.0, FillRate=2.0/s, InitialDelay=0.50s, Backoff=1.80, Decrease=0.98
+20:51:29 DEB [utils    __init__ 1144] SessionManager instance created: ID=97912448
+20:51:29 INF [temp2    test_mat 94  ] SessionManager instance created in test.py: ID=97912448
+20:51:29 INF [temp2    test_mat 99  ] SessionManager initialized.
+20:51:29 INF [temp2    test_mat 102 ] Starting WebDriver session and logging in...
+20:51:29 DEB [utils    start_se 1415] --- SessionManager Phase 1: Starting Driver (Cloudscraper+UBE Test V3 Debug) ---
+20:51:29 DEB [utils    _initial 1672] SessionManager ID=97912448 initializing SQLAlchemy Engine/Session...
+20:51:29 DEB [utils    _initial 1685] DB Path: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ancestry.db
+20:51:29 DEB [utils    _initial 1701] DB Pool Config: Size=10, MaxOverflow=2, Timeout=30
+20:51:29 DEB [utils    _initial 1713] Created NEW SQLAlchemy engine: ID=122648480 for SM ID=97912448
+20:51:29 DEB [utils    _initial 1733] Created Session factory for Engine ID=122648480
+20:51:29 DEB [database _create_ 310 ] Executing CREATE VIEW statement for 'messages' view...
+20:51:29 DEB [database _create_ 313 ] Database view 'messages' created or already exists.
+20:51:29 DEB [utils    _initial 1738] DB tables checked/created successfully.
+20:51:29 DEB [utils    start_se 1443] Initializing WebDriver instance (using init_webdvr)...
+20:51:29 DEB [chromedr init_web 175 ] WebDriver initialization attempt 1/3...
+20:51:29 DEB [chromedr init_web 192 ] Using user data directory:
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\User Data
+20:51:29 DEB [chromedr init_web 196 ] Using profile directory: Default
+20:51:29 DEB [chromedr init_web 202 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+20:51:29 DEB [chromedr init_web 219 ] Setting User-Agent:
+                                      Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+20:51:29 DEB [chromedr init_web 230 ] Using specified ChromeDriver:
+                                      C:\Users\wayne\.cache\selenium\chromedriver\win64\chromedriver-win64\chromedriver.exe
+20:51:31 DEB [chromedr init_web 251 ] WebDriver instance object potentially created (attempt 1).
+20:51:31 DEB [chromedr init_web 259 ] User-Agent override applied via CDP.
+20:51:31 DEB [chromedr init_web 262 ] Attempting to minimize window (non-headless mode)...
+20:51:31 DEB [chromedr init_web 265 ] Browser window minimized.
+20:51:31 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+20:51:31 DEB [utils    start_se 1451] WebDriver initialization successful.
+20:51:31 DEB [utils    start_se 1454] Navigating to Base URL (https://www.ancestry.co.uk/) to stabilize...
+20:51:31 DEB [utils    nav_to_p 3573] Navigation Attempt 1/3 to: https://www.ancestry.co.uk/
+20:51:36 DEB [utils    nav_to_p 3677] Navigation successful and element 'body' found on:
+                                      https://www.ancestry.co.uk/
+20:51:36 DEB [utils    start_se 1467] Initial navigation to Base URL successful.
+20:51:36 DEB [utils    start_se 1473] --- SessionManager Phase 1: Driver Start Successful ---
+20:51:36 CRI [temp2    test_mat 471 ] An unexpected error occurred during the test setup or execution: cannot unpack non-iterable bool object
+20:51:36 INF [temp2    test_mat 488 ] --- Standalone MatchList API Test (Cloudscraper + UBE Header V2 Debug) FAILED ---
+20:51:36 DEB [cache    close_ca 261 ] Closing DiskCache connection...
+20:51:36 INF [cache    close_ca 263 ] DiskCache connection closed.

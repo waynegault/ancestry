@@ -86,3 +86,520 @@
                                       --- API Report ---
 13:41:27 WAR [temp     initiali 1495] Failed to authenticate with Ancestry automatically.
 13:41:27 WAR [temp     initiali 1496] Please login manually when the browser opens.
+20:52:12 WAR [temp     <module> 211 ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+20:52:12 WAR [temp     <module> 212 ] API functionality will be disabled.
+20:52:12 WAR [temp     <module> 1475] API Utils unavailable, using dummy SessionManager.
+20:52:12 INF [temp     main     1754] --- GEDCOM Interrogator Script Starting (v7.36) ---
+20:52:12 INF [temp     main     1766] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+20:52:12 INF [temp     main     1768] GEDCOM loaded successfully.
+20:52:12 INF [temp     build_in 55  ] [Cache] Building INDI index...
+20:52:17 INF [temp     build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.76s.
+20:52:17 INF [temp     main     1772] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+20:52:17 INF [temp     main     1781] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+20:52:17 INF [temp     menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+20:52:17 INF [temp     menu     1401] ===================================
+20:52:17 INF [temp     menu     1402] 1. GEDCOM Report (Local File)
+20:52:17 INF [temp     menu     1403] 2. API Report (Ancestry Online)
+20:52:17 INF [temp     menu     1404] ----------------------------------
+20:52:17 INF [temp     menu     1405] t. Toggle Log Level (Current: DEBUG)
+20:52:17 INF [temp     menu     1408] q. Quit
+20:52:17 INF [temp     menu     1409] ===================================
+20:52:21 INF [temp     handle_g 1896] 
+                                      --- GEDCOM Report ---
+20:52:21 INF [temp     handle_g 1906] 
+                                      Enter search criteria for the person of interest:
+20:52:32 INF [temp     display_ 1425] Name: Fraser Gault
+20:52:32 INF [temp     display_ 1427] Born: 15/6/1941 in Banff, Banffshire, Scotland
+20:52:32 INF [temp     display_ 1432] 
+                                      Parents:
+20:52:34 INF [temp     display_ 1435] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+20:52:34 INF [temp     display_ 1435] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+20:52:34 INF [temp     display_ 1440] 
+                                      Siblings:
+20:52:37 INF [temp     display_ 1443] - Derrick Wardie Gault (b. 16 MAY 1943)
+20:52:37 INF [temp     display_ 1443] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+20:52:37 INF [temp     display_ 1443] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+20:52:37 INF [temp     display_ 1443] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+20:52:37 INF [temp     display_ 1443] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+20:52:37 INF [temp     display_ 1443] - William 'Billy' George Gault (b. 07/05/1947)
+20:52:37 INF [temp     display_ 1443] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+20:52:37 INF [temp     display_ 1443] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+20:52:37 INF [temp     display_ 1443] - Helen Gault (b. 20/2/1933)
+20:52:37 INF [temp     display_ 1443] - Thomas Gault (b. 1929, d. 1929)
+20:52:37 INF [temp     display_ 1448] 
+                                      Spouse(s):
+20:52:39 INF [temp     display_ 1451] - Nellie Mason Smith
+20:52:39 INF [temp     display_ 1456] 
+                                      Children:
+20:52:41 INF [temp     display_ 1459] - David Gault
+20:52:41 INF [temp     display_ 1459] - Caroline Gault
+20:52:41 INF [temp     display_ 1459] - Barry Gault
+20:52:48 INF [temp     handle_g 1972] 
+                                      Fraser Gault
+                                      -> Fraser Gault is the son of 'Dolly' Clara Alexina Fraser
+                                      -> 'Dolly' Clara Alexina Fraser is the mother of Derrick Wardie Gault
+                                      -> Derrick Wardie Gault is the father of Wayne Gordon Gault
+                                      
+20:52:48 INF [temp     menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+20:52:48 INF [temp     menu     1401] ===================================
+20:52:48 INF [temp     menu     1402] 1. GEDCOM Report (Local File)
+20:52:48 INF [temp     menu     1403] 2. API Report (Ancestry Online)
+20:52:48 INF [temp     menu     1404] ----------------------------------
+20:52:48 INF [temp     menu     1405] t. Toggle Log Level (Current: DEBUG)
+20:52:48 INF [temp     menu     1408] q. Quit
+20:52:48 INF [temp     menu     1409] ===================================
+21:56:51 WAR [temp     <module> 211 ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+21:56:51 WAR [temp     <module> 212 ] API functionality will be disabled.
+21:56:51 WAR [temp     <module> 1475] API Utils unavailable, using dummy SessionManager.
+21:56:51 INF [temp     main     1754] --- GEDCOM Interrogator Script Starting (v7.36) ---
+21:56:51 INF [temp     main     1766] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+21:56:51 INF [temp     main     1768] GEDCOM loaded successfully.
+21:56:51 INF [temp     build_in 55  ] [Cache] Building INDI index...
+21:56:56 INF [temp     build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.91s.
+21:56:56 INF [temp     main     1772] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+21:56:56 INF [temp     main     1781] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+21:56:56 INF [temp     menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+21:56:56 INF [temp     menu     1401] ===================================
+21:56:56 INF [temp     menu     1402] 1. GEDCOM Report (Local File)
+21:56:56 INF [temp     menu     1403] 2. API Report (Ancestry Online)
+21:56:56 INF [temp     menu     1404] ----------------------------------
+21:56:56 INF [temp     menu     1405] t. Toggle Log Level (Current: DEBUG)
+21:56:56 INF [temp     menu     1408] q. Quit
+21:56:56 INF [temp     menu     1409] ===================================
+21:57:00 INF [temp     handle_g 1896] 
+                                      --- GEDCOM Report ---
+21:57:00 INF [temp     handle_g 1906] 
+                                      Enter search criteria for the person of interest:
+21:57:12 INF [temp     display_ 1425] Name: Fraser Gault
+21:57:12 INF [temp     display_ 1427] Born: 15/6/1941 in Banff, Banffshire, Scotland
+21:57:12 INF [temp     display_ 1432] 
+                                      Parents:
+21:57:15 INF [temp     display_ 1435] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+21:57:15 INF [temp     display_ 1435] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+21:57:15 INF [temp     display_ 1440] 
+                                      Siblings:
+21:57:17 INF [temp     display_ 1443] - Derrick Wardie Gault (b. 16 MAY 1943)
+21:57:17 INF [temp     display_ 1443] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+21:57:17 INF [temp     display_ 1443] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+21:57:17 INF [temp     display_ 1443] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+21:57:17 INF [temp     display_ 1443] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+21:57:17 INF [temp     display_ 1443] - William 'Billy' George Gault (b. 07/05/1947)
+21:57:17 INF [temp     display_ 1443] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+21:57:17 INF [temp     display_ 1443] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+21:57:17 INF [temp     display_ 1443] - Helen Gault (b. 20/2/1933)
+21:57:17 INF [temp     display_ 1443] - Thomas Gault (b. 1929, d. 1929)
+21:57:17 INF [temp     display_ 1448] 
+                                      Spouse(s):
+21:57:19 INF [temp     display_ 1451] - Nellie Mason Smith
+21:57:19 INF [temp     display_ 1456] 
+                                      Children:
+21:57:21 INF [temp     display_ 1459] - David Gault
+21:57:21 INF [temp     display_ 1459] - Caroline Gault
+21:57:21 INF [temp     display_ 1459] - Barry Gault
+21:57:28 INF [temp     handle_g 1972] 
+                                      Fraser Gault
+                                      -> Fraser Gault is the son of James Gault
+                                      -> James Gault is the father of Derrick Wardie Gault
+                                      -> Derrick Wardie Gault is the father of Wayne Gordon Gault
+                                      
+12:44:27 WAR [temp     <module> 211 ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+12:44:27 WAR [temp     <module> 212 ] API functionality will be disabled.
+12:44:27 WAR [temp     <module> 1475] API Utils unavailable, using dummy SessionManager.
+12:44:27 INF [temp     main     1754] --- GEDCOM Interrogator Script Starting (v7.36) ---
+12:44:27 INF [temp     main     1766] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+12:44:27 INF [temp     main     1768] GEDCOM loaded successfully.
+12:44:27 INF [temp     build_in 55  ] [Cache] Building INDI index...
+12:44:31 INF [temp     build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.55s.
+12:44:31 INF [temp     main     1772] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+12:44:31 INF [temp     main     1781] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+12:44:31 INF [temp     menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+12:44:31 INF [temp     menu     1401] ===================================
+12:44:31 INF [temp     menu     1402] 1. GEDCOM Report (Local File)
+12:44:31 INF [temp     menu     1403] 2. API Report (Ancestry Online)
+12:44:31 INF [temp     menu     1404] ----------------------------------
+12:44:31 INF [temp     menu     1405] t. Toggle Log Level (Current: DEBUG)
+12:44:31 INF [temp     menu     1408] q. Quit
+12:44:31 INF [temp     menu     1409] ===================================
+12:44:36 INF [temp     handle_g 1896] 
+                                      --- GEDCOM Report ---
+12:44:36 INF [temp     handle_g 1906] 
+                                      Enter search criteria for the person of interest:
+12:44:53 INF [temp     display_ 1425] Name: Fraser Gault
+12:44:53 INF [temp     display_ 1427] Born: 15/6/1941 in Banff, Banffshire, Scotland
+12:44:53 INF [temp     display_ 1432] 
+                                      Parents:
+12:44:56 INF [temp     display_ 1435] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+12:44:56 INF [temp     display_ 1435] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+12:44:56 INF [temp     display_ 1440] 
+                                      Siblings:
+12:44:58 INF [temp     display_ 1443] - Derrick Wardie Gault (b. 16 MAY 1943)
+12:44:58 INF [temp     display_ 1443] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+12:44:58 INF [temp     display_ 1443] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+12:44:58 INF [temp     display_ 1443] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+12:44:58 INF [temp     display_ 1443] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+12:44:58 INF [temp     display_ 1443] - William 'Billy' George Gault (b. 07/05/1947)
+12:44:58 INF [temp     display_ 1443] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+12:44:58 INF [temp     display_ 1443] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+12:44:58 INF [temp     display_ 1443] - Helen Gault (b. 20/2/1933)
+12:44:58 INF [temp     display_ 1443] - Thomas Gault (b. 1929, d. 1929)
+12:44:58 INF [temp     display_ 1448] 
+                                      Spouse(s):
+12:45:00 INF [temp     display_ 1451] - Nellie Mason Smith
+12:45:00 INF [temp     display_ 1456] 
+                                      Children:
+12:45:02 INF [temp     display_ 1459] - David Gault
+12:45:02 INF [temp     display_ 1459] - Caroline Gault
+12:45:02 INF [temp     display_ 1459] - Barry Gault
+12:45:09 INF [temp     handle_g 1972] 
+                                      Fraser Gault
+                                      -> Fraser Gault is the son of James Gault
+                                      -> James Gault is the father of Derrick Wardie Gault
+                                      -> Derrick Wardie Gault is the father of Wayne Gordon Gault
+                                      
+13:36:59 WAR [temp     <module> 211 ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+13:36:59 WAR [temp     <module> 212 ] API functionality will be disabled.
+13:36:59 WAR [temp     <module> 1475] API Utils unavailable, using dummy SessionManager.
+13:36:59 INF [temp     main     1754] --- GEDCOM Interrogator Script Starting (v7.36) ---
+13:36:59 INF [temp     main     1766] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+13:36:59 INF [temp     main     1768] GEDCOM loaded successfully.
+13:36:59 INF [temp     build_in 55  ] [Cache] Building INDI index...
+13:37:03 INF [temp     build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.47s.
+13:37:03 INF [temp     main     1772] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+13:37:03 INF [temp     main     1781] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+13:37:03 INF [temp     menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+13:37:03 INF [temp     menu     1401] ===================================
+13:37:03 INF [temp     menu     1402] 1. GEDCOM Report (Local File)
+13:37:03 INF [temp     menu     1403] 2. API Report (Ancestry Online)
+13:37:03 INF [temp     menu     1404] ----------------------------------
+13:37:03 INF [temp     menu     1405] t. Toggle Log Level (Current: DEBUG)
+13:37:03 INF [temp     menu     1408] q. Quit
+13:37:03 INF [temp     menu     1409] ===================================
+13:37:06 INF [temp     handle_g 1896] 
+                                      --- GEDCOM Report ---
+13:37:06 INF [temp     handle_g 1906] 
+                                      Enter search criteria for the person of interest:
+13:37:21 INF [temp     display_ 1425] Name: Fraser Gault
+13:37:21 INF [temp     display_ 1427] Born: 15/6/1941 in Banff, Banffshire, Scotland
+13:37:21 INF [temp     display_ 1432] 
+                                      Parents:
+13:37:23 INF [temp     display_ 1435] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+13:37:23 INF [temp     display_ 1435] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+13:37:23 INF [temp     display_ 1440] 
+                                      Siblings:
+13:37:25 INF [temp     display_ 1443] - Derrick Wardie Gault (b. 16 MAY 1943)
+13:37:25 INF [temp     display_ 1443] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+13:37:25 INF [temp     display_ 1443] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+13:37:25 INF [temp     display_ 1443] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+13:37:25 INF [temp     display_ 1443] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+13:37:25 INF [temp     display_ 1443] - William 'Billy' George Gault (b. 07/05/1947)
+13:37:25 INF [temp     display_ 1443] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+13:37:25 INF [temp     display_ 1443] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+13:37:25 INF [temp     display_ 1443] - Helen Gault (b. 20/2/1933)
+13:37:25 INF [temp     display_ 1443] - Thomas Gault (b. 1929, d. 1929)
+13:37:25 INF [temp     display_ 1448] 
+                                      Spouse(s):
+13:37:27 INF [temp     display_ 1451] - Nellie Mason Smith
+13:37:27 INF [temp     display_ 1456] 
+                                      Children:
+13:37:29 INF [temp     display_ 1459] - David Gault
+13:37:29 INF [temp     display_ 1459] - Caroline Gault
+13:37:29 INF [temp     display_ 1459] - Barry Gault
+13:37:36 INF [temp     handle_g 1972] 
+                                      Fraser Gault
+                                      -> Fraser Gault is the son of 'Dolly' Clara Alexina Fraser
+                                      -> 'Dolly' Clara Alexina Fraser is the mother of Derrick Wardie Gault
+                                      -> Derrick Wardie Gault is the father of Wayne Gordon Gault
+                                      
+14:28:13 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+14:28:13 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+14:28:13 WAR [api_util <module> 68  ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+14:28:13 WAR [api_util <module> 69  ] API functionality will be disabled.
+14:28:13 INF [api_util <module> 124 ] Session Manager initialized (type: UtilsSessionManager). API Utils Available: False
+14:28:13 INF [api_util <module> 389 ] api_utils loaded.
+14:28:13 ERR [api_util <module> 393 ] Underlying 'utils' module is NOT available. API functions will fail.
+14:28:13 INF [cache    close_ca 263 ] DiskCache connection closed.
+14:28:19 INF [gedcom_u <module> 1163] gedcom_utils loaded.
+14:28:19 INF [gedcom_u <module> 1166] ged4py library seems available.
+14:28:39 INF [action10 main     264 ] --- Action 10: GEDCOM Report Starting ---
+14:28:39 INF [action10 main     285 ] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+14:28:39 CRI [action10 main     331 ] An unexpected error occurred in main: name 'time' is not defined
+14:28:39 INF [action10 main     334 ] --- Action 10: GEDCOM Report Finished ---
+14:28:47 INF [action10 main     264 ] --- Action 10: GEDCOM Report Starting ---
+14:28:47 INF [action10 main     285 ] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+14:28:47 CRI [action10 main     331 ] An unexpected error occurred in main: name 'time' is not defined
+14:28:47 INF [action10 main     334 ] --- Action 10: GEDCOM Report Finished ---
+14:29:05 INF [action10 main     265 ] --- Action 10: GEDCOM Report Starting ---
+14:29:05 INF [action10 main     286 ] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+14:29:05 INF [action10 main     290 ] GEDCOM loaded successfully in 0.00 seconds.
+14:29:05 INF [action10 main     293 ] Building individual index...
+14:29:05 INF [gedcom_u build_in 263 ] [Cache] Building INDI index...
+14:29:09 INF [gedcom_u build_in 273 ] [Cache] INDI index built with 14530 individuals in 4.47s.
+14:29:09 INF [action10 main     296 ] Pre-searching for reference person 'Wayne Gordon Gault' in GEDCOM...
+14:29:09 INF [action10 main     315 ] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@] 
+14:29:09 INF [action10 handle_g 147 ] 
+                                      --- GEDCOM Report ---
+14:29:09 INF [action10 handle_g 156 ] 
+                                      Enter search criteria for the person of interest:
+14:29:24 INF [action10 handle_g 172 ] Searching GEDCOM...
+14:29:24 INF [action10 handle_g 185 ] Auto-selected only match: Fraser Gault
+14:29:24 INF [action10 display_ 91  ] 
+                                      --- Individual Details (GEDCOM) ---
+14:29:24 INF [action10 display_ 92  ] Name: Fraser Gault
+14:29:24 INF [action10 display_ 94  ] Born: 15/6/1941 in Banff, Banffshire, Scotland
+14:29:24 INF [action10 display_ 99  ] 
+                                      Parents:
+14:29:26 INF [action10 display_ 102 ] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+14:29:26 INF [action10 display_ 102 ] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+14:29:26 INF [action10 display_ 107 ] 
+                                      Siblings:
+14:29:29 INF [action10 display_ 110 ] - Derrick Wardie Gault (b. 16 MAY 1943)
+14:29:29 INF [action10 display_ 110 ] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+14:29:29 INF [action10 display_ 110 ] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+14:29:29 INF [action10 display_ 110 ] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+14:29:29 INF [action10 display_ 110 ] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+14:29:29 INF [action10 display_ 110 ] - William 'Billy' George Gault (b. 07/05/1947)
+14:29:29 INF [action10 display_ 110 ] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+14:29:29 INF [action10 display_ 110 ] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+14:29:29 INF [action10 display_ 110 ] - Helen Gault (b. 20/2/1933)
+14:29:29 INF [action10 display_ 110 ] - Thomas Gault (b. 1929, d. 1929)
+14:29:29 INF [action10 display_ 115 ] 
+                                      Spouse(s):
+14:29:31 INF [action10 display_ 118 ] - Nellie Mason Smith
+14:29:31 INF [action10 display_ 123 ] 
+                                      Children:
+14:29:33 INF [action10 display_ 126 ] - David Gault
+14:29:33 INF [action10 display_ 126 ] - Caroline Gault
+14:29:33 INF [action10 display_ 126 ] - Barry Gault
+14:29:33 INF [action10 handle_g 240 ] 
+                                      Calculating relationship to Wayne Gordon Gault...
+14:29:39 INF [action10 handle_g 245 ] 
+                                      --- Relationship Path (GEDCOM) ---
+14:29:39 INF [action10 handle_g 246 ] Fraser Gault
+                                      -> Fraser Gault is the son of James Gault
+                                      -> James Gault is the father of Derrick Wardie Gault
+                                      -> Derrick Wardie Gault is the father of Wayne Gordon Gault
+                                      
+14:29:39 INF [action10 main     335 ] --- Action 10: GEDCOM Report Finished ---
+14:30:13 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+14:30:13 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+14:30:13 WAR [api_util <module> 68  ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+14:30:13 WAR [api_util <module> 69  ] API functionality will be disabled.
+14:30:13 INF [api_util <module> 124 ] Session Manager initialized (type: UtilsSessionManager). API Utils Available: False
+14:30:13 CRI [action11 <module> 430 ] Exiting: Required API utilities (utils module / api_utils) not available.
+14:30:13 INF [cache    close_ca 263 ] DiskCache connection closed.
+14:39:28 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+14:39:28 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+14:39:28 WAR [api_util <module> 68  ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+14:39:28 WAR [api_util <module> 69  ] API functionality will be disabled.
+14:39:28 INF [api_util <module> 124 ] Session Manager initialized (type: UtilsSessionManager). API Utils Available: False
+14:39:28 CRI [action11 <module> 410 ] Exiting: Required API utilities (utils module / api_utils) not available.
+14:39:28 INF [cache    close_ca 263 ] DiskCache connection closed.
+16:43:02 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+16:43:02 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+16:43:02 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+16:43:02 INF [api_util <module> 454 ] api_utils loaded.
+16:43:02 INF [api_util <module> 456 ] Underlying 'utils' module (SessionManager) seems available.
+16:43:02 INF [cache    close_ca 263 ] DiskCache connection closed.
+16:43:14 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+16:43:14 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+16:43:14 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+16:43:14 INF [action11 main     356 ] --- Action 11: API Report Starting ---
+16:43:14 INF [action11 handle_a 99  ] 
+                                      --- API Report ---
+16:43:14 INF [api_util initiali 150 ] Initializing browser session...
+16:43:17 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+16:43:24 INF [utils    _retriev 2510] My profile id: 07BDD45E-0006-0000-0000-000000000000
+16:43:25 INF [utils    _retriev 2524] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+16:43:26 INF [utils    _retriev 2539] My tree id: 175946702
+16:43:27 INF [utils    _retriev 2563] Tree Owner Name: Wayne Gault.
+                                      
+16:43:27 INF [api_util initiali 171 ] Session is ready.
+16:43:27 INF [action11 handle_a 133 ] 
+                                      Enter search criteria for the person of interest (API Search):
+16:43:33 INF [action11 handle_a 160 ] Calling Suggest API: https://www.ancestry.co.uk/api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault
+16:44:37 WAR [utils    _api_req 1388] Person Picker Suggest API: ConnectionError (Attempt 1/3). Retrying in 0.55s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:45:42 WAR [utils    _api_req 1388] Person Picker Suggest API: ConnectionError (Attempt 2/3). Retrying in 0.95s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:46:47 WAR [utils    _api_req 1388] Person Picker Suggest API: ConnectionError (Attempt 3/3). Retrying in 1.81s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:47:54 ERR [utils    _api_req 1383] Person Picker Suggest API: ConnectionError failed after 4 attempts. Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:47:54 ERR [action11 handle_a 225 ] Error during /person-picker/suggest API call or processing: name 'requests' is not defined
+16:47:54 INF [action11 main     375 ] Attempting to clean up browser session...
+16:47:54 INF [action11 main     385 ] Browser session closed via session_manager.close_sess().
+16:47:54 INF [action11 main     402 ] --- Action 11: API Report Finished ---
+16:47:54 INF [cache    close_ca 263 ] DiskCache connection closed.
+16:49:23 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+16:49:23 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+16:49:23 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+16:49:23 INF [action11 main     357 ] --- Action 11: API Report Starting ---
+16:49:23 INF [action11 handle_a 100 ] 
+                                      --- API Report ---
+16:49:23 INF [api_util initiali 150 ] Initializing browser session...
+16:49:25 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+16:49:33 INF [utils    _retriev 2510] My profile id: 07BDD45E-0006-0000-0000-000000000000
+16:49:34 INF [utils    _retriev 2524] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+16:49:35 INF [utils    _retriev 2539] My tree id: 175946702
+16:49:36 INF [utils    _retriev 2563] Tree Owner Name: Wayne Gault.
+                                      
+16:49:36 INF [api_util initiali 171 ] Session is ready.
+16:49:36 INF [action11 handle_a 134 ] 
+                                      Enter search criteria for the person of interest (API Search):
+16:49:41 INF [action11 handle_a 161 ] Calling Suggest API: https://www.ancestry.co.uk/api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault
+16:50:45 WAR [utils    _api_req 1388] Person Picker Suggest API: ConnectionError (Attempt 1/3). Retrying in 0.56s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:51:50 WAR [utils    _api_req 1388] Person Picker Suggest API: ConnectionError (Attempt 2/3). Retrying in 1.00s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:52:56 WAR [utils    _api_req 1388] Person Picker Suggest API: ConnectionError (Attempt 3/3). Retrying in 1.81s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:54:02 ERR [utils    _api_req 1383] Person Picker Suggest API: ConnectionError failed after 4 attempts. Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+16:54:02 ERR [action11 handle_a 187 ] Suggest API request failed (returned None).
+16:54:02 INF [action11 main     376 ] Attempting to clean up browser session...
+16:54:02 INF [action11 main     386 ] Browser session closed via session_manager.close_sess().
+16:54:02 INF [action11 main     403 ] --- Action 11: API Report Finished ---
+16:54:02 INF [cache    close_ca 263 ] DiskCache connection closed.
+18:22:17 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+18:22:17 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+18:22:17 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+18:22:17 INF [action11 main     357 ] --- Action 11: API Report Starting ---
+18:22:17 INF [action11 handle_a 100 ] 
+                                      --- API Report ---
+18:22:17 INF [api_util initiali 150 ] Initializing browser session...
+18:22:19 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+18:22:24 WAR [utils    _api_req 1339] Cannot sync cookies directly to scraper session (attribute missing).
+18:22:25 WAR [utils    _api_req 1414] API Login Verification (header/dna): API call failed 401 . Possible Cloudflare block or session expired/invalid?
+18:22:25 WAR [utils    _api_req 1339] Cannot sync cookies directly to scraper session (attribute missing).
+18:22:26 WAR [utils    _api_req 1389] CSRF Token API: Unexpected final status 303 See Other (Redirects Enabled). Returning response.
+18:22:26 ERR [utils    get_csrf 2207] Unexpected response type for CSRF token API: <class 'requests.models.Response'>
+18:22:26 ERR [utils    _perform 1633] Failed to retrieve/verify CSRF token.
+18:22:26 WAR [api_util initiali 162 ] Failed to ensure session ready automatically.
+18:22:26 ERR [api_util initiali 166 ] Session still not ready after ensure_session_ready attempt.
+18:22:26 ERR [action11 handle_a 109 ] Failed to initialize session. Cannot proceed with API operations.
+18:22:26 INF [action11 main     376 ] Attempting to clean up browser session...
+18:22:26 INF [action11 main     386 ] Browser session closed via session_manager.close_sess().
+18:22:26 INF [action11 main     403 ] --- Action 11: API Report Finished ---
+18:22:26 INF [cache    close_ca 263 ] DiskCache connection closed.
+18:23:34 WAR [temp     <module> 211 ] Could not import from 'utils' module: cannot import name '_api_req' from 'utils' (c:\Users\wayne\GitHub\Python\Projects\Ancestry\utils.py)
+18:23:34 WAR [temp     <module> 212 ] API functionality will be disabled.
+18:23:34 WAR [temp     <module> 1475] API Utils unavailable, using dummy SessionManager.
+18:23:34 INF [temp     main     1754] --- GEDCOM Interrogator Script Starting (v7.36) ---
+18:23:34 INF [temp     main     1766] Loading GEDCOM: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged...
+18:23:34 INF [temp     main     1768] GEDCOM loaded successfully.
+18:23:34 INF [temp     build_in 55  ] [Cache] Building INDI index...
+18:23:39 INF [temp     build_in 65  ] [Cache] INDI index built with 14530 individuals in 4.87s.
+18:23:39 INF [temp     main     1772] Pre-searching for 'Wayne Gordon Gault' in GEDCOM...
+18:23:39 INF [temp     main     1781] Found WGG in GEDCOM: Wayne Gordon Gault [@I102281560836@]
+18:23:39 INF [temp     menu     1400] 
+                                      --- GEDCOM Interrogator (v7.36) ---
+18:23:39 INF [temp     menu     1401] ===================================
+18:23:39 INF [temp     menu     1402] 1. GEDCOM Report (Local File)
+18:23:39 INF [temp     menu     1403] 2. API Report (Ancestry Online)
+18:23:39 INF [temp     menu     1404] ----------------------------------
+18:23:39 INF [temp     menu     1405] t. Toggle Log Level (Current: DEBUG)
+18:23:39 INF [temp     menu     1408] q. Quit
+18:23:39 INF [temp     menu     1409] ===================================
+18:23:42 INF [temp     handle_g 1896] 
+                                      --- GEDCOM Report ---
+18:23:42 INF [temp     handle_g 1906] 
+                                      Enter search criteria for the person of interest:
+18:23:51 INF [temp     display_ 1425] Name: Fraser Gault
+18:23:51 INF [temp     display_ 1427] Born: 15/6/1941 in Banff, Banffshire, Scotland
+18:23:51 INF [temp     display_ 1432] 
+                                      Parents:
+18:23:54 INF [temp     display_ 1435] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+18:23:54 INF [temp     display_ 1435] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+18:23:54 INF [temp     display_ 1440] 
+                                      Siblings:
+18:23:56 INF [temp     display_ 1443] - Derrick Wardie Gault (b. 16 MAY 1943)
+18:23:56 INF [temp     display_ 1443] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+18:23:56 INF [temp     display_ 1443] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+18:23:56 INF [temp     display_ 1443] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+18:23:56 INF [temp     display_ 1443] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+18:23:56 INF [temp     display_ 1443] - William 'Billy' George Gault (b. 07/05/1947)
+18:23:56 INF [temp     display_ 1443] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+18:23:56 INF [temp     display_ 1443] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+18:23:56 INF [temp     display_ 1443] - Helen Gault (b. 20/2/1933)
+18:23:56 INF [temp     display_ 1443] - Thomas Gault (b. 1929, d. 1929)
+18:23:56 INF [temp     display_ 1448] 
+                                      Spouse(s):
+18:23:58 INF [temp     display_ 1451] - Nellie Mason Smith
+18:23:58 INF [temp     display_ 1456] 
+                                      Children:
+18:24:00 INF [temp     display_ 1459] - David Gault
+18:24:00 INF [temp     display_ 1459] - Caroline Gault
+18:24:00 INF [temp     display_ 1459] - Barry Gault
+18:24:07 INF [temp     handle_g 1972] 
+                                      Fraser Gault
+                                      -> Fraser Gault is the son of 'Dolly' Clara Alexina Fraser
+                                      -> 'Dolly' Clara Alexina Fraser is the mother of Derrick Wardie Gault
+                                      -> Derrick Wardie Gault is the father of Wayne Gordon Gault
+                                      
+18:25:04 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+18:25:04 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+18:25:04 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+18:25:04 INF [action11 main     357 ] --- Action 11: API Report Starting ---
+18:25:04 INF [action11 handle_a 100 ] 
+                                      --- API Report ---
+18:25:04 INF [api_util initiali 150 ] Initializing browser session...
+18:25:06 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+18:25:15 INF [utils    _retriev 2521] My profile id: 07BDD45E-0006-0000-0000-000000000000
+18:25:16 INF [utils    _retriev 2535] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+18:25:17 INF [utils    _retriev 2550] My tree id: 175946702
+18:25:18 INF [utils    _retriev 2574] Tree Owner Name: Wayne Gault.
+                                      
+18:25:18 INF [api_util initiali 171 ] Session is ready.
+18:25:18 INF [action11 handle_a 134 ] 
+                                      Enter search criteria for the person of interest (API Search):
+18:25:24 INF [action11 handle_a 161 ] Calling Suggest API: https://www.ancestry.co.uk/api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault
+18:26:30 WAR [utils    _api_req 1399] Person Picker Suggest API: ConnectionError (Attempt 1/3). Retrying in 0.67s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:27:09 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+18:27:09 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+18:27:09 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+18:27:09 INF [action11 main     357 ] --- Action 11: API Report Starting ---
+18:27:09 INF [action11 handle_a 100 ] 
+                                      --- API Report ---
+18:27:09 INF [api_util initiali 150 ] Initializing browser session...
+18:27:11 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+18:27:19 INF [utils    _retriev 2474] My profile id: 07BDD45E-0006-0000-0000-000000000000
+18:27:20 INF [utils    _retriev 2488] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+18:27:21 INF [utils    _retriev 2503] My tree id: 175946702
+18:27:22 INF [utils    _retriev 2527] Tree Owner Name: Wayne Gault.
+                                      
+18:27:22 INF [api_util initiali 171 ] Session is ready.
+18:27:22 INF [action11 handle_a 134 ] 
+                                      Enter search criteria for the person of interest (API Search):
+18:27:27 INF [action11 handle_a 161 ] Calling Suggest API: https://www.ancestry.co.uk/api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault
+18:28:33 WAR [utils    _api_req 1355] Person Picker Suggest API: ConnectionError (Attempt 1/3). Retrying in 0.67s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:29:40 WAR [utils    _api_req 1355] Person Picker Suggest API: ConnectionError (Attempt 2/3). Retrying in 1.01s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:30:47 WAR [utils    _api_req 1355] Person Picker Suggest API: ConnectionError (Attempt 3/3). Retrying in 1.74s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:31:55 ERR [utils    _api_req 1351] Person Picker Suggest API: ConnectionError failed after 4 attempts. Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:31:55 ERR [action11 handle_a 187 ] Suggest API request failed (returned None).
+18:31:55 INF [action11 main     376 ] Attempting to clean up browser session...
+18:31:55 INF [action11 main     386 ] Browser session closed via session_manager.close_sess().
+18:31:55 INF [action11 main     403 ] --- Action 11: API Report Finished ---
+18:31:55 INF [cache    close_ca 263 ] DiskCache connection closed.
+18:35:54 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+18:35:54 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+18:35:54 INF [api_util <module> 131 ] Session Manager initialized (type: SessionManager). API Utils Available: True
+18:35:54 INF [action11 main     357 ] --- Action 11: API Report Starting ---
+18:35:54 INF [action11 handle_a 100 ] 
+                                      --- API Report ---
+18:35:54 INF [api_util initiali 150 ] Initializing browser session...
+18:35:56 INF [chromedr init_web 289 ] WebDriver instance fully configured successfully (attempt 1).
+18:36:04 INF [utils    _retriev 2493] My profile id: 07BDD45E-0006-0000-0000-000000000000
+18:36:05 INF [utils    _retriev 2507] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+18:36:06 INF [utils    _retriev 2522] My tree id: 175946702
+18:36:07 INF [utils    _retriev 2546] Tree Owner Name: Wayne Gault.
+                                      
+18:36:07 INF [api_util initiali 171 ] Session is ready.
+18:36:07 INF [action11 handle_a 134 ] 
+                                      Enter search criteria for the person of interest (API Search):
+18:36:16 INF [action11 handle_a 161 ] Calling Suggest API: https://www.ancestry.co.uk/api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault
+18:37:22 WAR [utils    _api_req 1374] Person Picker Suggest API: ConnectionError (Attempt 1/3). Retrying in 0.52s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:38:29 WAR [utils    _api_req 1374] Person Picker Suggest API: ConnectionError (Attempt 2/3). Retrying in 1.04s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:39:36 WAR [utils    _api_req 1374] Person Picker Suggest API: ConnectionError (Attempt 3/3). Retrying in 1.70s... Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:40:44 ERR [utils    _api_req 1370] Person Picker Suggest API: ConnectionError failed after 4 attempts. Error: HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Max retries exceeded with url: /api/person-picker/suggest/175946702?partialFirstName=fraser&partialLastName=gault (Caused by ReadTimeoutError("HTTPSConnectionPool(host='www.ancestry.co.uk', port=443): Read timed out. (read timeout=15)"))
+18:40:44 ERR [action11 handle_a 187 ] Suggest API request failed (returned None).
+18:40:44 INF [action11 main     376 ] Attempting to clean up browser session...
+18:40:44 INF [action11 main     386 ] Browser session closed via session_manager.close_sess().
+18:40:44 INF [action11 main     403 ] --- Action 11: API Report Finished ---
+18:40:44 INF [cache    close_ca 263 ] DiskCache connection closed.
