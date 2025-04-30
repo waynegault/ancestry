@@ -27,6 +27,8 @@ V16.14: Corrected Ladder API call in self_check Phase 4 to include JSONP
         parameters. Updated JSONP handling in display_raw_relationship_ladder.
         Uses TESTING_PERSON_TREE_ID from config.
 V16.15: Corrected validation logic for format_api_relationship_path in self_check.
+V16.16: Refactored HTML/JSONP extraction logic from display_raw_relationship_ladder
+        into a new helper function _extract_ladder_html. Updated self_check.
 """
 
 # --- Standard library imports ---
@@ -59,87 +61,11 @@ except ImportError:
     BeautifulSoup = None  # type: ignore # Gracefully handle missing dependency
 
 # --- Local application imports ---
-# Need full config_instance for self_check and link generation
-try:
-    # Ensure utils can be imported and has the necessary components
-    import utils  # Import utils first
+import utils
+from utils import format_name, ordinal_case
+from config import config_instance, selenium_config
+from gedcom_utils import _parse_date, _clean_display_date
 
-    if not hasattr(utils, "SessionManager") or not hasattr(utils, "_api_req"):
-        raise ImportError(
-            "Required components (SessionManager, _api_req) not found in utils."
-        )
-    # Then import specific names if needed elsewhere or directly use utils.SessionManager etc.
-    # from utils import format_name, ordinal_case, SessionManager, _api_req etc.
-
-    from config import config_instance, selenium_config  # Need selenium_config now
-
-    # --- Add check for TESTING_PERSON_TREE_ID in config ---
-    if not hasattr(config_instance, "TESTING_PERSON_TREE_ID"):
-        # Add a placeholder if missing, self_check will fail later
-        setattr(config_instance, "TESTING_PERSON_TREE_ID", None)
-
-except ImportError:
-    # Create a dummy config if the real one fails, so the module can load
-    # but self_check will report failure.
-    class DummyConfig:
-        BASE_URL = "https://www.ancestry.com"  # Minimal required attribute
-        TESTING_PROFILE_ID = None
-        TESTING_PERSON_TREE_ID = None  # Use the correct attribute name
-        MY_TREE_ID = None
-        TREE_OWNER_NAME = "Unknown Owner"
-        ANCESTRY_USERNAME = None
-        ANCESTRY_PASSWORD = None
-        TREE_NAME = None
-        LOG_DIR = "Logs"
-        DATA_DIR = "Data"
-        CACHE_DIR = "Cache"
-        DATABASE_FILE = "dummy_ancestry_data.db"
-        MAX_RETRIES = 3
-        INITIAL_DELAY = 0.5
-        BACKOFF_FACTOR = 1.8
-        MAX_DELAY = 60.0
-        DECREASE_FACTOR = 0.98
-        TOKEN_BUCKET_CAPACITY = 10.0
-        TOKEN_BUCKET_FILL_RATE = 2.0
-        RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
-        USER_AGENTS = ["Mozilla/5.0"]
-        API_CONTEXTUAL_HEADERS = {}
-
-    class DummySeleniumConfig:  # Add dummy selenium_config
-        API_TIMEOUT = 60
-
-    config_instance = DummyConfig()  # type: ignore
-    selenium_config = DummySeleniumConfig()  # type: ignore
-    logging.warning("Could not import real config/selenium_config, using DummyConfig.")
-
-
-# Need format_name and ordinal_case for parsing/formatting
-try:
-    from utils import format_name, ordinal_case
-except ImportError:
-
-    def format_name(name: Optional[str]) -> str:
-        return str(name) if name else "Unknown"
-
-    def ordinal_case(text: str) -> str:
-        return str(text)
-
-    logging.warning(
-        "Could not import format_name/ordinal_case from utils, using fallbacks."
-    )
-
-# Need date helpers from gedcom_utils
-try:
-    from gedcom_utils import _parse_date, _clean_display_date
-except ImportError:
-
-    def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
-        return None
-
-    def _clean_display_date(date_str: Optional[str]) -> Optional[str]:
-        return date_str
-
-    logging.warning("Could not import date helpers from gedcom_utils, using fallbacks.")
 
 # Initialize logger - Ensure logger is always available
 # If running standalone, __main__ block will reconfigure logging
@@ -766,13 +692,137 @@ def format_api_relationship_path(
 # End of format_api_relationship_path
 
 
+# --- NEW HELPER FUNCTION ---
+def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
+    """
+    Extracts and decodes the relationship ladder HTML from raw API response content.
+    Handles standard JSON, JSONP, and potential errors.
+    """
+    if isinstance(raw_content, dict) and "error" in raw_content:
+        error_msg = raw_content.get("error", {}).get(
+            "message", raw_content.get("message", "Unknown API Error")
+        )
+        logger.error(f"_extract_ladder_html: API returned error: {error_msg}")
+        return None
+    if not raw_content or not isinstance(raw_content, str):
+        logger.error(
+            f"_extract_ladder_html: Invalid raw content type: {type(raw_content)}"
+        )
+        return None
+
+    html_escaped = None
+    # 1. Try JSONP extraction first
+    logger.debug("_extract_ladder_html: Attempting JSONP extraction...")
+    try:
+        jsonp_match = re.match(r"^\s*[\w$.]+\((.*)\)\s*;?\s*$", raw_content, re.DOTALL)
+        if jsonp_match:
+            json_str = jsonp_match.group(1).strip()
+            if json_str.startswith("{") and json_str.endswith("}"):
+                json_data = json.loads(json_str)
+                if isinstance(json_data, dict) and "html" in json_data:
+                    html_escaped = json_data["html"]
+                    if isinstance(html_escaped, str):
+                        logger.debug(
+                            f"_extract_ladder_html: Found HTML via JSONP. Length: {len(html_escaped)}"
+                        )
+                    else:
+                        logger.warning(
+                            f"_extract_ladder_html: 'html' key found in JSONP, but not string: {type(html_escaped)}"
+                        )
+                        html_escaped = None
+                else:
+                    logger.warning(
+                        "_extract_ladder_html: 'html' key not found in JSONP object."
+                    )
+            else:
+                logger.warning(
+                    f"_extract_ladder_html: Content in JSONP () not JSON: {json_str[:100]}..."
+                )
+        else:
+            logger.debug(
+                "_extract_ladder_html: Raw content does not match JSONP callback structure."
+            )
+            # --- Attempt direct JSON parse if JSONP match fails ---
+            if raw_content.strip().startswith("{") and raw_content.strip().endswith(
+                "}"
+            ):
+                logger.debug("_extract_ladder_html: Attempting direct JSON parse...")
+                try:
+                    json_data_direct = json.loads(raw_content.strip())
+                    if (
+                        isinstance(json_data_direct, dict)
+                        and "html" in json_data_direct
+                        and isinstance(json_data_direct["html"], str)
+                    ):
+                        html_escaped = json_data_direct["html"]
+                        logger.debug(
+                            f"_extract_ladder_html: Found HTML via direct JSON parse. Length: {len(html_escaped)}"
+                        )
+                    else:
+                        logger.warning(
+                            "_extract_ladder_html: Direct JSON ok, but 'html' key missing/invalid."
+                        )
+                except json.JSONDecodeError:
+                    logger.warning("_extract_ladder_html: Direct JSON parse failed.")
+            # --- End Direct JSON ---
+
+    except json.JSONDecodeError as json_e:
+        logger.warning(
+            f"_extract_ladder_html: JSONDecodeError during JSONP/JSON extraction: {json_e}"
+        )
+    except Exception as e:
+        logger.warning(
+            f"_extract_ladder_html: Unexpected error during JSONP/JSON extraction: {e}"
+        )
+
+    # 2. Fallback: Try direct regex for "html":"..." structure
+    if not html_escaped:
+        logger.debug("_extract_ladder_html: JSONP/JSON failed, trying regex...")
+        html_match = re.search(
+            r'"html"\s*:\s*"((?:\\.|[^"\\])*)"',
+            raw_content,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if html_match:
+            html_escaped = html_match.group(1)
+            logger.debug(
+                f"_extract_ladder_html: Found HTML via regex. Length: {len(html_escaped)}"
+            )
+
+    # 3. If HTML still not found, fail
+    if not html_escaped:
+        logger.error("_extract_ladder_html: Could not extract HTML content.")
+        logger.debug(f"Raw content snippet: {raw_content[:500]}...")
+        return None
+
+    # 4. Unescape and decode
+    try:
+        temp_unescaped = html_escaped.replace("\\\\", "\\")
+        html_intermediate = temp_unescaped.encode("utf-8", "backslashreplace").decode(
+            "unicode_escape", errors="replace"
+        )
+        html_unescaped = html.unescape(html_intermediate)
+        logger.debug("_extract_ladder_html: Successfully unescaped HTML.")
+        return html_unescaped
+    except Exception as decode_err:
+        logger.error(
+            f"_extract_ladder_html: Could not decode HTML. Error: {decode_err}",
+            exc_info=True,
+        )
+        logger.debug(f"Problematic escaped HTML snippet: {html_escaped[:500]}...")
+        return None
+
+
+# End of _extract_ladder_html
+
+
+# --- UPDATED FUNCTION ---
 def display_raw_relationship_ladder(
     raw_content: Union[str, Dict], owner_name: str, target_name: str
 ):
     """
     Parse and display the Ancestry relationship ladder from raw JSONP/HTML content.
-    Robustly extracts the 'html' part, decodes, and parses the relationship and path.
-    Uses format_api_relationship_path internally to generate the formatted string.
+    Uses helper functions to extract HTML and format the path.
     """
     # Check if BeautifulSoup is available early
     if BeautifulSoup is None:
@@ -789,119 +839,19 @@ def display_raw_relationship_ladder(
         f"\n--- Relationship between {owner_name} and {target_name} (API Report) ---"
     )
 
-    # Handle cases where API call failed (raw_content might be dict with error)
-    if isinstance(raw_content, dict) and "error" in raw_content:
-        error_msg = raw_content.get("error", {}).get(
-            "message", raw_content.get("message", "Unknown API Error")
+    # --- Use helper to extract and decode HTML ---
+    html_unescaped = _extract_ladder_html(raw_content)
+
+    if not html_unescaped:
+        # Error already logged by helper
+        print(
+            "\n(Could not extract or decode relationship path HTML from API response)"
         )
-        logger.error(f"Could not retrieve relationship data from API: {error_msg}")
-        print(f"\n(Error retrieving relationship path from API: {error_msg})")
         return  # End of function display_raw_relationship_ladder
-    if not raw_content or not isinstance(raw_content, str):
-        logger.error("No relationship content available or invalid format.")
-        print("\n(No relationship path available from API)")
-        return  # End of function display_raw_relationship_ladder
-
-    # --- Adjust HTML extraction for potential JSONP wrapper ---
-    html_escaped = None
-    # 1. Try JSONP extraction first (more likely for this type of endpoint)
-    logger.debug("Attempting JSONP extraction for ladder HTML...")
-    try:
-        # More robust JSONP parsing: Find callback name and extract content within braces
-        jsonp_match = re.match(r"^\s*[\w$.]+\((.*)\)\s*;?\s*$", raw_content, re.DOTALL)
-        if jsonp_match:
-            json_str = jsonp_match.group(1).strip()
-            # Check if the extracted content looks like a JSON object
-            if json_str.startswith("{") and json_str.endswith("}"):
-                json_data = json.loads(json_str)
-                if isinstance(json_data, dict) and "html" in json_data:
-                    html_escaped = json_data["html"]
-                    if isinstance(html_escaped, str):
-                        logger.debug(
-                            f"Successfully extracted 'html' field via JSONP parsing. Length: {len(html_escaped)}"
-                        )
-                    else:
-                        logger.warning(
-                            f"'html' key found in JSONP, but value is not a string: {type(html_escaped)}"
-                        )
-                        html_escaped = None
-                else:
-                    logger.warning(
-                        "'html' key not found within extracted JSONP object."
-                    )
-            else:
-                logger.warning(
-                    f"Content within JSONP parentheses doesn't look like JSON: {json_str[:100]}..."
-                )
-        else:
-            logger.warning("Could not match JSONP callback structure.")
-    except json.JSONDecodeError as json_e:
-        logger.warning(f"JSONDecodeError during JSONP extraction attempt: {json_e}")
-        logger.debug(f"Content snippet during JSONP error: {raw_content[:500]}...")
-    except Exception as e:
-        logger.warning(f"Unexpected error during JSONP extraction: {e}")
-
-    # 2. Fallback: Try direct "html": "..." extraction (if JSONP failed)
-    if not html_escaped:
-        logger.debug(
-            "JSONP extraction failed or 'html' key missing, trying standard regex..."
-        )
-        html_match = re.search(
-            r'"html"\s*:\s*"((?:\\.|[^"\\])*)"',  # Allows escaped chars \\, \", etc.
-            raw_content,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if html_match:
-            html_escaped = html_match.group(1)
-            logger.debug(
-                f"Successfully extracted 'html' field using standard regex (fallback). Length: {len(html_escaped)}"
-            )
-
-    # Final check if HTML was extracted
-    if not html_escaped:
-        logger.error(
-            "Could not extract relationship ladder HTML from the API response (checked JSONP and standard JSON)."
-        )
-        logger.debug(f"Raw content snippet: {raw_content[:500]}...")
-        print("\n(Could not extract relationship path HTML from API response)")
-        return  # End of function display_raw_relationship_ladder
-
-    # Unescape unicode and HTML entities
-    html_unescaped = ""
-    try:
-        # Handle potential double escaping (e.g., \\uXXXX becoming \uXXXX)
-        temp_unescaped = html_escaped.replace("\\\\", "\\")
-
-        # Decode unicode escapes (e.g., \u003c -> <)
-        try:
-            # Use utf-8 with backslashreplace for robustness
-            html_intermediate = temp_unescaped.encode(
-                "utf-8", "backslashreplace"
-            ).decode("unicode_escape", errors="replace")
-        except Exception as e:
-            logger.error(
-                f"Failed to decode unicode escapes: {e}. Proceeding with potentially raw string.",
-                exc_info=False,
-            )
-            html_intermediate = (
-                temp_unescaped  # Fallback to string before unicode decoding
-            )
-
-        # Decode HTML entities (e.g., & -> &)
-        html_unescaped = html.unescape(html_intermediate)
-        logger.debug("Successfully unescaped HTML content.")
-
-    except Exception as decode_err:
-        logger.error(
-            f"Could not decode relationship ladder HTML. Error: {decode_err}",
-            exc_info=True,  # Log traceback
-        )
-        logger.debug(f"Problematic escaped HTML snippet: {html_escaped[:500]}...")
-        print("\n(Error decoding relationship path HTML)")
-        return  # End of function display_raw_relationship_ladder
+    # --- End HTML extraction ---
 
     # --- Use format_api_relationship_path to get the full formatted string ---
-    # Pass the unescaped HTML to the formatter function
+    # Pass the clean, unescaped HTML to the formatter function
     formatted_path_str = format_api_relationship_path(
         html_unescaped, owner_name, target_name
     )
@@ -912,6 +862,7 @@ def display_raw_relationship_ladder(
             formatted_path_str.strip()
         )  # Print the generated path/relationship string
     else:
+        # Error should have been logged by format_api_relationship_path
         logger.warning("format_api_relationship_path returned empty string or None.")
         print("(Could not format relationship path steps from extracted HTML)")
 
@@ -1329,151 +1280,43 @@ def self_check(verbose: bool = True) -> bool:
             if ladder_response_raw and isinstance(ladder_response_raw, str):
                 log_msg("- Tree Ladder API call: SUCCESS (Received string)")
 
-                # Test 1: display_raw_relationship_ladder internal logic (JSONP handling added)
-                try:
-                    log_msg(
-                        "- Testing display_raw_relationship_ladder (internal logic)..."
-                    )
-                    display_raw_relationship_ladder(
-                        ladder_response_raw, target_owner_name, target_name_from_profile
-                    )
-                    log_msg(
-                        "- display_raw_relationship_ladder execution: PASSED (No exceptions)"
-                    )
-                except Exception as display_e:
-                    log_msg(
-                        f"- display_raw_relationship_ladder execution: FAILED (Exception: {display_e})",
-                        logging.ERROR,
-                    )
-                    log_msg(traceback.format_exc(), logging.DEBUG)
-                    status = False
+                # --- Use helper function to extract HTML ---
+                log_msg("- Extracting HTML using _extract_ladder_html...")
+                html_extracted = _extract_ladder_html(ladder_response_raw)
 
-                # Test 2: format_api_relationship_path (JSONP handling added)
-                html_extracted = None
-                # Try JSONP extraction first (using updated logic from display_raw...)
-                try:
-                    # Use regex to strip callback: callback(...) -> ...
-                    jsonp_match = re.match(
-                        r"^\s*[\w$.]+\((.*)\)\s*;?\s*$", ladder_response_raw, re.DOTALL
-                    )
-                    if jsonp_match:
-                        json_str = jsonp_match.group(1).strip()
-                        if json_str.startswith("{") and json_str.endswith("}"):
-                            json_data = json.loads(json_str)
-                            if (
-                                isinstance(json_data, dict)
-                                and "html" in json_data
-                                and isinstance(json_data["html"], str)
-                            ):
-                                html_escaped_test = json_data["html"]
-                                temp_unescaped_test = html_escaped_test.replace(
-                                    "\\\\", "\\"
-                                )
-                                html_intermediate_test = temp_unescaped_test.encode(
-                                    "utf-8", "backslashreplace"
-                                ).decode("unicode_escape", errors="replace")
-                                html_extracted = html.unescape(html_intermediate_test)
-                                log_msg(
-                                    "- Successfully extracted HTML via JSONP parsing for format test.",
-                                    logging.DEBUG,
-                                )
-                            else:
-                                log_msg(
-                                    "- 'html' key not found or not string in JSONP object.",
-                                    logging.WARNING,
-                                )
-                        else:
-                            log_msg(
-                                f"- Content within JSONP parentheses doesn't look like JSON: {json_str[:100]}...",
-                                logging.WARNING,
-                            )
-                    else:
-                        log_msg(
-                            "- Could not match JSONP callback structure for HTML extraction.",
-                            logging.WARNING,
-                        )
-                        # --- ADDED: Attempt to process even if callback match failed (might be plain JSON with HTML) ---
-                        if ladder_response_raw.strip().startswith(
-                            "{"
-                        ) and ladder_response_raw.strip().endswith("}"):
-                            try:
-                                json_data_direct = json.loads(
-                                    ladder_response_raw.strip()
-                                )
-                                if (
-                                    isinstance(json_data_direct, dict)
-                                    and "html" in json_data_direct
-                                    and isinstance(json_data_direct["html"], str)
-                                ):
-                                    html_escaped_test = json_data_direct["html"]
-                                    temp_unescaped_test = html_escaped_test.replace(
-                                        "\\\\", "\\"
-                                    )
-                                    html_intermediate_test = temp_unescaped_test.encode(
-                                        "utf-8", "backslashreplace"
-                                    ).decode("unicode_escape", errors="replace")
-                                    html_extracted = html.unescape(
-                                        html_intermediate_test
-                                    )
-                                    log_msg(
-                                        "- Successfully extracted HTML via DIRECT JSON parsing for format test.",
-                                        logging.DEBUG,
-                                    )
-                                else:
-                                    log_msg(
-                                        "- Direct JSON parse successful, but 'html' key missing/invalid.",
-                                        logging.WARNING,
-                                    )
-                            except json.JSONDecodeError:
-                                log_msg(
-                                    "- Direct JSON parse failed after JSONP match failure.",
-                                    logging.WARNING,
-                                )
-                        # --- END ADDED ---
-
-                except Exception as jsonp_e:
-                    log_msg(
-                        f"- Error during JSONP processing for format test: {jsonp_e}",
-                        logging.WARNING,
-                    )
-
-                # Fallback: Try direct regex if JSONP failed
                 if not html_extracted:
-                    log_msg(
-                        "- Trying direct regex for HTML extraction...", logging.DEBUG
-                    )
-                    html_match_test = re.search(
-                        r'"html"\s*:\s*"((?:\\.|[^"\\])*)"',
-                        ladder_response_raw,
-                        re.IGNORECASE | re.DOTALL,
-                    )
-                    if html_match_test:
-                        html_escaped_test = html_match_test.group(1)
-                        try:
-                            temp_unescaped_test = html_escaped_test.replace(
-                                "\\\\", "\\"
-                            )
-                            html_intermediate_test = temp_unescaped_test.encode(
-                                "utf-8", "backslashreplace"
-                            ).decode("unicode_escape", errors="replace")
-                            html_extracted = html.unescape(html_intermediate_test)
-                            log_msg(
-                                "- Successfully extracted HTML via direct regex for format test.",
-                                logging.DEBUG,
-                            )
-                        except Exception as decode_err_test:
-                            log_msg(
-                                f"- Error decoding HTML (regex) for format test: {decode_err_test}",
-                                logging.WARNING,
-                            )
+                    log_msg("- HTML Extraction FAILED.", logging.ERROR)
+                    status = False  # Fail if HTML extraction fails
+                else:
+                    log_msg("- HTML Extraction SUCCESS.")
+                    # Test 1: display_raw_relationship_ladder (now just uses the helper + format)
+                    try:
+                        log_msg(
+                            "- Testing display_raw_relationship_ladder (internal logic)..."
+                        )
+                        display_raw_relationship_ladder(
+                            ladder_response_raw,
+                            target_owner_name,
+                            target_name_from_profile,
+                        )
+                        log_msg(
+                            "- display_raw_relationship_ladder execution: PASSED (No exceptions)"
+                        )
+                    except Exception as display_e:
+                        log_msg(
+                            f"- display_raw_relationship_ladder execution: FAILED (Exception: {display_e})",
+                            logging.ERROR,
+                        )
+                        log_msg(traceback.format_exc(), logging.DEBUG)
+                        status = False
 
-                if html_extracted:
+                    # Test 2: format_api_relationship_path (using the extracted HTML)
                     log_msg("- Testing format_api_relationship_path...")
                     try:
                         formatted_path = format_api_relationship_path(
                             html_extracted, target_owner_name, target_name_from_profile
                         )
-                        # --- Corrected Validation ---
+                        # Corrected Validation
                         if (
                             formatted_path
                             and isinstance(formatted_path, str)
@@ -1490,7 +1333,6 @@ def self_check(verbose: bool = True) -> bool:
                             and isinstance(formatted_path, str)
                             and formatted_path.startswith("(")
                         ):
-                            # Allow summary text as success too
                             log_msg(
                                 "- format_api_relationship_path call: PASSED (Returned summary text)"
                             )
@@ -1506,7 +1348,7 @@ def self_check(verbose: bool = True) -> bool:
                                 f"  - Actual Output: {formatted_path}", logging.DEBUG
                             )
                             status = False
-                        # --- End Corrected Validation ---
+                        # End Corrected Validation
                     except Exception as format_e:
                         log_msg(
                             f"- format_api_relationship_path call: FAILED (Exception: {format_e})",
@@ -1514,12 +1356,6 @@ def self_check(verbose: bool = True) -> bool:
                         )
                         log_msg(traceback.format_exc(), logging.DEBUG)
                         status = False
-                else:
-                    log_msg(
-                        "- Skipping format_api_relationship_path test: Could not extract/decode HTML from response",
-                        logging.ERROR,
-                    )
-                    status = False  # Fail if HTML can't be extracted
 
             elif isinstance(ladder_response_raw, requests.Response):
                 log_msg(

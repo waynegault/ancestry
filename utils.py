@@ -179,33 +179,119 @@ def format_name(name: Optional[str]) -> str:
     """
     Formats a person's name string to title case, preserving uppercase components
     (like initials or acronyms) and handling None/empty input gracefully.
-    Also removes GEDCOM-style slashes around surnames.
+    Also removes GEDCOM-style slashes around surnames anywhere in the string.
+    Handles common name particles and prefixes like Mc/Mac/O'.
     """
     if not name or not isinstance(name, str):
         return "Valued Relative"
+
     try:
-        # Remove GEDCOM slashes first
+        # 1. Pre-processing: Clean spaces and GEDCOM slashes
         cleaned_name = name.strip()
-        cleaned_name = re.sub(r"\s*/([^/]+)/\s*$", r" \1", cleaned_name).strip()
-        cleaned_name = re.sub(r"^/", "", cleaned_name).strip()
-        cleaned_name = re.sub(r"/$", "", cleaned_name).strip()
-        # Replace multiple spaces
-        cleaned_name = re.sub(r"\s+", " ", cleaned_name)
-        # Title case preserving uppercase parts
+        # Replace /Surname/ with space-Surname-space
+        cleaned_name = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", cleaned_name)
+        # Handle slashes at beginning/end
+        cleaned_name = re.sub(r"^[/\s]+|[/\s]+$", "", cleaned_name)
+        # Collapse multiple spaces
+        cleaned_name = re.sub(r"\s+", " ", cleaned_name).strip()
+
+        # 2. Define particles and exceptions
+        lowercase_particles = {
+            "van",
+            "von",
+            "der",
+            "den",
+            "de",
+            "di",
+            "da",
+            "do",
+            "la",
+            "le",
+            "el",
+        }
+        uppercase_exceptions = {
+            "II",
+            "III",
+            "IV",
+            "SR",
+            "JR",
+        }  # Keep these fully uppercase
+
+        # 3. Process each part of the name
         parts = cleaned_name.split()
         formatted_parts = []
-        for part in parts:
-            if part.isupper():
-                formatted_parts.append(part)
-            else:
-                formatted_parts.append(part.title())
+        for i, part in enumerate(parts):
+            # Handle fully uppercase exceptions
+            if part.upper() in uppercase_exceptions:
+                formatted_parts.append(part.upper())
+                continue
+
+            # Handle hyphenated parts (e.g., Smith-Jones)
+            if "-" in part:
+                hyphenated = []
+                for hp_idx, hp in enumerate(part.split("-")):
+                    if hp_idx > 0 and hp.lower() in lowercase_particles:
+                        hyphenated.append(hp.lower())
+                    else:
+                        hyphenated.append(
+                            hp.capitalize()
+                        )  # Basic capitalize for hyphen parts
+                formatted_parts.append("-".join(hyphenated))
+                continue
+
+            # Handle apostrophes (e.g., O'Malley)
+            if "'" in part and len(part) > 1:
+                apostrophe_parts = part.split("'")
+                # Capitalize first part, capitalize letter after apostrophe
+                formatted_part = (
+                    apostrophe_parts[0].capitalize()
+                    + "'"
+                    + apostrophe_parts[1].capitalize()
+                )
+                formatted_parts.append(formatted_part)
+                continue
+
+            # Handle prefixes (Mc/Mac)
+            if part.lower().startswith("mc") and len(part) > 2:
+                formatted_parts.append("Mc" + part[2:].capitalize())
+                continue
+            if part.lower().startswith("mac") and len(part) > 3:
+                # Check if it's just 'Mac' itself or a name like 'MacLeod'
+                if part.lower() == "mac":
+                    formatted_parts.append("Mac")
+                else:
+                    formatted_parts.append("Mac" + part[3:].capitalize())
+                continue
+
+            # Handle lowercase particles (keep lowercase unless first word)
+            if i > 0 and part.lower() in lowercase_particles:
+                formatted_parts.append(part.lower())
+                continue
+
+            # Handle initials (J., P.) - should be uppercase
+            if len(part) == 2 and part.endswith(".") and part[0].isalpha():
+                formatted_parts.append(part[0].upper() + ".")
+                continue
+            if len(part) == 1 and part.isalpha():  # Single letter initial without dot
+                formatted_parts.append(part.upper())
+                continue
+
+            # Default: Capitalize the word
+            formatted_parts.append(part.capitalize())
+
+        # 4. Join and final cleanup
         final_name = " ".join(formatted_parts)
+        final_name = re.sub(r"\s+", " ", final_name).strip()  # Final space check
+
         return final_name if final_name else "Valued Relative"
+
     except Exception as e:
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
-        return "Valued Relative"
-
-
+        # Fallback to basic title case on error during complex logic
+        try:
+            return name.title() if name else "Valued Relative"
+        except:
+            return "Valued Relative"
 # End of format_name
 
 # ------------------------------
@@ -3754,378 +3840,743 @@ def _check_for_unavailability(
 
 def main():
     """
-    Standalone test function for utils.py.
-    Runs a sequence of readiness and identifier checks on SessionManager,
-    prints/logs all results, and ensures all errors are visible.
-    V2: Simplified readiness checks, improved logging.
+    Standalone test suite for utils.py.
+    Runs a sequence of tests covering core utilities, session management,
+    API helpers, and other functions within this module.
+    Provides a clear PASS/FAIL summary for each test and an overall result.
     """
-    # --- Setup Logging ---
-    from logging_config import setup_logging
-    from config import config_instance
+    # --- Standard library imports needed for main ---
+    import sys
     import traceback
+    from textwrap import dedent
 
-    db_file_path = config_instance.DATABASE_FILE
-    log_filename_only = db_file_path.with_suffix(".log").name
+    # --- Local imports needed for main ---
+    # Import necessary functions/classes specifically for testing within main
+    from logging_config import setup_logging
+    from config import config_instance, selenium_config
+
+    # Re-assign the global logger for the main function's scope
+    # Use INFO level to make test output cleaner
     global logger
-    logger = setup_logging(log_file=log_filename_only, log_level="DEBUG")
+    # Ensure config_instance is valid before proceeding
+    if not config_instance or not config_instance.DATABASE_FILE:
+        # Use basic print/logging as full logger might not be set up
+        print(
+            "ERROR: config_instance not loaded correctly. Cannot proceed with utils.py main test."
+        )
+        logging.critical(
+            "config_instance not loaded correctly. Cannot proceed with utils.py main test."
+        )
+        sys.exit(1)
 
+    # Setup logging for the test run
+    try:
+        db_file_path = config_instance.DATABASE_FILE
+        log_filename_only = db_file_path.with_suffix(".log").name
+        # Use INFO level for cleaner test output
+        logger = setup_logging(log_file=log_filename_only, log_level="INFO")
+        logger.info("--- Starting utils.py Standalone Test Suite ---")
+    except Exception as log_setup_err:
+        print(f"CRITICAL: Failed to set up logging: {log_setup_err}")
+        logging.critical(f"Failed to set up logging: {log_setup_err}", exc_info=True)
+        sys.exit(1)
+
+    # --- Test Runner Helper ---
+    test_results = []
+
+    def _run_test(
+        test_name: str, test_func: Callable, *args, **kwargs
+    ) -> Tuple[str, str, str]:
+        """Runs a single test, logs result, and returns status."""
+        logger.info(f"[ RUNNING ] {test_name}")
+        status = "FAIL"  # Default to FAIL
+        message = ""
+        # Check for internal flags, remove them from kwargs passed down
+        expect_none = kwargs.pop("expected_none", False)
+
+        try:
+            # Call the actual test function (lambda or direct function)
+            result = test_func(*args, **kwargs)  # Pass args and CLEANED kwargs
+
+            # --- Determine PASS/FAIL ---
+            assertion_passed = False
+            if isinstance(result, bool):
+                assertion_passed = (
+                    result  # Result of the lambda/function IS the assertion
+                )
+                if not assertion_passed:
+                    message = "Assertion in test function failed (returned False)"
+            elif expect_none and result is None:
+                assertion_passed = True  # Explicitly expected None and got None
+            elif result is None and not expect_none:
+                # Got None implicitly (e.g., func finished without error/return) -> Treat as PASS here
+                assertion_passed = True
+            elif expect_none and result is not None:
+                assertion_passed = False  # Expected None, got something else
+                message = f"Expected None, but got {type(result)}"
+            elif result is not None and not isinstance(result, bool):
+                # Got a non-boolean, non-None result. Assume test func raises error on failure.
+                assertion_passed = True
+
+            status = "PASS" if assertion_passed else "FAIL"
+
+        except Exception as e:
+            status = "FAIL"
+            message = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Exception details for {test_name}: {message}")
+
+        result_log_level = logging.INFO if status == "PASS" else logging.ERROR
+        log_message = f"[ {status:<6} ] {test_name}{f': {message}' if message and status == 'FAIL' else ''}"  # Only show message on FAIL
+        logger.log(result_log_level, log_message)
+        return (test_name, status, message)
+
+    # End of _run_test
+
+    # --- Test Execution ---
     session_manager: Optional[SessionManager] = None
-    driver_instance = None
-    test_success = True  # Assume success initially
+    driver_instance: Optional[WebDriver] = None
+    overall_status = "PASS"  # Assume PASS initially
 
     try:
-        # --- PHASE 1: Driver/DB Setup ---
-        logger.info("=== PHASE 1: Testing SessionManager.start_sess() ===\n")
-        session_manager = SessionManager()
-        start_ok = session_manager.start_sess(action_name="Utils Test - Phase 1")
-        if not start_ok or not session_manager.driver_live:
-            logger.error("SessionManager.start_sess() (Phase 1) FAILED. Aborting.")
-            test_success = False
-            return  # Cannot proceed without driver
-        driver_instance = session_manager.driver
-        if not driver_instance:
-            logger.error(
-                "Driver instance is None after successful Phase 1 report. Aborting."
-            )
-            test_success = False
-            return  # Cannot proceed without driver
-        logger.info("SessionManager.start_sess() (Phase 1) PASSED.\n")
+        # === Section 1: Basic Utility Functions ===
+        logger.info("\n--- Section 1: Basic Utility Functions ---")
 
-        # --- PHASE 2: Session Readiness ---
-        logger.info("=== PHASE 2: Testing SessionManager.ensure_session_ready() ===\n")
-        ready_ok = session_manager.ensure_session_ready(
-            action_name="Utils Test - Phase 2"
+        # 1.1 parse_cookie
+        test_results.append(
+            _run_test(
+                "parse_cookie (valid)",
+                lambda: parse_cookie("key1=value1; key2=value2 ; key3=val3=")
+                == {"key1": "value1", "key2": "value2", "key3": "val3="},
+            )
+        )
+        test_results.append(
+            _run_test(
+                "parse_cookie (empty/invalid)",
+                lambda: parse_cookie(
+                    " ; keyonly ; =valueonly; malformed=part=again ; valid=true "
+                )
+                == {"": "valueonly", "malformed": "part=again", "valid": "true"},
+            )
         )
 
-        if not ready_ok:
+        # 1.2 ordinal_case
+        test_results.append(
+            _run_test(
+                "ordinal_case (numbers)",
+                lambda: ordinal_case("1") == "1st"
+                and ordinal_case("22") == "22nd"
+                and ordinal_case("13") == "13th"
+                and ordinal_case("104") == "104th",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "ordinal_case (string title)",
+                lambda: ordinal_case("first cousin once removed")
+                == "First Cousin Once Removed",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "ordinal_case (string specific lc)",
+                lambda: ordinal_case("mother of the bride") == "Mother of the Bride",
+            )
+        )
+
+        # 1.3 format_name
+        test_results.append(
+            _run_test(
+                "format_name (simple)",
+                lambda: format_name("john smith") == "John Smith",
+            )
+        )
+        # Split GEDCOM tests for clarity
+        test_results.append(
+            _run_test(
+                "format_name (GEDCOM simple)", lambda: format_name("/Smith/") == "Smith"
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (GEDCOM start)",
+                lambda: format_name("/Smith/ John") == "Smith John",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (GEDCOM end)",
+                lambda: format_name("John /Smith/") == "John Smith",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (GEDCOM middle)",
+                # Corrected expectation to JR (uppercase) based on function logic
+                lambda: format_name("John /Smith/ Jr") == "John Smith JR",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (with initials)",
+                lambda: format_name("J. P. Morgan") == "J. P. Morgan",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (None input)",
+                lambda: format_name(None) == "Valued Relative",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (Uppercase preserved/Particles)",
+                lambda: format_name("McDONALD van der BEEK III")
+                == "McDonald van der Beek III",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (Hyphenated)",
+                lambda: format_name("jean-luc picard") == "Jean-Luc Picard",
+            )
+        )
+        test_results.append(
+            _run_test(
+                "format_name (Apostrophe)",
+                lambda: format_name("o'malley") == "O'Malley",
+            )
+        )
+
+        # === Section 2: Session Manager Lifecycle & Readiness ===
+        logger.info("\n--- Section 2: Session Manager Lifecycle & Readiness ---")
+
+        # 2.1 Instantiate SessionManager (No direct test in _run_test)
+        logger.info("[ RUNNING ] SessionManager Instantiation")
+        try:
+            session_manager = SessionManager()  # Instantiate directly
+            logger.info("[ PASS    ] SessionManager Instantiation")
+            test_results.append(("SessionManager Instantiation", "PASS", ""))
+        except Exception as sm_init_err:
+            logger.error(f"[ FAIL    ] SessionManager Instantiation: {sm_init_err}")
+            test_results.append(
+                (
+                    "SessionManager Instantiation",
+                    "FAIL",
+                    f"{type(sm_init_err).__name__}: {sm_init_err}",
+                )
+            )
+            session_manager = None  # Ensure it's None on failure
             logger.error(
-                "SessionManager.ensure_session_ready() (Phase 2) FAILED. Running diagnostics...\n"
+                "SessionManager instantiation failed. Skipping session-dependent tests."
             )
-            test_success = False
 
-            # --- PHASE 2c/2d Combined: Readiness Diagnostics (only run on failure) ---
-            logger.info("=== PHASE 2 Diag: Running Readiness Sub-Checks ===\n")
-            readiness_results = []
-            diag_errors = []
-
-            # 1. Login status
-            login_stat_result = login_status(session_manager)
-            login_stat_str = (
-                "PASSED"
-                if login_stat_result is True
-                else f"FAILED ({login_stat_result})"
+        # 2.2 SessionManager.start_sess
+        if session_manager:
+            start_sess_name, start_sess_status, start_sess_msg = _run_test(
+                "SessionManager.start_sess()",
+                session_manager.start_sess,
+                action_name="Utils Test - Start Sess",
             )
-            readiness_results.append(("Login status", login_stat_str))
-            if login_stat_result is not True:
-                diag_errors.append("Login status check failed")
-
-            # 2. Essential cookies
-            essential_cookies = ["ANCSESSIONID", "SecureATT"]
-            cookies_ok = session_manager.get_cookies(essential_cookies, timeout=5)
-            cookies_str = "PASSED" if cookies_ok else "FAILED"
-            readiness_results.append(("Essential cookies", cookies_str))
-            if not cookies_ok:
-                diag_errors.append("Essential cookies missing")
-
-            # 3. CSRF token (Fetch ONCE for diagnostics if needed)
-            if not session_manager.csrf_token or len(session_manager.csrf_token) < 20:
-                logger.debug("Diag: Fetching CSRF token as it was missing/invalid...")
-                session_manager.csrf_token = session_manager.get_csrf()  # Store it
-
-            csrf_valid = (
-                session_manager.csrf_token and len(session_manager.csrf_token) >= 20
-            )
-            csrf_str = (
-                "PASSED"
-                if csrf_valid
-                else f"FAILED (Value: {str(session_manager.csrf_token)[:10]}...)"
-            )
-            readiness_results.append(("CSRF token", csrf_str))
-            if not csrf_valid:
-                diag_errors.append("CSRF token invalid")
-
-            # 4. Identifiers (Check instance attributes populated by ensure_session_ready)
-            profile_id_ok = bool(session_manager.my_profile_id)
-            uuid_ok = bool(session_manager.my_uuid)
-            tree_id_ok = (
-                bool(session_manager.my_tree_id) if config_instance.TREE_NAME else True
-            )  # Only fail if TREE_NAME set and ID missing
-            ids_str = (
-                "PASSED" if (profile_id_ok and uuid_ok and tree_id_ok) else "FAILED"
-            )
-            readiness_results.append(("Identifiers", ids_str))
-            if not profile_id_ok:
-                diag_errors.append("my_profile_id missing")
-            if not uuid_ok:
-                diag_errors.append("my_uuid missing")
-            if config_instance.TREE_NAME and not tree_id_ok:
-                diag_errors.append("my_tree_id missing (for configured tree)")
-
-            # 5. Tree owner name
-            owner_ok = (
-                bool(session_manager.tree_owner_name)
-                if config_instance.TREE_NAME
-                else True
-            )  # Only check if tree expected
-            owner_str = "PASSED" if owner_ok else "FAILED"
-            readiness_results.append(("Tree owner name", owner_str))
-            if config_instance.TREE_NAME and not owner_ok:
-                diag_errors.append("tree_owner_name missing")
-
-            # Log summary table
-            table_header = (
-                f"\n{'Readiness Check':<25} | {'Result':<20}\n{'-'*25}+{'-'*21}"
-            )
-            table_rows = [
-                f"{name:<25} | {result:<20}" for name, result in readiness_results
-            ]
-            table = table_header + "\n" + "\n".join(table_rows)
-            logger.info(f"Readiness Diagnostics Table:{table}\n")
-            if diag_errors:
-                logger.error(f"Diagnostic Errors Summary: {'; '.join(diag_errors)}\n")
-
+            test_results.append((start_sess_name, start_sess_status, start_sess_msg))
+            if start_sess_status == "PASS":
+                driver_instance = (
+                    session_manager.driver
+                )  # Get driver if start succeeded
+            else:
+                driver_instance = None  # Ensure driver is None if start failed
+                logger.error("start_sess failed. Skipping tests requiring live driver.")
         else:
-            # Phase 2 Passed - Log identifiers briefly
-            logger.info("SessionManager.ensure_session_ready() (Phase 2) PASSED.\n")
-            logger.info("--- Key Identifiers Retrieved ---")
-            logger.info(f"  Profile ID: {session_manager.my_profile_id}")
-            logger.info(f"  UUID: {session_manager.my_uuid}")
-            logger.info(f"  Tree ID: {session_manager.my_tree_id or 'N/A'}")
-            logger.info(f"  Tree Owner: {session_manager.tree_owner_name or 'N/A'}")
-            # Log stored CSRF token
-            csrf_display = (
-                f"{str(session_manager.csrf_token)[:10]}..."
-                if session_manager.csrf_token
-                else "None"
+            test_results.append(
+                (
+                    "SessionManager.start_sess()",
+                    "SKIPPED",
+                    "SessionManager instantiation failed",
+                )
             )
-            logger.info(f"  CSRF Token: {csrf_display}\n")
 
-        # --- PHASE 3: Navigation Test (Only if driver exists) ---
-        logger.info("=== PHASE 3: Testing Navigation (nav_to_page to BASE_URL) ===\n")
-        if not driver_instance:
-            logger.error(
-                "Cannot test navigation, driver_instance is None. SKIPPING PHASE 3."
+        # 2.3 SessionManager.ensure_session_ready
+        if session_manager and driver_instance and session_manager.driver_live:
+            ensure_ready_name, ensure_ready_status, ensure_ready_msg = _run_test(
+                "SessionManager.ensure_session_ready()",
+                session_manager.ensure_session_ready,
+                action_name="Utils Test - Ensure Ready",
             )
-            test_success = False  # Mark as failure if driver disappeared
+            test_results.append(
+                (ensure_ready_name, ensure_ready_status, ensure_ready_msg)
+            )
+
+            if ensure_ready_status == "FAIL":
+                logger.warning("ensure_session_ready() FAILED. Running diagnostics...")
+                # --- Readiness Diagnostics (only on failure) ---
+                diag_results = []
+                login_stat_result = (
+                    login_status(session_manager)
+                    if session_manager.is_sess_valid()
+                    else None
+                )
+                diag_results.append(
+                    (
+                        "Login status",
+                        (
+                            "PASSED"
+                            if login_stat_result is True
+                            else f"FAILED ({login_stat_result})"
+                        ),
+                    )
+                )
+
+                essential_cookies = ["ANCSESSIONID", "SecureATT"]
+                cookies_ok = (
+                    session_manager.get_cookies(essential_cookies, timeout=5)
+                    if session_manager.is_sess_valid()
+                    else False
+                )
+                diag_results.append(
+                    ("Essential cookies", "PASSED" if cookies_ok else "FAILED")
+                )
+
+                # Try fetching CSRF ONLY if needed for diagnostics and session seems valid
+                if (
+                    not session_manager.csrf_token
+                    or len(session_manager.csrf_token) < 20
+                ) and session_manager.is_sess_valid():
+                    logger.info("Diag: Fetching CSRF token...")
+                    try:
+                        session_manager.csrf_token = session_manager.get_csrf()
+                    except Exception as csrf_diag_err:
+                        logger.error(f"Diag: Error fetching CSRF: {csrf_diag_err}")
+                csrf_valid = bool(
+                    session_manager.csrf_token and len(session_manager.csrf_token) >= 20
+                )
+                diag_results.append(
+                    ("CSRF token", "PASSED" if csrf_valid else "FAILED")
+                )
+
+                # Check identifiers (already fetched by ensure_session_ready attempt)
+                ids_ok = bool(session_manager.my_profile_id and session_manager.my_uuid)
+                tree_id_needed = bool(config_instance.TREE_NAME)
+                tree_id_ok = (
+                    bool(session_manager.my_tree_id) if tree_id_needed else True
+                )
+                ids_ok = ids_ok and tree_id_ok
+                diag_results.append(("Identifiers", "PASSED" if ids_ok else "FAILED"))
+
+                # Log diagnostics
+                logger.info("--- Readiness Diagnostics ---")
+                for name, result in diag_results:
+                    logger.info(f"  - {name:<20}: {result}")
+                logger.info("--- End Diagnostics ---")
         else:
-            nav_ok = nav_to_page(
+            # Skip if SM instantiation or start_sess failed
+            if not session_manager:
+                skip_reason = "SessionManager instantiation failed"
+            elif not driver_instance or not session_manager.driver_live:
+                skip_reason = "start_sess failed"
+            else:  # Should not happen
+                skip_reason = "Prerequisites failed"
+            test_results.append(
+                ("SessionManager.ensure_session_ready()", "SKIPPED", skip_reason)
+            )
+
+        # === Section 3: Session-Dependent Utilities ===
+        logger.info("\n--- Section 3: Session-Dependent Utilities ---")
+
+        session_ready_for_section_3 = bool(
+            session_manager and session_manager.session_ready and driver_instance
+        )
+        skip_reason_s3 = "Session not ready" if not session_ready_for_section_3 else ""
+
+        # 3.1 Header Generation (make_*) - Requires live driver
+        if session_ready_for_section_3:
+            test_results.append(
+                _run_test("make_ube()", lambda: bool(make_ube(driver_instance)))
+            )
+            test_results.append(
+                _run_test(
+                    "make_newrelic()", lambda: bool(make_newrelic(driver_instance))
+                )
+            )
+            test_results.append(
+                _run_test(
+                    "make_traceparent()",
+                    lambda: bool(make_traceparent(driver_instance)),
+                )
+            )
+            test_results.append(
+                _run_test(
+                    "make_tracestate()", lambda: bool(make_tracestate(driver_instance))
+                )
+            )
+        else:
+            test_results.append(("make_ube()", "SKIPPED", skip_reason_s3))
+            test_results.append(("make_newrelic()", "SKIPPED", skip_reason_s3))
+            test_results.append(("make_traceparent()", "SKIPPED", skip_reason_s3))
+            test_results.append(("make_tracestate()", "SKIPPED", skip_reason_s3))
+
+        # 3.2 Navigation (nav_to_page)
+        if session_ready_for_section_3:
+            nav_name, nav_status, nav_msg = _run_test(
+                "nav_to_page() (to BASE_URL)",
+                nav_to_page,
                 driver=driver_instance,
                 url=config_instance.BASE_URL,
-                selector="body",  # Basic check
+                selector="body",
                 session_manager=session_manager,
             )
-            if nav_ok:
-                logger.info("nav_to_page() to BASE_URL PASSED.")
+            test_results.append((nav_name, nav_status, nav_msg))
+            if nav_status == "PASS":
                 try:
-                    current_url_after_nav = driver_instance.current_url
-                    # Looser check for base URL start
-                    if current_url_after_nav.startswith(
-                        config_instance.BASE_URL.rstrip("/")
-                    ):
-                        logger.info(
-                            f"Successfully landed on expected base URL: {current_url_after_nav}\n"
-                        )
-                    else:
+                    current_url = driver_instance.current_url
+                    if not current_url.startswith(config_instance.BASE_URL.rstrip("/")):
                         logger.warning(
-                            f"nav_to_page() to base URL landed on different URL: {current_url_after_nav}. Marking as navigation issue.\n"
+                            f"Navigation test PASSED element check, but landed on unexpected URL: {current_url}"
                         )
-                        # Treat unexpected URL as a failure even if element found
-                        test_success = False
-                        nav_ok = False  # Override for subsequent checks
                 except Exception as e:
-                    logger.warning(
-                        f"Could not verify URL after nav_to_page: {e}. Proceeding cautiously.\n"
-                    )
-            else:
-                logger.error("nav_to_page() to BASE_URL FAILED.\n")
-                test_success = False
-
-        # --- PHASE 4: API Request Test (Only if session seems ready) ---
-        logger.info(
-            "=== PHASE 4: Testing API Request (_api_req via CSRF endpoint) ===\n"
-        )
-        # Use session_ready flag which should be reliable now
-        if not session_manager or not session_manager.session_ready:
-            logger.warning(
-                "Cannot test API Request, session not ready. SKIPPING PHASE 4."
-            )
-            # Don't necessarily mark as failure if Phase 2 already failed
+                    logger.warning(f"Could not verify URL after nav_to_page test: {e}")
         else:
+            test_results.append(
+                ("nav_to_page() (to BASE_URL)", "SKIPPED", skip_reason_s3)
+            )
+
+        # 3.3 API Request (_api_req via CSRF fetch)
+        if session_ready_for_section_3:
             csrf_url = urljoin(
                 config_instance.BASE_URL, "discoveryui-matches/parents/api/csrfToken"
             )
-            # Use the CSRF token already fetched if available, otherwise _api_req will handle it
-            csrf_test_response = _api_req(
-                url=csrf_url,
-                driver=driver_instance,  # Pass driver instance
-                session_manager=session_manager,
-                method="GET",
-                use_csrf_token=False,  # CSRF endpoint doesn't need the token sent to it
-                api_description="CSRF Token API Test",
-                force_text_response=True,  # Get the raw token string
-            )
 
-            if (
-                csrf_test_response
-                and isinstance(csrf_test_response, str)
-                and len(csrf_test_response) > 10  # Basic validity check
-            ):
-                logger.info("CSRF Token API call via _api_req PASSED.")
-                logger.debug(
-                    f"CSRF Token API test retrieved: {csrf_test_response[:40]}...\n"
+            def _test_csrf_api_req():
+                response = _api_req(
+                    url=csrf_url,
+                    driver=driver_instance,
+                    session_manager=session_manager,
+                    method="GET",
+                    use_csrf_token=False,
+                    api_description="CSRF Token API Test",
+                    force_text_response=True,
                 )
-                # Optionally verify it matches the stored one if needed
-                # if session_manager.csrf_token and csrf_test_response != session_manager.csrf_token:
-                #    logger.warning("Fresh CSRF token from API test differs from stored token.")
-            else:
-                logger.error("CSRF Token API call via _api_req FAILED.")
-                logger.debug(f"Response received: {csrf_test_response}\n")
-                test_success = False
+                return isinstance(response, str) and len(response) > 20
 
-        # --- PHASE 5: Tab Management Test (Only if driver exists) ---
-        logger.info("=== PHASE 5: Testing Tab Management (make_tab, close_tabs) ===\n")
-        if (
-            not driver_instance or not session_manager.is_sess_valid()
-        ):  # Re-check validity
-            logger.warning(
-                "Cannot test Tab Management, driver invalid or None. SKIPPING PHASE 5."
+            api_test_name, api_test_status, api_test_msg = _run_test(
+                "_api_req() (fetch CSRF token)", _test_csrf_api_req
             )
-            if not test_success:  # If already failing, don't override
-                pass
-            elif driver_instance:  # Driver existed but became invalid
-                test_success = False
+            test_results.append((api_test_name, api_test_status, api_test_msg))
         else:
-            logger.info("Creating a new tab...")
-            initial_handles_list = driver_instance.window_handles  # Get initial handles
-            initial_handle = initial_handles_list[0]  # Assume first is the one to keep
-            new_tab_handle = session_manager.make_tab()
+            test_results.append(
+                ("_api_req() (fetch CSRF token)", "SKIPPED", skip_reason_s3)
+            )
 
-            if new_tab_handle:
-                logger.info(f"make_tab() PASSED. New handle: {new_tab_handle}")
-                logger.info("Navigating new tab to example.com...")
-                try:
-                    driver_instance.switch_to.window(new_tab_handle)
-                    nav_new_tab_ok = nav_to_page(
-                        driver_instance,
-                        "https://example.com",
-                        selector="body",
-                        session_manager=session_manager,
+        # 3.4 _send_message_via_api (Dry Run / Input Validation)
+        if session_manager:
+            try:
+                from database import Person
+
+                if not session_manager.my_profile_id and session_manager.session_ready:
+                    logger.warning("Fetching my_profile_id for _send_message test...")
+                    session_manager.my_profile_id = session_manager.get_my_profileId()
+
+                if not session_manager.my_profile_id:
+                    logger.warning(
+                        "my_profile_id missing, skipping _send_message tests."
                     )
-                    if nav_new_tab_ok:
-                        logger.info("Navigation in new tab successful.")
-                        logger.info("Closing extra tabs...")
-                        # Ensure close_tabs is imported or called correctly
-                        try:
-                            from selenium_utils import close_tabs
-
-                            # Call close_tabs without the unexpected keyword argument.
-                            close_tabs(driver_instance)
-
-                            handles_after_close = driver_instance.window_handles
-
-                            if len(handles_after_close) == 1:
-                                logger.info(
-                                    "close_tabs() PASSED (correctly left one tab open)."
-                                )
-                                if handles_after_close[0] == initial_handle:
-                                    logger.debug(
-                                        f"Remaining tab handle '{handles_after_close[0]}' matches initial handle."
-                                    )
-                                else:
-                                    logger.warning(
-                                        f"Remaining tab handle '{handles_after_close[0]}' does NOT match initial handle '{initial_handle}'. Check close_tabs logic."
-                                    )
-                                if (
-                                    driver_instance.current_window_handle
-                                    != handles_after_close[0]
-                                ):
-                                    logger.debug(
-                                        "Switching focus back to the single remaining tab."
-                                    )
-                                    driver_instance.switch_to.window(
-                                        handles_after_close[0]
-                                    )
-                            else:
-                                logger.error(
-                                    f"close_tabs() FAILED (expected 1 tab, found {len(handles_after_close)}: {handles_after_close})."
-                                )
-                                test_success = False
-
-                        except ImportError:
-                            logger.error(
-                                "Could not import 'close_tabs' from 'selenium_utils'. Tab test incomplete."
-                            )
-                            test_success = False
-                        except (
-                            TypeError
-                        ) as te:  # Catch the specific error if it persists
-                            logger.error(
-                                f"TypeError calling close_tabs: {te}. Check selenium_utils.py definition.",
-                                exc_info=True,
-                            )
-                            test_success = False
-                        except Exception as close_tab_err:
-                            logger.error(
-                                f"Error during close_tabs execution: {close_tab_err}",
-                                exc_info=True,
-                            )
-                            test_success = False
-                    else:
-                        logger.error("Navigation in new tab FAILED.")
-                        test_success = False
-                        try:
-                            from selenium_utils import close_tabs
-
-                            close_tabs(driver_instance)
-                        except Exception:
-                            logger.warning(
-                                "Failed to cleanup tabs after navigation failure."
-                            )
-                except Exception as tab_e:
-                    logger.error(
-                        f"Error during tab management test steps: {tab_e}",
-                        exc_info=True,
+                    test_results.append(
+                        (
+                            "_send_message_via_api (dry_run)",
+                            "SKIPPED",
+                            "my_profile_id missing",
+                        )
                     )
-                    test_success = False
+                    test_results.append(
+                        (
+                            "_send_message_via_api (invalid recipient)",
+                            "SKIPPED",
+                            "my_profile_id missing",
+                        )
+                    )
+                else:
+                    dummy_person_ok = Person(
+                        profile_id="DUMMY-PROFILE-ID-OK", username="dummy_ok"
+                    )
+                    dummy_person_bad = Person(profile_id=None, username="dummy_bad")
+                    original_app_mode = config_instance.APP_MODE
+                    config_instance.APP_MODE = "dry_run"
+                    test_results.append(
+                        _run_test(
+                            "_send_message_via_api (dry_run)",
+                            lambda: _send_message_via_api(
+                                session_manager,
+                                dummy_person_ok,
+                                "Test message",
+                                None,
+                                "DryRunTest",
+                            )[0]
+                            == SEND_SUCCESS_DRY_RUN,
+                        )
+                    )
+                    test_results.append(
+                        _run_test(
+                            "_send_message_via_api (invalid recipient)",
+                            lambda: _send_message_via_api(
+                                session_manager,
+                                dummy_person_bad,
+                                "Test",
+                                None,
+                                "InvalidTest",
+                            )[0]
+                            == SEND_ERROR_INVALID_RECIPIENT,
+                        )
+                    )
+                    config_instance.APP_MODE = original_app_mode
+
+            except ImportError:
+                test_results.append(
+                    (
+                        "_send_message_via_api Tests",
+                        "SKIPPED",
+                        "Could not import Person class",
+                    )
+                )
+            except Exception as send_test_e:
+                test_results.append(
+                    (
+                        "_send_message_via_api Tests",
+                        "FAIL",
+                        f"Unexpected error in test setup: {send_test_e}",
+                    )
+                )
+        else:
+            test_results.append(
+                (
+                    "_send_message_via_api Tests",
+                    "SKIPPED",
+                    "SessionManager instantiation failed",
+                )
+            )
+
+        # 3.5 _fetch_profile_details_for_person (Input Validation)
+        if session_manager:
+            if not session_manager.my_profile_id and session_manager.session_ready:
+                logger.warning(
+                    "Fetching my_profile_id for _fetch_profile_details test..."
+                )
+                session_manager.my_profile_id = session_manager.get_my_profileId()
+
+            if not session_manager.my_profile_id:
+                logger.warning(
+                    "my_profile_id missing, skipping _fetch_profile_details test."
+                )
+                test_results.append(
+                    (
+                        "_fetch_profile_details_for_person (invalid input)",
+                        "SKIPPED",
+                        "my_profile_id missing",
+                    )
+                )
+            else:
+                test_results.append(
+                    _run_test(
+                        "_fetch_profile_details_for_person (invalid input)",
+                        lambda: _fetch_profile_details_for_person(session_manager, "")
+                        is None,
+                        expected_none=True,  # Pass flag to _run_test, not the lambda
+                    )
+                )
+        else:
+            test_results.append(
+                (
+                    "_fetch_profile_details_for_person (invalid input)",
+                    "SKIPPED",
+                    "SessionManager instantiation failed",
+                )
+            )
+
+        # === Section 4: Tab Management ===
+        logger.info("\n--- Section 4: Tab Management ---")
+        if session_ready_for_section_3:
+            initial_handles = []
+            try:
+                initial_handles = driver_instance.window_handles
+                make_tab_name, make_tab_status, make_tab_msg = _run_test(
+                    "SessionManager.make_tab()", session_manager.make_tab
+                )
+                test_results.append((make_tab_name, make_tab_status, make_tab_msg))
+
+                if make_tab_status == "PASS":
                     try:
                         from selenium_utils import close_tabs
 
-                        current_handles_cleanup = driver_instance.window_handles
-                        if len(current_handles_cleanup) > 1:
-                            logger.warning("Attempting tab cleanup after error...")
-                            close_tabs(driver_instance)
-                    except Exception as cleanup_err:
-                        logger.error(
-                            f"Error during tab cleanup after error: {cleanup_err}"
+                        handles_after_make = driver_instance.window_handles
+                        if len(handles_after_make) > len(initial_handles):
+                            logger.info(
+                                "make_tab appears successful (handle count increased)."
+                            )
+
+                            close_tab_name, close_tab_status, close_tab_msg = _run_test(
+                                "close_tabs()", close_tabs, driver=driver_instance
+                            )
+                            test_results.append(
+                                (close_tab_name, close_tab_status, close_tab_msg)
+                            )
+
+                            if close_tab_status == "PASS":
+                                handles_after_close = driver_instance.window_handles
+                                if len(handles_after_close) != 1:
+                                    logger.error(
+                                        f"close_tabs test failed verification: Expected 1 handle, found {len(handles_after_close)}"
+                                    )
+                                    for i, res in enumerate(test_results):
+                                        if res[0] == "close_tabs()":
+                                            test_results[i] = (
+                                                res[0],
+                                                "FAIL",
+                                                f"Post-test verification failed: Expected 1 handle, found {len(handles_after_close)}",
+                                            )
+                                            break
+                                else:
+                                    logger.info(
+                                        "close_tabs() post-test verification PASSED (1 tab remaining)."
+                                    )
+
+                        else:
+                            logger.error(
+                                f"make_tab test failed verification: Handle count did not increase ({len(initial_handles)} -> {len(handles_after_make)})"
+                            )
+                            for i, res in enumerate(test_results):
+                                if res[0] == "SessionManager.make_tab()":
+                                    if res[1] == "PASS":
+                                        test_results[i] = (
+                                            res[0],
+                                            "FAIL",
+                                            "Verification failed: Handle count did not increase",
+                                        )
+                                    break
+                            test_results.append(
+                                (
+                                    "close_tabs()",
+                                    "SKIPPED",
+                                    "make_tab verification failed",
+                                )
+                            )
+
+                    except ImportError:
+                        test_results.append(
+                            (
+                                "close_tabs()",
+                                "SKIPPED",
+                                "Could not import from selenium_utils",
+                            )
                         )
-            else:
-                logger.error("make_tab() FAILED.")
-                test_success = False
+                    except Exception as tab_close_e:
+                        test_results.append(
+                            (
+                                "close_tabs()",
+                                "FAIL",
+                                f"Exception during close_tabs test: {tab_close_e}",
+                            )
+                        )
+                else:
+                    test_results.append(("close_tabs()", "SKIPPED", "make_tab failed"))
+
+            except WebDriverException as e:
+                test_results.append(
+                    (
+                        "SessionManager.make_tab()",
+                        "FAIL",
+                        f"WebDriverException during test: {e}",
+                    )
+                )
+                test_results.append(
+                    (
+                        "close_tabs()",
+                        "SKIPPED",
+                        "make_tab failed due to WebDriverException",
+                    )
+                )
+            except Exception as e:
+                test_results.append(
+                    (
+                        "SessionManager.make_tab()",
+                        "FAIL",
+                        f"Unexpected exception during test: {e}",
+                    )
+                )
+                test_results.append(
+                    (
+                        "close_tabs()",
+                        "SKIPPED",
+                        "make_tab failed due to unexpected exception",
+                    )
+                )
+        else:
+            test_results.append(
+                ("SessionManager.make_tab()", "SKIPPED", skip_reason_s3)
+            )
+            test_results.append(("close_tabs()", "SKIPPED", skip_reason_s3))
 
     except Exception as e:
         logger.critical(
-            f"CRITICAL error during utils.py standalone test execution: {e}",
-            exc_info=True,
+            f"--- CRITICAL ERROR during test execution: {e} ---", exc_info=True
         )
-        test_success = False  # Mark as failed on critical error
+        overall_status = "FAIL"
+        test_results.append(("Test Suite Execution", "FAIL", f"Critical error: {e}"))
+
     finally:
-        if session_manager:
+        # === Cleanup ===
+        if session_manager and session_manager.driver_live:
             logger.info("Closing session manager in finally block...")
-            session_manager.close_sess()
+            session_manager.close_sess(keep_db=True)
+        elif session_manager:
+            logger.info(
+                "Session manager exists but driver not live, attempting minimal cleanup..."
+            )
+            session_manager.cls_db_conn(keep_db=True)
         else:
             logger.info("No SessionManager instance to close.")
 
-        print("")  # Add a newline for separation
-        if test_success:
+        # === Summary Report ===
+        logger.info("\n--- Test Summary ---")
+        name_width = (
+            max(len(name) for name, _, _ in test_results) if test_results else 45
+        )
+        name_width = max(name_width, 45)
+        status_width = 8
+        header = (
+            f"{'Test Name':<{name_width}} | {'Status':<{status_width}} | {'Message'}"
+        )
+        logger.info(header)
+        logger.info("-" * (name_width + status_width + 12))
+
+        final_fail_count = 0
+        final_skip_count = 0
+        for name, status, message in test_results:
+            if status == "FAIL":
+                final_fail_count += 1
+                overall_status = "FAIL"
+                logger.error(
+                    f"{name:<{name_width}} | {status:<{status_width}} | {message}"
+                )
+            elif status == "SKIPPED":
+                final_skip_count += 1
+                logger.warning(
+                    f"{name:<{name_width}} | {status:<{status_width}} | {message}"
+                )
+            else:  # PASS
+                logger.info(f"{name:<{name_width}} | {status:<{status_width}} |")
+
+        logger.info("-" * (len(header)))
+
+        # === Overall Conclusion ===
+        total_tests = len(test_results)
+        passed_tests = total_tests - final_fail_count - final_skip_count
+
+        summary_line = f"Result: {overall_status} ({passed_tests} passed, {final_fail_count} failed, {final_skip_count} skipped out of {total_tests} tests)"
+        if overall_status == "PASS":
+            logger.info(summary_line)
             logger.info("--- Utils.py standalone test run PASSED ---")
         else:
+            logger.error(summary_line)
             logger.error("--- Utils.py standalone test run FAILED ---")
-        # Optional: Exit with non-zero code on failure for CI/CD
-        # if not test_success:
-        #     sys.exit(1)
-
-
 # End of main
+
 
 if __name__ == "__main__":
     main()

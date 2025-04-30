@@ -17,3 +17,5 @@
 /gedcom_analysis.log
 /Logs/gedcom_interrogator.log
 /Logs/ancestry.log
+/Logs/api_utils_self_check.log
+/Logs/gedcom_processor.log
