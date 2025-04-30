@@ -260,7 +260,7 @@ def close_cache():
         try:
             logger.debug("Closing DiskCache connection...")
             cache.close()
-            logger.info("DiskCache connection closed.")
+            logger.debug("DiskCache connection closed.")
         except Exception as e:
             logger.error(f"Error closing DiskCache connection: {e}", exc_info=True)
     else:

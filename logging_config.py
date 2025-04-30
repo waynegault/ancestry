@@ -50,16 +50,16 @@ try:
     try:
         _log_dir_path = Path(config_instance.LOG_DIR)
         LOG_DIRECTORY = _log_dir_path.resolve()  # Resolve to absolute path
-        logger_for_setup.info(f"Log directory determined from config: {LOG_DIRECTORY}")
+        logger_for_setup.info(f"Log directory determined from config: {LOG_DIRECTORY}\n")
     except AttributeError:
-        logger_for_setup.warning("config_instance.LOG_DIR not found. Using fallback.")
+        logger_for_setup.warning("config_instance.LOG_DIR not found. Using fallback.\n")
     except (TypeError, ValueError) as e:
         logger_for_setup.warning(
-            f"config_instance.LOG_DIR invalid path ({e}). Using fallback."
+            f"config_instance.LOG_DIR invalid path ({e}). Using fallback.\n"
         )
     except Exception as e:
         logger_for_setup.error(
-            f"Error resolving LOG_DIRECTORY from config: {e}.", exc_info=True
+            f"Error resolving LOG_DIRECTORY from config: {e}.\n", exc_info=True
         )
 except ImportError as e:
     logger_for_setup.error(
@@ -75,8 +75,14 @@ if LOG_DIRECTORY is None:
     LOG_DIRECTORY = (Path(__file__).parent.resolve() / "Logs").resolve()
     logger_for_setup.warning(f"Using fallback LOG_DIRECTORY: {LOG_DIRECTORY}")
 
+import logging
+
+# Suppress INFO and lower logs during startup
+logging.basicConfig(level=logging.WARNING)
+
 # --- Initialize Main Application Logger ---
 # Get the logger instance named 'logger' (used throughout the application)
+
 logger: logging.Logger = logging.getLogger("logger")
 logger.setLevel(logging.DEBUG)  # Set base level to DEBUG; handlers control final output
 logger.propagate = False  # Prevent messages from propagating to the root logger

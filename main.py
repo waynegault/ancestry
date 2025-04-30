@@ -38,7 +38,12 @@ from action6_gather import coord as coord_action_func, nav_to_list
 from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
-from action10 import run_action10
+# Ensure that run_action10 is defined in action10.py or remove this line if not needed
+try:
+    from action10 import run_action10
+except ImportError:
+    print("WARNING: 'run_action10' is not defined in 'action10'. Please verify.")
+    run_action10 = None
 from action11 import run_action11
 from chromedriver import cleanup_webdrv
 from config import config_instance, selenium_config

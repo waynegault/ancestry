@@ -100,13 +100,10 @@ def test_matchlist():
 
         # 2. Start Session & Set UA
         logger.info("Starting WebDriver session and logging in...")
-        start_sess_result = session_manager.start_sess(
+        start_ok = session_manager.start_sess(
             action_name="Cloudscraper+UBE Test V3 Debug"
         )  # New action name
-        if isinstance(start_sess_result, tuple) and len(start_sess_result) == 2:
-            start_ok, driver = start_sess_result
-        else:
-            start_ok, driver = start_sess_result, None
+        driver = session_manager.driver if start_ok else None
         if not start_ok or not driver:
             logger.critical("SessionManager.start_sess() FAILED. Aborting test.")
             if session_manager:

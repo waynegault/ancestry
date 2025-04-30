@@ -1,414 +1,975 @@
 # action11.py
 """
-Standalone script to perform Action 2: API Report.
-Initializes a session with Ancestry (potentially requiring login),
-prompts the user for search criteria (name), uses Ancestry API
-endpoints (/suggest, /person-card) via the SessionManager's _api_req method
-to find and display the person's details and basic family information fetched from the API.
+Action 11: API Report - Search Ancestry API, display details, family, relationship.
+V16.0: Refactored from temp.py v7.36, using functions from utils.py, api_utils.py, gedcom_utils.py.
+Implements consistent scoring and output format with Action 10.
 """
-
+# --- Standard library imports ---
 import logging
 import sys
 import os
-import urllib.parse
-import random  # Used for User-Agent fallback potentially
+import re
+from pathlib import Path
 import time
-import json  # For potential JSON parsing if needed directly
-import requests
+import json
+import urllib.parse
+import random  # Keep for retry jitter in utils (if not used there)
+import html  # Keep if needed for parsing directly in action11
 
-# Add parent directory to sys.path to import utils, config, etc.
-# Adjust depth as needed based on project structure.
-# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# from typing import Optional, List, Dict, Any, Tuple # Keep types needed locally
 
-# --- Import Local Modules ---
+# Import specific types needed locally
+from typing import Optional, List, Dict, Any, Tuple, Union
+from datetime import datetime  # Import datetime for date comparisons/objects
+
+# import inspect # Keep for config path if needed
+
+# --- Third-party imports ---
 try:
-    from logging_config import setup_logging
+    from bs4 import (
+        BeautifulSoup,
+    )  # Import BeautifulSoup if needed directly for any reason, otherwise api_utils uses it
+except ImportError:
+    # print("Warning: BeautifulSoup not found. Relationship ladder parsing might fail.") # This message should ideally come from api_utils
+    BeautifulSoup = None  # Set to None if import fails
+
+# --- Local application imports ---
+# Use centralized logging config setup
+try:
+    from logging_config import setup_logging, logger
 except ImportError:
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger("action11")
+    logger.warning("Using fallback logger for Action 11.")
+
+
+# --- Load Config and SCORING CONSTANTS (Mandatory - Direct Import) ---
+config_instance = None
+COMMON_SCORING_WEIGHTS = None
+NAME_FLEXIBILITY = None
+DATE_FLEXIBILITY = None
+try:
+    # Import instance and scoring dicts directly from config
+    from config import (
+        config_instance,
+        COMMON_SCORING_WEIGHTS,
+        NAME_FLEXIBILITY,
+        DATE_FLEXIBILITY,
+        USER_AGENTS,  # Import for potential use in headers
     )
 
-    def setup_logging(log_file="action11.log", log_level="INFO"):
-        logger = logging.getLogger("action11_fallback")
-        return logger
-
-
-try:
-    from config import config_instance
-except ImportError:
-    logging.error("Failed to import config_instance. API functionality may be limited.")
-
-    class DummyConfig:
-        GEDCOM_FILE_PATH = None
-        BASE_URL = "https://www.ancestry.com"  # Default fallback
-        USER_AGENTS = ["Mozilla/5.0"]
-
-    config_instance = DummyConfig()
-
-# Setup logging for this action script
-logger = setup_logging(
-    log_file="gedcom_processor.log", log_level="INFO"
-)  # Use shared log file
-
-
-# --- Import API Utilities ---
-# We need the session_manager instance and initialize function from api_utils
-# We also need API_UTILS_AVAILABLE flag
-try:
-    from api_utils import (
-        initialize_session,
-        session_manager,  # Import the singleton instance
-        API_UTILS_AVAILABLE,
-        logger as api_logger,  # Use the logger from api_utils if needed
-    )
-
-    # NOTE: _api_req is NOT imported here; it's a method of session_manager
-    # If using api_utils logger: logger = api_logger
+    logger.info("Successfully imported config_instance and scoring dictionaries.")
+    # Basic validation that scoring weights are dictionaries
+    if (
+        not isinstance(COMMON_SCORING_WEIGHTS, dict)
+        or not isinstance(NAME_FLEXIBILITY, dict)
+        or not isinstance(DATE_FLEXIBILITY, dict)
+    ):
+        raise TypeError(
+            "One or more scoring configurations imported from config.py is not a dictionary."
+        )
+    # Optional warning if weights dict is empty
+    if not COMMON_SCORING_WEIGHTS:
+        logger.warning(
+            "COMMON_SCORING_WEIGHTS dictionary imported from config.py is empty. Scoring may not function as expected."
+        )
 
 except ImportError as e:
     logger.critical(
-        f"Failed to import from api_utils: {e}. Cannot run API report.", exc_info=True
+        f"Failed to import config_instance or scoring dictionaries from config.py: {e}. Cannot proceed.",
+        exc_info=True,
     )
-    API_UTILS_AVAILABLE = False  # Ensure flag reflects reality
+    print(f"\nFATAL ERROR: Failed to import required components from config.py: {e}")
+    sys.exit(1)
+except TypeError as config_err:
+    logger.critical(f"Configuration Error: {config_err}")
+    print(f"\nFATAL ERROR: {config_err}")
+    sys.exit(1)
+except Exception as e:
+    logger.critical(f"Unexpected error loading configuration: {e}", exc_info=True)
+    print(f"\nFATAL ERROR: Unexpected error loading configuration: {e}")
+    sys.exit(1)
 
-    # Define dummy session_manager if import failed completely
-    class DummySessionManager:
-        driver_live = False
-        session_ready = False
-        my_tree_id = None
-        my_profile_id = None
-        my_uuid = None
-        driver = None
+# Ensure critical config components are loaded before proceeding
+if (
+    config_instance is None
+    or COMMON_SCORING_WEIGHTS is None
+    or NAME_FLEXIBILITY is None
+    or DATE_FLEXIBILITY is None
+):
+    logger.critical("One or more critical configuration components failed to load.")
+    print("\nFATAL ERROR: Configuration load failed.")
+    sys.exit(1)
 
-        # Add dummy _api_req to the dummy class
-        def _api_req(self, *args, **kwargs):
-            logger.error("API request attempted but api_utils failed to load.")
-            return {"error": "'api_utils' module unavailable"}
 
-        def quit_driver(self):
+# --- Import GEDCOM Utilities (for scoring and date helpers) ---
+# Import specific functions needed from gedcom_utils
+calculate_match_score = None
+_parse_date = None
+_clean_display_date = None
+GEDCOM_DATE_UTILS_AVAILABLE = False  # Flag for date helpers
+GEDCOM_SCORING_AVAILABLE = False  # Flag for scoring function
+
+try:
+    # Attempt to import the specific functions
+    from gedcom_utils import calculate_match_score, _parse_date, _clean_display_date
+
+    logger.info(
+        "Successfully imported calculate_match_score and date helpers from gedcom_utils."
+    )
+
+    # Check availability of imported functions
+    if calculate_match_score is not None:
+        GEDCOM_SCORING_AVAILABLE = True
+    else:
+        logger.error("calculate_match_score NOT FOUND in gedcom_utils after import.")
+
+    if _parse_date is not None and _clean_display_date is not None:
+        GEDCOM_DATE_UTILS_AVAILABLE = True
+    else:
+        logger.error(
+            "_parse_date or _clean_display_date NOT FOUND in gedcom_utils after import."
+        )
+
+except ImportError as e:
+    logger.error(
+        f"Failed to import required scoring or date functions from gedcom_utils: {e}.",
+        exc_info=True,
+    )
+    # Variables remain None/False as initialized
+
+# --- Import API Utilities ---
+parse_ancestry_person_details = None
+print_group = None
+display_raw_relationship_ladder = None  # This function handles parsing/displaying HTML
+# format_api_relationship_path = None # display_raw_relationship_ladder calls this internally now
+
+API_UTILS_AVAILABLE = False
+
+try:
+    # Attempt to import the specific functions
+    from api_utils import (
+        parse_ancestry_person_details,
+        print_group,
+        display_raw_relationship_ladder,
+    )
+
+    logger.info("Successfully imported required functions from api_utils.")
+
+    # Check availability of imported functions
+    if (
+        parse_ancestry_person_details is not None
+        and print_group is not None
+        and display_raw_relationship_ladder is not None
+    ):
+        API_UTILS_AVAILABLE = True
+    else:
+        logger.error("One or more core functions NOT FOUND in api_utils after import.")
+
+except ImportError as e:
+    logger.error(
+        f"Failed to import required functions from api_utils: {e}.", exc_info=True
+    )
+    # Variables remain None/False as initialized
+
+
+# --- Import General Utilities ---
+# SessionManager, _api_req, nav_to_page are critical for API actions
+SessionManager = None
+_api_req = None
+nav_to_page = None
+format_name = lambda x: str(x)  # Fallback for format_name
+ordinal_case = lambda x: str(x)  # Fallback for ordinal_case
+
+CORE_UTILS_AVAILABLE = False
+
+try:
+    # Import the core utility components
+    from utils import SessionManager, _api_req, nav_to_page, format_name, ordinal_case
+
+    logger.info("Successfully imported required functions from utils.")
+    CORE_UTILS_AVAILABLE = True
+
+except ImportError as e:
+    logger.critical(
+        f"Failed to import critical components from 'utils' module: {e}. API functions unavailable.",
+        exc_info=True,
+    )
+    print(f"FATAL ERROR: Failed to import required functions from utils.py: {e}")
+
+    # Define dummy SessionManager and _api_req to prevent crashes if import fails
+    class SessionManager:
+        def __init__(self):
+            self.driver_live = False
+            self.session_ready = False
+            self.my_tree_id = None
+            self.my_profile_id = None
+            self.driver = None
+            self.my_uuid = None
+            self.tree_owner_name = "Unknown (Utils missing)"
+            # Ensure necessary attributes are present even if dummy
+            self.csrf_token = None
+
+        # End of __init__
+        def ensure_driver_live(self):
+            logger.error("Dummy SessionManager: ensure_driver_live called.")
+            return False
+
+        # End of ensure_driver_live
+        def ensure_session_ready(self):
+            logger.error("Dummy SessionManager: ensure_session_ready called.")
+            return False
+
+        # End of ensure_session_ready
+        def check_session_status(self):
+            logger.error("Dummy SessionManager: check_session_status called.")
             pass
 
-    session_manager = DummySessionManager()
+        # End of check_session_status
+        def _retrieve_identifiers(self):
+            logger.error("Dummy SessionManager: _retrieve_identifiers called.")
+            return False
+
+        # End of _retrieve_identifiers
+        def _sync_cookies(self):
+            logger.error("Dummy SessionManager: _sync_cookies called.")
+            pass
+
+        # End of _sync_cookies
+        def get_csrf(self):
+            logger.error("Dummy SessionManager: get_csrf called.")
+            return None
+
+        # End of get_csrf
+        # Add dummy get_cookies to prevent crash in _api_req
+        def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
+            logger.error("Dummy SessionManager: get_cookies called.")
+            return False
+
+        # Add dummy is_sess_valid to prevent crash in _api_req
+        def is_sess_valid(self) -> bool:
+            logger.error("Dummy SessionManager: is_sess_valid called.")
+            return False
+
+    # End of SessionManager dummy class
+    def _api_req(*args, **kwargs):
+        logger.error(
+            "Dummy _api_req: API request attempted but core 'utils' module is missing."
+        )
+
+        # Return a response-like object with error info
+        class DummyResponse:
+            status_code = 500
+            reason = "Utils Module Missing"
+            text = "Error: Required utils module is missing."
+
+            def json(self):
+                return {"error": self.text}
+
+            ok = False
+            headers = {}
+
+        return DummyResponse()  # Return dummy response
+
+    # End of _api_req dummy function
+    nav_to_page = None  # type: ignore
+    # format_name and ordinal_case fallbacks already defined above
+
+# --- Constants ---
+# MAX_DISPLAY_MATCHES is handled by action10.handle_gedcom_report parameter,
+# Action11 logic auto-selects top API match after searching, but we will
+# adjust it to display the top scored match consistently.
+
+# --- Session Manager Instance ---
+# Create a standalone session_manager instance from utils if available
+session_manager: SessionManager = (
+    SessionManager()
+)  # Instantiate the real or dummy SessionManager
 
 
-# --- Main API Report Handler ---
-
-
+# --- Main Handler ---
 def handle_api_report():
-    """Handler for Action 11 - API Report using suggest and person-card."""
-    logger.info("\n--- API Report ---")
+    """
+    Handler for Action 11 - API Report.
+    Searches Ancestry API, displays details, family, relationship to Tree Owner.
+    Uses functions from utils.py, api_utils.py, and gedcom_utils.py (for scoring/dates).
+    """
+    global COMMON_SCORING_WEIGHTS, NAME_FLEXIBILITY, DATE_FLEXIBILITY
+    logger.info(
+        "\n--- Person Details & Relationship to Tree Owner (Ancestry API Report) ---"
+    )
+
+    # Check essential dependencies
+    if not CORE_UTILS_AVAILABLE:
+        logger.error("handle_api_report: Core utils module unavailable.")
+        print("\nERROR: Core utilities (SessionManager, API req) unavailable.")
+        return False  # Indicate failure
     if not API_UTILS_AVAILABLE:
-        logger.error(
-            "API functionality is disabled because 'utils' module dependencies are missing or failed to load."
+        logger.error("handle_api_report: API utils module unavailable.")
+        print("\nERROR: API utilities (parsing, formatting) unavailable.")
+        return False  # Indicate failure
+    # Scoring and date helpers are not strictly fatal for API Report *if* user doesn't enter search criteria,
+    # but required for consistent match display and scoring.
+    if not GEDCOM_SCORING_AVAILABLE:
+        logger.warning(
+            "handle_api_report: GEDCOM scoring function unavailable. API match scoring will be skipped."
         )
-        return
-
-    # Initialize API Session (handles login, CSRF, etc.)
-    if not initialize_session():  # This function now lives in api_utils
-        logger.error(
-            "Failed to initialize session. Cannot proceed with API operations."
+        # Allow proceeding, but scoring info won't be displayed
+    if not GEDCOM_DATE_UTILS_AVAILABLE:
+        logger.warning(
+            "handle_api_report: GEDCOM date utilities unavailable. API date formatting may be basic."
         )
-        return
+        # Allow proceeding, but date formatting might be inconsistent
 
-    # We need tree_id, profile_id, uuid from the initialized session_manager
-    my_tree_id = getattr(session_manager, "my_tree_id", None)
-    my_profile_id = getattr(session_manager, "my_profile_id", None)
-    my_uuid = getattr(session_manager, "my_uuid", None)
-
-    if not my_tree_id:
-        logger.error(
-            "Tree ID not found in session. Cannot use person-picker/suggest API."
-        )
-        # Depending on API, might still be possible to proceed with other searches?
-        # For this specific flow, tree_id is needed for /suggest.
-        return
-    if not my_uuid:
-        logger.error(
-            "User UUID not found in session. Cannot construct match list URL for context."
-        )
-        # This is needed for Referer/Origin context
-        return
-
-    # Prompt for search criteria (simple name search for /suggest)
-    logger.info("\nEnter search criteria for the person of interest (API Search):")
-    first_name = input(" First Name: ").strip() or ""
-    surname = input(" Surname: ").strip() or ""
-    if not (first_name or surname):
-        logger.error(
-            "API search requires at least First Name or Surname. Report cancelled."
-        )
-        return
-
-    # --- Prepare Context for API calls ---
-    # Context like Referer, Origin, CSRF, User-Agent is handled internally by
-    # the session_manager._api_req method based on the current driver state.
-    # We just need to provide the core request parameters (URL, method, data).
-    base_url = getattr(config_instance, "BASE_URL", "https://www.ancestry.com").rstrip(
-        "/"
+    # --- Initialize API Session ---
+    # Use the global session_manager instance and ensure it's ready
+    print("Initializing Ancestry session...")  # User feedback
+    session_init_ok = session_manager.ensure_session_ready(
+        action_name="API Report Session Init"
     )
-    referer = f"{base_url}/discoveryui-matches/list/{my_uuid}"  # Suggest API often needs context
+    if not session_init_ok:
+        logger.error("Failed to initialize Ancestry session for API report.")
+        print(
+            "\nERROR: Failed to initialize session. Cannot proceed with API operations."
+        )
+        return False  # Indicate failure
 
-    # --- Call /person-picker/suggest API ---
-    suggest_url = (
-        f"{base_url}/api/person-picker/suggest/{my_tree_id}?"
-        f"partialFirstName={urllib.parse.quote(first_name)}&partialLastName={urllib.parse.quote(surname)}"
+    # Retrieve tree owner name from session_manager
+    owner_name = getattr(session_manager, "tree_owner_name", "the Tree Owner")
+    owner_profile_id = getattr(session_manager, "my_profile_id", None)
+    owner_tree_id = getattr(session_manager, "my_tree_id", None)
+
+    if not owner_profile_id:
+        logger.error(
+            "handle_api_report: My profile ID not available in SessionManager."
+        )
+        print(
+            "\nERROR: Cannot determine your profile ID. API features requiring it (like relationship path) will fail."
+        )
+        # Continue, but some features will be limited
+
+    # --- Prompt for search criteria ---
+    logger.info(
+        "\nEnter search criteria for the person of interest (Ancestry API Search):"
     )
-    selected_person_api_info = None
-    person_card_data = None
-
+    # Use try/except for input to handle EOFError (Ctrl+D) or other input issues
     try:
-        logger.info(f"Calling Suggest API: {suggest_url}")
-        # *** CHANGED: Call _api_req as a method of the session_manager instance ***
-        # *** REMOVED: driver and session_manager arguments from the call ***
-        suggest_response = session_manager._api_req(
+        first_name = input(" First Name (optional): ").strip() or None
+        surname = input(" Surname (optional): ").strip() or None
+        dob_str = input(" Birth Date/Year (optional): ").strip() or None
+        pob = input(" Birth Place (optional): ").strip() or None
+        dod_str = (
+            input(" Death Date/Year (optional): ").strip() or None
+        )  # Added Death Date input
+        pod = (
+            input(" Death Place (optional): ").strip() or None
+        )  # Added Death Place input
+        gender = input(" Gender (M/F, optional): ").strip() or None
+        if gender:
+            gender = (
+                gender[0].lower() if gender[0].lower() in ["m", "f"] else None
+            )  # Normalize gender input
+    except EOFError:
+        print("\nInput cancelled.")
+        return False  # Indicate operation cancelled
+    except Exception as input_err:
+        logger.error(f"Error reading input: {input_err}", exc_info=True)
+        print("\nError reading input.")
+        return False  # Indicate failure
+
+    # API Suggest requires at least first name or surname
+    if not (first_name or surname):
+        logger.info("\nAPI search needs First Name or Surname. Report cancelled.")
+        print("\nAPI search needs First Name or Surname. Report cancelled.")
+        return True  # Indicate success (cancelled by user intent)
+
+    # Prepare search criteria for scoring
+    clean_param = lambda p: (
+        p.strip().lower() if p and isinstance(p, str) else None
+    )  # Clean and lowercase input strings
+
+    target_first_name_lower = clean_param(first_name)
+    target_surname_lower = clean_param(surname)
+    target_pob_lower = clean_param(pob)
+    target_pod_lower = clean_param(pod)
+    target_gender_clean = gender  # m or f or None
+
+    # Parse target dates/years using imported helpers
+    target_birth_year: Optional[int] = None
+    target_birth_date_obj: Optional[datetime] = None
+    if dob_str and GEDCOM_DATE_UTILS_AVAILABLE:
+        target_birth_date_obj = _parse_date(dob_str)
+        if target_birth_date_obj:
+            target_birth_year = target_birth_date_obj.year
+
+    target_death_year: Optional[int] = None
+    target_death_date_obj: Optional[datetime] = None
+    if dod_str and GEDCOM_DATE_UTILS_AVAILABLE:
+        target_death_date_obj = _parse_date(dod_str)
+        if target_death_date_obj:
+            target_death_year = target_death_date_obj.year
+
+    # Prepare search criteria dictionary for scoring function
+    search_criteria_dict = {
+        "first_name": target_first_name_lower,
+        "surname": target_surname_lower,
+        "birth_year": target_birth_year,
+        "birth_date_obj": target_birth_date_obj,
+        "birth_place": target_pob_lower,
+        "death_year": target_death_year,
+        "death_date_obj": target_death_date_obj,
+        "death_place": target_pod_lower,
+        "gender": target_gender_clean,
+    }
+
+    # --- Use person-picker/suggest API to find candidates ---
+    # This API is used to get candidate PersonIds based on name search.
+    # It typically returns a limited number of results (often just the top one).
+    tree_id_for_suggest = owner_tree_id  # Suggest API needs tree ID
+    if not tree_id_for_suggest:
+        logger.error(
+            "Cannot perform API search: My tree ID is not available in SessionManager."
+        )
+        print(
+            "\nERROR: Cannot determine your tree ID. API search functionality is limited."
+        )
+        return False  # Indicate failure
+
+    base_url = getattr(
+        config_instance, "BASE_URL", "https://www.ancestry.co.uk"
+    ).rstrip("/")
+    suggest_params = []
+    if first_name:
+        suggest_params.append(f"partialFirstName={urllib.parse.quote(first_name)}")
+    if surname:
+        suggest_params.append(f"partialLastName={urllib.parse.quote(surname)}")
+
+    suggest_url = f"{base_url}/api/person-picker/suggest/{tree_id_for_suggest}?{'&'.join(suggest_params)}"
+    logger.info(f"Attempting search using Ancestry Suggest API...")
+    print("Searching Ancestry API...")  # User feedback
+
+    suggest_response = None
+    try:
+        suggest_response = _api_req(
             url=suggest_url,
+            driver=session_manager.driver,  # Pass the actual driver from the session manager
+            session_manager=session_manager,  # Pass the session manager instance
             method="GET",
-            # headers=common_headers, # Headers are mostly handled internally now
             api_description="Person Picker Suggest API",
-            referer_url=referer,  # Provide specific referer if needed
-            timeout=15,
-            use_csrf_token=True,  # Suggest API might need CSRF
+            # Headers are handled automatically by _api_req, but can provide context-specific ones
+            # Add specific referer if needed, otherwise _api_req uses BASE_URL
+            # referer_url=urljoin(base_url, f"/family-tree/tree/{tree_id_for_suggest}/person/{owner_profile_id}/facts") # Example referer
+            timeout=15,  # Shorter timeout for this quick API
         )
-
-        # Process suggest response
-        if isinstance(suggest_response, dict) and "error" in suggest_response:
-            logger.error(f"Suggest API failed: {suggest_response['error']}")
-            return
-        # Handle cases where _api_req returns the Response object on error
-        if isinstance(suggest_response, requests.Response) and not suggest_response.ok:
-            logger.error(
-                f"Suggest API request failed with status {suggest_response.status_code}"
-            )
-            return
-        if (
-            suggest_response is None
-        ):  # Handle None return from _api_req on total failure
-            logger.error("Suggest API request failed (returned None).")
-            return
-
+        # suggest_response is expected to be a list of person dictionaries or None on error/no result
         if not isinstance(suggest_response, list) or not suggest_response:
-            logger.info("No matches found via Suggest API.")
-            # Maybe try a different search API here as a fallback?
-            return
-
-        # --- Auto-select the first suggestion ---
-        # TODO: Implement selection logic if multiple suggestions are relevant
-        if len(suggest_response) > 1:
-            logger.info(
-                f"Multiple suggestions found ({len(suggest_response)}), auto-selecting the first."
-            )
-            # Add logic here to display options and let user choose if needed
-            # for i, person in enumerate(suggest_response):
-            #     logger.info(f"  {i+1}. {person.get('Name', 'N/A')} (ID: {person.get('PersonId', 'N/A')})")
-            # ... input choice ...
-
-        selected_person_api_info = suggest_response[0]
-        logger.info(
-            f"Selected person from API: {selected_person_api_info.get('Name', 'N/A')}"
-        )
-
-        # Extract details needed for the next API call (/person-card)
-        person_id = selected_person_api_info.get("PersonId")
-        # Tree ID might differ if the person is from a different tree? Use the one from the response.
-        person_tree_id = selected_person_api_info.get(
-            "TreeId", my_tree_id
-        )  # Fallback to user's tree
-
-        if not person_id or not person_tree_id:
-            logger.error(
-                "Could not extract necessary PersonId/TreeId from suggest response."
-            )
-            logger.debug(f"Suggest Response Item: {selected_person_api_info}")
-            return
+            logger.info("No matches found via Ancestry Suggest API.")
+            print("\nNo potential matches found in Ancestry API based on name.")
+            return True  # Indicate success (no matches is a valid outcome)
 
     except Exception as e:
-        logger.error(
-            f"Error during /person-picker/suggest API call or processing: {e}",
-            exc_info=True,
+        logger.error(f"API /suggest call failed: {e}", exc_info=True)
+        print(f"\nError during API search: {e}. Check logs.")
+        return False  # Indicate failure
+
+    # --- Process Suggest API Results and Score the Top Match ---
+    # We will only process and score the top suggestion from the API for now
+    # To fully replicate GEDCOM report (multiple matches + selection), we would need
+    # to fetch details and score *all* suggestions returned by the API, which can be slow.
+    # Sticking to scoring/displaying the top one as implemented in temp.py API handler.
+
+    top_api_suggestion = suggest_response[0]
+    api_person_id = top_api_suggestion.get("PersonId")
+    api_tree_id = top_api_suggestion.get(
+        "TreeId"
+    )  # Tree ID from the search result person (might be different from user's tree ID)
+    api_name_raw = top_api_suggestion.get("Name", "Unknown")
+
+    if not api_person_id or not api_tree_id:
+        logger.error("Suggest API result missing critical IDs (PersonId or TreeId).")
+        print("\nError processing top API search result (missing IDs).")
+        return False  # Indicate failure
+
+    logger.debug(
+        f"Processing top Suggest API match: {api_name_raw} (ID: {api_person_id})"
+    )
+
+    # Fetch more details for scoring and display using Person Card API
+    # The Person Card API gives birth/death dates/places and family summary
+    person_card_url = f"{base_url}/api/search-results/person-card/tree/{api_tree_id}/person/{api_person_id}"
+    person_card_data = {}  # Use empty dict as default
+    try:
+        logger.debug(f"Fetching person card for {api_person_id} from {person_card_url}")
+        person_card_data = _api_req(
+            url=person_card_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            api_description="Person Card API",
+            # Referer needed for this API context
+            referer_url=urljoin(
+                base_url,
+                f"/family-tree/tree/{tree_id_for_suggest}/person/{owner_profile_id}/facts",
+            ),
+            timeout=15,
         )
-        return  # Stop if suggest fails
-
-    # --- Call /person-card API ---
-    if selected_person_api_info and person_id and person_tree_id:
-        person_card_url = f"{base_url}/api/search-results/person-card/tree/{person_tree_id}/person/{person_id}"
-        try:
-            logger.info(f"Calling Person Card API: {person_card_url}")
-            # *** CHANGED: Call _api_req as a method of the session_manager instance ***
-            # *** REMOVED: driver and session_manager arguments from the call ***
-            person_card_response = session_manager._api_req(
-                url=person_card_url,
-                method="GET",
-                # headers=common_headers, # Headers handled internally
-                api_description="Person Card API",
-                referer_url=referer,  # Maintain context if needed
-                timeout=15,
-                use_csrf_token=True,  # Person card API might need CSRF
+        # Ensure the response is a dictionary
+        if not isinstance(person_card_data, dict):
+            logger.warning(
+                f"Person Card API did not return a dictionary for {api_person_id}. Received type: {type(person_card_data)}"
             )
+            person_card_data = {}  # Reset to empty dict if unexpected format
+    except Exception as e:
+        logger.error(
+            f"API /person-card call failed for {api_person_id}: {e}", exc_info=True
+        )
+        print(f"\nWarning: Could not fetch full details from API for scoring/display.")
+        # person_card_data remains {}
 
-            if (
-                isinstance(person_card_response, dict)
-                and "error" in person_card_response
-            ):
-                logger.error(f"Person Card API failed: {person_card_response['error']}")
-                # Continue? Or stop? Data will be incomplete. Stop for now.
-                return
-            # Handle cases where _api_req returns the Response object on error
-            if (
-                isinstance(person_card_response, requests.Response)
-                and not person_card_response.ok
-            ):
-                logger.error(
-                    f"Person Card API request failed with status {person_card_response.status_code}"
-                )
-                return
-            if person_card_response is None:  # Handle None return from _api_req
-                logger.error("Person Card API request failed (returned None).")
-                return
+    # Parse the fetched data to get structured details (using api_utils helper)
+    # Pass empty dict/None if API calls failed
+    parsed_api_details = parse_ancestry_person_details(
+        person_card_data, {}
+    )  # Pass empty facts for now if not fetched separately
 
-            if not isinstance(person_card_response, dict):
-                logger.error(
-                    "Person card API did not return a valid dictionary result."
+    # Prepare candidate data dictionary for scoring (using parsed details)
+    candidate_data_dict = {
+        "first_name": (
+            parsed_api_details.get("name", "").split(" ")[0].lower()
+            if parsed_api_details.get("name")
+            else None
+        ),
+        "surname": (
+            parsed_api_details.get("name", "").split(" ")[-1].lower()
+            if parsed_api_details.get("name")
+            and len(parsed_api_details.get("name", "").split(" ")) > 1
+            else None
+        ),
+        "birth_year": (
+            parsed_api_details.get("api_birth_obj").year
+            if parsed_api_details.get("api_birth_obj")
+            else None
+        ),
+        "birth_date_obj": parsed_api_details.get("api_birth_obj"),
+        "birth_place": (
+            parsed_api_details.get("birth_place").lower()
+            if parsed_api_details.get("birth_place")
+            and parsed_api_details.get("birth_place") != "N/A"
+            else None
+        ),
+        "death_year": (
+            parsed_api_details.get("api_death_obj").year
+            if parsed_api_details.get("api_death_obj")
+            else None
+        ),
+        "death_date_obj": parsed_api_details.get("api_death_obj"),
+        "death_place": (
+            parsed_api_details.get("death_place").lower()
+            if parsed_api_details.get("death_place")
+            and parsed_api_details.get("death_place") != "N/A"
+            else None
+        ),
+        "gender": (
+            parsed_api_details.get("gender").lower()
+            if parsed_api_details.get("gender")
+            else None
+        ),
+    }
+
+    # Calculate score using the common scoring function (if available)
+    score = 0
+    reasons = ["API Suggest Match"]  # Base reason
+    if GEDCOM_SCORING_AVAILABLE:
+        score, reasons_list = calculate_match_score(
+            search_criteria_dict,
+            candidate_data_dict,
+            COMMON_SCORING_WEIGHTS,
+            NAME_FLEXIBILITY,
+            DATE_FLEXIBILITY,
+        )
+        # Add "API Suggest Match" if not already in reasons (unlikely if scoring uses this)
+        if "API Suggest Match" not in reasons_list:
+            reasons_list.append("API Suggest Match")
+        reasons = reasons_list
+        logger.debug(
+            f"Calculated score for top API match: {score} (Reasons: {reasons})"
+        )
+    else:
+        logger.warning("Scoring function unavailable. Cannot score API match.")
+        # Score remains 0, reasons is just "API Suggest Match"
+
+    # Create a match dict for display, similar to GEDCOM results
+    api_match_for_display = {
+        "id": api_person_id,  # Use Person ID as ID
+        "norm_id": api_person_id,  # Use Person ID as normalized ID
+        "tree_id": api_tree_id,
+        "name": parsed_api_details.get(
+            "name", api_name_raw
+        ),  # Use parsed name if available, else raw
+        "birth_date": parsed_api_details.get("birth_date", "N/A"),
+        "birth_place": parsed_api_details.get("birth_place", "N/A"),
+        "death_date": parsed_api_details.get("death_date", "N/A"),
+        "death_place": parsed_api_details.get("death_place", "N/A"),
+        "score": score,
+        "reasons": ", ".join(reasons),
+        "link": parsed_api_details.get("link"),
+        "is_living": parsed_api_details.get("is_living"),
+    }
+
+    # --- Display the Top Scored Match (consistent with Action 10) ---
+    print(f"\n--- Top Match (Scored) ---")
+    # Always display the one scored match
+    match = api_match_for_display
+    b_info = (
+        f"b. {match['birth_date']}"
+        if match.get("birth_date") and match["birth_date"] != "N/A"
+        else ""
+    )
+    d_info = (
+        f"d. {match['death_date']}"
+        if match.get("death_date") and match["death_date"] != "N/A"
+        else ""
+    )
+    date_info = (
+        f" ({', '.join(filter(None, [b_info, d_info]))}" if b_info or d_info else ""
+    )
+    birth_place_info = (
+        f"in {match['birth_place']}"
+        if match.get("birth_place") and match["birth_place"] != "N/A"
+        else ""
+    )
+    death_place_info = (
+        f"in {match['death_place']}"
+        if match.get("death_place") and match["death_place"] != "N/A"
+        else ""
+    )
+
+    # Display using format consistent with Action 10
+    print(f"  1. {match['name']}")
+    print(f"     Born : {match.get('birth_date', '?')} {birth_place_info}")
+    # Only print death line if there is death info or marked as not living
+    if (
+        match.get("death_date") != "N/A"
+        or match.get("death_place") != "N/A"
+        or match.get("is_living") is False
+    ):
+        print(f"     Died : {match.get('death_date', '?')} {death_place_info}")
+
+    if GEDCOM_SCORING_AVAILABLE:
+        print(
+            f"     Score: {match.get('score', '?')} (Reasons: {match.get('reasons', 'API Suggest Match')})"
+        )
+    else:
+        print(
+            f"     Score: (Scoring unavailable) (Reasons: {match.get('reasons', 'API Suggest Match')})"
+        )
+
+    print(f"\n---> Auto-selecting this match: {match['name']}")
+    selected_match = api_match_for_display  # Auto-select the only one
+
+    # --- Fetch Full Details and Family using API (if not already done by person-card) ---
+    # We already have person_card_data. We might need facts_data for more complete family details.
+    # The 'facts' API endpoint often has a different structure and requires a CSRF token.
+    # This endpoint is https://www.ancestry.co.uk/tree/{treeId}/person/{personId}/facts (navigating here gets the data via JS/internal APIs)
+    # There might be a direct API endpoint for facts data, but the Person Card API already provides much of it.
+    # Let's check if facts_data is significantly different from person_card_data. Temp.py v7.36 used person-card and facts API, let's replicate that pattern if facts adds value.
+    # Re-checking temp.py: it fetches person-card AND facts data (`/tree/{treeId}/person/{personId}/facts` which is a web page, then tries to use it). Let's use the explicit facts API mentioned in action11.py provided initially.
+
+    # Use the explicit facts API endpoint from the initial action11.py
+    # This requires MyProfileID to be available from the SessionManager
+    if owner_profile_id:
+        facts_api_url = f"{base_url}/app-api/express/v1/profiles/details?userId={api_person_id.upper()}"  # This looks more like a profile details API, not facts
+        # The initial action11.py used `/tree/{tree_id}/person/{person_id}/facts` which loads an HTML page that contains JSON data embedded in it, or fetched by JS.
+        # Let's use the API endpoint identified in the initial action11.py that seems to give facts: `/app-api/express/v1/profiles/details?userId={profile_id.upper()}`
+        facts_data = None
+        api_description_facts = "API Profile Details (Facts-like)"
+        logger.debug(
+            f"Attempting to fetch facts-like data from: {facts_api_url} ({api_description_facts})"
+        )
+        try:
+            # This API might not need CSRF, but requires session cookies
+            facts_data = _api_req(
+                url=facts_api_url,
+                driver=session_manager.driver,
+                session_manager=session_manager,
+                method="GET",
+                headers={},  # _api_req adds defaults + dynamic
+                use_csrf_token=False,  # This API likely doesn't need CSRF
+                api_description=api_description_facts,
+                # Referer needed for context, use a likely page user would be on
+                referer_url=urljoin(
+                    base_url,
+                    f"/family-tree/tree/{tree_id_for_suggest}/person/{owner_profile_id}/facts",
+                ),
+                timeout=15,
+            )
+            if not isinstance(facts_data, dict):
+                logger.warning(
+                    f"{api_description_facts} did not return a dictionary for {api_person_id}. Received type: {type(facts_data)}"
                 )
-                logger.debug(f"Person Card Response Type: {type(person_card_response)}")
+                facts_data = None  # Reset to None if unexpected format
+            else:
                 logger.debug(
-                    f"Person Card Response Content: {str(person_card_response)[:500]}..."
+                    f"Successfully fetched {api_description_facts} for {api_person_id}."
                 )
-                return
-
-            person_card_data = person_card_response  # Store the valid data
+                # Need to check structure for family members if needed from here
+                # The Person Card API already provides father, mother, selectedSpouse, children under spouse.
+                # The profile details API might have a different structure.
+                # Let's stick to Person Card API for family details as in temp.py v7.36 if it provides enough.
+                # Reviewing temp.py v7.36 family display: it uses person_card_data's 'father', 'mother', 'selectedSpouse', 'children' under spouse. It *didn't* use a separate facts API for family display. Let's just use person_card_data for family display.
 
         except Exception as e:
             logger.error(
-                f"Error during /search-results/person-card API call or processing: {e}",
+                f"API {api_description_facts} call failed for {api_person_id}: {e}",
                 exc_info=True,
             )
-            # Continue without person card data? Or stop? Stop for now.
-            return
+            print(f"\nWarning: Could not fetch additional profile details from API.")
+            facts_data = None  # Ensure it's None on failure
 
-    # --- Display Results from Person Card API ---
-    if person_card_data:
-        logger.info("\n--- Individual Details (API - Person Card) ---")
-        logger.info(f" Name: {person_card_data.get('name', 'Unknown')}")
-        # Check for birth/death date and place details
-        birth_info = person_card_data.get("birth", "")
-        death_info = person_card_data.get("death", "")
-        logger.info(f"   Birth: {birth_info if birth_info else '(N/A)'}")
-        logger.info(f"   Death: {death_info if death_info else '(N/A)'}")
-        logger.info(f"   Person ID: {person_card_data.get('personId', '(N/A)')}")
-        logger.info(
-            f"   Tree ID: {person_card_data.get('treeId', '(N/A)')}"
-        )  # Often included
-
-        # Parents
-        logger.info("\n Parents:")
-        father = person_card_data.get("father")
-        mother = person_card_data.get("mother")
-        if father:
-            logger.info(
-                f"  - Father: {father.get('name', '')} {father.get('lifeSpan', '')}"
-            )
-        if mother:
-            logger.info(
-                f"  - Mother: {mother.get('name', '')} {mother.get('lifeSpan', '')}"
-            )
-        if not (father or mother):
-            logger.info("  (None found in API data)")
-
-        # Spouse(s) - Person card usually shows only one selected spouse
-        logger.info("\n Spouse(s):")
-        # Key might be 'spouse' or 'selectedSpouse', check response structure if needed
-        spouse = person_card_data.get("selectedSpouse") or person_card_data.get(
-            "spouse"
+    # --- Display Details using api_utils functions ---
+    # Use the already parsed details from the person_card
+    print("\n=== PERSON DETAILS (API) ===")
+    print(f"Name: {parsed_api_details.get('name', 'Unknown')}")
+    print(f"Gender: {parsed_api_details.get('gender') or 'N/A'}")
+    print(
+        f"Born: {parsed_api_details.get('birth_date', '(Date unknown)')} in {parsed_api_details.get('birth_place', '(Place unknown)')}"
+    )
+    # Only print Died line if there is death info or marked as not living
+    if (
+        parsed_api_details.get("death_date", "N/A") != "N/A"
+        or parsed_api_details.get("death_place", "N/A") != "N/A"
+        or parsed_api_details.get("is_living") is False
+    ):
+        print(
+            f"Died: {parsed_api_details.get('death_date', '(Date unknown)')} in {parsed_api_details.get('death_place', '(Place unknown)')}"
         )
-        if spouse and isinstance(spouse, dict):  # Ensure spouse data is a dictionary
-            logger.info(
-                f"  - Spouse: {spouse.get('name', '')} {spouse.get('lifeSpan', '')}"
-            )
-            # Children with this spouse are often nested
-            logger.info("\n Children (with this spouse):")
-            children = spouse.get("children", [])
-            if children:
-                for child in children:
-                    logger.info(
-                        f"  - Child: {child.get('name', '')} {child.get('lifeSpan', '')}"
-                    )
-            else:
-                logger.info("  (None found for this spouse in API data)")
-        elif spouse:  # Handle cases where spouse might be something else unexpected
-            logger.warning(
-                f"Spouse data found but not in expected dictionary format: {spouse}"
-            )
-            logger.info("  (Could not parse spouse details)")
+    print(f"Link: {parsed_api_details.get('link', '(unavailable)')}")
+
+    # --- Display Family Details using api_utils functions ---
+    print("\n--- Family Details (API) ---")
+    # Extract family members from person_card_data as done in temp.py v7.36
+    parents_list = []
+    father = person_card_data.get("father")
+    mother = person_card_data.get("mother")
+    if father and isinstance(father, dict):
+        parents_list.append(father)
+    if mother and isinstance(mother, dict):
+        parents_list.append(mother)
+
+    print_group("Parents", parents_list)
+
+    # Siblings are not directly available in this Person Card response structure in a simple list.
+    # We could potentially fetch them via a different API or parse the Facts API more deeply.
+    # For now, matching temp.py v7.36, display as None found.
+    print_group(
+        "Siblings", []
+    )  # Placeholder / Not available directly in this API response
+
+    spouses_list = []
+    spouse = person_card_data.get(
+        "selectedSpouse"
+    )  # The currently selected/primary spouse
+    # The Person Card API only gives details for ONE selected spouse and their children.
+    # If multiple spouses exist, they might be in the Facts API response structure, but
+    # the specific `/app-api/express/v1/profiles/details` endpoint structure needs checking.
+    # Temp.py v7.36's Person Card parsing only checks for 'selectedSpouse'. Let's add a check for 'spouses' list in facts_data if available, but prioritize the selected one.
+    if spouse and isinstance(spouse, dict):
+        spouses_list.append(spouse)  # Add the selected spouse
+
+    # Add other spouses from facts_data if available (checking for the list structure)
+    if facts_data and isinstance(facts_data.get("spouses"), list):
+        selected_spouse_id = (
+            spouse.get("personId") if spouse and isinstance(spouse, dict) else None
+        )
+        for sp_fact in facts_data["spouses"]:
+            if (
+                isinstance(sp_fact, dict)
+                and sp_fact.get("personId") != selected_spouse_id
+            ):
+                spouses_list.append(
+                    {"name": sp_fact.get("name", "Unknown Spouse")}
+                )  # Append other spouses
+
+    print_group("Spouse(s)", spouses_list)
+
+    children_list = []
+    # Children are listed under the selected spouse in the Person Card API
+    if spouse and isinstance(spouse, dict) and isinstance(spouse.get("children"), list):
+        children_list.extend(spouse["children"])
+
+    # Also check for a 'children' list in the facts_data if available
+    if facts_data and isinstance(facts_data.get("children"), list):
+        # Avoid adding children already listed under the selected spouse
+        existing_child_ids = {
+            c.get("personId") for c in children_list if isinstance(c, dict)
+        }
+        for ch_fact in facts_data["children"]:
+            if (
+                isinstance(ch_fact, dict)
+                and ch_fact.get("personId") not in existing_child_ids
+            ):
+                children_list.append(
+                    {"name": ch_fact.get("name", "Unknown Child")}
+                )  # Append other children
+
+    print_group("Children", children_list)
+
+    # --- Display Relationship Path to Tree Owner (WGG) ---
+    # This requires the selected person's ID and the logged-in user's profile ID (Tree Owner)
+    # The API endpoint for this is /discoveryui-matchesservice/api/samples/{personId}/relationshiptome/{meProfileId}
+    # It returns a JSONP response containing HTML.
+    selected_person_id = selected_match.get(
+        "person_id"
+    )  # Use the ID from the selected match
+    if owner_profile_id and selected_person_id:
+        # Ensure the Tree Owner's profile ID is not the same as the selected person's ID
+        if owner_profile_id.upper() == selected_person_id.upper():
+            print(f"\n--- Relationship Path to {owner_name} (API) ---")
+            print("(Selected person is the Tree Owner)")
         else:
-            logger.info("  (None found in API data)")
+            print(
+                f"\nCalculating relationship path to {owner_name}..."
+            )  # Use actual owner name
+            ladder_api_url = f"{base_url}/discoveryui-matchesservice/api/samples/{selected_person_id}/relationshiptome/{owner_profile_id}"
+            api_description_ladder = "API Relationship Ladder (Batch)"  # Using the batch API description from config
 
-        # Note: Person card API might not show siblings directly.
+            relationship_html_raw = None  # Store the raw response text
 
-    else:
-        logger.info("\nNo detailed person card data could be retrieved from the API.")
+            try:
+                # Fetch the raw response text (it's JSONP/text, not pure JSON)
+                relationship_html_raw = _api_req(
+                    url=ladder_api_url,
+                    driver=session_manager.driver,
+                    session_manager=session_manager,
+                    method="GET",
+                    api_description=api_description_ladder,
+                    # Referer needed for context, match list is a good referer
+                    referer_url=urljoin(
+                        base_url, f"/discoveryui-matches/list/{session_manager.my_uuid}"
+                    ),
+                    is_json=False,  # Explicitly tell _api_req NOT to parse as JSON initially
+                    force_text_response=True,  # Ensure we get text response
+                    timeout=15,  # Short timeout
+                )
+
+                # display_raw_relationship_ladder handles extraction, decoding, parsing, and printing
+                if relationship_html_raw and isinstance(relationship_html_raw, str):
+                    display_raw_relationship_ladder(
+                        relationship_html_raw,
+                        owner_name,
+                        selected_match.get("name", "Selected Person"),
+                    )
+                elif (
+                    isinstance(relationship_html_raw, dict)
+                    and "error" in relationship_html_raw
+                ):
+                    # If _api_req returned an error dict, pass it to the display function
+                    display_raw_relationship_ladder(
+                        relationship_html_raw,
+                        owner_name,
+                        selected_match.get("name", "Selected Person"),
+                    )
+                else:
+                    logger.warning(
+                        f"API call {api_description_ladder} returned unexpected response type or None: {type(relationship_html_raw)}"
+                    )
+                    print(f"\n--- Relationship Path to {owner_name} (API) ---")
+                    print("(API call returned unexpected data or no response)")
+
+            except Exception as e:
+                logger.error(
+                    f"API call {api_description_ladder} failed: {e}", exc_info=True
+                )
+                print(f"\n--- Relationship Path to {owner_name} (API) ---")
+                print(f"(Error fetching relationship path from API: {e})")
+
+    elif not owner_profile_id:
+        print(f"\n--- Relationship Path to Tree Owner (API) ---")
+        print("(Skipping relationship calculation as your profile ID was not found)")
+
+    else:  # selected_person_id is None (shouldn't happen if match was selected)
+        print(f"\n--- Relationship Path to {owner_name} (API) ---")
+        print("(Skipping relationship calculation as selected person ID is missing)")
+
+    return True  # Indicate successful report completion
+
+
+# End of handle_api_report
 
 
 # --- Main Execution ---
-
-
 def main():
     """Main execution flow for Action 11 (API Report)."""
     logger.info("--- Action 11: API Report Starting ---")
 
+    # Check if required core utilities are available
+    if not CORE_UTILS_AVAILABLE:
+        logger.critical(
+            "Required core utilities (utils.py) not loaded. Cannot run Action 11."
+        )
+        print("\nCRITICAL ERROR: Required utilities not loaded.")
+        sys.exit(1)
+
+    # Check if required API utilities are available
     if not API_UTILS_AVAILABLE:
         logger.critical(
-            "API utilities (from 'utils' module) are unavailable. Cannot proceed."
+            "Required API utilities (api_utils.py) not loaded. Cannot run Action 11."
+        )
+        print("\nCRITICAL ERROR: Required API utilities not loaded.")
+        sys.exit(1)
+
+    # Check if required GEDCOM scoring/date utilities are available (needed for consistent scoring and display)
+    # These are not strictly fatal for the *entire* API report, but necessary for key parts.
+    # We log warnings in handle_api_report if they are missing, but exit here if scoring is a critical requirement.
+    # As per requirement 3, scoring mechanism must be used.
+    if not GEDCOM_SCORING_AVAILABLE or not GEDCOM_DATE_UTILS_AVAILABLE:
+        logger.critical(
+            "Required GEDCOM scoring or date utilities (from gedcom_utils.py) not loaded."
+        )
+        print(
+            "\nCRITICAL ERROR: Required scoring or date utilities not loaded. Cannot ensure consistent report format."
         )
         sys.exit(1)
 
-    try:
-        # Execute the main API report handler
-        handle_api_report()
+    # Check if scoring configuration is available
+    if (
+        COMMON_SCORING_WEIGHTS is None
+        or NAME_FLEXIBILITY is None
+        or DATE_FLEXIBILITY is None
+    ):
+        logger.critical(
+            "Scoring configuration variables are None after attempting load."
+        )
+        print("\nERROR: Scoring configuration load failed. Cannot run Action 11.")
+        sys.exit(1)
 
-    except KeyboardInterrupt:
-        logger.warning("\nOperation interrupted by user.")
-    except Exception as e:
-        logger.critical(f"An unexpected error occurred in main: {e}", exc_info=True)
-    finally:
-        # Attempt to close Selenium driver if it was opened by session_manager
-        if session_manager and getattr(session_manager, "driver_live", False):
-            logger.info("Attempting to clean up browser session...")
-            try:
-                # Use a quit method if available in the session manager implementation
-                if hasattr(session_manager, "close_sess") and callable(
-                    session_manager.close_sess
-                ):
-                    # close_sess handles driver.quit() internally
-                    session_manager.close_sess(
-                        keep_db=True
-                    )  # Keep DB pool if other actions might run
-                    logger.info(
-                        "Browser session closed via session_manager.close_sess()."
-                    )
-                elif (
-                    hasattr(session_manager, "driver")
-                    and session_manager.driver
-                    and hasattr(session_manager.driver, "quit")
-                ):
-                    session_manager.driver.quit()  # Fallback direct quit
-                    logger.info("Browser session closed directly.")
-                else:
-                    logger.info("No active driver or quit method found to close.")
-            except Exception as close_err:
-                logger.error(
-                    f"Error closing browser session: {close_err}", exc_info=False
-                )
+    # Run the API Report Handler
+    handle_api_report()
 
-        logger.info("--- Action 11: API Report Finished ---")
+    logger.info("--- Action 11: API Report Finished ---")
+    print("\nAction 11 finished.")
 
 
+# End of main
+
+# Script entry point check
 if __name__ == "__main__":
-    # Check dependencies before running main
-    if API_UTILS_AVAILABLE:
+    # Initial check for core utils availability before calling main
+    # main function will perform more detailed checks
+    if CORE_UTILS_AVAILABLE:
         main()
     else:
-        logger.critical(
-            "Exiting: Required API utilities (utils module / api_utils) not available."
+        # If CORE_UTILS_AVAILABLE is False (due to utils import error), exit immediately
+        print(
+            "\nCRITICAL ERROR: Required core utilities (utils.py) are not installed or failed to load."
         )
+        print("Please check your Python environment and dependencies.")
+        logging.getLogger().critical("Exiting: Required core utilities not loaded.")
         sys.exit(1)
+
+
+
+
+# End of action11.py

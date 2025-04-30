@@ -9,6 +9,7 @@ Loads application settings from environment variables (.env file) and defines
 configuration classes (`Config_Class`, `SeleniumConfig`) with sensible defaults.
 Provides typed access to settings like credentials, paths, URLs, API keys,
 behavioral parameters, and Selenium options. Includes contextual headers for API calls.
+V2: Added loading and validation for TESTING_PERSON_TREE_ID.
 """
 
 # --- Standard library imports ---
@@ -170,6 +171,9 @@ class Config_Class(BaseConfig):
     # --- Static Constants / Fixed Settings ---
     # Default testing profile ID (can be overridden by .env)
     TESTING_PROFILE_ID: Optional[str] = "08FA6E79-0006-0000-0000-000000000000"
+    TESTING_PERSON_TREE_ID: Optional[str] = (
+        None  # NEW: For specific person ID in tree tests
+    )
     # Default rate limiting parameters (can be overridden by .env)
     INITIAL_DELAY: float = 0.5
     MAX_DELAY: float = 60.0
@@ -206,6 +210,7 @@ class Config_Class(BaseConfig):
         """Initializes the Config_Class by loading values and validating criticals."""
         self._load_values()
         self._validate_critical_configs()
+
     # End of __init__
 
     def _load_values(self):
@@ -254,6 +259,18 @@ class Config_Class(BaseConfig):
         else:
             logger.warning("TESTING_PROFILE_ID is not set in environment or defaults.")
             self.TESTING_PROFILE_ID = None  # Ensure it's None
+
+        # Load the tree-specific Person ID for testing ladder functions etc.
+        # Use the default None specified in the class definition if not in env
+        self.TESTING_PERSON_TREE_ID = self._get_string_env("TESTING_PERSON_TREE_ID", "")
+        if self.TESTING_PERSON_TREE_ID:
+            logger.info(
+                f"Loaded TESTING_PERSON_TREE_ID: '{self.TESTING_PERSON_TREE_ID}'"
+            )
+        else:
+            logger.debug(
+                "TESTING_PERSON_TREE_ID not set in environment."
+            )  # Debug level
 
         # === Paths & Files ===
         log_dir_name = self._get_string_env("LOG_DIR", "Logs")
@@ -426,6 +443,9 @@ class Config_Class(BaseConfig):
             # --- Headers for Profile Details API ---
             "Profile Details API (Batch)": {"ancestry-clientpath": "express-fe"},
             "Profile Details API (Action 7)": {"ancestry-clientpath": "express-fe"},
+            "Get Target Name (Profile Details)": {
+                "ancestry-clientpath": "express-fe"
+            },  # Added for self-check
             # --- Headers for Messaging APIs (Action 7/8/9) ---
             "Create Conversation API": {"ancestry-clientpath": "express-fe"},
             "Send Message API (Existing Conv)": {"ancestry-clientpath": "express-fe"},
@@ -452,7 +472,10 @@ class Config_Class(BaseConfig):
             "Header Trees API": {},  # No special headers needed beyond defaults
             "Match Details API (Batch)": {},  # No special headers needed beyond defaults
             "Badge Details API (Batch)": {},  # No special headers needed beyond defaults
-            "Get Ladder API (Batch)": {},  # No special headers needed beyond defaults
+            "Get Ladder API (Self Check)": {},  # Placeholder for old ladder test
+            "Get Tree Ladder API (Self Check)": {},  # For new ladder test
+            "Tree Person Search API (Self Check)": {},  # For tree search test
+            "Person Picker Suggest API (Self Check)": {},  # For person picker test
         }
 
         # === Tree Search Method ===
@@ -492,6 +515,7 @@ class Config_Class(BaseConfig):
         logger.info(f"  To-Do List Name: '{self.MS_TODO_LIST_NAME}'")
         logger.info("----------------------")
         logger.debug("Application config loading complete.\n")
+
     # End of _load_values
 
     def _validate_critical_configs(self):
@@ -570,9 +594,18 @@ class Config_Class(BaseConfig):
 
         # === Testing Profile ID (If mode is 'testing') ===
         if self.APP_MODE == "testing" and not self.TESTING_PROFILE_ID:
+            # Keep this as potentially critical if APP_MODE is strictly 'testing'
             errors_found.append(
                 "APP_MODE is 'testing' but TESTING_PROFILE_ID is not set in .env file or defaults."
             )
+
+        # === Testing Person Tree ID (Warning only) ===
+        # Add warning for missing TESTING_PERSON_TREE_ID (needed for specific tests like api_utils self-check)
+        if not self.TESTING_PERSON_TREE_ID:
+            logger.warning(
+                "TESTING_PERSON_TREE_ID is missing in .env file. Some tests (e.g., api_utils self-check Phase 4) will be skipped or fail."
+            )
+            # Not making this a critical error unless APP_MODE requires it explicitly
 
         # === Report Errors or Success ===
         if errors_found:
@@ -586,7 +619,9 @@ class Config_Class(BaseConfig):
             )
         else:
             logger.info("Critical configuration settings validated successfully.")
+
     # End of _validate_critical_configs
+
 
 # End of Config_Class class
 
@@ -812,6 +847,70 @@ else:
         "config.py loaded, but configuration instance creation FAILED validation."
     )
 
+# ===============================================
+# --- SCORING CONFIGURATION FOR MATCHING ---
+# ===============================================
+
+# Weights for different matching criteria used in find_potential_matches
+COMMON_SCORING_WEIGHTS = {
+    # --- Name Components ---
+    # Points for exact matches
+    "exact_first_name": 20,
+    "exact_surname": 20,
+    # Max points for fuzzy matches (scaled by similarity ratio)
+    "fuzzy_first_name": 15,
+    "fuzzy_surname": 15,
+    # Points if name only matches the start (used if fuzzy fails/disabled)
+    "starts_first_name": 3,
+    "starts_surname": 5,
+    # Extra boost if BOTH first and surname match exactly
+    "boost_exact_full_name": 20,
+    # --- Date Components ---
+    # Points for exact YYYY-MM-DD matches
+    "exact_birth_date": 20,
+    "exact_death_date": 20,
+    # Points if only the year matches (within range defined in DATE_FLEXIBILITY)
+    "year_birth": 15,
+    "year_death": 15,
+    # Points if death date is explicitly missing in BOTH search and candidate
+    "death_dates_both_absent": 5,
+    # --- Place Components (using 'contains') ---
+    "contains_pob": 15,
+    "contains_pod": 15,
+    # --- Gender Component ---
+    "gender_match": 20,
+    "gender_mismatch_penalty": -20,  # Negative value subtracts points
+    # --- Fuzzy Path Specific Weights (used when full name isn't exact) ---
+    # Points for date/year matches in the fuzzy path (can be lower)
+    "year_birth_fuzzy": 5,
+    "year_death_fuzzy": 5,
+    # Points for gender match in the fuzzy path (can be lower)
+    "gender_match_fuzzy": 3,
+    "gender_mismatch_penalty_fuzzy": -3,
+    # Points for place match in the fuzzy path (can be lower)
+    "contains_pob_fuzzy": 1,
+    "contains_pod_fuzzy": 1,
+    # Points for boosting an exact name + year match (in exact path)
+    "boost_exact_name_year": 2,
+}
+
+# Flexibility settings for name matching
+NAME_FLEXIBILITY = {
+    # Similarity ratio (0.0 to 1.0) required to trigger fuzzy points
+    "fuzzy_threshold": 0.8,
+    # Whether to check starts_with if fuzzy match fails threshold (not used in V13 logic)
+    "check_starts_with": True,
+}
+
+# Flexibility settings for date matching
+DATE_FLEXIBILITY = {
+    # Allow +/- this many years for year scoring bonus
+    "year_match_range": 1,
+}
+
+# --- End of Scoring Configuration ---
+
+
 # --- Standalone Test Block ---
 if __name__ == "__main__":
     print(f"\n--- Running {__file__} standalone test ---")
@@ -847,6 +946,11 @@ if __name__ == "__main__":
         print(
             f"  TESTING_PROFILE_ID: {config_instance.TESTING_PROFILE_ID or 'Not Set'}"
         )
+        # --- Print TESTING_PERSON_TREE_ID ---
+        print(
+            f"  TESTING_PERSON_TREE_ID: {config_instance.TESTING_PERSON_TREE_ID or 'Not Set'}"
+        )
+        # --- End Change ---
         print(f"  MAX_PAGES: {config_instance.MAX_PAGES}")
         print(f"  MAX_INBOX: {config_instance.MAX_INBOX}")
         print(f"  MAX_PRODUCTIVE: {config_instance.MAX_PRODUCTIVE_TO_PROCESS}")

@@ -22,7 +22,7 @@ import time
 import json  # Added for API response parsing
 import requests
 import urllib.parse
-from utils import SessionManager
+from utils import SessionManager as TempSessionManager
 import html  # Added for unescaping
 from bs4 import BeautifulSoup  # Added for HTML parsing
 
