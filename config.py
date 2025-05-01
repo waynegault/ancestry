@@ -151,6 +151,13 @@ class Config_Class(BaseConfig):
     TESTING_PROFILE_ID: Optional[str] = "08FA6E79-0006-0000-0000-000000000000"
     # Default tree-specific person ID for testing (MUST be set in .env for some tests)
     TESTING_PERSON_TREE_ID: Optional[str] = None
+    # Reference person configuration for relationship paths
+    REFERENCE_PERSON_ID: Optional[str] = (
+        "I102281560836"  # Default ID for Wayne Gordon Gault
+    )
+    REFERENCE_PERSON_NAME: str = (
+        "Wayne Gordon Gault"  # Default name for reference person
+    )
     # Default rate limiting parameters (can be overridden by .env)
     INITIAL_DELAY: float = 0.5
     MAX_DELAY: float = 60.0
@@ -308,6 +315,26 @@ class Config_Class(BaseConfig):
                 )
         else:
             logger.debug("TESTING_PERSON_TREE_ID not set in environment or defaults.")
+
+        # Load reference person configuration
+        self.REFERENCE_PERSON_ID = self._get_string_env(
+            "REFERENCE_PERSON_ID", Config_Class.REFERENCE_PERSON_ID or ""
+        )
+        self.REFERENCE_PERSON_NAME = self._get_string_env(
+            "REFERENCE_PERSON_NAME", Config_Class.REFERENCE_PERSON_NAME
+        )
+        if self.REFERENCE_PERSON_ID:
+            env_val_ref_id = os.getenv("REFERENCE_PERSON_ID")
+            if env_val_ref_id:
+                logger.info(
+                    f"Loaded REFERENCE_PERSON_ID from env var: '{self.REFERENCE_PERSON_ID}'"
+                )
+            else:
+                logger.info(
+                    f"Using default REFERENCE_PERSON_ID: '{self.REFERENCE_PERSON_ID}' (set in .env to override)"
+                )
+        else:
+            logger.debug("REFERENCE_PERSON_ID not set in environment or defaults.")
 
         # === Paths & Files ===
         log_dir_name = self._get_string_env("LOG_DIR", "Logs")

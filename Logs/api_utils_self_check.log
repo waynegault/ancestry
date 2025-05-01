@@ -490,3 +490,483 @@
 20:30:44 INF [api_util self_che 1406] api_utils self-check status: PASS
 20:30:44 DEB [cache    close_ca 261 ] Closing DiskCache connection...
 20:30:44 DEB [cache    close_ca 263 ] DiskCache connection closed.
+23:45:35 INF [api_util log_msg  947 ] 
+                                      [api_utils.py self-check starting...]
+23:45:35 INF [api_util log_msg  947 ] 
+                                      --- Phase 0: Prerequisite Checks ---
+23:45:35 INF [api_util log_msg  947 ] - BeautifulSoup Import: OK
+23:45:35 INF [api_util log_msg  947 ] - format_name Import/Fallback: OK
+23:45:35 INF [api_util log_msg  947 ] - ordinal_case Import/Fallback: OK
+23:45:35 INF [api_util log_msg  947 ] - _parse_date Import/Fallback: OK
+23:45:35 INF [api_util log_msg  947 ] - _clean_display_date Import/Fallback: OK
+23:45:35 INF [api_util log_msg  947 ] - Config Check: Essential credentials/URLs/IDs present.
+23:45:35 INF [api_util log_msg  947 ] 
+                                      --- Phase 1: Session Setup & Login ---
+23:45:35 DEB [utils    __init__ 1017] Initialized shared requests.Session with HTTPAdapter.
+23:45:35 DEB [utils    __init__ 1040] Initialized shared cloudscraper instance with retry strategy.
+23:45:35 DEB [utils    __init__ 813 ] RateLimiter Init: Capacity=10.0, FillRate=2.0/s, InitialDelay=0.50s, MaxDelay=60.0s, Backoff=1.80, Decrease=0.98
+23:45:35 DEB [utils    __init__ 1058] SessionManager instance created: ID=115815536
+                                      
+23:45:35 DEB [utils    start_se 1070] --- SessionManager Phase 1: Starting Driver (api_utils Self Check Start) ---
+                                      
+23:45:35 DEB [utils    _initial 1472] SessionManager ID=115815536 initializing SQLAlchemy Engine/Session...
+23:45:35 DEB [utils    _initial 1490] DB Path: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ancestry.db
+23:45:35 DEB [utils    _initial 1503] DB Pool Config: Size=10, MaxOverflow=5, Timeout=30
+23:45:36 DEB [utils    _initial 1518] Created NEW SQLAlchemy engine: ID=114856096 for SM ID=115815536
+23:45:36 DEB [utils    _initial 1542] Created Session factory for Engine ID=114856096
+23:45:36 DEB [utils    enable_s 1532] SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal).
+23:45:36 DEB [database _create_ 310 ] Executing CREATE VIEW statement for 'messages' view...
+23:45:36 DEB [database _create_ 313 ] Database view 'messages' created or already exists.
+23:45:36 DEB [utils    _initial 1547] DB tables checked/created successfully.
+23:45:36 DEB [utils    start_se 1103] Initializing WebDriver instance (using init_webdvr)...
+23:45:36 DEB [chromedr init_web 175 ] WebDriver initialization attempt 1/3...
+23:45:36 INF [chromedr init_web 192 ] User data directory (no --profile-directory):
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\chrome_automation_profile
+23:45:36 DEB [chromedr init_web 203 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+23:45:36 DEB [chromedr init_web 220 ] Setting User-Agent:
+                                      Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+23:45:36 DEB [chromedr init_web 229 ] Letting undetected_chromedriver auto-manage ChromeDriver version (self-patching mode).
+23:45:36 INF [chromedr init_web 231 ] [init_webdvr] Attempting uc.Chrome() self-patching (attempt 1)...
+23:45:40 INF [chromedr init_web 234 ] [init_webdvr] uc.Chrome() self-patching succeeded in 4.50s (attempt 1)
+23:45:40 DEB [chromedr init_web 235 ] WebDriver instance object potentially created (attempt 1).
+23:45:40 DEB [chromedr init_web 277 ] User-Agent override applied via CDP.
+23:45:40 DEB [chromedr init_web 282 ] Attempting to minimize window (non-headless mode)...
+23:45:40 DEB [chromedr init_web 285 ] Browser window minimized.
+23:45:40 DEB [chromedr init_web 309 ] WebDriver instance fully configured successfully (attempt 1).
+23:45:40 DEB [utils    start_se 1113] WebDriver initialization successful.
+23:45:40 DEB [utils    start_se 1115] Navigating to Base URL (https://www.ancestry.co.uk/) to stabilize...
+23:45:40 DEB [utils    nav_to_p 4921] Navigation Attempt 1/3 to: https://www.ancestry.co.uk/
+23:45:40 DEB [utils    nav_to_p 4952] Executing driver.get('https://www.ancestry.co.uk/')...
+23:45:42 DEB [utils    nav_to_p 4977] Landed on URL base: https://www.ancestry.co.uk
+23:45:44 DEB [utils    nav_to_p 5106] On correct URL base. Waiting up to 20s for selector: 'body'
+23:45:45 DEB [utils    nav_to_p 5113] Navigation successful and element 'body' found on: https://www.ancestry.co.uk/
+23:45:45 DEB [utils    start_se 1128] Initial navigation to Base URL successful.
+23:45:45 DEB [utils    start_se 1135] --- SessionManager Phase 1: Driver Start Successful ---
+23:45:45 INF [api_util log_msg  947 ] - SessionManager.start_sess(): PASSED
+23:45:45 DEB [utils    ensure_s 1181] TRACE: Entered ensure_session_ready (Action: api_utils Self Check Ready)
+23:45:45 DEB [utils    ensure_d 1159] Driver already live (Action: api_utils Self Check Ready - Ensure Driver).
+23:45:45 DEB [utils    ensure_s 1197] TRACE: Calling _perform_readiness_checks
+23:45:45 DEB [utils    _perform 1264] Performing readiness checks (Attempt 1/2, Action: api_utils Self Check Ready - Readiness Checks)...
+23:45:45 DEB [utils    login_st 4736] Checking login status (API prioritized)...
+23:45:45 DEB [utils    login_st 4751] Attempting API login verification (_verify_api_login_status)...
+23:45:45 DEB [utils    _verify_ 2506] Verifying login status via API endpoint: https://www.ancestry.co.uk/api/uhome/secure/rest/header/dna...
+23:45:45 DEB [utils    _verify_ 2516] Syncing cookies before API login check...
+23:45:45 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:45 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:45 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/header/dna (Timeout: 15s, AllowRedirects: True)
+23:45:45 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:45 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:45 DEB [utils    _api_req 3219] [API Login Verification (header/dna)] Cookies synced (Attempt 1).
+23:45:45 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.540s (CurrentDelay: 0.50s)
+23:45:45 DEB [utils    _api_req 3244] [API Login Verification (header/dna)] Rate limit wait: 0.54s (Attempt 1)
+23:45:45 DEB [utils    _api_req 3265] [_api_req Attempt 1 'API Login Verification (header/dna)'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-7265bee...76-01', 'tracestate': '2611750@nr...45095', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9'}
+23:45:45 DEB [utils    _api_req 3274] [_api_req Attempt 1 'API Login Verification (header/dna)'] >>> Calling requests.request...
+23:45:46 DEB [utils    _api_req 3288] [_api_req Attempt 1 'API Login Verification (header/dna)'] <<< requests.request returned.
+23:45:46 DEB [utils    _api_req 3294] <-- Response Status: 200 
+23:45:46 DEB [utils    _verify_ 2559] API Login Verification (header/dna): API login check successful ('testId' found).
+23:45:46 DEB [utils    login_st 4755] Login status confirmed TRUE via API check.
+23:45:46 DEB [utils    _perform 1362] Checking/Handling current URL...
+23:45:46 DEB [utils    _check_a 1582] Current URL for check: https://www.ancestry.co.uk/
+23:45:46 DEB [utils    _check_a 1665] Current URL is suitable, no extra navigation needed.
+23:45:46 DEB [utils    _perform 1368] URL check/handling OK.
+23:45:46 DEB [utils    _perform 1371] Verifying essential cookies...
+23:45:46 DEB [utils    get_cook 1849] Waiting up to 5s for cookies: ['ANCSESSIONID', 'SecureATT']...
+23:45:46 DEB [utils    get_cook 1870] All required cookies found: ['ANCSESSIONID', 'SecureATT'].
+23:45:46 DEB [utils    _perform 1378] Essential cookies OK.
+23:45:46 DEB [utils    _perform 1381] Syncing cookies to requests session...
+23:45:46 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:46 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:46 DEB [utils    _perform 1384] Cookies synced.
+23:45:46 DEB [utils    _perform 1391] Ensuring CSRF token...
+23:45:46 DEB [utils    get_csrf 1787] Attempting to fetch fresh CSRF token from: https://www.ancestry.co.uk/discoveryui-matches/parents/api/csrfToken
+23:45:46 DEB [utils    get_cook 1849] Waiting up to 10s for cookies: ['ANCSESSIONID', 'SecureATT']...
+23:45:46 DEB [utils    get_cook 1870] All required cookies found: ['ANCSESSIONID', 'SecureATT'].
+23:45:46 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/discoveryui-matches/parents/api/csrfToken (Timeout: 60s, AllowRedirects: True)
+23:45:46 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:46 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:46 DEB [utils    _api_req 3219] [CSRF Token API] Cookies synced (Attempt 1).
+23:45:46 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.434s (CurrentDelay: 0.50s)
+23:45:46 DEB [utils    _api_req 3244] [CSRF Token API] Rate limit wait: 0.43s (Attempt 1)
+23:45:46 DEB [utils    _api_req 3265] [_api_req Attempt 1 'CSRF Token API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-d254364...69-01', 'tracestate': '2611750@nr...46515', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9'}
+23:45:46 DEB [utils    _api_req 3274] [_api_req Attempt 1 'CSRF Token API'] >>> Calling requests.request...
+23:45:47 DEB [utils    _api_req 3288] [_api_req Attempt 1 'CSRF Token API'] <<< requests.request returned.
+23:45:47 DEB [utils    _api_req 3294] <-- Response Status: 200 OK
+23:45:47 DEB [utils    get_csrf 1811] CSRF token successfully retrieved (Length: 144).
+23:45:47 DEB [utils    _perform 1400] CSRF token OK.
+23:45:47 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+23:45:47 DEB [utils    ensure_s 1201] TRACE: _perform_readiness_checks returned: True
+23:45:47 DEB [utils    _retriev 1673] TRACE: Entered _retrieve_identifiers
+23:45:47 DEB [utils    _retriev 1682] Retrieving profile ID (ucdmid)...
+23:45:47 DEB [utils    get_my_p 2211] Attempting to fetch own profile ID (ucdmid)...
+23:45:47 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid (Timeout: 60s, AllowRedirects: True)
+23:45:47 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:47 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:47 DEB [utils    _api_req 3219] [Get my profile_id] Cookies synced (Attempt 1).
+23:45:47 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.481s (CurrentDelay: 0.50s)
+23:45:47 DEB [utils    _api_req 3244] [Get my profile_id] Rate limit wait: 0.48s (Attempt 1)
+23:45:47 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get my profile_id'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'ancestry-clientpath': 'p13n-js', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-b5e4654...95-01', 'tracestate': '2611750@nr...47207', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9'}
+23:45:47 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get my profile_id'] >>> Calling requests.request...
+23:45:47 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get my profile_id'] <<< requests.request returned.
+23:45:47 DEB [utils    _api_req 3294] <-- Response Status: 200 OK
+23:45:47 DEB [utils    get_my_p 2234] Successfully retrieved profile_id: 07BDD45E-0006-0000-0000-000000000000
+23:45:47 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+23:45:47 DEB [utils    _retriev 1698] Retrieving UUID (testId)...
+23:45:48 DEB [utils    get_my_u 2272] Attempting to fetch own UUID (testId) from header/dna API...
+23:45:48 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/header/dna (Timeout: 60s, AllowRedirects: True)
+23:45:48 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:48 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:48 DEB [utils    _api_req 3219] [Get UUID API] Cookies synced (Attempt 1).
+23:45:48 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.582s (CurrentDelay: 0.50s)
+23:45:48 DEB [utils    _api_req 3244] [Get UUID API] Rate limit wait: 0.58s (Attempt 1)
+23:45:48 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get UUID API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-90561cc...42-01', 'tracestate': '2611750@nr...48021', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+23:45:48 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get UUID API'] >>> Calling requests.request...
+23:45:49 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get UUID API'] <<< requests.request returned.
+23:45:49 DEB [utils    _api_req 3294] <-- Response Status: 200 
+23:45:49 DEB [utils    get_my_u 2286] Successfully retrieved UUID: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+23:45:49 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+23:45:49 DEB [utils    _retriev 1712] Retrieving tree ID for tree name: 'Gault Family'...
+23:45:49 DEB [utils    get_my_t 2327] Attempting to fetch tree ID for TREE_NAME='Gault Family'...
+23:45:49 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/header/trees (Timeout: 60s, AllowRedirects: True)
+23:45:49 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:49 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:49 DEB [utils    _api_req 3219] [Header Trees API] Cookies synced (Attempt 1).
+23:45:49 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.547s (CurrentDelay: 0.50s)
+23:45:49 DEB [utils    _api_req 3244] [Header Trees API] Rate limit wait: 0.55s (Attempt 1)
+23:45:49 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Header Trees API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-c62d1fc...12-01', 'tracestate': '2611750@nr...49029', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+23:45:49 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Header Trees API'] >>> Calling requests.request...
+23:45:50 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Header Trees API'] <<< requests.request returned.
+23:45:50 DEB [utils    _api_req 3294] <-- Response Status: 200 
+23:45:50 DEB [utils    get_my_t 2358] Found tree ID '175946702' for tree 'Gault Family'.
+23:45:50 INF [utils    _retriev 1724] My tree id: 175946702
+23:45:50 DEB [utils    _retriev 1734] TRACE: Exiting _retrieve_identifiers (Overall success: True)
+23:45:50 DEB [utils    _retriev 1743] TRACE: Entered _retrieve_tree_owner
+23:45:50 DEB [utils    _retriev 1759] Retrieving tree owner name...
+23:45:50 DEB [utils    get_tree 2415] Attempting to fetch tree owner name for tree ID: 175946702...
+23:45:50 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/user/tree-info?tree_id=175946702 (Timeout: 60s, AllowRedirects: True)
+23:45:50 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:50 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:50 DEB [utils    _api_req 3219] [Tree Owner Name API] Cookies synced (Attempt 1).
+23:45:50 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.440s (CurrentDelay: 0.50s)
+23:45:50 DEB [utils    _api_req 3244] [Tree Owner Name API] Rate limit wait: 0.44s (Attempt 1)
+23:45:50 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Tree Owner Name API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'ancestry-clientpath': 'Browser:meexp-uhome', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-c819220...45-01', 'tracestate': '2611750@nr...50062', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+23:45:50 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Tree Owner Name API'] >>> Calling requests.request...
+23:45:50 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Tree Owner Name API'] <<< requests.request returned.
+23:45:50 DEB [utils    _api_req 3294] <-- Response Status: 200 
+23:45:50 DEB [utils    get_tree 2432] Found tree owner 'Wayne Gault' for tree ID 175946702.
+23:45:50 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+23:45:50 DEB [utils    _retriev 1774] TRACE: Exiting _retrieve_tree_owner (success)
+23:45:50 DEB [utils    ensure_s 1226] Identifiers after fetch: profile_id=07BDD45E-0006-0000-0000-000000000000, uuid=FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7, tree_id=175946702
+23:45:50 DEB [utils    ensure_s 1229] Tree owner name after fetch: Wayne Gault
+23:45:50 DEB [utils    ensure_s 1240] TRACE: Set self.session_ready to: True (ChecksOK: True, IDsOK: True, OwnerOK: True)
+23:45:50 DEB [utils    ensure_s 1243] TRACE: Exiting ensure_session_ready (returning True)
+23:45:50 INF [api_util log_msg  947 ] - SessionManager.ensure_session_ready(): PASSED
+23:45:50 INF [api_util log_msg  947 ] 
+                                      --- Phase 2: Get Target Info & Validate Config ---
+23:45:50 INF [api_util log_msg  947 ] - Target Profile ID (TESTING_PROFILE_ID): 08FA6E79-0006-0000-0000-000000000000
+23:45:50 INF [api_util log_msg  947 ] - Target Person ID (TESTING_PERSON_TREE_ID): 102281560544
+23:45:50 INF [api_util log_msg  947 ] - Target Tree ID (MY_TREE_ID): 175946702
+23:45:50 INF [api_util log_msg  947 ] - Target Owner Name: Wayne Gault
+23:45:50 INF [api_util log_msg  947 ] - Getting target display name from Profile API: https://www.ancestry.co.uk/app-api/express/v1/profiles/details?userId=08FA6E79-0006-0000-0000-000000000000
+23:45:50 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/app-api/express/v1/profiles/details?userId=08FA6E79-0006-0000-0000-000000000000 (Timeout: 60s, AllowRedirects: True)
+23:45:50 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:50 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:50 DEB [utils    _api_req 3219] [Get Target Name (Profile Details)] Cookies synced (Attempt 1).
+23:45:50 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.535s (CurrentDelay: 0.50s)
+23:45:51 DEB [utils    _api_req 3244] [Get Target Name (Profile Details)] Rate limit wait: 0.53s (Attempt 1)
+23:45:51 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get Target Name (Profile Details)'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'ancestry-clientpath': 'express-fe', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-951179c...9a-01', 'tracestate': '2611750@nr...50773', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+23:45:51 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get Target Name (Profile Details)'] >>> Calling requests.request...
+23:45:51 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get Target Name (Profile Details)'] <<< requests.request returned.
+23:45:51 DEB [utils    _api_req 3294] <-- Response Status: 200 
+23:45:51 INF [api_util log_msg  947 ] - Target Display Name found: 'Frances Mc Hardy'
+23:45:51 INF [api_util log_msg  947 ] 
+                                      --- Phase 3: Test parse_ancestry_person_details (Profile Details API) ---
+23:45:51 INF [api_util log_msg  947 ] - Using Profile Details API response from Phase 2.
+23:45:51 DEB [api_util parse_an 362 ] Parsed API details for 'Frances Mc Hardy': ID=08FA6E79-0006-0000-0000-000000000000, Tree=175946702, Born='N/A' in 'None', Died='N/A' in 'None', Gender='None', Living=None
+23:45:51 INF [api_util log_msg  947 ] - parse_ancestry_person_details call: SUCCESS
+23:45:51 INF [api_util log_msg  947 ] - Parsed Details Validation: PASSED (Name: 'Frances Mc Hardy', Link: https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/08FA6E79-0006-0000-0000-000000000000/facts)
+23:45:51 INF [api_util log_msg  947 ] 
+                                      --- Phase 4: Test Relationship Ladder Parsing (using /getladder) ---
+23:45:51 INF [api_util log_msg  947 ] - Calling Tree Relationship Ladder API: https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544/getladder?callback=__ancestry_jsonp_1746053151696&_=1746053151696
+23:45:51 DEB [utils    _api_req 3164] [Get Tree Ladder API (Self Check)] Applied 2 explicit header overrides.
+23:45:51 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544/getladder?callback=__ancestry_jsonp_1746053151696&_=1746053151696 (Timeout: 20s, AllowRedirects: True)
+23:45:51 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+23:45:51 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+23:45:51 DEB [utils    _api_req 3219] [Get Tree Ladder API (Self Check)] Cookies synced (Attempt 1).
+23:45:51 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.460s (CurrentDelay: 0.50s)
+23:45:52 DEB [utils    _api_req 3244] [Get Tree Ladder API (Self Check)] Rate limit wait: 0.46s (Attempt 1)
+23:45:52 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get Tree Ladder API (Self Check)'] Sending Headers: {'Accept': 'text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01', 'Referer': 'https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544/facts', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-60a411c...c7-01', 'tracestate': '2611750@nr...51708', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+23:45:52 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get Tree Ladder API (Self Check)'] >>> Calling requests.request...
+23:45:52 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get Tree Ladder API (Self Check)'] <<< requests.request returned.
+23:45:52 DEB [utils    _api_req 3294] <-- Response Status: 200 OK
+23:45:52 INF [api_util log_msg  947 ] - Tree Ladder API call: SUCCESS (Received string)
+23:45:52 INF [api_util log_msg  947 ] - Extracting HTML using _extract_ladder_html...
+23:45:52 DEB [api_util _extract 715 ] _extract_ladder_html: Attempting JSONP extraction...
+23:45:52 DEB [api_util _extract 725 ] _extract_ladder_html: Found HTML via JSONP. Length: 360
+23:45:52 DEB [api_util _extract 805 ] _extract_ladder_html: Successfully unescaped HTML.
+23:45:52 INF [api_util log_msg  947 ] - HTML Extraction SUCCESS.
+23:45:52 INF [api_util log_msg  947 ] - Testing display_raw_relationship_ladder (internal logic)...
+23:45:52 INF [api_util display_ 838 ] 
+                                      --- Relationship between Wayne Gault and Frances Mc Hardy (API Report) ---
+23:45:52 DEB [api_util _extract 715 ] _extract_ladder_html: Attempting JSONP extraction...
+23:45:52 DEB [api_util _extract 725 ] _extract_ladder_html: Found HTML via JSONP. Length: 360
+23:45:52 DEB [api_util _extract 805 ] _extract_ladder_html: Successfully unescaped HTML.
+23:45:52 DEB [api_util format_a 567 ] Path item 1 (last): Removed prefix, using description: 'Son of Frances Margaret Milne'
+23:45:52 INF [api_util log_msg  947 ] - display_raw_relationship_ladder execution: PASSED (No exceptions)
+23:45:52 INF [api_util log_msg  947 ] - Testing format_api_relationship_path...
+23:45:52 DEB [api_util format_a 567 ] Path item 1 (last): Removed prefix, using description: 'Son of Frances Margaret Milne'
+23:45:52 INF [api_util log_msg  947 ] - format_api_relationship_path call: PASSED
+23:45:52 INF [api_util log_msg  947 ] - Formatted Output (Preview):
+                                      Frances Margaret Milne
+                                      -> Frances Margaret Milne is the Mother of Wayne Gault...
+                                      
+23:45:52 INF [api_util log_msg  947 ] 
+                                      --- Finalizing: Closing Session ---
+23:45:52 DEB [utils    close_se 2732] Attempting to close WebDriver session...
+23:45:52 DEB [utils    close_se 2735] WebDriver session quit successfully.
+23:45:52 DEB [utils    close_se 2754] Closing database connection pool...
+23:45:52 DEB [utils    cls_db_c 2185] SessionManager ID=115815536 cls_db_conn called (keep_db=False). Disposing Engine ID: 114856096
+23:45:52 DEB [utils    cls_db_c 2190] Engine ID=114856096 disposed successfully.
+23:45:52 INF [api_util self_che 1406] api_utils self-check status: PASS
+23:45:52 DEB [cache    close_ca 261 ] Closing DiskCache connection...
+23:45:52 DEB [cache    close_ca 263 ] DiskCache connection closed.
+00:04:27 INF [api_util log_msg  947 ] 
+                                      [api_utils.py self-check starting...]
+00:04:27 INF [api_util log_msg  947 ] 
+                                      --- Phase 0: Prerequisite Checks ---
+00:04:27 INF [api_util log_msg  947 ] - BeautifulSoup Import: OK
+00:04:27 INF [api_util log_msg  947 ] - format_name Import/Fallback: OK
+00:04:27 INF [api_util log_msg  947 ] - ordinal_case Import/Fallback: OK
+00:04:27 INF [api_util log_msg  947 ] - _parse_date Import/Fallback: OK
+00:04:27 INF [api_util log_msg  947 ] - _clean_display_date Import/Fallback: OK
+00:04:27 INF [api_util log_msg  947 ] - Config Check: Essential credentials/URLs/IDs present.
+00:04:27 INF [api_util log_msg  947 ] 
+                                      --- Phase 1: Session Setup & Login ---
+00:04:27 DEB [utils    __init__ 1017] Initialized shared requests.Session with HTTPAdapter.
+00:04:27 DEB [utils    __init__ 1040] Initialized shared cloudscraper instance with retry strategy.
+00:04:27 DEB [utils    __init__ 813 ] RateLimiter Init: Capacity=10.0, FillRate=2.0/s, InitialDelay=0.50s, MaxDelay=60.0s, Backoff=1.80, Decrease=0.98
+00:04:27 DEB [utils    __init__ 1058] SessionManager instance created: ID=111286448
+                                      
+00:04:27 DEB [utils    start_se 1070] --- SessionManager Phase 1: Starting Driver (api_utils Self Check Start) ---
+                                      
+00:04:27 DEB [utils    _initial 1472] SessionManager ID=111286448 initializing SQLAlchemy Engine/Session...
+00:04:27 DEB [utils    _initial 1490] DB Path: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ancestry.db
+00:04:27 DEB [utils    _initial 1503] DB Pool Config: Size=10, MaxOverflow=5, Timeout=30
+00:04:27 DEB [utils    _initial 1518] Created NEW SQLAlchemy engine: ID=116768736 for SM ID=111286448
+00:04:27 DEB [utils    _initial 1542] Created Session factory for Engine ID=116768736
+00:04:27 DEB [utils    enable_s 1532] SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal).
+00:04:27 DEB [database _create_ 310 ] Executing CREATE VIEW statement for 'messages' view...
+00:04:27 DEB [database _create_ 313 ] Database view 'messages' created or already exists.
+00:04:27 DEB [utils    _initial 1547] DB tables checked/created successfully.
+00:04:27 DEB [utils    start_se 1103] Initializing WebDriver instance (using init_webdvr)...
+00:04:27 DEB [chromedr init_web 175 ] WebDriver initialization attempt 1/3...
+00:04:27 INF [chromedr init_web 192 ] User data directory (no --profile-directory):
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\chrome_automation_profile
+00:04:27 DEB [chromedr init_web 203 ] Using browser executable:
+                                      C:\Program Files\Google\Chrome\Application\chrome.exe
+00:04:27 DEB [chromedr init_web 220 ] Setting User-Agent:
+                                      Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36
+00:04:27 DEB [chromedr init_web 229 ] Letting undetected_chromedriver auto-manage ChromeDriver version (self-patching mode).
+00:04:27 INF [chromedr init_web 231 ] [init_webdvr] Attempting uc.Chrome() self-patching (attempt 1)...
+00:04:30 INF [chromedr init_web 234 ] [init_webdvr] uc.Chrome() self-patching succeeded in 2.56s (attempt 1)
+00:04:30 DEB [chromedr init_web 235 ] WebDriver instance object potentially created (attempt 1).
+00:04:30 DEB [chromedr init_web 277 ] User-Agent override applied via CDP.
+00:04:30 DEB [chromedr init_web 282 ] Attempting to minimize window (non-headless mode)...
+00:04:30 DEB [chromedr init_web 285 ] Browser window minimized.
+00:04:30 DEB [chromedr init_web 309 ] WebDriver instance fully configured successfully (attempt 1).
+00:04:30 DEB [utils    start_se 1113] WebDriver initialization successful.
+00:04:30 DEB [utils    start_se 1115] Navigating to Base URL (https://www.ancestry.co.uk/) to stabilize...
+00:04:30 DEB [utils    nav_to_p 4921] Navigation Attempt 1/3 to: https://www.ancestry.co.uk/
+00:04:30 DEB [utils    nav_to_p 4952] Executing driver.get('https://www.ancestry.co.uk/')...
+00:04:32 DEB [utils    nav_to_p 4977] Landed on URL base: https://www.ancestry.co.uk
+00:04:34 DEB [utils    nav_to_p 5106] On correct URL base. Waiting up to 20s for selector: 'body'
+00:04:34 DEB [utils    nav_to_p 5113] Navigation successful and element 'body' found on: https://www.ancestry.co.uk/
+00:04:34 DEB [utils    start_se 1128] Initial navigation to Base URL successful.
+00:04:34 DEB [utils    start_se 1135] --- SessionManager Phase 1: Driver Start Successful ---
+00:04:34 INF [api_util log_msg  947 ] - SessionManager.start_sess(): PASSED
+00:04:34 DEB [utils    ensure_s 1181] TRACE: Entered ensure_session_ready (Action: api_utils Self Check Ready)
+00:04:34 DEB [utils    ensure_d 1159] Driver already live (Action: api_utils Self Check Ready - Ensure Driver).
+00:04:34 DEB [utils    ensure_s 1197] TRACE: Calling _perform_readiness_checks
+00:04:34 DEB [utils    _perform 1264] Performing readiness checks (Attempt 1/2, Action: api_utils Self Check Ready - Readiness Checks)...
+00:04:34 DEB [utils    login_st 4736] Checking login status (API prioritized)...
+00:04:34 DEB [utils    login_st 4751] Attempting API login verification (_verify_api_login_status)...
+00:04:34 DEB [utils    _verify_ 2506] Verifying login status via API endpoint: https://www.ancestry.co.uk/api/uhome/secure/rest/header/dna...
+00:04:34 DEB [utils    _verify_ 2516] Syncing cookies before API login check...
+00:04:34 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:34 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:34 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/header/dna (Timeout: 15s, AllowRedirects: True)
+00:04:34 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:34 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:34 DEB [utils    _api_req 3219] [API Login Verification (header/dna)] Cookies synced (Attempt 1).
+00:04:34 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.568s (CurrentDelay: 0.50s)
+00:04:35 DEB [utils    _api_req 3244] [API Login Verification (header/dna)] Rate limit wait: 0.57s (Attempt 1)
+00:04:35 DEB [utils    _api_req 3265] [_api_req Attempt 1 'API Login Verification (header/dna)'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-884d56e...9e-01', 'tracestate': '2611750@nr...74673', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9'}
+00:04:35 DEB [utils    _api_req 3274] [_api_req Attempt 1 'API Login Verification (header/dna)'] >>> Calling requests.request...
+00:04:35 DEB [utils    _api_req 3288] [_api_req Attempt 1 'API Login Verification (header/dna)'] <<< requests.request returned.
+00:04:35 DEB [utils    _api_req 3294] <-- Response Status: 200 
+00:04:35 DEB [utils    _verify_ 2559] API Login Verification (header/dna): API login check successful ('testId' found).
+00:04:35 DEB [utils    login_st 4755] Login status confirmed TRUE via API check.
+00:04:35 DEB [utils    _perform 1362] Checking/Handling current URL...
+00:04:35 DEB [utils    _check_a 1582] Current URL for check: https://www.ancestry.co.uk/
+00:04:35 DEB [utils    _check_a 1665] Current URL is suitable, no extra navigation needed.
+00:04:35 DEB [utils    _perform 1368] URL check/handling OK.
+00:04:35 DEB [utils    _perform 1371] Verifying essential cookies...
+00:04:35 DEB [utils    get_cook 1849] Waiting up to 5s for cookies: ['ANCSESSIONID', 'SecureATT']...
+00:04:35 DEB [utils    get_cook 1870] All required cookies found: ['ANCSESSIONID', 'SecureATT'].
+00:04:35 DEB [utils    _perform 1378] Essential cookies OK.
+00:04:35 DEB [utils    _perform 1381] Syncing cookies to requests session...
+00:04:35 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:35 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:35 DEB [utils    _perform 1384] Cookies synced.
+00:04:35 DEB [utils    _perform 1391] Ensuring CSRF token...
+00:04:35 DEB [utils    get_csrf 1787] Attempting to fetch fresh CSRF token from: https://www.ancestry.co.uk/discoveryui-matches/parents/api/csrfToken
+00:04:35 DEB [utils    get_cook 1849] Waiting up to 10s for cookies: ['ANCSESSIONID', 'SecureATT']...
+00:04:35 DEB [utils    get_cook 1870] All required cookies found: ['ANCSESSIONID', 'SecureATT'].
+00:04:35 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/discoveryui-matches/parents/api/csrfToken (Timeout: 60s, AllowRedirects: True)
+00:04:35 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:35 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:35 DEB [utils    _api_req 3219] [CSRF Token API] Cookies synced (Attempt 1).
+00:04:35 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.508s (CurrentDelay: 0.50s)
+00:04:36 DEB [utils    _api_req 3244] [CSRF Token API] Rate limit wait: 0.51s (Attempt 1)
+00:04:36 DEB [utils    _api_req 3265] [_api_req Attempt 1 'CSRF Token API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-1b1708e...85-01', 'tracestate': '2611750@nr...75928', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9'}
+00:04:36 DEB [utils    _api_req 3274] [_api_req Attempt 1 'CSRF Token API'] >>> Calling requests.request...
+00:04:36 DEB [utils    _api_req 3288] [_api_req Attempt 1 'CSRF Token API'] <<< requests.request returned.
+00:04:36 DEB [utils    _api_req 3294] <-- Response Status: 200 OK
+00:04:36 DEB [utils    get_csrf 1811] CSRF token successfully retrieved (Length: 144).
+00:04:36 DEB [utils    _perform 1400] CSRF token OK.
+00:04:36 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+00:04:36 DEB [utils    ensure_s 1201] TRACE: _perform_readiness_checks returned: True
+00:04:36 DEB [utils    _retriev 1673] TRACE: Entered _retrieve_identifiers
+00:04:36 DEB [utils    _retriev 1682] Retrieving profile ID (ucdmid)...
+00:04:36 DEB [utils    get_my_p 2211] Attempting to fetch own profile ID (ucdmid)...
+00:04:36 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid (Timeout: 60s, AllowRedirects: True)
+00:04:36 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:36 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:36 DEB [utils    _api_req 3219] [Get my profile_id] Cookies synced (Attempt 1).
+00:04:36 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.525s (CurrentDelay: 0.50s)
+00:04:37 DEB [utils    _api_req 3244] [Get my profile_id] Rate limit wait: 0.53s (Attempt 1)
+00:04:37 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get my profile_id'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'ancestry-clientpath': 'p13n-js', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-d78e74c...10-01', 'tracestate': '2611750@nr...76795', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9'}
+00:04:37 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get my profile_id'] >>> Calling requests.request...
+00:04:37 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get my profile_id'] <<< requests.request returned.
+00:04:37 DEB [utils    _api_req 3294] <-- Response Status: 200 OK
+00:04:37 DEB [utils    get_my_p 2234] Successfully retrieved profile_id: 07BDD45E-0006-0000-0000-000000000000
+00:04:37 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+00:04:37 DEB [utils    _retriev 1698] Retrieving UUID (testId)...
+00:04:37 DEB [utils    get_my_u 2272] Attempting to fetch own UUID (testId) from header/dna API...
+00:04:37 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/header/dna (Timeout: 60s, AllowRedirects: True)
+00:04:37 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:37 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:37 DEB [utils    _api_req 3219] [Get UUID API] Cookies synced (Attempt 1).
+00:04:37 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.502s (CurrentDelay: 0.50s)
+00:04:38 DEB [utils    _api_req 3244] [Get UUID API] Rate limit wait: 0.50s (Attempt 1)
+00:04:38 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get UUID API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-6230ac9...de-01', 'tracestate': '2611750@nr...77590', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+00:04:38 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get UUID API'] >>> Calling requests.request...
+00:04:38 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get UUID API'] <<< requests.request returned.
+00:04:38 DEB [utils    _api_req 3294] <-- Response Status: 200 
+00:04:38 DEB [utils    get_my_u 2286] Successfully retrieved UUID: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+00:04:38 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+00:04:38 DEB [utils    _retriev 1712] Retrieving tree ID for tree name: 'Gault Family'...
+00:04:38 DEB [utils    get_my_t 2327] Attempting to fetch tree ID for TREE_NAME='Gault Family'...
+00:04:38 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/header/trees (Timeout: 60s, AllowRedirects: True)
+00:04:38 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:38 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:38 DEB [utils    _api_req 3219] [Header Trees API] Cookies synced (Attempt 1).
+00:04:38 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.480s (CurrentDelay: 0.50s)
+00:04:39 DEB [utils    _api_req 3244] [Header Trees API] Rate limit wait: 0.48s (Attempt 1)
+00:04:39 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Header Trees API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-7d2453d...33-01', 'tracestate': '2611750@nr...78543', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+00:04:39 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Header Trees API'] >>> Calling requests.request...
+00:04:39 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Header Trees API'] <<< requests.request returned.
+00:04:39 DEB [utils    _api_req 3294] <-- Response Status: 200 
+00:04:39 DEB [utils    get_my_t 2358] Found tree ID '175946702' for tree 'Gault Family'.
+00:04:39 INF [utils    _retriev 1724] My tree id: 175946702
+00:04:39 DEB [utils    _retriev 1734] TRACE: Exiting _retrieve_identifiers (Overall success: True)
+00:04:39 DEB [utils    _retriev 1743] TRACE: Entered _retrieve_tree_owner
+00:04:39 DEB [utils    _retriev 1759] Retrieving tree owner name...
+00:04:39 DEB [utils    get_tree 2415] Attempting to fetch tree owner name for tree ID: 175946702...
+00:04:39 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/api/uhome/secure/rest/user/tree-info?tree_id=175946702 (Timeout: 60s, AllowRedirects: True)
+00:04:39 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:39 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:39 DEB [utils    _api_req 3219] [Tree Owner Name API] Cookies synced (Attempt 1).
+00:04:39 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.596s (CurrentDelay: 0.50s)
+00:04:39 DEB [utils    _api_req 3244] [Tree Owner Name API] Rate limit wait: 0.60s (Attempt 1)
+00:04:39 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Tree Owner Name API'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'ancestry-clientpath': 'Browser:meexp-uhome', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-228d0ed...8f-01', 'tracestate': '2611750@nr...79387', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+00:04:39 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Tree Owner Name API'] >>> Calling requests.request...
+00:04:40 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Tree Owner Name API'] <<< requests.request returned.
+00:04:40 DEB [utils    _api_req 3294] <-- Response Status: 200 
+00:04:40 DEB [utils    get_tree 2432] Found tree owner 'Wayne Gault' for tree ID 175946702.
+00:04:40 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+00:04:40 DEB [utils    _retriev 1774] TRACE: Exiting _retrieve_tree_owner (success)
+00:04:40 DEB [utils    ensure_s 1226] Identifiers after fetch: profile_id=07BDD45E-0006-0000-0000-000000000000, uuid=FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7, tree_id=175946702
+00:04:40 DEB [utils    ensure_s 1229] Tree owner name after fetch: Wayne Gault
+00:04:40 DEB [utils    ensure_s 1240] TRACE: Set self.session_ready to: True (ChecksOK: True, IDsOK: True, OwnerOK: True)
+00:04:40 DEB [utils    ensure_s 1243] TRACE: Exiting ensure_session_ready (returning True)
+00:04:40 INF [api_util log_msg  947 ] - SessionManager.ensure_session_ready(): PASSED
+00:04:40 INF [api_util log_msg  947 ] 
+                                      --- Phase 2: Get Target Info & Validate Config ---
+00:04:40 INF [api_util log_msg  947 ] - Target Profile ID (TESTING_PROFILE_ID): 08FA6E79-0006-0000-0000-000000000000
+00:04:40 INF [api_util log_msg  947 ] - Target Person ID (TESTING_PERSON_TREE_ID): 102281560544
+00:04:40 INF [api_util log_msg  947 ] - Target Tree ID (MY_TREE_ID): 175946702
+00:04:40 INF [api_util log_msg  947 ] - Target Owner Name: Wayne Gault
+00:04:40 INF [api_util log_msg  947 ] - Getting target display name from Profile API: https://www.ancestry.co.uk/app-api/express/v1/profiles/details?userId=08FA6E79-0006-0000-0000-000000000000
+00:04:40 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/app-api/express/v1/profiles/details?userId=08FA6E79-0006-0000-0000-000000000000 (Timeout: 60s, AllowRedirects: True)
+00:04:40 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:40 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:40 DEB [utils    _api_req 3219] [Get Target Name (Profile Details)] Cookies synced (Attempt 1).
+00:04:40 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.556s (CurrentDelay: 0.50s)
+00:04:40 DEB [utils    _api_req 3244] [Get Target Name (Profile Details)] Rate limit wait: 0.56s (Attempt 1)
+00:04:40 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get Target Name (Profile Details)'] Sending Headers: {'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.ancestry.co.uk/', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'ancestry-clientpath': 'express-fe', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-c318a40...37-01', 'tracestate': '2611750@nr...80292', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+00:04:40 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get Target Name (Profile Details)'] >>> Calling requests.request...
+00:04:41 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get Target Name (Profile Details)'] <<< requests.request returned.
+00:04:41 DEB [utils    _api_req 3294] <-- Response Status: 200 
+00:04:41 INF [api_util log_msg  947 ] - Target Display Name found: 'Frances Mc Hardy'
+00:04:41 INF [api_util log_msg  947 ] 
+                                      --- Phase 3: Test parse_ancestry_person_details (Profile Details API) ---
+00:04:41 INF [api_util log_msg  947 ] - Using Profile Details API response from Phase 2.
+00:04:41 DEB [api_util parse_an 362 ] Parsed API details for 'Frances Mc Hardy': ID=08FA6E79-0006-0000-0000-000000000000, Tree=175946702, Born='N/A' in 'None', Died='N/A' in 'None', Gender='None', Living=None
+00:04:41 INF [api_util log_msg  947 ] - parse_ancestry_person_details call: SUCCESS
+00:04:41 INF [api_util log_msg  947 ] - Parsed Details Validation: PASSED (Name: 'Frances Mc Hardy', Link: https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/08FA6E79-0006-0000-0000-000000000000/facts)
+00:04:41 INF [api_util log_msg  947 ] 
+                                      --- Phase 4: Test Relationship Ladder Parsing (using /getladder) ---
+00:04:41 INF [api_util log_msg  947 ] - Calling Tree Relationship Ladder API: https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544/getladder?callback=__ancestry_jsonp_1746054281062&_=1746054281062
+00:04:41 DEB [utils    _api_req 3164] [Get Tree Ladder API (Self Check)] Applied 2 explicit header overrides.
+00:04:41 DEB [utils    _api_req 3180] API Req: GET https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544/getladder?callback=__ancestry_jsonp_1746054281062&_=1746054281062 (Timeout: 20s, AllowRedirects: True)
+00:04:41 DEB [utils    _sync_co 1937] Retrieved 42 cookies from WebDriver for sync.
+00:04:41 DEB [utils    _sync_co 2010] Successfully synced 42 cookies to requests session.
+00:04:41 DEB [utils    _api_req 3219] [Get Tree Ladder API (Self Check)] Cookies synced (Attempt 1).
+00:04:41 DEB [utils    wait     842 ] Token available (9.00 left). Applying base delay: 0.487s (CurrentDelay: 0.50s)
+00:04:41 DEB [utils    _api_req 3244] [Get Tree Ladder API (Self Check)] Rate limit wait: 0.49s (Attempt 1)
+00:04:41 DEB [utils    _api_req 3265] [_api_req Attempt 1 'Get Tree Ladder API (Self Check)'] Sending Headers: {'Accept': 'text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01', 'Referer': 'https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544/facts', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', '_method': 'GET', 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'newrelic': 'eyJ2IjpbMC...wIn19', 'traceparent': '00-37f359c...79-01', 'tracestate': '2611750@nr...81079', 'ancestry-context-ube': 'eyJldmVudE...7fSJ9', 'ancestry-userid': '07BDD45E-0006-0000-0000-000000000000'}
+00:04:41 DEB [utils    _api_req 3274] [_api_req Attempt 1 'Get Tree Ladder API (Self Check)'] >>> Calling requests.request...
+00:04:42 DEB [utils    _api_req 3288] [_api_req Attempt 1 'Get Tree Ladder API (Self Check)'] <<< requests.request returned.
+00:04:42 DEB [utils    _api_req 3294] <-- Response Status: 200 OK
+00:04:42 INF [api_util log_msg  947 ] - Tree Ladder API call: SUCCESS (Received string)
+00:04:42 INF [api_util log_msg  947 ] - Extracting HTML using _extract_ladder_html...
+00:04:42 DEB [api_util _extract 715 ] _extract_ladder_html: Attempting JSONP extraction...
+00:04:42 DEB [api_util _extract 725 ] _extract_ladder_html: Found HTML via JSONP. Length: 360
+00:04:42 DEB [api_util _extract 805 ] _extract_ladder_html: Successfully unescaped HTML.
+00:04:42 INF [api_util log_msg  947 ] - HTML Extraction SUCCESS.
+00:04:42 INF [api_util log_msg  947 ] - Testing display_raw_relationship_ladder (internal logic)...
+00:04:42 INF [api_util display_ 838 ] 
+                                      --- Relationship between Wayne Gault and Frances Mc Hardy (API Report) ---
+00:04:42 DEB [api_util _extract 715 ] _extract_ladder_html: Attempting JSONP extraction...
+00:04:42 DEB [api_util _extract 725 ] _extract_ladder_html: Found HTML via JSONP. Length: 360
+00:04:42 DEB [api_util _extract 805 ] _extract_ladder_html: Successfully unescaped HTML.
+00:04:42 DEB [api_util format_a 567 ] Path item 1 (last): Removed prefix, using description: 'Son of Frances Margaret Milne'
+00:04:42 INF [api_util log_msg  947 ] - display_raw_relationship_ladder execution: PASSED (No exceptions)
+00:04:42 INF [api_util log_msg  947 ] - Testing format_api_relationship_path...
+00:04:42 DEB [api_util format_a 567 ] Path item 1 (last): Removed prefix, using description: 'Son of Frances Margaret Milne'
+00:04:42 INF [api_util log_msg  947 ] - format_api_relationship_path call: PASSED
+00:04:42 INF [api_util log_msg  947 ] - Formatted Output (Preview):
+                                      Frances Margaret Milne
+                                      -> Frances Margaret Milne is the Mother of Wayne Gault...
+                                      
+00:04:42 INF [api_util log_msg  947 ] 
+                                      --- Finalizing: Closing Session ---
+00:04:42 DEB [utils    close_se 2732] Attempting to close WebDriver session...
+00:04:42 DEB [utils    close_se 2735] WebDriver session quit successfully.
+00:04:42 DEB [utils    close_se 2754] Closing database connection pool...
+00:04:42 DEB [utils    cls_db_c 2185] SessionManager ID=111286448 cls_db_conn called (keep_db=False). Disposing Engine ID: 116768736
+00:04:42 DEB [utils    cls_db_c 2190] Engine ID=116768736 disposed successfully.
+00:04:42 INF [api_util self_che 1406] api_utils self-check status: PASS
+00:04:42 DEB [cache    close_ca 261 ] Closing DiskCache connection...
+00:04:42 DEB [cache    close_ca 263 ] DiskCache connection closed.

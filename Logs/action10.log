@@ -1,0 +1,40 @@
+12:21:17 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+12:21:17 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+12:21:17 ERR [action10 <module> 36  ] Failed to import gedcom_utils: cannot import name 'COMMON_SCORING_WEIGHTS' from 'gedcom_utils' (C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py)
+12:21:17 INF [action10 main     268 ] --- Action 10: GEDCOM Report Starting ---
+12:21:17 CRI [action10 main     272 ] Required GEDCOM library (ged4py) or core gedcom_utils classes are unavailable.
+12:25:28 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+12:25:28 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+12:25:28 ERR [action10 <module> 36  ] Failed to import gedcom_utils: cannot import name 'COMMON_SCORING_WEIGHTS' from 'gedcom_utils' (C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py)
+12:25:28 INF [action10 main     268 ] --- Action 10: GEDCOM Report Starting ---
+12:25:28 CRI [action10 main     272 ] Required GEDCOM library (ged4py) or core gedcom_utils classes are unavailable.
+12:26:26 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+12:26:26 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+12:26:26 INF [action10 main     288 ] --- Action 10: GEDCOM Report Starting ---
+12:26:26 INF [action10 main     323 ] Loading GEDCOM file: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged
+12:26:35 INF [action10 main     349 ] GEDCOM loaded successfully in 8.79 seconds.
+12:26:35 INF [action10 handle_g 80  ] 
+                                      --- Person Details & Family (GEDCOM Report) ---
+12:26:35 INF [action10 handle_g 83  ] 
+                                      Enter search criteria for the person of interest:
+12:28:22 INF [action10 main     390 ] --- Action 10: GEDCOM Report Finished ---
+12:41:11 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+12:41:11 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+12:41:11 INF [action10 main     288 ] --- Action 10: GEDCOM Report Starting ---
+12:41:11 INF [action10 main     323 ] Loading GEDCOM file: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged
+12:41:20 INF [action10 main     349 ] GEDCOM loaded successfully in 8.89 seconds.
+12:41:20 INF [action10 handle_g 80  ] 
+                                      --- Person Details & Family (GEDCOM Report) ---
+12:41:20 INF [action10 handle_g 83  ] 
+                                      Enter search criteria for the person of interest:
+12:41:33 INF [action10 main     390 ] --- Action 10: GEDCOM Report Finished ---
+12:54:52 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+12:54:52 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+12:54:52 INF [action10 main     288 ] --- Action 10: GEDCOM Report Starting ---
+12:54:52 INF [action10 main     323 ] Loading GEDCOM file: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\Gault Family.ged
+12:55:00 INF [action10 main     349 ] GEDCOM loaded successfully in 8.78 seconds.
+12:55:00 INF [action10 handle_g 80  ] 
+                                      --- Person Details & Family (GEDCOM Report) ---
+12:55:00 INF [action10 handle_g 83  ] 
+                                      Enter search criteria for the person of interest:
+12:55:14 INF [action10 main     390 ] --- Action 10: GEDCOM Report Finished ---

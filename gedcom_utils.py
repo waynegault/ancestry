@@ -32,46 +32,17 @@ import difflib
 import traceback
 
 # --- Third-party imports ---
-try:
-    from ged4py.parser import GedcomReader
-    from ged4py.model import Individual, Record, Name, NameRec
-
-    GedcomIndividualType: TypeAlias = Individual
-    GedcomRecordType: TypeAlias = Record
-    GedcomNameType: TypeAlias = Name
-    GedcomNameRecType: TypeAlias = NameRec
-    GedcomReaderType: TypeAlias = GedcomReader
-    GED4PY_AVAILABLE = True
-except ImportError:
-    GedcomIndividualType = type(None)
-    GedcomRecordType = type(None)
-    GedcomNameType = type(None)
-    GedcomNameRecType = type(None)
-    GedcomReaderType = type(None)
-    GED4PY_AVAILABLE = False
-    logging.warning(
-        "ged4py library not found. GEDCOM functionality will be unavailable."
-    )
-
-
-# --- Local application imports ---
-try:
-    from utils import format_name, ordinal_case
-    from config import config_instance
-except ImportError as local_import_err:
-    logging.error(
-        f"Failed to import local modules (utils/config): {local_import_err}. Using basic fallbacks."
-    )
-    config_instance = None
-
-    def format_name(name: Optional[str]) -> str:
-        return str(name).title() if name else "Unknown"
-
-    def ordinal_case(text: Union[str, int]) -> str:
-        return str(text)
-
+from ged4py.parser import GedcomReader
+from ged4py.model import Individual, Record, Name, NameRec
+from utils import format_name, ordinal_case
+from config import config_instance
 
 # --- Constants ---
+GedcomIndividualType: TypeAlias = Individual
+GedcomRecordType: TypeAlias = Record
+GedcomNameType: TypeAlias = Name
+GedcomNameRecType: TypeAlias = NameRec
+GedcomReaderType: TypeAlias = GedcomReader
 TAG_INDI = "INDI"
 TAG_BIRTH = "BIRT"
 TAG_DEATH = "DEAT"
@@ -95,36 +66,36 @@ logger = logging.getLogger("gedcom_utils")
 # ==============================================
 # Utility Functions (Independent of GedcomData)
 # ==============================================
-# NOTE: Functions remain IDENTICAL to the previous version (V17.11)
+
 def _is_individual(obj: Any) -> bool:
     return (
-        GED4PY_AVAILABLE and obj is not None and isinstance(obj, GedcomIndividualType)
+         obj is not None and isinstance(obj, GedcomIndividualType)
     )
 
 
 def _is_record(obj: Any) -> bool:
-    return GED4PY_AVAILABLE and obj is not None and isinstance(obj, GedcomRecordType)
+    return  obj is not None and isinstance(obj, GedcomRecordType)
 
 
 def _is_name_rec(obj: Any) -> bool:
-    return GED4PY_AVAILABLE and obj is not None and isinstance(obj, GedcomNameRecType)
+    return  obj is not None and isinstance(obj, GedcomNameRecType)
 
 
 def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
     if not xref_id or not isinstance(xref_id, str):
         return None
-    match = re.match(r"^@?([IFSNMCXO][0-9A-Z\-]+)@?$", xref_id.strip().upper())
+    # Updated regex to restrict to digits/hyphens after prefix
+    match = re.match(r"^@?([IFSNMCXO][0-9\-]+)@?$", xref_id.strip().upper())
     if match:
         return match.group(1)
     else:
-        search_match = re.search(r"([IFSNMCXO][0-9A-Z\-]+)", xref_id.strip().upper())
+        # Updated fallback regex to match same pattern
+        search_match = re.search(r"([IFSNMCXO][0-9\-]+)", xref_id.strip().upper())
         if search_match:
-            logger.debug(
-                f"_normalize_id: Used fallback regex for '{xref_id}' -> '{search_match.group(1)}'"
-            )
+            logger.debug(f"...")
             return search_match.group(1)
         else:
-            logger.warning(f"_normalize_id: Invalid format for xref_id: '{xref_id}'")
+            logger.warning(f"...")
             return None
 
 
@@ -145,6 +116,7 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
 
 
 def _get_full_name(indi: GedcomIndividualType) -> str:
+    """Safely gets formatted name using Name.format(). Handles None/errors."""
     if not _is_individual(indi):
         if hasattr(indi, "value") and _is_individual(getattr(indi, "value", None)):
             indi = indi.value
@@ -154,18 +126,36 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
             )
             return "Unknown (Invalid Type)"
     try:
+        # First try to access the name attribute directly (as in temp.py)
+        if hasattr(indi, "name"):
+            name_rec = indi.name
+            if _is_name_rec(name_rec):
+                # Use the ged4py Name object's format method
+                formatted_name = name_rec.format()
+                # Clean up and format the name
+                cleaned_name = format_name(formatted_name)
+                return (
+                    cleaned_name
+                    if cleaned_name and cleaned_name != "Unknown"
+                    else "Unknown (Empty Name)"
+                )
+
+        # Fallback to using sub_tag method if name attribute doesn't exist or isn't a Name object
         name_rec = indi.sub_tag(TAG_NAME)
         if _is_name_rec(name_rec):
             ged4py_formatted_name = name_rec.format()
             cleaned_name = format_name(ged4py_formatted_name)
-        if cleaned_name and cleaned_name != "Unknown":
-            return cleaned_name
+            if cleaned_name and cleaned_name != "Unknown":
+                return cleaned_name
+
+        # Try sub_tag_value as a last resort
         name_val = indi.sub_tag_value(TAG_NAME)
         if isinstance(name_val, str) and name_val.strip():
             logger.debug(f"Using sub_tag_value fallback for name: {name_val}")
             cleaned_name = format_name(name_val)
-        if cleaned_name and cleaned_name != "Unknown":
-            return cleaned_name
+            if cleaned_name and cleaned_name != "Unknown":
+                return cleaned_name
+
         return "Unknown (No Name Found)"
     except AttributeError as ae:
         indi_id_log = extract_and_fix_id(indi) or "Unknown ID"
@@ -505,8 +495,6 @@ def explain_relationship_path(
 ) -> str:
     if not path_ids or len(path_ids) < 2:
         return "(No relationship path explanation available)"
-    if not GED4PY_AVAILABLE:
-        return "(Error: ged4py library not available for explanation)"
     if reader is None:
         return "(Error: GedcomReader not available)"
     if id_to_parents is None or id_to_children is None or indi_index is None:
@@ -586,6 +574,8 @@ def calculate_match_score(
 ) -> Tuple[float, List[str]]:
     score = 0.0
     match_reasons: List[str] = []
+
+    # --- Get Scoring Parameters ---
     weights = (
         scoring_weights
         if scoring_weights is not None
@@ -608,6 +598,8 @@ def calculate_match_score(
     year_score_range = date_flex.get("year_match_range", 1)
     fuzzy_threshold = name_flex.get("fuzzy_threshold", 0.8)
     check_starts_with = name_flex.get("check_starts_with", True)
+
+    # --- Prepare Target Data ---
     t_fname_raw = search_criteria.get("first_name")
     t_sname_raw = search_criteria.get("surname")
     t_pob_raw = search_criteria.get("birth_place")
@@ -621,6 +613,8 @@ def calculate_match_score(
     t_sname = t_sname_raw.lower() if isinstance(t_sname_raw, str) else ""
     t_pob = t_pob_raw.lower() if isinstance(t_pob_raw, str) else ""
     t_pod = t_pod_raw.lower() if isinstance(t_pod_raw, str) else ""
+
+    # --- Prepare Candidate Data ---
     c_fname_raw = candidate_data.get("first_name")
     c_sname_raw = candidate_data.get("surname")
     c_bplace_raw = candidate_data.get("birth_place")
@@ -632,8 +626,10 @@ def calculate_match_score(
     c_gender = candidate_data.get("gender")
     c_fname = c_fname_raw.lower() if isinstance(c_fname_raw, str) else ""
     c_sname = c_sname_raw.lower() if isinstance(c_sname_raw, str) else ""
-    c_bplace = c_bplace_raw.lower() if isinstance(c_bplace_raw, str) else ""
-    c_dplace = c_dplace_raw.lower() if isinstance(c_dplace_raw, str) else ""
+    c_bplace = c_bplace_raw if isinstance(c_bplace_raw, str) else ""
+    c_dplace = c_dplace_raw if isinstance(c_dplace_raw, str) else ""
+
+    # --- Name Scoring ---
     exact_first = bool(t_fname and c_fname and t_fname == c_fname)
     exact_surname = bool(t_sname and c_sname and t_sname == c_sname)
     fuzzy_first_ratio = (
@@ -677,6 +673,8 @@ def calculate_match_score(
         temp_name_reasons.append("Boost Exact Name")
     score += name_score
     match_reasons.extend(temp_name_reasons)
+
+    # --- Date Scoring ---
     exact_birth_date_match = bool(
         t_b_date and c_b_date and t_b_date.date() == c_b_date.date()
     )
@@ -684,10 +682,14 @@ def calculate_match_score(
         t_d_date and c_d_date and t_d_date.date() == c_d_date.date()
     )
     birth_year_match = bool(
-        t_b_year and c_b_year and abs(c_b_year - t_b_year) <= year_score_range
+        t_b_year is not None
+        and c_b_year is not None
+        and abs(c_b_year - t_b_year) <= year_score_range
     )
     death_year_match = bool(
-        t_d_year and c_d_year and abs(c_d_year - t_d_year) <= year_score_range
+        t_d_year is not None
+        and c_d_year is not None
+        and abs(c_d_year - t_d_year) <= year_score_range
     )
     death_dates_absent = bool(
         t_d_date is None and c_d_date is None and t_d_year is None and c_d_year is None
@@ -699,46 +701,81 @@ def calculate_match_score(
         temp_date_reasons.append("Exact Birth Date")
         birth_year_matched_for_boost = True
     elif birth_year_match:
-        score += weights.get("year_birth", 15)
+        year_weight = (
+            weights.get("year_birth", 15)
+            if (exact_first and exact_surname)
+            else weights.get("year_birth_fuzzy", 5)
+        )
+        score += year_weight
         temp_date_reasons.append(f"Birth Year ~{t_b_year} ({c_b_year})")
         birth_year_matched_for_boost = True
-    elif birth_year_match and not (exact_first and exact_surname):
-        score += weights.get("year_birth_fuzzy", 5)
-        temp_date_reasons.append(f"Birth Year ~{t_b_year} ({c_b_year}) (Fuzzy Wt)")
+    if (
+        not (exact_first and exact_surname)
+        and birth_year_match
+        and not exact_birth_date_match
+    ):
+        temp_date_reasons[
+            -1
+        ] += " (Fuzzy Wt)"  # Check added for not exact_birth_date_match
     if exact_death_date_match:
         score += weights.get("exact_death_date", 20)
         temp_date_reasons.append("Exact Death Date")
     elif death_year_match:
-        score += weights.get("year_death", 15)
+        year_weight = (
+            weights.get("year_death", 15)
+            if (exact_first and exact_surname)
+            else weights.get("year_death_fuzzy", 5)
+        )
+        score += year_weight
         temp_date_reasons.append(f"Death Year ~{t_d_year} ({c_d_year})")
+    if (
+        not (exact_first and exact_surname)
+        and death_year_match
+        and not exact_death_date_match
+    ):
+        temp_date_reasons[
+            -1
+        ] += " (Fuzzy Wt)"  # Check added for not exact_death_date_match
     elif death_dates_absent:
         score += weights.get("death_dates_both_absent", 5)
         temp_date_reasons.append("Death Dates Both Absent")
-    elif death_year_match and not (exact_first and exact_surname):
-        score += weights.get("year_death_fuzzy", 5)
-        temp_date_reasons.append(f"Death Year ~{t_d_year} ({c_d_year}) (Fuzzy Wt)")
     match_reasons.extend(temp_date_reasons)
     if exact_first and exact_surname and birth_year_matched_for_boost:
         score += weights.get("boost_exact_name_year", 2)
         match_reasons.append("Boost Exact Name + Year")
+
+    # --- Place Scoring ---
     temp_place_reasons = []
-    if t_pob and c_bplace and t_pob in c_bplace:
+    if t_pob and c_bplace:  # Check if both exist
+        # Convert both to lowercase for case-insensitive comparison
+        t_pob_lower = t_pob.lower()
+        c_bplace_lower = (c_bplace or "").lower()
+        # Determine weight first
         place_weight = (
             weights.get("contains_pob", 15)
             if (exact_first and exact_surname)
             else weights.get("contains_pob_fuzzy", 1)
         )
-        score += place_weight
-        temp_place_reasons.append(f"POB contains '{t_pob}'")
-    if t_pod and c_dplace and t_pod in c_dplace:
+        if t_pob_lower in c_bplace_lower:
+            score += place_weight
+            temp_place_reasons.append(f"POB contains '{t_pob}'")
+
+    if t_pod and c_dplace:  # Check if both exist
+        # Convert both to lowercase
+        t_pod_lower = t_pod.lower()
+        c_dplace_lower = (c_dplace or "").lower()
         place_weight = (
             weights.get("contains_pod", 15)
             if (exact_first and exact_surname)
             else weights.get("contains_pod_fuzzy", 1)
         )
-        score += place_weight
-        temp_place_reasons.append(f"POD contains '{t_pod}'")
+        if t_pod_lower in c_dplace_lower:
+            score += place_weight
+            temp_place_reasons.append(f"POD contains '{t_pod}'")
+
     match_reasons.extend(temp_place_reasons)
+
+    # --- Gender Scoring ---
     temp_gender_reasons = []
     if t_gender and c_gender:
         if t_gender == c_gender:
@@ -760,9 +797,12 @@ def calculate_match_score(
                 f"Gender Mismatch ({c_gender.upper()} vs {t_gender.upper()})"
             )
     match_reasons.extend(temp_gender_reasons)
-    final_score = max(0.0, round(score))
-    return final_score, sorted(list(set(match_reasons)))
 
+    # --- Final Score ---
+    final_score = max(0.0, round(score))
+    unique_reasons = sorted(list(set(match_reasons)))
+    return final_score, unique_reasons
+# End of function calculate_match_score
 
 # ==============================================
 # GedcomData Class (definition remains unchanged)
@@ -770,8 +810,6 @@ def calculate_match_score(
 class GedcomData:
     # --- Methods remain identical to previous version ---
     def __init__(self, gedcom_path: Union[str, Path]):
-        if not GED4PY_AVAILABLE:
-            raise ImportError("ged4py library is required for GedcomData class.")
         self.path = Path(gedcom_path).resolve()
         self.reader: Optional[GedcomReaderType] = None
         self.indi_index: Dict[str, GedcomIndividualType] = {}
@@ -1256,18 +1294,13 @@ class GedcomData:
                 )
                 birth_year_ged = birth_date_obj.year if birth_date_obj else None
                 death_year_ged = death_date_obj.year if death_date_obj else None
-                if (
-                    t_b_year
-                    and birth_year_ged
-                    and abs(birth_year_ged - t_b_year) > year_filter_range
-                ):
-                    continue
-                if (
-                    t_d_year
-                    and death_year_ged
-                    and abs(death_year_ged - t_d_year) > year_filter_range
-                ):
-                    continue
+                if t_b_year is not None and birth_year_ged is not None:
+                    if abs(birth_year_ged - t_b_year) > year_filter_range:
+                        continue
+                        
+                if t_d_year is not None and death_year_ged is not None:
+                    if abs(death_year_ged - t_d_year) > year_filter_range:
+                        continue
                 name_parts = indi_full_name.split()
                 c_first_name = name_parts[0] if name_parts else ""
                 c_surname = name_parts[-1] if len(name_parts) > 1 else ""
@@ -1356,19 +1389,12 @@ class GedcomData:
         )
         return limited_results
 
-
 # End of GedcomData class
 
 
 # --- Standalone Test Block ---
 if __name__ == "__main__":
-    try:
-        from config import config_instance
-    except ImportError:
-        config_instance = None
-        print(
-            "[WARNING] config.py not found or failed to import. Functional tests requiring config will be skipped."
-        )
+    from config import config_instance
 
     # --- Test Runner Setup ---
     test_results_main: List[Tuple[str, str, str]] = []
@@ -1509,44 +1535,59 @@ if __name__ == "__main__":
     )
     gedcom_data: Optional[GedcomData] = None
     gedcom_load_status = "SKIPPED"
-    gedcom_load_message = "Prerequisites not met (config or ged4py)"
-    can_load_gedcom = False
+    gedcom_load_message = "Prerequisites not met (config or ged4py)"  # Default message
+    can_load_gedcom = False  # Start as False
+    gedcom_path: Optional[Path] = None  # Initialize path
+
     if (
         config_instance
         and hasattr(config_instance, "GEDCOM_FILE_PATH")
         and config_instance.GEDCOM_FILE_PATH
     ):
-        gedcom_path = config_instance.GEDCOM_FILE_PATH
-        if GED4PY_AVAILABLE and gedcom_path.is_file():
-            can_load_gedcom = True
+        # Config path exists, now check if it's a valid file
+        potential_path = Path(config_instance.GEDCOM_FILE_PATH)
+        if potential_path.is_file():
+            gedcom_path = potential_path  # Store the valid Path object
+            can_load_gedcom = True  # <<< --- THE FIX IS HERE --- >>>
+            gedcom_load_message = f"Configured path found: {gedcom_path.name}"
         else:
-            gedcom_load_message = "ged4py not available or GEDCOM file invalid: " + str(
-                gedcom_path
-            )
+            # Path was configured but doesn't point to a file
+            gedcom_load_message = f"GEDCOM_FILE_PATH '{config_instance.GEDCOM_FILE_PATH}' is not a valid file."
+            can_load_gedcom = False  # Ensure it stays False
     else:
-        gedcom_load_message = "GEDCOM_FILE_PATH not configured"
+        # Config path was missing or empty
+        gedcom_load_message = "GEDCOM_FILE_PATH not configured or empty in config."
+        can_load_gedcom = False  # Ensure it stays False
 
-    if can_load_gedcom:
+    # Now, the instantiation test attempt:
+    if can_load_gedcom and gedcom_path:  # Check both flag and valid path
         test_name = "GedcomData Instantiation"
         logger.info(f"[ RUNNING ] {test_name}")
         try:
+            # Make sure to use the validated gedcom_path
             gedcom_data = GedcomData(gedcom_path)
             gedcom_load_status = "PASS"
             gedcom_load_message = f"Loaded {gedcom_path.name}"
             logger.info(f"[ PASS    ] {test_name}: {gedcom_load_message}")
         except Exception as e:
             gedcom_load_status = "FAIL"
-            gedcom_load_message = f"{type(e).__name__}: {e}"
+            # Use traceback for better error reporting during tests
+            gedcom_load_message = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
             logger.error(f"[ FAIL    ] {test_name}: {gedcom_load_message}")
         test_results_main.append((test_name, gedcom_load_status, gedcom_load_message))
     else:
+        # This block now correctly executes only if can_load_gedcom is False
         test_results_main.append(
             ("GedcomData Instantiation", "SKIPPED", gedcom_load_message)
         )
 
+    # --- The rest of the Section 2 tests follow ---
+    # (No changes needed below this point for this specific fix)
+
     print(
         "\n>>> IMPORTANT: Functional tests below require modifying placeholder IDs/Names <<<"
     )
+    # ... (rest of the test script remains the same) ...
     TEST_INDI_ID_1 = "I102281560836"
     TEST_INDI_ID_2 = "I102281560744"
     TEST_SEARCH_NAME = "Wayne"
