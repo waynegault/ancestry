@@ -50,7 +50,9 @@ try:
     try:
         _log_dir_path = Path(config_instance.LOG_DIR)
         LOG_DIRECTORY = _log_dir_path.resolve()  # Resolve to absolute path
-        logger_for_setup.info(f"Log directory determined from config: {LOG_DIRECTORY}\n")
+        logger_for_setup.info(
+            f"Log directory determined from config: {LOG_DIRECTORY}\n"
+        )
     except AttributeError:
         logger_for_setup.warning("config_instance.LOG_DIR not found. Using fallback.\n")
     except (TypeError, ValueError) as e:
@@ -246,7 +248,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
             elif isinstance(handler, logging.FileHandler):
                 if handler.level != numeric_log_level:
                     handler.setLevel(numeric_log_level)
-                    updated_file = True    
+                    updated_file = True
         return logger  # Return existing logger instance
 
     # Step 3: Ensure log directory exists

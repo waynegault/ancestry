@@ -1742,6 +1742,8 @@ def handle_api_report():
     except Exception as e:
         logger.error(f"API /search-results/person-card failed: {e}")
         return
+
+
 # REVISED: Main function with simplified logic
 def main():
     """Main execution flow: Load GEDCOM, process user choices for reports."""

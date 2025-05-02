@@ -127,6 +127,8 @@ def save_cache_on_exit():
         logger.error(
             f"Failed to save MSAL cache to {CACHE_FILEPATH}: {e}", exc_info=True
         )
+
+
 # End of save_cache_on_exit
 
 # Step 9: Register the save function with atexit
@@ -255,6 +257,7 @@ def acquire_token_device_flow() -> Optional[str]:
         )
         return None
 
+
 # End of acquire_token_device_flow
 
 
@@ -350,6 +353,8 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
         # Catch-all for unexpected errors
         logger.error(f"Unexpected error getting To-Do list ID: {e}", exc_info=True)
         return None
+
+
 # End of get_todo_list_id
 
 
@@ -437,6 +442,8 @@ def create_todo_task(
     except Exception as e:
         logger.error(f"Unexpected error creating To-Do task: {e}", exc_info=True)
         return False
+
+
 # End of create_todo_task
 
 

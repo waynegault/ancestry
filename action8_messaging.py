@@ -181,6 +181,7 @@ def load_message_templates() -> Dict[str, str]:
         )
         return {}
 
+
 # End of load_message_templates
 
 # Load templates into a global variable for easy access
@@ -325,6 +326,8 @@ def determine_next_message_type(
     else:
         logger.debug(f"  Final Decision: Skip ({skip_reason}).")
     return next_type
+
+
 # End of determine_next_message_type
 
 # ------------------------------------------------------------------------------
@@ -586,6 +589,8 @@ def _commit_messaging_batch(
             f"Error committing messaging batch (Batch {batch_num}): {e}", exc_info=True
         )
         return False
+
+
 # End of _commit_messaging_batch
 
 
@@ -743,6 +748,8 @@ def _prefetch_messaging_data(
             f"Unexpected error during messaging pre-fetching: {e}", exc_info=True
         )
         return None, None, None, None
+
+
 # End of _prefetch_messaging_data
 
 
@@ -1124,6 +1131,8 @@ def _process_single_person(
             f"Unexpected critical error processing {log_prefix}: {e}", exc_info=True
         )
         return None, None, "error"  # Return None, None, 'error'
+
+
 # End of _process_single_person
 
 
@@ -1228,7 +1237,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 "desc": "",  # Add space after desc for alignment
                 "unit": " person",
                 "dynamic_ncols": True,
-                "leave": True, 
+                "leave": True,
                 "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
             }
             logger.debug("Processing candidates...")
@@ -1473,6 +1482,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
     # Step 7: Return overall success status
     return overall_success
+
+
 # End of send_messages_to_matches
 
 
@@ -1537,6 +1548,8 @@ def main():
         logger.info(
             f"--- Action 8 Standalone Test Finished (Overall Success: {action_success}) ---"
         )
+
+
 # End of main
 
 if __name__ == "__main__":

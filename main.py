@@ -38,6 +38,7 @@ from action6_gather import coord as coord_action_func, nav_to_list
 from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
+
 # Ensure that run_action10 is defined in action10.py or remove this line if not needed
 try:
     from action10 import run_action10
@@ -73,7 +74,6 @@ from utils import (
     nav_to_page,
     retry,
 )
-
 
 
 def menu():
@@ -249,7 +249,10 @@ def exec_actn(
         final_args.extend(args)
 
         # Handle keyword args specifically for coord_action_func
-        if action_name in ("coord_action_func", "coord_action") and "start" in func_sig.parameters:
+        if (
+            action_name in ("coord_action_func", "coord_action")
+            and "start" in func_sig.parameters
+        ):
             start_val = 1
             int_args = [a for a in args if isinstance(a, int)]
             if int_args:

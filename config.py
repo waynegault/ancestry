@@ -191,36 +191,33 @@ class Config_Class(BaseConfig):
 
     # --- Scoring Configuration (Class Attributes) ---
     COMMON_SCORING_WEIGHTS: Dict[str, int] = {
-        "exact_first_name": 20,
-        "exact_surname": 20,
-        "fuzzy_first_name": 15,
-        "fuzzy_surname": 15,
-        "starts_first_name": 3,
-        "starts_surname": 5,
-        "boost_exact_full_name": 20,
-        "exact_birth_date": 20,
-        "exact_death_date": 20,
-        "year_birth": 15,
-        "year_death": 15,
-        "death_dates_both_absent": 5,
-        "contains_pob": 15,
-        "contains_pod": 15,
-        "gender_match": 20,
-        "gender_mismatch_penalty": -20,
-        "year_birth_fuzzy": 5,
-        "year_death_fuzzy": 5,
-        "gender_match_fuzzy": 3,
-        "gender_mismatch_penalty_fuzzy": -3,
-        "contains_pob_fuzzy": 1,
-        "contains_pod_fuzzy": 1,
-        "boost_exact_name_year": 2,
+        # cases are ignored
+        # --- Name Weights ---
+        "contains_first_name": 25,  # if the input first name is in the candidate first name
+        "contains_surname": 25,  # if the input surname is in the candidate surname
+        "bonus_both_names_contain": 25,  # additional bonus if both first and last name achieved a score
+        # --- Existing Date Weights ---
+        "exact_birth_date": 25,  # if input date of birth is exact with candidate date of birth ie yyy/mm/dd
+        "exact_death_date": 25,  # if input date of death is exact with candidate date of death ie yyy/mm/dd
+        "year_birth": 20,  # if input year of death is exact with candidate year of death even if the day and month is wrong or not given
+        "year_death": 20,  # if input year of death is exact with candidate year of death even if the day and month is wrong or not given
+        "approx_year_birth": 10,  # if input year of death is within year_match_range years of candidate year of death even if the day and month is wrong or not given
+        "approx_year_death": 10,  # if input year of death is within year_match_range years of candidate year of death even if the day and month is wrong or not given
+        "death_dates_both_absent": 15,  # if both the input and candidate have no death dates
+        # --- Gender Weights ---
+        "gender_match": 25,  # if the input gender indication eg m/man/male/boy or f/fem/female/woman/girl matches the candidate gender indication.
+        # --- Place Weights ---
+        "contains_pob": 15,  # if the input place of birth is contained in the candidate place of birth
+        "contains_pod": 15,  # if the input place of death is contained in the candidate place of death
     }
     NAME_FLEXIBILITY: Dict[str, Union[float, bool]] = {
+        # Fuzzy threshold might still be useful for other potential matching logic
         "fuzzy_threshold": 0.8,
-        "check_starts_with": True,
+        # check_starts_with is no longer directly used by the primary name scoring
+        "check_starts_with": False,  # Set to False as 'contains' is primary
     }
     DATE_FLEXIBILITY: Dict[str, int] = {
-        "year_match_range": 1,
+        "year_match_range": 10,
     }
     # --- End Scoring Configuration ---
 
@@ -231,6 +228,7 @@ class Config_Class(BaseConfig):
         self.ANCESTRY_USERNAME: str = ""
         self.ANCESTRY_PASSWORD: str = ""
         self.TREE_NAME: str = ""
+        self.TREE_OWNER_NAME: str = ""
         self.MY_PROFILE_ID: Optional[str] = None
         self.MY_TREE_ID: Optional[str] = None
         self.MS_GRAPH_CLIENT_ID: str = ""
@@ -266,6 +264,7 @@ class Config_Class(BaseConfig):
         self.ANCESTRY_USERNAME = self._get_string_env("ANCESTRY_USERNAME", "")
         self.ANCESTRY_PASSWORD = self._get_string_env("ANCESTRY_PASSWORD", "")
         self.TREE_NAME = self._get_string_env("TREE_NAME", "")
+        self.TREE_OWNER_NAME = self._get_string_env("TREE_OWNER_NAME", "")
         self.MY_PROFILE_ID = self._get_string_env("MY_PROFILE_ID", "")
         self.MY_TREE_ID = self._get_string_env("MY_TREE_ID", "")
         self.MS_GRAPH_CLIENT_ID = self._get_string_env("MS_GRAPH_CLIENT_ID", "")

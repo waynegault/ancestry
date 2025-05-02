@@ -1,37 +1,41 @@
+# --- START OF FILE action11.py ---
 # action11.py
 """
 Action 11: API Report - Search Ancestry API, display details, family, relationship.
 V16.0: Refactored from temp.py v7.36, using functions from utils.py, api_utils.py, gedcom_utils.py.
 Implements consistent scoring and output format with Action 10.
+V16.1: Corrected config import, removed faulty API call, simplified family display logic.
+V16.2: Fixed IndentationError, removed redundant dummy code, restored interactive input.
+V16.3: Hardcoded Fraser Gault inputs, switched detail fetch to /person-picker/person API,
+       adjusted parsing, added isHideVeiledRecords param to suggest API.
+V16.4: Switched /suggest API call to use cloudscraper.
+V16.5: Added explicit cookie synchronization to cloudscraper instance.
+V16.6: Increased timeout for /person-picker/person API call.
+V16.7: Switched /person-picker/person API call to use cloudscraper.
 """
 # --- Standard library imports ---
 import logging
 import sys
-import os
-import re
-from pathlib import Path
 import time
-import json
 import urllib.parse
-import random  # Keep for retry jitter in utils (if not used there)
-import html  # Keep if needed for parsing directly in action11
-
-# from typing import Optional, List, Dict, Any, Tuple # Keep types needed locally
+from pathlib import Path
+from urllib.parse import urljoin, urlencode
 
 # Import specific types needed locally
 from typing import Optional, List, Dict, Any, Tuple, Union
-from datetime import datetime  # Import datetime for date comparisons/objects
-
-# import inspect # Keep for config path if needed
+from datetime import datetime
 
 # --- Third-party imports ---
 try:
-    from bs4 import (
-        BeautifulSoup,
-    )  # Import BeautifulSoup if needed directly for any reason, otherwise api_utils uses it
+    import requests
+
+    try:
+        import cloudscraper
+    except ImportError:
+        cloudscraper = None
 except ImportError:
-    # print("Warning: BeautifulSoup not found. Relationship ladder parsing might fail.") # This message should ideally come from api_utils
-    BeautifulSoup = None  # Set to None if import fails
+    requests = None
+    cloudscraper = None
 
 # --- Local application imports ---
 # Use centralized logging config setup
@@ -45,40 +49,50 @@ except ImportError:
     logger.warning("Using fallback logger for Action 11.")
 
 
-# --- Load Config and SCORING CONSTANTS (Mandatory - Direct Import) ---
+# --- Load Config (Mandatory - Direct Import) ---
 config_instance = None
-COMMON_SCORING_WEIGHTS = None
-NAME_FLEXIBILITY = None
-DATE_FLEXIBILITY = None
 try:
-    # Import instance and scoring dicts directly from config
-    from config import (
-        config_instance,
-        COMMON_SCORING_WEIGHTS,
-        NAME_FLEXIBILITY,
-        DATE_FLEXIBILITY,
-        USER_AGENTS,  # Import for potential use in headers
-    )
+    # Import instance directly from config
+    from config import config_instance
 
-    logger.info("Successfully imported config_instance and scoring dictionaries.")
-    # Basic validation that scoring weights are dictionaries
-    if (
-        not isinstance(COMMON_SCORING_WEIGHTS, dict)
-        or not isinstance(NAME_FLEXIBILITY, dict)
-        or not isinstance(DATE_FLEXIBILITY, dict)
+    logger.info("Successfully imported config_instance.")
+
+    # Basic validation that config_instance and its scoring attributes are loaded
+    if not config_instance:
+        raise ImportError("config_instance is None after import.")
+    # End if
+    if not hasattr(config_instance, "COMMON_SCORING_WEIGHTS") or not isinstance(
+        config_instance.COMMON_SCORING_WEIGHTS, dict
     ):
         raise TypeError(
-            "One or more scoring configurations imported from config.py is not a dictionary."
+            "config_instance.COMMON_SCORING_WEIGHTS is missing or not a dictionary."
         )
+    # End if
+    if not hasattr(config_instance, "NAME_FLEXIBILITY") or not isinstance(
+        config_instance.NAME_FLEXIBILITY, dict
+    ):
+        raise TypeError(
+            "config_instance.NAME_FLEXIBILITY is missing or not a dictionary."
+        )
+    # End if
+    if not hasattr(config_instance, "DATE_FLEXIBILITY") or not isinstance(
+        config_instance.DATE_FLEXIBILITY, dict
+    ):
+        raise TypeError(
+            "config_instance.DATE_FLEXIBILITY is missing or not a dictionary."
+        )
+    # End if
+
     # Optional warning if weights dict is empty
-    if not COMMON_SCORING_WEIGHTS:
+    if not config_instance.COMMON_SCORING_WEIGHTS:
         logger.warning(
-            "COMMON_SCORING_WEIGHTS dictionary imported from config.py is empty. Scoring may not function as expected."
+            "config_instance.COMMON_SCORING_WEIGHTS dictionary is empty. Scoring may not function as expected."
         )
+    # End if
 
 except ImportError as e:
     logger.critical(
-        f"Failed to import config_instance or scoring dictionaries from config.py: {e}. Cannot proceed.",
+        f"Failed to import config_instance from config.py: {e}. Cannot proceed.",
         exc_info=True,
     )
     print(f"\nFATAL ERROR: Failed to import required components from config.py: {e}")
@@ -91,202 +105,134 @@ except Exception as e:
     logger.critical(f"Unexpected error loading configuration: {e}", exc_info=True)
     print(f"\nFATAL ERROR: Unexpected error loading configuration: {e}")
     sys.exit(1)
+# End try
 
-# Ensure critical config components are loaded before proceeding
+# Ensure critical config components are loaded before proceeding (redundant check, but safe)
 if (
     config_instance is None
-    or COMMON_SCORING_WEIGHTS is None
-    or NAME_FLEXIBILITY is None
-    or DATE_FLEXIBILITY is None
+    or not hasattr(config_instance, "COMMON_SCORING_WEIGHTS")
+    or not hasattr(config_instance, "NAME_FLEXIBILITY")
+    or not hasattr(config_instance, "DATE_FLEXIBILITY")
 ):
     logger.critical("One or more critical configuration components failed to load.")
     print("\nFATAL ERROR: Configuration load failed.")
     sys.exit(1)
+# End if
 
 
 # --- Import GEDCOM Utilities (for scoring and date helpers) ---
-# Import specific functions needed from gedcom_utils
 calculate_match_score = None
 _parse_date = None
 _clean_display_date = None
-GEDCOM_DATE_UTILS_AVAILABLE = False  # Flag for date helpers
-GEDCOM_SCORING_AVAILABLE = False  # Flag for scoring function
+GEDCOM_DATE_UTILS_AVAILABLE = False
+GEDCOM_SCORING_AVAILABLE = False
 
 try:
-    # Attempt to import the specific functions
     from gedcom_utils import calculate_match_score, _parse_date, _clean_display_date
 
-    logger.info(
-        "Successfully imported calculate_match_score and date helpers from gedcom_utils."
+    logger.info("Successfully imported functions from gedcom_utils.")
+    GEDCOM_SCORING_AVAILABLE = calculate_match_score is not None
+    GEDCOM_DATE_UTILS_AVAILABLE = (
+        _parse_date is not None and _clean_display_date is not None
     )
-
-    # Check availability of imported functions
-    if calculate_match_score is not None:
-        GEDCOM_SCORING_AVAILABLE = True
-    else:
-        logger.error("calculate_match_score NOT FOUND in gedcom_utils after import.")
-
-    if _parse_date is not None and _clean_display_date is not None:
-        GEDCOM_DATE_UTILS_AVAILABLE = True
-    else:
-        logger.error(
-            "_parse_date or _clean_display_date NOT FOUND in gedcom_utils after import."
-        )
-
 except ImportError as e:
-    logger.error(
-        f"Failed to import required scoring or date functions from gedcom_utils: {e}.",
-        exc_info=True,
-    )
-    # Variables remain None/False as initialized
+    logger.error(f"Failed to import from gedcom_utils: {e}.", exc_info=True)
+# End try
 
 # --- Import API Utilities ---
-parse_ancestry_person_details = None
 print_group = None
-display_raw_relationship_ladder = None  # This function handles parsing/displaying HTML
-# format_api_relationship_path = None # display_raw_relationship_ladder calls this internally now
-
+display_raw_relationship_ladder = None
 API_UTILS_AVAILABLE = False
 
 try:
-    # Attempt to import the specific functions
-    from api_utils import (
-        parse_ancestry_person_details,
-        print_group,
-        display_raw_relationship_ladder,
-    )
+    from api_utils import print_group, display_raw_relationship_ladder
 
     logger.info("Successfully imported required functions from api_utils.")
-
-    # Check availability of imported functions
-    if (
-        parse_ancestry_person_details is not None
-        and print_group is not None
-        and display_raw_relationship_ladder is not None
-    ):
-        API_UTILS_AVAILABLE = True
-    else:
-        logger.error("One or more core functions NOT FOUND in api_utils after import.")
-
-except ImportError as e:
-    logger.error(
-        f"Failed to import required functions from api_utils: {e}.", exc_info=True
+    API_UTILS_AVAILABLE = (
+        print_group is not None and display_raw_relationship_ladder is not None
     )
-    # Variables remain None/False as initialized
+except ImportError as e:
+    logger.error(f"Failed to import from api_utils: {e}.", exc_info=True)
+# End try
 
 
 # --- Import General Utilities ---
-# SessionManager, _api_req, nav_to_page are critical for API actions
-SessionManager = None
-_api_req = None
-nav_to_page = None
-format_name = lambda x: str(x)  # Fallback for format_name
-ordinal_case = lambda x: str(x)  # Fallback for ordinal_case
-
-CORE_UTILS_AVAILABLE = False
-
 try:
-    # Import the core utility components
     from utils import SessionManager, _api_req, nav_to_page, format_name, ordinal_case
 
-    logger.info("Successfully imported required functions from utils.")
+    logger.info("Successfully imported required components from utils.")
     CORE_UTILS_AVAILABLE = True
-
 except ImportError as e:
     logger.critical(
-        f"Failed to import critical components from 'utils' module: {e}. API functions unavailable.",
+        f"Failed to import critical components from 'utils' module: {e}. Cannot run.",
         exc_info=True,
     )
     print(f"FATAL ERROR: Failed to import required functions from utils.py: {e}")
+    CORE_UTILS_AVAILABLE = False
+    sys.exit(1)  # Exit if core utils are missing
+# End try
 
-    # Define dummy SessionManager and _api_req to prevent crashes if import fails
-    class SessionManager:
-        def __init__(self):
-            self.driver_live = False
-            self.session_ready = False
-            self.my_tree_id = None
-            self.my_profile_id = None
-            self.driver = None
-            self.my_uuid = None
-            self.tree_owner_name = "Unknown (Utils missing)"
-            # Ensure necessary attributes are present even if dummy
-            self.csrf_token = None
-
-        # End of __init__
-        def ensure_driver_live(self):
-            logger.error("Dummy SessionManager: ensure_driver_live called.")
-            return False
-
-        # End of ensure_driver_live
-        def ensure_session_ready(self):
-            logger.error("Dummy SessionManager: ensure_session_ready called.")
-            return False
-
-        # End of ensure_session_ready
-        def check_session_status(self):
-            logger.error("Dummy SessionManager: check_session_status called.")
-            pass
-
-        # End of check_session_status
-        def _retrieve_identifiers(self):
-            logger.error("Dummy SessionManager: _retrieve_identifiers called.")
-            return False
-
-        # End of _retrieve_identifiers
-        def _sync_cookies(self):
-            logger.error("Dummy SessionManager: _sync_cookies called.")
-            pass
-
-        # End of _sync_cookies
-        def get_csrf(self):
-            logger.error("Dummy SessionManager: get_csrf called.")
-            return None
-
-        # End of get_csrf
-        # Add dummy get_cookies to prevent crash in _api_req
-        def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
-            logger.error("Dummy SessionManager: get_cookies called.")
-            return False
-
-        # Add dummy is_sess_valid to prevent crash in _api_req
-        def is_sess_valid(self) -> bool:
-            logger.error("Dummy SessionManager: is_sess_valid called.")
-            return False
-
-    # End of SessionManager dummy class
-    def _api_req(*args, **kwargs):
-        logger.error(
-            "Dummy _api_req: API request attempted but core 'utils' module is missing."
-        )
-
-        # Return a response-like object with error info
-        class DummyResponse:
-            status_code = 500
-            reason = "Utils Module Missing"
-            text = "Error: Required utils module is missing."
-
-            def json(self):
-                return {"error": self.text}
-
-            ok = False
-            headers = {}
-
-        return DummyResponse()  # Return dummy response
-
-    # End of _api_req dummy function
-    nav_to_page = None  # type: ignore
-    # format_name and ordinal_case fallbacks already defined above
-
-# --- Constants ---
-# MAX_DISPLAY_MATCHES is handled by action10.handle_gedcom_report parameter,
-# Action11 logic auto-selects top API match after searching, but we will
-# adjust it to display the top scored match consistently.
 
 # --- Session Manager Instance ---
-# Create a standalone session_manager instance from utils if available
-session_manager: SessionManager = (
-    SessionManager()
-)  # Instantiate the real or dummy SessionManager
+session_manager: SessionManager = SessionManager()
+
+
+# --- Helper Function for Parsing Life Events ---
+def _extract_life_event(
+    events: List[Dict], event_type: str
+) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
+    """Extracts date string, location, and parsed date object for a specific event type."""
+    date_str: Optional[str] = None
+    location: Optional[str] = None
+    date_obj: Optional[datetime] = None
+
+    if not isinstance(events, list):
+        return date_str, location, date_obj
+    # End if
+
+    for event in events:
+        if isinstance(event, dict) and event.get("Type") == event_type:
+            location = event.get("LocationText")
+            date_data = event.get("Date")
+            if isinstance(date_data, dict):
+                year = date_data.get("Year")
+                month = date_data.get("Month")
+                day = date_data.get("Day")
+                if year:
+                    try:
+                        if month and day:
+                            month_str = str(month).zfill(2)
+                            day_str = str(day).zfill(2)
+                            temp_date_str = f"{year}-{month_str}-{day_str}"
+                            date_obj = _parse_date(temp_date_str)
+                            date_str = temp_date_str
+                        elif month:
+                            month_str = str(month).zfill(2)
+                            temp_date_str = f"{year}-{month_str}"
+                            date_obj = _parse_date(temp_date_str)
+                            date_str = temp_date_str
+                        else:
+                            temp_date_str = str(year)
+                            date_obj = _parse_date(temp_date_str)
+                            date_str = temp_date_str
+                        # End if/elif/else for date parts
+                    except Exception as parse_e:
+                        logger.warning(
+                            f"Could not reconstruct/parse date from {date_data}: {parse_e}"
+                        )
+                        date_obj = None
+                        date_str = None
+                    # End try/except for parsing
+                # End if year
+            # End if date_data is dict
+            break  # Found the event
+        # End if
+    # End for
+
+    return date_str, location, date_obj
+
+
+# End of _extract_life_event
 
 
 # --- Main Handler ---
@@ -296,36 +242,52 @@ def handle_api_report():
     Searches Ancestry API, displays details, family, relationship to Tree Owner.
     Uses functions from utils.py, api_utils.py, and gedcom_utils.py (for scoring/dates).
     """
-    global COMMON_SCORING_WEIGHTS, NAME_FLEXIBILITY, DATE_FLEXIBILITY
     logger.info(
         "\n--- Person Details & Relationship to Tree Owner (Ancestry API Report) ---"
     )
 
     # Check essential dependencies
     if not CORE_UTILS_AVAILABLE:
-        logger.error("handle_api_report: Core utils module unavailable.")
-        print("\nERROR: Core utilities (SessionManager, API req) unavailable.")
-        return False  # Indicate failure
+        logger.critical("handle_api_report: Core utils module unavailable at runtime.")
+        print("\nCRITICAL ERROR: Core utilities unavailable.")
+        return False
+    # End if
     if not API_UTILS_AVAILABLE:
-        logger.error("handle_api_report: API utils module unavailable.")
-        print("\nERROR: API utilities (parsing, formatting) unavailable.")
-        return False  # Indicate failure
-    # Scoring and date helpers are not strictly fatal for API Report *if* user doesn't enter search criteria,
-    # but required for consistent match display and scoring.
+        logger.critical("handle_api_report: API utils module unavailable at runtime.")
+        print("\nCRITICAL ERROR: API utilities unavailable.")
+        return False
+    # End if
     if not GEDCOM_SCORING_AVAILABLE:
-        logger.warning(
-            "handle_api_report: GEDCOM scoring function unavailable. API match scoring will be skipped."
+        logger.critical(
+            "handle_api_report: GEDCOM scoring function unavailable at runtime."
         )
-        # Allow proceeding, but scoring info won't be displayed
+        print("\nCRITICAL ERROR: Scoring function unavailable.")
+        return False
+    # End if
     if not GEDCOM_DATE_UTILS_AVAILABLE:
-        logger.warning(
-            "handle_api_report: GEDCOM date utilities unavailable. API date formatting may be basic."
+        logger.critical(
+            "handle_api_report: GEDCOM date utilities unavailable at runtime."
         )
-        # Allow proceeding, but date formatting might be inconsistent
+        print("\nCRITICAL ERROR: Date utilities unavailable.")
+        return False
+    # End if
+    if cloudscraper is None:
+        logger.critical(
+            "handle_api_report: Cloudscraper library is required but not installed (`pip install cloudscraper`)."
+        )
+        print("\nCRITICAL ERROR: cloudscraper library not found.")
+        return False
+    # End if
+    if not session_manager.scraper:
+        logger.critical(
+            "handle_api_report: Cloudscraper instance not available in SessionManager."
+        )
+        print("\nCRITICAL ERROR: Cloudscraper instance failed to initialize.")
+        return False
+    # End if
 
     # --- Initialize API Session ---
-    # Use the global session_manager instance and ensure it's ready
-    print("Initializing Ancestry session...")  # User feedback
+    print("Initializing Ancestry session...")
     session_init_ok = session_manager.ensure_session_ready(
         action_name="API Report Session Init"
     )
@@ -334,75 +296,72 @@ def handle_api_report():
         print(
             "\nERROR: Failed to initialize session. Cannot proceed with API operations."
         )
-        return False  # Indicate failure
+        return False
+    # End if
 
     # Retrieve tree owner name from session_manager
     owner_name = getattr(session_manager, "tree_owner_name", "the Tree Owner")
     owner_profile_id = getattr(session_manager, "my_profile_id", None)
     owner_tree_id = getattr(session_manager, "my_tree_id", None)
+    base_url = getattr(
+        config_instance, "BASE_URL", "https://www.ancestry.co.uk"
+    ).rstrip("/")
 
     if not owner_profile_id:
-        logger.error(
-            "handle_api_report: My profile ID not available in SessionManager."
+        logger.warning(
+            "handle_api_report: My profile ID not available in SessionManager. Relationship path will fail."
         )
         print(
-            "\nERROR: Cannot determine your profile ID. API features requiring it (like relationship path) will fail."
+            "\nWARNING: Cannot determine your profile ID. Relationship path calculation will fail."
         )
-        # Continue, but some features will be limited
+    # End if
 
-    # --- Prompt for search criteria ---
-    logger.info(
-        "\nEnter search criteria for the person of interest (Ancestry API Search):"
+    # --- TEMPORARY HARDCODED VALUES FOR TESTING ---
+    logger.info("--- Using TEMPORARY hardcoded input values for Fraser Gault ---")
+    first_name = "Fraser"
+    surname = "Gault"
+    dob_str = "1941"  # Birth Date/Year
+    pob = "Banff"  # Birth Place
+    dod_str = None  # Death Date/Year
+    pod = None  # Death Place
+    gender_input = "m"  # Gender
+    gender = (
+        gender_input[0].lower()
+        if gender_input and gender_input[0].lower() in ["m", "f"]
+        else None
     )
-    # Use try/except for input to handle EOFError (Ctrl+D) or other input issues
-    try:
-        first_name = input(" First Name (optional): ").strip() or None
-        surname = input(" Surname (optional): ").strip() or None
-        dob_str = input(" Birth Date/Year (optional): ").strip() or None
-        pob = input(" Birth Place (optional): ").strip() or None
-        dod_str = (
-            input(" Death Date/Year (optional): ").strip() or None
-        )  # Added Death Date input
-        pod = (
-            input(" Death Place (optional): ").strip() or None
-        )  # Added Death Place input
-        gender = input(" Gender (M/F, optional): ").strip() or None
-        if gender:
-            gender = (
-                gender[0].lower() if gender[0].lower() in ["m", "f"] else None
-            )  # Normalize gender input
-    except EOFError:
-        print("\nInput cancelled.")
-        return False  # Indicate operation cancelled
-    except Exception as input_err:
-        logger.error(f"Error reading input: {input_err}", exc_info=True)
-        print("\nError reading input.")
-        return False  # Indicate failure
+    logger.info(f"  First Name: {first_name}")
+    logger.info(f"  Surname: {surname}")
+    logger.info(f"  Birth Date/Year: {dob_str}")
+    logger.info(f"  Birth Place: {pob}")
+    logger.info(f"  Death Date/Year: {dod_str}")
+    logger.info(f"  Death Place: {pod}")
+    logger.info(f"  Gender: {gender}")
+    # --- END OF TEMPORARY HARDCODED VALUES ---
 
-    # API Suggest requires at least first name or surname
     if not (first_name or surname):
         logger.info("\nAPI search needs First Name or Surname. Report cancelled.")
         print("\nAPI search needs First Name or Surname. Report cancelled.")
-        return True  # Indicate success (cancelled by user intent)
+        return True
+    # End if
 
     # Prepare search criteria for scoring
-    clean_param = lambda p: (
-        p.strip().lower() if p and isinstance(p, str) else None
-    )  # Clean and lowercase input strings
+    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
 
     target_first_name_lower = clean_param(first_name)
     target_surname_lower = clean_param(surname)
     target_pob_lower = clean_param(pob)
     target_pod_lower = clean_param(pod)
-    target_gender_clean = gender  # m or f or None
+    target_gender_clean = gender
 
-    # Parse target dates/years using imported helpers
     target_birth_year: Optional[int] = None
     target_birth_date_obj: Optional[datetime] = None
     if dob_str and GEDCOM_DATE_UTILS_AVAILABLE:
         target_birth_date_obj = _parse_date(dob_str)
         if target_birth_date_obj:
             target_birth_year = target_birth_date_obj.year
+        # End if
+    # End if
 
     target_death_year: Optional[int] = None
     target_death_date_obj: Optional[datetime] = None
@@ -410,8 +369,9 @@ def handle_api_report():
         target_death_date_obj = _parse_date(dod_str)
         if target_death_date_obj:
             target_death_year = target_death_date_obj.year
+        # End if
+    # End if
 
-    # Prepare search criteria dictionary for scoring function
     search_criteria_dict = {
         "first_name": target_first_name_lower,
         "surname": target_surname_lower,
@@ -424,10 +384,8 @@ def handle_api_report():
         "gender": target_gender_clean,
     }
 
-    # --- Use person-picker/suggest API to find candidates ---
-    # This API is used to get candidate PersonIds based on name search.
-    # It typically returns a limited number of results (often just the top one).
-    tree_id_for_suggest = owner_tree_id  # Suggest API needs tree ID
+    # --- Use person-picker/suggest API (via Cloudscraper) ---
+    tree_id_for_suggest = owner_tree_id
     if not tree_id_for_suggest:
         logger.error(
             "Cannot perform API search: My tree ID is not available in SessionManager."
@@ -435,192 +393,381 @@ def handle_api_report():
         print(
             "\nERROR: Cannot determine your tree ID. API search functionality is limited."
         )
-        return False  # Indicate failure
+        return False
+    # End if
 
-    base_url = getattr(
-        config_instance, "BASE_URL", "https://www.ancestry.co.uk"
-    ).rstrip("/")
     suggest_params = []
     if first_name:
         suggest_params.append(f"partialFirstName={urllib.parse.quote(first_name)}")
+    # End if
     if surname:
         suggest_params.append(f"partialLastName={urllib.parse.quote(surname)}")
+    # End if
+    suggest_params.append("isHideVeiledRecords=false")
 
     suggest_url = f"{base_url}/api/person-picker/suggest/{tree_id_for_suggest}?{'&'.join(suggest_params)}"
-    logger.info(f"Attempting search using Ancestry Suggest API...")
-    print("Searching Ancestry API...")  # User feedback
+    logger.info(f"Attempting search using Ancestry Suggest API: {suggest_url}")
+    print("Searching Ancestry API...")
 
     suggest_response = None
+    scraper_response = None
     try:
-        suggest_response = _api_req(
-            url=suggest_url,
-            driver=session_manager.driver,  # Pass the actual driver from the session manager
-            session_manager=session_manager,  # Pass the session manager instance
-            method="GET",
-            api_description="Person Picker Suggest API",
-            # Headers are handled automatically by _api_req, but can provide context-specific ones
-            # Add specific referer if needed, otherwise _api_req uses BASE_URL
-            # referer_url=urljoin(base_url, f"/family-tree/tree/{tree_id_for_suggest}/person/{owner_profile_id}/facts") # Example referer
-            timeout=15,  # Shorter timeout for this quick API
-        )
-        # suggest_response is expected to be a list of person dictionaries or None on error/no result
-        if not isinstance(suggest_response, list) or not suggest_response:
+        # Construct referer using owner's context
+        owner_facts_referer = None
+        if owner_tree_id and owner_profile_id:
+            owner_facts_referer = urljoin(
+                base_url,
+                f"/family-tree/tree/{owner_tree_id}/person/{owner_profile_id}/facts",
+            )
+        else:
+            logger.warning(
+                "Cannot construct owner facts referer for Suggest API: Tree ID or Profile ID missing."
+            )
+            owner_facts_referer = base_url  # Fallback
+        # End if
+
+        # --- Use Cloudscraper for Suggest API ---
+        logger.info("Attempting Suggest API call using Cloudscraper...")
+        scraper = session_manager.scraper
+        if scraper:
+            # --- Explicitly sync cookies to Cloudscraper's session ---
+            try:
+                logger.debug(
+                    "Syncing cookies from SessionManager requests session to Cloudscraper session..."
+                )
+                session_manager._sync_cookies()  # Ensure requests session is synced first
+                scraper.cookies.clear()
+                synced_count = 0
+                for cookie in session_manager._requests_session.cookies:
+                    try:
+                        scraper.cookies.set(
+                            name=cookie.name,
+                            value=cookie.value,
+                            domain=cookie.domain,
+                            path=cookie.path,
+                        )
+                        synced_count += 1
+                    except Exception as set_cookie_err:
+                        logger.warning(
+                            f"Failed to set cookie '{cookie.name}' in cloudscraper: {set_cookie_err}"
+                        )
+                    # End inner try
+                # End for
+                logger.debug(f"Synced {synced_count} cookies to Cloudscraper session.")
+            except Exception as sync_err:
+                logger.error(
+                    f"Error syncing cookies to Cloudscraper: {sync_err}", exc_info=True
+                )
+            # --- End cookie sync ---
+
+            # Prepare headers for scraper
+            scraper_headers = {
+                "Accept": "application/json, text/plain, */*",
+                "Referer": owner_facts_referer,
+            }
+
+            # Apply rate limit wait before the call
+            wait_time = session_manager.dynamic_rate_limiter.wait()
+            if wait_time > 0.1:
+                logger.debug(
+                    f"[Suggest API (Cloudscraper)] Rate limit wait: {wait_time:.2f}s"
+                )
+            # End if
+
+            try:
+                scraper_response = scraper.get(
+                    suggest_url, headers=scraper_headers, timeout=30
+                )
+                scraper_response.raise_for_status()  # Check for HTTP errors
+                suggest_response = scraper_response.json()  # Parse JSON
+                logger.info("Suggest API call successful using Cloudscraper.")
+                session_manager.dynamic_rate_limiter.decrease_delay()  # Indicate success
+
+            except cloudscraper.exceptions.CloudflareChallengeError as cfe:
+                logger.error(
+                    f"Cloudflare challenge encountered during Suggest API call: {cfe}"
+                )
+                suggest_response = None
+                session_manager.dynamic_rate_limiter.increase_delay()
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(
+                    f"HTTPError during Cloudscraper Suggest API call: {http_err}"
+                )
+                if http_err.response is not None:
+                    logger.error(f"  Status Code: {http_err.response.status_code}")
+                    logger.debug(f"  Response Text: {http_err.response.text[:500]}")
+                    if http_err.response.status_code == 401:
+                        logger.error(
+                            "Suggest API returned 401 Unauthorized - cookie sync likely failed or session invalid."
+                        )
+                    # End if 401
+                # End if response exists
+                suggest_response = None
+            except requests.exceptions.RequestException as req_exc:
+                logger.error(
+                    f"RequestException during Cloudscraper Suggest API call: {req_exc}"
+                )
+                suggest_response = None
+            except requests.exceptions.JSONDecodeError as json_err:
+                logger.error(
+                    f"Failed to decode JSON from Cloudscraper Suggest API response: {json_err}"
+                )
+                logger.debug(
+                    f"Cloudscraper Response Text: {getattr(scraper_response, 'text', 'N/A')[:500]}"
+                )
+                suggest_response = None
+            except Exception as scrape_err:
+                logger.error(
+                    f"Unexpected error during Cloudscraper Suggest API call: {scrape_err}",
+                    exc_info=True,
+                )
+                suggest_response = None
+            # End inner try/except for scraper call
+        else:
+            logger.critical(
+                "Cloudscraper instance not available in SessionManager. Cannot call Suggest API."
+            )
+            return False
+        # --- END: Use Cloudscraper for Suggest API ---
+
+        # Check response validity
+        if suggest_response is None:
+            logger.error("Suggest API call failed (check previous errors).")
+            print("\nError during API search. Check logs.")
+            return False
+        elif not isinstance(suggest_response, list) or not suggest_response:
             logger.info("No matches found via Ancestry Suggest API.")
             print("\nNo potential matches found in Ancestry API based on name.")
-            return True  # Indicate success (no matches is a valid outcome)
+            return True
+        # End if/elif for suggest_response check
 
-    except Exception as e:
-        logger.error(f"API /suggest call failed: {e}", exc_info=True)
+    except Exception as e:  # Keep outer catch for broader issues
+        logger.error(f"General error during API search section: {e}", exc_info=True)
         print(f"\nError during API search: {e}. Check logs.")
-        return False  # Indicate failure
+        return False
+    # End try/except for suggest search
 
     # --- Process Suggest API Results and Score the Top Match ---
-    # We will only process and score the top suggestion from the API for now
-    # To fully replicate GEDCOM report (multiple matches + selection), we would need
-    # to fetch details and score *all* suggestions returned by the API, which can be slow.
-    # Sticking to scoring/displaying the top one as implemented in temp.py API handler.
-
     top_api_suggestion = suggest_response[0]
     api_person_id = top_api_suggestion.get("PersonId")
-    api_tree_id = top_api_suggestion.get(
-        "TreeId"
-    )  # Tree ID from the search result person (might be different from user's tree ID)
+    api_tree_id = top_api_suggestion.get("TreeId")
     api_name_raw = top_api_suggestion.get("Name", "Unknown")
 
     if not api_person_id or not api_tree_id:
         logger.error("Suggest API result missing critical IDs (PersonId or TreeId).")
         print("\nError processing top API search result (missing IDs).")
-        return False  # Indicate failure
+        return False
+    # End if
 
     logger.debug(
-        f"Processing top Suggest API match: {api_name_raw} (ID: {api_person_id})"
+        f"Processing top Suggest API match: {api_name_raw} (ID: {api_person_id}, TreeID: {api_tree_id})"
     )
 
-    # Fetch more details for scoring and display using Person Card API
-    # The Person Card API gives birth/death dates/places and family summary
-    person_card_url = f"{base_url}/api/search-results/person-card/tree/{api_tree_id}/person/{api_person_id}"
-    person_card_data = {}  # Use empty dict as default
+    # --- Fetch details using the /person-picker/person API (via Cloudscraper) ---
+    person_details_url = (
+        f"{base_url}/api/person-picker/person/{api_tree_id}/{api_person_id}/"
+    )
+    person_details_data = {}
+    details_scraper_response = None  # Initialize response var
     try:
-        logger.debug(f"Fetching person card for {api_person_id} from {person_card_url}")
-        person_card_data = _api_req(
-            url=person_card_url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            method="GET",
-            api_description="Person Card API",
-            # Referer needed for this API context
-            referer_url=urljoin(
+        logger.debug(
+            f"Fetching person details for {api_person_id} from {person_details_url} using Cloudscraper..."
+        )
+        details_referer = None
+        if tree_id_for_suggest and owner_profile_id:
+            details_referer = urljoin(
                 base_url,
                 f"/family-tree/tree/{tree_id_for_suggest}/person/{owner_profile_id}/facts",
-            ),
-            timeout=15,
-        )
-        # Ensure the response is a dictionary
-        if not isinstance(person_card_data, dict):
-            logger.warning(
-                f"Person Card API did not return a dictionary for {api_person_id}. Received type: {type(person_card_data)}"
             )
-            person_card_data = {}  # Reset to empty dict if unexpected format
-    except Exception as e:
+        else:
+            details_referer = base_url
+        # End if
+
+        # --- Use Cloudscraper for Person Details API ---
+        scraper = session_manager.scraper
+        if scraper:
+            # --- Sync Cookies Again (Important!) ---
+            try:
+                logger.debug("Re-syncing cookies before Person Details API call...")
+                session_manager._sync_cookies()  # Ensure requests session is synced first
+                scraper.cookies.clear()
+                synced_count = 0
+                for cookie in session_manager._requests_session.cookies:
+                    try:
+                        scraper.cookies.set(
+                            name=cookie.name,
+                            value=cookie.value,
+                            domain=cookie.domain,
+                            path=cookie.path,
+                        )
+                        synced_count += 1
+                    except Exception as set_cookie_err:
+                        logger.warning(
+                            f"Failed to set cookie '{cookie.name}' in cloudscraper (details call): {set_cookie_err}"
+                        )
+                    # End inner try
+                # End for
+                logger.debug(
+                    f"Synced {synced_count} cookies to Cloudscraper session (details call)."
+                )
+            except Exception as sync_err:
+                logger.error(
+                    f"Error syncing cookies to Cloudscraper (details call): {sync_err}",
+                    exc_info=True,
+                )
+            # --- End cookie sync ---
+
+            # Prepare headers for scraper
+            details_scraper_headers = {
+                "Accept": "application/json, text/plain, */*",
+                "Referer": details_referer,
+            }
+
+            # Apply rate limit wait
+            wait_time = session_manager.dynamic_rate_limiter.wait()
+            if wait_time > 0.1:
+                logger.debug(
+                    f"[Person Details API (Cloudscraper)] Rate limit wait: {wait_time:.2f}s"
+                )
+            # End if
+
+            try:
+                details_scraper_response = scraper.get(
+                    person_details_url,
+                    headers=details_scraper_headers,
+                    timeout=30,  # Use increased timeout
+                )
+                details_scraper_response.raise_for_status()
+                person_details_data = details_scraper_response.json()
+                logger.info("Person Details API call successful using Cloudscraper.")
+                session_manager.dynamic_rate_limiter.decrease_delay()
+
+            except cloudscraper.exceptions.CloudflareChallengeError as cfe:
+                logger.error(
+                    f"Cloudflare challenge encountered during Person Details API call: {cfe}"
+                )
+                person_details_data = {}
+                session_manager.dynamic_rate_limiter.increase_delay()
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(
+                    f"HTTPError during Cloudscraper Person Details API call: {http_err}"
+                )
+                if http_err.response is not None:
+                    logger.error(f"  Status Code: {http_err.response.status_code}")
+                    logger.debug(f"  Response Text: {http_err.response.text[:500]}")
+                person_details_data = {}
+            except requests.exceptions.RequestException as req_exc:
+                logger.error(
+                    f"RequestException during Cloudscraper Person Details API call: {req_exc}"
+                )
+                person_details_data = {}
+            except requests.exceptions.JSONDecodeError as json_err:
+                logger.error(
+                    f"Failed to decode JSON from Cloudscraper Person Details API response: {json_err}"
+                )
+                logger.debug(
+                    f"Cloudscraper Response Text: {getattr(details_scraper_response, 'text', 'N/A')[:500]}"
+                )
+                person_details_data = {}
+            except Exception as scrape_err:
+                logger.error(
+                    f"Unexpected error during Cloudscraper Person Details API call: {scrape_err}",
+                    exc_info=True,
+                )
+                person_details_data = {}
+            # End inner try/except for scraper details call
+        else:
+            logger.critical(
+                "Cloudscraper instance not available in SessionManager. Cannot call Person Details API."
+            )
+            return False
+        # --- END: Use Cloudscraper for Person Details API ---
+
+    except Exception as e:  # Outer catch for broader issues during details fetch setup
+        logger.error(f"Error preparing for Person Details API call: {e}", exc_info=True)
+        print(f"\nWarning: Could not fetch person details from API.")
+        person_details_data = {}
+    # End try/except for details fetch
+
+    # --- Extract data directly from person_details_data ---
+    # Check if data was actually fetched
+    if not person_details_data:
         logger.error(
-            f"API /person-card call failed for {api_person_id}: {e}", exc_info=True
+            f"Failed to fetch details for {api_name_raw} (ID: {api_person_id}). Cannot proceed."
         )
-        print(f"\nWarning: Could not fetch full details from API for scoring/display.")
-        # person_card_data remains {}
+        print(
+            f"\nERROR: Could not fetch details for the selected match ({api_name_raw})."
+        )
+        return False  # Cannot proceed without details
+    # End if
 
-    # Parse the fetched data to get structured details (using api_utils helper)
-    # Pass empty dict/None if API calls failed
-    parsed_api_details = parse_ancestry_person_details(
-        person_card_data, {}
-    )  # Pass empty facts for now if not fetched separately
+    extracted_name = format_name(
+        f"{person_details_data.get('GivenName', '')} {person_details_data.get('Surname', '')}".strip()
+    )
+    extracted_gender = person_details_data.get("Gender")
+    life_events = person_details_data.get("LifeEvents", [])
 
-    # Prepare candidate data dictionary for scoring (using parsed details)
+    birth_date_str, birth_place, birth_date_obj = _extract_life_event(life_events, "b")
+    death_date_str, death_place, death_date_obj = _extract_life_event(life_events, "d")
+
+    birth_date_disp = _clean_display_date(birth_date_str) if birth_date_str else "N/A"
+    death_date_disp = _clean_display_date(death_date_str) if death_date_str else "N/A"
+
+    # --- Prepare candidate data dictionary for scoring ---
     candidate_data_dict = {
-        "first_name": (
-            parsed_api_details.get("name", "").split(" ")[0].lower()
-            if parsed_api_details.get("name")
-            else None
-        ),
-        "surname": (
-            parsed_api_details.get("name", "").split(" ")[-1].lower()
-            if parsed_api_details.get("name")
-            and len(parsed_api_details.get("name", "").split(" ")) > 1
-            else None
-        ),
-        "birth_year": (
-            parsed_api_details.get("api_birth_obj").year
-            if parsed_api_details.get("api_birth_obj")
-            else None
-        ),
-        "birth_date_obj": parsed_api_details.get("api_birth_obj"),
-        "birth_place": (
-            parsed_api_details.get("birth_place").lower()
-            if parsed_api_details.get("birth_place")
-            and parsed_api_details.get("birth_place") != "N/A"
-            else None
-        ),
-        "death_year": (
-            parsed_api_details.get("api_death_obj").year
-            if parsed_api_details.get("api_death_obj")
-            else None
-        ),
-        "death_date_obj": parsed_api_details.get("api_death_obj"),
-        "death_place": (
-            parsed_api_details.get("death_place").lower()
-            if parsed_api_details.get("death_place")
-            and parsed_api_details.get("death_place") != "N/A"
-            else None
-        ),
-        "gender": (
-            parsed_api_details.get("gender").lower()
-            if parsed_api_details.get("gender")
-            else None
-        ),
+        "first_name": clean_param(person_details_data.get("GivenName")),
+        "surname": clean_param(person_details_data.get("Surname")),
+        "birth_year": birth_date_obj.year if birth_date_obj else None,
+        "birth_date_obj": birth_date_obj,
+        "birth_place": clean_param(birth_place),
+        "death_year": death_date_obj.year if death_date_obj else None,
+        "death_date_obj": death_date_obj,
+        "death_place": clean_param(death_place),
+        "gender": extracted_gender if extracted_gender in ["m", "f"] else None,
     }
 
-    # Calculate score using the common scoring function (if available)
-    score = 0
-    reasons = ["API Suggest Match"]  # Base reason
-    if GEDCOM_SCORING_AVAILABLE:
-        score, reasons_list = calculate_match_score(
-            search_criteria_dict,
-            candidate_data_dict,
-            COMMON_SCORING_WEIGHTS,
-            NAME_FLEXIBILITY,
-            DATE_FLEXIBILITY,
-        )
-        # Add "API Suggest Match" if not already in reasons (unlikely if scoring uses this)
-        if "API Suggest Match" not in reasons_list:
-            reasons_list.append("API Suggest Match")
-        reasons = reasons_list
-        logger.debug(
-            f"Calculated score for top API match: {score} (Reasons: {reasons})"
-        )
-    else:
-        logger.warning("Scoring function unavailable. Cannot score API match.")
-        # Score remains 0, reasons is just "API Suggest Match"
+    # --- Calculate score ---
+    score = 0.0
+    reasons = ["API Suggest Match"]
+    field_scores = {}
 
-    # Create a match dict for display, similar to GEDCOM results
+    score, field_scores, reasons_list = calculate_match_score(
+        search_criteria_dict,
+        candidate_data_dict,
+        config_instance.COMMON_SCORING_WEIGHTS,
+        config_instance.NAME_FLEXIBILITY,
+        config_instance.DATE_FLEXIBILITY,
+    )
+    if "API Suggest Match" not in reasons_list:
+        reasons_list.append("API Suggest Match")
+    # End if
+    reasons = reasons_list
+    logger.debug(f"Calculated score for top API match: {score} (Reasons: {reasons})")
+
+    # --- Create match dict ---
+    person_link = "(unavailable)"
+    if api_tree_id and api_person_id and base_url:
+        person_link = f"{base_url}/family-tree/person/tree/{api_tree_id}/person/{api_person_id}/facts"
+    # End if
+
     api_match_for_display = {
-        "id": api_person_id,  # Use Person ID as ID
-        "norm_id": api_person_id,  # Use Person ID as normalized ID
+        "id": api_person_id,
+        "norm_id": api_person_id,
         "tree_id": api_tree_id,
-        "name": parsed_api_details.get(
-            "name", api_name_raw
-        ),  # Use parsed name if available, else raw
-        "birth_date": parsed_api_details.get("birth_date", "N/A"),
-        "birth_place": parsed_api_details.get("birth_place", "N/A"),
-        "death_date": parsed_api_details.get("death_date", "N/A"),
-        "death_place": parsed_api_details.get("death_place", "N/A"),
+        "name": extracted_name if extracted_name != "Valued Relative" else api_name_raw,
+        "birth_date": birth_date_disp,
+        "birth_place": birth_place or "N/A",
+        "death_date": death_date_disp,
+        "death_place": death_place or "N/A",
         "score": score,
         "reasons": ", ".join(reasons),
-        "link": parsed_api_details.get("link"),
-        "is_living": parsed_api_details.get("is_living"),
+        "link": person_link,
+        "is_living": death_date_obj is None and death_date_str is None,
+        "person_id": api_person_id,
     }
 
-    # --- Display the Top Scored Match (consistent with Action 10) ---
+    # --- Display Top Match ---
     print(f"\n--- Top Match (Scored) ---")
-    # Always display the one scored match
     match = api_match_for_display
     b_info = (
         f"b. {match['birth_date']}"
@@ -631,9 +778,6 @@ def handle_api_report():
         f"d. {match['death_date']}"
         if match.get("death_date") and match["death_date"] != "N/A"
         else ""
-    )
-    date_info = (
-        f" ({', '.join(filter(None, [b_info, d_info]))}" if b_info or d_info else ""
     )
     birth_place_info = (
         f"in {match['birth_place']}"
@@ -646,215 +790,144 @@ def handle_api_report():
         else ""
     )
 
-    # Display using format consistent with Action 10
     print(f"  1. {match['name']}")
     print(f"     Born : {match.get('birth_date', '?')} {birth_place_info}")
-    # Only print death line if there is death info or marked as not living
     if (
         match.get("death_date") != "N/A"
         or match.get("death_place") != "N/A"
         or match.get("is_living") is False
     ):
         print(f"     Died : {match.get('death_date', '?')} {death_place_info}")
-
-    if GEDCOM_SCORING_AVAILABLE:
-        print(
-            f"     Score: {match.get('score', '?')} (Reasons: {match.get('reasons', 'API Suggest Match')})"
-        )
-    else:
-        print(
-            f"     Score: (Scoring unavailable) (Reasons: {match.get('reasons', 'API Suggest Match')})"
-        )
+    # End if
+    print(
+        f"     Score: {match.get('score', 0.0):.0f} (Reasons: {match.get('reasons', 'API Suggest Match')})"
+    )
 
     print(f"\n---> Auto-selecting this match: {match['name']}")
-    selected_match = api_match_for_display  # Auto-select the only one
+    selected_match = api_match_for_display
 
-    # --- Fetch Full Details and Family using API (if not already done by person-card) ---
-    # We already have person_card_data. We might need facts_data for more complete family details.
-    # The 'facts' API endpoint often has a different structure and requires a CSRF token.
-    # This endpoint is https://www.ancestry.co.uk/tree/{treeId}/person/{personId}/facts (navigating here gets the data via JS/internal APIs)
-    # There might be a direct API endpoint for facts data, but the Person Card API already provides much of it.
-    # Let's check if facts_data is significantly different from person_card_data. Temp.py v7.36 used person-card and facts API, let's replicate that pattern if facts adds value.
-    # Re-checking temp.py: it fetches person-card AND facts data (`/tree/{treeId}/person/{personId}/facts` which is a web page, then tries to use it). Let's use the explicit facts API mentioned in action11.py provided initially.
-
-    # Use the explicit facts API endpoint from the initial action11.py
-    # This requires MyProfileID to be available from the SessionManager
-    if owner_profile_id:
-        facts_api_url = f"{base_url}/app-api/express/v1/profiles/details?userId={api_person_id.upper()}"  # This looks more like a profile details API, not facts
-        # The initial action11.py used `/tree/{tree_id}/person/{person_id}/facts` which loads an HTML page that contains JSON data embedded in it, or fetched by JS.
-        # Let's use the API endpoint identified in the initial action11.py that seems to give facts: `/app-api/express/v1/profiles/details?userId={profile_id.upper()}`
-        facts_data = None
-        api_description_facts = "API Profile Details (Facts-like)"
-        logger.debug(
-            f"Attempting to fetch facts-like data from: {facts_api_url} ({api_description_facts})"
-        )
-        try:
-            # This API might not need CSRF, but requires session cookies
-            facts_data = _api_req(
-                url=facts_api_url,
-                driver=session_manager.driver,
-                session_manager=session_manager,
-                method="GET",
-                headers={},  # _api_req adds defaults + dynamic
-                use_csrf_token=False,  # This API likely doesn't need CSRF
-                api_description=api_description_facts,
-                # Referer needed for context, use a likely page user would be on
-                referer_url=urljoin(
-                    base_url,
-                    f"/family-tree/tree/{tree_id_for_suggest}/person/{owner_profile_id}/facts",
-                ),
-                timeout=15,
-            )
-            if not isinstance(facts_data, dict):
-                logger.warning(
-                    f"{api_description_facts} did not return a dictionary for {api_person_id}. Received type: {type(facts_data)}"
-                )
-                facts_data = None  # Reset to None if unexpected format
-            else:
-                logger.debug(
-                    f"Successfully fetched {api_description_facts} for {api_person_id}."
-                )
-                # Need to check structure for family members if needed from here
-                # The Person Card API already provides father, mother, selectedSpouse, children under spouse.
-                # The profile details API might have a different structure.
-                # Let's stick to Person Card API for family details as in temp.py v7.36 if it provides enough.
-                # Reviewing temp.py v7.36 family display: it uses person_card_data's 'father', 'mother', 'selectedSpouse', 'children' under spouse. It *didn't* use a separate facts API for family display. Let's just use person_card_data for family display.
-
-        except Exception as e:
-            logger.error(
-                f"API {api_description_facts} call failed for {api_person_id}: {e}",
-                exc_info=True,
-            )
-            print(f"\nWarning: Could not fetch additional profile details from API.")
-            facts_data = None  # Ensure it's None on failure
-
-    # --- Display Details using api_utils functions ---
-    # Use the already parsed details from the person_card
+    # --- Display Details ---
     print("\n=== PERSON DETAILS (API) ===")
-    print(f"Name: {parsed_api_details.get('name', 'Unknown')}")
-    print(f"Gender: {parsed_api_details.get('gender') or 'N/A'}")
-    print(
-        f"Born: {parsed_api_details.get('birth_date', '(Date unknown)')} in {parsed_api_details.get('birth_place', '(Place unknown)')}"
+    print(f"Name: {match['name']}")
+    gender_display = (
+        "Male"
+        if extracted_gender == "m"
+        else "Female" if extracted_gender == "f" else "N/A"
     )
-    # Only print Died line if there is death info or marked as not living
+    print(f"Gender: {gender_display}")
+    print(f"Born: {match['birth_date']} in {match['birth_place']}")
     if (
-        parsed_api_details.get("death_date", "N/A") != "N/A"
-        or parsed_api_details.get("death_place", "N/A") != "N/A"
-        or parsed_api_details.get("is_living") is False
+        match.get("death_date") != "N/A"
+        or match.get("death_place") != "N/A"
+        or match.get("is_living") is False
     ):
-        print(
-            f"Died: {parsed_api_details.get('death_date', '(Date unknown)')} in {parsed_api_details.get('death_place', '(Place unknown)')}"
-        )
-    print(f"Link: {parsed_api_details.get('link', '(unavailable)')}")
+        print(f"Died: {match['death_date']} in {match['death_place']}")
+    # End if
+    print(f"Link: {match['link']}")
 
-    # --- Display Family Details using api_utils functions ---
+    # --- Display Family Details ---
     print("\n--- Family Details (API) ---")
-    # Extract family members from person_card_data as done in temp.py v7.36
+    family_members = person_details_data.get("FamilyMembers", [])
     parents_list = []
-    father = person_card_data.get("father")
-    mother = person_card_data.get("mother")
-    if father and isinstance(father, dict):
-        parents_list.append(father)
-    if mother and isinstance(mother, dict):
-        parents_list.append(mother)
+    siblings_list = []
+    spouses_list = []
+    children_list = []
+
+    for member in family_members:
+        if isinstance(member, dict):
+            rel_type = member.get("Relationship")
+            member_name = format_name(
+                f"{member.get('GivenName', '')} {member.get('Surname', '')}".strip()
+            )
+            if member_name == "Valued Relative":
+                continue
+            # End if
+            member_info = {"name": member_name}
+
+            if rel_type == "f" or rel_type == "m":
+                parents_list.append(member_info)
+            elif rel_type == "b":  # Brother
+                siblings_list.append(member_info)
+            elif rel_type == "s" and member.get("Gender") == "f":  # Sister
+                siblings_list.append(member_info)
+            elif rel_type == "s":  # Spouse
+                spouses_list.append(member_info)
+            elif rel_type == "c":
+                children_list.append(member_info)
+            # End if/elif
+        # End if
+    # End for
 
     print_group("Parents", parents_list)
-
-    # Siblings are not directly available in this Person Card response structure in a simple list.
-    # We could potentially fetch them via a different API or parse the Facts API more deeply.
-    # For now, matching temp.py v7.36, display as None found.
-    print_group(
-        "Siblings", []
-    )  # Placeholder / Not available directly in this API response
-
-    spouses_list = []
-    spouse = person_card_data.get(
-        "selectedSpouse"
-    )  # The currently selected/primary spouse
-    # The Person Card API only gives details for ONE selected spouse and their children.
-    # If multiple spouses exist, they might be in the Facts API response structure, but
-    # the specific `/app-api/express/v1/profiles/details` endpoint structure needs checking.
-    # Temp.py v7.36's Person Card parsing only checks for 'selectedSpouse'. Let's add a check for 'spouses' list in facts_data if available, but prioritize the selected one.
-    if spouse and isinstance(spouse, dict):
-        spouses_list.append(spouse)  # Add the selected spouse
-
-    # Add other spouses from facts_data if available (checking for the list structure)
-    if facts_data and isinstance(facts_data.get("spouses"), list):
-        selected_spouse_id = (
-            spouse.get("personId") if spouse and isinstance(spouse, dict) else None
-        )
-        for sp_fact in facts_data["spouses"]:
-            if (
-                isinstance(sp_fact, dict)
-                and sp_fact.get("personId") != selected_spouse_id
-            ):
-                spouses_list.append(
-                    {"name": sp_fact.get("name", "Unknown Spouse")}
-                )  # Append other spouses
-
+    print_group("Siblings", siblings_list)
     print_group("Spouse(s)", spouses_list)
-
-    children_list = []
-    # Children are listed under the selected spouse in the Person Card API
-    if spouse and isinstance(spouse, dict) and isinstance(spouse.get("children"), list):
-        children_list.extend(spouse["children"])
-
-    # Also check for a 'children' list in the facts_data if available
-    if facts_data and isinstance(facts_data.get("children"), list):
-        # Avoid adding children already listed under the selected spouse
-        existing_child_ids = {
-            c.get("personId") for c in children_list if isinstance(c, dict)
-        }
-        for ch_fact in facts_data["children"]:
-            if (
-                isinstance(ch_fact, dict)
-                and ch_fact.get("personId") not in existing_child_ids
-            ):
-                children_list.append(
-                    {"name": ch_fact.get("name", "Unknown Child")}
-                )  # Append other children
-
     print_group("Children", children_list)
 
-    # --- Display Relationship Path to Tree Owner (WGG) ---
-    # This requires the selected person's ID and the logged-in user's profile ID (Tree Owner)
-    # The API endpoint for this is /discoveryui-matchesservice/api/samples/{personId}/relationshiptome/{meProfileId}
-    # It returns a JSONP response containing HTML.
-    selected_person_id = selected_match.get(
-        "person_id"
-    )  # Use the ID from the selected match
+    # --- Display Relationship Path ---
+    selected_person_id = selected_match.get("person_id")
+    selected_tree_id = selected_match.get("tree_id")
+
     if owner_profile_id and selected_person_id:
-        # Ensure the Tree Owner's profile ID is not the same as the selected person's ID
         if owner_profile_id.upper() == selected_person_id.upper():
             print(f"\n--- Relationship Path to {owner_name} (API) ---")
             print("(Selected person is the Tree Owner)")
         else:
-            print(
-                f"\nCalculating relationship path to {owner_name}..."
-            )  # Use actual owner name
-            ladder_api_url = f"{base_url}/discoveryui-matchesservice/api/samples/{selected_person_id}/relationshiptome/{owner_profile_id}"
-            api_description_ladder = "API Relationship Ladder (Batch)"  # Using the batch API description from config
+            print(f"\nCalculating relationship path to {owner_name}...")
+            ladder_api_url = ""
+            api_description_ladder = ""
+            ladder_headers = {}
+            ladder_referer = ""
+            use_csrf_ladder = False
+            force_text_ladder = True
 
-            relationship_html_raw = None  # Store the raw response text
+            if owner_tree_id and selected_tree_id == owner_tree_id:
+                ladder_api_url = f"{base_url}/family-tree/person/tree/{owner_tree_id}/person/{selected_person_id}/getladder"
+                api_description_ladder = "Get Tree Ladder API (Action 11)"
+                callback_name = f"__ancestry_jsonp_{int(time.time()*1000)}"
+                timestamp_ms = int(time.time() * 1000)
+                query_params = urlencode({"callback": callback_name, "_": timestamp_ms})
+                ladder_api_url = f"{ladder_api_url}?{query_params}"
+                ladder_headers = {
+                    "Accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                }
+                ladder_referer = f"{base_url}/family-tree/person/tree/{owner_tree_id}/person/{selected_person_id}/facts"
+                logger.debug(f"Using Tree Ladder API: {ladder_api_url}")
+            else:
+                if not owner_profile_id:
+                    logger.error(
+                        "Cannot calculate relationship path: Owner profile ID missing for discovery API."
+                    )
+                    print(
+                        "\nERROR: Cannot calculate relationship path - required owner ID missing."
+                    )
+                    return True
+                # End if
 
+                ladder_api_url = f"{base_url}/discoveryui-matchesservice/api/samples/{selected_person_id}/relationshiptome/{owner_profile_id}"
+                api_description_ladder = "API Relationship Ladder (Batch)"
+                ladder_referer = urljoin(
+                    base_url, f"/discoveryui-matches/list/{session_manager.my_uuid}"
+                )
+                logger.debug(f"Using Discovery/Batch Ladder API: {ladder_api_url}")
+            # End if/else for API choice
+
+            relationship_html_raw = None
             try:
-                # Fetch the raw response text (it's JSONP/text, not pure JSON)
+                # Use standard _api_req for ladder APIs
                 relationship_html_raw = _api_req(
                     url=ladder_api_url,
                     driver=session_manager.driver,
                     session_manager=session_manager,
                     method="GET",
                     api_description=api_description_ladder,
-                    # Referer needed for context, match list is a good referer
-                    referer_url=urljoin(
-                        base_url, f"/discoveryui-matches/list/{session_manager.my_uuid}"
-                    ),
-                    is_json=False,  # Explicitly tell _api_req NOT to parse as JSON initially
-                    force_text_response=True,  # Ensure we get text response
-                    timeout=15,  # Short timeout
+                    headers=ladder_headers,
+                    referer_url=ladder_referer,
+                    use_csrf_token=use_csrf_ladder,
+                    force_text_response=force_text_ladder,
+                    timeout=20,
                 )
 
-                # display_raw_relationship_ladder handles extraction, decoding, parsing, and printing
                 if relationship_html_raw and isinstance(relationship_html_raw, str):
                     display_raw_relationship_ladder(
                         relationship_html_raw,
@@ -865,7 +938,6 @@ def handle_api_report():
                     isinstance(relationship_html_raw, dict)
                     and "error" in relationship_html_raw
                 ):
-                    # If _api_req returned an error dict, pass it to the display function
                     display_raw_relationship_ladder(
                         relationship_html_raw,
                         owner_name,
@@ -877,23 +949,24 @@ def handle_api_report():
                     )
                     print(f"\n--- Relationship Path to {owner_name} (API) ---")
                     print("(API call returned unexpected data or no response)")
-
+                # End if/else
             except Exception as e:
                 logger.error(
                     f"API call {api_description_ladder} failed: {e}", exc_info=True
                 )
                 print(f"\n--- Relationship Path to {owner_name} (API) ---")
                 print(f"(Error fetching relationship path from API: {e})")
-
+            # End try/except for ladder API call
+        # End if/else for relationship calculation
     elif not owner_profile_id:
         print(f"\n--- Relationship Path to Tree Owner (API) ---")
         print("(Skipping relationship calculation as your profile ID was not found)")
-
-    else:  # selected_person_id is None (shouldn't happen if match was selected)
+    else:
         print(f"\n--- Relationship Path to {owner_name} (API) ---")
         print("(Skipping relationship calculation as selected person ID is missing)")
+    # End if/elif/else for relationship path
 
-    return True  # Indicate successful report completion
+    return True
 
 
 # End of handle_api_report
@@ -904,72 +977,64 @@ def main():
     """Main execution flow for Action 11 (API Report)."""
     logger.info("--- Action 11: API Report Starting ---")
 
-    # Check if required core utilities are available
+    # Check prerequisites before running handler
     if not CORE_UTILS_AVAILABLE:
-        logger.critical(
-            "Required core utilities (utils.py) not loaded. Cannot run Action 11."
-        )
+        logger.critical("Required core utilities not loaded.")
         print("\nCRITICAL ERROR: Required utilities not loaded.")
         sys.exit(1)
-
-    # Check if required API utilities are available
+    # End if
     if not API_UTILS_AVAILABLE:
-        logger.critical(
-            "Required API utilities (api_utils.py) not loaded. Cannot run Action 11."
-        )
+        logger.critical("Required API utilities not loaded.")
         print("\nCRITICAL ERROR: Required API utilities not loaded.")
         sys.exit(1)
-
-    # Check if required GEDCOM scoring/date utilities are available (needed for consistent scoring and display)
-    # These are not strictly fatal for the *entire* API report, but necessary for key parts.
-    # We log warnings in handle_api_report if they are missing, but exit here if scoring is a critical requirement.
-    # As per requirement 3, scoring mechanism must be used.
+    # End if
     if not GEDCOM_SCORING_AVAILABLE or not GEDCOM_DATE_UTILS_AVAILABLE:
-        logger.critical(
-            "Required GEDCOM scoring or date utilities (from gedcom_utils.py) not loaded."
-        )
-        print(
-            "\nCRITICAL ERROR: Required scoring or date utilities not loaded. Cannot ensure consistent report format."
-        )
+        logger.critical("Required GEDCOM scoring or date utilities not loaded.")
+        print("\nCRITICAL ERROR: Required scoring or date utilities not loaded.")
         sys.exit(1)
-
-    # Check if scoring configuration is available
+    # End if
     if (
-        COMMON_SCORING_WEIGHTS is None
-        or NAME_FLEXIBILITY is None
-        or DATE_FLEXIBILITY is None
+        config_instance is None
+        or not hasattr(config_instance, "COMMON_SCORING_WEIGHTS")
+        or not hasattr(config_instance, "NAME_FLEXIBILITY")
+        or not hasattr(config_instance, "DATE_FLEXIBILITY")
     ):
-        logger.critical(
-            "Scoring configuration variables are None after attempting load."
-        )
-        print("\nERROR: Scoring configuration load failed. Cannot run Action 11.")
+        logger.critical("Scoring configuration variables missing or invalid.")
+        print("\nERROR: Scoring configuration load failed.")
         sys.exit(1)
+    # End if
+    if cloudscraper is None or not session_manager.scraper:
+        logger.critical(
+            "Cloudscraper library/instance missing or failed to initialize."
+        )
+        print("\nCRITICAL ERROR: Cloudscraper is required but unavailable.")
+        sys.exit(1)
+    # End if
 
-    # Run the API Report Handler
-    handle_api_report()
+    report_successful = handle_api_report()
 
-    logger.info("--- Action 11: API Report Finished ---")
-    print("\nAction 11 finished.")
+    if report_successful:
+        logger.info("--- Action 11: API Report Finished Successfully ---")
+        print("\nAction 11 finished successfully.")
+    else:
+        logger.error("--- Action 11: API Report Finished with Errors ---")
+        print("\nAction 11 finished with errors.")
+    # End if
 
 
 # End of main
 
 # Script entry point check
 if __name__ == "__main__":
-    # Initial check for core utils availability before calling main
-    # main function will perform more detailed checks
     if CORE_UTILS_AVAILABLE:
         main()
     else:
-        # If CORE_UTILS_AVAILABLE is False (due to utils import error), exit immediately
         print(
             "\nCRITICAL ERROR: Required core utilities (utils.py) are not installed or failed to load."
         )
         print("Please check your Python environment and dependencies.")
         logging.getLogger().critical("Exiting: Required core utilities not loaded.")
         sys.exit(1)
-
-
-
-
+    # End if
 # End of action11.py
+# --- END OF FILE action11.py ---

@@ -111,6 +111,8 @@ def reset_preferences_file():
     except Exception as e:
         logger.error(f"Unexpected error in reset_preferences_file: {e}", exc_info=True)
         raise
+
+
 # End of reset_preferences_file
 
 
@@ -134,6 +136,8 @@ def set_win_size(driver):
         )
     except Exception as e:
         logger.error(f"Failed to set window size and position: {e}", exc_info=True)
+
+
 # End of set_win_size
 
 
@@ -152,6 +156,8 @@ def close_tabs(driver):
         logger.warning("Attempted to close or switch to a tab that no longer exists.")
     except Exception as e:
         logger.error(f"Error in close_tabs: {e}", exc_info=True)
+
+
 # end close_tabs
 
 
@@ -189,7 +195,9 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         if user_data_dir_path:
             user_data_dir_str = str(user_data_dir_path.resolve())
             options.add_argument(f"--user-data-dir={user_data_dir_str}")
-            logger.info(f"User data directory (no --profile-directory):\n{user_data_dir_str}")
+            logger.info(
+                f"User data directory (no --profile-directory):\n{user_data_dir_str}"
+            )
         # Removed --profile-directory option for correct Chrome profile persistence
         # profile_dir_str = config.PROFILE_DIR
         # if profile_dir_str:
@@ -226,45 +234,74 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
             # Self-patching: Let undetected_chromedriver (uc) auto-manage ChromeDriver version.
             # Do not pass Service or executable_path unless overriding auto-management.
             chrome_kwargs = {"options": options}
-            logger.debug("Letting undetected_chromedriver auto-manage ChromeDriver version (self-patching mode).")
+            logger.debug(
+                "Letting undetected_chromedriver auto-manage ChromeDriver version (self-patching mode)."
+            )
             try:
-                logger.info(f"[init_webdvr] Attempting uc.Chrome() self-patching (attempt {attempt_num})...")
+                logger.info(
+                    f"[init_webdvr] Attempting uc.Chrome() self-patching (attempt {attempt_num})..."
+                )
                 start_time = time.time()
                 driver = uc.Chrome(**chrome_kwargs)
-                logger.info(f"[init_webdvr] uc.Chrome() self-patching succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})")
+                logger.info(
+                    f"[init_webdvr] uc.Chrome() self-patching succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})"
+                )
                 logger.debug(
                     f"WebDriver instance object potentially created (attempt {attempt_num})."
                 )  # Changed log slightly
             except Exception as uc_exc:
-                logger.error(f"[init_webdvr] uc.Chrome() self-patching failed on attempt {attempt_num}: {uc_exc}", exc_info=True)
-                if "cannot connect to chrome" in str(uc_exc).lower() or "chrome not reachable" in str(uc_exc).lower():
-                    logger.warning("[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary.")
+                logger.error(
+                    f"[init_webdvr] uc.Chrome() self-patching failed on attempt {attempt_num}: {uc_exc}",
+                    exc_info=True,
+                )
+                if (
+                    "cannot connect to chrome" in str(uc_exc).lower()
+                    or "chrome not reachable" in str(uc_exc).lower()
+                ):
+                    logger.warning(
+                        "[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary."
+                    )
                 # Fallback: Try manual path if available
                 driver_path_obj = config.CHROME_DRIVER_PATH
                 if driver_path_obj:
                     driver_path_str = str(driver_path_obj.resolve())
                     if os.path.exists(driver_path_str):
-                        logger.info(f"[init_webdvr] Falling back to manual ChromeDriver path: {driver_path_str}")
+                        logger.info(
+                            f"[init_webdvr] Falling back to manual ChromeDriver path: {driver_path_str}"
+                        )
                         try:
                             from selenium.webdriver.chrome.service import Service
+
                             # FRESH ChromeOptions for fallback!
                             fallback_options = uc.ChromeOptions()
                             # Copy all arguments and settings from original options
                             for arg in options.arguments:
                                 fallback_options.add_argument(arg)
                             fallback_options.binary_location = options.binary_location
-                            chrome_kwargs_fallback = {"options": fallback_options, "service": Service(executable_path=driver_path_str)}
+                            chrome_kwargs_fallback = {
+                                "options": fallback_options,
+                                "service": Service(executable_path=driver_path_str),
+                            }
                             start_time_fallback = time.time()
                             driver = uc.Chrome(**chrome_kwargs_fallback)
-                            logger.info(f"[init_webdvr] Fallback uc.Chrome() with manual path succeeded in {time.time() - start_time_fallback:.2f}s (attempt {attempt_num})")
+                            logger.info(
+                                f"[init_webdvr] Fallback uc.Chrome() with manual path succeeded in {time.time() - start_time_fallback:.2f}s (attempt {attempt_num})"
+                            )
                         except Exception as fallback_exc:
-                            logger.error(f"[init_webdvr] Fallback uc.Chrome() with manual path also failed: {fallback_exc}", exc_info=True)
+                            logger.error(
+                                f"[init_webdvr] Fallback uc.Chrome() with manual path also failed: {fallback_exc}",
+                                exc_info=True,
+                            )
                             driver = None
                     else:
-                        logger.error(f"[init_webdvr] Manual ChromeDriver path not found: {driver_path_str}. No further fallback possible.")
+                        logger.error(
+                            f"[init_webdvr] Manual ChromeDriver path not found: {driver_path_str}. No further fallback possible."
+                        )
                         driver = None
                 else:
-                    logger.error("[init_webdvr] No manual ChromeDriver path configured. No further fallback possible.")
+                    logger.error(
+                        "[init_webdvr] No manual ChromeDriver path configured. No further fallback possible."
+                    )
                     driver = None
 
             # Only proceed with driver setup if driver is not None
@@ -310,7 +347,6 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                     f"WebDriver instance fully configured successfully (attempt {attempt_num})."
                 )
                 return driver  # SUCCESS!
-
 
         # --- Handle Specific Exceptions During Outer Initialization Attempt ---
         except TimeoutException as e:
@@ -371,6 +407,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
     logger.error("Exited WebDriver initialization loop unexpectedly.")
     return None
+
+
 # End of init_webdvr
 
 
@@ -401,6 +439,8 @@ def cleanup_webdrv():
 
     except Exception as e:
         logger.error(f"Error during cleanup: {e}", exc_info=True)
+
+
 # end of cleanup_webdr
 
 

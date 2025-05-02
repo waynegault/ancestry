@@ -109,6 +109,7 @@ def _get_message_context(
         )
         return []
 
+
 # End of _get_message_context
 
 
@@ -157,6 +158,8 @@ def _format_context_for_ai_extraction(
 
     # Step 4: Join lines into a single string separated by newlines
     return "\n".join(context_lines)
+
+
 # End of _format_context_for_ai_extraction
 
 
@@ -165,14 +168,18 @@ def _search_gedcom_for_names(names: List[str]):
     # TODO: Implement GEDCOM parsing and search logic.
     gedcom_path = config_instance.GEDCOM_FILE_PATH
     if gedcom_path and gedcom_path.exists():
-         logger.info(f"(Placeholder) Would search GEDCOM {gedcom_path.name} for: {names}")
-         # Add actual search logic here
-         pass
+        logger.info(
+            f"(Placeholder) Would search GEDCOM {gedcom_path.name} for: {names}"
+        )
+        # Add actual search logic here
+        pass
     elif gedcom_path:
-         logger.warning(f"GEDCOM search configured but file not found: {gedcom_path}")
+        logger.warning(f"GEDCOM search configured but file not found: {gedcom_path}")
     else:
-         logger.warning("GEDCOM search called but GEDCOM_FILE_PATH not configured.")
-    return None # Placeholder return
+        logger.warning("GEDCOM search called but GEDCOM_FILE_PATH not configured.")
+    return None  # Placeholder return
+
+
 # End of _search_gedcom_for_names
 
 
@@ -181,7 +188,9 @@ def _search_api_for_names(session_manager: SessionManager, names: List[str]):
     # TODO: Implement Ancestry API search logic (likely undocumented).
     logger.info(f"(Placeholder) Would search Ancestry API for names: {names}")
     # Add actual API search logic here
-    return None # Placeholder return
+    return None  # Placeholder return
+
+
 # End of _search_api_for_names
 
 
@@ -211,11 +220,15 @@ def _search_ancestry_tree(session_manager: SessionManager, names: List[str]):
     elif search_method == "API":
         return _search_api_for_names(session_manager, names)
     elif search_method == "NONE":
-         logger.info("Action 9 Tree Search: Method set to NONE. Skipping search.")
-         return None
-    else: # Should be caught by config loading, but safety check
-        logger.error(f"Action 9 Tree Search: Invalid TREE_SEARCH_METHOD '{search_method}' encountered.")
+        logger.info("Action 9 Tree Search: Method set to NONE. Skipping search.")
         return None
+    else:  # Should be caught by config loading, but safety check
+        logger.error(
+            f"Action 9 Tree Search: Invalid TREE_SEARCH_METHOD '{search_method}' encountered."
+        )
+        return None
+
+
 # End of _search_ancestry_tree
 
 
@@ -245,6 +258,8 @@ def _load_templates_for_action9() -> Dict[str, str]:
 
     # Step 3: Return loaded templates if validation passes
     return all_templates
+
+
 # End of _load_templates_for_action9
 
 
@@ -979,6 +994,8 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
     # Step 11: Return overall success status
     return overall_success
+
+
 # End of process_productive_messages
 
 

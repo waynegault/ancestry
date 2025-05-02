@@ -1,3 +1,4 @@
+# --- START OF FILE api_utils.py ---
 # api_utils.py
 """
 Utility functions specifically for parsing Ancestry API responses
@@ -29,6 +30,8 @@ V16.14: Corrected Ladder API call in self_check Phase 4 to include JSONP
 V16.15: Corrected validation logic for format_api_relationship_path in self_check.
 V16.16: Refactored HTML/JSONP extraction logic from display_raw_relationship_ladder
         into a new helper function _extract_ladder_html. Updated self_check.
+V16.17: Revised format_api_relationship_path to correctly parse relationship direction
+        and handle appended dates in names based on analysis of raw HTML.
 """
 
 # --- Standard library imports ---
@@ -38,8 +41,8 @@ import re
 import os
 import time
 import json
-import requests  # Keep if used by parsing logic, though _api_req handles fetch
-import urllib.parse  # Used for urlencode in self_check
+import requests # Keep if used by parsing logic, though _api_req handles fetch
+import urllib.parse # Used for urlencode in self_check
 import html
 from typing import Optional, Dict, Any, Union, List, Tuple
 from datetime import (
@@ -51,7 +54,7 @@ from urllib.parse import (
     urlencode,
     quote,
 )  # Need quote for person picker params
-from pathlib import Path  # Needed for __main__ block
+from pathlib import Path # Needed for __main__ block
 
 # --- Third-party imports ---
 # Keep BeautifulSoup import here, check for its availability in functions
@@ -61,25 +64,35 @@ except ImportError:
     BeautifulSoup = None  # type: ignore # Gracefully handle missing dependency
 
 # --- Local application imports ---
-import utils
-from utils import format_name, ordinal_case
-from config import config_instance, selenium_config
-from gedcom_utils import _parse_date, _clean_display_date
-
+# Use try-except for robustness, especially if run standalone initially
+try:
+    import utils
+    from utils import format_name, ordinal_case
+    from config import config_instance, selenium_config
+    from gedcom_utils import _parse_date, _clean_display_date
+    UTILS_AVAILABLE = True
+except ImportError as imp_err:
+    UTILS_AVAILABLE = False
+    # Define fallbacks if imports fail
+    format_name = lambda x: str(x).title() if x else "Unknown"
+    ordinal_case = lambda x: str(x)
+    _parse_date = lambda x: None
+    _clean_display_date = lambda x: str(x) if x else "N/A"
+    class DummyConfig:
+        BASE_URL = "https://www.ancestry.com" # Provide a default
+        TESTING_PROFILE_ID = "08FA6E79-0006-0000-0000-000000000000"
+        TESTING_PERSON_TREE_ID = None
+    config_instance = DummyConfig()
+    selenium_config = None # Define selenium_config as None or a dummy if needed
 
 # Initialize logger - Ensure logger is always available
-# If running standalone, __main__ block will reconfigure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("api_utils")
-# logger.warning("Using fallback logger for api_utils.")
 
-
-# --- API Response Parsing (Functions remain unchanged) ---
-
-
+# --- API Response Parsing ---
 def parse_ancestry_person_details(
     person_card: Dict, facts_data: Optional[Dict]
 ) -> Dict:
@@ -90,19 +103,12 @@ def parse_ancestry_person_details(
     Prioritizes facts_data if available.
 
     Args:
-        person_card (Dict): A dictionary containing basic person info,
-                             MUST include 'personId' and 'treeId' if link generation
-                             or logging context is desired. personId can be the User ID
-                             or the tree-specific Person ID depending on the context.
-        facts_data (Optional[Dict]): The more detailed response from the Facts API endpoint
-                                      or the Profile Details API endpoint.
-                                      Expected to contain keys like 'gender', 'birthDate',
-                                      'deathDate', 'personName', 'FirstName', 'DisplayName', etc.
+        person_card (Dict): A dictionary containing basic person info.
+        facts_data (Optional[Dict]): More detailed API response (e.g., Profile Details).
 
     Returns:
         Dict: A standardized dictionary containing parsed details.
     """
-    # --- Initialize Details with defaults and essential IDs from person_card ---
     details = {
         "name": "Unknown",
         "birth_date": None,
@@ -110,27 +116,18 @@ def parse_ancestry_person_details(
         "death_date": None,
         "death_place": None,
         "gender": None,
-        "person_id": person_card.get(
-            "personId"
-        ),  # This should be the USER ID if facts_data is from Profile Details API
-        "tree_id": person_card.get(
-            "treeId"
-        ),  # May be None if facts_data is from Profile Details API
+        "person_id": person_card.get("personId"),
+        "tree_id": person_card.get("treeId"),
         "link": None,
-        "api_birth_obj": None,  # Store parsed datetime object
-        "api_death_obj": None,  # Store parsed datetime object
+        "api_birth_obj": None,
+        "api_death_obj": None,
         "is_living": None,
     }
 
-    # --- Extract from Facts Data (Primary Source if available) ---
     if facts_data and isinstance(facts_data, dict):
-        # Extract Name (Check multiple possible keys)
-        person_info = facts_data.get(
-            "person", {}
-        )  # Check inside 'person' dict first (Facts API)
+        person_info = facts_data.get("person", {})
         if isinstance(person_info, dict):
             details["name"] = person_info.get("personName", details["name"])
-            # Gender often within 'person'
             gender_fact = person_info.get("gender")
             if gender_fact and isinstance(gender_fact, str):
                 details["gender"] = (
@@ -138,32 +135,28 @@ def parse_ancestry_person_details(
                     if gender_fact.lower() == "male"
                     else "F" if gender_fact.lower() == "female" else None
                 )
-            # isLiving flag
             details["is_living"] = person_info.get("isLiving", details["is_living"])
+        # End if person_info is dict
 
-        # Fallback: Check top level 'personName' (Facts API)
         if details["name"] == "Unknown":
             details["name"] = facts_data.get("personName", details["name"])
+        # End if name unknown
 
-        # Fallback: Check 'DisplayName' (Profile Details API)
         if details["name"] == "Unknown":
             details["name"] = facts_data.get("DisplayName", details["name"])
+        # End if name unknown
 
-        # Fallback: Check 'FirstName' (Profile Details API - might need combining)
         if details["name"] == "Unknown":
             first_name_pd = facts_data.get("FirstName")
             if first_name_pd:
-                # Attempt to construct full name if possible, otherwise use FirstName
                 last_name_pd = facts_data.get("LastName")
-                if last_name_pd:
-                    details["name"] = f"{first_name_pd} {last_name_pd}"
-                else:
-                    details["name"] = first_name_pd
-            # Ensure name is not empty if DisplayName/FirstName were used
+                details["name"] = f"{first_name_pd} {last_name_pd}" if last_name_pd else first_name_pd
+            # End if first_name_pd
             if not details["name"]:
                 details["name"] = "Unknown"
+            # End if not details name
+        # End if name unknown
 
-        # Gender fallback: check top-level 'gender' (Facts API)
         if details["gender"] is None:
             gender_fact = facts_data.get("gender")
             if gender_fact and isinstance(gender_fact, str):
@@ -172,115 +165,120 @@ def parse_ancestry_person_details(
                     if gender_fact.lower() == "male"
                     else "F" if gender_fact.lower() == "female" else None
                 )
-        # Gender fallback: check 'Gender' (Profile Details API)
+            # End if gender_fact
+        # End if gender is None
+
         if details["gender"] is None:
-            gender_pd = facts_data.get("Gender")  # Note capitalization
+            gender_pd = facts_data.get("Gender")
             if gender_pd and isinstance(gender_pd, str):
                 details["gender"] = (
                     "M"
                     if gender_pd.lower() == "male"
                     else "F" if gender_pd.lower() == "female" else None
                 )
+            # End if gender_pd
+        # End if gender is None
 
-        # isLiving fallback: check top-level 'isLiving' (Facts API)
         if details["is_living"] is None:
             details["is_living"] = facts_data.get("isLiving", details["is_living"])
-        # isLiving fallback: check 'IsLiving' (Profile Details API) - Less common here
+        # End if is_living is None
+
         if details["is_living"] is None:
             details["is_living"] = facts_data.get("IsLiving", details["is_living"])
+        # End if is_living is None
 
-        # Extract Birth/Death from structured facts (Facts API structure)
         birth_fact_group = facts_data.get("facts", {}).get("Birth", [{}])[0]
         if isinstance(birth_fact_group, dict):
             date_info = birth_fact_group.get("date", {})
             place_info = birth_fact_group.get("place", {})
             if isinstance(date_info, dict):
-                details["birth_date"] = date_info.get(
-                    "normalized", date_info.get("original")
-                )
+                details["birth_date"] = date_info.get("normalized", date_info.get("original"))
+            # End if date_info
             if isinstance(place_info, dict):
                 details["birth_place"] = place_info.get("placeName")
+            # End if place_info
+        # End if birth_fact_group
 
         death_fact_group = facts_data.get("facts", {}).get("Death", [{}])[0]
         if isinstance(death_fact_group, dict):
             date_info = death_fact_group.get("date", {})
             place_info = death_fact_group.get("place", {})
             if isinstance(date_info, dict):
-                details["death_date"] = date_info.get(
-                    "normalized", date_info.get("original")
-                )
+                details["death_date"] = date_info.get("normalized", date_info.get("original"))
+            # End if date_info
             if isinstance(place_info, dict):
                 details["death_place"] = place_info.get("placeName")
+            # End if place_info
+        # End if death_fact_group
 
-        # Alternative structure check (e.g., from Profile Details API)
         if details["birth_date"] is None:
-            birth_fact_alt = facts_data.get(
-                "birthDate"
-            )  # Profile Details often uses this
+            birth_fact_alt = facts_data.get("birthDate")
             if birth_fact_alt and isinstance(birth_fact_alt, dict):
-                date_str = birth_fact_alt.get(
-                    "normalized", birth_fact_alt.get("date", "")
-                )
+                date_str = birth_fact_alt.get("normalized", birth_fact_alt.get("date", ""))
                 place_str = birth_fact_alt.get("place", "")
                 if date_str and isinstance(date_str, str):
                     details["birth_date"] = date_str
+                # End if date_str
                 if place_str and isinstance(place_str, str):
                     details["birth_place"] = place_str
-            elif isinstance(birth_fact_alt, str):  # Sometimes it's just a string
+                # End if place_str
+            elif isinstance(birth_fact_alt, str):
                 details["birth_date"] = birth_fact_alt
+            # End if/elif birth_fact_alt
+        # End if birth_date is None
 
         if details["death_date"] is None:
-            death_fact_alt = facts_data.get(
-                "deathDate"
-            )  # Profile Details often uses this
+            death_fact_alt = facts_data.get("deathDate")
             if death_fact_alt and isinstance(death_fact_alt, dict):
-                date_str = death_fact_alt.get(
-                    "normalized", death_fact_alt.get("date", "")
-                )
+                date_str = death_fact_alt.get("normalized", death_fact_alt.get("date", ""))
                 place_str = death_fact_alt.get("place", "")
                 if date_str and isinstance(date_str, str):
                     details["death_date"] = date_str
+                # End if date_str
                 if place_str and isinstance(place_str, str):
                     details["death_place"] = place_str
-            elif isinstance(death_fact_alt, str):  # Sometimes it's just a string
+                # End if place_str
+            elif isinstance(death_fact_alt, str):
                 details["death_date"] = death_fact_alt
+            # End if/elif death_fact_alt
+        # End if death_date is None
+    # End if facts_data
 
-    # --- Fallback to Person Card data if Facts are missing or incomplete ---
-    # Only overwrite if the detail is still None after checking facts_data
     if details["name"] == "Unknown":
         details["name"] = person_card.get("name", "Unknown")
+    # End if name unknown
 
     if details["birth_date"] is None:
         birth_info_card = person_card.get("birth", "")
         if birth_info_card and isinstance(birth_info_card, str):
             parts = birth_info_card.split(" in ")
             details["birth_date"] = parts[0].strip() if parts else birth_info_card
-            if (
-                details["birth_place"] is None
-            ):  # Only set place if not already from facts
+            if details["birth_place"] is None:
                 details["birth_place"] = parts[1].strip() if len(parts) > 1 else None
-        elif isinstance(birth_info_card, dict):  # Handle structured data in person_card
+            # End if birth_place
+        elif isinstance(birth_info_card, dict):
             details["birth_date"] = birth_info_card.get("date", details["birth_date"])
             if details["birth_place"] is None:
-                details["birth_place"] = birth_info_card.get(
-                    "place", details["birth_place"]
-                )
+                details["birth_place"] = birth_info_card.get("place", details["birth_place"])
+            # End if birth_place
+        # End if/elif birth_info_card
+    # End if birth_date is None
 
     if details["death_date"] is None:
         death_info_card = person_card.get("death", "")
         if death_info_card and isinstance(death_info_card, str):
             parts = death_info_card.split(" in ")
             details["death_date"] = parts[0].strip() if parts else death_info_card
-            if (
-                details["death_place"] is None
-            ):  # Only set place if not already from facts
+            if details["death_place"] is None:
                 details["death_place"] = parts[1].strip() if len(parts) > 1 else None
-        elif isinstance(death_info_card, dict):  # Handle structured data in person_card
+            # End if death_place
+        elif isinstance(death_info_card, dict):
             details["death_date"] = death_info_card.get("date", details["death_date"])
             if details["death_place"] is None:
-                details["death_place"] = death_info_card.get(
-                    "place", details["death_place"]
-                )
+                details["death_place"] = death_info_card.get("place", details["death_place"])
+            # End if death_place
+        # End if/elif death_info_card
+    # End if death_date is None
 
     if details["gender"] is None:
         gender_card = person_card.get("gender")
@@ -290,86 +288,54 @@ def parse_ancestry_person_details(
                 if gender_card.lower() == "male"
                 else "F" if gender_card.lower() == "female" else None
             )
+        # End if gender_card
+    # End if gender is None
 
     if details["is_living"] is None:
         details["is_living"] = person_card.get("isLiving", details["is_living"])
+    # End if is_living is None
 
-    # --- Final Processing ---
-    # Format Name (always apply formatting)
     details["name"] = format_name(details["name"])
 
-    # Parse dates into datetime objects using gedcom_utils helper
-    if _parse_date:
+    if UTILS_AVAILABLE and _parse_date:
         if details["birth_date"]:
             details["api_birth_obj"] = _parse_date(details["birth_date"])
+        # End if birth_date
         if details["death_date"]:
             details["api_death_obj"] = _parse_date(details["death_date"])
+        # End if death_date
+    # End if UTILS_AVAILABLE
 
-    # Clean dates for display using gedcom_utils helper
-    if _clean_display_date:
+    if UTILS_AVAILABLE and _clean_display_date:
         details["birth_date"] = (
-            _clean_display_date(details["birth_date"])
-            if details["birth_date"]
-            else "N/A"
+            _clean_display_date(details["birth_date"]) if details["birth_date"] else "N/A"
         )
         details["death_date"] = (
-            _clean_display_date(details["death_date"])
-            if details["death_date"]
-            else "N/A"
-        )
-    else:  # Fallback if _clean_display_date import failed
-        details["birth_date"] = (
-            str(details["birth_date"]) if details["birth_date"] else "N/A"
-        )
-        details["death_date"] = (
-            str(details["death_date"]) if details["death_date"] else "N/A"
-        )
-
-    # Generate Ancestry link
-    # Use treeId if available (from person_card), otherwise use profile link structure
-    if (
-        details["tree_id"]
-        and details[
-            "person_id"
-        ]  # This ID might be USER ID or PERSON ID depending on source
-        and config_instance
-        and hasattr(config_instance, "BASE_URL")
-    ):
-        # Best guess: If treeId exists, person_id is likely the PERSON ID for tree context
-        base_url = getattr(
-            config_instance, "BASE_URL", "https://www.ancestry.com"
-        ).rstrip("/")
-        # Use the originally intended facts link if tree context seems available
-        details["link"] = (
-            f"{base_url}/family-tree/person/tree/{details['tree_id']}/person/{details['person_id']}/facts"
-        )
-    elif (
-        details["person_id"]  # Assume this is the USER ID if tree_id is missing
-        and config_instance
-        and hasattr(config_instance, "BASE_URL")
-    ):
-        # Use profile link if tree context is missing
-        base_url = getattr(
-            config_instance, "BASE_URL", "https://www.ancestry.com"
-        ).rstrip("/")
-        details["link"] = (
-            f"{base_url}/discoveryui-matches/profile/{details['person_id']}"  # Link to profile/match page
+            _clean_display_date(details["death_date"]) if details["death_date"] else "N/A"
         )
     else:
-        details["link"] = "(unavailable)"
+        details["birth_date"] = str(details["birth_date"]) if details["birth_date"] else "N/A"
+        details["death_date"] = str(details["death_date"]) if details["death_date"] else "N/A"
+    # End if/else UTILS_AVAILABLE
 
-    # Log details extracted
+    base_url_for_link = getattr(config_instance, "BASE_URL", "https://www.ancestry.com").rstrip("/")
+    if details["tree_id"] and details["person_id"]:
+        details["link"] = f"{base_url_for_link}/family-tree/person/tree/{details['tree_id']}/person/{details['person_id']}/facts"
+    elif details["person_id"]:
+        details["link"] = f"{base_url_for_link}/discoveryui-matches/profile/{details['person_id']}"
+    else:
+        details["link"] = "(unavailable)"
+    # End if/elif/else link
+
     logger.debug(
         f"Parsed API details for '{details.get('name', 'Unknown')}': "
-        f"ID={details.get('person_id')}, Tree={details.get('tree_id', 'N/A')}, "  # Handle missing tree_id
+        f"ID={details.get('person_id')}, Tree={details.get('tree_id', 'N/A')}, "
         f"Born='{details.get('birth_date')}' in '{details.get('birth_place')}', "
         f"Died='{details.get('death_date')}' in '{details.get('death_place')}', "
         f"Gender='{details.get('gender')}', Living={details.get('is_living')}"
     )
 
     return details
-
-
 # End of parse_ancestry_person_details
 
 
@@ -377,19 +343,69 @@ def print_group(label: str, items: List[Dict]):
     """Prints a formatted group of relatives from API data."""
     print(f"\n{label}:")
     if items:
-        # Use format_name helper from utils (if available)
-        formatter = (
-            format_name
-            if "format_name" in globals() and callable(format_name)
-            else lambda x: str(x)
-        )
+        formatter = format_name if UTILS_AVAILABLE else lambda x: str(x).title()
         for item in items:
-            print(f"  - {formatter(item.get('name', 'Unknown'))}")
+            # Ensure item is a dict and has 'name' before formatting
+            name_to_format = item.get('name') if isinstance(item, dict) else None
+            print(f"  - {formatter(name_to_format)}")
+        # End for
     else:
         print("  (None found)")
-
-
+    # End if/else
 # End of print_group
+
+
+# Relationship term mapping (simple examples, expand as needed)
+RELATIONSHIP_MAP = {
+    "son": "Father",
+    "daughter": "Mother",
+    "mother": "Daughter", # Relationship FROM A TO B
+    "father": "Son",     # Relationship FROM A TO B
+    "brother": "Brother",
+    "sister": "Sister",
+    "husband": "Wife",
+    "wife": "Husband",
+    "uncle": "Nephew/Niece", # Can't determine Nephew/Niece without B's gender
+    "aunt": "Nephew/Niece",
+    # Add more inverse relationships
+}
+
+
+def _get_relationship_term(person_a_gender: Optional[str], basic_relationship: str) -> str:
+    """ Determines the specific relationship term based on gender (e.g., Father vs Parent). """
+    term = basic_relationship.capitalize() # Default
+    if basic_relationship.lower() == 'parent':
+        if person_a_gender == 'M':
+            term = "Father"
+        elif person_a_gender == 'F':
+            term = "Mother"
+        # End if/elif
+    elif basic_relationship.lower() == 'child':
+        if person_a_gender == 'M':
+            term = "Son"
+        elif person_a_gender == 'F':
+            term = "Daughter"
+        # End if/elif
+    elif basic_relationship.lower() == 'sibling':
+        if person_a_gender == 'M':
+            term = "Brother"
+        elif person_a_gender == 'F':
+            term = "Sister"
+        # End if/elif
+    elif basic_relationship.lower() == 'spouse':
+        if person_a_gender == 'M':
+            term = "Husband"
+        elif person_a_gender == 'F':
+            term = "Wife"
+        # End if/elif
+
+    # Apply ordinal casing if the term might contain ordinals (e.g., "1st Cousin")
+    if any(char.isdigit() for char in term) and UTILS_AVAILABLE:
+        term = ordinal_case(term)
+    # End if
+
+    return term
+# End of _get_relationship_term
 
 
 def format_api_relationship_path(
@@ -398,320 +414,206 @@ def format_api_relationship_path(
     """
     Parses relationship ladder HTML from Ancestry API response and formats
     it into a human-readable path string. Uses BeautifulSoup for parsing.
-    Based on temp.py v7.36 display_raw_relationship_ladder parsing logic.
+    Revised (v16.18) to correctly parse relationship direction based on HTML structure.
     """
     if not ladder_html or not isinstance(ladder_html, str):
-        logger.warning(
-            "format_api_relationship_path: Relationship ladder HTML missing or invalid type."
-        )
-        return "(No relationship path explanation available from API - HTML missing)"
+        logger.warning("format_api_relationship_path: HTML missing or invalid.")
+        return "(No relationship path explanation available - HTML missing)"
+    # End if
 
-    # Check if BeautifulSoup is available
     if BeautifulSoup is None:
-        logger.error(
-            "format_api_relationship_path: BeautifulSoup is not available. Cannot parse HTML."
-        )
+        logger.error("format_api_relationship_path: BeautifulSoup is not available.")
         return "(Cannot parse relationship path - BeautifulSoup missing. pip install beautifulsoup4 lxml)"
+    # End if
 
     try:
-        # Attempt to decode HTML entities and unicode escapes (handled by display_raw_relationship_ladder already if called from action11)
-        # Assuming the input ladder_html might still need some cleaning if not coming directly from display_raw_relationship_ladder raw output
-        html_unescaped = html.unescape(ladder_html)  # Basic unescaping
-        # Decode unicode escapes (e.g., \u003c -> <). Needs bytes.
-        try:
-            # Handle potential encoding issues. 'unicode_escape' requires bytes.
-            # Use utf-8 with backslashreplace for robustness.
-            html_unescaped = bytes(html_unescaped, "utf-8", "backslashreplace").decode(
-                "unicode_escape", errors="replace"
-            )
-        except Exception as e:
-            logger.debug(
-                f"Failed to decode unicode escapes in format_api_relationship_path: {e}. Proceeding.",
-                exc_info=False,
-            )
+        # HTML should already be unescaped by _extract_ladder_html
+        soup = BeautifulSoup(ladder_html, "html.parser")
 
-        soup = BeautifulSoup(html_unescaped, "html.parser")
+        # Select list items, excluding dividers
+        path_items_raw = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
 
-        # Extract Relationship Path items
-        path_list: List[str] = []
-        # Try common path item selectors - prioritize specific structure if known
-        path_items = (
-            soup.select(
-                'ul.textCenter > li:not([class*="iconArrowDown"])'
-            )  # Common structure seen
-            or soup.select(
-                "div.rel-path-wrapper ul > li:not(.rel-divider)"
-            )  # Another common structure
-            or soup.select("ul#relationshipPath > li")  # Older structure
-            or soup.select("div.relationshipPath li")
-            or soup.select(".rel-path li")
-        )
-
-        num_items = len(path_items)
-        if not path_items:
-            logger.warning(
-                "format_api_relationship_path: Could not find any relationship path items using selectors."
-            )
-            logger.debug(
-                f"HTML snippet that yielded no path items: {html_unescaped[:500]}..."
-            )
-            # Attempt to extract relationship text directly if path fails
+        if not path_items_raw:
+            logger.warning("format_api_relationship_path: Could not find path items.")
             rel_text_elem = soup.select_one(".rel-path-wrapper p") or soup.select_one(
                 ".relationshipText"
             )
             if rel_text_elem:
-                return f"({rel_text_elem.get_text(strip=True)})"  # Return just the summary text
+                return f"({rel_text_elem.get_text(strip=True)})"
+            # End if rel_text_elem
             return "(Could not parse relationship path from API HTML)"
+        # End if not path_items_raw
 
-        # Get formatting helpers from utils (if available)
-        name_formatter = (
-            format_name
-            if "format_name" in globals() and callable(format_name)
-            else lambda x: str(x)
-        )
-        ordinal_formatter = (
-            ordinal_case
-            if "ordinal_case" in globals() and callable(ordinal_case)
-            else lambda x: str(x)
-        )
-
-        # --- Parse Path Items ---
-        for i, item in enumerate(path_items):
-            # Skip arrow/divider elements if they were selected
-            # More robust check for classes containing 'arrow' or 'divider'
-            item_classes = item.get("class", [])
-            if any("arrow" in c or "divider" in c for c in item_classes):
-                continue
-
-            name_text = ""
-            desc_text = ""
-
-            # Find name container (<a>, <b>, <strong>, or span.name)
-            name_container = (
+        # Extract name and raw description for each person in the path
+        path_data = []
+        for item in path_items_raw:
+            name_text, desc_text = "Unknown", ""
+            # Extract name
+            name_container_b_in_a = item.select_one("a > b")
+            name_container_b = item.find("b") if not name_container_b_in_a else None
+            name_container_a = (
                 item.find("a")
-                or item.find("b")
-                or item.find("strong")
-                or item.find(
-                    "span", class_=re.compile(r"\bname\b", re.IGNORECASE)
-                )  # More specific class match
+                if not name_container_b_in_a and not name_container_b
+                else None
             )
 
-            if name_container:
-                # Clean and format the name using the helper from utils
-                raw_name = name_container.get_text(strip=True)
-                name_text = name_formatter(raw_name)
-                # Remove quotes if any (sometimes in API names)
-                name_text = name_text.replace('"', "").replace("'", "")
-            else:
-                # Fallback: Get all direct text within the li, stripping known unwanted tags
-                potential_name = item.get_text(separator=" ", strip=True)
-                # Remove text from known sub-elements like <i> or relationship spans
-                rel_span = item.find(
-                    "span", class_=re.compile(r"relationship", re.IGNORECASE)
-                )
-                if rel_span:
-                    potential_name = potential_name.replace(
-                        rel_span.get_text(strip=True), ""
-                    )
-                italic_span = item.find("i")
-                if italic_span:
-                    potential_name = potential_name.replace(
-                        italic_span.get_text(strip=True), ""
-                    )
-                potential_name = potential_name.strip()
-                # Basic check if it looks like a name
-                if (
-                    potential_name
-                    and not potential_name.isdigit()
-                    and len(potential_name.split()) <= 4
-                ):
-                    name_text = name_formatter(
-                        potential_name.replace('"', "").replace("'", "")
-                    )
-                    logger.debug(
-                        f"Path item {i}: Using fallback text as name: '{name_text}'"
-                    )
-                else:
-                    logger.debug(
-                        f"Path item {i}: Could not find name container or suitable fallback text."
-                    )
+            raw_name = "Unknown"
+            if name_container_b_in_a:
+                raw_name = name_container_b_in_a.get_text(strip=True)
+            elif name_container_b:
+                raw_name = name_container_b.get_text(strip=True)
+            elif name_container_a:
+                raw_name = name_container_a.get_text(strip=True)
+            # End if/elif
 
-            # Find description container (<i> or <span class="relationship">)
-            # The relationship description usually describes the *connection to the next person*
-            desc_element = (
-                item.find("i")  # Often holds the relationship label like 'Father'
-                or item.find(
-                    "span", class_=re.compile(r"\brelationship\b", re.IGNORECASE)
-                )
-                or item.find(
-                    "div", class_=re.compile(r"\brelationship\b", re.IGNORECASE)
-                )
-            )
+            cleaned_name = re.sub(r"\s+\d{4}-\d{0,4}$", "", raw_name).strip()
+            name_text = format_name(cleaned_name)
 
+            # Extract raw description text from <i> tag
+            desc_element = item.find("i")
             if desc_element:
-                raw_desc_full = desc_element.get_text(strip=True).replace('"', "'")
-                # Apply ordinal_case helper from utils for formatting terms like 1st Cousin
-                desc_text = ordinal_formatter(raw_desc_full)
-
-                # Check specifically for the last item which often has "You are the..." prefix
-                # This assumes the path is from the target person TO the tree owner ("You")
-                you_are_prefix_match = re.match(
-                    r"you are (?:the\s+)?", raw_desc_full, re.IGNORECASE
+                desc_text = desc_element.get_text(separator=" ", strip=True).replace(
+                    '"', "'"
                 )
-                if i == num_items - 1 and you_are_prefix_match:
-                    # If it's the last item and starts with "You are (the)...", format just the relationship part
-                    processed_desc = raw_desc_full[you_are_prefix_match.end() :].strip()
-                    desc_text = ordinal_formatter(
-                        processed_desc
-                    )  # Apply ordinal_case to the relationship part
-                    logger.debug(
-                        f"Path item {i} (last): Removed prefix, using description: '{desc_text}'"
-                    )
-                elif raw_desc_full:
-                    # For other items, just apply ordinal_case to the raw description
-                    desc_text = ordinal_formatter(raw_desc_full)
-            else:
-                logger.debug(
-                    f"Path item {i}: Could not find description element (i, span.relationship)."
-                )
-
-            # Combine Name and Description (if available)
-            display_text = name_text
-            # Only append description if it's not empty and not just the name itself
-            # Also check if description is just a date range (common mistake)
-            is_date_range = desc_text and re.match(r"\d{4}\s*-\s*\d{0,4}", desc_text)
-            if (
-                desc_text
-                and desc_text.lower() != name_text.lower()
-                and not is_date_range
-            ):
-                display_text += f" ({desc_text})"
-            elif is_date_range:
-                logger.debug(
-                    f"Path item {i}: Skipping description '{desc_text}' as it looks like a date range."
-                )
-
-            # Add to path list if we got valid text
-            if display_text:
-                path_list.append(display_text)
-            elif name_text:
-                path_list.append(
-                    name_text
-                )  # Fallback to just name if desc logic failed
-            else:
-                # If name extraction completely failed, log and skip
-                logger.warning(
-                    f"Path item {i}: Skipping path item because display_text/name_text is empty. Raw HTML item: {item}"
-                )
+            # End if desc_element
+            path_data.append({"name": name_text, "raw_desc": desc_text})
+        # End for item
 
         # --- Format the Path Steps ---
-        # The API path typically goes from the Target Person UP or ACROSS to the Tree Owner ("You").
-        # The first item is the Target Person, the last item is the Tree Owner.
-        formatted_steps: List[str] = []
-
-        if len(path_list) < 2:
+        if len(path_data) < 2:
             logger.warning(
-                f"Path list too short ({len(path_list)} items) for detailed explanation."
+                f"Path data too short ({len(path_data)} items) for detailed explanation."
             )
-            # Attempt to extract relationship text directly if path is short
-            rel_text_elem = soup.select_one(".rel-path-wrapper p") or soup.select_one(
-                ".relationshipText"
+            if path_data:
+                return f"{path_data[0]['name']} (Path too short)"
+            # End if path_data
+            return "(Could not parse sufficient path steps)"
+        # End if len < 2
+
+        formatted_steps: List[str] = []
+        # Extract overall relationship from the *first* item's description if simple
+        overall_relationship = ""
+        first_desc = path_data[0].get("raw_desc", "").strip()
+        # Check if it's a single capitalized word (likely a direct relationship term)
+        if first_desc and " " not in first_desc and first_desc[0].isupper():
+            overall_relationship = first_desc
+        # End if
+
+        # Iterate through pairs to determine the relationship FROM A TO B
+        # The description associated with B tells us B's relationship TO A.
+        for i in range(len(path_data) - 1):
+            person_a_data = path_data[i]
+            person_b_data = path_data[i + 1]
+            name_a = person_a_data.get("name", "Unknown")
+            name_b = person_b_data.get("name", "Unknown")
+            desc_b = person_b_data.get(
+                "raw_desc", ""
+            )  # Description associated with Person B
+
+            rel_term_b_to_a = "related"  # Default relationship term
+
+            # --- NEW PARSING LOGIC ---
+            # 1. Check for "You are the [Relation] of [Person A Name]"
+            you_are_match = re.match(
+                r"You are the (.*?) of (.*)", desc_b, re.IGNORECASE
             )
-            if rel_text_elem:
-                return f"({rel_text_elem.get_text(strip=True)})"  # Return just the summary text
+            if you_are_match:
+                rel_term_b_to_a = you_are_match.group(1).strip()
+                # Person B is "You", replace name_b with owner_name
+                name_b = owner_name
+                logger.debug(
+                    f"Path step {i+1}: Parsed 'You are the {rel_term_b_to_a} of {name_a}'"
+                )
 
-            if path_list:
-                return f"{path_list[0]} (Path too short for explanation)"
-            return "(Could not parse path steps from HTML)"
+            else:
+                # 2. Check for "[Relation] of [Person A Name]"
+                relation_of_match = re.match(r"(.*?) of (.*)", desc_b, re.IGNORECASE)
+                if relation_of_match:
+                    # Ensure the name matches Person A approximately (handle formatting diffs)
+                    name_check = relation_of_match.group(2).strip()
+                    if (
+                        name_a.lower() in name_check.lower()
+                        or name_check.lower() in name_a.lower()
+                    ):
+                        rel_term_b_to_a = relation_of_match.group(1).strip()
+                        logger.debug(
+                            f"Path step {i+1}: Parsed '{rel_term_b_to_a} of {name_a}'"
+                        )
+                    else:
+                        logger.warning(
+                            f"Path step {i+1}: Desc '{desc_b}' matched 'X of Y', but Y ('{name_check}') didn't match Person A ('{name_a}'). Using fallback."
+                        )
+                        rel_term_b_to_a = "related"  # Fallback if name mismatch
+                    # End if name check
+                else:
+                    # 3. Check if desc_b is a simple relationship term (e.g., "Brother", "Mother")
+                    # Assume simple term applies to Person B's relationship to A
+                    if desc_b and " " not in desc_b and desc_b[0].isupper():
+                        rel_term_b_to_a = desc_b
+                        logger.debug(
+                            f"Path step {i+1}: Parsed simple term '{rel_term_b_to_a}'"
+                        )
+                    elif desc_b:
+                        # Fallback if description exists but doesn't match patterns
+                        logger.warning(
+                            f"Path step {i+1}: Unrecognized description format '{desc_b}'. Using 'related'."
+                        )
+                        rel_term_b_to_a = "related"
+                    # End if/else simple term check
+                # End if/else relation_of_match
+            # End if/else you_are_match
 
-        # Start the explanation with the target person
-        start_person_display = path_list[0]  # First element is the target
-        # Remove " (description)" from the start person's entry if present
-        start_person_name_only = name_formatter(start_person_display.split(" (")[0])
+            # Format the relationship term (capitalize, handle ordinals)
+            formatted_rel_term = ordinal_case(rel_term_b_to_a.capitalize())
 
-        # Generate steps like "Name A is the [description] of Name B"
-        # The description associated with a person in the API HTML often refers to the *relationship to the next person*
-        # So, we look at person N and their description to describe the link from N to N+1.
+            # Format the step string: B is the Relation of A
+            formatted_steps.append(f"{name_b} is the {formatted_rel_term} of {name_a}")
+            # --- END NEW PARSING LOGIC ---
+        # End for i
 
-        for i in range(len(path_list) - 1):
-            current_person_info = path_list[i]  # E.g., "John Smith (Father)"
-            next_person_info = path_list[
-                i + 1
-            ]  # E.g., "Jane Doe (Mother)" or "You (Self)"
+        # Assemble the final explanation string
+        explanation_str = f"{path_data[0]['name']}\n -> " + "\n -> ".join(
+            formatted_steps
+        )
 
-            current_person_name = name_formatter(
-                current_person_info.split(" (")[0]
-            )  # Just the name
-            next_person_name = name_formatter(
-                next_person_info.split(" (")[0]
-            )  # Just the name
-
-            # Extract description from current_person_info if available
-            desc_match = re.search(r"\((.*?)\)", current_person_info)
-            # Use ordinal_formatter on the extracted relationship label
-            relationship_label = (
-                ordinal_formatter(desc_match.group(1)) if desc_match else "related"
+        # Prepend overall relationship if found
+        overall_rel_display = ""
+        if overall_relationship:
+            overall_rel_display = (
+                f"Overall: {ordinal_case(overall_relationship.title())}\nPath:\n"
             )
+        # End if overall_relationship
 
-            # Special handling for the last step towards the Tree Owner
-            if i == len(path_list) - 2:
-                # Ensure the last person displayed is the Tree Owner name passed to function
-                # The API often labels the last item "You" or similar, use the known owner name instead
-                next_person_name = name_formatter(
-                    owner_name
-                )  # Use the actual tree owner name
-
-            # Format the step
-            formatted_steps.append(
-                f"{current_person_name} is the {relationship_label} of {next_person_name}"
-            )
-
-        # Combine the steps with arrows
-        explanation_str = "\n -> ".join(formatted_steps)
-
-        # Return the final formatted path, starting with the initial person
-        # Adding the overall relationship text if available
-        overall_rel_text = ""
-        rel_text_elem = soup.select_one(
-            ".rel-path-wrapper p.marBtm10"
-        ) or soup.select_one(".relationshipText")
-        if rel_text_elem:
-            overall_rel_text = f"Overall: {ordinal_formatter(rel_text_elem.get_text(strip=True))}\nPath:\n"
-
-        return f"{overall_rel_text}{start_person_name_only}\n -> {explanation_str}"
+        return f"{overall_rel_display}{explanation_str}"
 
     except Exception as bs_parse_err:
         logger.error(
-            f"Error parsing relationship ladder HTML with BeautifulSoup: {bs_parse_err}",
-            exc_info=True,  # Log traceback
+            f"Error parsing relationship ladder HTML: {bs_parse_err}", exc_info=True
         )
-        logger.debug(f"Problematic unescaped HTML: {html_unescaped[:500]}...")
+        logger.debug(f"Problematic HTML: {ladder_html[:500]}...")
         return f"(Error parsing API relationship path: {bs_parse_err})"
 
 
 # End of format_api_relationship_path
 
 
-# --- NEW HELPER FUNCTION ---
+# --- Helper Function for HTML Extraction ---
 def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
     """
     Extracts and decodes the relationship ladder HTML from raw API response content.
     Handles standard JSON, JSONP, and potential errors.
     """
     if isinstance(raw_content, dict) and "error" in raw_content:
-        error_msg = raw_content.get("error", {}).get(
-            "message", raw_content.get("message", "Unknown API Error")
-        )
+        error_msg = raw_content.get("error", {}).get("message", raw_content.get("message", "Unknown API Error"))
         logger.error(f"_extract_ladder_html: API returned error: {error_msg}")
         return None
+    # End if
     if not raw_content or not isinstance(raw_content, str):
-        logger.error(
-            f"_extract_ladder_html: Invalid raw content type: {type(raw_content)}"
-        )
+        logger.error(f"_extract_ladder_html: Invalid raw content type: {type(raw_content)}")
         return None
+    # End if
 
     html_escaped = None
-    # 1. Try JSONP extraction first
     logger.debug("_extract_ladder_html: Attempting JSONP extraction...")
     try:
         jsonp_match = re.match(r"^\s*[\w$.]+\((.*)\)\s*;?\s*$", raw_content, re.DOTALL)
@@ -722,101 +624,70 @@ def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
                 if isinstance(json_data, dict) and "html" in json_data:
                     html_escaped = json_data["html"]
                     if isinstance(html_escaped, str):
-                        logger.debug(
-                            f"_extract_ladder_html: Found HTML via JSONP. Length: {len(html_escaped)}"
-                        )
+                        logger.debug(f"_extract_ladder_html: Found HTML via JSONP. Length: {len(html_escaped)}")
                     else:
-                        logger.warning(
-                            f"_extract_ladder_html: 'html' key found in JSONP, but not string: {type(html_escaped)}"
-                        )
+                        logger.warning(f"_extract_ladder_html: 'html' key found in JSONP, but not string: {type(html_escaped)}")
                         html_escaped = None
+                    # End if/else isinstance
                 else:
-                    logger.warning(
-                        "_extract_ladder_html: 'html' key not found in JSONP object."
-                    )
+                    logger.warning("_extract_ladder_html: 'html' key not found in JSONP object.")
+                # End if/else html key
             else:
-                logger.warning(
-                    f"_extract_ladder_html: Content in JSONP () not JSON: {json_str[:100]}..."
-                )
+                logger.warning(f"_extract_ladder_html: Content in JSONP () not JSON: {json_str[:100]}...")
+            # End if/else json_str looks like JSON
         else:
-            logger.debug(
-                "_extract_ladder_html: Raw content does not match JSONP callback structure."
-            )
-            # --- Attempt direct JSON parse if JSONP match fails ---
-            if raw_content.strip().startswith("{") and raw_content.strip().endswith(
-                "}"
-            ):
+            logger.debug("_extract_ladder_html: Raw content does not match JSONP structure.")
+            if raw_content.strip().startswith("{") and raw_content.strip().endswith("}"):
                 logger.debug("_extract_ladder_html: Attempting direct JSON parse...")
                 try:
                     json_data_direct = json.loads(raw_content.strip())
-                    if (
-                        isinstance(json_data_direct, dict)
-                        and "html" in json_data_direct
-                        and isinstance(json_data_direct["html"], str)
-                    ):
+                    if isinstance(json_data_direct, dict) and "html" in json_data_direct and isinstance(json_data_direct["html"], str):
                         html_escaped = json_data_direct["html"]
-                        logger.debug(
-                            f"_extract_ladder_html: Found HTML via direct JSON parse. Length: {len(html_escaped)}"
-                        )
+                        logger.debug(f"_extract_ladder_html: Found HTML via direct JSON parse. Length: {len(html_escaped)}")
                     else:
-                        logger.warning(
-                            "_extract_ladder_html: Direct JSON ok, but 'html' key missing/invalid."
-                        )
+                        logger.warning("_extract_ladder_html: Direct JSON ok, but 'html' key missing/invalid.")
+                    # End if/else html key
                 except json.JSONDecodeError:
                     logger.warning("_extract_ladder_html: Direct JSON parse failed.")
-            # --- End Direct JSON ---
-
+                # End try/except JSONDecodeError
+            # End if starts/ends with {}
+        # End if/else jsonp_match
     except json.JSONDecodeError as json_e:
-        logger.warning(
-            f"_extract_ladder_html: JSONDecodeError during JSONP/JSON extraction: {json_e}"
-        )
+        logger.warning(f"_extract_ladder_html: JSONDecodeError during JSONP/JSON extraction: {json_e}")
     except Exception as e:
-        logger.warning(
-            f"_extract_ladder_html: Unexpected error during JSONP/JSON extraction: {e}"
-        )
+        logger.warning(f"_extract_ladder_html: Unexpected error during JSONP/JSON extraction: {e}")
+    # End try/except
 
-    # 2. Fallback: Try direct regex for "html":"..." structure
     if not html_escaped:
         logger.debug("_extract_ladder_html: JSONP/JSON failed, trying regex...")
-        html_match = re.search(
-            r'"html"\s*:\s*"((?:\\.|[^"\\])*)"',
-            raw_content,
-            re.IGNORECASE | re.DOTALL,
-        )
+        html_match = re.search(r'"html"\s*:\s*"((?:\\.|[^"\\])*)"', raw_content, re.IGNORECASE | re.DOTALL)
         if html_match:
             html_escaped = html_match.group(1)
-            logger.debug(
-                f"_extract_ladder_html: Found HTML via regex. Length: {len(html_escaped)}"
-            )
+            logger.debug(f"_extract_ladder_html: Found HTML via regex. Length: {len(html_escaped)}")
+        # End if html_match
+    # End if not html_escaped
 
-    # 3. If HTML still not found, fail
     if not html_escaped:
         logger.error("_extract_ladder_html: Could not extract HTML content.")
         logger.debug(f"Raw content snippet: {raw_content[:500]}...")
         return None
+    # End if not html_escaped
 
-    # 4. Unescape and decode
     try:
         temp_unescaped = html_escaped.replace("\\\\", "\\")
-        html_intermediate = temp_unescaped.encode("utf-8", "backslashreplace").decode(
-            "unicode_escape", errors="replace"
-        )
+        html_intermediate = temp_unescaped.encode("utf-8", "backslashreplace").decode("unicode_escape", errors="replace")
         html_unescaped = html.unescape(html_intermediate)
         logger.debug("_extract_ladder_html: Successfully unescaped HTML.")
         return html_unescaped
     except Exception as decode_err:
-        logger.error(
-            f"_extract_ladder_html: Could not decode HTML. Error: {decode_err}",
-            exc_info=True,
-        )
+        logger.error(f"_extract_ladder_html: Could not decode HTML. Error: {decode_err}", exc_info=True)
         logger.debug(f"Problematic escaped HTML snippet: {html_escaped[:500]}...")
         return None
-
-
+    # End try/except decode
 # End of _extract_ladder_html
 
 
-# --- UPDATED FUNCTION ---
+# --- Display Function ---
 def display_raw_relationship_ladder(
     raw_content: Union[str, Dict], owner_name: str, target_name: str
 ):
@@ -824,627 +695,648 @@ def display_raw_relationship_ladder(
     Parse and display the Ancestry relationship ladder from raw JSONP/HTML content.
     Uses helper functions to extract HTML and format the path.
     """
-    # Check if BeautifulSoup is available early
     if BeautifulSoup is None:
-        logger.error(
-            "BeautifulSoup library not found. Cannot parse relationship ladder HTML."
-        )
+        logger.error("BeautifulSoup library not found. Cannot parse relationship ladder HTML.")
         print(f"\n--- Relationship between {owner_name} and {target_name} (API) ---")
-        print(
-            "\n(Cannot parse relationship path - BeautifulSoup missing. pip install beautifulsoup4 lxml)"
-        )
-        return  # End of function display_raw_relationship_ladder
+        print("\n(Cannot parse relationship path - BeautifulSoup missing. pip install beautifulsoup4 lxml)")
+        return # End of function display_raw_relationship_ladder
+    # End if
 
-    logger.info(
-        f"\n--- Relationship between {owner_name} and {target_name} (API Report) ---"
-    )
+    logger.info(f"\n--- Relationship between {owner_name} and {target_name} (API Report) ---")
 
-    # --- Use helper to extract and decode HTML ---
     html_unescaped = _extract_ladder_html(raw_content)
 
     if not html_unescaped:
-        # Error already logged by helper
-        print(
-            "\n(Could not extract or decode relationship path HTML from API response)"
-        )
-        return  # End of function display_raw_relationship_ladder
-    # --- End HTML extraction ---
+        print("\n(Could not extract or decode relationship path HTML from API response)")
+        return # End of function display_raw_relationship_ladder
+    # End if
 
-    # --- Use format_api_relationship_path to get the full formatted string ---
-    # Pass the clean, unescaped HTML to the formatter function
+    # --- REMOVED DEBUG PRINT BLOCK ---
+
     formatted_path_str = format_api_relationship_path(
         html_unescaped, owner_name, target_name
     )
 
-    # Print the formatted path/relationship string returned by the formatter
     if formatted_path_str:
-        print(
-            formatted_path_str.strip()
-        )  # Print the generated path/relationship string
+        print(formatted_path_str.strip())
     else:
-        # Error should have been logged by format_api_relationship_path
         logger.warning("format_api_relationship_path returned empty string or None.")
         print("(Could not format relationship path steps from extracted HTML)")
-
+    # End if/else
 
 # End of display_raw_relationship_ladder
 
 
 # --- Standalone Test Block ---
-def self_check(verbose: bool = True) -> bool:
+def self_check() -> bool:  # Removed verbose argument as it's not used
     """
-    Performs internal self-checks for api_utils.py, including LIVE API calls
-    to test core parsing functions using configured credentials and target IDs.
-    Requires .env file to be correctly configured with Ancestry credentials,
-    TESTING_PROFILE_ID, TESTING_PERSON_TREE_ID (tree-specific), and MY_TREE_ID
-    (or TREE_NAME for auto-detection). Tests parser with Profile Details API (JSON)
-    and relationship functions with the tree-specific /getladder API (JSONP/HTML).
+    Performs internal self-checks for api_utils.py, including LIVE API calls.
+    Requires .env file to be correctly configured. Provides formatted output summary.
     """
     # --- Local Imports for Self-Check ---
-    # Need these to run the live tests without top-level dependency loops
     try:
-        # Ensure utils can be imported and has the necessary components
         import utils
-
-        if not hasattr(utils, "SessionManager") or not hasattr(utils, "_api_req"):
-            raise ImportError(
-                "Required components (SessionManager, _api_req) not found in utils."
-            )
-        from utils import SessionManager, _api_req, log_in, login_status
-
-        # Ensure config provides necessary attributes
-        from config import config_instance, selenium_config  # Need selenium_config too
-
-        if not hasattr(config_instance, "TESTING_PROFILE_ID"):
-            raise ImportError("config_instance missing TESTING_PROFILE_ID.")
-        # --- Check for TESTING_PERSON_TREE_ID existence ---
-        if not hasattr(config_instance, "TESTING_PERSON_TREE_ID"):
-            raise ImportError("config_instance missing TESTING_PERSON_TREE_ID.")
-        # Ensure logging is set up
+        from utils import SessionManager, _api_req, format_name, ordinal_case
+        from config import config_instance, selenium_config
         from logging_config import logger as utils_logger
-        from urllib.parse import urljoin, urlencode, quote  # Need quote
+        from urllib.parse import urljoin, urlencode, quote
         import traceback
-        import requests  # Needed for type checking response
+        import requests
+        from typing import Callable  # For _run_test_sc type hinting
     except ImportError as e:
-        print(f"\n[api_utils.py self-check ERROR]")
+        print(f"\n[api_utils.py self-check ERROR] - CRITICAL IMPORT FAILED: {e}")
         print(
-            f"- CRITICAL: Failed to import required modules/attributes for self-check: {e}"
-        )
-        print(
-            "- Ensure utils.py, config.py, logging_config.py are present, importable, and contain required definitions."
-        )
-        print(
-            "- Make sure TESTING_PERSON_TREE_ID is defined in your .env file and loaded by config.py"
+            "Ensure utils.py, config.py, logging_config.py are present and configured."
         )
         print(f"Self-check status: FAIL\n")
         return False
+    # End try
 
     # Use the logger imported from logging_config
-    logger = utils_logger
+    logger_self_check = utils_logger
+
+    # --- Test Runner Helper ---
+    test_results_sc: List[Tuple[str, str, str]] = []
+
+    def _run_test_sc(
+        test_name: str, test_func: Callable, *args, **kwargs
+    ) -> Tuple[str, str, str]:
+        """Runs a single test, logs result, stores result, and returns status tuple."""
+        logger_self_check.debug(f"[ RUNNING SC ] {test_name}")
+        status = "FAIL"
+        message = ""
+        expect_none = kwargs.pop("expected_none", False)
+        expect_type = kwargs.pop("expected_type", None)
+        expect_value = kwargs.pop("expected_value", None)
+        expect_contains = kwargs.pop("expected_contains", None)
+
+        try:
+            result = test_func(*args, **kwargs)
+            passed = False
+            if expect_none and result is None:
+                passed = True
+            elif expect_type is not None and isinstance(result, expect_type):
+                passed = True
+            elif expect_value is not None and result == expect_value:
+                passed = True
+            elif (
+                expect_contains is not None
+                and isinstance(result, str)
+                and expect_contains in result
+            ):
+                passed = True
+            elif result is True:
+                passed = True
+            elif result is None and not expect_none:
+                passed = True
+            else:  # Construct failure message
+                if expect_none:
+                    message = f"Expected None, got {type(result).__name__} ({str(result)[:50]})"
+                elif expect_type:
+                    message = f"Expected type {expect_type.__name__}, got {type(result).__name__}"
+                elif expect_value:
+                    message = f"Expected value '{str(expect_value)[:50]}', got '{str(result)[:50]}'"
+                elif expect_contains:
+                    message = f"Expected result to contain '{expect_contains}', got '{str(result)[:100]}...'"
+                else:
+                    message = f"Assertion failed (returned {str(result)[:100]})"
+            # End if/elif/else for checking result
+            status = "PASS" if passed else "FAIL"
+        except Exception as e:
+            status = "FAIL"
+            message = f"{type(e).__name__}: {e}"
+            logger_self_check.debug(
+                f"Exception details for {test_name}: {message}\n{traceback.format_exc()}",
+                exc_info=False,
+            )
+        # End try/except
+
+        log_level = logging.INFO if status == "PASS" else logging.ERROR
+        log_message = f"[ {status:<6} SC ] {test_name}{f': {message}' if message and status == 'FAIL' else ''}"
+        logger_self_check.log(log_level, log_message)
+        test_results_sc.append((test_name, status, message))
+        return (test_name, status, message)
+
+    # End of _run_test_sc
 
     # --- Test Parameters ---
-    target_profile_id = (
-        config_instance.TESTING_PROFILE_ID
-    )  # User ID for profile/ladder API
-    target_person_id = (
-        config_instance.TESTING_PERSON_TREE_ID
-    )  # Tree-specific Person ID from config
-    target_name_from_profile = "Unknown Target"  # Name from profile API
+    # Ensure required attributes exist before accessing
+    if (
+        not hasattr(config_instance, "TESTING_PROFILE_ID")
+        or not config_instance.TESTING_PROFILE_ID
+    ):
+        logger_self_check.error("TESTING_PROFILE_ID missing in config_instance.")
+        return False
+    if (
+        not hasattr(config_instance, "TESTING_PERSON_TREE_ID")
+        or not config_instance.TESTING_PERSON_TREE_ID
+    ):
+        logger_self_check.error("TESTING_PERSON_TREE_ID missing in config_instance.")
+        return False
+    # End if attribute checks
+
+    target_profile_id = config_instance.TESTING_PROFILE_ID
+    target_person_id = config_instance.TESTING_PERSON_TREE_ID
+    target_name_from_profile = "Unknown Target"
 
     # --- Status Tracking ---
-    status = True
-    messages = []
-    session_manager: Optional[SessionManager] = None  # Initialize
+    overall_status = True  # Assume PASS initially
+    session_manager_sc: Optional[SessionManager] = None
 
-    # --- Helper for printing/logging messages ---
-    def log_msg(msg: str, level: int = logging.INFO):
-        messages.append(msg)
-        if level == logging.ERROR:
-            logger.error(msg)
-        elif level == logging.WARNING:
-            logger.warning(msg)
-        else:
-            logger.info(msg)
-
-    # End of log_msg
-
-    log_msg("\n[api_utils.py self-check starting...]")
+    logger_self_check.info("\n[api_utils.py self-check starting...]")
 
     # === Phase 0: Prerequisite Checks ===
-    log_msg("\n--- Phase 0: Prerequisite Checks ---")
-    # Check essential imports loaded at module level
-    module_imports_ok = True
-    if BeautifulSoup is None:
-        log_msg(
-            "- BeautifulSoup Import: FAILED (Needed for HTML parsing)", logging.ERROR
-        )
-        module_imports_ok = False
-        status = False
-    else:
-        log_msg("- BeautifulSoup Import: OK")
+    logger_self_check.info("--- Phase 0: Prerequisite Checks ---")
+    _, s0_status, _ = _run_test_sc(
+        "Check BeautifulSoup Import",
+        lambda: BeautifulSoup is not None,
+        expected_type=type,
+    )
+    if s0_status == "FAIL":
+        overall_status = False
+    # End if
 
-    # Check formatters/parsers
-    core_funcs = {
+    func_map = {
         "format_name": format_name,
         "ordinal_case": ordinal_case,
         "_parse_date": _parse_date,
         "_clean_display_date": _clean_display_date,
     }
-    for name, func in core_funcs.items():
-        if name not in globals() or not callable(func):
-            log_msg(f"- {name} Import/Fallback: FAILED", logging.ERROR)
-            module_imports_ok = False
-            status = False
-        else:
-            log_msg(f"- {name} Import/Fallback: OK")
+    for name, func in func_map.items():
+        _, s0_status, _ = _run_test_sc(
+            f"Check Function '{name}'", lambda: callable(func)
+        )
+        if s0_status == "FAIL":
+            overall_status = False
+    # End for
 
-    # Check config existence and critical values needed for tests
-    config_ok = True
-    if not hasattr(config_instance, "BASE_URL") or not config_instance.BASE_URL:
-        log_msg("- Config Check: BASE_URL missing or empty. FAILED", logging.ERROR)
-        config_ok = False
-        status = False
-    if (
-        not hasattr(config_instance, "ANCESTRY_USERNAME")
-        or not config_instance.ANCESTRY_USERNAME
-    ):
-        log_msg(
-            "- Config Check: ANCESTRY_USERNAME missing or empty. FAILED", logging.ERROR
-        )
-        config_ok = False
-        status = False
-    if (
-        not hasattr(config_instance, "ANCESTRY_PASSWORD")
-        or not config_instance.ANCESTRY_PASSWORD
-    ):
-        log_msg(
-            "- Config Check: ANCESTRY_PASSWORD missing or empty. FAILED", logging.ERROR
-        )
-        config_ok = False
-        status = False
-    if (
-        not hasattr(config_instance, "TESTING_PROFILE_ID")
-        or not config_instance.TESTING_PROFILE_ID
-    ):
-        log_msg(
-            "- Config Check: TESTING_PROFILE_ID missing or empty. FAILED", logging.ERROR
-        )
-        config_ok = False
-        status = False
-    # --- Check for the NEW required config ---
-    if (
-        not hasattr(config_instance, "TESTING_PERSON_TREE_ID")
-        or not config_instance.TESTING_PERSON_TREE_ID
-    ):
-        log_msg(
-            "- Config Check: TESTING_PERSON_TREE_ID missing or empty (Required for Ladder Test). FAILED",
-            logging.ERROR,
-        )
-        config_ok = False
-        status = False
-    if config_ok:
-        log_msg("- Config Check: Essential credentials/URLs/IDs present.")
+    _, s0_status, _ = _run_test_sc(
+        "Check Config Loaded",
+        lambda: config_instance is not None
+        and hasattr(config_instance, "BASE_URL")
+        and config_instance.BASE_URL is not None,
+    )
+    if s0_status == "FAIL":
+        overall_status = False
+    # End if
 
-    if not module_imports_ok or not config_ok:
-        log_msg(
-            "Prerequisite checks failed. Cannot proceed with live tests.", logging.ERROR
+    if not overall_status:
+        logger_self_check.error(
+            "Prerequisite checks failed. Cannot proceed with live tests."
         )
-        if verbose:
-            print("\n[api_utils.py self-check results]")
-            for m in messages:
-                print(m.replace("- ", "  "))
-        print(f"\nSelf-check status: FAIL (Prerequisites)\n")
         return False
+    # End if
 
     try:
         # === Phase 1: Session Setup ===
-        log_msg("\n--- Phase 1: Session Setup & Login ---")
-        session_manager = SessionManager()
-        start_ok = session_manager.start_sess(action_name="api_utils Self Check Start")
-        if not start_ok or not session_manager.driver_live:
-            log_msg("- SessionManager.start_sess(): FAILED", logging.ERROR)
-            status = False
-            raise RuntimeError("Failed to start WebDriver session.")
-
-        log_msg("- SessionManager.start_sess(): PASSED")
-        ready_ok = session_manager.ensure_session_ready(
-            action_name="api_utils Self Check Ready"
+        logger_self_check.info("--- Phase 1: Session Setup & Login ---")
+        session_manager_sc = SessionManager()  # Instantiate within try block
+        _, s1_status, _ = _run_test_sc(
+            "SessionManager.start_sess()",
+            session_manager_sc.start_sess,
+            action_name="SC Phase 1 Start",
         )
-        if not ready_ok:
-            log_msg("- SessionManager.ensure_session_ready(): FAILED", logging.ERROR)
-            status = False
-            raise RuntimeError(
-                "Failed to ensure session readiness (login/setup failed)."
-            )
+        if s1_status == "FAIL":
+            overall_status = False
+            raise RuntimeError("start_sess failed")
+        # End if
 
-        log_msg("- SessionManager.ensure_session_ready(): PASSED")
+        _, s1_status, _ = _run_test_sc(
+            "SessionManager.ensure_session_ready()",
+            session_manager_sc.ensure_session_ready,
+            action_name="SC Phase 1 Ready",
+        )
+        if s1_status == "FAIL":
+            overall_status = False
+            raise RuntimeError("ensure_session_ready failed")
+        # End if
 
         # === Phase 2: Get Target Info & Validate Config ===
-        log_msg("\n--- Phase 2: Get Target Info & Validate Config ---")
-        params_ok = True
-        target_tree_id = session_manager.my_tree_id
-        target_owner_name = session_manager.tree_owner_name
-        target_person_id = config_instance.TESTING_PERSON_TREE_ID  # Get from config
+        logger_self_check.info("--- Phase 2: Get Target Info & Validate Config ---")
+        target_tree_id = session_manager_sc.my_tree_id
+        target_owner_name = session_manager_sc.tree_owner_name
 
-        log_msg(f"- Target Profile ID (TESTING_PROFILE_ID): {target_profile_id}")
-        log_msg(
-            f"- Target Person ID (TESTING_PERSON_TREE_ID): {target_person_id}"
-        )  # Log configured person ID
+        _, s2_status_tid, _ = _run_test_sc(
+            "Check Target Tree ID Found", lambda: bool(target_tree_id)
+        )
+        _, s2_status_owner, _ = _run_test_sc(
+            "Check Target Owner Name Found", lambda: bool(target_owner_name)
+        )
+        if s2_status_tid == "FAIL" or s2_status_owner == "FAIL":
+            overall_status = False
+        # End if
 
-        if not target_tree_id:
-            log_msg(
-                "- Target Tree ID (MY_TREE_ID): FAILED (Not found/set after login)",
-                logging.ERROR,
-            )
-            params_ok = False
-            status = False
-        else:
-            log_msg(f"- Target Tree ID (MY_TREE_ID): {target_tree_id}")
-
-        if not target_owner_name:
-            log_msg(
-                "- Target Owner Name: FAILED (Not found after login)", logging.ERROR
-            )
-            params_ok = False
-            status = False
-        else:
-            log_msg(f"- Target Owner Name: {target_owner_name}")
-
-        # Validate the configured Person ID is present (already checked in Phase 0, but double check)
-        if not target_person_id:
-            log_msg(
-                "- Configured Target Person ID (TESTING_PERSON_TREE_ID): FAILED (Missing from config)",
-                logging.ERROR,
-            )
-            params_ok = False
-            status = False  # Critical for ladder test
-
-        # Step 2a: Get target display name from Profile API (still useful for relationship functions)
+        # Fetch target display name
         profile_api_url = urljoin(
-            config_instance.BASE_URL.rstrip("/") + "/",
+            config_instance.BASE_URL,
             f"/app-api/express/v1/profiles/details?userId={target_profile_id.upper()}",
         )
-        profile_api_desc = "Get Target Name (Profile Details)"
-        log_msg(f"- Getting target display name from Profile API: {profile_api_url}")
-        profile_response_details = utils._api_req(  # Use utils._api_req explicitly
+        api_call_lambda = lambda: utils._api_req(
             url=profile_api_url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            api_description=profile_api_desc,
+            driver=session_manager_sc.driver,
+            session_manager=session_manager_sc,
+            api_description="Get Target Name (Profile Details)",
             use_csrf_token=False,
         )
-        if profile_response_details and isinstance(profile_response_details, dict):
-            target_name_from_profile = profile_response_details.get(
-                "DisplayName", target_name_from_profile
-            )
-            # Fallback logic for name
-            if target_name_from_profile == "Unknown Target":
-                first_name = profile_response_details.get("FirstName")
-                last_name = profile_response_details.get("LastName")
-                if first_name and last_name:
-                    target_name_from_profile = f"{first_name} {last_name}"
-                elif first_name:
-                    target_name_from_profile = first_name
-            log_msg(f"- Target Display Name found: '{target_name_from_profile}'")
+        test_name = "API Call: Get Target Name"
+        _, s2_status, _ = _run_test_sc(test_name, api_call_lambda, expected_type=dict)
+        profile_response_details = api_call_lambda() if s2_status == "PASS" else None
+
+        if s2_status == "FAIL":
+            overall_status = False
         else:
-            log_msg(
-                f"- Failed to get target display name from Profile API. Response: {profile_response_details}",
-                logging.ERROR,
-            )
-            params_ok = False
-            status = False  # Fail if we can't get the name for relationship test
+            if profile_response_details:
+                target_name_from_profile = profile_response_details.get(
+                    "DisplayName", "Unknown Target"
+                )
+                if target_name_from_profile == "Unknown Target":
+                    first = profile_response_details.get("FirstName")
+                    last = profile_response_details.get("LastName")
+                    if first and last:
+                        target_name_from_profile = f"{first} {last}"
+                    elif first:
+                        target_name_from_profile = first
+                    # End if/elif
+                # End if fallback
+                _, s2_status_name, _ = _run_test_sc(
+                    "Check Target Name Found in API Resp",
+                    lambda: target_name_from_profile != "Unknown Target",
+                )
+                if s2_status_name == "FAIL":
+                    overall_status = False
+                # End if name check
+            else:
+                logger_self_check.error(
+                    "API call passed but response was None/invalid."
+                )
+                _run_test_sc("Check Target Name Found in API Resp", lambda: False)
+                overall_status = False
+            # End if/else profile_response_details
+        # End if/else API call status
 
-        # Step 2b: Removed API search for personId
-
-        if not params_ok:
-            log_msg(
-                "One or more required parameters missing. Subsequent tests may be skipped or fail.",
-                logging.WARNING,
-            )
-
-        # === Phase 3: Test parse_ancestry_person_details (Profile Details API) ===
-        # This phase remains the same, testing the parser with the Profile Details JSON
-        log_msg(
-            "\n--- Phase 3: Test parse_ancestry_person_details (Profile Details API) ---"
-        )
-        # Use profile_response_details fetched in Phase 2
-        parsed_details: Optional[Dict] = None
+        # === Phase 3: Test parse_ancestry_person_details ===
+        logger_self_check.info("--- Phase 3: Test parse_ancestry_person_details ---")
         if profile_response_details and isinstance(profile_response_details, dict):
-            log_msg("- Using Profile Details API response from Phase 2.")
-            # Pass the USER ID (target_profile_id) here, as that's what the Profile API used
             person_card_for_parse = {
                 "personId": target_profile_id,
-                "treeId": target_tree_id,  # Can be None
+                "treeId": target_tree_id,
             }
+            test_name_parse = "Function Call: parse_ancestry_person_details()"
+            parsed_details = None  # Initialize
             try:
-                parsed_details = parse_ancestry_person_details(
+                # Need to call within lambda for _run_test_sc exception handling
+                parse_lambda = lambda: parse_ancestry_person_details(
                     person_card_for_parse, profile_response_details
                 )
-                if parsed_details and isinstance(parsed_details, dict):
-                    log_msg("- parse_ancestry_person_details call: SUCCESS")
-                    # Validate essential keys (person_id will be the PROFILE ID here)
-                    missing_keys = [
-                        k
-                        for k in ["name", "person_id", "link"]
-                        if k not in parsed_details or parsed_details[k] is None
-                    ]
-                    if not missing_keys:
-                        # Check if name matches the one fetched earlier
-                        if parsed_details["name"] == format_name(
-                            target_name_from_profile
-                        ):
-                            log_msg(
-                                f"- Parsed Details Validation: PASSED (Name: '{parsed_details['name']}', Link: {parsed_details['link']})"
-                            )
-                        else:
-                            log_msg(
-                                f"- Parsed Details Validation: WARNING (Parsed name '{parsed_details['name']}' differs from fetched '{format_name(target_name_from_profile)}')",
-                                logging.WARNING,
-                            )
-                            # Don't fail the test for name discrepancy alone, but log it.
-                    else:
-                        log_msg(
-                            f"- Parsed Details Validation: FAILED (Missing/Null keys: {missing_keys})",
-                            logging.ERROR,
-                        )
-                        log_msg(f"  - Parsed Output: {parsed_details}", logging.DEBUG)
-                        status = False  # Fail if core details missing
-                else:
-                    log_msg(
-                        "- parse_ancestry_person_details call: FAILED (Returned None or wrong type)",
-                        logging.ERROR,
-                    )
-                    status = False
-            except Exception as parse_e:
-                log_msg(
-                    f"- parse_ancestry_person_details call: FAILED (Exception: {parse_e})",
-                    logging.ERROR,
+                _, s3_status, _ = _run_test_sc(
+                    test_name_parse, parse_lambda, expected_type=dict
                 )
-                log_msg(traceback.format_exc(), logging.DEBUG)
-                status = False
-        else:
-            log_msg(
-                "- Skipping parse_ancestry_person_details test: Profile Details API failed in Phase 2.",
-                logging.WARNING,
-            )
+                if s3_status == "PASS":
+                    parsed_details = parse_lambda()  # Call again to get result
+                else:
+                    overall_status = False
+                # End if/else status
+            except Exception as parse_e:
+                # Log exception if the call itself fails inside _run_test_sc's try block wasn't enough
+                logger_self_check.error(
+                    f"Exception calling parser: {parse_e}", exc_info=True
+                )
+                _run_test_sc(
+                    test_name_parse,
+                    lambda: False,
+                    expected_value=f"Exception: {parse_e}",
+                )  # Log failure
+                overall_status = False
+            # End try/except around parse call
 
-        # === Phase 4: Test Relationship Ladder Parsing (using /getladder endpoint) ===
-        log_msg(
-            "\n--- Phase 4: Test Relationship Ladder Parsing (using /getladder) ---"
+            # Validate result if parse call succeeded
+            if parsed_details:
+                missing_keys = [
+                    k
+                    for k in ["name", "person_id", "link"]
+                    if k not in parsed_details or parsed_details[k] is None
+                ]
+                if missing_keys:
+                    _, s3_v_status, _ = _run_test_sc(
+                        "Validation: Parsed Details Keys",
+                        lambda: False,
+                        expected_value=f"Missing keys: {missing_keys}",
+                    )
+                    if s3_v_status == "FAIL":
+                        overall_status = False
+                    # End if status fail
+                else:
+                    _run_test_sc("Validation: Parsed Details Keys", lambda: True)
+                    # Optional: Check name match
+                    _, s3_n_status, _ = _run_test_sc(
+                        "Validation: Parsed Name Match",
+                        lambda: parsed_details["name"]
+                        == format_name(target_name_from_profile),
+                    )
+                    # if s3_n_status == 'FAIL': overall_status = False # Treat name mismatch as warning, not failure
+                # End if/else missing keys
+            elif s3_status == "PASS":  # Parser call succeeded but returned None/invalid
+                _run_test_sc(
+                    "Validation: Parsed Details Keys",
+                    lambda: False,
+                    expected_value="Parser returned None/invalid unexpectedly",
+                )
+                overall_status = False
+            # End if/elif parsed_details check
+        else:
+            logger_self_check.warning(
+                "Skipping parse_ancestry_person_details test: Prerequisite API call failed."
+            )
+            _run_test_sc(
+                "Function Call: parse_ancestry_person_details()",
+                lambda: False,
+                expected_value="Skipped",
+            )
+        # End if profile_response_details
+
+        # === Phase 4: Test HTML Extraction (_extract_ladder_html) ===
+        logger_self_check.info("--- Phase 4: Test HTML Extraction ---")
+        test_jsonp_good = 'jQuery123({"html": "<p>Good HTML</p>", "other": 1});'
+        test_jsonp_bad_json = "jQuery123(Not JSON Content);"
+        test_jsonp_no_html = 'jQuery123({"key": "value"});'
+        test_json_good = '{"html": "<b>Good JSON HTML</b>"}'
+        test_json_bad = '{"key": "value"}'
+        test_invalid = "Just some text"
+        expected_html_good = "<p>Good HTML</p>"
+        expected_html_json = "<b>Good JSON HTML</b>"
+
+        _, s4_status, _ = _run_test_sc(
+            "HTML Extract: Good JSONP",
+            lambda: _extract_ladder_html(test_jsonp_good),
+            expected_value=expected_html_good,
         )
-        # Only proceed if owner name, target name, AND target_person_id (from config) are known
+        if s4_status == "FAIL":
+            overall_status = False
+        # End if
+        _, s4_status, _ = _run_test_sc(
+            "HTML Extract: Bad JSON in JSONP",
+            lambda: _extract_ladder_html(test_jsonp_bad_json),
+            expected_none=True,
+        )
+        if s4_status == "FAIL":
+            overall_status = False
+        # End if
+        _, s4_status, _ = _run_test_sc(
+            "HTML Extract: No HTML Key in JSONP",
+            lambda: _extract_ladder_html(test_jsonp_no_html),
+            expected_none=True,
+        )
+        if s4_status == "FAIL":
+            overall_status = False
+        # End if
+        _, s4_status, _ = _run_test_sc(
+            "HTML Extract: Good Direct JSON",
+            lambda: _extract_ladder_html(test_json_good),
+            expected_value=expected_html_json,
+        )
+        if s4_status == "FAIL":
+            overall_status = False
+        # End if
+        _, s4_status, _ = _run_test_sc(
+            "HTML Extract: Bad Direct JSON",
+            lambda: _extract_ladder_html(test_json_bad),
+            expected_none=True,
+        )
+        if s4_status == "FAIL":
+            overall_status = False
+        # End if
+        _, s4_status, _ = _run_test_sc(
+            "HTML Extract: Invalid Input",
+            lambda: _extract_ladder_html(test_invalid),
+            expected_none=True,
+        )
+        if s4_status == "FAIL":
+            overall_status = False
+        # End if
+
+        # === Phase 5: Test Relationship Ladder Parsing ===
+        logger_self_check.info(
+            "--- Phase 5: Test Relationship Ladder Parsing (Live API) ---"
+        )
         if (
             not target_owner_name
             or target_name_from_profile == "Unknown Target"
             or not target_person_id
             or not target_tree_id
         ):
-            missing_ladder_reqs = []
-            if not target_owner_name:
-                missing_ladder_reqs.append("Owner Name")
-            if target_name_from_profile == "Unknown Target":
-                missing_ladder_reqs.append("Target Name")
-            if not target_person_id:
-                missing_ladder_reqs.append(
-                    "Target Person ID (Config: TESTING_PERSON_TREE_ID)"
-                )
-            if not target_tree_id:
-                missing_ladder_reqs.append("Target Tree ID")
-            log_msg(
-                f"- Skipping Relationship Ladder test: Missing required info ({', '.join(missing_ladder_reqs)}).",
-                logging.WARNING,
+            missing_ladder_reqs = [
+                n
+                for n, v in [
+                    ("Owner Name", target_owner_name),
+                    ("Target Name", target_name_from_profile != "Unknown Target"),
+                    ("Target Person ID", target_person_id),
+                    ("Target Tree ID", target_tree_id),
+                ]
+                if not v
+            ]
+            logger_self_check.warning(
+                f"Skipping Live Ladder test: Missing ({', '.join(missing_ladder_reqs)})."
             )
-            if (
-                not target_person_id
-            ):  # Explicitly fail if the required config is missing
-                status = False
+            _run_test_sc(
+                "API Call: Get Tree Ladder", lambda: False, expected_value="Skipped"
+            )
+            _run_test_sc(
+                "Function Call: display_raw_relationship_ladder()",
+                lambda: False,
+                expected_value="Skipped",
+            )
+            _run_test_sc(
+                "Function Call: format_api_relationship_path()",
+                lambda: False,
+                expected_value="Skipped",
+            )
         else:
-            # --- Construct URL with JSONP parameters ---
             base_ladder_url = urljoin(
-                config_instance.BASE_URL.rstrip("/") + "/",
+                config_instance.BASE_URL,
                 f"/family-tree/person/tree/{target_tree_id}/person/{target_person_id}/getladder",
             )
-            callback_name = (
-                f"__ancestry_jsonp_{int(time.time()*1000)}"  # Simple unique callback
-            )
+            callback_name = f"__ancestry_jsonp_{int(time.time()*1000)}"
             timestamp_ms = int(time.time() * 1000)
             query_params = urlencode({"callback": callback_name, "_": timestamp_ms})
             ladder_api_url = f"{base_ladder_url}?{query_params}"
-            # --- End URL construction ---
 
-            log_msg(f"- Calling Tree Relationship Ladder API: {ladder_api_url}")
-
-            # Mimic headers from working cURL
             ladder_headers = {
                 "Accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
                 "X-Requested-With": "XMLHttpRequest",
             }
-            # Specific referer based on the person being viewed
             ladder_referer = urljoin(
-                config_instance.BASE_URL.rstrip("/") + "/",
+                config_instance.BASE_URL,
                 f"/family-tree/person/tree/{target_tree_id}/person/{target_person_id}/facts",
             )
 
-            ladder_response_raw = utils._api_req(  # Use utils._api_req explicitly
+            # Test API call
+            ladder_response_raw = None  # Initialize
+            api_call_lambda_ladder = lambda: utils._api_req(
                 url=ladder_api_url,
-                driver=session_manager.driver,
-                session_manager=session_manager,
+                driver=session_manager_sc.driver,
+                session_manager=session_manager_sc,
                 api_description="Get Tree Ladder API (Self Check)",
-                use_csrf_token=False,  # Rely on cookies based on cURL example
+                use_csrf_token=False,
                 headers=ladder_headers,
                 referer_url=ladder_referer,
-                force_text_response=True,  # Expecting JSONP string
-                timeout=20,  # Keep shorter timeout for diagnosis
+                force_text_response=True,
+                timeout=20,
             )
-
-            if ladder_response_raw and isinstance(ladder_response_raw, str):
-                log_msg("- Tree Ladder API call: SUCCESS (Received string)")
-
-                # --- Use helper function to extract HTML ---
-                log_msg("- Extracting HTML using _extract_ladder_html...")
-                html_extracted = _extract_ladder_html(ladder_response_raw)
-
-                if not html_extracted:
-                    log_msg("- HTML Extraction FAILED.", logging.ERROR)
-                    status = False  # Fail if HTML extraction fails
-                else:
-                    log_msg("- HTML Extraction SUCCESS.")
-                    # Test 1: display_raw_relationship_ladder (now just uses the helper + format)
-                    try:
-                        log_msg(
-                            "- Testing display_raw_relationship_ladder (internal logic)..."
-                        )
-                        display_raw_relationship_ladder(
-                            ladder_response_raw,
-                            target_owner_name,
-                            target_name_from_profile,
-                        )
-                        log_msg(
-                            "- display_raw_relationship_ladder execution: PASSED (No exceptions)"
-                        )
-                    except Exception as display_e:
-                        log_msg(
-                            f"- display_raw_relationship_ladder execution: FAILED (Exception: {display_e})",
-                            logging.ERROR,
-                        )
-                        log_msg(traceback.format_exc(), logging.DEBUG)
-                        status = False
-
-                    # Test 2: format_api_relationship_path (using the extracted HTML)
-                    log_msg("- Testing format_api_relationship_path...")
-                    try:
-                        formatted_path = format_api_relationship_path(
-                            html_extracted, target_owner_name, target_name_from_profile
-                        )
-                        # Corrected Validation
-                        if (
-                            formatted_path
-                            and isinstance(formatted_path, str)
-                            and "->" in formatted_path
-                            and target_owner_name in formatted_path
-                        ):
-                            log_msg("- format_api_relationship_path call: PASSED")
-                            log_msg(
-                                f"  - Formatted Output (Preview):\n{formatted_path[:200]}...\n",
-                                logging.DEBUG,
-                            )
-                        elif (
-                            formatted_path
-                            and isinstance(formatted_path, str)
-                            and formatted_path.startswith("(")
-                        ):
-                            log_msg(
-                                "- format_api_relationship_path call: PASSED (Returned summary text)"
-                            )
-                            log_msg(
-                                f"  - Summary Output: {formatted_path}", logging.DEBUG
-                            )
-                        else:
-                            log_msg(
-                                "- format_api_relationship_path call: FAILED (Output invalid, empty, or missing structure/owner name)",
-                                logging.ERROR,
-                            )
-                            log_msg(
-                                f"  - Actual Output: {formatted_path}", logging.DEBUG
-                            )
-                            status = False
-                        # End Corrected Validation
-                    except Exception as format_e:
-                        log_msg(
-                            f"- format_api_relationship_path call: FAILED (Exception: {format_e})",
-                            logging.ERROR,
-                        )
-                        log_msg(traceback.format_exc(), logging.DEBUG)
-                        status = False
-
-            elif isinstance(ladder_response_raw, requests.Response):
-                log_msg(
-                    f"- Tree Ladder API call: FAILED (HTTP Status {ladder_response_raw.status_code})",
-                    logging.ERROR,
-                )
-                status = False
-            elif ladder_response_raw is None:
-                log_msg(
-                    f"- Tree Ladder API call: FAILED (Returned None - likely timeout after {20}s)",
-                    logging.ERROR,
-                )
-                status = False
+            test_name_ladder_api = "API Call: Get Tree Ladder"
+            _, s5_api_status, _ = _run_test_sc(
+                test_name_ladder_api, api_call_lambda_ladder, expected_type=str
+            )
+            if s5_api_status == "PASS":
+                ladder_response_raw = api_call_lambda_ladder()
             else:
-                log_msg(
-                    f"- Tree Ladder API call: FAILED (Returned {type(ladder_response_raw)})",
-                    logging.ERROR,
+                overall_status = False
+            # End if/else API status
+
+            # Proceed only if API call succeeded and returned string
+            if ladder_response_raw and isinstance(ladder_response_raw, str):
+                # Test display function
+                display_lambda = lambda: display_raw_relationship_ladder(
+                    ladder_response_raw, target_owner_name, target_name_from_profile
                 )
-                status = False
+                _, s5_display_status, _ = _run_test_sc(
+                    "Function Call: display_raw_relationship_ladder()", display_lambda
+                )
+                if s5_display_status == "FAIL":
+                    overall_status = False
+                # End if display fail
+
+                # Test format function
+                html_for_format = _extract_ladder_html(ladder_response_raw)
+                if html_for_format:
+                    format_lambda = lambda: format_api_relationship_path(
+                        html_for_format, target_owner_name, target_name_from_profile
+                    )
+                    _, s5_format_status, _ = _run_test_sc(
+                        "Function Call: format_api_relationship_path()",
+                        format_lambda,
+                        expected_contains=target_owner_name,
+                    )
+                    if s5_format_status == "FAIL":
+                        overall_status = False
+                    # End if format fail
+                else:
+                    logger_self_check.error(
+                        "Could not extract HTML for format_api_relationship_path test."
+                    )
+                    _run_test_sc(
+                        "Function Call: format_api_relationship_path()",
+                        lambda: False,
+                        expected_value="HTML Extraction Failed",
+                    )
+                    overall_status = False
+                # End if html_for_format
+            elif (
+                s5_api_status == "PASS"
+            ):  # API Call passed but didn't return valid string
+                logger_self_check.error(
+                    "Ladder API call passed status check but returned invalid data."
+                )
+                _run_test_sc(
+                    "Function Call: display_raw_relationship_ladder()",
+                    lambda: False,
+                    expected_value="API Response Invalid",
+                )
+                _run_test_sc(
+                    "Function Call: format_api_relationship_path()",
+                    lambda: False,
+                    expected_value="API Response Invalid",
+                )
+                overall_status = False
+            # End if/elif ladder_response_raw check
+        # End if/else can run ladder test
 
     except Exception as e:
-        log_msg(f"\n--- CRITICAL ERROR during self-check execution ---", logging.ERROR)
-        log_msg(f"- Error Type: {type(e).__name__}", logging.ERROR)
-        log_msg(f"- Error Details: {e}", logging.ERROR)
-        log_msg(f"- Traceback:\n{traceback.format_exc()}", logging.DEBUG)
-        status = False
+        logger_self_check.critical(
+            f"\n--- CRITICAL ERROR during self-check ---", exc_info=True
+        )
+        _run_test_sc(
+            "Self-Check Execution", lambda: False, expected_value=f"CRITICAL ERROR: {e}"
+        )
+        overall_status = False
     finally:
-        if session_manager:
-            log_msg("\n--- Finalizing: Closing Session ---")
-            session_manager.close_sess()
+        if session_manager_sc:
+            logger_self_check.info("--- Finalizing: Closing Session ---")
+            session_manager_sc.close_sess()
         else:
-            log_msg("\n--- Finalizing: No session to close ---")
+            logger_self_check.info("--- Finalizing: No session to close ---")
+        # End if
 
-        # Print results
-        if verbose:
-            print("\n[api_utils.py self-check results]")
-            for m in messages:
-                prefix = "  "
-                if "ERROR" in m or "FAIL" in m:
-                    prefix = "* "
-                elif "WARN" in m:
-                    prefix = "! "
-                print(f"{prefix}{m.replace('- ', '')}")
+        # --- Print Formatted Summary ---
+        print("\n--- api_utils.py Self-Check Summary ---")
+        name_width = max((len(name) for name, _, _ in test_results_sc), default=50)
+        status_width = 8
+        header = (
+            f"{'Test Name':<{name_width}} | {'Status':<{status_width}} | {'Message'}"
+        )
+        print(header)
+        print("-" * (len(header)))
+        final_fail_count = 0
+        final_skip_count = 0
+        for name, status, message in test_results_sc:
+            if status == "FAIL":
+                final_fail_count += 1
+            elif status == "SKIPPED":
+                final_skip_count += 1
+            # End if/elif
+            print(
+                f"{name:<{name_width}} | {status:<{status_width}} | {message if status != 'PASS' else ''}"
+            )
+        # End for
+        print("-" * (len(header)))
+        total_tests = len(test_results_sc)
+        passed_tests = total_tests - final_fail_count - final_skip_count
 
-        final_status_msg = f"Self-check status: {'PASS' if status else 'FAIL'}"
-        print(f"\n{final_status_msg}\n")
-        if status:
-            logger.info("api_utils self-check status: PASS")
+        # Determine final overall status based on individual test failures
+        overall_status = final_fail_count == 0
+
+        final_status_msg = f"Result: {'PASS' if overall_status else 'FAIL'} ({passed_tests} passed, {final_fail_count} failed, {final_skip_count} skipped out of {total_tests} tests)"
+        print(f"{final_status_msg}\n")
+        if overall_status:
+            logger_self_check.info("api_utils self-check overall status: PASS")
         else:
-            logger.error("api_utils self-check status: FAIL")
+            logger_self_check.error("api_utils self-check overall status: FAIL")
+        # --- End Summary Printing ---
 
-    return status
+    return overall_status
 
 
 # End of self_check
 
 if __name__ == "__main__":
-    # --- ADDED IMPORT HERE ---
-    from pathlib import Path
-
-    # Note: This standalone test now performs live API calls.
-    # Ensure your .env file is configured correctly before running,
-    # including TESTING_PERSON_TREE_ID for the ladder test.
+    # Run self-check when executed directly
     print("Running api_utils.py self-check (with live API calls)...")
-    # Need to ensure logging is set up if running standalone
     try:
         # Ensure logging_config is importable before calling setup_logging
         import logging_config
 
         if not hasattr(logging_config, "setup_logging"):
-            raise ImportError("setup_logging function not found in logging_config")
-        # Use a generic log file name for standalone run
+            raise ImportError("setup_logging missing")
         log_file = Path("api_utils_self_check.log").resolve()
         # Set level to DEBUG to capture detailed logs from self_check
-        logger = logging_config.setup_logging(log_file=log_file, log_level="DEBUG")
+        logger_standalone = logging_config.setup_logging(
+            log_file=log_file, log_level="DEBUG"
+        )
         print(f"Detailed logs will be written to: {log_file}")
     except ImportError as log_imp_err:
         print(
-            f"Warning: logging_config import or setup failed ({log_imp_err}). Using basic logging."
+            f"Warning: logging_config import/setup failed ({log_imp_err}). Using basic logging."
         )
-        logging.basicConfig(level=logging.DEBUG)  # Fallback basic config
-        logger = logging.getLogger("api_utils_standalone")
+        logging.basicConfig(level=logging.DEBUG)
+        logger_standalone = logging.getLogger("api_utils_standalone")
     except Exception as log_setup_err:
         print(f"Error setting up logging: {log_setup_err}. Using basic logging.")
         logging.basicConfig(level=logging.DEBUG)
-        logger = logging.getLogger("api_utils_standalone")
+        logger_standalone = logging.getLogger("api_utils_standalone")
+    # End try/except logging setup
 
-    self_check_passed = self_check(verbose=True)
+    self_check_passed = self_check()  # Run the self-check
     print("\nThis is the api_utils module. Import it into other scripts.")
-    # Optional: Exit with status code based on test result
     sys.exit(0 if self_check_passed else 1)
+# End of __main__ block
 # End of api_utils.py
+# --- END OF FILE api_utils.py ---

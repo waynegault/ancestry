@@ -49,36 +49,36 @@ from sqlalchemy import (
     update,
     select as sql_select,
 )
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, aliased, joinedload
-from selenium.common.exceptions import WebDriverException  
-from tqdm.auto import tqdm 
-from tqdm.contrib.logging import logging_redirect_tqdm 
+from selenium.common.exceptions import WebDriverException
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 # --- Local application imports ---
-from ai_interface import classify_message_intent 
-from config import config_instance 
-from database import (  
+from ai_interface import classify_message_intent
+from config import config_instance
+from database import (
     ConversationLog,
     MessageDirectionEnum,
-    MessageType,  
+    MessageType,
     Person,
     PersonStatusEnum,
     db_transn,
     commit_bulk_data,
 )
-from logging_config import logger  
-from utils import (  
+from logging_config import logger
+from utils import (
     DynamicRateLimiter,
     SessionManager,
-    _api_req,  
-    format_name, 
+    _api_req,
+    format_name,
     retry,
     retry_api,
     time_wait,
     urljoin,
-    _fetch_profile_details_for_person
+    _fetch_profile_details_for_person,
 )
 
 
@@ -120,6 +120,7 @@ class InboxProcessor:
         logger.debug(
             f"InboxProcessor initialized: MaxInbox={self.max_inbox_limit}, BatchSize={self.api_batch_size}, AIContext={self.ai_context_msg_count} msgs / {self.ai_context_max_words} words."
         )
+
     # End of __init__
 
     # --- Private Helper Methods ---
@@ -221,6 +222,7 @@ class InboxProcessor:
                 f"Unexpected error in _get_all_conversations_api: {e}", exc_info=True
             )
             return None, None  # Return None on unexpected errors
+
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
@@ -305,6 +307,7 @@ class InboxProcessor:
             "username": username,  # Display name of the other person
             "last_message_timestamp": last_msg_ts_aware,  # Aware datetime object or None
         }
+
     # End of _extract_conversation_info
 
     @retry_api(max_retries=2)  # Allow retries for fetching context
@@ -437,6 +440,7 @@ class InboxProcessor:
                 exc_info=True,
             )
             return None  # Return None on unexpected errors
+
     # End of _fetch_conversation_context
 
     def _format_context_for_ai(
@@ -472,6 +476,7 @@ class InboxProcessor:
             context_lines.append(f"{label}{truncated_content}")
         # Step 3: Join lines into a single string
         return "\n".join(context_lines)
+
     # End of _format_context_for_ai
 
     def _lookup_or_create_person(
@@ -646,6 +651,7 @@ class InboxProcessor:
 
         # Step 4: Return the person object and status
         return person, status
+
     # End of _lookup_or_create_person
 
     def _create_comparator(self, session: DbSession) -> Optional[Dict[str, Any]]:
@@ -713,6 +719,7 @@ class InboxProcessor:
 
         # Step 6: Return the comparator info dictionary or None
         return latest_log_entry_info
+
     # End of _create_comparator
 
     # --- Main Public Methods ---
@@ -812,14 +819,14 @@ class InboxProcessor:
                     stop_reason,
                     total_processed_api_items,
                     ai_classified_count,
-                    status_updated_count,  
+                    status_updated_count,
                     items_processed_before_stop,
-                ) = self._process_inbox_loop( 
+                ) = self._process_inbox_loop(
                     session,
                     comp_conv_id,
                     comp_ts,
                     my_pid_lower,
-                    None, 
+                    None,
                 )
             # Check if loop stopped due to an error state
             if stop_reason and "error" in stop_reason.lower():
@@ -856,6 +863,7 @@ class InboxProcessor:
         # Step 6: Return overall success status
         return overall_success
         # End of search_inbox
+
     # End of search_inbox
 
     def _process_inbox_loop(
@@ -885,9 +893,9 @@ class InboxProcessor:
         status_updated_count = 0  # Tracks Person updates
         total_processed_api_items = 0
         items_processed_before_stop = 0
-        logs_processed_in_run = 0 
+        logs_processed_in_run = 0
         skipped_count_this_loop = 0
-        error_count_this_loop = 0 
+        error_count_this_loop = 0
         stop_reason: Optional[str] = None
         next_cursor: Optional[str] = None
         current_batch_num = 0
@@ -1271,11 +1279,11 @@ class InboxProcessor:
 
                     if progress_bar:
                         progress_bar.set_postfix(
-                            AI=ai_classified_count, # AI classifications this run
-                            Archived=status_updated_count, # Persons archived this run
-                            Skip=skipped_count_this_loop, # Skipped in this loop
-                            Err=error_count_this_loop, # Errors in this loop
-                            refresh=True # Use refresh=True for immediate update
+                            AI=ai_classified_count,  # AI classifications this run
+                            Archived=status_updated_count,  # Persons archived this run
+                            Skip=skipped_count_this_loop,  # Skipped in this loop
+                            Err=error_count_this_loop,  # Errors in this loop
+                            refresh=True,  # Use refresh=True for immediate update
                         )
 
                     # Check stop flag again after processing item (if comparator was hit)
@@ -1426,6 +1434,7 @@ class InboxProcessor:
             status_updated_count,
             items_processed_before_stop,
         )
+
     # End of _process_inbox_loop
 
     def _log_unified_summary(
@@ -1459,6 +1468,7 @@ class InboxProcessor:
         logger.info(f"  Processing Stopped Due To:    {final_reason}")
         # Step 4: Print footer
         logger.info("----------------------------------\n")  # Add newline
+
     # End of _log_unified_summary
 
 
