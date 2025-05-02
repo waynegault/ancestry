@@ -56,6 +56,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging throu
 from cache import cache as global_cache  # Use the initialized global cache instance
 from cache import cache_result  # Decorator for caching function results
 from config import config_instance, selenium_config  # Configuration singletons
+from selenium_utils import get_driver_cookies
 from database import (  # Database models and utilities
     DnaMatch,
     FamilyTree,
@@ -72,7 +73,6 @@ from utils import (  # Core utilities
     SessionManager,
     _api_req,  # API request helper
     format_name,  # Name formatting utility
-    get_driver_cookies,  # Cookie utility
     make_newrelic,  # Header generation utilities
     make_traceparent,
     make_tracestate,

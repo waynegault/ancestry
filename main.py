@@ -1,1132 +1,1133 @@
-#!/usr/bin/env python3
-
-# main.py
-
+# --- START OF FILE action11.py ---
+# action11.py
+"""
+Action 11: API Report - Search Ancestry API, display details, family, relationship.
+V16.0: Refactored from temp.py v7.36, using functions from utils.py, api_utils.py, gedcom_utils.py.
+Implements consistent scoring and output format with Action 10.
+V16.1: Corrected config import, removed faulty API call, simplified family display logic.
+V16.2: Fixed IndentationError, removed redundant dummy code, restored interactive input.
+V16.3: Hardcoded Fraser Gault inputs, switched detail fetch to /person-picker/person API,
+       adjusted parsing, added isHideVeiledRecords param to suggest API.
+V16.4: Switched /suggest API call to use cloudscraper.
+V16.5: Added explicit cookie synchronization to cloudscraper instance.
+V16.6: Increased timeout for /person-picker/person API call.
+V16.7: Switched detail fetch to /facts/user/ endpoint for richer data, updated parsing.
+V16.8: Added logging for /suggest API response, adjusted ID validation.
+V16.9: Reverted detail fetch API back to /facts/user/ based on user clarification,
+       ensuring correct owner ID is used in URL. Removed parsing dependency on UserId from suggest.
+V16.10: Switched /facts/user/ API call to use Cloudscraper with cookie sync and X-Requested-With header.
+V16.11: Reverted /facts/user/ API call back to _api_req, added timeout=60 and X-Requested-With header.
+V16.12: Switched /facts/user/ API call back to Cloudscraper again due to persistent timeouts with _api_req.
+V16.13: Reverting /facts/user/ API call back to _api_req (V16.11 logic) as Cloudscraper caused 401 errors.
+V16.14: Switching /facts/user/ back to Cloudscraper (like V16.12) with robust cookie sync right before call.
+"""
 # --- Standard library imports ---
-import gc
-import inspect  # Keep standard inspect
-import json
 import logging
-import os
-import shutil
 import sys
 import time
-import traceback
-import warnings
+import urllib.parse
+import json
 from pathlib import Path
-from urllib.parse import urljoin
-from typing import Optional, Any, Tuple
+from urllib.parse import urljoin, urlencode
+
+# Import specific types needed locally
+from typing import Optional, List, Dict, Any, Tuple, Union
+from datetime import datetime
 
 # --- Third-party imports ---
-from selenium.webdriver.remote.remote_connection import RemoteConnection
-import urllib3.poolmanager
-import psutil
-import urllib3
-from selenium.common.exceptions import (
-    TimeoutException,
-    WebDriverException,
-)  # Added WebDriverException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.wait import WebDriverWait
-from sqlalchemy import create_engine, event, func, inspect as sa_inspect, text
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
+try:
+    import requests
+
+    try:
+        import cloudscraper
+    except ImportError:
+        cloudscraper = None
+except ImportError:
+    requests = None
+    cloudscraper = None
 
 # --- Local application imports ---
-from action6_gather import coord as coord_action_func, nav_to_list
-from action7_inbox import InboxProcessor
-from action8_messaging import send_messages_to_matches
-from action9_process_productive import process_productive_messages
-
-# Ensure that run_action10 is defined in action10.py or remove this line if not needed
+# Use centralized logging config setup
 try:
-    from action10 import run_action10
+    from logging_config import setup_logging, logger
 except ImportError:
-    print("WARNING: 'run_action10' is not defined in 'action10'. Please verify.")
-    run_action10 = None
-from action11 import run_action11
-from chromedriver import cleanup_webdrv
-from config import config_instance, selenium_config
-from database import (
-    backup_database,
-    Base,
-    db_transn,
-    delete_database,
-    MessageType,
-    Person,
-    ConversationLog,
-    DnaMatch,
-    FamilyTree,
-)
-import database
-from logging_config import logger, setup_logging
-from my_selectors import (
-    INBOX_CONTAINER_SELECTOR,
-    MATCH_ENTRY_SELECTOR,
-    WAIT_FOR_PAGE_SELECTOR,
-)
-from utils import (
-    SessionManager,
-    is_elem_there,
-    log_in,
-    login_status,
-    nav_to_page,
-    retry,
-)
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger("action11")
+    logger.warning("Using fallback logger for Action 11.")
 
 
-def menu():
-    """Display the main menu and return the user's choice."""
-    print("Main Menu")
-    print("=" * 17)
-    level_name = "UNKNOWN"  # Default
+# --- Load Config (Mandatory - Direct Import) ---
+config_instance = None
+try:
+    # Import instance directly from config
+    from config import config_instance
 
-    if logger and logger.handlers:
-        try:
-            console_handler = None
-            for handler in logger.handlers:
-                if (
-                    isinstance(handler, logging.StreamHandler)
-                    and handler.stream == sys.stderr
-                ):
-                    console_handler = handler
-                    break
-            if console_handler:
-                level_name = logging.getLevelName(console_handler.level)
-            else:
-                level_name = logging.getLevelName(logger.getEffectiveLevel())
-        except Exception as e:
-            print(f"DEBUG: Error getting console handler level: {e}", file=sys.stderr)
-            level_name = "ERROR"
-    elif "config_instance" in globals() and hasattr(config_instance, "LOG_LEVEL"):
-        level_name = config_instance.LOG_LEVEL.upper()
+    logger.info("Successfully imported config_instance.")
 
-    print(f"(Log Level: {level_name})\n")
-    print("0. Delete all rows except the first")
-    print("1. Run Actions 6, 7, and 8 Sequentially")
-    print("2. Reset Database")
-    print("3. Backup Database")
-    print("4. Restore Database")
-    print("5. Check Login Status")
-    print("6. Gather Matches [start page]")
-    print("7. Search Inbox")
-    print("8. Send Messages")
-    print("9. Process Productive Messages")
-    print("10. GEDCOM Report (Local File)")
-    print("11. API Report (Ancestry Online)")
-    print("")
-    print("t. Toggle Console Log Level (INFO/DEBUG)")
-    print("c. Clear Screen")
-    print("q. Exit")
-    choice = input("\nEnter choice: ").strip().lower()
-    return choice
-
-
-# End of menu
-
-
-def clear_log_file() -> Tuple[bool, Optional[str]]:
-    """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
-    cleared = False
-    log_file_handler: Optional[logging.FileHandler] = None
-    log_file_path: Optional[str] = None
-    try:
-        # Step 1: Find the FileHandler in the logger's handlers
-        for handler in logger.handlers:
-            if isinstance(handler, logging.FileHandler):
-                log_file_handler = handler
-                log_file_path = handler.baseFilename  # type: ignore[union-attr]
-                break
-        if log_file_handler and log_file_path:
-            # Step 2: Flush the handler (ensuring all previous writes are persisted to disk)
-            log_file_handler.flush()  # type: ignore[union-attr]
-            # Step 3: Close the handler (releases resources)
-            log_file_handler.close()  # type: ignore[union-attr]
-            # Step 4: Clear the log file contents
-            with open(log_file_path, "w", encoding="utf-8") as f:
-                pass
-            cleared = True
-    except PermissionError as permission_error:
-        # Handle permission errors when attempting to open the log file
-        logger.warning(
-            f"Permission denied clearing log '{log_file_path}': {permission_error}"
+    # Basic validation that config_instance and its scoring attributes are loaded
+    if not config_instance:
+        raise ImportError("config_instance is None after import.")
+    # End if
+    if not hasattr(config_instance, "COMMON_SCORING_WEIGHTS") or not isinstance(
+        config_instance.COMMON_SCORING_WEIGHTS, dict
+    ):
+        raise TypeError(
+            "config_instance.COMMON_SCORING_WEIGHTS is missing or not a dictionary."
         )
-    except IOError as io_error:
-        # Handle I/O errors when attempting to open the log file
-        logger.warning(f"IOError clearing log '{log_file_path}': {io_error}")
-    except Exception as error:
-        # Handle any other exceptions during the log clearing process
-        logger.warning(f"Error clearing log '{log_file_path}': {error}", exc_info=True)
-    return cleared, log_file_path
+    # End if
+    if not hasattr(config_instance, "NAME_FLEXIBILITY") or not isinstance(
+        config_instance.NAME_FLEXIBILITY, dict
+    ):
+        raise TypeError(
+            "config_instance.NAME_FLEXIBILITY is missing or not a dictionary."
+        )
+    # End if
+    if not hasattr(config_instance, "DATE_FLEXIBILITY") or not isinstance(
+        config_instance.DATE_FLEXIBILITY, dict
+    ):
+        raise TypeError(
+            "config_instance.DATE_FLEXIBILITY is missing or not a dictionary."
+        )
+    # End if
+
+    # Optional warning if weights dict is empty
+    if not config_instance.COMMON_SCORING_WEIGHTS:
+        logger.warning(
+            "config_instance.COMMON_SCORING_WEIGHTS dictionary is empty. Scoring may not function as expected."
+        )
+    # End if
+
+except ImportError as e:
+    logger.critical(
+        f"Failed to import config_instance from config.py: {e}. Cannot proceed.",
+        exc_info=True,
+    )
+    print(f"\nFATAL ERROR: Failed to import required components from config.py: {e}")
+    sys.exit(1)
+except TypeError as config_err:
+    logger.critical(f"Configuration Error: {config_err}")
+    print(f"\nFATAL ERROR: {config_err}")
+    sys.exit(1)
+except Exception as e:
+    logger.critical(f"Unexpected error loading configuration: {e}", exc_info=True)
+    print(f"\nFATAL ERROR: Unexpected error loading configuration: {e}")
+    sys.exit(1)
+# End try
+
+# Ensure critical config components are loaded before proceeding (redundant check, but safe)
+if (
+    config_instance is None
+    or not hasattr(config_instance, "COMMON_SCORING_WEIGHTS")
+    or not hasattr(config_instance, "NAME_FLEXIBILITY")
+    or not hasattr(config_instance, "DATE_FLEXIBILITY")
+):
+    logger.critical("One or more critical configuration components failed to load.")
+    print("\nFATAL ERROR: Configuration load failed.")
+    sys.exit(1)
+# End if
 
 
-# End of clear_log_file
+# --- Import GEDCOM Utilities (for scoring and date helpers) ---
+calculate_match_score = None
+_parse_date = None
+_clean_display_date = None
+GEDCOM_DATE_UTILS_AVAILABLE = False
+GEDCOM_SCORING_AVAILABLE = False
+
+try:
+    from gedcom_utils import calculate_match_score, _parse_date, _clean_display_date
+
+    logger.info("Successfully imported functions from gedcom_utils.")
+    GEDCOM_SCORING_AVAILABLE = calculate_match_score is not None
+    GEDCOM_DATE_UTILS_AVAILABLE = (
+        _parse_date is not None and _clean_display_date is not None
+    )
+except ImportError as e:
+    logger.error(f"Failed to import from gedcom_utils: {e}.", exc_info=True)
+# End try
+
+# --- Import API Utilities ---
+print_group = None
+display_raw_relationship_ladder = None
+API_UTILS_AVAILABLE = False
+
+try:
+    from api_utils import print_group, display_raw_relationship_ladder
+
+    logger.info("Successfully imported required functions from api_utils.")
+    API_UTILS_AVAILABLE = (
+        print_group is not None and display_raw_relationship_ladder is not None
+    )
+except ImportError as e:
+    logger.error(f"Failed to import from api_utils: {e}.", exc_info=True)
+# End try
 
 
-def exec_actn(
-    action_func,
-    session_manager: SessionManager,
-    choice: str,
-    close_sess_after: bool = False,
-    *args,
-) -> bool:
-    """
-    Executes an action, ensuring the required session state
-    (driver live, session ready) is met beforehand using SessionManager methods.
-    Leaves the session open unless action fails or close_sess_after is True.
+# --- Import General Utilities ---
+try:
+    from utils import SessionManager, _api_req, nav_to_page, format_name, ordinal_case
 
-    Args:
-        action_func: The function representing the action to execute.
-        session_manager: The SessionManager instance to manage session state.
-        choice: The user's choice of action.
-        close_sess_after: Flag to close session after action, defaults to False.
-        *args: Additional arguments to pass to the action function.
+    logger.info("Successfully imported required components from utils.")
+    CORE_UTILS_AVAILABLE = True
+except ImportError as e:
+    logger.critical(
+        f"Failed to import critical components from 'utils' module: {e}. Cannot run.",
+        exc_info=True,
+    )
+    print(f"FATAL ERROR: Failed to import required functions from utils.py: {e}")
+    CORE_UTILS_AVAILABLE = False
+    sys.exit(1)  # Exit if core utils are missing
+# End try
 
-    Returns:
-        True if action completed successfully, False otherwise.
-    """
-    start_time = time.time()
-    action_name = action_func.__name__
 
-    # --- Performance Logging Setup ---
-    process = psutil.Process(os.getpid())
-    mem_before = process.memory_info().rss / (1024 * 1024)
+# --- Session Manager Instance ---
+session_manager: SessionManager = SessionManager()
 
-    logger.info("------------------------------------------")
-    logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("------------------------------------------\n")
 
-    action_result = None
-    action_exception = None  # Store exception if one occurs
+# --- Helper Function for Parsing PersonFacts Array ---
+def _extract_fact_data(
+    person_facts: List[Dict], fact_type_str: str
+) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
+    """Extracts date string, place string, and parsed date object from PersonFacts list."""
+    date_str: Optional[str] = None
+    place_str: Optional[str] = None
+    date_obj: Optional[datetime] = None
 
-    # Determine the required session state for the action
-    required_state = "none"  # Default for browserless actions
-    # Actions that are DB-only and do NOT require browser or session
-    browserless_actions = [
-        "all_but_first_actn",
-        "reset_db_actn",
-        "backup_db_actn",
-        "restore_db_actn",
-        "run_action10",  # Action 10 does not require session
-    ]
-    if action_name in browserless_actions:
-        required_state = "none"
-    elif action_name not in ["all_but_first_actn"]:
-        required_state = "session_ready"
+    if not isinstance(person_facts, list):
+        return date_str, place_str, date_obj  # Return defaults if not a list
+    # End if
 
-    try:
-        # --- Ensure Required State ---
-        state_ok = True
-        if required_state == "driver_live":
-            state_ok = session_manager.ensure_driver_live(
-                action_name=f"{action_name} - Setup"
-            )
-        elif required_state == "session_ready":
-            state_ok = session_manager.ensure_session_ready(
-                action_name=f"{action_name} - Setup"
-            )
-
-        if not state_ok:
-            # Log specific state failure before raising generic exception
-            logger.error(
-                f"Failed to achieve required state '{required_state}' for action '{action_name}'."
-            )
-            raise Exception(
-                f"Setup failed: Could not achieve state '{required_state}'."
-            )
-
-        # --- Execute Action ---
-        func_sig = inspect.signature(action_func)
-        pass_config = "config_instance" in func_sig.parameters
-        pass_session_manager = "session_manager" in func_sig.parameters
-
-        final_args = []
-        if pass_session_manager:
-            final_args.append(session_manager)
-        if pass_config:
-            final_args.append(config_instance)
-        final_args.extend(args)
-
-        # Handle keyword args specifically for coord_action_func
+    for fact in person_facts:
+        # Ensure fact is a dict and TypeString matches, ignoring alternate facts for primary data
         if (
-            action_name in ("coord_action_func", "coord_action")
-            and "start" in func_sig.parameters
+            isinstance(fact, dict)
+            and fact.get("TypeString") == fact_type_str
+            and not fact.get("IsAlternate")
         ):
-            start_val = 1
-            int_args = [a for a in args if isinstance(a, int)]
-            if int_args:
-                start_val = int_args[-1]
-            kwargs_for_action = {"start": start_val}
-            # Prepare coord_action_func specific positional args
+            date_str = fact.get("Date")
+            place_str = fact.get("Place")
+            parsed_date_data = fact.get("ParsedDate")
+            # Try parsing the date object if available and valid
+            if isinstance(parsed_date_data, dict):
+                year = parsed_date_data.get("Year")
+                month = parsed_date_data.get("Month")
+                day = parsed_date_data.get("Day")
+                if year:
+                    try:
+                        # Construct YYYY-MM-DD format for better parsing
+                        if month and day:
+                            temp_date = (
+                                f"{year}-{str(month).zfill(2)}-{str(day).zfill(2)}"
+                            )
+                        elif month:
+                            temp_date = f"{year}-{str(month).zfill(2)}"
+                        else:
+                            temp_date = str(year)
+                        # End if/elif/else for date parts
+                        date_obj = _parse_date(temp_date)
+                    except (ValueError, TypeError) as dt_err:
+                        logger.warning(
+                            f"Could not parse date from ParsedDate {parsed_date_data}: {dt_err}"
+                        )
+                        date_obj = None  # Reset on error
+                    # End try/except parsing
+                # End if year
+            # End if parsed_date_data
+            # If date_obj parsing failed or wasn't possible, try parsing the Date string directly
+            if date_obj is None and date_str:
+                date_obj = _parse_date(date_str)
+            # End if fallback parsing
 
-            coord_args = []
-            if pass_session_manager:
-                coord_args.append(session_manager)
-            if pass_config:
-                coord_args.append(config_instance)
-            # Call with prepared positional args and keyword args
-            action_result = action_func(*coord_args, **kwargs_for_action)
+            # Found the primary fact, break the loop
+            break
+        # End if fact matches
+    # End for fact
+
+    return date_str, place_str, date_obj
+
+
+# End of _extract_fact_data
+
+
+# --- Main Handler ---
+def handle_api_report():
+    """
+    Handler for Action 11 - API Report.
+    Searches Ancestry API, displays details, family, relationship to Tree Owner.
+    Uses functions from utils.py, api_utils.py, and gedcom_utils.py (for scoring/dates).
+    """
+    logger.info(
+        "\n--- Person Details & Relationship to Tree Owner (Ancestry API Report) ---"
+    )
+
+    # Check essential dependencies
+    if not CORE_UTILS_AVAILABLE:
+        logger.critical("handle_api_report: Core utils module unavailable at runtime.")
+        print("\nCRITICAL ERROR: Core utilities unavailable.")
+        return False
+    # End if
+    if not API_UTILS_AVAILABLE:
+        logger.critical("handle_api_report: API utils module unavailable at runtime.")
+        print("\nCRITICAL ERROR: API utilities unavailable.")
+        return False
+    # End if
+    if not GEDCOM_SCORING_AVAILABLE:
+        logger.critical(
+            "handle_api_report: GEDCOM scoring function unavailable at runtime."
+        )
+        print("\nCRITICAL ERROR: Scoring function unavailable.")
+        return False
+    # End if
+    if not GEDCOM_DATE_UTILS_AVAILABLE:
+        logger.critical(
+            "handle_api_report: GEDCOM date utilities unavailable at runtime."
+        )
+        print("\nCRITICAL ERROR: Date utilities unavailable.")
+        return False
+    # End if
+    if cloudscraper is None:
+        logger.critical(
+            "handle_api_report: Cloudscraper library is required but not installed (`pip install cloudscraper`)."
+        )
+        print("\nCRITICAL ERROR: cloudscraper library not found.")
+        return False
+    # End if
+    if not session_manager.scraper:
+        logger.critical(
+            "handle_api_report: Cloudscraper instance not available in SessionManager."
+        )
+        print("\nCRITICAL ERROR: Cloudscraper instance failed to initialize.")
+        return False
+    # End if
+
+    # --- Initialize API Session ---
+    print("Initializing Ancestry session...")
+    session_init_ok = session_manager.ensure_session_ready(
+        action_name="API Report Session Init"
+    )
+    if not session_init_ok:
+        logger.error("Failed to initialize Ancestry session for API report.")
+        print(
+            "\nERROR: Failed to initialize session. Cannot proceed with API operations."
+        )
+        return False
+    # End if
+
+    # Retrieve tree owner name from session_manager
+    owner_name = getattr(session_manager, "tree_owner_name", "the Tree Owner")
+    owner_profile_id = getattr(
+        session_manager, "my_profile_id", None
+    )  # Owner's global UserId
+    owner_tree_id = getattr(session_manager, "my_tree_id", None)
+    base_url = getattr(
+        config_instance, "BASE_URL", "https://www.ancestry.co.uk"
+    ).rstrip("/")
+
+    if not owner_profile_id:
+        logger.warning(
+            "handle_api_report: My profile ID not available in SessionManager. Relationship path may fail."
+        )
+        print(
+            "\nWARNING: Cannot determine your profile ID. Relationship path calculation may fail."
+        )
+    # End if
+    if not owner_tree_id:
+        logger.warning(
+            "handle_api_report: My tree ID not available in SessionManager. Initial search may fail."
+        )
+        print("\nWARNING: Cannot determine your tree ID.")
+    # End if
+
+    # --- TEMPORARY HARDCODED VALUES FOR TESTING ---
+    logger.info("--- Using TEMPORARY hardcoded input values for Fraser Gault ---")
+    first_name = "Fraser"
+    surname = "Gault"
+    dob_str = "1941"
+    pob = "Banff"
+    dod_str = None
+    pod = None
+    gender_input = "m"
+    gender = (
+        gender_input[0].lower()
+        if gender_input and gender_input[0].lower() in ["m", "f"]
+        else None
+    )
+    logger.info(f"  First Name: {first_name}")
+    logger.info(f"  Surname: {surname}")
+    logger.info(f"  Birth Date/Year: {dob_str}")
+    logger.info(f"  Birth Place: {pob}")
+    logger.info(f"  Death Date/Year: {dod_str}")
+    logger.info(f"  Death Place: {pod}")
+    logger.info(f"  Gender: {gender}")
+    # --- END OF TEMPORARY HARDCODED VALUES ---
+
+    if not (first_name or surname):
+        logger.info("\nAPI search needs First Name or Surname. Report cancelled.")
+        print("\nAPI search needs First Name or Surname. Report cancelled.")
+        return True
+    # End if
+
+    # Prepare search criteria for scoring
+    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+
+    target_first_name_lower = clean_param(first_name)
+    target_surname_lower = clean_param(surname)
+    target_pob_lower = clean_param(pob)
+    target_pod_lower = clean_param(pod)
+    target_gender_clean = gender
+
+    target_birth_year: Optional[int] = None
+    target_birth_date_obj: Optional[datetime] = None
+    if dob_str and GEDCOM_DATE_UTILS_AVAILABLE:
+        target_birth_date_obj = _parse_date(dob_str)
+        if target_birth_date_obj:
+            target_birth_year = target_birth_date_obj.year
+        # End if
+    # End if
+
+    target_death_year: Optional[int] = None
+    target_death_date_obj: Optional[datetime] = None
+    if dod_str and GEDCOM_DATE_UTILS_AVAILABLE:
+        target_death_date_obj = _parse_date(dod_str)
+        if target_death_date_obj:
+            target_death_year = target_death_date_obj.year
+        # End if
+    # End if
+
+    search_criteria_dict = {
+        "first_name": target_first_name_lower,
+        "surname": target_surname_lower,
+        "birth_year": target_birth_year,
+        "birth_date_obj": target_birth_date_obj,
+        "birth_place": target_pob_lower,
+        "death_year": target_death_year,
+        "death_date_obj": target_death_date_obj,
+        "death_place": target_pod_lower,
+        "gender": target_gender_clean,
+    }
+
+    # --- Use person-picker/suggest API (via Cloudscraper) ---
+    tree_id_for_suggest = owner_tree_id
+    if not tree_id_for_suggest:
+        logger.error(
+            "Cannot perform API search: My tree ID is not available in SessionManager."
+        )
+        print(
+            "\nERROR: Cannot determine your tree ID. API search functionality is limited."
+        )
+        return False
+    # End if
+
+    suggest_params = []
+    if first_name:
+        suggest_params.append(f"partialFirstName={urllib.parse.quote(first_name)}")
+    # End if
+    if surname:
+        suggest_params.append(f"partialLastName={urllib.parse.quote(surname)}")
+    # End if
+    suggest_params.append("isHideVeiledRecords=false")
+
+    suggest_url = f"{base_url}/api/person-picker/suggest/{tree_id_for_suggest}?{'&'.join(suggest_params)}"
+    logger.info(f"Attempting search using Ancestry Suggest API: {suggest_url}")
+    print("Searching Ancestry API...")
+
+    suggest_response = None
+    scraper_response = None
+    try:
+        owner_facts_referer = None
+        if owner_tree_id and owner_profile_id:
+            owner_facts_referer = urljoin(
+                base_url,
+                f"/family-tree/tree/{owner_tree_id}/person/{owner_profile_id}/facts",
+            )
         else:
-            # General case - call with the assembled final_args list
-            action_result = action_func(*final_args)
+            logger.warning(
+                "Cannot construct owner facts referer for Suggest API: Tree ID or Profile ID missing."
+            )
+            owner_facts_referer = base_url  # Fallback
+        # End if
+
+        logger.info("Attempting Suggest API call using Cloudscraper...")
+        scraper = session_manager.scraper
+        if scraper:
+            try:
+                logger.debug(
+                    "Syncing cookies from SessionManager requests session to Cloudscraper session..."
+                )
+                session_manager._sync_cookies()
+                scraper.cookies.clear()
+                synced_count = 0
+                for cookie in session_manager._requests_session.cookies:
+                    try:
+                        scraper.cookies.set(
+                            name=cookie.name,
+                            value=cookie.value,
+                            domain=cookie.domain,
+                            path=cookie.path,
+                        )
+                        synced_count += 1
+                    except Exception as set_cookie_err:
+                        logger.warning(
+                            f"Failed to set cookie '{cookie.name}' in cloudscraper: {set_cookie_err}"
+                        )
+                    # End inner try
+                # End for
+                logger.debug(f"Synced {synced_count} cookies to Cloudscraper session.")
+            except Exception as sync_err:
+                logger.error(
+                    f"Error syncing cookies to Cloudscraper: {sync_err}", exc_info=True
+                )
+            # End try
+
+            scraper_headers = {
+                "Accept": "application/json, text/plain, */*",
+                "Referer": owner_facts_referer,
+            }
+            wait_time = session_manager.dynamic_rate_limiter.wait()
+            if wait_time > 0.1:
+                logger.debug(
+                    f"[Suggest API (Cloudscraper)] Rate limit wait: {wait_time:.2f}s"
+                )
+            # End if
+
+            try:
+                scraper_response = scraper.get(
+                    suggest_url, headers=scraper_headers, timeout=30
+                )
+                scraper_response.raise_for_status()
+                suggest_response = scraper_response.json()
+                logger.info("Suggest API call successful using Cloudscraper.")
+                session_manager.dynamic_rate_limiter.decrease_delay()
+
+            except cloudscraper.exceptions.CloudflareChallengeError as cfe:
+                logger.error(
+                    f"Cloudflare challenge encountered during Suggest API call: {cfe}"
+                )
+                suggest_response = None
+                session_manager.dynamic_rate_limiter.increase_delay()
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(
+                    f"HTTPError during Cloudscraper Suggest API call: {http_err}"
+                )
+                if http_err.response is not None:
+                    logger.error(f"  Status Code: {http_err.response.status_code}")
+                    logger.debug(f"  Response Text: {http_err.response.text[:500]}")
+                    if http_err.response.status_code == 401:
+                        logger.error(
+                            "Suggest API returned 401 Unauthorized - cookie sync likely failed or session invalid."
+                        )
+                    # End if 401
+                # End if response exists
+                suggest_response = None
+            except requests.exceptions.RequestException as req_exc:
+                logger.error(
+                    f"RequestException during Cloudscraper Suggest API call: {req_exc}"
+                )
+                suggest_response = None
+            except requests.exceptions.JSONDecodeError as json_err:
+                logger.error(
+                    f"Failed to decode JSON from Cloudscraper Suggest API response: {json_err}"
+                )
+                logger.debug(
+                    f"Cloudscraper Response Text: {getattr(scraper_response, 'text', 'N/A')[:500]}"
+                )
+                suggest_response = None
+            except Exception as scrape_err:
+                logger.error(
+                    f"Unexpected error during Cloudscraper Suggest API call: {scrape_err}",
+                    exc_info=True,
+                )
+                suggest_response = None
+            # End inner try/except
+        else:
+            logger.critical(
+                "Cloudscraper instance not available in SessionManager. Cannot call Suggest API."
+            )
+            return False
+        # End if scraper
+
+        # Check response validity *after* API call attempt
+        if suggest_response is None:
+            logger.error("Suggest API call failed (check previous errors).")
+            print("\nError during API search. Check logs.")
+            return False
+        elif not isinstance(suggest_response, list) or not suggest_response:
+            logger.info("No matches found via Ancestry Suggest API.")
+            print("\nNo potential matches found in Ancestry API based on name.")
+            return True
+        # End if/elif for suggest_response check
 
     except Exception as e:
-        # Log exception details and mark action as failure
-        logger.error(f"Exception during action {action_name}: {e}", exc_info=True)
-        action_result = False
-        action_exception = e
+        logger.error(f"General error during API search section: {e}", exc_info=True)
+        print(f"\nError during API search: {e}. Check logs.")
+        return False
+    # End try/except
 
-    finally:
-        # --- Session Closing Logic (Simplified) ---
-        should_close = False
-        if action_result is False or action_exception is not None:
-            # Close session if action failed or raised exception
-            logger.warning(
-                f"Action '{action_name}' failed or raised exception. Closing session."
-            )
-            should_close = True
-        elif close_sess_after:
-            # Close session if explicitly requested
-            logger.debug(
-                f"Closing session after '{action_name}' as requested by caller (close_sess_after=True)."
-            )
-            should_close = True
+    # --- Process Suggest API Results ---
+    if not suggest_response:
+        logger.error("Suggest response list is empty after API call. Cannot process.")
+        return False
+    # End if
 
-        # Perform close if needed and possible
-        if (
-            should_close
-            and isinstance(session_manager, SessionManager)
-            and session_manager.driver_live
-        ):
-            logger.debug(f"Closing browser session...")
-            # Keep DB pool for browserless actions if closing due to error, else close pool
-            session_manager.close_sess(keep_db=(action_name in ["all_but_first_actn"]))
-            logger.debug(
-                f"Browser session closed. DB Pool status: {'Kept' if action_name in ['all_but_first_actn'] else 'Closed'}."
-            )
-        # Log if session is kept open
-        elif (
-            isinstance(session_manager, SessionManager)
-            and session_manager.driver_live
-            and not should_close
-        ):
-            logger.debug(f"Keeping session live after '{action_name}'.")
+    top_api_suggestion = suggest_response[0]
+    api_person_id = top_api_suggestion.get("PersonId")  # Tree-specific ID
+    api_tree_id = top_api_suggestion.get("TreeId")
+    api_user_id = top_api_suggestion.get("UserId")  # Global ID (may be None)
+    api_name_raw = top_api_suggestion.get("Name", "Unknown")
 
-        # --- Performance Logging ---
-        duration = time.time() - start_time
-        hours, remainder = divmod(duration, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
-        # Recalculate memory usage safely
-        try:
-            mem_after = process.memory_info().rss / (1024 * 1024)
-            mem_used = mem_after - mem_before
-            mem_log = f"Memory used: {mem_used:.1f} MB"
-        except Exception as mem_err:
-            mem_log = f"Memory usage unavailable: {mem_err}"
-
-        print(" ")  # Spacer
-
-        # Restore old footer style
-        if action_result is False:
-            logger.debug(f"Action {choice} ({action_name}) reported failure.")
-        elif action_exception is not None:
-            logger.debug(
-                f"Action {choice} ({action_name}) failed due to exception: {type(action_exception).__name__}."
-            )
-
-        logger.info("------------------------------------------")
-        logger.info(f"Action {choice} ({action_name}) finished.")
-        logger.info(f"Duration: {formatted_duration}")
-        logger.info(mem_log)
-        logger.info("------------------------------------------\n")
-
-    # --- Return Action Result ---
-    # Return True only if action completed without exception AND didn't return False explicitly
-    final_outcome = action_result is not False and action_exception is None
-    logger.debug(
-        f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}"
-    )
-    return final_outcome
-
-
-# End of exec_actn
-
-
-# --- Action Functions
-
-
-# Action 0 (all_but_first_actn)
-def all_but_first_actn(session_manager: SessionManager, *args):
-    """
-    V1.2: Modified to delete records from people, conversation_log,
-          dna_match, and family_tree, except for the person with a
-          specific profile_id. Leaves message_types untouched. Browserless.
-    Closes the provided main session pool FIRST.
-    Creates a temporary SessionManager for the delete operation.
-    """
-    # Define the specific profile ID to keep (ensure it's uppercase for comparison)
-    profile_id_to_keep = "08FA6E79-0006-0000-0000-000000000000".upper()
-
-    temp_manager = None  # Initialize
-    session = None
-    success = False
-    try:
-        # --- Close main pool FIRST ---
-        if session_manager:
-            logger.debug(
-                f"Closing main DB connections before deleting data (except {profile_id_to_keep})..."
-            )
-            session_manager.cls_db_conn(keep_db=False)
-            logger.debug("Main DB pool closed.")
-        else:
-            logger.warning(
-                "No main session manager passed to all_but_first_actn to close."
-            )
-        # --- End closing main pool ---
-
-        logger.info(
-            f"Deleting data for all people except Profile ID: {profile_id_to_keep}..."
+    # Validate IDs needed for the /facts/user/ API call
+    if not api_person_id or not api_tree_id or not owner_profile_id:
+        logger.error(
+            f"Facts API prerequisites missing (PersonId: {api_person_id}, TreeId: {api_tree_id}, OwnerUserId: {owner_profile_id}). Full Suggest Item: {top_api_suggestion}"
         )
-        # Create a temporary SessionManager for this specific operation
-        temp_manager = SessionManager()
-        session = temp_manager.get_db_conn()
-        if session is None:
-            raise Exception("Failed to get DB session via temporary manager.")
+        print(
+            "\nError processing top API search result (missing essential IDs for details fetch)."
+        )
+        return False
+    # End if
 
-        with db_transn(session) as sess:
-            # 1. Find the ID of the person to keep
-            person_to_keep = (
-                sess.query(Person.id, Person.username)
-                .filter(Person.profile_id == profile_id_to_keep)
-                .first()
+    logger.debug(
+        f"Processing top Suggest API match: {api_name_raw} (PersonID: {api_person_id}, TreeID: {api_tree_id}, TargetGlobalID?: {api_user_id})"
+    )
+
+    # --- Fetch details using the /facts/user/ API (via Cloudscraper) ---
+    facts_api_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id.upper()}/tree/{api_tree_id}/person/{api_person_id}"
+    facts_data_raw = {}
+    facts_scraper_response = None
+    try:
+        logger.debug(
+            f"Fetching facts for {api_name_raw} from {facts_api_url} using Cloudscraper..."
+        )
+        facts_referer = None
+        if owner_tree_id and owner_profile_id:
+            facts_referer = urljoin(
+                base_url,
+                f"/family-tree/tree/{owner_tree_id}/person/{owner_profile_id}/facts",
             )
+        else:
+            facts_referer = base_url
+        # End if
 
-            if not person_to_keep:
-                logger.warning(
-                    f"Person with Profile ID {profile_id_to_keep} not found. No records will be deleted."
+        # --- Use Cloudscraper for Facts API ---
+        scraper = session_manager.scraper
+        if scraper:
+            # --- Sync Cookies Again (Important!) ---
+            try:
+                logger.debug("Re-syncing cookies before Facts API call...")
+                session_manager._sync_cookies()
+                scraper.cookies.clear()
+                synced_count = 0
+                for cookie in session_manager._requests_session.cookies:
+                    try:
+                        scraper.cookies.set(
+                            name=cookie.name,
+                            value=cookie.value,
+                            domain=cookie.domain,
+                            path=cookie.path,
+                        )
+                        synced_count += 1
+                    except Exception as set_cookie_err:
+                        logger.warning(
+                            f"Failed to set cookie '{cookie.name}' in cloudscraper (facts call): {set_cookie_err}"
+                        )
+                    # End inner try
+                # End for
+                logger.debug(
+                    f"Synced {synced_count} cookies to Cloudscraper session (facts call)."
                 )
-                return True  # Exit gracefully if the keeper doesn't exist
+            except Exception as sync_err:
+                logger.error(
+                    f"Error syncing cookies to Cloudscraper (facts call): {sync_err}",
+                    exc_info=True,
+                )
+            # --- End cookie sync ---
 
-            person_id_to_keep = person_to_keep.id
-            logger.debug(
-                f"Keeping Person ID: {person_id_to_keep} (ProfileID: {profile_id_to_keep}, User: {person_to_keep.username})"
-            )
-
-            # --- Perform Deletions ---
-            deleted_counts = {
-                "conversation_log": 0,
-                "dna_match": 0,
-                "family_tree": 0,
-                "people": 0,
+            # Prepare headers for scraper
+            facts_scraper_headers = {
+                "Accept": "application/json, text/plain, */*",
+                "Referer": facts_referer,
+                "X-Requested-With": "XMLHttpRequest",  # Added header
             }
 
-            # 2. Delete from conversation_log
-            logger.debug(
-                f"Deleting from conversation_log where people_id != {person_id_to_keep}..."
-            )
-            result_conv = (
-                sess.query(ConversationLog)
-                .filter(ConversationLog.people_id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["conversation_log"] = (
-                result_conv if result_conv is not None else 0
-            )
-            logger.info(
-                f"Deleted {deleted_counts['conversation_log']} conversation_log records."
-            )
-
-            # 3. Delete from dna_match
-            logger.debug(
-                f"Deleting from dna_match where people_id != {person_id_to_keep}..."
-            )
-            result_dna = (
-                sess.query(DnaMatch)
-                .filter(DnaMatch.people_id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["dna_match"] = result_dna if result_dna is not None else 0
-            logger.info(f"Deleted {deleted_counts['dna_match']} dna_match records.")
-
-            # 4. Delete from family_tree
-            logger.debug(
-                f"Deleting from family_tree where people_id != {person_id_to_keep}..."
-            )
-            result_ft = (
-                sess.query(FamilyTree)
-                .filter(FamilyTree.people_id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["family_tree"] = result_ft if result_ft is not None else 0
-            logger.info(f"Deleted {deleted_counts['family_tree']} family_tree records.")
-
-            # 5. Delete from people
-            logger.debug(f"Deleting from people where id != {person_id_to_keep}...")
-            result_people = (
-                sess.query(Person)
-                .filter(Person.id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["people"] = result_people if result_people is not None else 0
-            logger.info(f"Deleted {deleted_counts['people']} people records.")
-
-            total_deleted = sum(deleted_counts.values())
-            if total_deleted == 0:
-                logger.info(
-                    f"No records found to delete besides Person ID {person_id_to_keep}."
+            # Apply rate limit wait
+            wait_time = session_manager.dynamic_rate_limiter.wait()
+            if wait_time > 0.1:
+                logger.debug(
+                    f"[Facts API (Cloudscraper)] Rate limit wait: {wait_time:.2f}s"
                 )
+            # End if
 
-        success = True  # Mark success if transaction completes
-
-    except Exception as e:
-        logger.error(
-            f"Error during deletion (except {profile_id_to_keep}): {e}", exc_info=True
-        )
-        success = False  # Explicitly mark failure
-    finally:
-        # Clean up the temporary session manager and its resources
-        if temp_manager:
-            if session:
-                temp_manager.return_session(session)
-            temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
-        logger.debug(f"Delete action (except {profile_id_to_keep}) finished.")
-    return success
-
-
-# end of action 0 (all_but_first_actn)
-
-
-# Action 1
-def run_actions_6_7_8_action(session_manager, *args):
-    """
-    Action to run actions 6, 7, and 8 sequentially.
-    Relies on exec_actn ensuring session is ready beforehand.
-    """
-    # Guard clause now checks session_ready
-    if not session_manager or not session_manager.session_ready:
-        logger.error("Cannot run sequential actions: Session not ready.")
-        return False
-
-    all_successful = True
-    try:
-        # --- Action 6 ---
-        logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-        # coord_action_func expects session_manager, config_instance, start=...
-        # config_instance is needed
-        gather_result = coord_action_func(session_manager, config_instance, start=1)
-        if gather_result is False:
-            logger.error("Action 6 FAILED.")
-            return False
+            # Make request
+            try:
+                facts_scraper_response = scraper.get(
+                    facts_api_url,
+                    headers=facts_scraper_headers,
+                    timeout=60,  # Use increased timeout
+                )
+                facts_scraper_response.raise_for_status()
+                facts_data_raw = facts_scraper_response.json()
+                logger.info("Facts API call successful using Cloudscraper.")
+                session_manager.dynamic_rate_limiter.decrease_delay()
+            except cloudscraper.exceptions.CloudflareChallengeError as cfe:
+                logger.error(
+                    f"Cloudflare challenge encountered during Facts API call: {cfe}"
+                )
+                facts_data_raw = {}
+                session_manager.dynamic_rate_limiter.increase_delay()
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(
+                    f"HTTPError during Cloudscraper Facts API call: {http_err}"
+                )
+                if http_err.response is not None:
+                    logger.error(f"  Status Code: {http_err.response.status_code}")
+                    logger.debug(f"  Response Text: {http_err.response.text[:500]}")
+                # End if
+                facts_data_raw = {}
+            except requests.exceptions.RequestException as req_exc:
+                logger.error(
+                    f"RequestException during Cloudscraper Facts API call: {req_exc}"
+                )
+                facts_data_raw = {}
+            except requests.exceptions.JSONDecodeError as json_err:
+                logger.error(
+                    f"Failed to decode JSON from Cloudscraper Facts API response: {json_err}"
+                )
+                logger.debug(
+                    f"Cloudscraper Response Text: {getattr(facts_scraper_response, 'text', 'N/A')[:500]}"
+                )
+                facts_data_raw = {}
+            except Exception as scrape_err:
+                logger.error(
+                    f"Unexpected error during Cloudscraper Facts API call: {scrape_err}",
+                    exc_info=True,
+                )
+                facts_data_raw = {}
+            # End inner try/except
         else:
-            logger.info("Action 6 OK.")
-
-        # --- Action 7 ---
-        logger.info("--- Running Action 7: Search Inbox ---")
-        inbox_url = urljoin(config_instance.BASE_URL, "/messaging/")
-        logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
-        # Wait for a specific element indicating inbox has loaded
-        if not nav_to_page(
-            session_manager.driver,
-            inbox_url,
-            "div[data-testid='conversation-list-item']",  # Selector for a conversation item
-            session_manager,
-        ):
-            logger.error("Action 7 nav FAILED.")
-            return False
-        logger.debug("Nav OK. Running search...")
-        inbox_processor = InboxProcessor(session_manager=session_manager)
-        search_result = inbox_processor.search_inbox()
-        if search_result is False:
-            logger.error("Action 7 FAILED.")
-            return False
-        else:
-            logger.info("Action 7 OK.")
-
-        # --- Action 8 ---
-        logger.info("--- Running Action 8: Send Messages ---")
-        logger.debug("Navigating to Base URL for Action 8...")
-        if not nav_to_page(
-            session_manager.driver,
-            config_instance.BASE_URL,
-            WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
-            session_manager,
-        ):
-            logger.error("Action 8 nav FAILED.")
-            return False
-        logger.debug("Nav OK. Sending messages...")
-        # send_messages_to_matches expects session_manager
-        send_result = send_messages_to_matches(session_manager)
-        if send_result is False:
-            logger.error("Action 8 FAILED.")
-            return False
-        else:
-            logger.info("Action 8 OK.")
-
-        logger.info("Sequential Actions 6-7-8 finished successfully.")
-        return True
-    except Exception as e:
-        logger.error(
-            f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
-        )
-        return False
-
-
-# End Action 1
-
-
-# Action 2 (reset_db_actn)
-def reset_db_actn(session_manager: SessionManager, *args):
-    """
-    Action to COMPLETELY reset the database by deleting the file. Browserless.
-    - Closes main pool.
-    - Deletes the .db file.
-    - Recreates schema from scratch.
-    - Seeds the MessageType table.
-    """
-    db_path = config_instance.DATABASE_FILE
-    reset_successful = False
-    temp_manager = None  # For recreation/seeding
-    recreation_session = None  # Session for seeding
-
-    try:
-        # --- 1. Close main pool FIRST ---
-        if session_manager:
-            logger.debug("Closing main DB connections before database deletion...")
-            session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
-            logger.debug("Main DB pool closed.")
-        else:
-            logger.warning("No main session manager passed to reset_db_actn to close.")
-
-        # --- 2. Delete the Database File ---
-        logger.debug(f"Attempting to delete database file: {db_path}...")
-        try:
-            # Call delete_database function from the database module
-            database.delete_database(None, db_path)  # Pass None for session_manager
-            logger.debug(f"Database file '{db_path.name}' deleted successfully.")
-        except Exception as del_err:
             logger.critical(
-                f"Failed to delete database file '{db_path.name}'. Reset aborted.",
-                exc_info=True,
+                "Cloudscraper instance not available in SessionManager. Cannot call Facts API."
             )
-            return False  # Critical failure if deletion fails
+            return False
+        # --- END Use Cloudscraper for Facts API ---
 
-        # --- 3. Re-initialize DB Schema and Seed ---
-        logger.debug("Re-initializing database schema and seeding MessageTypes...")
-        # Use a temporary SessionManager to handle creation on the now non-existent file path
-        temp_manager = SessionManager()
-        try:
-            # This will create a new engine and session factory pointing to the file path
-            temp_manager._initialize_db_engine_and_session()
-            if not temp_manager.engine or not temp_manager.Session:
-                raise SQLAlchemyError(
-                    "Failed to initialize DB engine/session for recreation!"
-                )
+    except Exception as e:  # Outer catch for broader issues during details fetch setup
+        logger.error(f"Error preparing for Facts API call: {e}", exc_info=True)
+        print(f"\nWarning: Could not fetch person facts from API.")
+        facts_data_raw = {}
+    # End try/except for details fetch
 
-            # This will create the tables in the new, empty file
-            Base.metadata.create_all(temp_manager.engine)
-            logger.debug("New database file created and tables schema applied.")
+    # --- Extract data from facts_data_raw ---
+    facts_data = facts_data_raw.get("data", {})
+    if not facts_data:
+        logger.error(
+            f"Failed to fetch valid facts data for {api_name_raw} (PersonID: {api_person_id}). Cannot proceed."
+        )
+        print(
+            f"\nERROR: Could not fetch details for the selected match ({api_name_raw})."
+        )
+        return False
+    # End if
 
-            # --- Seed MessageType Table ---
-            recreation_session = temp_manager.get_db_conn()
-            if not recreation_session:
-                raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
+    extracted_name = format_name(facts_data.get("PersonFullName", api_name_raw))
+    extracted_gender_str = facts_data.get("PersonGender")
+    extracted_gender = (
+        "m"
+        if extracted_gender_str == "Male"
+        else "f" if extracted_gender_str == "Female" else None
+    )
+    is_living = facts_data.get("IsPersonLiving", True)
+    person_facts_list = facts_data.get("PersonFacts", [])
+    person_family_data = facts_data.get("PersonFamily", {})
 
-            logger.debug("Seeding message_types table...")
-            script_dir = Path(__file__).resolve().parent
-            messages_file = script_dir / "messages.json"
-            if messages_file.exists():
-                with messages_file.open("r", encoding="utf-8") as f:
-                    messages_data = json.load(f)
-                if isinstance(messages_data, dict):
-                    # Use the session from the temporary manager
-                    with db_transn(recreation_session) as sess:
-                        types_to_add = [
-                            MessageType(type_name=name)
-                            for name in messages_data
-                            # No need to check existence in an empty DB
-                        ]
-                        if types_to_add:
-                            sess.add_all(types_to_add)
-                            logger.debug(f"Added {len(types_to_add)} message types.")
-                        else:
-                            logger.warning(
-                                "No message types found in messages.json to seed."
-                            )
-                    count = (
-                        recreation_session.query(func.count(MessageType.id)).scalar()
-                        or 0
+    birth_date_str, birth_place, birth_date_obj = _extract_fact_data(
+        person_facts_list, "Birth"
+    )
+    death_date_str, death_place, death_date_obj = _extract_fact_data(
+        person_facts_list, "Death"
+    )
+
+    birth_date_disp = _clean_display_date(birth_date_str) if birth_date_str else "N/A"
+    death_date_disp = _clean_display_date(death_date_str) if death_date_str else "N/A"
+
+    # --- Prepare candidate data dictionary for scoring ---
+    given_name_score = None
+    surname_score = None
+    name_fact = next(
+        (f for f in person_facts_list if f.get("TypeString") == "Name"), None
+    )
+    if name_fact and name_fact.get("Value"):
+        formatted_nf = format_name(name_fact.get("Value"))
+        if formatted_nf != "Valued Relative":
+            parts = formatted_nf.split()
+            if parts:
+                given_name_score = parts[0]
+            if len(parts) > 1:
+                surname_score = parts[-1]
+            # End if parts checks
+        # End if formatted_nf
+    # End if name_fact
+    if given_name_score is None and extracted_name != "Valued Relative":
+        parts = extracted_name.split()
+        if parts:
+            given_name_score = parts[0]
+        if len(parts) > 1:
+            surname_score = parts[-1]
+        # End if parts checks
+    # End if fallback
+
+    candidate_data_dict = {
+        "first_name": clean_param(given_name_score),
+        "surname": clean_param(surname_score),
+        "birth_year": birth_date_obj.year if birth_date_obj else None,
+        "birth_date_obj": birth_date_obj,
+        "birth_place": clean_param(birth_place),
+        "death_year": death_date_obj.year if death_date_obj else None,
+        "death_date_obj": death_date_obj,
+        "death_place": clean_param(death_place),
+        "gender": extracted_gender,
+    }
+
+    # --- Calculate score ---
+    score = 0.0
+    reasons = ["API Suggest Match"]
+    field_scores = {}
+
+    score, field_scores, reasons_list = calculate_match_score(
+        search_criteria_dict,
+        candidate_data_dict,
+        config_instance.COMMON_SCORING_WEIGHTS,
+        config_instance.NAME_FLEXIBILITY,
+        config_instance.DATE_FLEXIBILITY,
+    )
+    if "API Suggest Match" not in reasons_list:
+        reasons_list.append("API Suggest Match")
+    # End if
+    reasons = reasons_list
+    logger.debug(f"Calculated score for top API match: {score} (Reasons: {reasons})")
+
+    # --- Create match dict ---
+    person_link = "(unavailable)"
+    if api_tree_id and api_person_id and base_url:
+        person_link = f"{base_url}/family-tree/person/tree/{api_tree_id}/person/{api_person_id}/facts"
+    # End if
+
+    api_match_for_display = {
+        "id": api_person_id,
+        "user_id": api_user_id,  # Store global ID if available from suggest
+        "norm_id": api_person_id,  # Use tree-specific ID as primary identifier for this record
+        "tree_id": api_tree_id,
+        "name": extracted_name,
+        "birth_date": birth_date_disp,
+        "birth_place": birth_place or "N/A",
+        "death_date": death_date_disp,
+        "death_place": death_place or "N/A",
+        "score": score,
+        "reasons": ", ".join(reasons),
+        "link": person_link,
+        "is_living": is_living,
+        "person_id": api_person_id,  # Keep tree-specific ID
+    }
+
+    # --- Display Top Match ---
+    print(f"\n--- Top Match (Scored) ---")
+    match = api_match_for_display
+    b_info = (
+        f"b. {match['birth_date']}"
+        if match.get("birth_date") and match["birth_date"] != "N/A"
+        else ""
+    )
+    d_info = (
+        f"d. {match['death_date']}"
+        if match.get("death_date") and match["death_date"] != "N/A"
+        else ""
+    )
+    birth_place_info = (
+        f"in {match['birth_place']}"
+        if match.get("birth_place") and match["birth_place"] != "N/A"
+        else ""
+    )
+    death_place_info = (
+        f"in {match['death_place']}"
+        if match.get("death_place") and match["death_place"] != "N/A"
+        else ""
+    )
+
+    print(f"  1. {match['name']}")
+    print(f"     Born : {match.get('birth_date', '?')} {birth_place_info}")
+    if not match.get("is_living"):
+        print(f"     Died : {match.get('death_date', '?')} {death_place_info}")
+    # End if
+    print(
+        f"     Score: {match.get('score', 0.0):.0f} (Reasons: {match.get('reasons', 'API Suggest Match')})"
+    )
+
+    print(f"\n---> Auto-selecting this match: {match['name']}")
+    selected_match = api_match_for_display
+
+    # --- Display Details ---
+    print("\n=== PERSON DETAILS (API) ===")
+    print(f"Name: {match['name']}")
+    gender_display = (
+        "Male"
+        if extracted_gender == "m"
+        else "Female" if extracted_gender == "f" else "N/A"
+    )
+    print(f"Gender: {gender_display}")
+    print(f"Born: {match['birth_date']} in {match['birth_place']}")
+    if not match.get("is_living"):
+        print(f"Died: {match['death_date']} in {match['death_place']}")
+    # End if
+    print(f"Link: {match['link']}")
+
+    # --- Display Family Details ---
+    print("\n--- Family Details (API) ---")
+    parents_list = []
+    if isinstance(person_family_data.get("Fathers"), list):
+        parents_list.extend(person_family_data["Fathers"])
+    # End if
+    if isinstance(person_family_data.get("Mothers"), list):
+        parents_list.extend(person_family_data["Mothers"])
+    # End if
+
+    siblings_list = []
+    if isinstance(person_family_data.get("Siblings"), list):
+        siblings_list.extend(person_family_data["Siblings"])
+    # End if
+
+    spouses_list = []
+    if isinstance(person_family_data.get("Spouses"), list):
+        spouses_list.extend(person_family_data["Spouses"])
+    # End if
+
+    children_list = []
+    if isinstance(person_family_data.get("Children"), list):
+        for child_group in person_family_data["Children"]:
+            if isinstance(child_group, list):
+                children_list.extend(child_group)
+            # End if
+        # End for
+    # End if
+
+    def format_family_member(member: Dict) -> Dict:
+        name = format_name(member.get("FullName", "Unknown"))
+        lifespan = member.get("LifeRange", "")
+        return {"name": f"{name} ({lifespan})" if lifespan else name}
+
+    # End of format_family_member
+
+    print_group("Parents", [format_family_member(p) for p in parents_list])
+    print_group("Siblings", [format_family_member(s) for s in siblings_list])
+    print_group("Spouse(s)", [format_family_member(s) for s in spouses_list])
+    print_group("Children", [format_family_member(c) for c in children_list])
+
+    # --- Display Relationship Path ---
+    selected_person_tree_id = selected_match.get("person_id")  # Tree-specific ID
+    selected_person_global_id = selected_match.get("user_id")  # Global ID (may be None)
+    selected_tree_id = selected_match.get("tree_id")
+
+    if owner_profile_id and selected_person_tree_id:  # Need at least tree-specific ID
+        # Check if the selected person IS the owner using global ID if available
+        is_owner = False
+        if (
+            selected_person_global_id
+            and owner_profile_id.upper() == selected_person_global_id.upper()
+        ):
+            is_owner = True
+        # End if
+
+        if is_owner:
+            print(f"\n--- Relationship Path to {owner_name} (API) ---")
+            print("(Selected person is the Tree Owner)")
+        else:
+            print(f"\nCalculating relationship path to {owner_name}...")
+            ladder_api_url = ""
+            api_description_ladder = ""
+            ladder_headers = {}
+            ladder_referer = ""
+            use_csrf_ladder = False
+            force_text_ladder = True
+
+            if owner_tree_id and selected_tree_id == owner_tree_id:
+                id_for_ladder = selected_person_tree_id
+                ladder_api_url = f"{base_url}/family-tree/person/tree/{owner_tree_id}/person/{id_for_ladder}/getladder"
+                api_description_ladder = "Get Tree Ladder API (Action 11)"
+                callback_name = f"__ancestry_jsonp_{int(time.time()*1000)}"
+                timestamp_ms = int(time.time() * 1000)
+                query_params = urlencode({"callback": callback_name, "_": timestamp_ms})
+                ladder_api_url = f"{ladder_api_url}?{query_params}"
+                ladder_headers = {
+                    "Accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                }
+                ladder_referer = f"{base_url}/family-tree/person/tree/{owner_tree_id}/person/{id_for_ladder}/facts"
+                logger.debug(f"Using Tree Ladder API with PersonID: {id_for_ladder}")
+            else:
+                if not owner_profile_id:
+                    logger.error(
+                        "Cannot calculate relationship path: Owner profile ID missing for discovery API."
                     )
+                    print(
+                        "\nERROR: Cannot calculate relationship path - required owner ID missing."
+                    )
+                    return True
+                # End if
+                # Use global ID if available, otherwise cannot use this endpoint
+                if selected_person_global_id:
+                    id_for_ladder = selected_person_global_id
+                    ladder_api_url = f"{base_url}/discoveryui-matchesservice/api/samples/{id_for_ladder}/relationshiptome/{owner_profile_id}"
+                    api_description_ladder = "API Relationship Ladder (Batch)"
+                    uuid_for_referer = getattr(session_manager, "my_uuid", None)
+                    if uuid_for_referer:
+                        ladder_referer = urljoin(
+                            base_url, f"/discoveryui-matches/list/{uuid_for_referer}"
+                        )
+                    else:
+                        ladder_referer = base_url
+                        logger.warning(
+                            "Cannot construct match list referer for ladder API: my_uuid missing."
+                        )
+                    # End if/else uuid
                     logger.debug(
-                        f"MessageType seeding OK. Total types in new DB: {count}"
+                        f"Using Discovery/Batch Ladder API with UserID: {id_for_ladder}"
                     )
                 else:
-                    logger.error("'messages.json' has incorrect format. Cannot seed.")
-            else:
-                logger.warning(f"'messages.json' not found. Cannot seed MessageTypes.")
-            # --- End Seeding ---
+                    # Cannot calculate path if outside tree and global ID is missing
+                    logger.error(
+                        "Cannot calculate relationship path: Target person is outside tree, but their global UserId is missing from Suggest API response."
+                    )
+                    print(f"\n--- Relationship Path to {owner_name} (API) ---")
+                    print(
+                        "(Cannot calculate path: Target is outside your tree and their global ID was not found)."
+                    )
+                    return True  # End gracefully
+                # End if/else global id check
+            # End if/else for API choice
 
-            reset_successful = True
-            logger.info("Database reset completed successfully.")
+            relationship_html_raw = None
+            try:
+                # Use standard _api_req for ladder APIs
+                relationship_html_raw = _api_req(
+                    url=ladder_api_url,
+                    driver=session_manager.driver,
+                    session_manager=session_manager,
+                    method="GET",
+                    api_description=api_description_ladder,
+                    headers=ladder_headers,
+                    referer_url=ladder_referer,
+                    use_csrf_token=use_csrf_ladder,
+                    force_text_response=force_text_ladder,
+                    timeout=20,
+                )
 
-        except Exception as recreate_err:
-            logger.error(
-                f"Error during DB recreation/seeding: {recreate_err}", exc_info=True
-            )
-            reset_successful = False
-        finally:
-            # Clean up the temporary manager and its session/engine
-            logger.debug("Cleaning up temporary resource manager for reset...")
-            if temp_manager:
-                if recreation_session:
-                    temp_manager.return_session(recreation_session)
-                temp_manager.cls_db_conn(keep_db=False)  # Dispose temp engine
-            logger.debug("Temporary resource manager cleanup finished.")
+                if relationship_html_raw and isinstance(relationship_html_raw, str):
+                    display_raw_relationship_ladder(
+                        relationship_html_raw,
+                        owner_name,
+                        selected_match.get("name", "Selected Person"),
+                    )
+                elif (
+                    isinstance(relationship_html_raw, dict)
+                    and "error" in relationship_html_raw
+                ):
+                    display_raw_relationship_ladder(
+                        relationship_html_raw,
+                        owner_name,
+                        selected_match.get("name", "Selected Person"),
+                    )
+                else:
+                    logger.warning(
+                        f"API call {api_description_ladder} returned unexpected response type or None: {type(relationship_html_raw)}"
+                    )
+                    print(f"\n--- Relationship Path to {owner_name} (API) ---")
+                    print("(API call returned unexpected data or no response)")
+                # End if/else
+            except Exception as e:
+                logger.error(
+                    f"API call {api_description_ladder} failed: {e}", exc_info=True
+                )
+                print(f"\n--- Relationship Path to {owner_name} (API) ---")
+                print(f"(Error fetching relationship path from API: {e})")
+            # End try/except for ladder API call
+        # End if/else is_owner check
+    elif not owner_profile_id:
+        print(f"\n--- Relationship Path to Tree Owner (API) ---")
+        print("(Skipping relationship calculation as your profile ID was not found)")
+    else:
+        print(f"\n--- Relationship Path to {owner_name} (API) ---")
+        print("(Skipping relationship calculation as selected person ID is missing)")
+    # End if/elif/else for relationship path
 
-    except Exception as e:
-        logger.error(f"Outer error during DB reset action: {e}", exc_info=True)
-        reset_successful = False  # Ensure failure is marked
-
-    finally:
-        logger.debug("Reset DB action finished.")
-
-    return reset_successful
-
-
-# end of Action 2 (reset_db_actn)
-
-
-# Action 3 (backup_db_actn)
-def backup_db_actn(
-    session_manager: Optional[SessionManager], *args
-):  # Added session_manager back (Optional)
-    """Action to backup the database. Browserless."""
-    try:
-        logger.debug("Starting DB backup...")
-        # session_manager isn't strictly needed but kept for signature consistency
-        backup_database()
-        logger.info("DB backup OK.")
-        return True
-    except Exception as e:
-        logger.error(f"Error during DB backup: {e}", exc_info=True)
-        return False
-
-
-# end of Action 3
-
-
-# Action 4 (restore_db_actn)
-def restore_db_actn(
-    session_manager: SessionManager, *args
-):  # Added session_manager back
-    """
-    Action to restore the database. Browserless.
-    Closes the provided main session pool FIRST.
-    """
-    backup_dir = config_instance.DATA_DIR
-    backup_path = backup_dir / "ancestry_backup.db"
-    db_path = config_instance.DATABASE_FILE
-    success = False
-    try:
-        # --- Close main pool FIRST ---
-        if session_manager:
-            logger.debug("Closing main DB connections before restore...")
-            session_manager.cls_db_conn(keep_db=False)
-            logger.debug("Main DB pool closed.")
-        else:
-            logger.warning(
-                "No main session manager passed to restore_db_actn to close."
-            )
-        # --- End closing main pool ---
-
-        logger.debug(f"Restoring DB from: {backup_path}")
-        if not backup_path.exists():
-            logger.error(f"Backup not found: {backup_path}.")
-            return False
-
-        logger.debug("Running GC before restore...")
-        gc.collect()
-        time.sleep(0.5)
-        gc.collect()
-
-        shutil.copy2(backup_path, db_path)
-        logger.info(f"Db restored from backup OK.")
-        success = True
-    except FileNotFoundError:
-        logger.error(f"Backup not found during copy: {backup_path}")
-    except (OSError, IOError, shutil.Error) as e:
-        logger.error(f"Error restoring DB: {e}", exc_info=True)
-    except Exception as e:
-        logger.critical(f"Unexpected restore error: {e}", exc_info=True)
-    finally:
-        logger.debug("DB restore action finished.")
-    return success
-
-
-# end of Action 4
-
-
-# Action 5 (check_login_actn)
-def check_login_actn(session_manager: SessionManager, *args) -> bool:
-    """
-    Action 5: Ensure browser and session readiness (start driver, login, identifiers).
-    """
-    if not session_manager:
-        logger.error("SessionManager required for check_login_actn.")
-        return False
-
-    logger.debug("Checking driver and session readiness (Action 5)...")
-
-    # Phase 1: Ensure WebDriver is initialized and on base URL
-    if not session_manager.ensure_driver_live(action_name="check_login_actn - Setup"):
-        logger.error("Failed to start browser session.")
-        return False
-
-    # Phase 2: Ensure full session readiness (login, CSRF, identifiers)
-    if not session_manager.ensure_session_ready(action_name="check_login_actn - Setup"):
-        logger.error("Failed to authenticate with Ancestry.")
-        return False
-
-    logger.info("Session is ready. Login verification successful.")
     return True
 
 
-# End of check_login_actn
+# End of handle_api_report
 
 
-# Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_instance, start=1):
-    """
-    Action wrapper for gathering matches (coord_action_func).
-    Relies on exec_actn ensuring session is ready before calling.
-    """
-    # Guard clause now checks session_ready
-    if not session_manager or not session_manager.session_ready:
-        logger.error("Cannot gather matches: Session not ready.")
-        return False
-
-    logger.debug(f"Gathering DNA Matches from page {start}...")
-    try:
-        # Call the imported function (coord_action_func from action6_gather)
-        result = coord_action_func(session_manager, config_instance, start=start)
-        if result is False:
-            logger.error("Match gathering reported failure.")
-            return False
-        else:
-            logger.info("Gathering matches OK.")
-            return True  # Use INFO for success
-    except Exception as e:
-        logger.error(f"Error during coord_action: {e}", exc_info=True)
-        return False
-
-
-# End of coord_action
-
-
-# Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager, *args):
-    """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
-    # Guard clause now checks session_ready
-    if not session_manager or not session_manager.session_ready:
-        logger.error("Cannot search inbox: Session not ready.")
-        return False
-
-    logger.debug("Starting inbox search...")
-    try:
-        processor = InboxProcessor(session_manager=session_manager)
-        result = processor.search_inbox()
-        if result is False:
-            logger.error("Inbox search reported failure.")
-            return False
-        else:
-            logger.info("Inbox search OK.")
-            return True  # Use INFO
-    except Exception as e:
-        logger.error(f"Error during inbox search: {e}", exc_info=True)
-        return False
-
-
-# End of srch_inbox_actn
-
-
-# Action 8 (send_messages_action)
-def send_messages_action(session_manager, *args):
-    """Action to send messages. Relies on exec_actn ensuring session is ready."""
-    # Guard clause now checks session_ready
-    if not session_manager or not session_manager.session_ready:
-        logger.error("Cannot send messages: Session not ready.")
-        return False
-
-    logger.debug("Starting message sending...")
-    try:
-        # Navigate to Base URL first (good practice before starting message loops)
-        logger.debug("Navigating to Base URL before sending...")
-        if not nav_to_page(
-            session_manager.driver,
-            config_instance.BASE_URL,
-            WAIT_FOR_PAGE_SELECTOR,
-            session_manager,
-        ):
-            logger.error("Failed nav to base URL. Aborting message sending.")
-            return False
-        logger.debug("Navigation OK. Proceeding to send messages...")
-
-        # Call the actual sending function
-        result = send_messages_to_matches(session_manager)
-        if result is False:
-            logger.error("Message sending reported failure.")
-            return False
-        else:
-            logger.info("Messages sent OK.")
-            return True  # Use INFO
-    except Exception as e:
-        logger.error(f"Error during message sending: {e}", exc_info=True)
-        return False
-
-
-# End of send_messages_action
-
-
-# Action 9
-# end of Action 9
-
-
+# --- Main Execution ---
 def main():
-    global logger, session_manager  # Ensure global logger can be modified
-    session_manager = None  # Initialize session_manager
-    was_driver_live = False  # Track if driver was ever live
+    """Main execution flow for Action 11 (API Report)."""
+    logger.info("--- Action 11: API Report Starting ---")
 
-    try:
-        os.system("cls" if os.name == "nt" else "clear")
-        print("")
-        # --- Logging Setup ---
-        try:
-            from config import config_instance  # Local import for clarity
+    # Check prerequisites before running handler
+    if not CORE_UTILS_AVAILABLE:
+        logger.critical("Required core utilities not loaded.")
+        print("\nCRITICAL ERROR: Required utilities not loaded.")
+        sys.exit(1)
+    # End if
+    if not API_UTILS_AVAILABLE:
+        logger.critical("Required API utilities not loaded.")
+        print("\nCRITICAL ERROR: Required API utilities not loaded.")
+        sys.exit(1)
+    # End if
+    if not GEDCOM_SCORING_AVAILABLE or not GEDCOM_DATE_UTILS_AVAILABLE:
+        logger.critical("Required GEDCOM scoring or date utilities not loaded.")
+        print("\nCRITICAL ERROR: Required scoring or date utilities not loaded.")
+        sys.exit(1)
+    # End if
+    if (
+        config_instance is None
+        or not hasattr(config_instance, "COMMON_SCORING_WEIGHTS")
+        or not hasattr(config_instance, "NAME_FLEXIBILITY")
+        or not hasattr(config_instance, "DATE_FLEXIBILITY")
+    ):
+        logger.critical("Scoring configuration variables missing or invalid.")
+        print("\nERROR: Scoring configuration load failed.")
+        sys.exit(1)
+    # End if
+    if cloudscraper is None or not session_manager.scraper:
+        logger.critical(
+            "Cloudscraper library/instance missing or failed to initialize."
+        )
+        print("\nCRITICAL ERROR: Cloudscraper is required but unavailable.")
+        sys.exit(1)
+    # End if
 
-            db_file_path = config_instance.DATABASE_FILE
-            log_filename = db_file_path.with_suffix(".log").name
-            log_level_to_set = getattr(config_instance, "LOG_LEVEL", "INFO").upper()
-            logger = setup_logging(log_file=log_filename, log_level=log_level_to_set)
-        except Exception as log_setup_e:
-            print(f"CRITICAL: Logging setup error: {log_setup_e}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            logging.basicConfig(
-                level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s"
-            )
-            logger = logging.getLogger("logger_fallback")
-            logger.warning("Using fallback logging.")
+    report_successful = handle_api_report()
 
-        # --- Instantiate SessionManager ---
-        session_manager = SessionManager()
-
-        # --- Main menu loop ---
-        while True:
-            choice = menu()
-            print("")
-
-            # --- Confirmation dictionary ---
-            confirm_actions = {
-                "0": "Delete all people except specific profile ID",
-                "2": "COMPLETELY reset the database (deletes data)",
-                "4": "Restore database from backup (overwrites data)",
-            }
-
-            # --- Confirmation Check ---
-            if choice in confirm_actions:
-                action_desc = confirm_actions[choice]
-                confirm = (
-                    input(
-                        f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): "
-                    )
-                    .strip()
-                    .lower()
-                )
-                if confirm not in ["yes", "y"]:
-                    print("Action cancelled.\n")
-                    continue
-                else:
-                    print(" ")  # Newline after confirmation
-
-            # --- Action Dispatching ---
-            # Note: Removed most close_sess_after=False as the default is now to keep open.
-            # Added close_sess_after=True only where explicit closure after action is desired.
-            if choice == "0":
-                # Confirmation handled above
-                exec_actn(all_but_first_actn, session_manager, choice)
-                # Recreate manager as DB structure might have changed significantly
-                # Although all_but_first closes the *main* pool, it uses a temp one.
-                # Recreating ensures the main manager points to the potentially recreated DB file correctly.
-                # session_manager.close_sess(keep_db=False) # Ensure old manager state is cleared
-                # session_manager = SessionManager() # This might be too disruptive if other state needed?
-                # For now, assume the action handled DB closure correctly and main manager state is okay.
-            elif choice == "1":
-                exec_actn(
-                    run_actions_6_7_8_action,
-                    session_manager,
-                    choice,
-                    close_sess_after=True,
-                )  # Close after full sequence
-            elif choice == "2":
-                # Confirmation handled above
-                exec_actn(reset_db_actn, session_manager, choice)
-                # Recreate manager after full reset
-                session_manager.close_sess(
-                    keep_db=False
-                )  # Ensure old manager state is cleared
-                session_manager = SessionManager()
-            elif choice == "3":
-                exec_actn(backup_db_actn, session_manager, choice)
-            elif choice == "4":
-                # Confirmation handled above
-                exec_actn(restore_db_actn, session_manager, choice)
-                # Recreate manager after restore
-                session_manager.close_sess(
-                    keep_db=False
-                )  # Ensure old manager state is cleared
-                session_manager = SessionManager()
-            elif choice == "5":
-                exec_actn(check_login_actn, session_manager, choice)  # Keep open
-            elif choice.startswith("6"):
-                parts = choice.split()
-                start_val = 1
-                if len(parts) > 1:
-                    try:
-                        start_arg = int(parts[1])
-                        start_val = start_arg if start_arg > 0 else 1
-                    except ValueError:
-                        logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
-                # Call exec_actn correctly passing config_instance and start_val as part of *args
-                exec_actn(
-                    coord_action,
-                    session_manager,
-                    "6",
-                    False,
-                    config_instance,
-                    start_val,
-                )  # Keep open
-            elif choice == "7":
-                exec_actn(srch_inbox_actn, session_manager, choice)  # Keep open
-            elif choice == "8":
-                exec_actn(send_messages_action, session_manager, choice)  # Keep open
-            elif choice == "9":
-                exec_actn(
-                    process_productive_messages, session_manager, choice
-                )  # Keep open
-            elif choice == "10":
-                exec_actn(run_action10, session_manager, choice)
-            elif choice == "11":
-                exec_actn(run_action11, session_manager, choice)
-            # --- Meta Options ---
-            elif choice == "t":
-                os.system("cls" if os.name == "nt" else "clear")
-                if logger and logger.handlers:
-                    console_handler = None
-                    for handler in logger.handlers:
-                        if (
-                            isinstance(handler, logging.StreamHandler)
-                            and handler.stream == sys.stderr
-                        ):
-                            console_handler = handler
-                            break
-                    if console_handler:
-                        current_level = console_handler.level
-                        new_level = (
-                            logging.DEBUG
-                            if current_level > logging.DEBUG
-                            else logging.INFO
-                        )
-                        new_level_name = logging.getLevelName(new_level)
-                        # Re-call setup_logging to potentially update filters etc. too
-                        logger = setup_logging(log_level=new_level_name)
-                        logger.info(f"Console log level toggled to: {new_level_name}")
-                    else:
-                        logger.warning(
-                            "Could not find console handler to toggle level."
-                        )
-                else:
-                    print(
-                        "WARNING: Logger not ready or has no handlers.", file=sys.stderr
-                    )
-            elif choice == "c":
-                os.system("cls" if os.name == "nt" else "clear")
-            elif choice == "q":
-                os.system("cls" if os.name == "nt" else "clear")
-                print("Exiting.")
-                break
-            else:
-                # Handle invalid choices
-                if choice not in confirm_actions:  # Avoid double 'invalid' message
-                    print("Invalid choice.\n")
-
-            # --- Track if driver became live ---
-            if (
-                session_manager
-                and hasattr(session_manager, "driver_live")
-                and session_manager.driver_live
-            ):
-                was_driver_live = (
-                    True  # Track if driver was successfully started at any point
-                )
-
-    except KeyboardInterrupt:
-        os.system("cls" if os.name == "nt" else "clear")
-        print("\nCTRL+C detected. Exiting.")
-    except Exception as e:
-        # Log critical error using the global logger if available
-        if "logger" in globals() and logger:
-            logger.critical(f"Critical error in main: {e}", exc_info=True)
-        else:  # Fallback print if logger failed
-            print(f"CRITICAL ERROR (no logger): {e}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-    finally:
-        # Final cleanup: Always close the session manager if it exists
-        logger_present = "logger" in globals() and logger is not None
-        sm_present = "session_manager" in locals() and session_manager is not None
-
-        if logger_present:
-            logger.info("Performing final cleanup...")
-        else:
-            print("Performing final cleanup...", file=sys.stderr)
-
-        if sm_present:
-            try:
-                # Close session, including DB pool, regardless of keep_db flags used earlier
-                if session_manager is not None:
-                    session_manager.close_sess(keep_db=False)
-                if logger_present:
-                    logger.debug("Session Manager closed in final cleanup.")
-                else:
-                    print("Session Manager closed.", file=sys.stderr)
-            except Exception as final_close_e:
-                if logger_present:
-                    logger.error(
-                        f"Error during final Session Manager cleanup: {final_close_e}"
-                    )
-                else:
-                    print(
-                        f"Error during final Session Manager cleanup: {final_close_e}",
-                        file=sys.stderr,
-                    )
-        elif logger_present:
-            logger.debug("Session Manager was None during final cleanup.")
-
-        # Log program finish
-        if logger_present:
-            logger.info("--- Main program execution finished ---")
-        else:
-            print(
-                "--- Main program execution finished (logger unavailable) ---",
-                file=sys.stderr,
-            )
-        print("\nExecution finished.")
+    if report_successful:
+        logger.info("--- Action 11: API Report Finished Successfully ---")
+        print("\nAction 11 finished successfully.")
+    else:
+        logger.error("--- Action 11: API Report Finished with Errors ---")
+        print("\nAction 11 finished with errors.")
+    # End if
 
 
-# end main
+# End of main
 
-# --- Entry Point ---
+# Script entry point check
 if __name__ == "__main__":
-    main()
-
-
-# end of main.py
+    if CORE_UTILS_AVAILABLE:
+        main()
+    else:
+        print(
+            "\nCRITICAL ERROR: Required core utilities (utils.py) are not installed or failed to load."
+        )
+        print("Please check your Python environment and dependencies.")
+        logging.getLogger().critical("Exiting: Required core utilities not loaded.")
+        sys.exit(1)
+    # End if
+# End of action11.py
+# --- END OF FILE action11.py ---

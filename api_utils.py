@@ -3,35 +3,6 @@
 """
 Utility functions specifically for parsing Ancestry API responses
 and formatting data obtained from APIs.
-Consolidates parsing/formatting logic from temp.py v7.36.
-V16.0: Consolidated API helpers from temp.py, uses date helpers from gedcom_utils.
-V16.1: Added standalone self-check functionality. Adjusted self-check mock data.
-V16.2: Rewrote self_check to use live API calls for functional testing.
-V16.3: Corrected API endpoint used in self_check for fetching person details.
-V16.4: Reverted self_check Phase 3 to use Profile Details API (returns JSON)
-       instead of Facts API (returns HTML), ensuring parser test works.
-V16.5: Added diagnostics (logging, shorter timeout) for Ladder API call hang.
-V16.6: Implemented personId lookup via Tree Search API and switched Ladder API
-       call to use the correct /getladder endpoint with personId.
-V16.7: Added logging around requests call in _api_req. Disabled header CSRF token
-       for Tree Search API call in self_check, relying on cookies. Added timeout.
-       Adjusted Accept header for Tree Search API.
-V16.8: Adjusted Tree Search API response handling in self_check to accept
-       list or dict return types.
-V16.9: Modified Tree Search in self_check to use only FirstName for lookup.
-V16.10: Replaced Tree Search API with Person Picker API in self_check for
-        personId lookup, using FirstName and LastName.
-V16.11: Disabled header CSRF token for Person Picker API call in self_check.
-V16.12: Removed fragile personId API search from self_check. Now requires
-        TESTING_PERSON_TREE_ID (env var) loaded into config_instance.
-V16.14: Corrected Ladder API call in self_check Phase 4 to include JSONP
-        parameters. Updated JSONP handling in display_raw_relationship_ladder.
-        Uses TESTING_PERSON_TREE_ID from config.
-V16.15: Corrected validation logic for format_api_relationship_path in self_check.
-V16.16: Refactored HTML/JSONP extraction logic from display_raw_relationship_ladder
-        into a new helper function _extract_ladder_html. Updated self_check.
-V16.17: Revised format_api_relationship_path to correctly parse relationship direction
-        and handle appended dates in names based on analysis of raw HTML.
 """
 
 # --- Standard library imports ---

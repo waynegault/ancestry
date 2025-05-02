@@ -1,0 +1,80 @@
+17:53:28 INF [action10 <module> 41  ] Logging configured via setup_logging (Level: INFO).
+17:53:28 INF [action11 <module> 66  ] Successfully imported config_instance.
+17:53:28 INF [action11 <module> 141 ] Successfully imported functions from gedcom_utils.
+17:53:28 INF [action11 <module> 158 ] Successfully imported required functions from api_utils.
+17:53:28 INF [action11 <module> 171 ] Successfully imported required components from utils.
+17:53:28 INF [ms_graph save_cac 108 ] Executing save_cache_on_exit via atexit...
+17:53:28 INF [ms_graph save_cac 125 ] MSAL cache unchanged since last load/save. No save needed.
+18:37:32 INF [action10 <module> 41  ] Logging configured via setup_logging (Level: INFO).
+18:37:33 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+18:37:33 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+18:37:33 INF [action10 main     76  ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+18:37:33 INF [action10 main     83  ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+18:37:33 INF [action10 main     84  ] Configured REFERENCE_PERSON_ID: I102281560836
+18:37:33 INF [action10 main     85  ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+18:37:33 INF [action10 main     96  ] Using GEDCOM file: Gault Family.ged
+18:37:33 INF [action10 main     102 ] Loading, parsing, and pre-processing GEDCOM data...
+18:38:05 INF [action10 main     106 ] GEDCOM data loaded & processed successfully in 32.24s.
+18:38:05 INF [action10 main     107 ] Index size: 14530
+18:38:05 INF [action10 main     108 ] Pre-processed cache size: 14530
+18:38:05 INF [action10 main     109 ] Build Times: Index=5.00s, Maps=4.76s, PreProcess=22.48s
+18:38:05 INF [action10 main     119 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+18:38:20 INF [action10 main     195 ] 
+                                      --- Final Scoring Criteria Used ---
+18:38:20 INF [action10 main     195 ] First Name: 'fraser'
+18:38:20 INF [action10 main     195 ] Surname: 'gault'
+18:38:20 INF [action10 main     195 ] Gender: 'm'
+18:38:20 INF [action10 main     195 ] Birth Year: '1941'
+18:38:20 INF [action10 main     195 ] Birth Place: 'banff'
+18:38:20 INF [action10 main     196 ] 
+                                      --- OR Filter Logic (Year Range: +/- 10) ---
+18:38:20 INF [action10 main     196 ] Individuals will be scored if ANY filter criteria met or if alive.
+18:38:20 INF [action10 main     200 ] 
+                                      --- Filtering and Scoring Individuals (using pre-processed data) ---
+18:38:20 INF [action10 main     203 ] Processing 14530 individuals from cache...
+18:38:20 INF [action10 main     239 ] Filtering & Scoring completed in 0.08s.
+18:38:20 INF [action10 main     240 ] Found 12160 individual(s) matching OR criteria and scored.
+18:38:20 INF [action10 main     244 ] 
+                                      --- Top 3 Highest Scoring Matches ---
+18:38:20 INF [action10 main     251 ] Displaying top 3 of 12160 scored matches:
+18:38:20 INF [action10 main     259 ] ID              | Name                           | Sex    | Birth Date         | Birth Place                    | Death Date         | Death Place                    | Total Score
+18:38:20 INF [action10 main     259 ] -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+18:38:20 INF [action10 main     270 ] @I102281560744@ | Fraser Gault                   | M      | 15/6/1941          | Banff, Banffshire, Scotland    | N/A                | N/A                            | 165        
+18:38:20 INF [action10 main     270 ] @I102281560714@ | Derrick Wardie Gault           | M      | 16 MAY 1943        | Banff, Banffshire, Scotland    | N/A                | N/A                            | 105        
+18:38:20 INF [action10 main     270 ] @I102281560766@ | William 'billy' George Gault   | M      | 07/05/1947         | Banff, Banffshire, Scotland    | N/A                | N/A                            | 105        
+18:38:20 INF [action10 main     271 ] ... and 12157 more matches not shown.
+18:38:20 INF [action10 main     274 ] 
+                                      --- Analysis of Top Match ---
+18:38:20 INF [action10 main     280 ] Best Match: Fraser Gault (ID: @I102281560744@, Score: 165)
+18:38:20 INF [action10 main     281 ] 
+                                      Relatives:
+18:38:23 INF [action10 main     283 ] Parents:
+18:38:23 INF [action10 main     283 ] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+18:38:23 INF [action10 main     283 ] - 'dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+18:38:23 INF [action10 main     285 ] Siblings:
+18:38:23 INF [action10 main     285 ] - Derrick Wardie Gault (b. 16 MAY 1943)
+18:38:23 INF [action10 main     285 ] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+18:38:23 INF [action10 main     285 ] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+18:38:23 INF [action10 main     285 ] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+18:38:23 INF [action10 main     285 ] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+18:38:23 INF [action10 main     285 ] - William 'billy' George Gault (b. 07/05/1947)
+18:38:23 INF [action10 main     285 ] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+18:38:23 INF [action10 main     285 ] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+18:38:23 INF [action10 main     285 ] - Helen Gault (b. 20/2/1933)
+18:38:23 INF [action10 main     285 ] - Thomas Gault (b. 1929, d. 1929)
+18:38:23 INF [action10 main     287 ] Spouses:
+18:38:23 INF [action10 main     287 ] - Nellie Mason Smith
+18:38:23 INF [action10 main     289 ] Children:
+18:38:23 INF [action10 main     289 ] - David Gault
+18:38:23 INF [action10 main     289 ] - Caroline Gault
+18:38:23 INF [action10 main     289 ] - Barry Gault
+18:38:23 INF [action10 main     297 ] 
+                                      Relationship Path to Wayne Gordon Gault (I102281560836):
+18:38:23 INF [action10 main     299 ] Fraser Gault
+18:38:23 INF [action10 main     299 ] -> whose father is James Gault
+18:38:23 INF [action10 main     299 ] -> whose son is Derrick Wardie Gault
+18:38:23 INF [action10 main     299 ] -> whose son is Wayne Gordon Gault
+18:38:23 INF [action10 main     299 ] [PROFILE] Total Time: 0.00s (BFS: 0.00s, Explain: 0.00s) [Build Times: Maps=4.76s, Index=5.00s, PreProcess=22.48s]
+18:38:23 INF [action10 main     302 ] 
+                                      --- Action 10 Finished ---
