@@ -12,8 +12,8 @@ import re
 import os
 import time
 import json
-import requests # Keep if used by parsing logic, though _api_req handles fetch
-import urllib.parse # Used for urlencode in self_check
+import requests  # Keep if used by parsing logic, though _api_req handles fetch
+import urllib.parse  # Used for urlencode in self_check
 import html
 from typing import Optional, Dict, Any, Union, List, Tuple
 from datetime import (
@@ -25,7 +25,7 @@ from urllib.parse import (
     urlencode,
     quote,
 )  # Need quote for person picker params
-from pathlib import Path # Needed for __main__ block
+from pathlib import Path  # Needed for __main__ block
 
 # --- Third-party imports ---
 # Keep BeautifulSoup import here, check for its availability in functions
@@ -34,6 +34,13 @@ try:
 except ImportError:
     BeautifulSoup = None  # type: ignore # Gracefully handle missing dependency
 
+# Initialize logger - Ensure logger is always available
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("api_utils")
+
 # --- Local application imports ---
 # Use try-except for robustness, especially if run standalone initially
 try:
@@ -41,7 +48,9 @@ try:
     from utils import format_name, ordinal_case
     from config import config_instance, selenium_config
     from gedcom_utils import _parse_date, _clean_display_date
+
     UTILS_AVAILABLE = True
+    logger.info("Successfully imported utils modules")
 except ImportError as imp_err:
     UTILS_AVAILABLE = False
     # Define fallbacks if imports fail
@@ -49,19 +58,24 @@ except ImportError as imp_err:
     ordinal_case = lambda x: str(x)
     _parse_date = lambda x: None
     _clean_display_date = lambda x: str(x) if x else "N/A"
-    class DummyConfig:
-        BASE_URL = "https://www.ancestry.com" # Provide a default
-        TESTING_PROFILE_ID = "08FA6E79-0006-0000-0000-000000000000"
-        TESTING_PERSON_TREE_ID = None
-    config_instance = DummyConfig()
-    selenium_config = None # Define selenium_config as None or a dummy if needed
+    logger.warning("Failed to import utils modules, using fallback functions")
 
-# Initialize logger - Ensure logger is always available
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("api_utils")
+    # Try to import from config.py
+    try:
+        from config import config_instance, selenium_config
+
+        logger.info("Successfully imported config from config.py")
+    except ImportError:
+        # Fallback to dummy config if config.py is not available
+        class DummyConfig:
+            BASE_URL = "https://www.ancestry.com"  # Provide a default
+            TESTING_PROFILE_ID = "08FA6E79-0006-0000-0000-000000000000"
+            TESTING_PERSON_TREE_ID = None
+
+        config_instance = DummyConfig()
+        selenium_config = None  # Define selenium_config as None or a dummy if needed
+        logger.warning("Failed to import config from config.py, using default values")
+
 
 # --- API Response Parsing ---
 def parse_ancestry_person_details(
@@ -121,7 +135,9 @@ def parse_ancestry_person_details(
             first_name_pd = facts_data.get("FirstName")
             if first_name_pd:
                 last_name_pd = facts_data.get("LastName")
-                details["name"] = f"{first_name_pd} {last_name_pd}" if last_name_pd else first_name_pd
+                details["name"] = (
+                    f"{first_name_pd} {last_name_pd}" if last_name_pd else first_name_pd
+                )
             # End if first_name_pd
             if not details["name"]:
                 details["name"] = "Unknown"
@@ -163,7 +179,9 @@ def parse_ancestry_person_details(
             date_info = birth_fact_group.get("date", {})
             place_info = birth_fact_group.get("place", {})
             if isinstance(date_info, dict):
-                details["birth_date"] = date_info.get("normalized", date_info.get("original"))
+                details["birth_date"] = date_info.get(
+                    "normalized", date_info.get("original")
+                )
             # End if date_info
             if isinstance(place_info, dict):
                 details["birth_place"] = place_info.get("placeName")
@@ -175,7 +193,9 @@ def parse_ancestry_person_details(
             date_info = death_fact_group.get("date", {})
             place_info = death_fact_group.get("place", {})
             if isinstance(date_info, dict):
-                details["death_date"] = date_info.get("normalized", date_info.get("original"))
+                details["death_date"] = date_info.get(
+                    "normalized", date_info.get("original")
+                )
             # End if date_info
             if isinstance(place_info, dict):
                 details["death_place"] = place_info.get("placeName")
@@ -185,7 +205,9 @@ def parse_ancestry_person_details(
         if details["birth_date"] is None:
             birth_fact_alt = facts_data.get("birthDate")
             if birth_fact_alt and isinstance(birth_fact_alt, dict):
-                date_str = birth_fact_alt.get("normalized", birth_fact_alt.get("date", ""))
+                date_str = birth_fact_alt.get(
+                    "normalized", birth_fact_alt.get("date", "")
+                )
                 place_str = birth_fact_alt.get("place", "")
                 if date_str and isinstance(date_str, str):
                     details["birth_date"] = date_str
@@ -201,7 +223,9 @@ def parse_ancestry_person_details(
         if details["death_date"] is None:
             death_fact_alt = facts_data.get("deathDate")
             if death_fact_alt and isinstance(death_fact_alt, dict):
-                date_str = death_fact_alt.get("normalized", death_fact_alt.get("date", ""))
+                date_str = death_fact_alt.get(
+                    "normalized", death_fact_alt.get("date", "")
+                )
                 place_str = death_fact_alt.get("place", "")
                 if date_str and isinstance(date_str, str):
                     details["death_date"] = date_str
@@ -230,7 +254,9 @@ def parse_ancestry_person_details(
         elif isinstance(birth_info_card, dict):
             details["birth_date"] = birth_info_card.get("date", details["birth_date"])
             if details["birth_place"] is None:
-                details["birth_place"] = birth_info_card.get("place", details["birth_place"])
+                details["birth_place"] = birth_info_card.get(
+                    "place", details["birth_place"]
+                )
             # End if birth_place
         # End if/elif birth_info_card
     # End if birth_date is None
@@ -246,7 +272,9 @@ def parse_ancestry_person_details(
         elif isinstance(death_info_card, dict):
             details["death_date"] = death_info_card.get("date", details["death_date"])
             if details["death_place"] is None:
-                details["death_place"] = death_info_card.get("place", details["death_place"])
+                details["death_place"] = death_info_card.get(
+                    "place", details["death_place"]
+                )
             # End if death_place
         # End if/elif death_info_card
     # End if death_date is None
@@ -279,21 +307,35 @@ def parse_ancestry_person_details(
 
     if UTILS_AVAILABLE and _clean_display_date:
         details["birth_date"] = (
-            _clean_display_date(details["birth_date"]) if details["birth_date"] else "N/A"
+            _clean_display_date(details["birth_date"])
+            if details["birth_date"]
+            else "N/A"
         )
         details["death_date"] = (
-            _clean_display_date(details["death_date"]) if details["death_date"] else "N/A"
+            _clean_display_date(details["death_date"])
+            if details["death_date"]
+            else "N/A"
         )
     else:
-        details["birth_date"] = str(details["birth_date"]) if details["birth_date"] else "N/A"
-        details["death_date"] = str(details["death_date"]) if details["death_date"] else "N/A"
+        details["birth_date"] = (
+            str(details["birth_date"]) if details["birth_date"] else "N/A"
+        )
+        details["death_date"] = (
+            str(details["death_date"]) if details["death_date"] else "N/A"
+        )
     # End if/else UTILS_AVAILABLE
 
-    base_url_for_link = getattr(config_instance, "BASE_URL", "https://www.ancestry.com").rstrip("/")
+    base_url_for_link = getattr(
+        config_instance, "BASE_URL", "https://www.ancestry.com"
+    ).rstrip("/")
     if details["tree_id"] and details["person_id"]:
-        details["link"] = f"{base_url_for_link}/family-tree/person/tree/{details['tree_id']}/person/{details['person_id']}/facts"
+        details["link"] = (
+            f"{base_url_for_link}/family-tree/person/tree/{details['tree_id']}/person/{details['person_id']}/facts"
+        )
     elif details["person_id"]:
-        details["link"] = f"{base_url_for_link}/discoveryui-matches/profile/{details['person_id']}"
+        details["link"] = (
+            f"{base_url_for_link}/discoveryui-matches/profile/{details['person_id']}"
+        )
     else:
         details["link"] = "(unavailable)"
     # End if/elif/else link
@@ -307,6 +349,8 @@ def parse_ancestry_person_details(
     )
 
     return details
+
+
 # End of parse_ancestry_person_details
 
 
@@ -317,12 +361,14 @@ def print_group(label: str, items: List[Dict]):
         formatter = format_name if UTILS_AVAILABLE else lambda x: str(x).title()
         for item in items:
             # Ensure item is a dict and has 'name' before formatting
-            name_to_format = item.get('name') if isinstance(item, dict) else None
+            name_to_format = item.get("name") if isinstance(item, dict) else None
             print(f"  - {formatter(name_to_format)}")
         # End for
     else:
         print("  (None found)")
     # End if/else
+
+
 # End of print_group
 
 
@@ -330,43 +376,45 @@ def print_group(label: str, items: List[Dict]):
 RELATIONSHIP_MAP = {
     "son": "Father",
     "daughter": "Mother",
-    "mother": "Daughter", # Relationship FROM A TO B
-    "father": "Son",     # Relationship FROM A TO B
+    "mother": "Daughter",  # Relationship FROM A TO B
+    "father": "Son",  # Relationship FROM A TO B
     "brother": "Brother",
     "sister": "Sister",
     "husband": "Wife",
     "wife": "Husband",
-    "uncle": "Nephew/Niece", # Can't determine Nephew/Niece without B's gender
+    "uncle": "Nephew/Niece",  # Can't determine Nephew/Niece without B's gender
     "aunt": "Nephew/Niece",
     # Add more inverse relationships
 }
 
 
-def _get_relationship_term(person_a_gender: Optional[str], basic_relationship: str) -> str:
-    """ Determines the specific relationship term based on gender (e.g., Father vs Parent). """
-    term = basic_relationship.capitalize() # Default
-    if basic_relationship.lower() == 'parent':
-        if person_a_gender == 'M':
+def _get_relationship_term(
+    person_a_gender: Optional[str], basic_relationship: str
+) -> str:
+    """Determines the specific relationship term based on gender (e.g., Father vs Parent)."""
+    term = basic_relationship.capitalize()  # Default
+    if basic_relationship.lower() == "parent":
+        if person_a_gender == "M":
             term = "Father"
-        elif person_a_gender == 'F':
+        elif person_a_gender == "F":
             term = "Mother"
         # End if/elif
-    elif basic_relationship.lower() == 'child':
-        if person_a_gender == 'M':
+    elif basic_relationship.lower() == "child":
+        if person_a_gender == "M":
             term = "Son"
-        elif person_a_gender == 'F':
+        elif person_a_gender == "F":
             term = "Daughter"
         # End if/elif
-    elif basic_relationship.lower() == 'sibling':
-        if person_a_gender == 'M':
+    elif basic_relationship.lower() == "sibling":
+        if person_a_gender == "M":
             term = "Brother"
-        elif person_a_gender == 'F':
+        elif person_a_gender == "F":
             term = "Sister"
         # End if/elif
-    elif basic_relationship.lower() == 'spouse':
-        if person_a_gender == 'M':
+    elif basic_relationship.lower() == "spouse":
+        if person_a_gender == "M":
             term = "Husband"
-        elif person_a_gender == 'F':
+        elif person_a_gender == "F":
             term = "Wife"
         # End if/elif
 
@@ -376,6 +424,8 @@ def _get_relationship_term(person_a_gender: Optional[str], basic_relationship: s
     # End if
 
     return term
+
+
 # End of _get_relationship_term
 
 
@@ -575,12 +625,16 @@ def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
     Handles standard JSON, JSONP, and potential errors.
     """
     if isinstance(raw_content, dict) and "error" in raw_content:
-        error_msg = raw_content.get("error", {}).get("message", raw_content.get("message", "Unknown API Error"))
+        error_msg = raw_content.get("error", {}).get(
+            "message", raw_content.get("message", "Unknown API Error")
+        )
         logger.error(f"_extract_ladder_html: API returned error: {error_msg}")
         return None
     # End if
     if not raw_content or not isinstance(raw_content, str):
-        logger.error(f"_extract_ladder_html: Invalid raw content type: {type(raw_content)}")
+        logger.error(
+            f"_extract_ladder_html: Invalid raw content type: {type(raw_content)}"
+        )
         return None
     # End if
 
@@ -595,28 +649,48 @@ def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
                 if isinstance(json_data, dict) and "html" in json_data:
                     html_escaped = json_data["html"]
                     if isinstance(html_escaped, str):
-                        logger.debug(f"_extract_ladder_html: Found HTML via JSONP. Length: {len(html_escaped)}")
+                        logger.debug(
+                            f"_extract_ladder_html: Found HTML via JSONP. Length: {len(html_escaped)}"
+                        )
                     else:
-                        logger.warning(f"_extract_ladder_html: 'html' key found in JSONP, but not string: {type(html_escaped)}")
+                        logger.warning(
+                            f"_extract_ladder_html: 'html' key found in JSONP, but not string: {type(html_escaped)}"
+                        )
                         html_escaped = None
                     # End if/else isinstance
                 else:
-                    logger.warning("_extract_ladder_html: 'html' key not found in JSONP object.")
+                    logger.warning(
+                        "_extract_ladder_html: 'html' key not found in JSONP object."
+                    )
                 # End if/else html key
             else:
-                logger.warning(f"_extract_ladder_html: Content in JSONP () not JSON: {json_str[:100]}...")
+                logger.warning(
+                    f"_extract_ladder_html: Content in JSONP () not JSON: {json_str[:100]}..."
+                )
             # End if/else json_str looks like JSON
         else:
-            logger.debug("_extract_ladder_html: Raw content does not match JSONP structure.")
-            if raw_content.strip().startswith("{") and raw_content.strip().endswith("}"):
+            logger.debug(
+                "_extract_ladder_html: Raw content does not match JSONP structure."
+            )
+            if raw_content.strip().startswith("{") and raw_content.strip().endswith(
+                "}"
+            ):
                 logger.debug("_extract_ladder_html: Attempting direct JSON parse...")
                 try:
                     json_data_direct = json.loads(raw_content.strip())
-                    if isinstance(json_data_direct, dict) and "html" in json_data_direct and isinstance(json_data_direct["html"], str):
+                    if (
+                        isinstance(json_data_direct, dict)
+                        and "html" in json_data_direct
+                        and isinstance(json_data_direct["html"], str)
+                    ):
                         html_escaped = json_data_direct["html"]
-                        logger.debug(f"_extract_ladder_html: Found HTML via direct JSON parse. Length: {len(html_escaped)}")
+                        logger.debug(
+                            f"_extract_ladder_html: Found HTML via direct JSON parse. Length: {len(html_escaped)}"
+                        )
                     else:
-                        logger.warning("_extract_ladder_html: Direct JSON ok, but 'html' key missing/invalid.")
+                        logger.warning(
+                            "_extract_ladder_html: Direct JSON ok, but 'html' key missing/invalid."
+                        )
                     # End if/else html key
                 except json.JSONDecodeError:
                     logger.warning("_extract_ladder_html: Direct JSON parse failed.")
@@ -624,17 +698,25 @@ def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
             # End if starts/ends with {}
         # End if/else jsonp_match
     except json.JSONDecodeError as json_e:
-        logger.warning(f"_extract_ladder_html: JSONDecodeError during JSONP/JSON extraction: {json_e}")
+        logger.warning(
+            f"_extract_ladder_html: JSONDecodeError during JSONP/JSON extraction: {json_e}"
+        )
     except Exception as e:
-        logger.warning(f"_extract_ladder_html: Unexpected error during JSONP/JSON extraction: {e}")
+        logger.warning(
+            f"_extract_ladder_html: Unexpected error during JSONP/JSON extraction: {e}"
+        )
     # End try/except
 
     if not html_escaped:
         logger.debug("_extract_ladder_html: JSONP/JSON failed, trying regex...")
-        html_match = re.search(r'"html"\s*:\s*"((?:\\.|[^"\\])*)"', raw_content, re.IGNORECASE | re.DOTALL)
+        html_match = re.search(
+            r'"html"\s*:\s*"((?:\\.|[^"\\])*)"', raw_content, re.IGNORECASE | re.DOTALL
+        )
         if html_match:
             html_escaped = html_match.group(1)
-            logger.debug(f"_extract_ladder_html: Found HTML via regex. Length: {len(html_escaped)}")
+            logger.debug(
+                f"_extract_ladder_html: Found HTML via regex. Length: {len(html_escaped)}"
+            )
         # End if html_match
     # End if not html_escaped
 
@@ -646,15 +728,22 @@ def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
 
     try:
         temp_unescaped = html_escaped.replace("\\\\", "\\")
-        html_intermediate = temp_unescaped.encode("utf-8", "backslashreplace").decode("unicode_escape", errors="replace")
+        html_intermediate = temp_unescaped.encode("utf-8", "backslashreplace").decode(
+            "unicode_escape", errors="replace"
+        )
         html_unescaped = html.unescape(html_intermediate)
         logger.debug("_extract_ladder_html: Successfully unescaped HTML.")
         return html_unescaped
     except Exception as decode_err:
-        logger.error(f"_extract_ladder_html: Could not decode HTML. Error: {decode_err}", exc_info=True)
+        logger.error(
+            f"_extract_ladder_html: Could not decode HTML. Error: {decode_err}",
+            exc_info=True,
+        )
         logger.debug(f"Problematic escaped HTML snippet: {html_escaped[:500]}...")
         return None
     # End try/except decode
+
+
 # End of _extract_ladder_html
 
 
@@ -667,19 +756,27 @@ def display_raw_relationship_ladder(
     Uses helper functions to extract HTML and format the path.
     """
     if BeautifulSoup is None:
-        logger.error("BeautifulSoup library not found. Cannot parse relationship ladder HTML.")
+        logger.error(
+            "BeautifulSoup library not found. Cannot parse relationship ladder HTML."
+        )
         print(f"\n--- Relationship between {owner_name} and {target_name} (API) ---")
-        print("\n(Cannot parse relationship path - BeautifulSoup missing. pip install beautifulsoup4 lxml)")
-        return # End of function display_raw_relationship_ladder
+        print(
+            "\n(Cannot parse relationship path - BeautifulSoup missing. pip install beautifulsoup4 lxml)"
+        )
+        return  # End of function display_raw_relationship_ladder
     # End if
 
-    logger.info(f"\n--- Relationship between {owner_name} and {target_name} (API Report) ---")
+    logger.info(
+        f"\n--- Relationship between {owner_name} and {target_name} (API Report) ---"
+    )
 
     html_unescaped = _extract_ladder_html(raw_content)
 
     if not html_unescaped:
-        print("\n(Could not extract or decode relationship path HTML from API response)")
-        return # End of function display_raw_relationship_ladder
+        print(
+            "\n(Could not extract or decode relationship path HTML from API response)"
+        )
+        return  # End of function display_raw_relationship_ladder
     # End if
 
     # --- REMOVED DEBUG PRINT BLOCK ---
@@ -694,6 +791,7 @@ def display_raw_relationship_ladder(
         logger.warning("format_api_relationship_path returned empty string or None.")
         print("(Could not format relationship path steps from extracted HTML)")
     # End if/else
+
 
 # End of display_raw_relationship_ladder
 
