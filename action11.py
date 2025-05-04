@@ -122,6 +122,7 @@ call_facts_user_api = None
 call_getladder_api = None
 call_discovery_relationship_api = None
 call_treesui_list_api = None
+_get_api_timeout = None
 API_UTILS_AVAILABLE = False
 try:
     # Import specific API call helpers and parsers
@@ -133,6 +134,7 @@ try:
         call_getladder_api,
         call_discovery_relationship_api,
         call_treesui_list_api,
+        _get_api_timeout,
     )
 
     logger.info("Successfully imported required functions from api_utils.")
@@ -146,6 +148,7 @@ try:
             call_getladder_api,
             call_discovery_relationship_api,
             call_treesui_list_api,
+            _get_api_timeout,
         ]
     )
     if not API_UTILS_AVAILABLE:
@@ -352,15 +355,16 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
 def _run_simple_suggestion_scoring(
     search_criteria: Dict[str, Any], candidate_data_dict: Dict[str, Any]
 ) -> Tuple[float, Dict, List[str]]:
-    """Performs simple fallback scoring based on hardcoded rules."""
+    """Performs simple fallback scoring based on hardcoded rules. Uses 'gender_match' key."""
     logger.warning("Using simple fallback scoring for suggestion.")
     score = 0.0
+    # <<< Use 'gender_match' as the key in field_scores >>>
     field_scores = {
         "givn": 0,
         "surn": 0,
-        "gender": 0,
+        "gender_match": 0,
         "byear": 0,
-        "bdate": 0,
+        "bdate": 0,  # Renamed gender key
         "bplace": 0,
         "dyear": 0,
         "ddate": 0,
@@ -369,23 +373,20 @@ def _run_simple_suggestion_scoring(
     }
     reasons = ["API Suggest Match", "Fallback Scoring"]
 
-    cand_fn = candidate_data_dict.get("first_name")
-    cand_sn = candidate_data_dict.get("surname")
-    cand_by = candidate_data_dict.get("birth_year")
-    cand_gn = candidate_data_dict.get("gender")  # Should be 'm'/'f'/None
-    search_fn = search_criteria.get("first_name")
-    search_sn = search_criteria.get("surname")
-    search_by = search_criteria.get("birth_year")
-    search_gn = search_criteria.get("gender")  # Should be 'm'/'f'/None
+    cand_gn = candidate_data_dict.get(
+        "gender"
+    )  # Still get 'gender' from candidate dict
+    search_gn = search_criteria.get("gender")
 
+    # ... (Name and Date scoring remain the same) ...
     if cand_fn and search_fn and search_fn in cand_fn:
         score += 25
         field_scores["givn"] = 25
-        reasons.append("Contains First Name (25pts)")
+        reasons.append(f"Contains First Name ({search_fn}) (25pts)")
     if cand_sn and search_sn and search_sn in cand_sn:
         score += 25
         field_scores["surn"] = 25
-        reasons.append("Contains Surname (25pts)")
+        reasons.append(f"Contains Surname ({search_sn}) (25pts)")
     if field_scores["givn"] > 0 and field_scores["surn"] > 0:
         score += 25
         field_scores["bonus"] = 25
@@ -394,21 +395,37 @@ def _run_simple_suggestion_scoring(
         score += 20
         field_scores["byear"] = 20
         reasons.append(f"Exact Birth Year ({cand_by}) (20pts)")
-    cand_dy = candidate_data_dict.get("death_year")
-    search_dy = search_criteria.get("death_year")
     if cand_dy and search_dy and cand_dy == search_dy:
         score += 15
         field_scores["dyear"] = 15
         reasons.append(f"Exact Death Year ({cand_dy}) (15pts)")
-    is_living = candidate_data_dict.get("is_living")
-    if not search_dy and not cand_dy and is_living in [False, None]:
+    elif not search_dy and not cand_dy and is_living in [False, None]:
         score += 15
         field_scores["ddate"] = 15
         reasons.append("Death Dates Absent (15pts)")
-    if cand_gn and search_gn and cand_gn == search_gn:
-        score += 25
-        field_scores["gender"] = 25
-        reasons.append(f"Gender Match ({cand_gn.upper()}) (25pts)")
+
+    # --- Gender Scoring (using 'gender_match' key) ---
+    logger.debug(
+        f"[Simple Scoring] Checking Gender: Search='{search_gn}', Candidate='{cand_gn}'"
+    )
+    if cand_gn is not None and search_gn is not None:
+        if cand_gn == search_gn:
+            # Use a fixed score for simple scoring, config weight might not be available/reliable here
+            gender_score_value = 25
+            score += gender_score_value
+            # <<< Store score under 'gender_match' key >>>
+            field_scores["gender_match"] = gender_score_value
+            reasons.append(
+                f"Gender Match ({cand_gn.upper()}) ({gender_score_value}pts)"
+            )
+            logger.debug(
+                f"[Simple Scoring] Gender match SUCCESS. Awarded {gender_score_value} points to 'gender_match'."
+            )
+        else:
+            logger.debug(
+                f"[Simple Scoring] Gender MISMATCH (Search: {search_gn}, Candidate: {cand_gn}). No points awarded."
+            )
+    # ... (rest of logging) ...
 
     return score, field_scores, reasons
 
@@ -419,9 +436,15 @@ def _run_simple_suggestion_scoring(
 def _process_and_score_suggestions(
     suggestions: List[Dict], search_criteria: Dict[str, Any], config_instance_local: Any
 ) -> List[Dict]:
-    """Processes raw API suggestions, extracts data, calculates match scores, returns sorted list."""
+    """
+    Processes raw API suggestions (from _parse_treesui_list_response),
+    extracts data into a format for scoring, calculates match scores against
+    search_criteria, and returns sorted list. (Enhanced Logging Before Score Call)
+    """
     processed_candidates = []
     clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    parse_date_func = _parse_date if callable(_parse_date) else None
+
     logger.info(f"\n--- Filtering and Scoring {len(suggestions)} Candidates ---")
 
     scoring_func = (
@@ -429,125 +452,136 @@ def _process_and_score_suggestions(
         if GEDCOM_SCORING_AVAILABLE
         else _run_simple_suggestion_scoring
     )
+    # <<< Log which scoring function is being used >>>
+    logger.info(f"Using scoring function: {scoring_func.__name__}")
     if not GEDCOM_SCORING_AVAILABLE:
-        logger.warning(
-            "Gedcom scoring function unavailable. Using simple fallback scoring."
-        )
+        logger.warning("Gedcom scoring function unavailable. Using simple fallback scoring.")
 
     scoring_weights = getattr(config_instance_local, "COMMON_SCORING_WEIGHTS", {})
     name_flex = getattr(config_instance_local, "NAME_FLEXIBILITY", 2)
     date_flex = getattr(config_instance_local, "DATE_FLEXIBILITY", 2)
+    # <<< Log the gender weight being used >>>
+    gender_weight = scoring_weights.get('gender', 0) # Get weight from config
+    logger.info(f"Gender scoring weight from config: {gender_weight}")
 
     for idx, raw_candidate in enumerate(suggestions):
         if not isinstance(raw_candidate, dict):
-            logger.warning(
-                f"Skipping invalid suggestion entry (not a dict): {raw_candidate}"
-            )
+            logger.warning(f"Skipping invalid suggestion entry (not a dict): {raw_candidate}")
             continue
 
-        # Use api_utils parser to get standardized basic info from suggestion
-        # Pass raw_candidate as both person_card and facts_data (parser handles overlaps)
-        parsed_suggestion = parse_ancestry_person_details(raw_candidate, raw_candidate)
+        # --- Direct Mapping from raw_candidate (parsed TreesUI data) ---
+        full_name_disp = raw_candidate.get("FullName", "Unknown")
+        person_id = raw_candidate.get("PersonId", f"Unknown_{idx}")
+        first_name_cand = None
+        surname_cand = None
+        if full_name_disp != "Unknown":
+            parts = full_name_disp.split()
+            if parts: first_name_cand = clean_param(parts[0])
+            if len(parts) > 1: surname_cand = clean_param(parts[-1])
+        birth_year_cand = raw_candidate.get("BirthYear")
+        birth_date_str_cand = raw_candidate.get("BirthDate")
+        birth_place_cand = clean_param(raw_candidate.get("BirthPlace"))
+        death_year_cand = raw_candidate.get("DeathYear")
+        death_date_str_cand = raw_candidate.get("DeathDate")
+        death_place_cand = clean_param(raw_candidate.get("DeathPlace"))
+        gender_cand = raw_candidate.get("Gender") # Should be 'm'/'f'/None
+        is_living_cand = raw_candidate.get("IsLiving")
+        birth_date_obj_cand = None
+        if birth_date_str_cand and parse_date_func:
+            try: birth_date_obj_cand = parse_date_func(birth_date_str_cand)
+            except ValueError: logger.debug(f"Could not parse candidate birth date string: {birth_date_str_cand}")
+        death_date_obj_cand = None
+        if death_date_str_cand and parse_date_func:
+            try: death_date_obj_cand = parse_date_func(death_date_str_cand)
+            except ValueError: logger.debug(f"Could not parse candidate death date string: {death_date_str_cand}")
 
-        # Prepare Candidate Data for Scoring using parsed info
+        # Prepare Candidate Data Dictionary for the scoring function
         candidate_data_dict = {
-            "first_name": clean_param(
-                parsed_suggestion["name"].split()[0]
-                if parsed_suggestion["name"] != "Unknown"
-                else None
-            ),  # Crude split
-            "surname": clean_param(
-                parsed_suggestion["name"].split()[-1]
-                if parsed_suggestion["name"] != "Unknown"
-                and len(parsed_suggestion["name"].split()) > 1
-                else None
-            ),  # Crude split
-            "birth_year": (
-                parsed_suggestion["api_birth_obj"].year
-                if parsed_suggestion.get("api_birth_obj")
-                else None
-            ),
-            "birth_date_obj": parsed_suggestion.get("api_birth_obj"),
-            "birth_place": clean_param(parsed_suggestion.get("birth_place")),
-            "death_year": (
-                parsed_suggestion["api_death_obj"].year
-                if parsed_suggestion.get("api_death_obj")
-                else None
-            ),
-            "death_date_obj": parsed_suggestion.get("api_death_obj"),
-            "death_place": clean_param(parsed_suggestion.get("death_place")),
-            "gender": parsed_suggestion.get("gender"),  # Already 'm'/'f'/None
-            "is_living": parsed_suggestion.get("is_living"),
-            "norm_id": parsed_suggestion.get("person_id", f"Unknown_{idx}"),
-            "display_id": parsed_suggestion.get("person_id", f"Unknown_{idx}"),
-            "full_name_disp": parsed_suggestion.get("name", "Unknown"),
-            "gender_norm": parsed_suggestion.get(
-                "gender"
-            ),  # Redundant but keep for compatibility
-            "birth_place_disp": clean_param(
-                parsed_suggestion.get("birth_place")
-            ),  # Redundant but keep for compatibility
-            "death_place_disp": clean_param(
-                parsed_suggestion.get("death_place")
-            ),  # Redundant but keep for compatibility
+            "norm_id": person_id, "display_id": person_id,
+            "first_name": first_name_cand, "surname": surname_cand,
+            "full_name_disp": full_name_disp,
+            "gender_norm": gender_cand, # <<< Ensure this is correct ('m'/'f'/None)
+            "birth_year": birth_year_cand, "birth_date_obj": birth_date_obj_cand,
+            "birth_place_disp": birth_place_cand,
+            "death_year": death_year_cand, "death_date_obj": death_date_obj_cand,
+            "death_place_disp": death_place_cand,
+            "is_living": is_living_cand,
+            "gender": gender_cand, # <<< Also ensure this is correct ('m'/'f'/None)
+            "birth_place": birth_place_cand, "death_place": death_place_cand,
         }
 
-        # Calculate Score
+        # --- >>> ADDED: Log inputs JUST BEFORE calling scoring function <<< ---
+        logger.debug(f"--- Scoring Candidate ID: {person_id} ---")
+        logger.debug(f"Search Criteria Gender: '{search_criteria.get('gender')}'")
+        logger.debug(f"Candidate Dict Gender ('gender_norm'): '{candidate_data_dict.get('gender_norm')}'")
+        logger.debug(f"Candidate Dict Gender ('gender'): '{candidate_data_dict.get('gender')}'")
+        logger.debug(f"Calling scoring function: {scoring_func.__name__}")
+        # --- End Added Logging ---
+
+        # --- Calculate Score ---
         score = 0.0
         field_scores = {}
         reasons = []
         try:
             if scoring_func == calculate_match_score:
+                # Check if gender weight is 0 from config, log warning if so
+                if gender_weight == 0:
+                    logger.warning(f"Gender weight in config is 0. calculate_match_score may not award points for gender.")
+
                 score, field_scores, reasons = scoring_func(
-                    search_criteria,
-                    candidate_data_dict,
-                    scoring_weights,
-                    name_flex,
-                    date_flex,
+                    search_criteria, candidate_data_dict,
+                    scoring_weights, name_flex, date_flex
                 )
-            else:  # Simple scoring
+                # <<< ADDED: Log score breakdown from calculate_match_score >>>
+                logger.debug(f"Gedcom Score for {person_id}: {score}, Fields: {field_scores}")
+                # Specifically check gender score if present in field_scores
+                if "gender" in field_scores:
+                    logger.debug(f"Gedcom Field Score for Gender: {field_scores['gender']}")
+                else:
+                    logger.debug("Gedcom Field Scores did not contain 'gender' key.")
+
+            else: # Simple scoring
                 score, field_scores, reasons = scoring_func(
                     search_criteria, candidate_data_dict
                 )
+                # Logging is now inside _run_simple_suggestion_scoring
+                logger.debug(f"Simple Score for {person_id}: {score}, Fields: {field_scores}")
+
         except Exception as score_err:
-            logger.error(
-                f"Error calculating score for suggestion {candidate_data_dict['display_id']}: {score_err}",
-                exc_info=True,
-            )
+            logger.error(f"Error calculating score for suggestion {candidate_data_dict['display_id']}: {score_err}", exc_info=True)
+            # Fallback to simple scoring on error
+            logger.warning("Falling back to simple scoring due to error during primary score calculation.")
             score, field_scores, reasons = _run_simple_suggestion_scoring(
                 search_criteria, candidate_data_dict
             )
             reasons.append("(Error Fallback)")
+            logger.debug(f"Fallback Simple Score for {person_id}: {score}, Fields: {field_scores}")
 
-        # Append Processed Candidate
-        processed_candidates.append(
-            {
-                "id": candidate_data_dict["display_id"],
-                "name": parsed_suggestion.get("name", "Unknown"),
-                "gender": candidate_data_dict.get(
-                    "gender"
-                ),  # Use 'm'/'f' for consistency
-                "birth_date": parsed_suggestion.get(
-                    "birth_date", "N/A"
-                ),  # Display date
-                "birth_place": parsed_suggestion.get("birth_place", "N/A"),
-                "death_date": parsed_suggestion.get(
-                    "death_date", "N/A"
-                ),  # Display date
-                "death_place": parsed_suggestion.get("death_place", "N/A"),
+        # --- Append Processed Candidate ---
+        processed_candidates.append({
+                "id": person_id,
+                "name": full_name_disp,
+                "gender": candidate_data_dict.get("gender"), # Use the 'm'/'f'/None value
+                "birth_date": _clean_display_date(birth_date_str_cand) if callable(_clean_display_date) else (birth_date_str_cand or "N/A"),
+                "birth_place": raw_candidate.get("BirthPlace", "N/A"),
+                "death_date": _clean_display_date(death_date_str_cand) if callable(_clean_display_date) else (death_date_str_cand or "N/A"),
+                "death_place": raw_candidate.get("DeathPlace", "N/A"),
                 "score": score,
-                "field_scores": field_scores,
+                "field_scores": field_scores, # Store the detailed score breakdown
                 "reasons": reasons,
-                "raw_data": raw_candidate,  # Keep original raw data
-                "parsed_suggestion": parsed_suggestion,  # Keep parsed data for details display fallback
+                "raw_data": raw_candidate,
+                "parsed_suggestion": candidate_data_dict,
             }
         )
 
     processed_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
     logger.info(f"Scored {len(processed_candidates)} candidates.")
+    if processed_candidates:
+        logger.info(f"Top candidate score: {processed_candidates[0].get('score', 0)}")
+        # <<< Log the field scores of the top candidate AFTER sorting >>>
+        logger.debug(f"Top candidate ({processed_candidates[0].get('id')}) FINAL field scores used for display: {processed_candidates[0].get('field_scores', {})}")
+
     return processed_candidates
-
-
 # End of _process_and_score_suggestions
 
 
@@ -1392,97 +1426,182 @@ def _call_direct_treesui_list_api(
     base_url: str,
 ) -> Optional[List[Dict]]:
     """
-    Directly calls the TreesUI List API with the specific format that provides better results.
+    Directly calls the TreesUI List API with the specific format requested.
 
     Args:
         session_manager_local: The active SessionManager instance
-        owner_tree_id: The ID of the owner's tree
-        search_criteria: Dict containing search criteria
-        base_url: The base Ancestry URL
+        owner_tree_id: The ID of the owner's tree (e.g., 175946702)
+        search_criteria: Dict containing search criteria (uses first/last name)
+        base_url: The base Ancestry URL (e.g., https://www.ancestry.co.uk)
 
     Returns:
-        List of result dictionaries, or None if call fails
+        List of result dictionaries from the API JSON response, or None if call fails.
     """
     if not session_manager_local or not owner_tree_id or not base_url:
         logger.error("Missing required parameters for direct TreesUI List API call")
         return None
+    if not session_manager_local.is_sess_valid():
+        logger.error("Session is not valid for direct TreesUI List API call.")
+        print("Error: Session invalid. Cannot contact Ancestry API.")
+        # Optionally try to re-ensure session readiness
+        # if not session_manager_local.ensure_session_ready("API Call Re-Init"):
+        #     return None
+        return None  # Fail if session is not ready
 
-    # Extract search criteria
+    # Extract search criteria - use raw names as provided by user initially
     first_name = search_criteria.get("first_name_raw", "")
     surname = search_criteria.get("surname_raw", "")
 
-    # Construct the API URL with the exact format that works
-    api_url = f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?"
-
-    # Add search parameters
-    params = []
+    # --- Construct the EXACT API URL provided by the user ---
+    # Use urlencode for parameters to handle special characters correctly
+    params = {
+        "sort": "sname,gname",
+        "limit": "100",  # Keep limit reasonable
+        "fields": "NAMES,EVENTS",  # Specify required fields
+    }
     if first_name:
-        params.append(f"fn={quote(first_name)}")
+        params["fn"] = first_name
     if surname:
-        params.append(f"ln={quote(surname)}")
+        params["ln"] = surname
 
-    # Add sorting and fields - use the exact fields that work
-    params.append("sort=sname,gname")
-    params.append("limit=100")
-    params.append("fields=NAMES,EVENTS")
+    # Encode the parameters
+    encoded_params = urlencode(params, quote_via=quote)
 
-    # Combine all parameters
-    api_url += "&".join(params)
+    # Construct the full URL
+    api_url = (
+        f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?{encoded_params}"
+    )
 
-    logger.info(f"Calling direct TreesUI List API: {api_url}")
-    print(f"Searching Ancestry API...")
+    logger.info(f"Calling specific TreesUI List API URL: {api_url}")
+    print(f"Searching Ancestry API...")  # Keep user message simple
+
+    # Get timeout from config or use a reasonable default
+    api_timeout = _get_api_timeout(
+        30
+    )  # Use helper from api_utils if available, else default
 
     try:
-        # Get the session cookies from the requests session
+        # Get the session cookies from the SessionManager's requests session
         cookies = None
-        if hasattr(session_manager_local, "_requests_session"):
+        if (
+            hasattr(session_manager_local, "_requests_session")
+            and session_manager_local._requests_session
+        ):
             cookies = session_manager_local._requests_session.cookies
-        elif hasattr(session_manager_local, "session"):
-            cookies = session_manager_local.session.cookies
+        # Fallback if _requests_session isn't directly accessible but session is
+        elif (
+            hasattr(session_manager_local, "session") and session_manager_local.session
+        ):
+            # This might be a Selenium session, less ideal for direct requests
+            logger.warning(
+                "Using cookies from Selenium session for direct API call - may be incomplete."
+            )
+            try:
+                # Attempt to get cookies from Selenium driver if requests session missing
+                selenium_cookies = session_manager_local.driver.get_cookies()
+                cookies = {c["name"]: c["value"] for c in selenium_cookies}
+            except Exception as cookie_err:
+                logger.error(
+                    f"Failed to get cookies from Selenium driver: {cookie_err}"
+                )
+                cookies = {}  # Proceed without cookies if extraction fails
 
         if not cookies:
-            logger.error("No session cookies available for API call")
-            return None
+            logger.error(
+                "No session cookies available for API call. Request will likely fail."
+            )
+            # Consider failing here if cookies are strictly required
+            # return None
 
-        # Set up headers
+        # Set up standard browser-like headers
         headers = {
-            "Accept": "application/json",
+            "Accept": "application/json",  # Essential for getting JSON response
+            "Accept-Language": "en-GB,en;q=0.9",  # Adjust language if needed
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": f"{base_url}/family-tree/tree/{owner_tree_id}/family",  # A plausible referer
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",  # Standard UA
+            "X-Requested-With": "XMLHttpRequest",  # Often used by JS-driven requests
         }
+        logger.debug(f"API Request Headers: {headers}")
+        if cookies:
+            logger.debug(f"API Request Cookies (keys): {list(cookies.keys())}")
 
-        # Make the request directly
-        response = requests.get(api_url, headers=headers, cookies=cookies, timeout=30)
+        # Make the request using requests library directly
+        response = requests.get(
+            api_url, headers=headers, cookies=cookies, timeout=api_timeout
+        )
+        logger.debug(f"API Response Status Code: {response.status_code}")
 
-        # Check response
+        # Check response status
         if response.status_code == 200:
             try:
+                # Attempt to parse the JSON response
                 data = response.json()
                 if isinstance(data, list):
+                    # Success! Log and return the list of results
                     logger.info(
-                        f"Direct TreesUI List API call successful, found {len(data)} results"
+                        f"Direct TreesUI List API call successful, received {len(data)} results."
                     )
-                    print(f"Found {len(data)} potential matches")
+                    print(f"Found {len(data)} potential matches.")
                     return data
                 else:
-                    logger.error(f"Unexpected response format: {type(data)}")
+                    # API returned 200 OK but content wasn't a list as expected
+                    logger.error(
+                        f"API call successful (200 OK) but response was not a JSON list. Type: {type(data)}"
+                    )
+                    logger.debug(f"API Response Text: {response.text[:500]}")
+                    print("Error: API returned data in an unexpected format.")
                     return None
-            except json.JSONDecodeError:
-                logger.error("Failed to parse JSON response")
+            except json.JSONDecodeError as json_err:
+                # API returned 200 OK but content wasn't valid JSON
+                logger.error(
+                    f"Failed to parse JSON response from API (200 OK): {json_err}"
+                )
+                logger.debug(
+                    f"API Response Text: {response.text[:1000]}"
+                )  # Log more text
+                print("Error: Could not understand the data received from Ancestry.")
                 return None
+        elif response.status_code in [401, 403]:
+            logger.error(
+                f"API call failed with status code: {response.status_code} (Unauthorized/Forbidden). Check login/session."
+            )
+            print(
+                f"Error: Access denied by Ancestry API ({response.status_code}). Session might be invalid."
+            )
+            # Attempt to refresh session? Or just fail.
+            # session_manager_local.invalidate_session() # Mark session as bad
+            return None
         else:
+            # Handle other HTTP errors (4xx, 5xx)
             logger.error(f"API call failed with status code: {response.status_code}")
+            logger.debug(f"API Response Text: {response.text[:500]}")
+            print(f"Error: Ancestry API returned an error ({response.status_code}).")
             return None
 
     except requests.exceptions.Timeout:
-        logger.error("API call timed out after 30s")
-        print("(Error: Timed out searching Ancestry API)")
+        logger.error(f"API call timed out after {api_timeout}s")
+        print(f"(Error: Timed out searching Ancestry API after {api_timeout} seconds)")
+        return None
+    except requests.exceptions.RequestException as req_err:
+        # Handle other potential requests errors (connection, etc.)
+        logger.error(
+            f"API call failed due to a network or request issue: {req_err}",
+            exc_info=True,
+        )
+        print(f"(Error connecting to Ancestry API: {req_err})")
         return None
     except Exception as e:
-        logger.error(f"API call failed: {e}", exc_info=True)
-        print(f"(Error searching Ancestry API: {e})")
+        # Catch any other unexpected errors during the API call
+        logger.error(
+            f"An unexpected error occurred during the API call: {e}", exc_info=True
+        )
+        print(f"(An unexpected error occurred while searching: {e})")
         return None
+
+
+# End of _call_direct_treesui_list_api
 
 
 def _handle_search_phase(
@@ -1490,214 +1609,306 @@ def _handle_search_phase(
     search_criteria: Dict[str, Any],
     config_instance_local: Any,
 ) -> Optional[List[Dict]]:
-    """Handles the API search phase, using direct TreesUI List API."""
+    """Handles the API search phase using the direct TreesUI List API."""
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
-    owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
 
     if not owner_tree_id:
         logger.error("Cannot perform API search: Owner Tree ID is missing.")
         print("\nERROR: Cannot perform API search because your Tree ID is unknown.")
         return None
+    if not base_url:
+        logger.error("Cannot perform API search: Base URL is missing in config.")
+        print(
+            "\nERROR: Cannot perform API search because the Ancestry URL is not configured."
+        )
+        return None
 
-    print("Searching Ancestry API...")  # Simplified message
-
-    # Use direct TreesUI List API as the only method
+    # --- Use the specific direct TreesUI List API call ---
     suggestions_raw = _call_direct_treesui_list_api(
         session_manager_local, owner_tree_id, search_criteria, base_url
     )
 
     if suggestions_raw is None:
-        logger.error("TreesUI List API search failed critically.")
-        print(
-            "\nError during API search. No results found or API call failed critically."
-        )
-        print("\nPossible solutions:")
-        print("1. Check your internet connection")
-        print("2. Verify Ancestry.com/.co.uk is accessible")
-        print("3. Try again later (API issues)")
-        print("4. Try a different search with fewer criteria")
+        logger.error("TreesUI List API search failed critically or returned None.")
+        print("\nPossible solutions if search failed:")
+        # ... (keep helpful context messages) ...
         return None
     if not suggestions_raw:
         logger.info("API Search returned no results.")
-        print("\nNo potential matches found in Ancestry API based on criteria.")
-        return []  # Return empty list for no results
-
-    # Process the TreesUI List API response to extract all necessary information
-    processed_results = _parse_treesui_list_response(suggestions_raw, search_criteria)
-
-    # Limit suggestions to score
-    max_score_limit = getattr(config_instance_local, "MAX_SUGGESTIONS_TO_SCORE", 10)
-    if max_score_limit > 0 and len(processed_results) > max_score_limit:
-        logger.warning(
-            f"Processing only top {max_score_limit} of {len(processed_results)} suggestions for scoring."
+        print(
+            "\nNo potential matches found in your Ancestry tree based on the criteria."
         )
-        return processed_results[:max_score_limit]
+        return []
+
+    # --- Parse the results obtained from the API ---
+    parsed_results = _parse_treesui_list_response(suggestions_raw, search_criteria)
+    if parsed_results is None:
+        logger.error("Failed to parse the API response.")
+        print("\nError: Could not process the data received from Ancestry.")
+        return None
+
+    # --- <<< REINSTATED SCORING LIMIT >>> ---
+    # Limit suggestions to score if configured
+    max_score_limit = getattr(
+        config_instance_local, "MAX_SUGGESTIONS_TO_SCORE", 100
+    )  # Default to 100 if not set
+    if (
+        isinstance(max_score_limit, int)
+        and max_score_limit > 0
+        and len(parsed_results) > max_score_limit
+    ):
+        logger.warning(
+            f"Processing only top {max_score_limit} of {len(parsed_results)} parsed suggestions for scoring based on MAX_SUGGESTIONS_TO_SCORE config."
+        )
+        # Return the limited list for scoring
+        return parsed_results[:max_score_limit]
     else:
-        return processed_results
+        # Return all parsed results if no limit or within limit
+        logger.info(
+            f"Passing all {len(parsed_results)} parsed suggestions for scoring (limit not applied or not exceeded)."
+        )
+        return parsed_results
+    # --- <<< END REINSTATED SCORING LIMIT >>> ---
 
 
 # End of _handle_search_phase
 
-
 def _parse_treesui_list_response(
     treesui_response: List[Dict],
-    search_criteria: Dict[str, Any],
-) -> List[Dict]:
+    search_criteria: Dict[
+        str, Any
+    ],  # Keep search_criteria for context/logging if needed
+) -> Optional[List[Dict]]:
     """
-    Parses the TreesUI List API response to extract all necessary information for scoring.
+    Parses the specific TreesUI List API response structure provided by the user
+    to extract information needed for scoring and display.
 
     Args:
-        treesui_response: The raw response from the TreesUI List API
-        search_criteria: The search criteria used for the API call
+        treesui_response: The raw list of dictionaries from the API JSON response.
+        search_criteria: The search criteria used (for logging/context).
 
     Returns:
-        A list of dictionaries with parsed information ready for scoring
+        A list of dictionaries, each representing a parsed person with standardized keys,
+        or None if a critical parsing error occurs.
     """
     parsed_results = []
+    parse_date_func = _parse_date if callable(_parse_date) else None
 
-    # Debug: Log the raw response
-    logger.info(f"TreesUI List API response contains {len(treesui_response)} items")
-    for i, person in enumerate(treesui_response[:3]):  # Log first 3 items for debugging
-        logger.info(f"Response item {i}: {json.dumps(person, default=str)[:500]}...")
+    logger.info(
+        f"Parsing {len(treesui_response)} items from TreesUI List API response."
+    )
+    # Optional: Log the first few raw items for debugging
+    # for i, person_raw in enumerate(treesui_response[:2]):
+    #     logger.debug(f"Raw item {i}: {json.dumps(person_raw, indent=2)}")
 
-    for person in treesui_response:
-        # Extract person ID and tree ID from the gid field
-        gid = person.get("gid", {}).get("v", "")
-        person_id = None
-        tree_id = None
-        if gid and isinstance(gid, str) and ":" in gid:
-            parts = gid.split(":")
-            if len(parts) >= 3:
-                person_id = parts[0]
-                tree_id = parts[2]
-                logger.info(
-                    f"Extracted person_id={person_id}, tree_id={tree_id} from gid={gid}"
-                )
-            else:
-                logger.warning(f"Invalid gid format: {gid}")
-        else:
-            logger.warning(f"Missing or invalid gid: {gid}")
-
-        # If we couldn't extract the IDs, skip this person
-        if not person_id or not tree_id:
-            logger.warning(f"Skipping person with invalid gid: {gid}")
+    for idx, person_raw in enumerate(treesui_response):
+        if not isinstance(person_raw, dict):
+            logger.warning(
+                f"Skipping item {idx}: Expected a dictionary, got {type(person_raw)}"
+            )
             continue
 
-        # Extract name from Names array
-        first_name = ""
-        surname = ""
-        full_name = "Unknown"
-        if (
-            person.get("Names")
-            and isinstance(person.get("Names"), list)
-            and person["Names"]
-        ):
-            name_obj = person["Names"][0]  # Use the first name entry
-            first_name = name_obj.get("g", "")
-            surname = name_obj.get("s", "")
-            if first_name and surname:
-                full_name = f"{first_name} {surname}"
-            elif first_name:
-                full_name = first_name
-            elif surname:
-                full_name = surname
+        try:
+            # --- Extract GID (Person ID and Tree ID) ---
+            gid_data = person_raw.get("gid", {}).get("v", "")
+            person_id = None
+            tree_id = None
+            if isinstance(gid_data, str) and ":" in gid_data:
+                parts = gid_data.split(":")
+                if len(parts) >= 3:
+                    person_id = parts[0]
+                    tree_id = parts[2]  # The third part is the Tree ID
+                    logger.debug(
+                        f"Item {idx}: Extracted person_id={person_id}, tree_id={tree_id} from gid={gid_data}"
+                    )
+                else:
+                    logger.warning(
+                        f"Item {idx}: Invalid gid format: {gid_data}. Cannot extract IDs."
+                    )
+                    continue  # Skip if we can't get IDs
+            else:
+                logger.warning(
+                    f"Item {idx}: Missing or invalid gid data: {gid_data}. Cannot extract IDs."
+                )
+                continue  # Skip if we can't get IDs
 
-        # Extract gender from the 'l' field (true for female, false for male)
-        gender = None
-        if "l" in person:
-            gender = "f" if person["l"] else "m"
+            # --- Extract Name ---
+            first_name_part = ""
+            surname_part = ""
+            full_name = "Unknown"
+            names_list = person_raw.get("Names", [])
+            if isinstance(names_list, list) and names_list:
+                # Use the first name entry in the list
+                name_obj = names_list[0]
+                if isinstance(name_obj, dict):
+                    first_name_part = name_obj.get("g", "").strip()  # Given name(s)
+                    surname_part = name_obj.get("s", "").strip()  # Surname
+                    # Construct full name
+                    if first_name_part and surname_part:
+                        full_name = f"{first_name_part} {surname_part}"
+                    elif first_name_part:
+                        full_name = first_name_part
+                    elif surname_part:
+                        full_name = surname_part
+                    logger.debug(
+                        f"Item {idx}: Extracted name parts: g='{first_name_part}', s='{surname_part}', Full='{full_name}'"
+                    )
+                else:
+                    logger.warning(
+                        f"Item {idx}: First item in Names list is not a dict: {name_obj}"
+                    )
+            else:
+                logger.warning(
+                    f"Item {idx}: Names list is missing, empty, or not a list: {names_list}"
+                )
 
-        # Extract birth and death information from Events array
-        birth_year = None
-        birth_date = None
-        birth_place = None
-        death_year = None
-        death_date = None
-        death_place = None
-        is_living = True  # Default to living
+            # --- Extract Gender ---
+            # Key is 'l' (boolean: true=female, false=male)
+            gender_flag = person_raw.get("l")
+            gender = None
+            if isinstance(gender_flag, bool):
+                gender = "f" if gender_flag else "m"
+                logger.debug(
+                    f"Item {idx}: Extracted gender flag l={gender_flag}, resulting gender='{gender}'"
+                )
+            else:
+                logger.warning(
+                    f"Item {idx}: Gender flag 'l' is missing or not a boolean: {gender_flag}"
+                )
 
-        if person.get("Events") and isinstance(person.get("Events"), list):
-            for event in person["Events"]:
-                event_type = event.get("t")
+            # --- Extract Birth and Death Events ---
+            birth_year = None
+            birth_date_str = (
+                None  # Store the best available date string (normalized preferred)
+            )
+            birth_place = None
+            death_year = None
+            death_date_str = None  # Store the best available date string
+            death_place = None
+            is_living = True  # Assume living unless a Death event is found
 
-                # Extract birth information
-                if event_type == "Birth":
-                    # Get date
-                    if event.get("nd"):  # Normalized date
-                        birth_date = event.get("d", "")
-                        # Extract year from normalized date (YYYY-MM-DD format)
-                        if event.get("nd") and len(event.get("nd", "")) >= 4:
-                            birth_year = int(event.get("nd")[:4])
-                    elif event.get("d"):  # Display date
-                        birth_date = event.get("d", "")
-                        # Try to extract year from display date
-                        year_match = re.search(r"\b(\d{4})\b", event.get("d", ""))
-                        if year_match:
-                            birth_year = int(year_match.group(1))
+            events_list = person_raw.get("Events", [])
+            if isinstance(events_list, list):
+                for event in events_list:
+                    if not isinstance(event, dict):
+                        logger.warning(
+                            f"Item {idx}: Skipping invalid item in Events list: {event}"
+                        )
+                        continue
 
-                    # Get place
-                    birth_place = event.get("p", "")
+                    event_type = event.get("t")  # Event type ('Birth', 'Death', etc.)
 
-                # Extract death information
-                elif event_type == "Death":
-                    # Get date
-                    if event.get("nd"):  # Normalized date
-                        death_date = event.get("d", "")
-                        # Extract year from normalized date (YYYY-MM-DD format)
-                        if event.get("nd") and len(event.get("nd", "")) >= 4:
-                            death_year = int(event.get("nd")[:4])
-                    elif event.get("d"):  # Display date
-                        death_date = event.get("d", "")
-                        # Try to extract year from display date
-                        year_match = re.search(r"\b(\d{4})\b", event.get("d", ""))
-                        if year_match:
-                            death_year = int(year_match.group(1))
+                    # --- Process Birth Event ---
+                    if event_type == "Birth":
+                        # Date: Prioritize 'nd' (normalized), fallback to 'd' (display)
+                        norm_date = event.get("nd")
+                        disp_date = event.get("d")
+                        current_birth_date_str = (
+                            norm_date if norm_date else disp_date
+                        )  # Use nd if available
 
-                    # Get place
-                    death_place = event.get("p", "")
+                        if current_birth_date_str:
+                            birth_date_str = current_birth_date_str  # Store the best string found so far
+                            # Extract year: Try parsing nd/d, fallback to regex on d
+                            year_match = re.search(
+                                r"\b(\d{4})\b", current_birth_date_str
+                            )
+                            if year_match:
+                                try:
+                                    birth_year = int(year_match.group(1))
+                                except ValueError:
+                                    logger.warning(
+                                        f"Item {idx}: Could not convert extracted birth year '{year_match.group(1)}' to int from date '{current_birth_date_str}'."
+                                    )
+                            logger.debug(
+                                f"Item {idx}: Found Birth event. DateStr='{birth_date_str}', Year={birth_year}"
+                            )
 
-                    # If there's a death date, the person is not living
-                    is_living = False
+                        # Place: Get 'p' field
+                        current_birth_place = event.get("p")
+                        if current_birth_place:
+                            birth_place = current_birth_place.strip()
+                            logger.debug(
+                                f"Item {idx}: Found Birth place: '{birth_place}'"
+                            )
 
-        # Create a suggestion object in the format expected by the scoring functions
-        suggestion = {
-            "PersonId": person_id,
-            "TreeId": tree_id,
-            "FullName": full_name,
-            "BirthYear": birth_year,
-            "BirthDate": birth_date,
-            "BirthPlace": birth_place,
-            "DeathYear": death_year,
-            "DeathDate": death_date,
-            "DeathPlace": death_place,
-            "Gender": gender,
-            "IsLiving": is_living,
-            # Add parsed suggestion for compatibility with existing code
-            "parsed_suggestion": {
-                "name": full_name,
-                "person_id": person_id,
-                "tree_id": tree_id,
-                "user_id": None,  # TreesUI List API doesn't provide user_id
-                "birth_date": birth_date,
-                "birth_place": birth_place,
-                "birth_year": birth_year,
-                "death_date": death_date,
-                "death_place": death_place,
-                "death_year": death_year,
-                "gender": gender,
-                "is_living": is_living,
-            },
-        }
+                    # --- Process Death Event ---
+                    elif event_type == "Death":
+                        is_living = False  # Found a death event, so not living
+                        # Date: Prioritize 'nd', fallback to 'd'
+                        norm_date = event.get("nd")
+                        disp_date = event.get("d")
+                        current_death_date_str = norm_date if norm_date else disp_date
 
-        parsed_results.append(suggestion)
+                        if current_death_date_str:
+                            death_date_str = current_death_date_str
+                            # Extract year
+                            year_match = re.search(
+                                r"\b(\d{4})\b", current_death_date_str
+                            )
+                            if year_match:
+                                try:
+                                    death_year = int(year_match.group(1))
+                                except ValueError:
+                                    logger.warning(
+                                        f"Item {idx}: Could not convert extracted death year '{year_match.group(1)}' to int from date '{current_death_date_str}'."
+                                    )
+                            logger.debug(
+                                f"Item {idx}: Found Death event. DateStr='{death_date_str}', Year={death_year}. Set is_living=False."
+                            )
 
-    logger.info(f"Parsed {len(parsed_results)} results from TreesUI List API response")
+                        # Place: Get 'p' field
+                        current_death_place = event.get("p")
+                        if current_death_place:
+                            death_place = current_death_place.strip()
+                            logger.debug(
+                                f"Item {idx}: Found Death place: '{death_place}'"
+                            )
+            else:
+                logger.warning(
+                    f"Item {idx}: Events key missing or not a list: {events_list}"
+                )
+
+            # --- Construct the Parsed Suggestion Dictionary ---
+            # Use the keys expected by _process_and_score_suggestions
+            suggestion = {
+                "PersonId": person_id,
+                "TreeId": tree_id,
+                "FullName": full_name,
+                # Provide components for potential use, though FullName is primary display
+                "GivenNamePart": first_name_part,
+                "SurnamePart": surname_part,
+                "BirthYear": birth_year,  # Integer or None
+                "BirthDate": birth_date_str,  # Best available date string (nd or d)
+                "BirthPlace": birth_place,  # Place string or None
+                "DeathYear": death_year,  # Integer or None
+                "DeathDate": death_date_str,  # Best available date string (nd or d)
+                "DeathPlace": death_place,  # Place string or None
+                "Gender": gender,  # 'm' / 'f' / None
+                "IsLiving": is_living,  # Boolean
+            }
+
+            # Add the fully parsed suggestion to our results list
+            parsed_results.append(suggestion)
+            logger.debug(f"Item {idx}: Successfully parsed person: {suggestion}")
+
+        except Exception as e:
+            logger.error(
+                f"Error parsing item {idx} from TreesUI response: {e}", exc_info=True
+            )
+            logger.error(f"Problematic Raw Data: {person_raw}")
+            # Decide whether to skip this item or fail entirely
+            # For robustness, let's skip this item and continue with others
+            continue
+
+    logger.info(
+        f"Successfully parsed {len(parsed_results)} suggestions from API response."
+    )
     return parsed_results
 
 
 # End of _parse_treesui_list_response
-
 
 def _handle_selection_phase(
     suggestions_to_score: List[Dict],
