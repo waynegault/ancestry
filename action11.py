@@ -1385,12 +1385,112 @@ def _display_discovery_relationship(
 # --- Phase Handler Functions ---
 
 
+def _call_direct_treesui_list_api(
+    session_manager_local: SessionManager,
+    owner_tree_id: str,
+    search_criteria: Dict[str, Any],
+    base_url: str,
+) -> Optional[List[Dict]]:
+    """
+    Directly calls the TreesUI List API with the specific format that provides better results.
+
+    Args:
+        session_manager_local: The active SessionManager instance
+        owner_tree_id: The ID of the owner's tree
+        search_criteria: Dict containing search criteria
+        base_url: The base Ancestry URL
+
+    Returns:
+        List of result dictionaries, or None if call fails
+    """
+    if not session_manager_local or not owner_tree_id or not base_url:
+        logger.error("Missing required parameters for direct TreesUI List API call")
+        return None
+
+    # Extract search criteria
+    first_name = search_criteria.get("first_name_raw", "")
+    surname = search_criteria.get("surname_raw", "")
+
+    # Construct the API URL with the exact format that works
+    api_url = f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?"
+
+    # Add search parameters
+    params = []
+    if first_name:
+        params.append(f"fn={quote(first_name)}")
+    if surname:
+        params.append(f"ln={quote(surname)}")
+
+    # Add sorting and fields - use the exact fields that work
+    params.append("sort=sname,gname")
+    params.append("limit=100")
+    params.append("fields=NAMES,EVENTS")
+
+    # Combine all parameters
+    api_url += "&".join(params)
+
+    logger.info(f"Calling direct TreesUI List API: {api_url}")
+    print(f"Searching Ancestry API...")
+
+    try:
+        # Get the session cookies from the requests session
+        cookies = None
+        if hasattr(session_manager_local, "_requests_session"):
+            cookies = session_manager_local._requests_session.cookies
+        elif hasattr(session_manager_local, "session"):
+            cookies = session_manager_local.session.cookies
+
+        if not cookies:
+            logger.error("No session cookies available for API call")
+            return None
+
+        # Set up headers
+        headers = {
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        }
+
+        # Make the request directly
+        response = requests.get(api_url, headers=headers, cookies=cookies, timeout=30)
+
+        # Check response
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if isinstance(data, list):
+                    logger.info(
+                        f"Direct TreesUI List API call successful, found {len(data)} results"
+                    )
+                    print(f"Found {len(data)} potential matches")
+                    return data
+                else:
+                    logger.error(f"Unexpected response format: {type(data)}")
+                    return None
+            except json.JSONDecodeError:
+                logger.error("Failed to parse JSON response")
+                return None
+        else:
+            logger.error(f"API call failed with status code: {response.status_code}")
+            return None
+
+    except requests.exceptions.Timeout:
+        logger.error("API call timed out after 30s")
+        print("(Error: Timed out searching Ancestry API)")
+        return None
+    except Exception as e:
+        logger.error(f"API call failed: {e}", exc_info=True)
+        print(f"(Error searching Ancestry API: {e})")
+        return None
+
+
 def _handle_search_phase(
     session_manager_local: SessionManager,
     search_criteria: Dict[str, Any],
     config_instance_local: Any,
 ) -> Optional[List[Dict]]:
-    """Handles the API search phase, including fallbacks."""
+    """Handles the API search phase, using direct TreesUI List API."""
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
@@ -1400,38 +1500,17 @@ def _handle_search_phase(
         print("\nERROR: Cannot perform API search because your Tree ID is unknown.")
         return None
 
-    if not callable(call_suggest_api) or not callable(call_treesui_list_api):
-        logger.error("Cannot perform API search: Required api_utils functions missing.")
-        print("\nERROR: API search utilities are unavailable.")
-        return None
-
     print("Searching Ancestry API...")  # Simplified message
 
-    # Try Suggest API first
-    suggestions_raw = call_suggest_api(
-        session_manager_local,
-        owner_tree_id,
-        owner_profile_id,
-        base_url,
-        search_criteria,
+    # Use direct TreesUI List API as the only method
+    suggestions_raw = _call_direct_treesui_list_api(
+        session_manager_local, owner_tree_id, search_criteria, base_url
     )
 
-    # Fallback to TreesUI List API if Suggest failed AND birth year available
-    if suggestions_raw is None and search_criteria.get("birth_year"):
-        logger.warning("Suggest API failed, attempting TreesUI List API fallback...")
-        print("\nTrying alternative API search method...")
-        suggestions_raw = call_treesui_list_api(
-            session_manager_local,
-            owner_tree_id,
-            owner_profile_id,
-            base_url,
-            search_criteria,
-        )
-
     if suggestions_raw is None:
-        logger.error("All API Search attempts failed critically.")
+        logger.error("TreesUI List API search failed critically.")
         print(
-            "\nError during API search. No results found or API calls failed critically."
+            "\nError during API search. No results found or API call failed critically."
         )
         print("\nPossible solutions:")
         print("1. Check your internet connection")
@@ -1444,18 +1523,180 @@ def _handle_search_phase(
         print("\nNo potential matches found in Ancestry API based on criteria.")
         return []  # Return empty list for no results
 
+    # Process the TreesUI List API response to extract all necessary information
+    processed_results = _parse_treesui_list_response(suggestions_raw, search_criteria)
+
     # Limit suggestions to score
     max_score_limit = getattr(config_instance_local, "MAX_SUGGESTIONS_TO_SCORE", 10)
-    if max_score_limit > 0 and len(suggestions_raw) > max_score_limit:
+    if max_score_limit > 0 and len(processed_results) > max_score_limit:
         logger.warning(
-            f"Processing only top {max_score_limit} of {len(suggestions_raw)} suggestions for scoring."
+            f"Processing only top {max_score_limit} of {len(processed_results)} suggestions for scoring."
         )
-        return suggestions_raw[:max_score_limit]
+        return processed_results[:max_score_limit]
     else:
-        return suggestions_raw
+        return processed_results
 
 
 # End of _handle_search_phase
+
+
+def _parse_treesui_list_response(
+    treesui_response: List[Dict],
+    search_criteria: Dict[str, Any],
+) -> List[Dict]:
+    """
+    Parses the TreesUI List API response to extract all necessary information for scoring.
+
+    Args:
+        treesui_response: The raw response from the TreesUI List API
+        search_criteria: The search criteria used for the API call
+
+    Returns:
+        A list of dictionaries with parsed information ready for scoring
+    """
+    parsed_results = []
+
+    # Debug: Log the raw response
+    logger.info(f"TreesUI List API response contains {len(treesui_response)} items")
+    for i, person in enumerate(treesui_response[:3]):  # Log first 3 items for debugging
+        logger.info(f"Response item {i}: {json.dumps(person, default=str)[:500]}...")
+
+    for person in treesui_response:
+        # Extract person ID and tree ID from the gid field
+        gid = person.get("gid", {}).get("v", "")
+        person_id = None
+        tree_id = None
+        if gid and isinstance(gid, str) and ":" in gid:
+            parts = gid.split(":")
+            if len(parts) >= 3:
+                person_id = parts[0]
+                tree_id = parts[2]
+                logger.info(
+                    f"Extracted person_id={person_id}, tree_id={tree_id} from gid={gid}"
+                )
+            else:
+                logger.warning(f"Invalid gid format: {gid}")
+        else:
+            logger.warning(f"Missing or invalid gid: {gid}")
+
+        # If we couldn't extract the IDs, skip this person
+        if not person_id or not tree_id:
+            logger.warning(f"Skipping person with invalid gid: {gid}")
+            continue
+
+        # Extract name from Names array
+        first_name = ""
+        surname = ""
+        full_name = "Unknown"
+        if (
+            person.get("Names")
+            and isinstance(person.get("Names"), list)
+            and person["Names"]
+        ):
+            name_obj = person["Names"][0]  # Use the first name entry
+            first_name = name_obj.get("g", "")
+            surname = name_obj.get("s", "")
+            if first_name and surname:
+                full_name = f"{first_name} {surname}"
+            elif first_name:
+                full_name = first_name
+            elif surname:
+                full_name = surname
+
+        # Extract gender from the 'l' field (true for female, false for male)
+        gender = None
+        if "l" in person:
+            gender = "f" if person["l"] else "m"
+
+        # Extract birth and death information from Events array
+        birth_year = None
+        birth_date = None
+        birth_place = None
+        death_year = None
+        death_date = None
+        death_place = None
+        is_living = True  # Default to living
+
+        if person.get("Events") and isinstance(person.get("Events"), list):
+            for event in person["Events"]:
+                event_type = event.get("t")
+
+                # Extract birth information
+                if event_type == "Birth":
+                    # Get date
+                    if event.get("nd"):  # Normalized date
+                        birth_date = event.get("d", "")
+                        # Extract year from normalized date (YYYY-MM-DD format)
+                        if event.get("nd") and len(event.get("nd", "")) >= 4:
+                            birth_year = int(event.get("nd")[:4])
+                    elif event.get("d"):  # Display date
+                        birth_date = event.get("d", "")
+                        # Try to extract year from display date
+                        year_match = re.search(r"\b(\d{4})\b", event.get("d", ""))
+                        if year_match:
+                            birth_year = int(year_match.group(1))
+
+                    # Get place
+                    birth_place = event.get("p", "")
+
+                # Extract death information
+                elif event_type == "Death":
+                    # Get date
+                    if event.get("nd"):  # Normalized date
+                        death_date = event.get("d", "")
+                        # Extract year from normalized date (YYYY-MM-DD format)
+                        if event.get("nd") and len(event.get("nd", "")) >= 4:
+                            death_year = int(event.get("nd")[:4])
+                    elif event.get("d"):  # Display date
+                        death_date = event.get("d", "")
+                        # Try to extract year from display date
+                        year_match = re.search(r"\b(\d{4})\b", event.get("d", ""))
+                        if year_match:
+                            death_year = int(year_match.group(1))
+
+                    # Get place
+                    death_place = event.get("p", "")
+
+                    # If there's a death date, the person is not living
+                    is_living = False
+
+        # Create a suggestion object in the format expected by the scoring functions
+        suggestion = {
+            "PersonId": person_id,
+            "TreeId": tree_id,
+            "FullName": full_name,
+            "BirthYear": birth_year,
+            "BirthDate": birth_date,
+            "BirthPlace": birth_place,
+            "DeathYear": death_year,
+            "DeathDate": death_date,
+            "DeathPlace": death_place,
+            "Gender": gender,
+            "IsLiving": is_living,
+            # Add parsed suggestion for compatibility with existing code
+            "parsed_suggestion": {
+                "name": full_name,
+                "person_id": person_id,
+                "tree_id": tree_id,
+                "user_id": None,  # TreesUI List API doesn't provide user_id
+                "birth_date": birth_date,
+                "birth_place": birth_place,
+                "birth_year": birth_year,
+                "death_date": death_date,
+                "death_place": death_place,
+                "death_year": death_year,
+                "gender": gender,
+                "is_living": is_living,
+            },
+        }
+
+        parsed_results.append(suggestion)
+
+    logger.info(f"Parsed {len(parsed_results)} results from TreesUI List API response")
+    return parsed_results
+
+
+# End of _parse_treesui_list_response
 
 
 def _handle_selection_phase(
@@ -1472,9 +1713,11 @@ def _handle_selection_phase(
         logger.info("No candidates available after scoring process.")
         return None
 
+    # Display search results
     max_display_limit = getattr(config_instance_local, "MAX_CANDIDATES_TO_DISPLAY", 5)
     _display_search_results(scored_candidates, max_display_limit)
 
+    # Select top candidate
     selection = _select_top_candidate(
         scored_candidates, suggestions_to_score
     )  # Pass scored list for raw data retrieval
