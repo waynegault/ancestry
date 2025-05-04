@@ -1,6 +1,6 @@
-# config.py
-
 #!/usr/bin/env python3
+
+# config.py
 
 """
 config.py - Centralized Configuration Management
@@ -9,7 +9,7 @@ Loads application settings from environment variables (.env file) and defines
 configuration classes (`Config_Class`, `SeleniumConfig`) with sensible defaults.
 Provides typed access to settings like credentials, paths, URLs, API keys,
 behavioral parameters, and Selenium options. Includes contextual headers for API calls.
-V3: Restored missing class attributes to Config_Class.
+V4: Added Action 11 display limits (MAX_SUGGESTIONS_TO_SCORE, MAX_CANDIDATES_TO_DISPLAY).
 """
 
 # --- Standard library imports ---
@@ -188,6 +188,9 @@ class Config_Class(BaseConfig):
     MAX_PRODUCTIVE_TO_PROCESS: int = 0
     TREE_SEARCH_METHOD: str = "GEDCOM"
     DB_ERROR_PAGE_THRESHOLD: int = 10
+    # Action 11 specific limits (can be overridden by .env)
+    MAX_SUGGESTIONS_TO_SCORE: int = 50
+    MAX_CANDIDATES_TO_DISPLAY: int = 10
 
     # --- Scoring Configuration (Class Attributes) ---
     COMMON_SCORING_WEIGHTS: Dict[str, int] = {
@@ -377,6 +380,13 @@ class Config_Class(BaseConfig):
         self.GATHER_THREAD_POOL_WORKERS = self._get_int_env(
             "GATHER_THREAD_POOL_WORKERS", 5
         )
+        # Action 11 Specific Limits
+        self.MAX_SUGGESTIONS_TO_SCORE = self._get_int_env(
+            "MAX_SUGGESTIONS_TO_SCORE", Config_Class.MAX_SUGGESTIONS_TO_SCORE
+        )
+        self.MAX_CANDIDATES_TO_DISPLAY = self._get_int_env(
+            "MAX_CANDIDATES_TO_DISPLAY", Config_Class.MAX_CANDIDATES_TO_DISPLAY
+        )
 
         # === Database ===
         self.DB_POOL_SIZE = self._get_int_env("DB_POOL_SIZE", Config_Class.DB_POOL_SIZE)
@@ -457,7 +467,7 @@ class Config_Class(BaseConfig):
         origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
         default_list_referer = urljoin(self.BASE_URL, "/discoveryui-matches/list/")
         self.API_CONTEXTUAL_HEADERS: Dict[str, Dict[str, Optional[str]]] = {
-            # ... (Header definitions remain the same) ...
+            # Context keys should match the `api_description` used in `_api_req`
             "Get my profile_id": {"ancestry-clientpath": "p13n-js"},
             "Tree Owner Name API": {"ancestry-clientpath": "Browser:meexp-uhome"},
             "Profile Details API (Batch)": {"ancestry-clientpath": "express-fe"},
@@ -474,17 +484,38 @@ class Config_Class(BaseConfig):
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             },
-            "Match Probability API (Cloudscraper)": {
+            # Headers for Action 11 APIs (simplified without Cloudscraper)
+            "Suggest API": { # Replaces "Suggest API (Fallback)"
                 "Accept": "application/json",
-                "Referer": default_list_referer,
-                "Origin": origin_header_value,
+                "Referer": None, # Referer will be set dynamically
             },
+             "TreesUI List API": { # Replaces "TreesUI List API (Fallback)"
+                "Accept": "application/json",
+                "Referer": None, # Referer will be set dynamically
+            },
+            "Person Facts API": { # Replaces "Person Facts API (_api_req fallback)"
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest", # Kept as potentially important
+                "Referer": None, # Referer will be set dynamically
+                # Consider adding other headers from V16.15 if _api_req fails without them
+            },
+            "Get Tree Ladder API": { # Replaces "Get Tree Ladder API (Action 11)"
+                "Accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": None, # Referer will be set dynamically
+            },
+            "Discovery Relationship API": { # Replaces "API Relationship Ladder (Discovery)"
+                "Accept": "application/json",
+                "Referer": None, # Referer will be set dynamically
+            },
+            # CSRF and other internal APIs
             "CSRF Token API": {},
             "Get UUID API": {},
             "Header Trees API": {},
             "Match Details API (Batch)": {},
             "Badge Details API (Batch)": {},
-            "Get Ladder API (Self Check)": {},
+            # Self-check headers
+            "Get Ladder API (Self Check)": {}, # Keep specific keys for self-check if needed
             "Get Tree Ladder API (Self Check)": {},
             "Tree Person Search API (Self Check)": {},
             "Person Picker Suggest API (Self Check)": {},
@@ -517,6 +548,9 @@ class Config_Class(BaseConfig):
         max_prod_log = f"MaxProductive={self.MAX_PRODUCTIVE_TO_PROCESS if self.MAX_PRODUCTIVE_TO_PROCESS > 0 else 'Unlimited'}"
         logger.info(
             f"Processing Limits: {max_pages_log}, {max_inbox_log}, {max_prod_log}"
+        )
+        logger.info(
+            f"Action 11 Limits: MaxScore={self.MAX_SUGGESTIONS_TO_SCORE}, MaxDisplay={self.MAX_CANDIDATES_TO_DISPLAY}"
         )
         # Log other final info...
         logger.debug("Application config loading complete.\n")
@@ -613,7 +647,7 @@ class SeleniumConfig(BaseConfig):
     DNA_LIST_PAGE_TIMEOUT: int = 30
     NEW_TAB_TIMEOUT: int = 15
     TWO_FA_CODE_ENTRY_TIMEOUT: int = 300
-    API_TIMEOUT: int = 60
+    API_TIMEOUT: int = 60 # Default timeout for requests library calls via _api_req
 
     # --- Initializer ---
     def __init__(self):
@@ -682,6 +716,7 @@ class SeleniumConfig(BaseConfig):
         self.TWO_FA_CODE_ENTRY_TIMEOUT = self._get_int_env(
             "TWO_FA_CODE_ENTRY_TIMEOUT", SeleniumConfig.TWO_FA_CODE_ENTRY_TIMEOUT
         )
+        # API_TIMEOUT uses the class default unless overridden
         self.API_TIMEOUT = self._get_int_env("API_TIMEOUT", SeleniumConfig.API_TIMEOUT)
 
         # Log key Selenium config settings
@@ -820,6 +855,9 @@ if __name__ == "__main__":
         print(f"  CACHE_TIMEOUT: {config_instance.CACHE_TIMEOUT}s")
         print(f"  RETRY_CODES: {config_instance.RETRY_STATUS_CODES}")
         print(f"  TREE_SEARCH_METHOD: {config_instance.TREE_SEARCH_METHOD}")
+        # Print Action 11 limits
+        print(f"  MAX_SUGGESTIONS_TO_SCORE: {config_instance.MAX_SUGGESTIONS_TO_SCORE}")
+        print(f"  MAX_CANDIDATES_TO_DISPLAY: {config_instance.MAX_CANDIDATES_TO_DISPLAY}")
 
         print("\n--- AI Config ---")
         print(f"  AI_PROVIDER: {config_instance.AI_PROVIDER or 'Not Set'}")
@@ -833,6 +871,7 @@ if __name__ == "__main__":
 
         print("\n--- Selenium Config (selenium_config) ---")
         print(f"  HEADLESS_MODE: {selenium_config.HEADLESS_MODE}")
+        print(f"  API_TIMEOUT: {selenium_config.API_TIMEOUT}s") # Print API timeout
         # Print other Selenium details...
 
         print(
@@ -841,3 +880,4 @@ if __name__ == "__main__":
 # End of config.py standalone test block
 
 # --- End of config.py ---
+
