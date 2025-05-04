@@ -430,193 +430,191 @@ def _get_relationship_term(
 
 
 def format_api_relationship_path(
-    ladder_html: Optional[str], owner_name: str, target_name: str
+    api_response_data: Union[str, Dict, None], owner_name: str, target_name: str
 ) -> str:
     """
-    Parses relationship ladder HTML from Ancestry API response and formats
-    it into a human-readable path string. Uses BeautifulSoup for parsing.
-    Revised (v16.18) to correctly parse relationship direction based on HTML structure.
-    """
-    if not ladder_html or not isinstance(ladder_html, str):
-        logger.warning("format_api_relationship_path: HTML missing or invalid.")
-        return "(No relationship path explanation available - HTML missing)"
-    # End if
+    Parses relationship data from different API formats (JSONP HTML, direct HTML, error dict)
+    and formats it into a readable path, intended for Action 11.
 
-    if BeautifulSoup is None:
-        logger.error("format_api_relationship_path: BeautifulSoup is not available.")
-        return "(Cannot parse relationship path - BeautifulSoup missing. pip install beautifulsoup4 lxml)"
-    # End if
+    Args:
+        api_response_data: The raw data returned by the relationship API call
+                           (_api_req with force_text=True for JSONP, or potentially dict/None).
+        owner_name: The name of the tree owner.
+        target_name: The name of the person whose relationship is being checked.
+
+    Returns:
+        A formatted multi-line string representing the relationship path,
+        or an error message string if parsing fails or no path is found.
+    """
+    if not api_response_data:
+        logger.warning(
+            "format_api_relationship_path: Received empty API response data."
+        )
+        return "(No relationship data received from API)"
+
+    html_to_parse: Optional[str] = None
+    status: str = "unknown"
+
+    # --- Step 1: Extract HTML content ---
+    if isinstance(api_response_data, str):
+        # Check for JSONP structure: callback({...});
+        if api_response_data.strip().endswith(");") and "(" in api_response_data:
+            try:
+                logger.debug("Attempting to parse API response as JSONP.")
+                # Extract JSON part
+                json_part = api_response_data[
+                    api_response_data.find("(") + 1 : api_response_data.rfind(")")
+                ]
+                parsed_json = json.loads(json_part)
+                status = parsed_json.get("status", "unknown")
+                if status == "success" and "html" in parsed_json:
+                    html_to_parse = parsed_json.get("html")
+                    logger.debug("Successfully extracted HTML from JSONP.")
+                elif status != "success":
+                    logger.warning(f"JSONP status was not 'success': {status}")
+                    # Try to get an error message if available
+                    error_msg = parsed_json.get(
+                        "message", parsed_json.get("error", f"Status: {status}")
+                    )
+                    return f"(API returned error: {error_msg})"
+                else:
+                    logger.warning("JSONP status was 'success' but 'html' key missing.")
+                    logger.debug(f"Parsed JSONP keys: {parsed_json.keys()}")
+
+            except json.JSONDecodeError as json_err:
+                logger.error(
+                    f"Failed to decode JSON part of JSONP response: {json_err}"
+                )
+                html_to_parse = (
+                    api_response_data  # Fallback: treat whole string as potential HTML
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error processing JSONP: {e}", exc_info=True)
+                html_to_parse = api_response_data  # Fallback
+        else:
+            # Assume it might be direct HTML
+            logger.debug("API response is string, assuming direct HTML.")
+            html_to_parse = api_response_data
+
+    elif isinstance(api_response_data, dict):
+        # Handle cases where _api_req might have returned a dict (e.g., error response)
+        logger.warning(
+            f"format_api_relationship_path received a dictionary: {api_response_data}"
+        )
+        error_msg = api_response_data.get(
+            "error", api_response_data.get("message", "Unknown dictionary format")
+        )
+        return f"(API returned error object: {error_msg})"
+
+    # --- Step 2: Parse the HTML (if found) ---
+    if not html_to_parse or not isinstance(html_to_parse, str) or not BeautifulSoup:
+        if not BeautifulSoup:
+            logger.warning("BeautifulSoup not available for HTML parsing.")
+        elif not html_to_parse:
+            logger.warning("No HTML content found to parse.")
+        else:
+            logger.warning(
+                f"Invalid HTML content type for parsing: {type(html_to_parse)}"
+            )
+        return "(Could not find or parse relationship HTML)"  # Consistent error message
 
     try:
-        # HTML should already be unescaped by _extract_ladder_html
-        soup = BeautifulSoup(ladder_html, "html.parser")
+        logger.debug(
+            f"Parsing HTML content using BeautifulSoup: {html_to_parse[:200]}..."
+        )
+        soup = BeautifulSoup(html_to_parse, "html.parser")
 
-        # Select list items, excluding dividers
-        path_items_raw = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
+        # Find list items using common selectors
+        # Prioritize more specific selectors if known, fallback to broader ones
+        path_elements = (
+            soup.select("ul.textCenter li")
+            or soup.select(".relationshipLadder li")
+            or soup.select("li.relationshipStep")
+            or soup.select("div.rel-step")
+            or soup.select("div.relationItem")
+            or soup.select("li[class*='relation']")
+        )
 
-        if not path_items_raw:
-            logger.warning("format_api_relationship_path: Could not find path items.")
-            rel_text_elem = soup.select_one(".rel-path-wrapper p") or soup.select_one(
-                ".relationshipText"
-            )
-            if rel_text_elem:
-                return f"({rel_text_elem.get_text(strip=True)})"
-            # End if rel_text_elem
-            return "(Could not parse relationship path from API HTML)"
-        # End if not path_items_raw
-
-        # Extract name and raw description for each person in the path
-        path_data = []
-        for item in path_items_raw:
-            name_text, desc_text = "Unknown", ""
-            # Extract name
-            name_container_b_in_a = item.select_one("a > b")
-            name_container_b = item.find("b") if not name_container_b_in_a else None
-            name_container_a = (
-                item.find("a")
-                if not name_container_b_in_a and not name_container_b
-                else None
-            )
-
-            raw_name = "Unknown"
-            if name_container_b_in_a:
-                raw_name = name_container_b_in_a.get_text(strip=True)
-            elif name_container_b:
-                raw_name = name_container_b.get_text(strip=True)
-            elif name_container_a:
-                raw_name = name_container_a.get_text(strip=True)
-            # End if/elif
-
-            cleaned_name = re.sub(r"\s+\d{4}-\d{0,4}$", "", raw_name).strip()
-            name_text = format_name(cleaned_name)
-
-            # Extract raw description text from <i> tag
-            desc_element = item.find("i")
-            if desc_element:
-                desc_text = desc_element.get_text(separator=" ", strip=True).replace(
-                    '"', "'"
-                )
-            # End if desc_element
-            path_data.append({"name": name_text, "raw_desc": desc_text})
-        # End for item
-
-        # --- Format the Path Steps ---
-        if len(path_data) < 2:
+        if not path_elements:
             logger.warning(
-                f"Path data too short ({len(path_data)} items) for detailed explanation."
+                "format_api_relationship_path: Could not find path items using known selectors."
             )
-            if path_data:
-                return f"{path_data[0]['name']} (Path too short)"
-            # End if path_data
-            return "(Could not parse sufficient path steps)"
-        # End if len < 2
+            return "(Could not find path items in API HTML)"  # Specific error
 
-        formatted_steps: List[str] = []
-        # Extract overall relationship from the *first* item's description if simple
-        overall_relationship = ""
-        first_desc = path_data[0].get("raw_desc", "").strip()
-        # Check if it's a single capitalized word (likely a direct relationship term)
-        if first_desc and " " not in first_desc and first_desc[0].isupper():
-            overall_relationship = first_desc
-        # End if
+        path_steps = []
+        # Skip the first element as it's usually the target person (already displayed)
+        # The second element is often just an arrow icon
+        start_index = 0
+        if len(path_elements) > 0 and target_name in path_elements[0].get_text(
+            strip=True
+        ):
+            start_index += 1
+        if len(path_elements) > start_index and "iconArrowDown" in path_elements[
+            start_index
+        ].get("class", []):
+            start_index += 1
 
-        # Iterate through pairs to determine the relationship FROM A TO B
-        # The description associated with B tells us B's relationship TO A.
-        for i in range(len(path_data) - 1):
-            person_a_data = path_data[i]
-            person_b_data = path_data[i + 1]
-            name_a = person_a_data.get("name", "Unknown")
-            name_b = person_b_data.get("name", "Unknown")
-            desc_b = person_b_data.get(
-                "raw_desc", ""
-            )  # Description associated with Person B
+        logger.debug(
+            f"Found {len(path_elements)} elements, starting parse from index {start_index}."
+        )
 
-            rel_term_b_to_a = "related"  # Default relationship term
+        for i, elem in enumerate(path_elements):
+            if i < start_index:
+                continue
 
-            # --- NEW PARSING LOGIC ---
-            # 1. Check for "You are the [Relation] of [Person A Name]"
-            you_are_match = re.match(
-                r"You are the (.*?) of (.*)", desc_b, re.IGNORECASE
-            )
-            if you_are_match:
-                rel_term_b_to_a = you_are_match.group(1).strip()
-                # Person B is "You", replace name_b with owner_name
-                name_b = owner_name
-                logger.debug(
-                    f"Path step {i+1}: Parsed 'You are the {rel_term_b_to_a} of {name_a}'"
-                )
+            # Extract text and clean it
+            elem_text = elem.get_text(strip=True)
+            # Sometimes the role (mother/father) is in a nested <i> or <b>
+            role_elem = elem.select_one("i b, b i, i, b")  # Find role emphasis tags
+            role = role_elem.get_text(strip=True) if role_elem else None
 
-            else:
-                # 2. Check for "[Relation] of [Person A Name]"
-                relation_of_match = re.match(r"(.*?) of (.*)", desc_b, re.IGNORECASE)
-                if relation_of_match:
-                    # Ensure the name matches Person A approximately (handle formatting diffs)
-                    name_check = relation_of_match.group(2).strip()
-                    if (
-                        name_a.lower() in name_check.lower()
-                        or name_check.lower() in name_a.lower()
-                    ):
-                        rel_term_b_to_a = relation_of_match.group(1).strip()
-                        logger.debug(
-                            f"Path step {i+1}: Parsed '{rel_term_b_to_a} of {name_a}'"
-                        )
-                    else:
-                        logger.warning(
-                            f"Path step {i+1}: Desc '{desc_b}' matched 'X of Y', but Y ('{name_check}') didn't match Person A ('{name_a}'). Using fallback."
-                        )
-                        rel_term_b_to_a = "related"  # Fallback if name mismatch
-                    # End if name check
+            # Extract name, often inside <a><b> or just <b>
+            name_elem = elem.select_one("a b, b")
+            name = name_elem.get_text(strip=True) if name_elem else None
+
+            # Construct step text
+            step_text = ""
+            if role:
+                step_text += f"-> {role}"  # e.g., -> mother
+                # Add the name if found and different from role/owner/target
+                if name and name != role and name != owner_name and name != target_name:
+                    step_text += f" is {name}"
+            elif (
+                name and name != owner_name and name != target_name
+            ):  # If only name found
+                step_text += f"-> {name}"
+            elif (
+                elem_text and elem_text != owner_name and elem_text != target_name
+            ):  # Fallback to full element text if specific parts not found
+                # Avoid repeating just the role if already captured
+                if not role or role not in elem_text:
+                    step_text += f"-> {elem_text}"
+
+            if step_text.strip():  # Only add non-empty steps
+                # Avoid adding the final "You are the..." message as a step here
+                if "You are the" not in step_text:
+                    path_steps.append(step_text.strip())
                 else:
-                    # 3. Check if desc_b is a simple relationship term (e.g., "Brother", "Mother")
-                    # Assume simple term applies to Person B's relationship to A
-                    if desc_b and " " not in desc_b and desc_b[0].isupper():
-                        rel_term_b_to_a = desc_b
-                        logger.debug(
-                            f"Path step {i+1}: Parsed simple term '{rel_term_b_to_a}'"
-                        )
-                    elif desc_b:
-                        # Fallback if description exists but doesn't match patterns
-                        logger.warning(
-                            f"Path step {i+1}: Unrecognized description format '{desc_b}'. Using 'related'."
-                        )
-                        rel_term_b_to_a = "related"
-                    # End if/else simple term check
-                # End if/else relation_of_match
-            # End if/else you_are_match
+                    # Log the final confirmation message separately
+                    logger.debug(
+                        f"Relationship confirmation found: {step_text.strip()}"
+                    )
 
-            # Format the relationship term (capitalize, handle ordinals)
-            formatted_rel_term = ordinal_case(rel_term_b_to_a.capitalize())
-
-            # Format the step string: B is the Relation of A
-            formatted_steps.append(f"{name_b} is the {formatted_rel_term} of {name_a}")
-            # --- END NEW PARSING LOGIC ---
-        # End for i
-
-        # Assemble the final explanation string
-        explanation_str = f"{path_data[0]['name']}\n -> " + "\n -> ".join(
-            formatted_steps
-        )
-
-        # Prepend overall relationship if found
-        overall_rel_display = ""
-        if overall_relationship:
-            overall_rel_display = (
-                f"Overall: {ordinal_case(overall_relationship.title())}\nPath:\n"
+        if not path_steps:
+            logger.warning(
+                "Found path elements but extracted no valid steps after filtering."
             )
-        # End if overall_relationship
+            return "(No relationship steps found in API HTML)"
 
-        return f"{overall_rel_display}{explanation_str}"
+        # Return formatted path (already includes ->)
+        return "\n".join(path_steps)
 
-    except Exception as bs_parse_err:
+    except Exception as e:
         logger.error(
-            f"Error parsing relationship ladder HTML: {bs_parse_err}", exc_info=True
+            f"Error parsing relationship HTML with BeautifulSoup: {e}", exc_info=True
         )
-        logger.debug(f"Problematic HTML: {ladder_html[:500]}...")
-        return f"(Error parsing API relationship path: {bs_parse_err})"
-
-
+        return f"(Error parsing relationship HTML: {e})"
 # End of format_api_relationship_path
-
 
 # --- Helper Function for HTML Extraction ---
 def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
@@ -742,8 +740,6 @@ def _extract_ladder_html(raw_content: Union[str, Dict]) -> Optional[str]:
         logger.debug(f"Problematic escaped HTML snippet: {html_escaped[:500]}...")
         return None
     # End try/except decode
-
-
 # End of _extract_ladder_html
 
 
