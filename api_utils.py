@@ -1,10 +1,8 @@
-# --- START OF FILE api_utils.py ---
 # api_utils.py
 """
 Utility functions specifically for parsing Ancestry API responses
 and formatting data obtained from APIs.
-V3.3: Added self_check tests for call_suggest_api, call_facts_user_api,
-      and JSON path formatting in format_api_relationship_path.
+V3.4: Improved HTML parsing in format_api_relationship_path for /getladder responses.
 """
 
 # --- Standard library imports ---
@@ -615,20 +613,18 @@ def format_api_relationship_path(
 ) -> str:
     """
     Parses relationship data primarily from the /getladder JSONP HTML response
-    and formats it into the specific two-line output:
-    'Person 1 (Lifespan): Relationship to Person 2'
-    '↓'
-    'Person 2 (Lifespan): Relationship to Person 1'
+    and formats it into a human-readable path with a specific bulleted format.
 
-    Also handles the direct JSON 'path' format from Discovery API if provided.
+    Handles the JSONP string format (e.g., `__ancestry_jsonp_...` or `no(...)`)
+    containing HTML, and the direct JSON `path` format from the Discovery API.
 
     Args:
         api_response_data: Raw data from /getladder (JSONP string) or Discovery (dict).
-        owner_name: Name of the tree owner (Person 2).
-        target_name: Name of the person whose relationship is checked (Person 1).
+        owner_name: Name of the tree owner (or "You").
+        target_name: Name of the person whose relationship is checked.
 
     Returns:
-        Formatted string representing the relationship, or an error message string.
+        Formatted string representing the relationship path, or an error message string.
     """
     if not api_response_data:
         logger.warning(
@@ -636,259 +632,287 @@ def format_api_relationship_path(
         )
         return "(No relationship data received from API)"
 
-    html_content: Optional[str] = None
+    html_content_raw: Optional[str] = None  # Raw string from JSON
+    json_data: Optional[Dict] = None
     api_status: str = "unknown"
+    response_source: str = "Unknown"  # 'JSONP', 'JSON', 'RawString'
     name_formatter = format_name if UTILS_AVAILABLE else lambda x: str(x).title()
 
-    # --- Step 1: Handle Input Type ---
+    # --- Step 1: Handle Input Type and Extract Relevant Data ---
+    # (This part remains the same)
     if isinstance(api_response_data, dict):
-        # Handle direct dictionary input (e.g., Discovery API)
+        response_source = "JSON"
         if "error" in api_response_data:
             return f"(API returned error object: {api_response_data.get('error', 'Unknown')})"
         elif "path" in api_response_data:
-            logger.debug("Received direct JSON 'path' format (Discovery API).")
-            path_steps_json = []
-            if (
-                isinstance(api_response_data["path"], list)
-                and api_response_data["path"]
-            ):
-                # Format for Discovery Path
-                path_steps_json.append(f"  {target_name}")  # Start with target
-                for step in api_response_data["path"]:
-                    step_name = step.get("name", "?")
-                    step_rel = step.get("relationship", "?")
-                    step_rel_display = _get_relationship_term(None, step_rel)
-                    path_steps_json.append(
-                        f"  -> {step_rel_display} is {name_formatter(step_name)}"
-                    )
-                path_steps_json.append(f"  -> {owner_name} (Tree Owner / You)")
-                return "\n".join(path_steps_json)
-            else:
-                logger.warning(
-                    f"Discovery API 'path' data invalid or empty: {api_response_data['path']}"
-                )
-                return "(Relationship path found but invalid format or empty)"
-        # Check if it's a JSONP structure wrapped in a dict by accident
+            logger.debug("Detected direct JSON 'path' format (Discovery API).")
+            json_data = api_response_data  # Assign dict to json_data
         elif (
-            "html" in api_response_data and api_response_data.get("status") == "success"
+            "html" in api_response_data
+            and "status" in api_response_data
+            and isinstance(api_response_data.get("html"), str)
         ):
-            html_content = api_response_data.get("html")
-            api_status = "success"
-            if not isinstance(html_content, str):
-                logger.warning("Dict input had 'html' key but it was not a string.")
-                html_content = None  # Force failure later
+            logger.debug("Detected pre-parsed JSONP structure with 'html' key.")
+            html_content_raw = api_response_data.get("html")
+            api_status = api_response_data.get("status", "unknown")
+            if api_status != "success":
+                return f"(API returned status '{api_status}': {api_response_data.get('message', 'Unknown Error')})"
         else:
             logger.warning(
-                f"Received unhandled dictionary format from API: Keys={list(api_response_data.keys())}"
+                f"Received unhandled dictionary format: Keys={list(api_response_data.keys())}"
             )
             return "(Received unhandled dictionary format from API)"
-
     elif isinstance(api_response_data, str):
-        # Handle JSONP string (likely /getladder)
-        if api_response_data.strip().startswith(
-            "__ancestry_jsonp_"
-        ) and api_response_data.strip().endswith(");"):
+        response_source = "JSONP/RawString"
+        if (
+            api_response_data.strip().startswith("__ancestry_jsonp_")
+            and api_response_data.strip().endswith(");")
+        ) or (
+            api_response_data.strip().startswith("no(")
+            and api_response_data.strip().endswith(")")
+        ):
+            response_source = "JSONP"
             try:
                 json_part_match = re.search(
                     r"^\s*[\w$.]+\((.*)\)\s*;?\s*$", api_response_data, re.DOTALL
-                )
+                ) or re.search(r"^\s*no\((.*)\)\s*$", api_response_data, re.DOTALL)
                 if json_part_match:
                     json_part = json_part_match.group(1).strip()
+                    logger.debug(f"Extracted JSON part: {json_part[:100]}...")
                     parsed_json = json.loads(json_part)
                     api_status = parsed_json.get("status", "unknown")
                     if api_status == "success":
-                        html_content = parsed_json.get("html")
-                        if not isinstance(html_content, str):
-                            logger.warning(
-                                "JSONP success but 'html' key is not a string."
+                        html_content_raw = parsed_json.get("html")
+                        if not isinstance(html_content_raw, str):
+                            logger.warning("'html' key not a string.")
+                            html_content_raw = None
+                        else:
+                            logger.debug(
+                                f"Extracted raw 'html': {html_content_raw[:100]}..."
                             )
-                            html_content = None
                     else:
-                        return f"(API returned status '{api_status}': {parsed_json.get('message', 'Unknown Error')})"
+                        return f"(API status '{api_status}': {parsed_json.get('message', 'Error')})"
                 else:
-                    logger.warning("Could not extract JSON part from JSONP string.")
-                    html_content = api_response_data  # Treat as raw text/HTML
-            except json.JSONDecodeError as e:
-                logger.error(f"Error decoding JSON part from JSONP: {e}")
-                html_content = api_response_data  # Treat as raw text/HTML
+                    logger.warning("Could not extract JSON part from wrapper.")
+                    html_content_raw = api_response_data
+                    response_source = "RawString"
             except Exception as e:
-                logger.error(f"Unexpected error processing JSONP: {e}")
-                html_content = api_response_data  # Treat as raw text/HTML
+                logger.error(f"Error processing {response_source}: {e}")
+                html_content_raw = api_response_data
+                response_source = "RawString"
         else:
-            logger.debug(
-                "Input string not in JSONP format, treating as raw content (potentially HTML)."
-            )
-            html_content = api_response_data
+            html_content_raw = api_response_data
+            response_source = "RawString"
     else:
-        return f"(Unsupported API response data type: {type(api_response_data)})"
+        return f"(Unsupported data type: {type(api_response_data)})"
 
-    # --- Step 2: Check if we have HTML content to parse (from /getladder) ---
-    if not html_content:
-        # This condition is now only relevant if input was string/JSONP and failed extraction
-        logger.warning("No processable HTML content found after extraction.")
-        status_msg = f" (API status: {api_status})" if api_status != "unknown" else ""
-        return f"(Could not find or parse relationship HTML{status_msg})"
-
-    # --- Step 3: Parse HTML (/getladder logic) ---
-    if not BeautifulSoup:
-        logger.error("BeautifulSoup library not found. Cannot parse relationship HTML.")
-        return "(Cannot parse relationship path - BeautifulSoup missing)"
-
-    try:
-        # Unescape HTML entities
-        try:
-            processed_html = html.unescape(html_content)
-        except Exception as unescape_err:
-            logger.warning(
-                f"HTML unescaping failed: {unescape_err}. Processing potentially escaped HTML."
-            )
-            processed_html = html_content
-
-        logger.debug(
-            f"Parsing HTML content with BeautifulSoup: {processed_html[:300]}..."
-        )
-
-        # Try lxml, fallback to html.parser
-        parser_used = "html.parser"
-        try:
-            soup = BeautifulSoup(processed_html, "lxml")
-            parser_used = "lxml"
-        except FeatureNotFound:
-            logger.warning("'lxml' parser not found, falling back to 'html.parser'.")
-            soup = BeautifulSoup(processed_html, "html.parser")
-        except Exception as e:
-            logger.warning(
-                f"Parser '{parser_used}' failed ({e}), falling back to 'html.parser'."
-            )
-            soup = BeautifulSoup(processed_html, "html.parser")
-            parser_used = "html.parser"
-        logger.debug(f"Successfully parsed HTML using '{parser_used}'.")
-
-        # Specific Parsing Logic for /getladder Format (ul.textCenter)
-        list_items = soup.select("ul.textCenter li")
-        logger.debug(f"Found {len(list_items)} list items in ul.textCenter")
-
-        if len(list_items) < 3:
-            logger.warning(
-                f"Expected at least 3 list items for relationship path, found {len(list_items)}. HTML structure mismatch?"
-            )
-            raw_text = soup.get_text(separator=" ", strip=True)
-            fallback_msg = f"(Relationship HTML structure not as expected - Found {len(list_items)} items)"
-            if raw_text and len(raw_text) < 150:
-                fallback_msg += f"\nRaw Text: {raw_text}"
-            return fallback_msg
-
-        # Extract Info from First Item (Target Person)
-        item1 = list_items[0]
-        name1_tag = item1.find("b")
-        role1_tag = item1.select_one("i b, i")
-        scraped_name1 = name1_tag.get_text(strip=True) if name1_tag else "Unknown"
-        role1 = role1_tag.get_text(strip=True) if role1_tag else "Unknown relationship"
-        lifespan1 = ""
-        if (
-            name1_tag
-            and name1_tag.next_sibling
-            and isinstance(name1_tag.next_sibling, str)
-        ):
-            potential_lifespan = name1_tag.next_sibling.strip()
-            if re.match(r"^\d{4}\s*[-–—]?\s*(\d{4})?$", potential_lifespan):
-                lifespan1 = potential_lifespan
-        logger.debug(
-            f"Parsed Item 1: Name='{scraped_name1}', Role='{role1}', Lifespan='{lifespan1}'"
-        )
-
-        # Extract Info from Third Item (Owner Person)
-        item3 = list_items[2]
-        name3_tag = item3.select_one("a b, a")
-        role3_text_tag = item3.find("i")
-        scraped_name3 = name3_tag.get_text(strip=True) if name3_tag else "Unknown"
-        role3_text = role3_text_tag.get_text(strip=True) if role3_text_tag else ""
-        lifespan3 = ""
-        if (
-            name3_tag
-            and name3_tag.next_sibling
-            and isinstance(name3_tag.next_sibling, str)
-        ):
-            potential_lifespan3 = name3_tag.next_sibling.strip()
-            if re.match(r"^\d{4}\s*[-–—]?\s*(\d{4})?$", potential_lifespan3):
-                lifespan3 = potential_lifespan3
-        logger.debug(
-            f"Parsed Item 3: Name='{scraped_name3}', RoleText='{role3_text}', Lifespan='{lifespan3}'"
-        )
-
-        # Determine Inverse Relationship
-        role3 = "related"
-        role3_text_lower = role3_text.lower()
-        # Basic inverse mapping based on common text patterns
-        inverse_map = {
-            "son of": "Son",
-            "daughter of": "Daughter",
-            "mother of": "Mother",
-            "father of": "Father",
-            "parent of": "Parent",
-            "husband of": "Husband",
-            "wife of": "Wife",
-            "spouse of": "Spouse",
-            "brother of": "Brother",
-            "sister of": "Sister",
-            "sibling of": "Sibling",
-        }
-        for key, val in inverse_map.items():
-            if key in role3_text_lower:
-                role3 = val
-                break
-
-        # Construct the Desired Output
-        if role1 != "Unknown relationship" and role3 != "related":
-            # Use owner_name and target_name passed into function
-            line1 = f"{target_name}{f' ({lifespan1})' if lifespan1 else ''}: {role1.capitalize()} of {owner_name}"
-            line2 = f"{owner_name}{f' ({lifespan3})' if lifespan3 else ''}: {role3} of {target_name}"
-            result_str = f"  {line1}\n  ↓\n  {line2}"  # Add indentation
-            logger.info(f"Formatted relationship path successfully:\n{result_str}")
+    # --- Step 2: Format Discovery JSON Path (if applicable) ---
+    if json_data and "path" in json_data:
+        path_steps_json = []
+        if isinstance(json_data["path"], list) and json_data["path"]:
+            # Correct formatting for Discovery JSON path
+            path_steps_json.append(f"  {target_name}")  # Start with target
+            for step in json_data["path"]:
+                step_name = name_formatter(step.get("name", "?"))  # Apply formatter
+                step_rel = step.get("relationship", "?")
+                # Use _get_relationship_term for consistent capitalization etc.
+                step_rel_display = _get_relationship_term(None, step_rel)
+                path_steps_json.append(
+                    f"  -> {step_rel_display} is {step_name}"  # Use formatted name
+                )
+            path_steps_json.append(
+                f"  -> {owner_name} (Tree Owner / You)"
+            )  # Match expected end format
+            result_str = "\n".join(path_steps_json)
+            logger.info(f"Formatted Discovery relationship path:\n{result_str}")
             return result_str
         else:
             logger.warning(
-                f"Could not reliably determine relationship roles from parsed HTML. role1='{role1}', role3='{role3}'"
+                f"Discovery 'path' data invalid/empty: {json_data.get('path')}"
             )
-            base_info = f"{target_name} ({scraped_name1 or '?'}) and {owner_name} ({scraped_name3 or '?'})"
-            if role1 != "Unknown relationship":
-                return f"(Partially parsed: {base_info} seem related as {role1.capitalize()}.)"
+            return "(Discovery path found but invalid format or empty)"
+
+    # --- Step 3: Decode and Parse HTML Content (if applicable, from /getladder) ---
+    # (Decoding and Parsing logic remains the same as previous correct version)
+    html_content_decoded: Optional[str] = None
+    if html_content_raw:
+        try:
+            html_content_decoded = bytes(html_content_raw, "utf-8").decode(
+                "unicode_escape"
+            )
+            logger.debug(f"Decoded HTML content: {html_content_decoded[:200]}...")
+        except Exception as decode_err:
+            logger.error(f"Failed to decode HTML content: {decode_err}", exc_info=True)
+            html_content_decoded = html_content_raw  # Fallback
+
+    if not html_content_decoded:
+        logger.warning("No processable HTML content found for relationship path.")
+        return f"(Could not find, decode, or parse relationship HTML)"
+
+    if not BeautifulSoup:
+        logger.error("BeautifulSoup library not found.")
+        return "(Cannot parse relationship path - BeautifulSoup missing)"
+
+    try:
+        logger.debug("Attempting to parse DECODED HTML content with BeautifulSoup...")
+        soup = None
+        list_items = []
+
+        parser_used = "html.parser"
+        try:
+            soup = BeautifulSoup(html_content_decoded, "lxml")
+            parser_used = "lxml"
+        except FeatureNotFound:
+            logger.warning("'lxml' parser not found, using 'html.parser'.")
+            soup = BeautifulSoup(html_content_decoded, "html.parser")
+        except Exception as e:
+            logger.warning(f"Parser '{parser_used}' failed ({e}), using 'html.parser'.")
+            soup = BeautifulSoup(html_content_decoded, "html.parser")
+            parser_used = "html.parser"
+
+        if soup:
+            list_items = soup.select("ul.textCenter li")
+            logger.debug(f"Found {len(list_items)} list items using '{parser_used}'.")
+        else:
+            logger.error("BeautifulSoup failed to create a soup object.")
+            return "(Error creating BeautifulSoup object)"
+
+        # --- Step 4: Extract Data from Parsed HTML List Items ---
+        if not list_items:
+            logger.warning("Expected list items, found none.")
+            return "(Relationship HTML structure not as expected - Found 0 items)"
+
+        item1 = list_items[0]
+        role1_tag = item1.select_one("i b, i")
+        overall_relationship = (
+            role1_tag.get_text(strip=True).lower()
+            if role1_tag
+            else "unknown relationship"
+        )
+        logger.debug(f"Overall relationship: {overall_relationship}")
+
+        path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
+        logger.debug(f"Found {len(path_items)} relevant path items.")
+
+        if len(path_items) < 2:
+            logger.warning(f"Expected at least 2 path items, found {len(path_items)}.")
+            return "(Could not find sufficient relationship path steps in HTML)"
+
+        # --- Step 5: Build Formatted Output String (Bulleted List for HTML) ---
+        summary_line = f"{target_name} is {owner_name}'s {overall_relationship}:"
+        path_lines = []
+        # Get the name of the first person (target) for context in descriptions
+        name1_tag = path_items[0].find("b")
+        target_name_from_html = (
+            name_formatter(name1_tag.get_text(strip=True)) if name1_tag else target_name
+        )
+
+        previous_person_name = (
+            target_name_from_html  # Use name parsed from HTML if possible
+        )
+
+        for i in range(1, len(path_items)):  # Start from the second item
+            item = path_items[i]
+            name_tag = item.find("a") or item.find("b")
+            current_person_name_raw = (
+                name_tag.get_text(strip=True) if name_tag else "Unknown"
+            )
+            current_person_name = name_formatter(current_person_name_raw)
+
+            lifespan = ""
+            if (
+                name_tag
+                and name_tag.next_sibling
+                and isinstance(name_tag.next_sibling, str)
+            ):
+                potential_lifespan = name_tag.next_sibling.strip()
+                lifespan_match = re.search(
+                    r"(\d{4})\s*[-–—]?\s*(\d{4})?$", potential_lifespan
+                )
+                if lifespan_match:
+                    start_year = lifespan_match.group(1)
+                    end_year = lifespan_match.group(2)
+                    if end_year:
+                        lifespan = f"{start_year}–{end_year}"
+                    elif (
+                        potential_lifespan == start_year
+                        or potential_lifespan.startswith(start_year)
+                    ):
+                        lifespan = f"b. {start_year}"
+                    else:
+                        lifespan = start_year  # Fallback to just year
+
+            desc_tag = item.find("i")
+            desc_text = desc_tag.get_text(strip=True) if desc_tag else ""
+            logger.debug(
+                f"Item {i}: Name='{current_person_name}', Lifespan='{lifespan}', Desc='{desc_text}'"
+            )
+
+            relationship_term = "relation"  # Default
+            rel_match = re.search(
+                r"\b(brother|sister|father|mother|son|daughter|husband|wife|spouse|parent|child|sibling)\b(?:\s+of)?",
+                desc_text,
+                re.IGNORECASE,
+            )
+            you_are_match = re.search(
+                r"You\s+are\s+the\s+(\w+)", desc_text, re.IGNORECASE
+            )
+
+            if you_are_match:
+                relationship_term = you_are_match.group(1).lower()
+            elif rel_match:
+                relationship_term = rel_match.group(1).lower()
             else:
-                return f"(Could not determine specific relationship between {target_name} and {owner_name})"
+                logger.warning(f"Could not extract standard term from: '{desc_text}'")
+
+            current_person_display = current_person_name
+            if lifespan:
+                current_person_display += f" ({lifespan})"
+
+            # Format the bullet point line based on relationship direction inferred from text
+            # Check if the description defines the current person relative to the previous one
+            previous_name_in_desc = previous_person_name.lower() in desc_text.lower()
+            # Check if the description defines the owner relative to the current person
+            owner_in_desc = (
+                owner_name.lower() in desc_text.lower()
+                and "you are" in desc_text.lower()
+            )
+
+            if owner_in_desc or (
+                i == len(path_items) - 1
+            ):  # Last item connects to owner
+                # Final line format: Owner is Previous's Relation
+                path_lines.append(
+                    f"- {owner_name} is {previous_person_name}'s {relationship_term}."
+                )
+            elif previous_name_in_desc:
+                # Intermediate format: Previous's Relation is Current
+                path_lines.append(
+                    f"- {previous_person_name}'s {relationship_term} is {current_person_display}."
+                )
+            else:
+                # Fallback/Unknown format - state relationship and person
+                logger.warning(
+                    f"Ambiguous relationship direction in '{desc_text}'. Using fallback format."
+                )
+                path_lines.append(
+                    f"- {current_person_display} ({relationship_term} of {previous_person_name})"
+                )
+
+            # Update previous person for the next iteration ONLY IF NOT THE OWNER ITEM
+            if not (owner_in_desc or (i == len(path_items) - 1)):
+                previous_person_name = current_person_name
+
+        result_str = f"{summary_line}\n\n" + "\n".join(path_lines)
+        logger.info(f"Formatted relationship path successfully:\n{result_str}")
+        return result_str
 
     except Exception as e:
         logger.error(
             f"Error processing relationship HTML with BeautifulSoup: {e}", exc_info=True
         )
         return f"(Error processing relationship HTML: {e})"
-
-
 # End of format_api_relationship_path
-
-
-# --- Display Function (DEPRECATED) ---
-def display_raw_relationship_ladder(
-    raw_content: Union[str, Dict], owner_name: str, target_name: str
-):
-    """
-    DEPRECATED. Parses and displays the Ancestry relationship ladder.
-    Prefer using format_api_relationship_path directly.
-    """
-    logger.warning(
-        "display_raw_relationship_ladder is deprecated. Use format_api_relationship_path."
-    )
-    logger.info(
-        f"\n--- Relationship between {owner_name} and {target_name} (Deprecated Display) ---"
-    )
-    formatted_path_str = format_api_relationship_path(
-        raw_content, owner_name, target_name
-    )
-    print(formatted_path_str.strip())
-
-
-# End of display_raw_relationship_ladder
-
-# --- NEW Specific API Call Helper Functions ---
 
 
 def _get_api_timeout(default: int = 60) -> int:
@@ -965,15 +989,18 @@ def call_suggest_api(
     api_description = "Suggest API"
     owner_facts_referer = _get_owner_referer(session_manager, base_url)
 
+    # Print the API URL to the console
+    print(f"\nAPI URL Called: {suggest_url}\n")
+    logger.info(f"Attempting {api_description} search: {suggest_url}")  # Keep log
+
     # Use provided timeouts or default
     timeouts_used = timeouts if timeouts else [20, 30, 60]
     max_attempts = len(timeouts_used)
 
-    logger.info(f"Attempting {api_description} search: {suggest_url}")
-    print(f"Searching Ancestry API (Timeout: {sum(timeouts_used)}s max)")
+    # print(f"Searching Ancestry API (Timeout: {sum(timeouts_used)}s max)") # Removed general message
 
     for attempt, timeout in enumerate(timeouts_used, 1):
-        print(f"(Calling {api_description}... Timeout: {timeout}s)")
+        # print(f"(Calling {api_description}... Timeout: {timeout}s)") # Removed status message
         try:
             custom_headers = {
                 "Accept": "application/json",
@@ -1037,11 +1064,10 @@ def call_suggest_api(
                 print("Error occurred. Retrying...")
             else:
                 print(f"\nAll {api_description} attempts failed.")
-            # Break on non-timeout errors if needed, or continue retrying
-            break  # Stop retrying on non-timeout errors for now
+            break
 
     # --- Direct Request Fallback ---
-    print("\nAttempting direct request fallback...")
+    # print("\nAttempting direct request fallback...") # Removed status message
     try:
         cookies = (
             session_manager._requests_session.cookies.get_dict()
@@ -1059,6 +1085,8 @@ def call_suggest_api(
             "Connection": "keep-alive",
         }
         logger.debug(f"Direct request URL: {suggest_url}")
+        # Print URL again for direct fallback attempt
+        print(f"\nAPI URL Called (Direct Fallback): {suggest_url}\n")
         logger.debug(f"Direct request headers: {direct_headers}")
         direct_response = requests.get(
             suggest_url, headers=direct_headers, cookies=cookies, timeout=30
@@ -1070,9 +1098,7 @@ def call_suggest_api(
                 logger.info(
                     f"Direct request fallback successful! Found {len(direct_data)} results."
                 )
-                print(
-                    f"Direct request successful! Found {len(direct_data)} potential matches."
-                )
+                # print(f"Direct request successful! Found {len(direct_data)} potential matches.") # Removed status message
                 return direct_data
             else:
                 logger.warning(
@@ -1130,9 +1156,11 @@ def call_facts_user_api(
     facts_referer = _get_owner_referer(session_manager, base_url)
     facts_data_raw = None
 
+    # Print the API URL to the console for the direct attempt
+    print(f"\nAPI URL Called (Direct Attempt): {facts_api_url}\n")
     logger.info(
         f"Attempting to fetch facts for PersonID {api_person_id}: {facts_api_url}"
-    )
+    )  # Keep log
 
     # --- Direct Request Attempt First ---
     try:
@@ -1165,7 +1193,7 @@ def call_facts_user_api(
                     f"Direct request returned non-dict data: {type(facts_data_raw)}"
                 )
                 logger.debug(f"Response content: {str(facts_data_raw)[:500]}")
-                facts_data_raw = None  # Treat as failure
+                facts_data_raw = None
         else:
             logger.warning(
                 f"Direct request failed: Status {direct_response.status_code}"
@@ -1183,16 +1211,18 @@ def call_facts_user_api(
 
     # --- Fallback to _api_req with Progressive Timeouts ---
     if facts_data_raw is None:
-        print(
-            "Direct request failed or returned invalid data. Trying original approach..."
-        )
+        # print("Direct request failed or returned invalid data. Trying original approach...") # Removed status message
+        # Print URL again for the _api_req fallback attempt
+        print(f"\nAPI URL Called (_api_req Fallback): {facts_api_url}\n")
+        logger.info(
+            f"Attempting {api_description} via _api_req: {facts_api_url}"
+        )  # Keep log
+
         timeouts_used = timeouts if timeouts else [30, 45, 60]
         max_attempts = len(timeouts_used)
 
         for attempt, timeout in enumerate(timeouts_used, 1):
-            print(
-                f"(Attempt {attempt}/{max_attempts}: Fetching details via _api_req... Timeout: {timeout}s)"
-            )
+            # print(f"(Attempt {attempt}/{max_attempts}: Fetching details via _api_req... Timeout: {timeout}s)") # Removed status message
             try:
                 custom_headers = {
                     "Accept": "application/json",
@@ -1214,7 +1244,7 @@ def call_facts_user_api(
                 )
 
                 if isinstance(api_response, dict):
-                    facts_data_raw = api_response  # Success!
+                    facts_data_raw = api_response
                     logger.info(
                         f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts})."
                     )
@@ -1267,7 +1297,7 @@ def call_facts_user_api(
                     print(
                         f"\nError fetching person details via _api_req: {api_req_err}"
                     )
-                break  # Stop retrying on non-timeout errors
+                break
 
     # --- Process Final Result ---
     if not isinstance(facts_data_raw, dict):
@@ -1324,21 +1354,19 @@ def call_getladder_api(
 
     api_description = "Get Tree Ladder API"
     ladder_api_url_base = f"{base_url}/family-tree/person/tree/{owner_tree_id}/person/{target_person_id}/getladder"
-    callback_name = f"__ancestry_jsonp_{int(time.time()*1000)}"
-    timestamp_ms = int(time.time() * 1000)
-    query_params = urlencode({"callback": callback_name, "_": timestamp_ms})
+    query_params = urlencode({"callback": "no"})
     ladder_api_url = f"{ladder_api_url_base}?{query_params}"
     ladder_referer = urljoin(
         base_url,
         f"/family-tree/person/tree/{owner_tree_id}/person/{target_person_id}/facts",
     )
-    api_timeout = timeout if timeout else _get_api_timeout(20)  # Specific default
+    api_timeout = timeout if timeout else _get_api_timeout(20)
 
-    logger.info(f"Calling {api_description} at {ladder_api_url}")
+    # Print the API URL to the console
+    print(f"\nAPI URL Called: {ladder_api_url}\n")
+    logger.info(f"Calling {api_description} at {ladder_api_url}")  # Keep log
     logger.debug(f" Referer: {ladder_referer}")
-    print(
-        f"(Calculating relationship via {api_description}... Timeout: {api_timeout}s)"
-    )
+    # print(f"(Calculating relationship via {api_description}... Timeout: {api_timeout}s)") # Removed status message
 
     try:
         relationship_data = _api_req(
@@ -1404,30 +1432,35 @@ def call_discovery_relationship_api(
         return None
 
     api_description = "Discovery Relationship API"
-    ladder_api_url = f"{base_url}/discoveryui-matchesservice/api/samples/{target_global_id}/relationshiptome/{owner_profile_id}"
+    # Corrected API endpoint structure based on observations (might vary)
+    # Using relationshiptome - adjust if /api/relationship is needed
+    discovery_api_url = f"{base_url}/discoveryui-matchesservice/api/samples/{target_global_id}/relationshiptome/{owner_profile_id}"
+    # If the other endpoint is needed:
+    # discovery_api_url = f"{base_url}/discoveryui-matchingservice/api/relationship?profileIdFrom={owner_profile_id}&profileIdTo={target_global_id}"
+
     uuid_for_referer = getattr(session_manager, "my_uuid", None)
-    ladder_referer = base_url
+    discovery_referer = base_url
     if uuid_for_referer:
-        ladder_referer = urljoin(
+        discovery_referer = urljoin(
             base_url, f"/discoveryui-matches/list/{uuid_for_referer}"
         )
-    api_timeout = timeout if timeout else _get_api_timeout(20)  # Specific default
+    api_timeout = timeout if timeout else _get_api_timeout(20)
 
-    logger.info(f"Calling {api_description} at {ladder_api_url}")
-    logger.debug(f" Referer: {ladder_referer}")
-    print(
-        f"(Calculating relationship via {api_description}... Timeout: {api_timeout}s)"
-    )
+    # Print the API URL to the console
+    print(f"\nAPI URL Called: {discovery_api_url}\n")
+    logger.info(f"Calling {api_description} at {discovery_api_url}")  # Keep log
+    logger.debug(f" Referer: {discovery_referer}")
+    # print(f"(Calculating relationship via {api_description}... Timeout: {api_timeout}s)") # Removed status message
 
     try:
         relationship_data = _api_req(
-            url=ladder_api_url,
+            url=discovery_api_url,
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             api_description=api_description,
-            referer_url=ladder_referer,
-            timeout=api_timeout,  # Expects JSON by default
+            referer_url=discovery_referer,
+            timeout=api_timeout,
         )
         if isinstance(relationship_data, dict):
             logger.info(f"{api_description} call successful.")
@@ -1488,10 +1521,10 @@ def call_treesui_list_api(
 
     if not birth_year:
         logger.warning("Cannot call TreesUI List API without birth year.")
-        print("Cannot use alternative API search: birth year is required.")
+        # print("Cannot use alternative API search: birth year is required.") # Removed print
         return None
 
-    treesui_params = ["limit=100", "fields=NAMES,BIRTH_DEATH"]
+    treesui_params = ["limit=100", "fields=NAMES,BIRTH_DEATH"]  # Reduced fields
     if first_name_raw:
         treesui_params.append(f"fn={quote(first_name_raw)}")
     if surname_raw:
@@ -1504,15 +1537,15 @@ def call_treesui_list_api(
     timeouts_used = timeouts if timeouts else [15, 25, 35]
     max_attempts = len(timeouts_used)
 
-    logger.info(f"Attempting {api_description} search using _api_req: {treesui_url}")
-    print(
-        f"Trying alternative API search (Progressive timeouts: {', '.join(map(str, timeouts_used))}s)"
-    )
+    # Print the API URL to the console
+    print(f"\nAPI URL Called (TreesUI List Fallback): {treesui_url}\n")
+    logger.info(
+        f"Attempting {api_description} search using _api_req: {treesui_url}"
+    )  # Keep log
+    # print(f"Trying alternative API search (Progressive timeouts: {', '.join(map(str, timeouts_used))}s)") # Removed status message
 
     for attempt, timeout in enumerate(timeouts_used, 1):
-        print(
-            f"(Attempt {attempt}/{max_attempts}: Calling {api_description}... Timeout: {timeout}s)"
-        )
+        # print(f"(Attempt {attempt}/{max_attempts}: Calling {api_description}... Timeout: {timeout}s)") # Removed status message
         try:
             custom_headers = {
                 "Accept": "application/json",
@@ -1535,17 +1568,15 @@ def call_treesui_list_api(
                 logger.info(
                     f"{api_description} call successful (attempt {attempt}/{max_attempts}), found {len(treesui_response)} results."
                 )
-                print(
-                    f"Alternative API search successful! Found {len(treesui_response)} potential matches."
-                )
+                # print(f"Alternative API search successful! Found {len(treesui_response)} potential matches.") # Removed status message
                 return treesui_response
-            elif treesui_response is not None:  # Received something, but not a list
+            elif treesui_response is not None:
                 logger.error(
                     f"{api_description} returned unexpected format: {type(treesui_response)}"
                 )
                 print("Alternative API search returned unexpected format.")
-                return None  # Don't retry if format is wrong
-            else:  # Response was None
+                return None
+            else:
                 logger.warning(
                     f"{api_description} call failed or returned None on attempt {attempt}/{max_attempts}."
                 )
@@ -1573,7 +1604,7 @@ def call_treesui_list_api(
                 print("Error occurred. Retrying...")
             else:
                 print("\nAll alternative API search attempts failed.")
-            break  # Stop retrying on non-timeout errors
+            break
 
     logger.error(f"{api_description} failed after all attempts.")
     return None
@@ -1791,145 +1822,62 @@ def self_check() -> bool:
     overall_status = True
 
     # --- Internal API Call Helpers for Self-Check ---
-    # Simplified: _sc_get_profile_details remains for testing the app-api endpoint
-    # Other API calls will use the production helpers directly (e.g., _sc_get_tree_ladder uses call_getladder_api)
+    # (These remain the same)
     def _sc_api_req_wrapper(
         url: str, description: str, expect_json: bool = True, **kwargs
     ) -> Any:
         """Wrapper for _api_req within self-check, handling session and potential Response objects."""
         nonlocal session_manager_sc
-        if not _api_req:
-            raise RuntimeError("_api_req function not available for self-check")
-        if not session_manager_sc or not session_manager_sc.is_sess_valid():
-            raise RuntimeError("Session object not ready for API call in self_check")
-        result = _api_req(
-            url=url,
-            driver=session_manager_sc.driver,
-            session_manager=session_manager_sc,
-            api_description=f"{description} (Self Check)",
-            **kwargs,
-        )
+        if not _api_req: raise RuntimeError("_api_req func unavailable")
+        if not session_manager_sc or not session_manager_sc.is_sess_valid(): raise RuntimeError("Session not ready")
+        result = _api_req(url=url, driver=session_manager_sc.driver, session_manager=session_manager_sc, api_description=f"{description} (SC)", **kwargs)
         if expect_json and isinstance(result, requests.Response):
-            logger_sc.warning(
-                f"[_sc_api_req wrapper] Expected JSON for '{description}', got Response object (Status: {result.status_code}). Returning None."
-            )
-            if 400 <= result.status_code < 600:
-                try:
-                    logger_sc.debug(f"Response content preview: {result.text[:500]}")
-                except Exception:
-                    pass
+            logger_sc.warning(f"[_sc wrapper] Expected JSON for '{description}', got Response (Status: {result.status_code}). Returning None.")
             return None
         return result
-
     # End of _sc_api_req_wrapper
 
     def _sc_get_profile_details(profile_id: str) -> Optional[Dict]:
-        """Helper to get profile details via /app-api endpoint using the self-check API request wrapper."""
-        if not config_instance_sc:
-            return None
-        if not profile_id:
-            return None
+        """Helper to get profile details via /app-api endpoint."""
+        if not config_instance_sc or not profile_id: return None
         api_desc = f"Get Profile Details ({profile_id})"
-        url = urljoin(
-            config_instance_sc.BASE_URL,
-            f"/app-api/express/v1/profiles/details?userId={profile_id.upper()}",
-        )
+        url = urljoin(config_instance_sc.BASE_URL, f"/app-api/express/v1/profiles/details?userId={profile_id.upper()}")
         timeout = getattr(selenium_config_sc, "API_TIMEOUT", 60)
-        return _sc_api_req_wrapper(
-            url, api_desc, expect_json=True, use_csrf_token=False, timeout=timeout
-        )
-
+        return _sc_api_req_wrapper(url, api_desc, expect_json=True, use_csrf_token=False, timeout=timeout)
     # End of _sc_get_profile_details
 
     def _sc_get_tree_ladder(tree_id: str, person_id: str) -> Optional[str]:
-        """Helper to get the relationship ladder using the production call_getladder_api helper."""
+        """Helper to get relationship ladder using production call_getladder_api."""
         nonlocal session_manager_sc
-        if not config_instance_sc or not selenium_config_sc or not session_manager_sc:
-            return None
-        if not tree_id or not person_id:
-            return None
-        if not callable(call_getladder_api):
-            logger_sc.error("call_getladder_api not callable in self_check")
-            return None
+        if not all([config_instance_sc, selenium_config_sc, session_manager_sc, tree_id, person_id, callable(call_getladder_api)]): return None
         api_timeout = getattr(selenium_config_sc, "API_TIMEOUT", 60)
         base_url = config_instance_sc.BASE_URL
-        # Note: call_getladder_api handles logging and printing its own status message
-        return call_getladder_api(
-            session_manager_sc, tree_id, person_id, base_url, timeout=api_timeout
-        )
-
+        return call_getladder_api(session_manager_sc, tree_id, person_id, base_url, timeout=api_timeout)
     # End of _sc_get_tree_ladder
 
     # --- Test Parameters ---
-    can_run_live_tests = bool(
-        SessionManager and _api_req and config_instance_sc and selenium_config_sc
-    )
+    can_run_live_tests = bool(SessionManager and _api_req and config_instance_sc and selenium_config_sc)
     target_profile_id = getattr(config_instance_sc, "TESTING_PROFILE_ID", None)
-    target_person_id_for_ladder = getattr(
-        config_instance_sc, "TESTING_PERSON_TREE_ID", None
-    )
-    base_url_sc = getattr(
-        config_instance_sc, "BASE_URL", "https://www.ancestry.com"
-    ).rstrip("/")
-
+    target_person_id_for_ladder = getattr(config_instance_sc, "TESTING_PERSON_TREE_ID", None)
+    base_url_sc = getattr(config_instance_sc, "BASE_URL", "https://www.ancestry.com").rstrip("/")
     target_name_from_profile = "Unknown Target"
-    target_name_for_ladder = "Unknown Ladder Target"
-
-    if can_run_live_tests and not target_profile_id:
-        logger_sc.warning("TESTING_PROFILE_ID missing in config.")
-    if can_run_live_tests and not target_person_id_for_ladder:
-        logger_sc.warning("TESTING_PERSON_TREE_ID missing in config.")
+    target_name_for_ladder = "Unknown Ladder Target" # Will be updated if possible
+    if can_run_live_tests and not target_profile_id: logger_sc.warning("TESTING_PROFILE_ID missing.")
+    if can_run_live_tests and not target_person_id_for_ladder: logger_sc.warning("TESTING_PERSON_TREE_ID missing.")
 
     logger_sc.info("\n[api_utils.py self-check starting...]")
 
     # === Phase 0: Prerequisite Checks ===
     logger_sc.info("--- Phase 0: Prerequisite Checks ---")
-    _sc_run_test(
-        "Check BeautifulSoup Import",
-        lambda: BeautifulSoup is not None,
-        test_results_sc,
-        logger_sc,
-        expected_truthy=True,
-    )
-    if BeautifulSoup is None:
-        overall_status = False
-
-    # Check core functions exist and are callable
-    func_map = {
-        "format_name": format_name,
-        "ordinal_case": ordinal_case,
-        "_parse_date": _parse_date,
-        "_clean_display_date": _clean_display_date,
-        "parse_ancestry_person_details": parse_ancestry_person_details,
-        "format_api_relationship_path": format_api_relationship_path,
-        "call_suggest_api": call_suggest_api,
-        "call_facts_user_api": call_facts_user_api,
-        "call_getladder_api": call_getladder_api,
-        "call_discovery_relationship_api": call_discovery_relationship_api,
-        "call_treesui_list_api": call_treesui_list_api,
-    }
+    _, s0_bs_stat, _ = _sc_run_test("Check BeautifulSoup Import", lambda: BeautifulSoup is not None, test_results_sc, logger_sc, expected_truthy=True)
+    if s0_bs_stat != "PASS": overall_status = False
+    # Check core functions
+    func_map = { "format_name": format_name, "ordinal_case": ordinal_case, "_parse_date": _parse_date, "_clean_display_date": _clean_display_date, "parse_ancestry_person_details": parse_ancestry_person_details, "format_api_relationship_path": format_api_relationship_path, "call_suggest_api": call_suggest_api, "call_facts_user_api": call_facts_user_api, "call_getladder_api": call_getladder_api, "call_discovery_relationship_api": call_discovery_relationship_api, "call_treesui_list_api": call_treesui_list_api, }
     for name, func in func_map.items():
-        _, s0_status, _ = _sc_run_test(
-            f"Check Function '{name}'",
-            lambda f=func: callable(f),
-            test_results_sc,
-            logger_sc,
-            expected_truthy=True,
-        )
-        if s0_status != "PASS":
-            overall_status = False
-
-    _sc_run_test(
-        "Check Config Loaded",
-        lambda: CONFIG_AVAILABLE
-        and config_instance_sc is not None
-        and hasattr(config_instance_sc, "BASE_URL"),
-        test_results_sc,
-        logger_sc,
-        expected_truthy=True,
-    )
-    if not CONFIG_AVAILABLE:
-        overall_status = False
+        _, s0_f_stat, _ = _sc_run_test(f"Check Function '{name}'", lambda f=func: callable(f), test_results_sc, logger_sc, expected_truthy=True)
+        if s0_f_stat != "PASS": overall_status = False
+    _, s0_c_stat, _ = _sc_run_test("Check Config Loaded", lambda: CONFIG_AVAILABLE and config_instance_sc and hasattr(config_instance_sc, "BASE_URL"), test_results_sc, logger_sc, expected_truthy=True)
+    if s0_c_stat != "PASS": overall_status = False
 
     # === Phase 0b: Test Formatters with Static Data ===
     logger_sc.info("--- Phase 0b: Static Formatter Tests ---")
@@ -1937,25 +1885,29 @@ def self_check() -> bool:
     mock_discovery_data = {
         "path": [
             {"relationship": "Father", "name": "Test Dad"},
-            {"relationship": "mother", "name": "Test Mom Name"},
+            {"relationship": "mother", "name": "Test Mom Name"}, # Use lowercase to test case handling
         ]
     }
     owner_name_mock = "Owner Name"
     target_name_mock = "Target Name"
+    # Define the CORRECT expected output string for the Discovery JSON format
     expected_output_mock = f"  {target_name_mock}\n  -> Father is Test Dad\n  -> Mother is Test Mom Name\n  -> {owner_name_mock} (Tree Owner / You)"
-    _sc_run_test(
+    _, s0b_status, _ = _sc_run_test(
         "format_api_relationship_path (Discovery JSON)",
         lambda: format_api_relationship_path(
             mock_discovery_data, owner_name_mock, target_name_mock
         ),
         test_results_sc,
         logger_sc,
-        expected_value=expected_output_mock,
+        expected_value=expected_output_mock, # Check against the correct expected value
     )
+    if s0b_status != "PASS":
+        overall_status = False # Mark fail if static test fails
 
+    # Check overall status before proceeding to live tests
     if not overall_status:
         logger_sc.error("Prerequisite or static tests failed. Cannot proceed further.")
-        can_run_live_tests = False
+        can_run_live_tests = False # Prevent live tests if basic checks fail
 
     # === Live Tests Section ===
     if can_run_live_tests:
@@ -1963,587 +1915,169 @@ def self_check() -> bool:
             # === Phase 1: Session Setup ===
             logger_sc.info("--- Phase 1: Session Setup & Login ---")
             session_manager_sc = SessionManager()
-            _, s1_status, _ = _sc_run_test(
-                "SessionManager.start_sess()",
-                session_manager_sc.start_sess,
-                test_results_sc,
-                logger_sc,
-                action_name="SC Phase 1 Start",
-                expected_truthy=True,
-            )
-            if s1_status != "PASS":
-                overall_status = False
-                raise RuntimeError("start_sess failed")
-            _, s1_status, _ = _sc_run_test(
-                "SessionManager.ensure_session_ready()",
-                session_manager_sc.ensure_session_ready,
-                test_results_sc,
-                logger_sc,
-                action_name="SC Phase 1 Ready",
-                expected_truthy=True,
-            )
-            if s1_status != "PASS":
-                overall_status = False
-                raise RuntimeError("ensure_session_ready failed")
+            _, s1_start_stat, _ = _sc_run_test("SessionManager.start_sess()", session_manager_sc.start_sess, test_results_sc, logger_sc, action_name="SC Phase 1 Start", expected_truthy=True)
+            if s1_start_stat != "PASS": overall_status = False; raise RuntimeError("start_sess failed")
+            _, s1_ready_stat, _ = _sc_run_test("SessionManager.ensure_session_ready()", session_manager_sc.ensure_session_ready, test_results_sc, logger_sc, action_name="SC Phase 1 Ready", expected_truthy=True)
+            if s1_ready_stat != "PASS": overall_status = False; raise RuntimeError("ensure_session_ready failed")
 
             # === Phase 2: Get Target Info & Validate Config ===
             logger_sc.info("--- Phase 2: Get Target Info & Validate Config ---")
             target_tree_id = session_manager_sc.my_tree_id
             target_owner_name = session_manager_sc.tree_owner_name
-            target_owner_profile_id = (
-                session_manager_sc.my_profile_id
-            )  # Get owner's profile ID
-
-            _, s2_status_tid, _ = _sc_run_test(
-                "Check Target Tree ID Found",
-                lambda: bool(target_tree_id),
-                test_results_sc,
-                logger_sc,
-                expected_truthy=True,
-            )
-            _, s2_status_owner, _ = _sc_run_test(
-                "Check Target Owner Name Found",
-                lambda: bool(target_owner_name),
-                test_results_sc,
-                logger_sc,
-                expected_truthy=True,
-            )
-            _, s2_status_profile, _ = _sc_run_test(
-                "Check Target Owner Profile ID Found",
-                lambda: bool(target_owner_profile_id),
-                test_results_sc,
-                logger_sc,
-                expected_truthy=True,
-            )
-            if (
-                s2_status_tid != "PASS"
-                or s2_status_owner != "PASS"
-                or s2_status_profile != "PASS"
-            ):
-                overall_status = False
+            target_owner_profile_id = session_manager_sc.my_profile_id
+            _, s2_tid_stat, _ = _sc_run_test("Check Target Tree ID Found", lambda: bool(target_tree_id), test_results_sc, logger_sc, expected_truthy=True)
+            _, s2_owner_stat, _ = _sc_run_test("Check Target Owner Name Found", lambda: bool(target_owner_name), test_results_sc, logger_sc, expected_truthy=True)
+            _, s2_profile_stat, _ = _sc_run_test("Check Target Owner Profile ID Found", lambda: bool(target_owner_profile_id), test_results_sc, logger_sc, expected_truthy=True)
+            if not all(s == "PASS" for s in [s2_tid_stat, s2_owner_stat, s2_profile_stat]): overall_status = False
 
             profile_response_details = None
             test_name_target_profile = "API Call: Get Target Profile Details (app-api)"
             if target_profile_id:
-                api_call_lambda = lambda: _sc_get_profile_details(
-                    cast(str, target_profile_id)
-                )
-                _, s2_status, _ = _sc_run_test(
-                    test_name_target_profile,
-                    api_call_lambda,
-                    test_results_sc,
-                    logger_sc,
-                    expected_type=dict,
-                )
-                if s2_status == "PASS":
-                    profile_response_details = api_call_lambda()  # Re-call to get data
-                    if profile_response_details and isinstance(
-                        profile_response_details, dict
-                    ):
-                        target_name_from_profile = parse_ancestry_person_details(
-                            {}, profile_response_details
-                        ).get("name", "Unknown")
-                        _, s2_status_name, _ = _sc_run_test(
-                            "Check Target Name Found in API Resp",
-                            lambda: target_name_from_profile != "Unknown",
-                            test_results_sc,
-                            logger_sc,
-                            expected_truthy=True,
-                        )
-                        if s2_status_name == "FAIL":
-                            overall_status = False
-                    else:
-                        logger_sc.error(
-                            f"{test_name_target_profile} passed status but result invalid: {type(profile_response_details)}"
-                        )
-                        overall_status = False
-                        _sc_run_test(
-                            "Check Target Name Found in API Resp",
-                            lambda: "Skipped",
-                            test_results_sc,
-                            logger_sc,
-                        )
-                elif s2_status == "SKIPPED":
-                    logger_sc.warning(
-                        f"{test_name_target_profile} skipped (API issue?). Cannot check name."
-                    )
-                    overall_status = False
-                    _sc_run_test(
-                        "Check Target Name Found in API Resp",
-                        lambda: "Skipped",
-                        test_results_sc,
-                        logger_sc,
-                    )
-                else:  # Failed
-                    overall_status = False
-                    logger_sc.error(
-                        f"{test_name_target_profile} failed. Cannot check name."
-                    )
-                    _sc_run_test(
-                        "Check Target Name Found in API Resp",
-                        lambda: "Skipped",
-                        test_results_sc,
-                        logger_sc,
-                    )
-            else:
-                logger_sc.warning(
-                    "Skipping Get Target Profile Details API call: TESTING_PROFILE_ID not set."
-                )
-                _sc_run_test(
-                    test_name_target_profile,
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
-                _sc_run_test(
-                    "Check Target Name Found in API Resp",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
+                api_call_lambda = lambda: _sc_get_profile_details(cast(str, target_profile_id))
+                _, s2_api_stat, _ = _sc_run_test(test_name_target_profile, api_call_lambda, test_results_sc, logger_sc, expected_type=dict)
+                if s2_api_stat == "PASS":
+                    profile_response_details = api_call_lambda()
+                    if profile_response_details:
+                        target_name_from_profile = parse_ancestry_person_details({}, profile_response_details).get("name", "Unknown Target")
+                        _, s2_name_stat, _ = _sc_run_test("Check Target Name Found in API Resp", lambda: target_name_from_profile not in ["Unknown", "Unknown Target"], test_results_sc, logger_sc, expected_truthy=True)
+                        if s2_name_stat != "PASS": overall_status = False
+                        # Set target_name_for_ladder if profile name found
+                        if target_name_from_profile not in ["Unknown", "Unknown Target"]:
+                             target_name_for_ladder = target_name_from_profile
+                             logger_sc.info(f"Using profile name '{target_name_for_ladder}' for ladder test.")
+                    else: logger_sc.error(f"{test_name_target_profile} passed but result invalid."); overall_status = False; _sc_run_test("Check Target Name Found in API Resp", lambda: "Skipped", test_results_sc, logger_sc)
+                elif s2_api_stat == "SKIPPED": logger_sc.warning(f"{test_name_target_profile} skipped. Cannot check name."); overall_status = False; _sc_run_test("Check Target Name Found in API Resp", lambda: "Skipped", test_results_sc, logger_sc)
+                else: overall_status = False; logger_sc.error(f"{test_name_target_profile} failed."); _sc_run_test("Check Target Name Found in API Resp", lambda: "Skipped", test_results_sc, logger_sc)
+            else: logger_sc.warning("Skipping Get Target Profile Details: TESTING_PROFILE_ID not set."); _sc_run_test(test_name_target_profile, lambda: "Skipped", test_results_sc, logger_sc); _sc_run_test("Check Target Name Found in API Resp", lambda: "Skipped", test_results_sc, logger_sc)
 
-            target_name_for_ladder = "Expected Target Name"  # Use fallback name
-            logger_sc.info(
-                f"Using fallback '{target_name_for_ladder}' for ladder target name."
-            )
+            # Fallback if ladder name wasn't set from profile
+            if target_name_for_ladder == "Unknown Ladder Target":
+                 logger_sc.warning(f"Using fallback '{target_name_for_ladder}' for ladder target name.")
 
             # === Phase 3: Test parse_ancestry_person_details ===
-            logger_sc.info(
-                "--- Phase 3: Test parse_ancestry_person_details (Live & Static) ---"
-            )
+            logger_sc.info("--- Phase 3: Test parse_ancestry_person_details (Live & Static) ---")
+            # (Test logic remains the same as previous version)
             test_name_parse = "Function Call: parse_ancestry_person_details()"
-            # Test case 1: Parsing profile_response_details (facts_data from app-api)
+            # Test case 1: Parsing profile_response_details
             if profile_response_details and isinstance(profile_response_details, dict):
-                # (Test logic remains the same as previous version)
-                person_card_empty = {}  # Pass empty card, rely on facts_data
+                person_card_empty = {}
                 try:
-                    parse_lambda_facts = lambda: parse_ancestry_person_details(
-                        person_card_empty, profile_response_details
-                    )
-                    _, s3_status_facts, _ = _sc_run_test(
-                        f"{test_name_parse} (with Facts)",
-                        parse_lambda_facts,
-                        test_results_sc,
-                        logger_sc,
-                        expected_type=dict,
-                    )
-                    if s3_status_facts == "PASS":
-                        parsed_details_facts = parse_lambda_facts()  # Re-call
-                        if parsed_details_facts and isinstance(
-                            parsed_details_facts, dict
-                        ):
-                            keys_ok_facts = all(
-                                k in parsed_details_facts
-                                for k in [
-                                    "name",
-                                    "person_id",
-                                    "link",
-                                    "birth_date",
-                                    "death_date",
-                                    "gender",
-                                    "is_living",
-                                ]
-                            )
-                            _, s3_keys_stat, _ = _sc_run_test(
-                                "Validation: Parsed Details Keys (Facts)",
-                                lambda: keys_ok_facts,
-                                test_results_sc,
-                                logger_sc,
-                                expected_truthy=True,
-                            )
-                            if s3_keys_stat != "PASS":
-                                overall_status = False
-                            if target_name_from_profile not in [
-                                "Unknown Target",
-                                "Unknown",
-                            ]:
-                                _, s3_name_stat, _ = _sc_run_test(
-                                    "Validation: Parsed Name Match (Facts)",
-                                    lambda p=parsed_details_facts: p.get("name")
-                                    == target_name_from_profile,
-                                    test_results_sc,
-                                    logger_sc,
-                                    expected_truthy=True,
-                                )
-                                if s3_name_stat != "PASS":
-                                    overall_status = False
-                        else:
-                            _sc_run_test(
-                                f"{test_name_parse} (with Facts)",
-                                lambda: False,
-                                test_results_sc,
-                                logger_sc,
-                                expected_value="Parser Invalid Return (Facts)",
-                            )
-                            overall_status = False
-                    else:
-                        overall_status = (
-                            False  # Skip dependent tests if parse fails/skips
-                        )
-                except Exception as parse_e:
-                    _sc_run_test(
-                        f"{test_name_parse} (with Facts)",
-                        lambda: False,
-                        test_results_sc,
-                        logger_sc,
-                        expected_value=f"Exception: {parse_e}",
-                    )
-                    overall_status = False
-            else:
-                _sc_run_test(
-                    f"{test_name_parse} (with Facts)",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
-                _sc_run_test(
-                    "Validation: Parsed Details Keys (Facts)",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
-                _sc_run_test(
-                    "Validation: Parsed Name Match (Facts)",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
-
-            # Test case 2: Parsing Suggest API like structure (person_card only) - Static Data
-            suggest_like_card = {
-                "PersonId": "12345",
-                "TreeId": "67890",
-                "UserId": "ABC-DEF",
-                "FullName": "Test Suggest Person",
-                "GivenName": "Test",
-                "Surname": "Suggest Person",
-                "BirthYear": 1950,
-                "BirthPlace": "SuggestBirth Town",
-                "DeathYear": 2000,
-                "DeathPlace": "SuggestDeath City",
-                "Gender": "Female",
-                "IsLiving": False,
-            }
+                    parse_lambda_facts = lambda: parse_ancestry_person_details(person_card_empty, profile_response_details)
+                    _, s3_facts_stat, _ = _sc_run_test(f"{test_name_parse} (with Facts)", parse_lambda_facts, test_results_sc, logger_sc, expected_type=dict)
+                    if s3_facts_stat == "PASS":
+                        parsed_details_facts = parse_lambda_facts()
+                        if parsed_details_facts:
+                            keys_ok_facts = all(k in parsed_details_facts for k in ["name", "person_id", "link", "birth_date", "death_date", "gender", "is_living"])
+                            _, s3_keys_stat, _ = _sc_run_test("Validation: Parsed Details Keys (Facts)", lambda: keys_ok_facts, test_results_sc, logger_sc, expected_truthy=True)
+                            if s3_keys_stat != "PASS": overall_status = False
+                            if target_name_from_profile not in ["Unknown Target", "Unknown"]:
+                                _, s3_name_stat, _ = _sc_run_test("Validation: Parsed Name Match (Facts)", lambda p=parsed_details_facts: p.get("name") == target_name_from_profile, test_results_sc, logger_sc, expected_truthy=True)
+                                if s3_name_stat != "PASS": overall_status = False
+                        else: _sc_run_test(f"{test_name_parse} (with Facts)", lambda: False, test_results_sc, logger_sc, expected_value="Parser Invalid Return (Facts)"); overall_status = False
+                    else: overall_status = False # Skip dependent tests
+                except Exception as parse_e: _sc_run_test(f"{test_name_parse} (with Facts)", lambda: False, test_results_sc, logger_sc, expected_value=f"Exception: {parse_e}"); overall_status = False
+            else: _sc_run_test(f"{test_name_parse} (with Facts)", lambda: "Skipped", test_results_sc, logger_sc); _sc_run_test("Validation: Parsed Details Keys (Facts)", lambda: "Skipped", test_results_sc, logger_sc); _sc_run_test("Validation: Parsed Name Match (Facts)", lambda: "Skipped", test_results_sc, logger_sc)
+            # Test case 2: Static Suggest API like structure
+            suggest_like_card = { "PersonId": "12345", "TreeId": "67890", "UserId": "ABC-DEF", "FullName": "Test Suggest Person", "GivenName": "Test", "Surname": "Suggest Person", "BirthYear": 1950, "BirthPlace": "SuggestBirth Town", "DeathYear": 2000, "DeathPlace": "SuggestDeath City", "Gender": "Female", "IsLiving": False, }
             try:
-                parse_lambda_suggest = lambda: parse_ancestry_person_details(
-                    suggest_like_card, None
-                )  # facts_data is None
-                _, s3_status_suggest, _ = _sc_run_test(
-                    f"{test_name_parse} (Suggest Format)",
-                    parse_lambda_suggest,
-                    test_results_sc,
-                    logger_sc,
-                    expected_type=dict,
-                )
-                if s3_status_suggest == "PASS":
+                parse_lambda_suggest = lambda: parse_ancestry_person_details(suggest_like_card, None)
+                _, s3_suggest_stat, _ = _sc_run_test(f"{test_name_parse} (Suggest Format)", parse_lambda_suggest, test_results_sc, logger_sc, expected_type=dict)
+                if s3_suggest_stat == "PASS":
                     parsed_details_suggest = parse_lambda_suggest()
-                    if parsed_details_suggest and isinstance(
-                        parsed_details_suggest, dict
-                    ):
-                        name_ok = (
-                            parsed_details_suggest.get("name") == "Test Suggest Person"
-                        )
-                        byear_ok = parsed_details_suggest.get("birth_date") == "1950"
-                        dyear_ok = parsed_details_suggest.get("death_date") == "2000"
-                        gender_ok = parsed_details_suggest.get("gender") == "F"
-                        living_ok = parsed_details_suggest.get("is_living") is False
-                        bplace_ok = (
-                            parsed_details_suggest.get("birth_place")
-                            == "SuggestBirth Town"
-                        )
-                        dplace_ok = (
-                            parsed_details_suggest.get("death_place")
-                            == "SuggestDeath City"
-                        )
-                        pid_ok = parsed_details_suggest.get("person_id") == "12345"
-                        uid_ok = parsed_details_suggest.get("user_id") == "ABC-DEF"
-                        validations_ok = all(
-                            [
-                                name_ok,
-                                byear_ok,
-                                dyear_ok,
-                                gender_ok,
-                                living_ok,
-                                bplace_ok,
-                                dplace_ok,
-                                pid_ok,
-                                uid_ok,
-                            ]
-                        )
-                        _, s3_val_stat, _ = _sc_run_test(
-                            "Validation: Parsed Details Values (Suggest)",
-                            lambda: validations_ok,
-                            test_results_sc,
-                            logger_sc,
-                            expected_truthy=True,
-                        )
-                        if s3_val_stat != "PASS":
-                            logger_sc.error(
-                                f"Suggest Parse Validation Failed: Name={name_ok}, B={byear_ok}, D={dyear_ok}, G={gender_ok}, L={living_ok}, BP={bplace_ok}, DP={dplace_ok}, PID={pid_ok}, UID={uid_ok}"
-                            )
-                            overall_status = False
-                    else:
-                        _sc_run_test(
-                            f"{test_name_parse} (Suggest Format)",
-                            lambda: False,
-                            test_results_sc,
-                            logger_sc,
-                            expected_value="Parser Invalid Return (Suggest)",
-                        )
-                        overall_status = False
-                else:
-                    overall_status = False  # Skip validation if parse fails/skips
-            except Exception as parse_e:
-                _sc_run_test(
-                    f"{test_name_parse} (Suggest Format)",
-                    lambda: False,
-                    test_results_sc,
-                    logger_sc,
-                    expected_value=f"Exception: {parse_e}",
-                )
-                overall_status = False
+                    if parsed_details_suggest:
+                        vals_ok = all([ parsed_details_suggest.get("name") == "Test Suggest Person", parsed_details_suggest.get("birth_date") == "1950", parsed_details_suggest.get("death_date") == "2000", parsed_details_suggest.get("gender") == "F", parsed_details_suggest.get("is_living") is False, parsed_details_suggest.get("birth_place") == "SuggestBirth Town", parsed_details_suggest.get("death_place") == "SuggestDeath City", parsed_details_suggest.get("person_id") == "12345", parsed_details_suggest.get("user_id") == "ABC-DEF" ])
+                        _, s3_val_stat, _ = _sc_run_test("Validation: Parsed Details Values (Suggest)", lambda: vals_ok, test_results_sc, logger_sc, expected_truthy=True)
+                        if s3_val_stat != "PASS": overall_status = False
+                    else: _sc_run_test(f"{test_name_parse} (Suggest Format)", lambda: False, test_results_sc, logger_sc, expected_value="Parser Invalid Return (Suggest)"); overall_status = False
+                else: overall_status = False
+            except Exception as parse_e: _sc_run_test(f"{test_name_parse} (Suggest Format)", lambda: False, test_results_sc, logger_sc, expected_value=f"Exception: {parse_e}"); overall_status = False
 
             # === Phase 4: Test API Helpers (Suggest, Facts User) ===
             logger_sc.info("--- Phase 4: Test API Helpers (Live) ---")
             # Test call_suggest_api
-            if (
-                target_tree_id
-                and target_owner_profile_id
-                and callable(call_suggest_api)
-            ):
-                suggest_criteria = {
-                    "first_name_raw": "John",
-                    "surname_raw": "Smith",
-                    "birth_year": 1900,
-                }
-                _, suggest_status, _ = _sc_run_test(
-                    "API Helper: call_suggest_api",
-                    lambda: call_suggest_api(
-                        session_manager_sc,
-                        target_tree_id,
-                        target_owner_profile_id,
-                        base_url_sc,
-                        suggest_criteria,
-                    ),
-                    test_results_sc,
-                    logger_sc,
-                    expected_type=list,
-                )  # Expect list, even if empty
-                if suggest_status != "PASS":
-                    overall_status = False
-            else:
-                _sc_run_test(
-                    "API Helper: call_suggest_api",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
-
+            if target_tree_id and target_owner_profile_id and callable(call_suggest_api):
+                suggest_criteria = { "first_name_raw": "John", "surname_raw": "Smith", "birth_year": 1900 }
+                _, suggest_status, _ = _sc_run_test("API Helper: call_suggest_api", lambda: call_suggest_api(session_manager_sc, target_tree_id, target_owner_profile_id, base_url_sc, suggest_criteria), test_results_sc, logger_sc, expected_type=list)
+                if suggest_status != "PASS": overall_status = False
+            else: _sc_run_test("API Helper: call_suggest_api", lambda: "Skipped", test_results_sc, logger_sc)
             # Test call_facts_user_api
-            facts_person_id = target_person_id_for_ladder  # Use the ladder test person ID if available
-            if (
-                target_tree_id
-                and target_owner_profile_id
-                and facts_person_id
-                and callable(call_facts_user_api)
-            ):
-                _, facts_status, _ = _sc_run_test(
-                    "API Helper: call_facts_user_api",
-                    lambda: call_facts_user_api(
-                        session_manager_sc,
-                        target_owner_profile_id,
-                        facts_person_id,
-                        target_tree_id,
-                        base_url_sc,
-                    ),
-                    test_results_sc,
-                    logger_sc,
-                    expected_type=dict,
-                )  # Expect dict (personResearch)
-                if facts_status != "PASS":
-                    overall_status = False
-            else:
-                missing_deps = []
-                if not target_tree_id:
-                    missing_deps.append("OwnerTreeID")
-                if not target_owner_profile_id:
-                    missing_deps.append("OwnerProfileID")
-                if not facts_person_id:
-                    missing_deps.append("TestPersonID (TESTING_PERSON_TREE_ID)")
-                if not callable(call_facts_user_api):
-                    missing_deps.append("Function callable")
-                logger_sc.warning(
-                    f"Skipping call_facts_user_api test. Missing: {', '.join(missing_deps)}"
-                )
-                _sc_run_test(
-                    "API Helper: call_facts_user_api",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
+            facts_person_id = target_person_id_for_ladder # Use ladder test person
+            if target_tree_id and target_owner_profile_id and facts_person_id and callable(call_facts_user_api):
+                _, facts_status, _ = _sc_run_test("API Helper: call_facts_user_api", lambda: call_facts_user_api(session_manager_sc, target_owner_profile_id, facts_person_id, target_tree_id, base_url_sc), test_results_sc, logger_sc, expected_type=dict)
+                if facts_status != "PASS": overall_status = False
+            else: logger_sc.warning(f"Skipping call_facts_user_api test. Missing deps."); _sc_run_test("API Helper: call_facts_user_api", lambda: "Skipped", test_results_sc, logger_sc)
 
             # === Phase 5: Test Relationship Ladder Parsing ===
-            logger_sc.info(
-                "--- Phase 5: Test Relationship Ladder Parsing (Live API) ---"
-            )
+            logger_sc.info("--- Phase 5: Test Relationship Ladder Parsing (Live API) ---")
             test_target_person_id = target_person_id_for_ladder
             test_target_tree_id = target_tree_id
             test_owner_name = target_owner_name
-            test_target_name = target_name_for_ladder  # Already set to fallback
+            test_target_name = target_name_for_ladder # Updated in phase 2 if possible
 
-            can_run_ladder_test_live = bool(
-                test_owner_name and test_target_person_id and test_target_tree_id
-            )
-            test_name_ladder_api = (
-                "API Helper: call_getladder_api"  # Updated name to reflect helper usage
-            )
-            test_name_format_ladder = (
-                "Function Call: format_api_relationship_path (HTML)"  # Clarified format
-            )
+            can_run_ladder_test_live = bool(test_owner_name and test_target_person_id and test_target_tree_id)
+            test_name_ladder_api = "API Helper: call_getladder_api"
+            test_name_format_ladder = "Function Call: format_api_relationship_path (HTML)"
 
             if not can_run_ladder_test_live:
-                missing_reqs = [
-                    n
-                    for n, v in [
-                        ("OwnerName", test_owner_name),
-                        ("TargetPersonID", test_target_person_id),
-                        ("TargetTreeID", test_target_tree_id),
-                    ]
-                    if not v
-                ]
-                logger_sc.warning(
-                    f"Skipping Live Ladder test: Missing prerequisites ({', '.join(missing_reqs)})."
-                )
-                _sc_run_test(
-                    test_name_ladder_api, lambda: "Skipped", test_results_sc, logger_sc
-                )
-                _sc_run_test(
-                    test_name_format_ladder,
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                )
+                logger_sc.warning(f"Skipping Live Ladder test: Missing prerequisites.")
+                _sc_run_test(test_name_ladder_api, lambda: "Skipped", test_results_sc, logger_sc)
+                _sc_run_test(test_name_format_ladder, lambda: "Skipped", test_results_sc, logger_sc)
             else:
-                # Use the helper function which includes logging/messages
-                ladder_response_raw = _sc_get_tree_ladder(
-                    cast(str, test_target_tree_id), cast(str, test_target_person_id)
-                )
-                # Evaluate based on the helper's return value
-                _, s5_api_status, _ = _sc_run_test(
-                    test_name_ladder_api,
-                    lambda r=ladder_response_raw: isinstance(r, str),
-                    test_results_sc,
-                    logger_sc,
-                    expected_truthy=True,
-                )
+                ladder_response_raw = _sc_get_tree_ladder(cast(str, test_target_tree_id), cast(str, test_target_person_id))
+                _, s5_api_status, _ = _sc_run_test(test_name_ladder_api, lambda r=ladder_response_raw: isinstance(r, str) and len(r) > 10, test_results_sc, logger_sc, expected_truthy=True)
 
-                if (
-                    s5_api_status == "PASS" and ladder_response_raw
-                ):  # Check if truthy too
+                if s5_api_status == "PASS" and ladder_response_raw:
                     owner_name_str = cast(str, test_owner_name)
                     target_name_str = cast(str, test_target_name)
-                    format_lambda = lambda: format_api_relationship_path(
-                        ladder_response_raw, owner_name_str, target_name_str
-                    )
-                    # Adjust expected_substrings based on your TESTING_PERSON_TREE_ID (e.g., mother)
+                    format_lambda = lambda: format_api_relationship_path(ladder_response_raw, owner_name_str, target_name_str)
+                    # --- Define Expected Substrings for Your Specific Test Case ---
+                    # !! IMPORTANT: Update these based on the KNOWN relationship
+                    #    between your owner profile and the TESTING_PERSON_TREE_ID !!
+                    # Example for Fraser Gault (Uncle):
                     expected_substrings = [
-                        target_name_str,
-                        "Mother of",
-                        owner_name_str,
-                        "\n  ↓\n",
-                        "Son of",
-                    ]  # Example
-                    logger_sc.info(
-                        f"Expecting relationship format containing: {expected_substrings}"
-                    )
+                        f"{target_name_str} is {owner_name_str}'s uncle:", # Summary line check
+                        f"- {target_name_str}'s brother is Derrick Wardie Gault", # Example intermediate step
+                        f"- {owner_name_str} is Derrick Wardie Gault's son." # Example final step
+                    ]
+                    logger_sc.info(f"Expecting relationship format containing: {expected_substrings}")
+
                     _, s5_format_status, _ = _sc_run_test(
                         test_name_format_ladder,
                         format_lambda,
                         test_results_sc,
                         logger_sc,
                         expected_type=str,
-                        expected_contains=expected_substrings,
+                        expected_contains=expected_substrings, # Check for key parts
                     )
                     if s5_format_status == "FAIL":
                         overall_status = False
                 else:
-                    logger_sc.warning(
-                        f"Skipping {test_name_format_ladder} because prerequisite API call failed or returned None/invalid."
-                    )
-                    # Don't mark API test as skipped if it returned None/invalid, it failed the check
-                    if (
-                        s5_api_status != "FAIL"
-                    ):  # If it wasn't already marked fail, log skip
-                        _sc_run_test(
-                            test_name_ladder_api,
-                            lambda: "Skipped",
-                            test_results_sc,
-                            logger_sc,
-                            expected_value="Depends on previous run",
-                        )  # Log skip for clarity
-                    _sc_run_test(
-                        test_name_format_ladder,
-                        lambda: "Skipped",
-                        test_results_sc,
-                        logger_sc,
-                    )
-                    if s5_api_status != "SKIPPED":
-                        overall_status = False  # Mark overall fail if API call didn't explicitly skip
+                    logger_sc.warning(f"Skipping {test_name_format_ladder} because API call failed or invalid.")
+                    _sc_run_test(test_name_format_ladder, lambda: "Skipped", test_results_sc, logger_sc)
+                    if s5_api_status != "SKIPPED": overall_status = False
 
         except Exception as e:
-            logger_sc.critical(
-                "\n--- CRITICAL ERROR during self-check live tests ---", exc_info=True
-            )
-            _sc_run_test(
-                "Self-Check Live Execution",
-                lambda: False,
-                test_results_sc,
-                logger_sc,
-                expected_value="CRITICAL EXCEPTION OCCURRED",
-            )
+            logger_sc.critical("\n--- CRITICAL ERROR during self-check live tests ---", exc_info=True)
+            _sc_run_test("Self-Check Live Execution", lambda: False, test_results_sc, logger_sc, expected_value="CRITICAL EXCEPTION OCCURRED")
             overall_status = False
         finally:
-            if session_manager_sc:
-                logger_sc.info("--- Finalizing: Closing Session ---")
-                session_manager_sc.close_sess()
-            else:
-                logger_sc.info("--- Finalizing: No session object to close ---")
+            if session_manager_sc: logger_sc.info("--- Finalizing: Closing Session ---"); session_manager_sc.close_sess()
+            else: logger_sc.info("--- Finalizing: No session object to close ---")
 
-    else:  # Not can_run_live_tests
-        logger_sc.warning(
-            "Skipping Live API tests due to missing dependencies or prerequisite failures."
-        )
-        phases_to_skip = [
-            "SessionManager.start_sess()",
-            "SessionManager.ensure_session_ready()",
-            "Check Target Tree ID Found",
-            "Check Target Owner Name Found",
-            "Check Target Owner Profile ID Found",
-            "API Call: Get Target Profile Details (app-api)",
-            "Check Target Name Found in API Resp",
-            "Function Call: parse_ancestry_person_details() (with Facts)",
-            "Validation: Parsed Details Keys (Facts)",
-            "Validation: Parsed Name Match (Facts)",
-            "API Helper: call_suggest_api",
-            "API Helper: call_facts_user_api",
-            "API Helper: call_getladder_api",
-            "Function Call: format_api_relationship_path (HTML)",
-            # Static tests in Phase 0b and Phase 3b will still run
-        ]
+    else: # Not can_run_live_tests
+        logger_sc.warning("Skipping Live API tests due to missing dependencies or prerequisite failures.")
+        # (Skip logic remains the same)
+        phases_to_skip = ["SessionManager.start_sess()", "SessionManager.ensure_session_ready()", "Check Target Tree ID Found", "Check Target Owner Name Found", "Check Target Owner Profile ID Found", "API Call: Get Target Profile Details (app-api)", "Check Target Name Found in API Resp", "Function Call: parse_ancestry_person_details() (with Facts)", "Validation: Parsed Details Keys (Facts)", "Validation: Parsed Name Match (Facts)", "API Helper: call_suggest_api", "API Helper: call_facts_user_api", "API Helper: call_getladder_api", "Function Call: format_api_relationship_path (HTML)", ]
         existing_test_names = {name for name, _, _ in test_results_sc}
         for test_name in phases_to_skip:
-            if test_name not in existing_test_names:
-                _sc_run_test(test_name, lambda: "Skipped", test_results_sc, logger_sc)
+            if test_name not in existing_test_names: _sc_run_test(test_name, lambda: "Skipped", test_results_sc, logger_sc)
+
 
     # --- Print Formatted Summary ---
     _sc_print_summary(test_results_sc, overall_status, logger_sc)
 
-    final_overall_status = overall_status and not any(
-        status == "FAIL" for _, status, _ in test_results_sc
-    )
+    final_overall_status = overall_status and not any(status == "FAIL" for _, status, _ in test_results_sc)
     return final_overall_status
-
-
 # End of self_check
 
 # --- Main Execution Block ---
@@ -2626,4 +2160,3 @@ if __name__ == "__main__":
 # End of __main__ block
 
 # End of api_utils.py
-# --- END OF FILE api_utils.py ---

@@ -352,3 +352,302 @@
 12:13:08 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
 12:13:16 INF [action11 _call_di 1619] Calling: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
 12:13:18 CRI [action11 main     2233] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+12:18:10 INF [action11 <module> 2247] Starting action11.py as standalone script
+                                      
+12:18:19 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:18:20 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:18:21 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:18:22 INF [utils    _retriev 1724] My tree id: 175946702
+12:18:23 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:18:34 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+12:18:35 ERR [action11 _handle_ 2122] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:18:35 INF [action11 main     2224] --- Action 11 finished successfully ---
+12:22:10 INF [action11 <module> 2250] Starting action11.py as standalone script
+                                      
+12:22:20 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:22:20 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:22:22 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:22:23 INF [utils    _retriev 1724] My tree id: 175946702
+12:22:24 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:22:30 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+12:22:32 ERR [action11 _handle_ 2125] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:22:32 INF [action11 main     2227] --- Action 11 finished successfully ---
+12:30:01 INF [action11 <module> 2249] Starting action11.py as standalone script
+                                      
+12:30:10 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:30:10 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:30:12 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:30:13 INF [utils    _retriev 1724] My tree id: 175946702
+12:30:14 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:31:43 ERR [action11 _handle_ 2125] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:31:43 INF [action11 main     2227] --- Action 11 finished successfully ---
+12:32:45 INF [action11 <module> 2260] Starting action11.py as standalone script
+                                      
+12:32:55 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:32:56 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:32:57 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:32:58 INF [utils    _retriev 1724] My tree id: 175946702
+12:32:59 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:34:23 ERR [action11 _handle_ 2136] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:34:23 INF [action11 main     2238] --- Action 11 finished successfully ---
+12:35:13 INF [action11 <module> 2316] Starting action11.py as standalone script
+                                      
+12:35:23 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:35:24 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:35:25 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:35:26 INF [utils    _retriev 1724] My tree id: 175946702
+12:35:27 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:36:56 ERR [action11 _handle_ 2192] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:36:56 INF [action11 main     2294] --- Action 11 finished successfully ---
+12:38:44 INF [action11 <module> 2334] Starting action11.py as standalone script
+                                      
+12:38:54 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:38:55 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:38:56 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:38:57 INF [utils    _retriev 1724] My tree id: 175946702
+12:38:58 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:40:32 ERR [action11 _handle_ 2210] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:40:32 INF [action11 main     2312] --- Action 11 finished successfully ---
+12:51:02 INF [action11 <module> 2352] Starting action11.py as standalone script
+                                      
+12:51:11 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:51:12 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:51:13 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:51:14 INF [utils    _retriev 1724] My tree id: 175946702
+12:51:15 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:51:19 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+12:51:21 ERR [action11 _handle_ 2210] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:51:21 INF [action11 _handle_ 2217] Using hardcoded relationship path for Fraser Gault
+12:51:21 INF [action11 _handle_ 2224] --- Hardcoded Relationship Path ---
+12:51:21 INF [action11 _handle_ 2226] Fraser Gault is Wayne Gault's Uncle
+12:51:21 INF [action11 _handle_ 2226] Fraser Gault
+12:51:21 INF [action11 _handle_ 2226] -> whose father is James Gault
+12:51:21 INF [action11 _handle_ 2226] -> whose son is Derrick Wardie Gault
+12:51:21 INF [action11 _handle_ 2226] -> whose son is Wayne Gault
+12:51:21 INF [action11 _handle_ 2230] ----------------------------
+12:51:21 INF [action11 main     2330] --- Action 11 finished successfully ---
+12:51:45 INF [action11 <module> 2352] Starting action11.py as standalone script
+                                      
+12:53:59 INF [action11 <module> 2325] Starting action11.py as standalone script
+                                      
+12:54:09 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:54:10 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:54:11 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:54:12 INF [utils    _retriev 1724] My tree id: 175946702
+12:54:13 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:54:18 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+12:54:20 ERR [action11 _handle_ 2201] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:54:20 INF [action11 main     2303] --- Action 11 finished successfully ---
+12:54:56 INF [action11 <module> 2338] Starting action11.py as standalone script
+                                      
+12:55:06 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:55:06 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:55:07 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:55:08 INF [utils    _retriev 1724] My tree id: 175946702
+12:55:09 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:55:15 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+12:55:18 ERR [action11 _handle_ 2214] Cannot calculate relationship for Fraser Gault. Conditions not met.
+12:55:18 INF [action11 main     2316] --- Action 11 finished successfully ---
+12:56:15 INF [action11 <module> 2338] Starting action11.py as standalone script
+                                      
+12:56:24 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:56:25 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:56:27 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:56:28 INF [utils    _retriev 1724] My tree id: 175946702
+12:56:28 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:09:28 INF [action11 <module> 2339] Starting action11.py as standalone script
+                                      
+13:09:38 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:09:38 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:09:40 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:09:40 INF [utils    _retriev 1724] My tree id: 175946702
+13:09:41 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:11:10 ERR [action11 _handle_ 2215] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:11:10 INF [action11 main     2317] --- Action 11 finished successfully ---
+13:12:30 INF [action11 <module> 2339] Starting action11.py as standalone script
+                                      
+13:12:40 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:12:41 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:12:42 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:12:43 INF [utils    _retriev 1724] My tree id: 175946702
+13:12:44 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:14:12 ERR [action11 _handle_ 2215] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:14:12 INF [action11 main     2317] --- Action 11 finished successfully ---
+13:14:46 INF [action11 <module> 2357] Starting action11.py as standalone script
+                                      
+13:14:56 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:14:57 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:14:58 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:14:59 INF [utils    _retriev 1724] My tree id: 175946702
+13:15:00 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:16:30 ERR [action11 _handle_ 2233] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:16:30 INF [action11 main     2335] --- Action 11 finished successfully ---
+13:16:59 INF [action11 <module> 2357] Starting action11.py as standalone script
+                                      
+13:17:08 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:17:09 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:17:10 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:17:11 INF [utils    _retriev 1724] My tree id: 175946702
+13:17:12 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:18:41 ERR [action11 _handle_ 2233] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:18:41 INF [action11 main     2335] --- Action 11 finished successfully ---
+13:21:35 INF [action11 <module> 2359] Starting action11.py as standalone script
+                                      
+13:21:43 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:21:44 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:21:45 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:21:46 INF [utils    _retriev 1724] My tree id: 175946702
+13:21:47 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:22:05 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+13:22:08 ERR [action11 _handle_ 2235] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:22:08 INF [action11 main     2337] --- Action 11 finished successfully ---
+13:22:44 INF [action11 <module> 2359] Starting action11.py as standalone script
+                                      
+13:22:51 CRI [utils    ensure_s 1211] BaseException in _perform_readiness_checks: KeyboardInterrupt: 
+13:24:06 INF [action11 <module> 2375] Starting action11.py as standalone script
+                                      
+13:24:15 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:24:16 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:24:17 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:24:18 INF [utils    _retriev 1724] My tree id: 175946702
+13:24:19 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:25:56 ERR [action11 _handle_ 2251] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:25:56 INF [action11 main     2353] --- Action 11 finished successfully ---
+13:26:52 INF [action11 <module> 2379] Starting action11.py as standalone script
+                                      
+13:27:03 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:27:04 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:27:05 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:27:06 INF [utils    _retriev 1724] My tree id: 175946702
+13:27:07 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:28:47 ERR [action11 _handle_ 2255] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:28:47 INF [action11 main     2357] --- Action 11 finished successfully ---
+13:29:37 INF [action11 <module> 2359] Starting action11.py as standalone script
+                                      
+13:29:49 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:29:50 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:29:51 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:29:52 INF [utils    _retriev 1724] My tree id: 175946702
+13:29:53 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:31:40 ERR [action11 _handle_ 2235] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:31:40 INF [action11 main     2337] --- Action 11 finished successfully ---
+13:33:23 INF [action11 <module> 2359] Starting action11.py as standalone script
+                                      
+13:33:33 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:33:34 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:33:35 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:33:36 INF [utils    _retriev 1724] My tree id: 175946702
+13:33:37 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:35:28 ERR [action11 _handle_ 2235] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:35:28 INF [action11 main     2337] --- Action 11 finished successfully ---
+13:35:52 INF [action11 <module> 2371] Starting action11.py as standalone script
+                                      
+13:36:02 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:36:03 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:36:04 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:36:05 INF [utils    _retriev 1724] My tree id: 175946702
+13:36:06 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:47:13 ERR [action11 _handle_ 2247] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:47:13 INF [action11 main     2349] --- Action 11 finished successfully ---
+13:48:33 INF [action11 <module> 2359] Starting action11.py as standalone script
+                                      
+13:48:43 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:48:44 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:48:45 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:48:46 INF [utils    _retriev 1724] My tree id: 175946702
+13:48:47 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:48:57 ERR [action11 _handle_ 2235] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:48:57 INF [action11 main     2337] --- Action 11 finished successfully ---
+13:54:54 INF [action11 <module> 2363] Starting action11.py as standalone script
+                                      
+13:55:04 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+13:55:05 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+13:55:06 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+13:55:07 INF [utils    _retriev 1724] My tree id: 175946702
+13:55:08 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+13:55:16 INF [action11 _get_sea 408 ] Surname (Raw API Param): ''
+13:55:19 ERR [action11 _handle_ 2239] Cannot calculate relationship for Fraser Gault. Conditions not met.
+13:55:19 INF [action11 main     2341] --- Action 11 finished successfully ---
+14:26:14 INF [action11 <module> 2354] Starting action11.py as standalone script
+                                      
+14:26:24 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+14:26:25 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+14:26:26 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+14:26:27 INF [utils    _retriev 1724] My tree id: 175946702
+14:26:28 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+14:26:42 ERR [action11 _handle_ 2230] Cannot calculate relationship for Fraser Gault. Conditions not met.
+14:26:42 INF [action11 main     2332] --- Action 11 finished successfully ---
+14:31:01 INF [action11 <module> 2354] Starting action11.py as standalone script
+                                      
+14:31:11 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+14:31:12 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+14:31:13 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+14:31:14 INF [utils    _retriev 1724] My tree id: 175946702
+14:31:15 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+14:31:26 ERR [action11 _handle_ 2230] Cannot calculate relationship for Fraser Gault. Conditions not met.
+14:31:26 INF [action11 main     2332] --- Action 11 finished successfully ---
+14:45:57 INF [action11 <module> 2354] Starting action11.py as standalone script
+                                      
+14:46:06 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+14:46:07 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+14:46:09 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+14:46:10 INF [utils    _retriev 1724] My tree id: 175946702
+14:46:11 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+14:46:20 ERR [action11 _handle_ 2230] Cannot calculate relationship for Fraser Gault. Conditions not met.
+14:46:20 INF [action11 main     2332] --- Action 11 finished successfully ---
+14:51:02 INF [action11 <module> 2294] Starting action11.py as standalone script
+                                      
+14:51:12 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+14:51:13 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+14:51:14 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+14:51:15 INF [utils    _retriev 1724] My tree id: 175946702
+14:51:16 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+14:53:14 ERR [action11 _handle_ 2168] Cannot calculate relationship for Fraser Gault. Conditions not met or IDs missing/mismatched.
+14:53:14 INF [action11 main     2272] --- Action 11 finished successfully ---
+14:56:35 INF [action11 <module> 2313] Starting action11.py as standalone script
+                                      
+14:56:44 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+14:56:45 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+14:56:46 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+14:56:47 INF [utils    _retriev 1724] My tree id: 175946702
+14:56:48 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+14:57:05 WAR [action11 _handle_ 2079] Detailed data fetched, but essential relationship IDs (PersonId/TreeId or UserId) missing. Will attempt fallback.
+14:57:05 INF [action11 _display 1429] Calculating Tree relationship path for Fraser Gault (102281560744) to Wayne Gault (175946702)
+14:57:07 INF [action11 _display 1474] --- Tree Relationship Path ---
+14:57:07 INF [action11 _display 1476] Fraser Gault is Wayne Gault's uncle:
+14:57:07 INF [action11 _display 1476] - Fraser Gault's brother is Derrick Wardie Gault 1943.
+14:57:07 INF [action11 _display 1476] - Wayne Gault is Derrick Wardie Gault 1943's son.
+14:57:07 INF [action11 _display 1480] ----------------------------
+14:57:07 INF [action11 main     2291] --- Action 11 finished successfully ---
+15:00:29 INF [action11 <module> 2309] Starting action11.py as standalone script
+                                      
+15:00:39 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+15:00:40 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+15:00:41 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+15:00:42 INF [utils    _retriev 1724] My tree id: 175946702
+15:00:43 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+15:00:50 WAR [action11 _handle_ 2075] Detailed data fetched, but essential relationship IDs (PersonId/TreeId or UserId) missing. Will attempt fallback.
+15:00:50 INF [action11 _display 1428] Calculating Tree relationship path for Fraser Gault (102281560744) to Wayne Gault (175946702)
+15:00:51 INF [action11 main     2287] --- Action 11 finished successfully ---
+15:07:18 INF [action11 <module> 2315] Starting action11.py as standalone script
+                                      
+15:07:27 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+15:07:28 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+15:07:29 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+15:07:30 INF [utils    _retriev 1724] My tree id: 175946702
+15:07:31 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+15:07:39 INF [action11 _call_di 1620] Calling direct TreesUI List API: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fraser
+15:07:40 WAR [action11 _handle_ 2081] Detailed data fetched, but essential relationship IDs (PersonId/TreeId or UserId) missing. Will attempt fallback.
+15:07:40 INF [action11 _display 1428] Calculating Tree relationship path for Fraser Gault (102281560744) to Wayne Gault (175946702)
+15:07:42 INF [action11 main     2293] --- Action 11 finished successfully ---
+15:15:33 INF [action11 <module> 2342] Starting action11.py as standalone script
+                                      
+15:15:42 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+15:15:43 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+15:15:44 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+15:15:45 INF [utils    _retriev 1724] My tree id: 175946702
+15:15:46 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+15:15:53 INF [action11 _call_di 1620] Calling direct TreesUI List API: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fraser
+15:15:55 WAR [action11 _handle_ 2084] Detailed data fetched, but essential relationship IDs (PersonId/TreeId or UserId) missing. Relationship calculation will be skipped.
+15:15:55 ERR [action11 _handle_ 2218] Cannot calculate relationship for Fraser Gault. Conditions not met or essential IDs missing (Source: Detailed Fetch Failed (Missing IDs)). See previous debug logs for ID values.
+15:15:55 INF [action11 main     2320] --- Action 11 finished successfully ---
