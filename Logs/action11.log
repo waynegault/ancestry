@@ -1,0 +1,354 @@
+09:19:33 INF [action11 <module> 43  ] Successfully imported config_instance and selenium_config.
+09:19:34 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+09:19:34 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+09:19:34 INF [action11 <module> 112 ] Successfully imported functions from gedcom_utils.
+09:19:34 INF [action11 <module> 147 ] Successfully imported required functions from api_utils.
+09:19:34 INF [action11 <module> 193 ] Successfully imported required components from utils.
+09:19:34 INF [action11 <module> 2264] Starting action11.py as main script
+09:19:34 INF [action11 main     2236] --- Action 11: API Report Starting ---
+09:19:34 INF [action11 handle_a 2151] 
+                                      --- Action 11: Person Details & Relationship (Ancestry API Report) ---
+09:19:34 INF [chromedr init_web 198 ] User data directory (no --profile-directory):
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\chrome_automation_profile
+09:19:34 INF [chromedr init_web 241 ] [init_webdvr] Attempting uc.Chrome() self-patching (attempt 1)...
+09:19:36 INF [chromedr init_web 246 ] [init_webdvr] uc.Chrome() self-patching succeeded in 2.36s (attempt 1)
+09:19:44 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+09:19:45 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+09:19:45 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+09:19:46 INF [utils    _retriev 1724] My tree id: 175946702
+09:19:47 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+09:19:47 INF [action11 handle_a 2190] --- Action 11: Phase 1: Get Criteria & Search ---
+09:19:47 INF [action11 _get_sea 302 ] --- Getting search criteria from user ---
+09:23:58 INF [action11 <module> 43  ] Successfully imported config_instance and selenium_config.
+09:23:58 INF [cache    <module> 36  ] Cache directory configured: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache
+09:23:58 INF [cache    <module> 60  ] DiskCache instance initialized successfully at C:\Users\wayne\GitHub\Python\Projects\Ancestry\Cache.
+09:23:58 INF [action11 <module> 112 ] Successfully imported functions from gedcom_utils.
+09:23:58 INF [action11 <module> 147 ] Successfully imported required functions from api_utils.
+09:23:58 INF [action11 <module> 193 ] Successfully imported required components from utils.
+09:23:58 INF [action11 <module> 2274] Starting action11.py as main script
+09:23:58 INF [action11 main     2242] --- Action 11: API Report Starting ---
+09:23:58 INF [action11 handle_a 2157] 
+                                      --- Action 11: Person Details & Relationship (Ancestry API Report) ---
+09:23:58 INF [chromedr init_web 198 ] User data directory (no --profile-directory):
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\chrome_automation_profile
+09:23:58 INF [chromedr init_web 241 ] [init_webdvr] Attempting uc.Chrome() self-patching (attempt 1)...
+09:24:01 INF [chromedr init_web 246 ] [init_webdvr] uc.Chrome() self-patching succeeded in 2.39s (attempt 1)
+09:24:08 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+09:24:09 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+09:24:10 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+09:24:10 INF [utils    _retriev 1724] My tree id: 175946702
+09:24:11 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+09:24:11 INF [action11 handle_a 2196] --- Action 11: Phase 1: Get Criteria & Search ---
+09:24:11 INF [action11 _get_sea 303 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+09:24:35 INF [action11 _get_sea 316 ] Input - First Name: 'fra'
+09:24:35 INF [action11 _get_sea 317 ] Input - Surname: 'gault'
+09:24:35 INF [action11 _get_sea 318 ] Input - Gender: 'm' (Input was: 'M')
+09:24:35 INF [action11 _get_sea 319 ] Input - Birth Date/Year: '1941'
+09:24:35 INF [action11 _get_sea 320 ] Input - Birth Place: ''
+09:24:35 INF [action11 _get_sea 321 ] Input - Death Date/Year: 'None'
+09:24:35 INF [action11 _get_sea 388 ] 
+                                      --- Final Search Criteria Prepared ---
+09:24:35 INF [action11 _get_sea 405 ] First Name (Scoring): 'fra'
+09:24:35 INF [action11 _get_sea 405 ] Surname (Scoring): 'gault'
+09:24:35 INF [action11 _get_sea 405 ] Birth Year: 1941
+09:24:35 INF [action11 _get_sea 405 ] Birth Place (Scoring): None
+09:24:35 INF [action11 _get_sea 405 ] Death Year: None
+09:24:35 INF [action11 _get_sea 405 ] Death Place (Scoring): None
+09:24:35 INF [action11 _get_sea 405 ] Gender: 'm'
+09:24:35 INF [action11 _handle_ 1744] Making direct TreesUI List API call with tree_id=175946702
+09:24:35 INF [action11 _call_di 1632] Calling specific TreesUI List API URL: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+09:24:36 INF [action11 _call_di 1678] Direct TreesUI List API call successful, received 4 results.
+09:24:36 INF [action11 _parse_t 1795] Parsing 4 items from TreesUI List API response.
+09:24:36 INF [action11 _parse_t 1950] Parsed 4 suggestions.
+09:24:36 INF [action11 _handle_ 1775] Passing all 4 parsed suggestions for scoring.
+09:24:36 INF [action11 handle_a 2209] --- Action 11: Phase 2: Score, Select & Initial Comparison ---
+09:24:36 INF [action11 _process 523 ] 
+                                      --- Filtering and Scoring 4 Candidates ---
+09:24:36 INF [action11 _process 529 ] Using scoring function: calculate_match_score
+09:24:36 INF [action11 _process 537 ] Gender scoring weight from config ('gender_match'): 25
+09:24:36 INF [action11 _process 680 ] Scored 4 candidates.
+09:24:36 INF [action11 _process 682 ] Top candidate score: 150
+09:24:36 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:24:36 INF [action11 _display 778 ] Displaying ID: 102281560744, Score: 150, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 20, 'bdate': 0, 'bplace': 0, 'dyear': 0, 'ddate': 15, 'dplace': 15, 'bonus': 25, 'gender_match': 25}
+09:24:36 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:24:36 INF [action11 _display 778 ] Displaying ID: 102281560730, Score: 100, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 0, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:24:36 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:24:36 INF [action11 _display 778 ] Displaying ID: 102281560745, Score: 100, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 0, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:24:36 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:24:36 INF [action11 _display 778 ] Displaying ID: 102553995370, Score: 100, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 0, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:24:36 INF [action11 _select_ 829 ] Highest scoring candidate selected: ID 102281560744, Score 150
+09:24:36 INF [action11 handle_a 2217] --- Action 11: Phase 3: Fetch Detailed Data (for Family/Relationships) ---
+09:24:37 INF [action11 handle_a 2224] --- Action 11: Phase 4: Display Supplementary Info ---
+09:24:37 INF [action11 _handle_ 2044] --- Phase 4/5: Displaying Supplementary Info (Family & Relationships) ---
+09:24:37 INF [action11 print_re 1394] Parents:
+09:24:37 INF [action11 print_re 1428] - James Gault (1906–1988)
+09:24:37 INF [action11 print_re 1428] - 'dolly' Clara Alexina Fraser (1908–2008)
+09:24:37 INF [action11 print_re 1394] Siblings:
+09:24:37 INF [action11 print_re 1428] - Thomas Gault (1929–1929)
+09:24:37 INF [action11 print_re 1428] - Margaret Milne Gault (1930–2017)
+09:24:37 INF [action11 print_re 1428] - Sheila Gault (1931–2022)
+09:24:37 INF [action11 print_re 1428] - Helen Gault (b. 1933)
+09:24:37 INF [action11 print_re 1428] - James Thomas Gault (1935–1996)
+09:24:37 INF [action11 print_re 1428] - Alexander Gault (1937–2024)
+09:24:37 INF [action11 print_re 1428] - Henry Gault (1939–2021)
+09:24:37 INF [action11 print_re 1428] - Derrick Wardie Gault (b. 1943)
+09:24:37 INF [action11 print_re 1428] - William 'billy' George Gault (b. 1947)
+09:24:37 INF [action11 print_re 1428] - Evelyn Jane Gault (1949–2025)
+09:24:37 INF [action11 print_re 1394] Spouses:
+09:24:37 CRI [action11 main     2260] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+09:27:31 INF [action11 <module> 2281] Starting action11.py as main script
+09:27:31 INF [action11 main     2249] --- Action 11: API Report Starting ---
+09:27:31 INF [action11 handle_a 2164] 
+                                      --- Action 11: Person Details & Relationship (Ancestry API Report) ---
+09:27:31 INF [chromedr init_web 198 ] User data directory (no --profile-directory):
+                                      C:\Users\wayne\AppData\Local\Google\Chrome\chrome_automation_profile
+09:27:31 INF [chromedr init_web 241 ] [init_webdvr] Attempting uc.Chrome() self-patching (attempt 1)...
+09:27:33 INF [chromedr init_web 246 ] [init_webdvr] uc.Chrome() self-patching succeeded in 2.40s (attempt 1)
+09:27:40 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+09:27:41 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+09:27:42 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+09:27:43 INF [utils    _retriev 1724] My tree id: 175946702
+09:27:44 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+09:27:44 INF [action11 handle_a 2203] --- Action 11: Phase 1: Get Criteria & Search ---
+09:28:08 INF [action11 _get_sea 316 ] Input - First Name: 'fra'
+09:28:08 INF [action11 _get_sea 317 ] Input - Surname: 'gault'
+09:28:08 INF [action11 _get_sea 318 ] Input - Gender: 'm' (Input was: 'M')
+09:28:08 INF [action11 _get_sea 319 ] Input - Birth Date/Year: '1941'
+09:28:08 INF [action11 _get_sea 320 ] Input - Birth Place: 'banff'
+09:28:08 INF [action11 _get_sea 321 ] Input - Death Date/Year: 'None'
+09:28:08 INF [action11 _get_sea 388 ] 
+                                      --- Final Search Criteria Prepared ---
+09:28:08 INF [action11 _get_sea 405 ] First Name (Scoring): 'fra'
+09:28:08 INF [action11 _get_sea 405 ] Surname (Scoring): 'gault'
+09:28:08 INF [action11 _get_sea 405 ] Birth Year: 1941
+09:28:08 INF [action11 _get_sea 405 ] Birth Place (Scoring): 'banff'
+09:28:08 INF [action11 _get_sea 405 ] Death Year: None
+09:28:08 INF [action11 _get_sea 405 ] Death Place (Scoring): None
+09:28:08 INF [action11 _get_sea 405 ] Gender: 'm'
+09:28:08 INF [action11 _handle_ 1744] Making direct TreesUI List API call with tree_id=175946702
+09:28:08 INF [action11 _call_di 1632] Calling specific TreesUI List API URL: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+09:28:09 INF [action11 _call_di 1678] Direct TreesUI List API call successful, received 4 results.
+09:28:09 INF [action11 _parse_t 1798] Parsing 4 items from TreesUI List API response.
+09:28:09 INF [action11 _parse_t 1953] Parsed 4 suggestions.
+09:28:09 INF [action11 _handle_ 1778] Passing all 4 parsed suggestions for scoring.
+09:28:09 INF [action11 handle_a 2216] --- Action 11: Phase 2: Score, Select & Initial Comparison ---
+09:28:09 INF [action11 _process 523 ] 
+                                      --- Filtering and Scoring 4 Candidates ---
+09:28:09 INF [action11 _process 529 ] Using scoring function: calculate_match_score
+09:28:09 INF [action11 _process 537 ] Gender scoring weight from config ('gender_match'): 25
+09:28:09 INF [action11 _process 680 ] Scored 4 candidates.
+09:28:09 INF [action11 _process 682 ] Top candidate score: 165
+09:28:09 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:28:09 INF [action11 _display 778 ] Displaying ID: 102281560744, Score: 165, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 20, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 15, 'dplace': 15, 'bonus': 25, 'gender_match': 25}
+09:28:09 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:28:09 INF [action11 _display 778 ] Displaying ID: 102281560730, Score: 115, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:28:09 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:28:09 INF [action11 _display 778 ] Displaying ID: 102281560745, Score: 115, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:28:09 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:28:09 INF [action11 _display 778 ] Displaying ID: 102553995370, Score: 115, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:28:09 INF [action11 _select_ 829 ] Highest scoring candidate selected: ID 102281560744, Score 165
+09:28:09 INF [action11 handle_a 2224] --- Action 11: Phase 3: Fetch Detailed Data (for Family/Relationships) ---
+09:28:10 INF [action11 handle_a 2231] --- Action 11: Phase 4: Display Supplementary Info ---
+09:28:10 INF [action11 _handle_ 2051] --- Phase 4/5: Displaying Supplementary Info (Family & Relationships) ---
+09:28:10 INF [action11 print_re 1394] Parents:
+09:28:10 INF [action11 print_re 1428] - James Gault (1906–1988)
+09:28:10 INF [action11 print_re 1428] - 'dolly' Clara Alexina Fraser (1908–2008)
+09:28:10 INF [action11 print_re 1394] Siblings:
+09:28:10 INF [action11 print_re 1428] - Thomas Gault (1929–1929)
+09:28:10 INF [action11 print_re 1428] - Margaret Milne Gault (1930–2017)
+09:28:10 INF [action11 print_re 1428] - Sheila Gault (1931–2022)
+09:28:10 INF [action11 print_re 1428] - Helen Gault (b. 1933)
+09:28:10 INF [action11 print_re 1428] - James Thomas Gault (1935–1996)
+09:28:10 INF [action11 print_re 1428] - Alexander Gault (1937–2024)
+09:28:10 INF [action11 print_re 1428] - Henry Gault (1939–2021)
+09:28:10 INF [action11 print_re 1428] - Derrick Wardie Gault (b. 1943)
+09:28:10 INF [action11 print_re 1428] - William 'billy' George Gault (b. 1947)
+09:28:10 INF [action11 print_re 1428] - Evelyn Jane Gault (1949–2025)
+09:28:10 INF [action11 print_re 1394] Spouses:
+09:28:10 CRI [action11 main     2267] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+09:35:01 INF [action11 <module> 2280] Starting action11.py as standalone script
+09:35:10 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+09:35:10 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+09:35:11 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+09:35:12 INF [utils    _retriev 1724] My tree id: 175946702
+09:35:13 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+09:35:13 INF [action11 handle_a 2200] --- Action 11: Phase 1: Get Criteria & Search ---
+09:35:37 INF [action11 _get_sea 316 ] Input - First Name: 'fra'
+09:35:37 INF [action11 _get_sea 317 ] Input - Surname: 'gault'
+09:35:37 INF [action11 _get_sea 318 ] Input - Gender: 'm' (Input was: 'M')
+09:35:37 INF [action11 _get_sea 319 ] Input - Birth Date/Year: '1941'
+09:35:37 INF [action11 _get_sea 320 ] Input - Birth Place: 'banff'
+09:35:37 INF [action11 _get_sea 321 ] Input - Death Date/Year: 'None'
+09:35:37 INF [action11 _get_sea 388 ] 
+                                      --- Final Search Criteria Prepared ---
+09:35:37 INF [action11 _get_sea 405 ] First Name (Scoring): 'fra'
+09:35:37 INF [action11 _get_sea 405 ] Surname (Scoring): 'gault'
+09:35:37 INF [action11 _get_sea 405 ] Birth Year: 1941
+09:35:37 INF [action11 _get_sea 405 ] Birth Place (Scoring): 'banff'
+09:35:37 INF [action11 _get_sea 405 ] Death Year: None
+09:35:37 INF [action11 _get_sea 405 ] Death Place (Scoring): None
+09:35:37 INF [action11 _get_sea 405 ] Gender: 'm'
+09:35:37 INF [action11 _handle_ 1744] Making direct TreesUI List API call with tree_id=175946702
+09:35:37 INF [action11 _call_di 1632] Calling specific TreesUI List API URL: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+09:35:38 INF [action11 _call_di 1678] Direct TreesUI List API call successful, received 4 results.
+09:35:38 INF [action11 _parse_t 1798] Parsing 4 items from TreesUI List API response.
+09:35:38 INF [action11 _parse_t 1953] Parsed 4 suggestions.
+09:35:38 INF [action11 _handle_ 1778] Passing all 4 parsed suggestions for scoring.
+09:35:38 INF [action11 handle_a 2213] --- Action 11: Phase 2: Score, Select & Initial Comparison ---
+09:35:38 INF [action11 _process 523 ] 
+                                      --- Filtering and Scoring 4 Candidates ---
+09:35:38 INF [action11 _process 529 ] Using scoring function: calculate_match_score
+09:35:38 INF [action11 _process 537 ] Gender scoring weight from config ('gender_match'): 25
+09:35:38 INF [action11 _process 680 ] Scored 4 candidates.
+09:35:38 INF [action11 _process 682 ] Top candidate score: 165
+09:35:38 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:35:38 INF [action11 _display 778 ] Displaying ID: 102281560744, Score: 165, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 20, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 15, 'dplace': 15, 'bonus': 25, 'gender_match': 25}
+09:35:38 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:35:38 INF [action11 _display 778 ] Displaying ID: 102281560730, Score: 115, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:35:38 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:35:38 INF [action11 _display 778 ] Displaying ID: 102281560745, Score: 115, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:35:38 INF [action11 _display 733 ] Fixed gender score from reason: 25
+09:35:38 INF [action11 _display 778 ] Displaying ID: 102553995370, Score: 115, FieldScores: {'givn': 25, 'surn': 25, 'gender': 25, 'byear': 0, 'bdate': 0, 'bplace': 15, 'dyear': 0, 'ddate': 0, 'dplace': 0, 'bonus': 25, 'gender_match': 25}
+09:35:38 INF [action11 _select_ 829 ] Highest scoring candidate selected: ID 102281560744, Score 165
+09:35:38 INF [action11 handle_a 2221] --- Action 11: Phase 3: Fetch Detailed Data (for Family/Relationships) ---
+09:35:39 INF [action11 handle_a 2228] --- Action 11: Phase 4: Display Supplementary Info ---
+09:35:39 INF [action11 _handle_ 2051] --- Phase 4/5: Displaying Supplementary Info (Family & Relationships) ---
+09:35:39 INF [action11 print_re 1394] Parents:
+09:35:39 INF [action11 print_re 1428] - James Gault (1906–1988)
+09:35:39 INF [action11 print_re 1428] - 'dolly' Clara Alexina Fraser (1908–2008)
+09:35:39 INF [action11 print_re 1394] Siblings:
+09:35:39 INF [action11 print_re 1428] - Thomas Gault (1929–1929)
+09:35:39 INF [action11 print_re 1428] - Margaret Milne Gault (1930–2017)
+09:35:39 INF [action11 print_re 1428] - Sheila Gault (1931–2022)
+09:35:39 INF [action11 print_re 1428] - Helen Gault (b. 1933)
+09:35:39 INF [action11 print_re 1428] - James Thomas Gault (1935–1996)
+09:35:39 INF [action11 print_re 1428] - Alexander Gault (1937–2024)
+09:35:39 INF [action11 print_re 1428] - Henry Gault (1939–2021)
+09:35:39 INF [action11 print_re 1428] - Derrick Wardie Gault (b. 1943)
+09:35:39 INF [action11 print_re 1428] - William 'billy' George Gault (b. 1947)
+09:35:39 INF [action11 print_re 1428] - Evelyn Jane Gault (1949–2025)
+09:35:39 INF [action11 print_re 1394] Spouses:
+09:35:39 CRI [action11 main     2266] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+09:54:14 INF [action11 <module> 2243] Starting action11.py as standalone script
+                                      
+09:54:22 INF [action11 <module> 2243] Starting action11.py as standalone script
+                                      
+09:54:31 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+09:54:32 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+09:54:33 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+09:54:34 INF [utils    _retriev 1724] My tree id: 175946702
+09:54:35 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+09:54:50 INF [action11 _call_di 1611] Calling: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+09:54:51 INF [action11 _parse_t 1917] Parsed 4 suggestions.
+09:54:51 INF [action11 _process 516 ] 
+                                      --- Filtering and Scoring 4 Candidates ---
+09:54:52 INF [action11 _handle_ 2015] --- Phase 4/5: Displaying Supplementary Info (Family & Relationships) ---
+09:54:52 INF [action11 print_re 1373] Parents:
+09:54:52 INF [action11 print_re 1407] - James Gault (1906–1988)
+09:54:52 INF [action11 print_re 1407] - 'dolly' Clara Alexina Fraser (1908–2008)
+09:54:52 INF [action11 print_re 1373] Siblings:
+09:54:52 INF [action11 print_re 1407] - Thomas Gault (1929–1929)
+09:54:52 INF [action11 print_re 1407] - Margaret Milne Gault (1930–2017)
+09:54:52 INF [action11 print_re 1407] - Sheila Gault (1931–2022)
+09:54:52 INF [action11 print_re 1407] - Helen Gault (b. 1933)
+09:54:52 INF [action11 print_re 1407] - James Thomas Gault (1935–1996)
+09:54:52 INF [action11 print_re 1407] - Alexander Gault (1937–2024)
+09:54:52 INF [action11 print_re 1407] - Henry Gault (1939–2021)
+09:54:52 INF [action11 print_re 1407] - Derrick Wardie Gault (b. 1943)
+09:54:52 INF [action11 print_re 1407] - William 'billy' George Gault (b. 1947)
+09:54:52 INF [action11 print_re 1407] - Evelyn Jane Gault (1949–2025)
+09:54:52 INF [action11 print_re 1373] Spouses:
+09:54:52 CRI [action11 main     2229] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+10:06:00 INF [action11 <module> 2233] Starting action11.py as standalone script
+                                      
+10:06:09 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+10:06:10 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+10:06:11 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+10:06:12 INF [utils    _retriev 1724] My tree id: 175946702
+10:06:12 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+10:06:26 INF [action11 _call_di 1607] Calling: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+10:06:27 INF [action11 _handle_ 2010] --- Family & Relationships ---
+                                      
+10:06:27 INF [action11 print_re 1371] Parents
+                                      :
+10:06:27 INF [action11 print_re 1404] - James Gault (1906–1988)
+10:06:27 INF [action11 print_re 1404] - 'dolly' Clara Alexina Fraser (1908–2008)
+10:06:27 INF [action11 print_re 1371] Siblings
+                                      :
+10:06:27 INF [action11 print_re 1404] - Thomas Gault (1929–1929)
+10:06:27 INF [action11 print_re 1404] - Margaret Milne Gault (1930–2017)
+10:06:27 INF [action11 print_re 1404] - Sheila Gault (1931–2022)
+10:06:27 INF [action11 print_re 1404] - Helen Gault (b. 1933)
+10:06:27 INF [action11 print_re 1404] - James Thomas Gault (1935–1996)
+10:06:27 INF [action11 print_re 1404] - Alexander Gault (1937–2024)
+10:06:27 INF [action11 print_re 1404] - Henry Gault (1939–2021)
+10:06:27 INF [action11 print_re 1404] - Derrick Wardie Gault (b. 1943)
+10:06:27 INF [action11 print_re 1404] - William 'billy' George Gault (b. 1947)
+10:06:27 INF [action11 print_re 1404] - Evelyn Jane Gault (1949–2025)
+10:06:27 INF [action11 print_re 1371] Spouses
+                                      :
+10:06:27 CRI [action11 main     2219] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+10:09:20 INF [action11 <module> 2228] Starting action11.py as standalone script
+                                      
+10:09:28 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+10:09:29 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+10:09:30 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+10:09:31 INF [utils    _retriev 1724] My tree id: 175946702
+10:09:32 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+10:09:48 INF [action11 <module> 2228] Starting action11.py as standalone script
+                                      
+10:09:57 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+10:09:58 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+10:09:59 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+10:10:00 INF [utils    _retriev 1724] My tree id: 175946702
+10:10:01 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+10:10:11 INF [action11 _call_di 1602] Calling: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+10:10:13 INF [action11 _handle_ 2005] --- Family & Relationships ---
+                                      
+10:10:13 INF [action11 print_re 1399] - James Gault (1906–1988)
+10:10:13 INF [action11 print_re 1399] - 'dolly' Clara Alexina Fraser (1908–2008)
+10:10:13 INF [action11 print_re 1399] - Thomas Gault (1929–1929)
+10:10:13 INF [action11 print_re 1399] - Margaret Milne Gault (1930–2017)
+10:10:13 INF [action11 print_re 1399] - Sheila Gault (1931–2022)
+10:10:13 INF [action11 print_re 1399] - Helen Gault (b. 1933)
+10:10:13 INF [action11 print_re 1399] - James Thomas Gault (1935–1996)
+10:10:13 INF [action11 print_re 1399] - Alexander Gault (1937–2024)
+10:10:13 INF [action11 print_re 1399] - Henry Gault (1939–2021)
+10:10:13 INF [action11 print_re 1399] - Derrick Wardie Gault (b. 1943)
+10:10:13 INF [action11 print_re 1399] - William 'billy' George Gault (b. 1947)
+10:10:13 INF [action11 print_re 1399] - Evelyn Jane Gault (1949–2025)
+10:10:13 CRI [action11 main     2214] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+10:14:38 INF [action11 <module> 2228] Starting action11.py as standalone script
+                                      
+10:14:47 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+10:14:47 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+10:14:48 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+10:14:49 INF [utils    _retriev 1724] My tree id: 175946702
+10:14:50 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+10:15:02 CRI [action11 main     2214] Unhandled exception during Action 11 execution: cannot access local variable 'gender' where it is not associated with a value
+10:17:45 INF [action11 <module> 2231] Starting action11.py as standalone script
+                                      
+10:17:54 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+10:17:55 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+10:17:56 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+10:17:57 INF [utils    _retriev 1724] My tree id: 175946702
+10:17:58 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+10:19:33 INF [action11 _call_di 1609] Calling: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fraser&ln=gault
+10:19:34 CRI [action11 main     2217] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value
+12:10:43 INF [action11 <module> 2231] Starting action11.py as standalone script
+                                      
+12:10:54 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:10:55 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:10:56 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:10:57 INF [utils    _retriev 1724] My tree id: 175946702
+12:10:58 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:12:55 INF [action11 <module> 2247] Starting action11.py as standalone script
+                                      
+12:13:05 INF [utils    _perform 1403] Readiness checks PASSED on attempt 1.
+12:13:05 INF [utils    _retriev 1690] My profile id: 07BDD45E-0006-0000-0000-000000000000
+12:13:06 INF [utils    _retriev 1704] My uuid: FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7
+12:13:07 INF [utils    _retriev 1724] My tree id: 175946702
+12:13:08 INF [utils    _retriev 1771] Tree owner name: Wayne Gault
+12:13:16 INF [action11 _call_di 1619] Calling: https://www.ancestry.co.uk/api/treesui-list/trees/175946702/persons?sort=sname%2Cgname&limit=100&fields=NAMES%2CEVENTS%2CGENDER&fn=fra&ln=gault
+12:13:18 CRI [action11 main     2233] Unhandled exception during Action 11 execution: cannot access local variable 'years' where it is not associated with a value

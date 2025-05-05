@@ -187,7 +187,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
         # --- Configure Options ---
         if config.HEADLESS_MODE:
-            logger.info("Configuring headless mode.")
+            logger.debug("Configuring headless mode.")
             options.add_argument("--headless=new")
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
@@ -195,7 +195,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         if user_data_dir_path:
             user_data_dir_str = str(user_data_dir_path.resolve())
             options.add_argument(f"--user-data-dir={user_data_dir_str}")
-            logger.info(
+            logger.debug(
                 f"User data directory (no --profile-directory):\n{user_data_dir_str}"
             )
         # Removed --profile-directory option for correct Chrome profile persistence
@@ -238,12 +238,12 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 "Letting undetected_chromedriver auto-manage ChromeDriver version (self-patching mode)."
             )
             try:
-                logger.info(
+                logger.debug(
                     f"[init_webdvr] Attempting uc.Chrome() self-patching (attempt {attempt_num})..."
                 )
                 start_time = time.time()
                 driver = uc.Chrome(**chrome_kwargs)
-                logger.info(
+                logger.debug(
                     f"[init_webdvr] uc.Chrome() self-patching succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})"
                 )
                 logger.debug(
@@ -266,7 +266,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 if driver_path_obj:
                     driver_path_str = str(driver_path_obj.resolve())
                     if os.path.exists(driver_path_str):
-                        logger.info(
+                        logger.debug(
                             f"[init_webdvr] Falling back to manual ChromeDriver path: {driver_path_str}"
                         )
                         try:
@@ -284,7 +284,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                             }
                             start_time_fallback = time.time()
                             driver = uc.Chrome(**chrome_kwargs_fallback)
-                            logger.info(
+                            logger.debug(
                                 f"[init_webdvr] Fallback uc.Chrome() with manual path succeeded in {time.time() - start_time_fallback:.2f}s (attempt {attempt_num})"
                             )
                         except Exception as fallback_exc:
@@ -395,7 +395,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
         # --- Wait Before Retrying ---
         if attempt_num < max_init_retries:
-            logger.info(
+            logger.debug(
                 f"Waiting {retry_delay} seconds before retrying initialization..."
             )
             time.sleep(retry_delay)
@@ -455,7 +455,7 @@ def main():
     try:
         driver = init_webdvr()
         if driver:
-            logger.info("WebDriver initialized successfully.")
+            logger.debug("WebDriver initialized successfully.")
             driver.get(config_instance.BASE_URL)
             input("Press Enter to close the browser...")
             driver.quit()

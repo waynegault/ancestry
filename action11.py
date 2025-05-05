@@ -2,15 +2,17 @@
 # action11.py
 """
 Action 11: API Report - Search Ancestry API, display details, family, relationship.
-V18.5: Refactored API calls to use helpers from api_utils.
-       Broke down handle_api_report into phase-based helpers.
-       Improved Discovery relationship parsing (direct JSON).
-       Moved retry logic to api_utils helpers.
+V18.8: Corrected SyntaxError in _parse_treesui_list_response.
+       Ensured correct function definition order.
+       Verified 'gender_match' key usage.
+       Verified initial comparison flow.
+       Verified MAX_SUGGESTIONS_TO_SCORE limit logic.
 """
 # --- Standard library imports ---
 import logging
 import sys
 import time
+from traceback import print_exception
 import urllib.parse
 import json
 import re  # Added for robust lifespan splitting
@@ -28,14 +30,10 @@ from datetime import datetime
 
 # --- Local application imports ---
 # Use centralized logging config setup
-try:
-    from logging_config import setup_logging, logger
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    logger = logging.getLogger("action11")
-    logger.warning("Using fallback logger for Action 11.")
+from logging_config import setup_logging, logger
+
+# Initialize the logger with a specific log file for this module
+logger = setup_logging(log_file="action11.log", log_level="INFO")
 
 # --- Load Config (Mandatory - Direct Import) ---
 config_instance = None
@@ -43,7 +41,7 @@ selenium_config = None
 try:
     from config import config_instance, selenium_config
 
-    logger.info("Successfully imported config_instance and selenium_config.")
+    logger.debug("Successfully imported config_instance and selenium_config.")
     if not config_instance or not selenium_config:
         raise ImportError("Config instances are None.")
 
@@ -61,7 +59,17 @@ try:
         value = getattr(config_instance, attr)
         if value is None:
             raise TypeError(f"config_instance.{attr} is None.")
-        if isinstance(value, (dict, list, tuple)) and not value:
+        # Check weights specifically
+        if attr == "COMMON_SCORING_WEIGHTS" and isinstance(value, dict):
+            if "gender_match" not in value:
+                logger.warning(
+                    "Config COMMON_SCORING_WEIGHTS is missing 'gender_match' key."
+                )
+            elif value.get("gender_match", -1) == 0:
+                logger.warning(
+                    "Config COMMON_SCORING_WEIGHTS has 'gender_match' set to 0."
+                )
+        elif isinstance(value, (dict, list, tuple)) and not value:
             logger.warning(f"config_instance.{attr} is empty.")
 
     if not hasattr(selenium_config, "API_TIMEOUT"):
@@ -102,7 +110,7 @@ GEDCOM_SCORING_AVAILABLE = False
 try:
     from gedcom_utils import calculate_match_score, _parse_date, _clean_display_date
 
-    logger.info("Successfully imported functions from gedcom_utils.")
+    logger.debug("Successfully imported functions from gedcom_utils.")
     GEDCOM_SCORING_AVAILABLE = calculate_match_score is not None and callable(
         calculate_match_score
     )
@@ -116,16 +124,16 @@ except ImportError as e:
 
 # --- Import API Utilities ---
 format_api_relationship_path = None
-parse_ancestry_person_details = None  # Import the parser
+parse_ancestry_person_details = None
 call_suggest_api = None
 call_facts_user_api = None
 call_getladder_api = None
 call_discovery_relationship_api = None
 call_treesui_list_api = None
-_get_api_timeout = None
+_get_api_timeout = None  # Define variable for import
 API_UTILS_AVAILABLE = False
 try:
-    # Import specific API call helpers and parsers
+    # Import specific API call helpers, parsers, AND the timeout helper
     from api_utils import (
         format_api_relationship_path,
         parse_ancestry_person_details,
@@ -134,10 +142,11 @@ try:
         call_getladder_api,
         call_discovery_relationship_api,
         call_treesui_list_api,
-        _get_api_timeout,
+        _get_api_timeout,  # Import the function
     )
 
-    logger.info("Successfully imported required functions from api_utils.")
+    logger.debug("Successfully imported required functions from api_utils.")
+    # Update the check to include _get_api_timeout
     API_UTILS_AVAILABLE = all(
         callable(f)
         for f in [
@@ -148,19 +157,33 @@ try:
             call_getladder_api,
             call_discovery_relationship_api,
             call_treesui_list_api,
-            _get_api_timeout,
+            _get_api_timeout,  # Check if callable
         ]
     )
     if not API_UTILS_AVAILABLE:
+        missing_api_funcs = [
+            name
+            for name, func in {
+                "format_api_relationship_path": format_api_relationship_path,
+                "parse_ancestry_person_details": parse_ancestry_person_details,
+                "call_suggest_api": call_suggest_api,
+                "call_facts_user_api": call_facts_user_api,
+                "call_getladder_api": call_getladder_api,
+                "call_discovery_relationship_api": call_discovery_relationship_api,
+                "call_treesui_list_api": call_treesui_list_api,
+                "_get_api_timeout": _get_api_timeout,
+            }.items()
+            if not callable(func)
+        ]
         logger.error(
-            "One or more required functions from api_utils are missing or not callable."
+            f"One or more required functions from api_utils are missing or not callable: {', '.join(missing_api_funcs)}"
         )
 except ImportError as e:
     logger.error(f"Failed to import from api_utils: {e}.", exc_info=True)
 
+
 # --- Import General Utilities ---
 SessionManager = None
-_api_req = None  # No longer directly needed here, but keep check
 format_name = None
 ordinal_case = None
 CORE_UTILS_AVAILABLE = False
@@ -168,7 +191,7 @@ try:
     # Only import SessionManager, format_name, ordinal_case from utils now
     from utils import SessionManager, format_name, ordinal_case
 
-    logger.info("Successfully imported required components from utils.")
+    logger.debug("Successfully imported required components from utils.")
     CORE_UTILS_AVAILABLE = all(
         callable(f) for f in [SessionManager, format_name, ordinal_case]
     )
@@ -205,11 +228,13 @@ def _extract_fact_data(
     place_str: Optional[str] = None
     date_obj: Optional[datetime] = None
 
-    if not isinstance(person_facts, list) or not callable(_parse_date):
+    if not isinstance(person_facts, list):
         logger.debug(
-            f"_extract_fact_data: Invalid input or _parse_date unavailable for {fact_type_str}."
+            f"_extract_fact_data: Invalid input person_facts (not a list) for {fact_type_str}."
         )
-        return date_str, place_str, date_obj  # Return defaults
+        return date_str, place_str, date_obj
+
+    parse_date_func = _parse_date if callable(_parse_date) else None
 
     for fact in person_facts:
         if (
@@ -229,14 +254,14 @@ def _extract_fact_data(
                 year = parsed_date_data.get("Year")
                 month = parsed_date_data.get("Month")
                 day = parsed_date_data.get("Day")
-                if year:
+                if year and parse_date_func:
                     try:
                         temp_date = str(year)
                         if month:
                             temp_date += f"-{str(month).zfill(2)}"
                         if day:
                             temp_date += f"-{str(day).zfill(2)}"
-                        date_obj = _parse_date(temp_date)
+                        date_obj = parse_date_func(temp_date)
                         logger.debug(
                             f"_extract_fact_data: Parsed date object from ParsedDate: {date_obj}"
                         )
@@ -247,12 +272,12 @@ def _extract_fact_data(
                         date_obj = None
 
             # Fallback to parsing the Date string if ParsedDate didn't yield an object
-            if date_obj is None and date_str:
+            if date_obj is None and date_str and parse_date_func:
                 logger.debug(
                     f"_extract_fact_data: Attempting to parse date_str '{date_str}' as fallback."
                 )
                 try:
-                    date_obj = _parse_date(date_str)
+                    date_obj = parse_date_func(date_str)
                     logger.debug(
                         f"_extract_fact_data: Parsed date object from date_str: {date_obj}"
                     )
@@ -275,55 +300,80 @@ def _extract_fact_data(
 
 def _get_search_criteria() -> Optional[Dict[str, Any]]:
     """Gets search criteria from the user via input prompts."""
-    logger.info("--- Getting search criteria from user ---")
-    print("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
+
+    # Log and display the prompt to the user (only need to print for user interaction)
+    print("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---\n")
 
     first_name = input("  First Name Contains: ").strip()
     surname = input("  Last Name Contains: ").strip()
+    gender_input = input("  Gender (M/F): ").strip().upper()
+    # Initialize gender to None by default
+    gender = None
+    # Only set gender if valid input is provided
+    if gender_input and gender_input[0] in ["M", "F"]:
+        gender = gender_input[0].lower()
     dob_str = input("  Birth Year (YYYY): ").strip()
     pob = input("  Birth Place Contains: ").strip()
     dod_str = input("  Death Year (YYYY): ").strip() or None
     pod = input("  Death Place Contains: ").strip() or None
-    gender_input = input("  Gender (M/F): ").strip().upper()
-
-    gender = None
-    if gender_input and gender_input[0] in ["M", "F"]:
-        gender = gender_input[0].lower()  # Store as lowercase 'm' or 'f'
-
-    logger.info(f"  Input - First Name: '{first_name}'")
-    logger.info(f"  Input - Surname: '{surname}'")
-    logger.info(f"  Input - Birth Date/Year: '{dob_str}'")
-    logger.info(f"  Input - Birth Place: '{pob}'")
-    logger.info(f"  Input - Death Date/Year: '{dod_str}'")
-    logger.info(f"  Input - Death Place: '{pod}'")
-    logger.info(f"  Input - Gender: '{gender}'")
+    print("")
 
     if not (first_name or surname):
         logger.warning("API search needs First Name or Surname. Report cancelled.")
+        # Use logger.info instead of duplicating with print
         print("\nAPI search needs First Name or Surname. Report cancelled.")
         return None
 
     clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    parse_date_func = _parse_date if callable(_parse_date) else None
 
     target_birth_year: Optional[int] = None
     target_birth_date_obj: Optional[datetime] = None
-    if dob_str and callable(_parse_date):
-        target_birth_date_obj = _parse_date(dob_str)
+    if dob_str:
+        if parse_date_func:
+            target_birth_date_obj = parse_date_func(dob_str)
         if target_birth_date_obj:
             target_birth_year = target_birth_date_obj.year
+        else:
+            logger.warning(f"Could not parse input birth year/date: '{dob_str}'")
+            year_match = re.search(r"\b(\d{4})\b", dob_str)
+            if year_match:
+                try:
+                    target_birth_year = int(year_match.group(1))
+                    logger.info(
+                        f"Extracted birth year {target_birth_year} from '{dob_str}' as fallback."
+                    )
+                except ValueError:
+                    logger.warning(
+                        f"Could not convert extracted year '{year_match.group(1)}' to int."
+                    )
 
     target_death_year: Optional[int] = None
     target_death_date_obj: Optional[datetime] = None
-    if dod_str and callable(_parse_date):
-        target_death_date_obj = _parse_date(dod_str)
+    if dod_str:
+        if parse_date_func:
+            target_death_date_obj = parse_date_func(dod_str)
         if target_death_date_obj:
             target_death_year = target_death_date_obj.year
+        else:
+            logger.warning(f"Could not parse input death year/date: '{dod_str}'")
+            year_match = re.search(r"\b(\d{4})\b", dod_str)
+            if year_match:
+                try:
+                    target_death_year = int(year_match.group(1))
+                    logger.info(
+                        f"Extracted death year {target_death_year} from '{dod_str}' as fallback."
+                    )
+                except ValueError:
+                    logger.warning(
+                        f"Could not convert extracted year '{year_match.group(1)}' to int."
+                    )
 
     search_criteria_dict = {
-        "first_name_raw": first_name,  # Keep raw for API params
-        "surname_raw": surname,  # Keep raw for API params
-        "first_name": clean_param(first_name),  # Cleaned for scoring
-        "surname": clean_param(surname),  # Cleaned for scoring
+        "first_name_raw": first_name,
+        "surname_raw": surname,
+        "first_name": clean_param(first_name),
+        "surname": clean_param(surname),
         "birth_year": target_birth_year,
         "birth_date_obj": target_birth_date_obj,
         "birth_place": clean_param(pob),
@@ -333,17 +383,31 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
         "gender": gender,
     }
 
-    logger.info("\n--- Final Search Criteria Prepared ---")
-    for key, value in search_criteria_dict.items():
-        if value is not None and key not in [
-            "first_name_raw",
-            "surname_raw",
-            "birth_date_obj",
-            "death_date_obj",
-        ]:
-            logger.info(f"  {key.replace('_', ' ').title()}: '{value}'")
-        elif key == "death_place" and value is None:
-            logger.info(f"  {key.replace('_', ' ').title()}: None")
+    log_display_map = {
+        "first_name": "First Name",
+        "surname": "Surname",
+        "birth_year": "Birth Year",
+        "birth_place": "Birth Place",
+        "death_year": "Death Year",
+        "death_place": "Death Place",
+        "gender": "Gender",
+    }
+    for key, display_name in log_display_map.items():
+        value = search_criteria_dict.get(key)
+        log_value = (
+            "None"
+            if value is None
+            else (f"'{value}'" if isinstance(value, str) else str(value))
+        )
+        logger.debug(f"  {display_name}: {log_value}")
+    if search_criteria_dict["first_name"] != search_criteria_dict["first_name_raw"]:
+        logger.info(
+            f"  First Name (Raw API Param): '{search_criteria_dict['first_name_raw']}'"
+        )
+    if search_criteria_dict["surname"] != search_criteria_dict["surname_raw"]:
+        logger.info(
+            f"  Surname (Raw API Param): '{search_criteria_dict['surname_raw']}'"
+        )
 
     return search_criteria_dict
 
@@ -351,14 +415,14 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
 # End of _get_search_criteria
 
 
-# Simple scoring remains local as it's a fallback specific to this action's workflow
+# Simple scoring fallback (Uses 'gender_match' key)
 def _run_simple_suggestion_scoring(
     search_criteria: Dict[str, Any], candidate_data_dict: Dict[str, Any]
 ) -> Tuple[float, Dict, List[str]]:
     """Performs simple fallback scoring based on hardcoded rules. Uses 'gender_match' key."""
     logger.warning("Using simple fallback scoring for suggestion.")
     score = 0.0
-    # <<< Use 'gender_match' as the key in field_scores >>>
+    # Use 'gender_match' as the key in field_scores
     field_scores = {
         "givn": 0,
         "surn": 0,
@@ -373,47 +437,55 @@ def _run_simple_suggestion_scoring(
     }
     reasons = ["API Suggest Match", "Fallback Scoring"]
 
-    cand_gn = candidate_data_dict.get(
-        "gender"
-    )  # Still get 'gender' from candidate dict
+    # Extract data using .get()
+    cand_fn = candidate_data_dict.get("first_name")
+    cand_sn = candidate_data_dict.get("surname")
+    cand_by = candidate_data_dict.get("birth_year")
+    cand_dy = candidate_data_dict.get("death_year")
+    cand_gn = candidate_data_dict.get("gender")
+    is_living = candidate_data_dict.get("is_living")
+    search_fn = search_criteria.get("first_name")
+    search_sn = search_criteria.get("surname")
+    search_by = search_criteria.get("birth_year")
+    search_dy = search_criteria.get("death_year")
     search_gn = search_criteria.get("gender")
 
-    # ... (Name and Date scoring remain the same) ...
+    # Name Scoring
     if cand_fn and search_fn and search_fn in cand_fn:
         score += 25
         field_scores["givn"] = 25
-        reasons.append(f"Contains First Name ({search_fn}) (25pts)")
+        reasons.append(f"contains first name ({search_fn}) (25pts)")
     if cand_sn and search_sn and search_sn in cand_sn:
         score += 25
         field_scores["surn"] = 25
-        reasons.append(f"Contains Surname ({search_sn}) (25pts)")
+        reasons.append(f"contains surname ({search_sn}) (25pts)")
     if field_scores["givn"] > 0 and field_scores["surn"] > 0:
         score += 25
         field_scores["bonus"] = 25
-        reasons.append("Bonus Both Names (25pts)")
+        reasons.append("bonus both names (25pts)")
+    # Date Scoring
     if cand_by and search_by and cand_by == search_by:
         score += 20
         field_scores["byear"] = 20
-        reasons.append(f"Exact Birth Year ({cand_by}) (20pts)")
+        reasons.append(f"exact birth year ({cand_by}) (20pts)")
     if cand_dy and search_dy and cand_dy == search_dy:
         score += 15
         field_scores["dyear"] = 15
-        reasons.append(f"Exact Death Year ({cand_dy}) (15pts)")
+        reasons.append(f"exact death year ({cand_dy}) (15pts)")
     elif not search_dy and not cand_dy and is_living in [False, None]:
         score += 15
         field_scores["ddate"] = 15
-        reasons.append("Death Dates Absent (15pts)")
+        reasons.append("death date absent (15pts)")
 
-    # --- Gender Scoring (using 'gender_match' key) ---
+    # Gender Scoring (using 'gender_match' key)
     logger.debug(
         f"[Simple Scoring] Checking Gender: Search='{search_gn}', Candidate='{cand_gn}'"
     )
     if cand_gn is not None and search_gn is not None:
         if cand_gn == search_gn:
-            # Use a fixed score for simple scoring, config weight might not be available/reliable here
-            gender_score_value = 25
+            gender_score_value = 25  # Fixed value for simple scoring
             score += gender_score_value
-            # <<< Store score under 'gender_match' key >>>
+            # Store score under 'gender_match' key
             field_scores["gender_match"] = gender_score_value
             reasons.append(
                 f"Gender Match ({cand_gn.upper()}) ({gender_score_value}pts)"
@@ -422,10 +494,15 @@ def _run_simple_suggestion_scoring(
                 f"[Simple Scoring] Gender match SUCCESS. Awarded {gender_score_value} points to 'gender_match'."
             )
         else:
-            logger.debug(
-                f"[Simple Scoring] Gender MISMATCH (Search: {search_gn}, Candidate: {cand_gn}). No points awarded."
-            )
-    # ... (rest of logging) ...
+            logger.debug(f"[Simple Scoring] Gender MISMATCH. No points awarded.")
+    elif search_gn is None:
+        # No gender provided in search criteria - this is acceptable
+        logger.debug("[Simple Scoring] No search gender provided. No points awarded.")
+    elif cand_gn is None:
+        # No gender available for candidate - this is acceptable
+        logger.debug(
+            "[Simple Scoring] Candidate gender not available. No points awarded."
+        )
 
     return score, field_scores, reasons
 
@@ -433,231 +510,249 @@ def _run_simple_suggestion_scoring(
 # End of _run_simple_suggestion_scoring
 
 
+# Suggestion processing and scoring (Uses 'gender_match' key)
 def _process_and_score_suggestions(
     suggestions: List[Dict], search_criteria: Dict[str, Any], config_instance_local: Any
 ) -> List[Dict]:
     """
-    Processes raw API suggestions (from _parse_treesui_list_response),
-    extracts data into a format for scoring, calculates match scores against
-    search_criteria, and returns sorted list. (Enhanced Logging Before Score Call)
+    Processes raw API suggestions, calculates match scores, and returns sorted list.
+    Uses 'gender_match' key from config weights.
     """
     processed_candidates = []
     clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
-
-    logger.info(f"\n--- Filtering and Scoring {len(suggestions)} Candidates ---")
-
     scoring_func = (
         calculate_match_score
         if GEDCOM_SCORING_AVAILABLE
         else _run_simple_suggestion_scoring
     )
-    # <<< Log which scoring function is being used >>>
-    logger.info(f"Using scoring function: {scoring_func.__name__}")
-    if not GEDCOM_SCORING_AVAILABLE:
-        logger.warning("Gedcom scoring function unavailable. Using simple fallback scoring.")
 
     scoring_weights = getattr(config_instance_local, "COMMON_SCORING_WEIGHTS", {})
     name_flex = getattr(config_instance_local, "NAME_FLEXIBILITY", 2)
     date_flex = getattr(config_instance_local, "DATE_FLEXIBILITY", 2)
-    # <<< Log the gender weight being used >>>
-    gender_weight = scoring_weights.get('gender', 0) # Get weight from config
-    logger.info(f"Gender scoring weight from config: {gender_weight}")
+    # Log the gender weight using the 'gender_match' key
+    gender_weight = scoring_weights.get("gender_match", 0)
 
     for idx, raw_candidate in enumerate(suggestions):
         if not isinstance(raw_candidate, dict):
-            logger.warning(f"Skipping invalid suggestion entry (not a dict): {raw_candidate}")
+            logger.warning(f"Skipping invalid entry: {raw_candidate}")
             continue
-
-        # --- Direct Mapping from raw_candidate (parsed TreesUI data) ---
+        # Data extraction into candidate_data_dict (ensure 'gender' key holds 'm'/'f'/None)
         full_name_disp = raw_candidate.get("FullName", "Unknown")
         person_id = raw_candidate.get("PersonId", f"Unknown_{idx}")
         first_name_cand = None
         surname_cand = None
         if full_name_disp != "Unknown":
             parts = full_name_disp.split()
-            if parts: first_name_cand = clean_param(parts[0])
-            if len(parts) > 1: surname_cand = clean_param(parts[-1])
+        if parts:
+            first_name_cand = clean_param(parts[0])
+        if len(parts) > 1:
+            surname_cand = clean_param(parts[-1])
         birth_year_cand = raw_candidate.get("BirthYear")
         birth_date_str_cand = raw_candidate.get("BirthDate")
         birth_place_cand = clean_param(raw_candidate.get("BirthPlace"))
         death_year_cand = raw_candidate.get("DeathYear")
         death_date_str_cand = raw_candidate.get("DeathDate")
         death_place_cand = clean_param(raw_candidate.get("DeathPlace"))
-        gender_cand = raw_candidate.get("Gender") # Should be 'm'/'f'/None
+        gender_cand = raw_candidate.get("Gender")
         is_living_cand = raw_candidate.get("IsLiving")
         birth_date_obj_cand = None
         if birth_date_str_cand and parse_date_func:
-            try: birth_date_obj_cand = parse_date_func(birth_date_str_cand)
-            except ValueError: logger.debug(f"Could not parse candidate birth date string: {birth_date_str_cand}")
+            try:
+                birth_date_obj_cand = parse_date_func(birth_date_str_cand)
+            except ValueError:
+                logger.debug(
+                    f"Could not parse candidate birth date: {birth_date_str_cand}"
+                )
         death_date_obj_cand = None
         if death_date_str_cand and parse_date_func:
-            try: death_date_obj_cand = parse_date_func(death_date_str_cand)
-            except ValueError: logger.debug(f"Could not parse candidate death date string: {death_date_str_cand}")
-
-        # Prepare Candidate Data Dictionary for the scoring function
+            try:
+                death_date_obj_cand = parse_date_func(death_date_str_cand)
+            except ValueError:
+                logger.debug(
+                    f"Could not parse candidate death date: {death_date_str_cand}"
+                )
         candidate_data_dict = {
-            "norm_id": person_id, "display_id": person_id,
-            "first_name": first_name_cand, "surname": surname_cand,
+            "norm_id": person_id,
+            "display_id": person_id,
+            "first_name": first_name_cand,
+            "surname": surname_cand,
             "full_name_disp": full_name_disp,
-            "gender_norm": gender_cand, # <<< Ensure this is correct ('m'/'f'/None)
-            "birth_year": birth_year_cand, "birth_date_obj": birth_date_obj_cand,
+            "gender_norm": gender_cand,
+            "birth_year": birth_year_cand,
+            "birth_date_obj": birth_date_obj_cand,
             "birth_place_disp": birth_place_cand,
-            "death_year": death_year_cand, "death_date_obj": death_date_obj_cand,
+            "death_year": death_year_cand,
+            "death_date_obj": death_date_obj_cand,
             "death_place_disp": death_place_cand,
             "is_living": is_living_cand,
-            "gender": gender_cand, # <<< Also ensure this is correct ('m'/'f'/None)
-            "birth_place": birth_place_cand, "death_place": death_place_cand,
+            "gender": gender_cand,
+            "birth_place": birth_place_cand,
+            "death_place": death_place_cand,
         }
 
-        # --- >>> ADDED: Log inputs JUST BEFORE calling scoring function <<< ---
+        # Log inputs and Calculate Score
         logger.debug(f"--- Scoring Candidate ID: {person_id} ---")
         logger.debug(f"Search Criteria Gender: '{search_criteria.get('gender')}'")
-        logger.debug(f"Candidate Dict Gender ('gender_norm'): '{candidate_data_dict.get('gender_norm')}'")
-        logger.debug(f"Candidate Dict Gender ('gender'): '{candidate_data_dict.get('gender')}'")
+        logger.debug(
+            f"Candidate Dict Gender ('gender'): '{candidate_data_dict.get('gender')}'"
+        )
         logger.debug(f"Calling scoring function: {scoring_func.__name__}")
-        # --- End Added Logging ---
-
-        # --- Calculate Score ---
         score = 0.0
         field_scores = {}
         reasons = []
         try:
             if scoring_func == calculate_match_score:
-                # Check if gender weight is 0 from config, log warning if so
                 if gender_weight == 0:
-                    logger.warning(f"Gender weight in config is 0. calculate_match_score may not award points for gender.")
-
+                    logger.warning(f"Gender weight ('gender_match') in config is 0.")
                 score, field_scores, reasons = scoring_func(
-                    search_criteria, candidate_data_dict,
-                    scoring_weights, name_flex, date_flex
+                    search_criteria,
+                    candidate_data_dict,
+                    scoring_weights,
+                    name_flex,
+                    date_flex,
                 )
-                # <<< ADDED: Log score breakdown from calculate_match_score >>>
-                logger.debug(f"Gedcom Score for {person_id}: {score}, Fields: {field_scores}")
-                # Specifically check gender score if present in field_scores
-                if "gender" in field_scores:
-                    logger.debug(f"Gedcom Field Score for Gender: {field_scores['gender']}")
+                logger.debug(
+                    f"Gedcom Score for {person_id}: {score}, Fields: {field_scores}"
+                )
+                # Log gender score using 'gender_match' key
+                if "gender_match" in field_scores:
+                    logger.debug(
+                        f"Gedcom Field Score ('gender_match'): {field_scores['gender_match']}"
+                    )
                 else:
-                    logger.debug("Gedcom Field Scores did not contain 'gender' key.")
-
-            else: # Simple scoring
+                    logger.debug("Gedcom Field Scores missing 'gender_match' key.")
+            else:  # Simple scoring
                 score, field_scores, reasons = scoring_func(
                     search_criteria, candidate_data_dict
                 )
-                # Logging is now inside _run_simple_suggestion_scoring
-                logger.debug(f"Simple Score for {person_id}: {score}, Fields: {field_scores}")
-
+                logger.debug(
+                    f"Simple Score for {person_id}: {score}, Fields: {field_scores}"
+                )
+                if "gender_match" in field_scores:
+                    logger.debug(
+                        f"Simple Field Score ('gender_match'): {field_scores['gender_match']}"
+                    )
+                else:
+                    logger.debug("Simple Field Scores missing 'gender_match' key.")
         except Exception as score_err:
-            logger.error(f"Error calculating score for suggestion {candidate_data_dict['display_id']}: {score_err}", exc_info=True)
-            # Fallback to simple scoring on error
-            logger.warning("Falling back to simple scoring due to error during primary score calculation.")
+            logger.error(f"Error scoring {person_id}: {score_err}", exc_info=True)
+            logger.warning("Falling back to simple scoring...")
             score, field_scores, reasons = _run_simple_suggestion_scoring(
                 search_criteria, candidate_data_dict
             )
             reasons.append("(Error Fallback)")
-            logger.debug(f"Fallback Simple Score for {person_id}: {score}, Fields: {field_scores}")
+            logger.debug(
+                f"Fallback Score for {person_id}: {score}, Fields: {field_scores}"
+            )
 
-        # --- Append Processed Candidate ---
-        processed_candidates.append({
+        # Append Processed Candidate
+        processed_candidates.append(
+            {
                 "id": person_id,
                 "name": full_name_disp,
-                "gender": candidate_data_dict.get("gender"), # Use the 'm'/'f'/None value
-                "birth_date": _clean_display_date(birth_date_str_cand) if callable(_clean_display_date) else (birth_date_str_cand or "N/A"),
+                "gender": candidate_data_dict.get("gender"),
+                "birth_date": (
+                    _clean_display_date(birth_date_str_cand)
+                    if callable(_clean_display_date)
+                    else (birth_date_str_cand or "N/A")
+                ),
                 "birth_place": raw_candidate.get("BirthPlace", "N/A"),
-                "death_date": _clean_display_date(death_date_str_cand) if callable(_clean_display_date) else (death_date_str_cand or "N/A"),
+                "death_date": (
+                    _clean_display_date(death_date_str_cand)
+                    if callable(_clean_display_date)
+                    else (death_date_str_cand or "N/A")
+                ),
                 "death_place": raw_candidate.get("DeathPlace", "N/A"),
                 "score": score,
-                "field_scores": field_scores, # Store the detailed score breakdown
+                "field_scores": field_scores,
                 "reasons": reasons,
                 "raw_data": raw_candidate,
                 "parsed_suggestion": candidate_data_dict,
             }
         )
 
+    # Sorting
     processed_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
-    logger.info(f"Scored {len(processed_candidates)} candidates.")
-    if processed_candidates:
-        logger.info(f"Top candidate score: {processed_candidates[0].get('score', 0)}")
-        # <<< Log the field scores of the top candidate AFTER sorting >>>
-        logger.debug(f"Top candidate ({processed_candidates[0].get('id')}) FINAL field scores used for display: {processed_candidates[0].get('field_scores', {})}")
-
     return processed_candidates
+
+
 # End of _process_and_score_suggestions
 
 
+# Display search results (Uses 'gender_match' key)
 def _display_search_results(candidates: List[Dict], max_to_display: int):
-    """Displays the scored search results in a formatted table."""
+    """Displays the scored search results. Uses 'gender_match' score key."""
     if not candidates:
         print("\nNo candidates to display.")
         return
-
     display_count = min(len(candidates), max_to_display)
-    print(f"\n=== SEARCH RESULTS (Top {display_count} Matches) ===")
-
+    print(f"\n=== SEARCH RESULTS (Top {display_count} Matches) ===\n")
     table_data = []
     headers = [
         "ID",
-        "Name [Score]",
-        "Gender [Score]",
-        "Birth [Score]",
-        "B.Place [Score]",
-        "Death [Score]",
-        "D.Place [Score]",
+        "Name",
+        "Gender",
+        "Birth",
+        "Birth Place",
+        "Death",
+        "Death Place",
         "Total",
     ]
-
     for candidate in candidates[:display_count]:
         fs = candidate.get("field_scores", {})
-        givn_s, surn_s, bonus_s = (
-            fs.get("givn", 0),
-            fs.get("surn", 0),
-            fs.get("bonus", 0),
-        )
-        gender_s = fs.get("gender", 0)
-        byear_s, bdate_s, bplace_s = (
-            fs.get("byear", 0),
-            fs.get("bdate", 0),
-            fs.get("bplace", 0),
-        )
-        dyear_s, ddate_s, dplace_s = (
-            fs.get("dyear", 0),
-            fs.get("ddate", 0),
-            fs.get("dplace", 0),
-        )
+        givn_s = fs.get("givn", 0)
+        surn_s = fs.get("surn", 0)
+        bonus_s = fs.get("bonus", 0)
+        # Get gender score using 'gender_match' key
+        gender_s = fs.get("gender_match", 0)
+        byear_s = fs.get("byear", 0)
+        bdate_s = fs.get("bdate", 0)
+        bplace_s = fs.get("bplace", 0)
+        dyear_s = fs.get("dyear", 0)
+        ddate_s = fs.get("ddate", 0)
+        dplace_s = fs.get("dplace", 0)
 
-        name_disp = candidate.get("name", "N/A")[:25] + (
-            "..." if len(candidate.get("name", "")) > 25 else ""
-        )
+        # Check if gender score is 0 but there's a gender match reason
+        if gender_s == 0:
+            for reason in candidate.get("reasons", []):
+                if "Gender Match" in reason:
+                    # Extract the score value from the reason text
+                    match = re.search(r"Gender Match \([MF]\) \((\d+)pts\)", reason)
+                    if match:
+                        gender_s = int(match.group(1))
+                        # Update the field_scores dictionary
+                        fs["gender_match"] = gender_s
+
+        # Format display strings
+        name_disp = candidate.get("name", "N/A")
+        name_disp_short = name_disp[:25] + ("..." if len(name_disp) > 25 else "")
         name_score_str = f"[{givn_s+surn_s}]" + (f"[+{bonus_s}]" if bonus_s > 0 else "")
-        name_with_score = f"{name_disp} {name_score_str}"
-
-        gender_disp = str(candidate.get("gender", "N/A")).upper()  # 'm'/'f' -> 'M'/'F'
+        name_with_score = f"{name_disp_short} {name_score_str}"
+        gender_disp = str(candidate.get("gender", "N/A")).upper()
+        # Display score from fs['gender_match'] - ensure it's shown
         gender_with_score = f"{gender_disp} [{gender_s}]"
-
         bdate_disp = str(candidate.get("birth_date", "N/A"))
         birth_score_display = (
             f"[{byear_s+bdate_s}]"
             if byear_s != bdate_s and bdate_s != 0
             else f"[{byear_s}]"
-        )  # Show combined if different
+        )
         bdate_with_score = f"{bdate_disp} {birth_score_display}"
-
         bplace_disp = str(candidate.get("birth_place", "N/A"))
-        bplace_disp = bplace_disp[:15] + ("..." if len(bplace_disp) > 15 else "")
+        bplace_disp = bplace_disp[:20] + ("..." if len(bplace_disp) > 20 else "")
         bplace_with_score = f"{bplace_disp} [{bplace_s}]"
-
         ddate_disp = str(candidate.get("death_date", "N/A"))
         death_score_display = (
             f"[{dyear_s+ddate_s}]"
             if dyear_s != ddate_s and ddate_s != 0
             else f"[{dyear_s}]"
-        )  # Show combined if different
+        )
         ddate_with_score = f"{ddate_disp} {death_score_display}"
-
         dplace_disp = str(candidate.get("death_place", "N/A"))
-        dplace_disp = dplace_disp[:15] + ("..." if len(dplace_disp) > 15 else "")
+        dplace_disp = dplace_disp[:20] + ("..." if len(dplace_disp) > 20 else "")
         dplace_with_score = f"{dplace_disp} [{dplace_s}]"
-
+        # Append row
         table_data.append(
             [
                 str(candidate.get("id", "N/A")),
@@ -667,33 +762,33 @@ def _display_search_results(candidates: List[Dict], max_to_display: int):
                 bplace_with_score,
                 ddate_with_score,
                 dplace_with_score,
-                f"{candidate.get('score', 0):.0f}",
+                f"{candidate.get('score',0):.0f}",
             ]
         )
-        logger.info(
-            f"  ID: {candidate.get('id', 'N/A')}, Name: {candidate.get('name', 'N/A')}, Score: {candidate.get('score', 0):.0f}"
-        )
-        logger.debug(f"    Field Scores: {candidate.get('field_scores', {})}")
-        logger.debug(f"    Reasons: {candidate.get('reasons', [])}")
 
+    # Print table
     try:
-        print(tabulate(table_data, headers=headers, tablefmt="simple"))
+        print(
+            tabulate(table_data, headers=headers, tablefmt="simple")
+        )  # Use simple format
     except Exception as tab_err:
-        logger.error(f"Error formatting results table with tabulate: {tab_err}")
-        print("\nSearch Results (Fallback Format):")
+        logger.error(f"Error formatting table: {tab_err}")
+        print("\nSearch Results (Fallback):")
         print(" | ".join(headers))
-        print("-" * (sum(len(h) for h in headers) + 3 * (len(headers) - 1)))
-        for row in table_data:
-            print(" | ".join(map(str, row)))
+        print("-" * 80)
+        [print(" | ".join(map(str, row))) for row in table_data]
     print("")
 
 
 # End of _display_search_results
 
 
+# Select top candidate
 def _select_top_candidate(
     scored_candidates: List[Dict],
-    raw_suggestions: List[Dict],  # raw_suggestions may not be needed now
+    raw_suggestions: List[
+        Dict
+    ],  # Keep for potential future use? Currently unused here.
 ) -> Optional[Tuple[Dict, Dict]]:
     """Selects the highest-scoring candidate and retrieves its original raw suggestion data."""
     if not scored_candidates:
@@ -702,56 +797,248 @@ def _select_top_candidate(
 
     top_scored_candidate = scored_candidates[0]
     top_scored_id = top_scored_candidate.get("id")
-    top_candidate_raw = top_scored_candidate.get(
-        "raw_data"
-    )  # Already stored during scoring
+    top_candidate_raw = top_scored_candidate.get("raw_data")  # Get from structure
 
     if not top_candidate_raw or not isinstance(top_candidate_raw, dict):
         logger.error(
-            f"Critical Error: Raw data missing for top scored candidate ID: {top_scored_id}."
+            f"Critical Error: Raw data missing for top candidate ID: {top_scored_id}."
         )
         print(
-            f"\nError: Internal mismatch finding details for top candidate ({top_scored_id})."
+            f"\nError: Internal mismatch finding raw data for top candidate ({top_scored_id})."
         )
         return None
 
-    # Handle case where ID was generated
     if isinstance(top_scored_id, str) and top_scored_id.startswith("Unknown_"):
         logger.warning(
             f"Top candidate has generated ID '{top_scored_id}'. Using stored raw data."
         )
 
-    logger.info(
-        f"Highest scoring candidate selected: ID {top_scored_id}, Score {top_scored_candidate.get('score', 0):.0f}"
-    )
-    print(
-        f"\n---> Auto-selecting top match: {top_scored_candidate.get('name', 'Unknown')}"
-    )
+    # Return the selected candidate's processed data and its original raw data
     return top_scored_candidate, top_candidate_raw
 
 
 # End of _select_top_candidate
 
-# _fetch_person_details is removed, logic moved to api_utils.call_facts_user_api
+
+# Display initial comparison (Uses 'gender_match' key)
+def _display_initial_comparison(
+    selected_candidate: Dict,  # The processed candidate dictionary with scoring information
+    search_criteria: Dict[str, Any],  # The user's search criteria
+):
+    """
+    Displays a formatted comparison between search criteria and the top matching candidate.
+    Shows each field side by side with the points awarded for that field match.
+    """
+    # Step 1: Extract the overall score, field scores, and scoring reasons
+    score = selected_candidate.get("score", 0.0)  # Total score for this candidate
+    field_scores = selected_candidate.get("field_scores", {})  # Individual field scores
+    reasons = selected_candidate.get(
+        "reasons", []
+    )  # Text explanations for points awarded
+    candidate_data = selected_candidate.get(
+        "parsed_suggestion", {}
+    )  # Candidate's data fields
+
+    # Step 2: Extract search criteria and candidate values for comparison
+    # Default to "N/A" if a field is missing
+    na = "N/A"
+
+    # Search criteria values (what the user entered)
+    sc_fn = search_criteria.get("first_name", na)  # First name
+    sc_sn = search_criteria.get("surname", na)  # Surname/last name
+    sc_gn = str(search_criteria.get("gender", na)).upper()  # Gender (M/F)
+    sc_by = str(search_criteria.get("birth_year", na))  # Birth year
+    sc_bp = search_criteria.get("birth_place", na)  # Birth place
+    sc_dy = str(search_criteria.get("death_year", na))  # Death year
+    sc_dp = search_criteria.get("death_place", na)  # Death place
+
+    # Candidate values (what was found in the API)
+    c_fn = candidate_data.get("first_name", na)  # First name
+    c_sn = candidate_data.get("surname", na)  # Surname/last name
+    c_gn = str(candidate_data.get("gender", na)).upper()  # Gender (M/F)
+    c_by = str(candidate_data.get("birth_year", na))  # Birth year
+    c_bp = candidate_data.get("birth_place", na)  # Birth place
+    c_dy = str(candidate_data.get("death_year", na))  # Death year
+    c_dp = candidate_data.get("death_place", na)  # Death place
+
+    # Step 3: Map each scoring reason to its corresponding field for display
+    # This allows us to show the specific reason points were awarded for each field
+    field_to_reason = {}
+    for reason in reasons:
+        # Match each reason text to the appropriate field
+        if "First Name" in reason or "Contains First Name" in reason:
+            field_to_reason["First Name"] = reason
+        elif "Last Name" in reason or "Contains Surname" in reason:
+            field_to_reason["Last Name"] = reason
+        elif "Bonus Both Names" in reason:
+            field_to_reason["Name Bonus"] = reason
+        elif "Gender Match" in reason:
+            field_to_reason["Gender"] = reason
+        elif "Birth Year" in reason or "Exact Birth Year" in reason:
+            field_to_reason["Birth Year"] = reason
+        elif "Birth Place" in reason or "Contains Birth Place" in reason:
+            field_to_reason["Birth Place"] = reason
+        elif "Death Dates" in reason or "Death Year" in reason:
+            field_to_reason["Death Year"] = reason
+        elif "Death Places" in reason or "Death Place" in reason:
+            field_to_reason["Death Place"] = reason
+
+    # Step 4: Display the top match header with name and total score
+    display_name = candidate_data.get("full_name_disp", "Unknown")
+    print(f"=== {display_name} (score: {score:.0f}) ===\n")
+
+    # First Name comparison
+    first_name_score = field_scores.get(
+        "givn", 0
+    )  # Points awarded for first name match
+    first_name_reason = field_to_reason.get(
+        "First Name", ""
+    )  # Reason text for first name
+    # Extract the points and reason from the reason text
+    points_match = re.search(r"\((\d+)pts", first_name_reason)
+    # Format the points and reason for display
+    points_str = (
+        f"({first_name_score}pts)"  # If no reason text, just show the score
+        if not points_match
+        else f"({points_match.group(1)}pts {first_name_reason.split('(')[0].strip()})"  # Show points and reason
+    )
+    # Display the first name comparison
+    print(f"First Name: {sc_fn} vs {c_fn} {points_str}")
+
+    # Last Name comparison
+    last_name_score = field_scores.get("surn", 0)  # Points awarded for last name match
+    last_name_reason = field_to_reason.get("Last Name", "")  # Reason text for last name
+    points_match = re.search(r"\((\d+)pts", last_name_reason)
+    points_str = (
+        f"({last_name_score}pts)"
+        if not points_match
+        else f"({points_match.group(1)}pts {last_name_reason.split('(')[0].strip()})"
+    )
+    print(f"Last Name: {sc_sn} vs {c_sn} {points_str}")
+
+    # Name Bonus (additional points when both first and last names match)
+    bonus_score = field_scores.get("bonus", 0)  # Bonus points for matching both names
+    bonus_reason = field_to_reason.get("Name Bonus", "")  # Reason text for name bonus
+    # Only display name bonus if points were awarded
+    if bonus_score > 0:
+        points_match = re.search(r"\((\d+)pts", bonus_reason)
+        points_str = (
+            f"({bonus_score}pts)"
+            if not points_match
+            else f"({points_match.group(1)}pts {bonus_reason.split('(')[0].strip()})"
+        )
+        print(f"Name Bonus:  {points_str}")
+
+    # Gender comparison
+    gender_score = field_scores.get(
+        "gender_match", 0
+    )  # Points awarded for gender match
+    gender_reason = field_to_reason.get("Gender", "")  # Reason text for gender
+    points_match = re.search(r"\((\d+)pts", gender_reason)
+    points_str = (
+        f"({gender_score}pts)"
+        if not points_match
+        else f"({points_match.group(1)}pts {gender_reason.split('(')[0].strip()})"
+    )
+    # Format gender values, handling None/empty values gracefully
+    sc_gn_disp = (
+        sc_gn.lower() if sc_gn and sc_gn.lower() not in ["none", "n/a"] else "none"
+    )
+    c_gn_disp = c_gn.lower() if c_gn and c_gn.lower() not in ["none", "n/a"] else "none"
+    # Display gender in lowercase for consistency
+    print(f"Gender: {sc_gn_disp} vs {c_gn_disp} {points_str}")
+
+    # Birth Year comparison
+    birth_year_score = field_scores.get(
+        "byear", 0
+    )  # Points awarded for birth year match
+    birth_year_reason = field_to_reason.get(
+        "Birth Year", ""
+    )  # Reason text for birth year
+    points_match = re.search(r"\((\d+)pts", birth_year_reason)
+    points_str = (
+        f"({birth_year_score}pts)"
+        if not points_match
+        else f"({points_match.group(1)}pts {birth_year_reason.split('(')[0].strip()})"
+    )
+    print(f"Birth Year: {sc_by} vs {c_by} {points_str}")
+
+    # Birth Place comparison
+    birth_place_score = field_scores.get(
+        "bplace", 0
+    )  # Points awarded for birth place match
+    birth_place_reason = field_to_reason.get(
+        "Birth Place", ""
+    )  # Reason text for birth place
+    points_match = re.search(r"\((\d+)pts", birth_place_reason)
+    points_str = (
+        f"({birth_place_score}pts)"
+        if not points_match
+        else f"({points_match.group(1)}pts {birth_place_reason.split('(')[0].strip()})"
+    )
+    print(f"Birth Place: {sc_bp} vs {c_bp} {points_str}")
+
+    # Death Year comparison
+    # Combine scores from death year and death date fields
+    death_year_score = field_scores.get("dyear", 0) + field_scores.get("ddate", 0)
+    death_year_reason = field_to_reason.get(
+        "Death Year", ""
+    )  # Reason text for death year
+    points_match = re.search(r"\((\d+)pts", death_year_reason)
+    points_str = (
+        f"({death_year_score}pts)"
+        if not points_match
+        else f"({points_match.group(1)}pts {death_year_reason.split('(')[0].strip()})"
+    )
+    # Format death year values to show "none" for missing values
+    sc_dy_disp = "none" if sc_dy.lower() == "none" or sc_dy.lower() == "n/a" else sc_dy
+    c_dy_disp = "none" if c_dy.lower() == "none" or c_dy.lower() == "n/a" else c_dy
+    print(f"Death Year: {sc_dy_disp} vs {c_dy_disp} {points_str}")
+
+    # Death Place comparison
+    death_place_score = field_scores.get(
+        "dplace", 0
+    )  # Points awarded for death place match
+    death_place_reason = field_to_reason.get(
+        "Death Place", ""
+    )  # Reason text for death place
+    points_match = re.search(r"\((\d+)pts", death_place_reason)
+    points_str = (
+        f"({death_place_score}pts)"
+        if not points_match
+        else f"({points_match.group(1)}pts {death_place_reason.split('(')[0].strip()})"
+    )
+    # Format death place values to show "none" for missing values
+    sc_dp_disp = (
+        "none"
+        if sc_dp is None or sc_dp.lower() == "none" or sc_dp.lower() == "n/a"
+        else sc_dp
+    )
+    c_dp_disp = (
+        "none"
+        if c_dp is None or c_dp.lower() == "none" or c_dp.lower() == "n/a"
+        else c_dp
+    )
+    print(f"Death Place: {sc_dp_disp} vs {c_dp_disp} {points_str}\n")
 
 
+# End of _display_initial_comparison
+
+
+# Detailed Info Extraction (Only called if proceeding to supplementary info)
 def _extract_best_name_from_details(
     person_research_data: Dict, candidate_raw: Dict
 ) -> str:
-    """Extracts the best available name from multiple potential sources in API details."""
-    # This function now primarily uses fields standard in person_research_data
-    # Fallback to candidate_raw fields if primary ones are missing
-
+    """Extracts the best available name from detailed API response."""
     best_name = "Unknown"
-    logger.debug(f"_extract_best_name: Input keys: {list(person_research_data.keys())}")
-
-    # Priority 1: PersonFullName
+    name_formatter = format_name if callable(format_name) else lambda x: str(x).title()
+    logger.debug(
+        f"_extract_best_name (Detail): Input keys={list(person_research_data.keys())}"
+    )
     person_full_name = person_research_data.get("PersonFullName")
     if person_full_name and person_full_name != "Valued Relative":
         best_name = person_full_name
         logger.debug(f"Using PersonFullName: '{best_name}'")
-
-    # Priority 2: Name Fact
     if best_name == "Unknown":
         person_facts_list = person_research_data.get("PersonFacts", [])
         if isinstance(person_facts_list, list):
@@ -759,7 +1046,9 @@ def _extract_best_name_from_details(
                 (
                     f
                     for f in person_facts_list
-                    if isinstance(f, dict) and f.get("TypeString") == "Name"
+                    if isinstance(f, dict)
+                    and f.get("TypeString") == "Name"
+                    and not f.get("IsAlternate")
                 ),
                 None,
             )
@@ -770,30 +1059,23 @@ def _extract_best_name_from_details(
             ):
                 best_name = name_fact.get("Value", "Unknown")
                 logger.debug(f"Using Name Fact: '{best_name}'")
-
-    # Priority 3: Constructed from FirstName/LastName
     if best_name == "Unknown":
         first_name_comp = person_research_data.get("FirstName", "")
         last_name_comp = person_research_data.get("LastName", "")
         if first_name_comp or last_name_comp:
             constructed_name = f"{first_name_comp} {last_name_comp}".strip()
-            if constructed_name:
-                best_name = constructed_name
-                logger.debug(f"Using Constructed Name: '{best_name}'")
-
-    # Fallback to name from original suggestion if still Unknown
+        if constructed_name and len(constructed_name) > 1:
+            best_name = constructed_name
+            logger.debug(f"Using Constructed Name: '{best_name}'")
     if best_name == "Unknown":
-        cand_name = candidate_raw.get("FullName", candidate_raw.get("Name"))
-        if cand_name:
+        cand_name = candidate_raw.get("FullName")  # Fallback to initial suggestion name
+        if cand_name and cand_name != "Unknown":
             best_name = cand_name
-            logger.debug(f"Using Fallback Name from Suggestion: '{best_name}'")
-
-    # Final formatting and validation
+            logger.debug(f"Using Fallback Suggestion Name: '{best_name}'")
     if not best_name or best_name == "Valued Relative":
         best_name = "Unknown"
-    elif callable(format_name):
-        best_name = format_name(best_name)
-
+    elif callable(name_formatter):
+        best_name = name_formatter(best_name)
     return best_name
 
 
@@ -802,133 +1084,144 @@ def _extract_best_name_from_details(
 
 def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> Dict:
     """Extracts detailed information from the 'personResearch' dictionary."""
-    # Relies on _extract_fact_data helper for birth/death
-    # Relies on _extract_best_name_from_details for name
-
     extracted = {}
     logger.debug("Extracting details from person_research_data...")
-
+    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    clean_display_func = (
+        _clean_display_date
+        if callable(_clean_display_date)
+        else lambda x: str(x) if x else "N/A"
+    )
     if not isinstance(person_research_data, dict):
         logger.error("Invalid input to _extract_detailed_info.")
         return {}
-
     person_facts_list = person_research_data.get("PersonFacts", [])
     if not isinstance(person_facts_list, list):
+        logger.warning(f"PersonFacts not list: {type(person_facts_list)}")
         person_facts_list = []
     logger.debug(f"Found {len(person_facts_list)} items in PersonFacts.")
-
-    # --- Name ---
+    # Name
     best_name = _extract_best_name_from_details(person_research_data, candidate_raw)
     extracted["name"] = best_name
-    logger.info(f"Final Extracted Name: {best_name}")
-
-    # --- Gender ---
+    logger.info(f"Final Extracted Detail Name: {best_name}")
+    # Gender
     gender_str = person_research_data.get("PersonGender")
-    if not gender_str:  # Check fact if main field missing
+    if not gender_str:
         gender_fact = next(
             (
                 f
                 for f in person_facts_list
-                if isinstance(f, dict) and f.get("TypeString") == "Gender"
+                if isinstance(f, dict)
+                and f.get("TypeString") == "Gender"
+                and not f.get("IsAlternate")
             ),
             None,
         )
-        if gender_fact and gender_fact.get("Value"):
-            gender_str = gender_fact.get("Value")
+    if gender_fact and gender_fact.get("Value"):
+        gender_str = gender_fact.get("Value")
+        logger.debug(f"Using Gender fact: '{gender_str}'")
     extracted["gender_str"] = gender_str
-    extracted["gender"] = (
-        "m" if gender_str == "Male" else ("f" if gender_str == "Female" else None)
+    extracted["gender"] = None
+    if gender_str and isinstance(gender_str, str):
+        gender_lower = gender_str.lower()
+    if gender_lower == "male":
+        extracted["gender"] = "m"
+    elif gender_lower == "female":
+        extracted["gender"] = "f"
+    elif gender_lower in ["m", "f"]:
+        extracted["gender"] = gender_lower
+    else:
+        logger.warning(f"Unrecognized gender: '{gender_str}'")
+    logger.info(
+        f"Final Extracted Detail Gender: {extracted['gender']} (from '{gender_str}')"
     )
-    logger.info(f"Final Extracted Gender: {extracted['gender']} (from '{gender_str}')")
-
-    # --- Living Status ---
-    extracted["is_living"] = person_research_data.get(
-        "IsPersonLiving", False
-    )  # Boolean expected
+    # Living Status
+    is_living_val = person_research_data.get("IsPersonLiving")
+    if isinstance(is_living_val, bool):
+        extracted["is_living"] = is_living_val
+    else:
+        logger.debug("IsPersonLiving missing/invalid. Inferring from Death fact.")
+        _, _, death_date_obj_for_living_check = _extract_fact_data(
+            person_facts_list, "Death"
+        )
+    if death_date_obj_for_living_check is None:
+        extracted["is_living"] = True
+        logger.debug("No death fact, assuming living=True.")
+    else:
+        extracted["is_living"] = False
+        logger.debug("Death fact found, assuming living=False.")
     logger.info(f"Is Living: {extracted['is_living']}")
-
-    # --- Birth/Death using helper ---
-    logger.debug("Extracting birth info...")
+    # Birth/Death
     birth_date_str, birth_place, birth_date_obj = _extract_fact_data(
         person_facts_list, "Birth"
     )
-    logger.debug("Extracting death info...")
     death_date_str, death_place, death_date_obj = _extract_fact_data(
         person_facts_list, "Death"
     )
-
     extracted["birth_date_str"] = birth_date_str
     extracted["birth_place"] = birth_place
     extracted["birth_date_obj"] = birth_date_obj
     extracted["birth_year"] = birth_date_obj.year if birth_date_obj else None
-    extracted["birth_date_disp"] = (
-        _clean_display_date(birth_date_str)
-        if birth_date_str and callable(_clean_display_date)
-        else "N/A"
-    )
+    extracted["birth_date_disp"] = clean_display_func(birth_date_str)
     logger.info(
-        f"Birth: Date='{extracted['birth_date_disp']}', Place='{birth_place or 'N/A'}'"
+        f"Birth Details: Date='{extracted['birth_date_disp']}', Place='{birth_place or 'N/A'}', ParsedObj={birth_date_obj}"
     )
-
     extracted["death_date_str"] = death_date_str
     extracted["death_place"] = death_place
     extracted["death_date_obj"] = death_date_obj
     extracted["death_year"] = death_date_obj.year if death_date_obj else None
-    extracted["death_date_disp"] = (
-        _clean_display_date(death_date_str)
-        if death_date_str and callable(_clean_display_date)
-        else "N/A"
-    )
+    extracted["death_date_disp"] = clean_display_func(death_date_str)
+    if death_date_obj and extracted.get("is_living") is True:
+        logger.warning(
+            "Death date found, but IsPersonLiving=True. Overriding is_living=False."
+        )
+        extracted["is_living"] = False
     logger.info(
-        f"Death: Date='{extracted['death_date_disp']}', Place='{death_place or 'N/A'}'"
+        f"Death Details: Date='{extracted['death_date_disp']}', Place='{death_place or 'N/A'}', ParsedObj={death_date_obj}"
     )
-
-    # --- Family Data ---
-    extracted["family_data"] = person_research_data.get("PersonFamily", {})
-    if not isinstance(extracted["family_data"], dict):
-        logger.warning("PersonFamily data not dict/missing.")
-        extracted["family_data"] = {}
+    # Family Data
+    family_data = person_research_data.get("PersonFamily", {})
+    if not isinstance(family_data, dict):
+        logger.warning(f"PersonFamily not dict: {type(family_data)}")
+        family_data = {}
+    extracted["family_data"] = family_data
     logger.info(f"Family Data Keys: {list(extracted['family_data'].keys())}")
-
-    # --- IDs ---
-    extracted["person_id"] = person_research_data.get(
-        "PersonId", candidate_raw.get("PersonId")
+    # IDs
+    extracted["person_id"] = person_research_data.get("PersonId") or candidate_raw.get(
+        "PersonId"
     )
-    extracted["tree_id"] = person_research_data.get(
-        "TreeId", candidate_raw.get("TreeId")
+    extracted["tree_id"] = person_research_data.get("TreeId") or candidate_raw.get(
+        "TreeId"
     )
-    extracted["user_id"] = person_research_data.get(
-        "UserId", candidate_raw.get("UserId")
-    )  # Global ID
+    extracted["user_id"] = person_research_data.get("UserId") or candidate_raw.get(
+        "UserId"
+    )
     logger.info(
         f"IDs: PersonId='{extracted['person_id']}', TreeId='{extracted['tree_id']}', UserId='{extracted['user_id']}'"
     )
-
-    # --- Name Components for scoring ---
-    extracted["first_name"] = person_research_data.get(
-        "FirstName"
-    )  # Use direct fields if available
-    extracted["surname"] = person_research_data.get("LastName")
-    if not extracted["first_name"] and best_name != "Unknown":  # Fallback crude split
+    # Name Components
+    extracted["first_name"] = clean_param(person_research_data.get("FirstName"))
+    extracted["surname"] = clean_param(person_research_data.get("LastName"))
+    if not extracted["first_name"] and best_name != "Unknown":
         parts = best_name.split()
-        if parts:
-            extracted["first_name"] = parts[0]
-        if len(parts) > 1:
-            extracted["surname"] = parts[-1]
+    if parts:
+        extracted["first_name"] = clean_param(parts[0])
+    if len(parts) > 1 and not extracted["surname"]:
+        extracted["surname"] = clean_param(parts[-1])
     logger.debug(
-        f"Extracted name components for scoring: First='{extracted['first_name']}', Sur='{extracted['surname']}'"
+        f"Extracted name components for detail scoring: First='{extracted['first_name']}', Sur='{extracted['surname']}'"
     )
-
     return extracted
 
 
 # End of _extract_detailed_info
 
 
+# Detailed scoring (Uses 'gender_match' key via fallback scorer)
 def _score_detailed_match(
     extracted_info: Dict, search_criteria: Dict[str, Any], config_instance_local: Any
 ) -> Tuple[float, Dict, List[str]]:
-    """Calculates final match score based on detailed info using scoring function or fallback."""
+    """Calculates final match score based on detailed info. Uses fallback scorer if gedcom_utils unavailable."""
     scoring_func = (
         calculate_match_score
         if GEDCOM_SCORING_AVAILABLE
@@ -938,27 +1231,28 @@ def _score_detailed_match(
         logger.warning(
             "Gedcom scoring unavailable for detailed match. Using simple fallback."
         )
-
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
     scoring_weights = getattr(config_instance_local, "COMMON_SCORING_WEIGHTS", {})
     name_flex = getattr(config_instance_local, "NAME_FLEXIBILITY", 2)
     date_flex = getattr(config_instance_local, "DATE_FLEXIBILITY", 2)
-
-    # Prepare data structure compatible with scoring function
+    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    # Prepare data for scoring function
     candidate_processed_data = {
         "norm_id": extracted_info.get("person_id"),
         "display_id": extracted_info.get("person_id"),
-        "first_name": clean_param(extracted_info.get("first_name")),
-        "surname": clean_param(extracted_info.get("surname")),
+        "first_name": extracted_info.get("first_name"),
+        "surname": extracted_info.get("surname"),
         "full_name_disp": extracted_info.get("name"),
-        "gender_norm": extracted_info.get("gender"),  # Already 'm'/'f'/None
+        "gender_norm": extracted_info.get("gender"),
         "birth_year": extracted_info.get("birth_year"),
         "birth_date_obj": extracted_info.get("birth_date_obj"),
         "birth_place_disp": clean_param(extracted_info.get("birth_place")),
         "death_year": extracted_info.get("death_year"),
         "death_date_obj": extracted_info.get("death_date_obj"),
         "death_place_disp": clean_param(extracted_info.get("death_place")),
-        "is_living": extracted_info.get("is_living", False),  # Needs to be bool
+        "is_living": extracted_info.get("is_living", False),
+        "gender": extracted_info.get("gender"),
+        "birth_place": clean_param(extracted_info.get("birth_place")),
+        "death_place": clean_param(extracted_info.get("death_place")),
     }
     logger.debug(
         f"Detailed scoring - Search criteria: {json.dumps(search_criteria, default=str)}"
@@ -966,15 +1260,11 @@ def _score_detailed_match(
     logger.debug(
         f"Detailed scoring - Candidate data: {json.dumps(candidate_processed_data, default=str)}"
     )
-
     score = 0.0
     field_scores = {}
     reasons_list = ["API Detail Match"]
-
     try:
-        logger.debug(
-            f"Calculating detailed score using {'gedcom_utils' if scoring_func == calculate_match_score else 'simple fallback'}..."
-        )
+        logger.debug(f"Calculating detailed score using {scoring_func.__name__}...")
         if scoring_func == calculate_match_score:
             score, field_scores, reasons = scoring_func(
                 search_criteria,
@@ -983,24 +1273,37 @@ def _score_detailed_match(
                 name_flex,
                 date_flex,
             )
-        else:  # Simple scoring
+        else:
             score, field_scores, reasons = scoring_func(
                 search_criteria, candidate_processed_data
-            )
-        # Ensure base reason is present and combine
+            )  # Simple scorer
         if "API Detail Match" not in reasons:
             reasons.insert(0, "API Detail Match")
         reasons_list = reasons
         logger.info(f"Calculated detailed score: {score:.0f}")
+        # Log detailed score gender key ('gender_match')
+        if "gender_match" in field_scores:
+            logger.debug(
+                f"Detailed Field Score ('gender_match'): {field_scores['gender_match']}"
+            )
+        else:
+            logger.debug("Detailed Field Scores missing 'gender_match' key.")
     except Exception as e:
         logger.error(f"Error calculating detailed score: {e}", exc_info=True)
-        logger.warning(
-            "Falling back to simple scoring for detailed match due to error."
-        )
-        score, field_scores, reasons_list = _run_simple_suggestion_scoring(
+        logger.warning("Falling back to simple scoring for detailed match.")
+        score, field_scores, reasons_list_fallback = _run_simple_suggestion_scoring(
             search_criteria, candidate_processed_data
-        )  # Use extracted_info for simple scoring
-        reasons_list.append("(Detailed Scoring Error Fallback)")
+        )
+        reasons_list = ["API Detail Match", "(Detailed Scoring Error Fallback)"] + [
+            r
+            for r in reasons_list_fallback
+            if r not in ["API Suggest Match", "Fallback Scoring"]
+        ]
+        # Log gender score key from fallback
+        if "gender_match" in field_scores:
+            logger.debug(
+                f"Fallback Detailed Field Score ('gender_match'): {field_scores['gender_match']}"
+            )
 
     logger.debug(f"Final detailed score: {score:.0f}")
     logger.debug(f"Final detailed field scores: {field_scores}")
@@ -1011,97 +1314,7 @@ def _score_detailed_match(
 # End of _score_detailed_match
 
 
-def _display_detailed_match_info(
-    extracted_info: Dict,
-    score_info: Tuple[float, Dict, List[str]],
-    search_criteria: Dict[str, Any],
-    base_url: str,
-):
-    """Displays the final scoring details, comparison, and selected match summary."""
-    score, field_scores, reasons = score_info
-    print("\n=== DETAILED SCORING INFORMATION ===")
-    print(f"Total Score: {score:.0f}")
-    print("\nField-by-Field Comparison:")
-
-    na = "N/A"
-    sc = search_criteria
-    ei = extracted_info
-    # Prepare comparison dict using cleaned search criteria and extracted info
-    cp = {  # Use extracted data directly
-        "First Name": str(ei.get("first_name", na)),
-        "Last Name": str(ei.get("surname", na)),
-        "Gender": str(ei.get("gender", na)).upper(),
-        "Birth Year": str(ei.get("birth_year", na)),
-        "Birth Place": str(ei.get("birth_place", na)),
-        "Death Year": str(ei.get("death_year", na)),
-        "Death Place": str(ei.get("death_place", na)),
-    }
-    sc_comp = {  # Use cleaned search criteria
-        "First Name": str(sc.get("first_name", na)),
-        "Last Name": str(sc.get("surname", na)),
-        "Gender": str(sc.get("gender", na)).upper(),
-        "Birth Year": str(sc.get("birth_year", na)),
-        "Birth Place": str(sc.get("birth_place", na)),
-        "Death Year": str(sc.get("death_year", na)),
-        "Death Place": str(sc.get("death_place", na)),
-    }
-
-    field_order = [
-        "First Name",
-        "Last Name",
-        "Gender",
-        "Birth Year",
-        "Birth Place",
-        "Death Year",
-        "Death Place",
-    ]
-    max_len = max(len(f) for f in field_order)
-    for field in field_order:
-        print(f"  {field:<{max_len}} : {sc_comp[field]:<15} vs {cp[field]}")
-
-    logger.debug("  Detailed Field Scores:")
-    for field, score_value in field_scores.items():
-        logger.debug(f"    {field}: {score_value}")
-
-    print("\nScore Reasons:")
-    for reason in reasons:
-        print(f"  - {reason}")
-
-    print(f"\n--- Top Match Details ---")
-    person_link = "(Link unavailable)"
-    # Generate link using api_utils helper (handles global vs tree ID)
-    link_func = getattr(sys.modules.get("api_utils"), "_generate_person_link", None)
-    if callable(link_func):
-        person_link = link_func(
-            ei.get("user_id") or ei.get("person_id"),
-            ei.get("tree_id") if not ei.get("user_id") else None,
-            base_url,
-        )
-    else:
-        logger.error("Cannot generate link: _generate_person_link helper missing.")
-
-    print(
-        f"  Name : {ei.get('name', 'Unknown')} (ID: {ei.get('user_id') or ei.get('person_id') or 'N/A'})"
-    )
-    print(f"  Link : {person_link}")
-    print(
-        f"  Born : {ei.get('birth_date_disp', '?')} in {ei.get('birth_place') or '?'}"
-    )
-    if not ei.get("is_living", False):
-        print(
-            f"  Died : {ei.get('death_date_disp', '?')} in {ei.get('death_place') or '?'}"
-        )
-    else:
-        print(f"  Died : (Living)")
-    reason_summary = (
-        reasons[0] + ("..." if len(reasons) > 1 else "") if reasons else "N/A"
-    )
-    print(f"  Score: {score:.0f} (Reason: {reason_summary})")
-
-
-# End of _display_detailed_match_info
-
-
+# Family/Relationship Display Functions
 def _flatten_children_list(children_raw: Union[List, Dict, None]) -> List[Dict]:
     """Flattens potentially nested list of children from PersonFamily and removes duplicates."""
     children_flat_list = []
@@ -1115,9 +1328,8 @@ def _flatten_children_list(children_raw: Union[List, Dict, None]) -> List[Dict]:
                 items_to_process.append(child_entry)
             else:
                 logger.warning(
-                    f"_flatten_children_list: Unexpected item type in Children list: {type(child_entry)}"
+                    f"Unexpected item type in Children list: {type(child_entry)}"
                 )
-
             for child_dict in items_to_process:
                 if isinstance(child_dict, dict):
                     child_id = child_dict.get("PersonId")
@@ -1125,31 +1337,21 @@ def _flatten_children_list(children_raw: Union[List, Dict, None]) -> List[Dict]:
                         children_flat_list.append(child_dict)
                         added_ids.add(child_id)
                     elif not child_id:
-                        logger.warning(
-                            "_flatten_children_list: Child dict missing PersonId."
-                        )
-                        children_flat_list.append(child_dict)  # Add anyway?
+                        children_flat_list.append(child_dict)
                 else:
                     logger.warning(
-                        f"_flatten_children_list: Non-dict item found within child entry: {type(child_dict)}"
+                        f"Non-dict item found within child entry: {type(child_dict)}"
                     )
-    elif isinstance(
-        children_raw, dict
-    ):  # Handle case where 'Children' might be a single dict
+    elif isinstance(children_raw, dict):
         child_id = children_raw.get("PersonId")
         if child_id and child_id not in added_ids:
             children_flat_list.append(children_raw)
             added_ids.add(child_id)
         elif not child_id:
-            logger.warning(
-                "_flatten_children_list: Single child dict missing PersonId."
-            )
+            logger.warning("Single child dict missing PersonId.")
             children_flat_list.append(children_raw)
     elif children_raw is not None:
-        logger.warning(
-            f"_flatten_children_list: Unexpected data type for 'Children': {type(children_raw)}"
-        )
-
+        logger.warning(f"Unexpected data type for 'Children': {type(children_raw)}")
     logger.debug(
         f"Flattened children entries into {len(children_flat_list)} unique children."
     )
@@ -1161,31 +1363,22 @@ def _flatten_children_list(children_raw: Union[List, Dict, None]) -> List[Dict]:
 
 def _display_family_info(family_data: Dict):
     """Displays formatted family information (parents, siblings, spouses, children)."""
-    print("\nRelatives:")
-    logger.info("\n  Relatives:")
+
     if not isinstance(family_data, dict) or not family_data:
-        logger.warning("_display_family_info: Received empty or invalid family_data.")
+        logger.warning("Received empty/invalid family_data.")
         print("  Family data unavailable.")
         return
-
-    # Use consistent name formatting
     name_formatter = format_name if callable(format_name) else lambda x: str(x).title()
 
     def print_relatives(rel_type: str, rel_list: Optional[List[Dict]]):
         type_display = rel_type.replace("_", " ").capitalize()
-        print(f"  {type_display}:")
-        logger.info(f"    {type_display}:")
+        print(f"\n{type_display}:\n")
         if not rel_list:
             print("    None found.")
-            logger.info("    None found.")
             return
         if not isinstance(rel_list, list):
-            logger.warning(
-                f"Expected list for {rel_type}, but got {type(rel_list)}. Skipping."
-            )
-            print("    (Data format error)")
+            print_exception(f"Expected list for {rel_type}, got {type(rel_list)}.")
             return
-
         found_any = False
         for idx, relative in enumerate(rel_list):
             if not isinstance(relative, dict):
@@ -1193,35 +1386,27 @@ def _display_family_info(family_data: Dict):
                     f"Skipping invalid relative entry {idx+1} in {rel_type}: {relative}"
                 )
                 continue
-
             name = name_formatter(relative.get("FullName", "Unknown"))
-            lifespan = relative.get("LifeRange", "")  # e.g., "1900-1950" or "1920"
-            # Try to extract just years for display
+            lifespan = relative.get("LifeRange", "")
             b_year, d_year = None, None
             if lifespan and isinstance(lifespan, str):
                 years = re.findall(r"\b\d{4}\b", lifespan)
-                if years:
-                    b_year = years[0]
-                if len(years) > 1:
-                    d_year = years[-1]
-
+            if years:
+                b_year = years[0]
+            if len(years) > 1:
+                d_year = years[-1]
             life_info = ""
             if b_year and d_year:
                 life_info = f" ({b_year}–{d_year})"
             elif b_year:
                 life_info = f" (b. {b_year})"
             elif lifespan:
-                life_info = f" ({lifespan})"  # Fallback to full string
-
+                life_info = f" ({lifespan})"
             rel_info = f"- {name}{life_info}"
-            print(f"    {rel_info}")
-            logger.info(f"      {rel_info}")
+            print(f"      {rel_info}")
             found_any = True
         if not found_any:
-            print("    None found.")
-            logger.info("    None found (list contained invalid entries).")
-
-    # End of print_relatives (nested function)
+            print("None found (list had invalid entries).")
 
     parents_list = (family_data.get("Fathers") or []) + (
         family_data.get("Mothers") or []
@@ -1230,7 +1415,6 @@ def _display_family_info(family_data: Dict):
     spouses_list = family_data.get("Spouses")
     children_raw = family_data.get("Children", [])
     children_flat_list = _flatten_children_list(children_raw)
-
     print_relatives("Parents", parents_list)
     print_relatives("Siblings", siblings_list)
     print_relatives("Spouses", spouses_list)
@@ -1248,37 +1432,35 @@ def _display_tree_relationship(
     session_manager_local: SessionManager,
     base_url: str,
 ):
-    """Calculates and displays the relationship path using the Tree Ladder API (/getladder) via api_utils helper."""
+    """Calculates and displays the relationship path using the Tree Ladder API."""
     print(f"\n--- Relationship Path (within Tree) to {owner_name} ---")
     logger.info(
-        f"Calculating Tree relationship path for {selected_name} (PersonID: {selected_person_tree_id}) to {owner_name} (TreeID: {owner_tree_id})"
+        f"Calculating Tree relationship path for {selected_name} ({selected_person_tree_id}) to {owner_name} ({owner_tree_id})"
     )
-
     if not callable(call_getladder_api) or not callable(format_api_relationship_path):
         logger.error(
             "Cannot display tree relationship: Required api_utils functions missing."
         )
-        print("(Error: Required relationship utilities unavailable)")
+        print("(Error: Relationship utilities unavailable)")
         return
+    # Construct the API URL for logging/display purposes
+    ladder_api_url = f"{base_url}/family-tree/person/tree/{owner_tree_id}/person/{selected_person_tree_id}/getladder"
+    print(f"\nAPI URL: {ladder_api_url}\n")
 
-    # Call the API helper
+    # Call the API
     relationship_data_raw = call_getladder_api(
         session_manager_local, owner_tree_id, selected_person_tree_id, base_url
     )
-
     if not relationship_data_raw:
         logger.warning("call_getladder_api returned no data.")
-        print("(Tree API call for relationship returned no response or failed)")
+        print("(Tree API call for relationship failed)")
         return
-
-    print("")  # Add space before output
+    print("")
     fallback_message_text = "(Could not parse relationship path from Tree API)"
-
     try:
         formatted_path = format_api_relationship_path(
             relationship_data_raw, owner_name, selected_name
         )
-        # Check for known error/empty states from the formatter
         known_error_starts = (
             "(No relationship",
             "(Could not parse",
@@ -1288,23 +1470,21 @@ def _display_tree_relationship(
             "(Error processing relationship",
         )
         if formatted_path and not formatted_path.startswith(known_error_starts):
-            print(
-                formatted_path
-            )  # Assumes formatter includes necessary indentation/newlines
-            logger.info("    --- Tree Relationship Path Interpretation ---")
-            for line in formatted_path.splitlines():
-                if line.strip():
-                    logger.info(f"    {line.strip()}")
-            logger.info("    ------------------------------------")
+            print(formatted_path)
+            logger.info("    --- Tree Relationship Path ---")
+            [
+                logger.info(f"    {line.strip()}")
+                for line in formatted_path.splitlines()
+                if line.strip()
+            ]
+            logger.info("    ----------------------------")
         else:
             logger.warning(
-                f"format_api_relationship_path returned no path or error: '{formatted_path}'"
+                f"format_api_relationship_path returned error: '{formatted_path}'"
             )
-            print(
-                f"  {formatted_path or fallback_message_text}"
-            )  # Display error from parser or fallback
+            print(f"  {formatted_path or fallback_message_text}")
             logger.warning(
-                f"Relationship parsing failed/returned error. Raw response:\n{str(relationship_data_raw)[:1000]}"
+                f"Relationship parsing failed. Raw response: {str(relationship_data_raw)[:1000]}"
             )
     except Exception as fmt_err:
         logger.error(
@@ -1312,7 +1492,7 @@ def _display_tree_relationship(
         )
         print(f"  {fallback_message_text} (Processing Error)")
         logger.warning(
-            f"Relationship parsing failed during format call. Raw response:\n{str(relationship_data_raw)[:1000]}"
+            f"Relationship parsing failed. Raw response: {str(relationship_data_raw)[:1000]}"
         )
 
 
@@ -1327,48 +1507,42 @@ def _display_discovery_relationship(
     session_manager_local: SessionManager,
     base_url: str,
 ):
-    """Calculates and displays the relationship path using the Discovery API (/relationshiptome) via api_utils helper."""
+    """Calculates and displays the relationship path using the Discovery API."""
     print(f"\n--- Relationship Path (Discovery) to {owner_name} ---")
     logger.info(
-        f"Calculating Discovery relationship path for {selected_name} (GlobalID: {selected_person_global_id}) to {owner_name} (ProfileID: {owner_profile_id})"
+        f"Calculating Discovery relationship for {selected_name} ({selected_person_global_id}) to {owner_name} ({owner_profile_id})"
     )
-
     if not callable(call_discovery_relationship_api):
-        logger.error(
-            "Cannot display discovery relationship: call_discovery_relationship_api function missing."
-        )
-        print("(Error: Required relationship utility unavailable)")
+        logger.error("Cannot display discovery relationship: Function missing.")
+        print("(Error: Relationship utility unavailable)")
         return
+    # Construct the API URL for logging/display purposes
+    discovery_api_url = f"{base_url}/discoveryui-matchingservice/api/relationship?profileIdFrom={owner_profile_id}&profileIdTo={selected_person_global_id}"
+    print(f"\nAPI URL: {discovery_api_url}\n")
 
-    # Call the API helper
+    # Call the API
     relationship_data = call_discovery_relationship_api(
         session_manager_local, selected_person_global_id, owner_profile_id, base_url
     )
-
     if not relationship_data:
         logger.warning("call_discovery_relationship_api returned no data.")
-        print("(Discovery API call for relationship returned no response or failed)")
+        print("(Discovery API call failed)")
         return
     if not isinstance(relationship_data, dict):
         logger.warning(
-            f"Discovery API call returned unexpected type: {type(relationship_data)}"
+            f"Discovery API returned unexpected type: {type(relationship_data)}"
         )
-        print("(Discovery API call returned data in unexpected format)")
+        print("(Discovery API returned unexpected format)")
         logger.debug(f"Raw Discovery response: {str(relationship_data)[:1000]}")
         return
-
-    print("")  # Add space before output
+    print("")
     fallback_message_text = "(Could not parse relationship path from Discovery API)"
-
-    # Direct JSON Parsing for 'path' array
     if isinstance(relationship_data.get("path"), list) and relationship_data.get(
         "path"
     ):
-        logger.info(
-            "    --- Discovery Relationship Path Interpretation (Direct JSON) ---"
-        )
+        logger.info("    --- Discovery Relationship Path (Direct JSON) ---")
         path_steps = relationship_data["path"]
-        print(f"  {selected_name}")  # Start with target
+        print(f"  {selected_name}")
         logger.info(f"    {selected_name}")
         name_formatter = (
             format_name if callable(format_name) else lambda x: str(x).title()
@@ -1376,38 +1550,30 @@ def _display_discovery_relationship(
         rel_term_func = getattr(
             sys.modules.get("api_utils"), "_get_relationship_term", None
         )
-
         for step in path_steps:
             step_name = step.get("name", "?")
             step_rel = step.get("relationship", "?")
-            display_rel = step_rel.capitalize()  # Default
-            if callable(rel_term_func):
-                display_rel = rel_term_func(
-                    None, step_rel
-                )  # Get specific term if possible
-
-            display_line = f"  -> {display_rel} is {name_formatter(step_name)}"
-            print(display_line)
-            logger.info(f"    {display_line.strip()}")
+            display_rel = step_rel.capitalize()
+        if callable(rel_term_func):
+            display_rel = rel_term_func(None, step_rel)
+        display_line = f"  -> {display_rel} is {name_formatter(step_name)}"
+        print(display_line)
+        logger.info(f"    {display_line.strip()}")
         print(f"  -> {owner_name} (Tree Owner / You)")
         logger.info(f"    -> {owner_name} (Tree Owner / You)")
-        logger.info("    ------------------------------------")
+        logger.info("    -------------------------------------------------")
     else:
-        # Log failure reason if path missing or invalid
         if "path" not in relationship_data:
-            logger.warning("Discovery API response JSON missing 'path' key.")
+            logger.warning("Discovery JSON missing 'path' key.")
             print(f"  {fallback_message_text} (Missing 'path')")
         elif not isinstance(relationship_data.get("path"), list):
             logger.warning(
-                f"Discovery API response 'path' key is not a list: {type(relationship_data.get('path'))}"
+                f"Discovery 'path' is not list: {type(relationship_data.get('path'))}"
             )
-            print(f"  {fallback_message_text} ('path' not a list)")
-        else:  # Path is likely an empty list
-            logger.warning("Discovery API response 'path' list is empty.")
-            print(
-                "(No direct relationship path found via Discovery API)"
-            )  # More specific message
-
+            print(f"  {fallback_message_text} ('path' not list)")
+        else:
+            logger.warning("Discovery 'path' list is empty.")
+            print("(No direct relationship path found via Discovery API)")
         logger.debug(
             f"Discovery response content: {json.dumps(relationship_data, indent=2)}"
         )
@@ -1419,6 +1585,7 @@ def _display_discovery_relationship(
 # --- Phase Handler Functions ---
 
 
+# API Call (Correct definition order)
 def _call_direct_treesui_list_api(
     session_manager_local: SessionManager,
     owner_tree_id: str,
@@ -1427,15 +1594,6 @@ def _call_direct_treesui_list_api(
 ) -> Optional[List[Dict]]:
     """
     Directly calls the TreesUI List API with the specific format requested.
-
-    Args:
-        session_manager_local: The active SessionManager instance
-        owner_tree_id: The ID of the owner's tree (e.g., 175946702)
-        search_criteria: Dict containing search criteria (uses first/last name)
-        base_url: The base Ancestry URL (e.g., https://www.ancestry.co.uk)
-
-    Returns:
-        List of result dictionaries from the API JSON response, or None if call fails.
     """
     if not session_manager_local or not owner_tree_id or not base_url:
         logger.error("Missing required parameters for direct TreesUI List API call")
@@ -1443,167 +1601,109 @@ def _call_direct_treesui_list_api(
     if not session_manager_local.is_sess_valid():
         logger.error("Session is not valid for direct TreesUI List API call.")
         print("Error: Session invalid. Cannot contact Ancestry API.")
-        # Optionally try to re-ensure session readiness
-        # if not session_manager_local.ensure_session_ready("API Call Re-Init"):
-        #     return None
-        return None  # Fail if session is not ready
+        return None
 
-    # Extract search criteria - use raw names as provided by user initially
     first_name = search_criteria.get("first_name_raw", "")
     surname = search_criteria.get("surname_raw", "")
-
-    # --- Construct the EXACT API URL provided by the user ---
-    # Use urlencode for parameters to handle special characters correctly
-    params = {
-        "sort": "sname,gname",
-        "limit": "100",  # Keep limit reasonable
-        "fields": "NAMES,EVENTS",  # Specify required fields
-    }
+    params = {"sort": "sname,gname", "limit": "100", "fields": "NAMES,EVENTS,GENDER"}
     if first_name:
         params["fn"] = first_name
     if surname:
         params["ln"] = surname
-
-    # Encode the parameters
     encoded_params = urlencode(params, quote_via=quote)
-
-    # Construct the full URL
     api_url = (
         f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?{encoded_params}"
     )
 
-    logger.info(f"Calling specific TreesUI List API URL: {api_url}")
-    print(f"Searching Ancestry API...")  # Keep user message simple
-
-    # Get timeout from config or use a reasonable default
-    api_timeout = _get_api_timeout(
-        30
-    )  # Use helper from api_utils if available, else default
+    # Log the API URL and also print it for the user
+    print(f"\nAPI URL: {api_url}\n")
+    api_timeout = 10  # Use a fixed timeout value
 
     try:
-        # Get the session cookies from the SessionManager's requests session
         cookies = None
         if (
             hasattr(session_manager_local, "_requests_session")
             and session_manager_local._requests_session
         ):
             cookies = session_manager_local._requests_session.cookies
-        # Fallback if _requests_session isn't directly accessible but session is
         elif (
             hasattr(session_manager_local, "session") and session_manager_local.session
         ):
-            # This might be a Selenium session, less ideal for direct requests
-            logger.warning(
-                "Using cookies from Selenium session for direct API call - may be incomplete."
-            )
+            logger.warning("Using cookies from Selenium session for direct API call.")
             try:
-                # Attempt to get cookies from Selenium driver if requests session missing
                 selenium_cookies = session_manager_local.driver.get_cookies()
                 cookies = {c["name"]: c["value"] for c in selenium_cookies}
             except Exception as cookie_err:
-                logger.error(
-                    f"Failed to get cookies from Selenium driver: {cookie_err}"
-                )
-                cookies = {}  # Proceed without cookies if extraction fails
-
+                logger.error(f"Failed to get cookies from Selenium: {cookie_err}")
+                cookies = {}
         if not cookies:
-            logger.error(
-                "No session cookies available for API call. Request will likely fail."
-            )
-            # Consider failing here if cookies are strictly required
-            # return None
+            logger.error("No session cookies available for API call.")
 
-        # Set up standard browser-like headers
         headers = {
-            "Accept": "application/json",  # Essential for getting JSON response
-            "Accept-Language": "en-GB,en;q=0.9",  # Adjust language if needed
+            "Accept": "application/json",
+            "Accept-Language": "en-GB,en;q=0.9",
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
-            "Referer": f"{base_url}/family-tree/tree/{owner_tree_id}/family",  # A plausible referer
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",  # Standard UA
-            "X-Requested-With": "XMLHttpRequest",  # Often used by JS-driven requests
+            "Referer": f"{base_url}/family-tree/tree/{owner_tree_id}/family",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "X-Requested-With": "XMLHttpRequest",
         }
         logger.debug(f"API Request Headers: {headers}")
         if cookies:
             logger.debug(f"API Request Cookies (keys): {list(cookies.keys())}")
 
-        # Make the request using requests library directly
         response = requests.get(
             api_url, headers=headers, cookies=cookies, timeout=api_timeout
         )
         logger.debug(f"API Response Status Code: {response.status_code}")
 
-        # Check response status
         if response.status_code == 200:
             try:
-                # Attempt to parse the JSON response
                 data = response.json()
                 if isinstance(data, list):
-                    # Success! Log and return the list of results
-                    logger.info(
-                        f"Direct TreesUI List API call successful, received {len(data)} results."
-                    )
-                    print(f"Found {len(data)} potential matches.")
                     return data
                 else:
-                    # API returned 200 OK but content wasn't a list as expected
                     logger.error(
-                        f"API call successful (200 OK) but response was not a JSON list. Type: {type(data)}"
+                        f"API call OK but response not JSON list. Type: {type(data)}"
                     )
                     logger.debug(f"API Response Text: {response.text[:500]}")
-                    print("Error: API returned data in an unexpected format.")
+                    print("Error: API returned unexpected data format.")
                     return None
             except json.JSONDecodeError as json_err:
-                # API returned 200 OK but content wasn't valid JSON
-                logger.error(
-                    f"Failed to parse JSON response from API (200 OK): {json_err}"
-                )
-                logger.debug(
-                    f"API Response Text: {response.text[:1000]}"
-                )  # Log more text
-                print("Error: Could not understand the data received from Ancestry.")
+                logger.error(f"Failed to parse JSON response (200 OK): {json_err}")
+                logger.debug(f"API Response Text: {response.text[:1000]}")
+                print("Error: Could not understand data from Ancestry.")
                 return None
         elif response.status_code in [401, 403]:
             logger.error(
-                f"API call failed with status code: {response.status_code} (Unauthorized/Forbidden). Check login/session."
+                f"API call failed: {response.status_code} (Unauthorized/Forbidden). Check session."
             )
-            print(
-                f"Error: Access denied by Ancestry API ({response.status_code}). Session might be invalid."
-            )
-            # Attempt to refresh session? Or just fail.
-            # session_manager_local.invalidate_session() # Mark session as bad
+            print(f"Error: Access denied ({response.status_code}). Session invalid?")
             return None
         else:
-            # Handle other HTTP errors (4xx, 5xx)
             logger.error(f"API call failed with status code: {response.status_code}")
             logger.debug(f"API Response Text: {response.text[:500]}")
-            print(f"Error: Ancestry API returned an error ({response.status_code}).")
+            print(f"Error: Ancestry API returned error ({response.status_code}).")
             return None
 
     except requests.exceptions.Timeout:
         logger.error(f"API call timed out after {api_timeout}s")
-        print(f"(Error: Timed out searching Ancestry API after {api_timeout} seconds)")
+        print(f"(Error: Timed out searching Ancestry API)")
         return None
     except requests.exceptions.RequestException as req_err:
-        # Handle other potential requests errors (connection, etc.)
-        logger.error(
-            f"API call failed due to a network or request issue: {req_err}",
-            exc_info=True,
-        )
+        logger.error(f"API call network/request issue: {req_err}", exc_info=True)
         print(f"(Error connecting to Ancestry API: {req_err})")
         return None
     except Exception as e:
-        # Catch any other unexpected errors during the API call
-        logger.error(
-            f"An unexpected error occurred during the API call: {e}", exc_info=True
-        )
-        print(f"(An unexpected error occurred while searching: {e})")
+        logger.error(f"Unexpected error during API call: {e}", exc_info=True)
+        print(f"(Unexpected error searching: {e})")
         return None
 
 
 # End of _call_direct_treesui_list_api
 
 
+# Search Phase (Includes Limit, Calls API func defined above)
 def _handle_search_phase(
     session_manager_local: SessionManager,
     search_criteria: Dict[str, Any],
@@ -1612,105 +1712,70 @@ def _handle_search_phase(
     """Handles the API search phase using the direct TreesUI List API."""
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
-
     if not owner_tree_id:
-        logger.error("Cannot perform API search: Owner Tree ID is missing.")
-        print("\nERROR: Cannot perform API search because your Tree ID is unknown.")
+        # Log error and display to user
+        logger.error("Owner Tree ID missing.")
         return None
     if not base_url:
-        logger.error("Cannot perform API search: Base URL is missing in config.")
-        print(
-            "\nERROR: Cannot perform API search because the Ancestry URL is not configured."
-        )
+        # Log error and display to user
+        logger.error("ERROR: Ancestry URL not configured.. Base URL missing.")
         return None
 
-    # --- Use the specific direct TreesUI List API call ---
+    # This call now works because the function is defined above
     suggestions_raw = _call_direct_treesui_list_api(
         session_manager_local, owner_tree_id, search_criteria, base_url
     )
-
     if suggestions_raw is None:
-        logger.error("TreesUI List API search failed critically or returned None.")
-        print("\nPossible solutions if search failed:")
-        # ... (keep helpful context messages) ...
-        return None
+        # Log error and display to user
+        logger.error("API search failed.")
+        return None  # Error logged previously
     if not suggestions_raw:
-        logger.info("API Search returned no results.")
-        print(
-            "\nNo potential matches found in your Ancestry tree based on the criteria."
-        )
+        # Log info and display to user
+        logger.info("API Search returned no results.No potential matches found.")
         return []
-
-    # --- Parse the results obtained from the API ---
     parsed_results = _parse_treesui_list_response(suggestions_raw, search_criteria)
     if parsed_results is None:
-        logger.error("Failed to parse the API response.")
-        print("\nError: Could not process the data received from Ancestry.")
+        # Log error and display to user
+        logger.error("Failed to parse API response. Error processing data.")
         return None
-
-    # --- <<< REINSTATED SCORING LIMIT >>> ---
-    # Limit suggestions to score if configured
-    max_score_limit = getattr(
-        config_instance_local, "MAX_SUGGESTIONS_TO_SCORE", 100
-    )  # Default to 100 if not set
+    # Limit suggestions based on config
+    max_score_limit = getattr(config_instance_local, "MAX_SUGGESTIONS_TO_SCORE", 100)
     if (
         isinstance(max_score_limit, int)
         and max_score_limit > 0
         and len(parsed_results) > max_score_limit
     ):
-        logger.warning(
-            f"Processing only top {max_score_limit} of {len(parsed_results)} parsed suggestions for scoring based on MAX_SUGGESTIONS_TO_SCORE config."
+        logger.debug(
+            f"Processing only top {max_score_limit} of {len(parsed_results)} suggestions for scoring."
         )
-        # Return the limited list for scoring
         return parsed_results[:max_score_limit]
     else:
-        # Return all parsed results if no limit or within limit
-        logger.info(
-            f"Passing all {len(parsed_results)} parsed suggestions for scoring (limit not applied or not exceeded)."
-        )
         return parsed_results
-    # --- <<< END REINSTATED SCORING LIMIT >>> ---
 
 
 # End of _handle_search_phase
 
+
+# Parsing (Definition before use in _handle_search_phase)
 def _parse_treesui_list_response(
     treesui_response: List[Dict],
-    search_criteria: Dict[
-        str, Any
-    ],  # Keep search_criteria for context/logging if needed
+    search_criteria: Dict[str, Any],
 ) -> Optional[List[Dict]]:
     """
     Parses the specific TreesUI List API response structure provided by the user
     to extract information needed for scoring and display.
-
-    Args:
-        treesui_response: The raw list of dictionaries from the API JSON response.
-        search_criteria: The search criteria used (for logging/context).
-
-    Returns:
-        A list of dictionaries, each representing a parsed person with standardized keys,
-        or None if a critical parsing error occurs.
     """
     parsed_results = []
     parse_date_func = _parse_date if callable(_parse_date) else None
-
-    logger.info(
+    logger.debug(
         f"Parsing {len(treesui_response)} items from TreesUI List API response."
     )
-    # Optional: Log the first few raw items for debugging
-    # for i, person_raw in enumerate(treesui_response[:2]):
-    #     logger.debug(f"Raw item {i}: {json.dumps(person_raw, indent=2)}")
-
     for idx, person_raw in enumerate(treesui_response):
         if not isinstance(person_raw, dict):
-            logger.warning(
-                f"Skipping item {idx}: Expected a dictionary, got {type(person_raw)}"
-            )
+            logger.warning(f"Skipping item {idx}: Not dict")
             continue
-
         try:
-            # --- Extract GID (Person ID and Tree ID) ---
+            # GID
             gid_data = person_raw.get("gid", {}).get("v", "")
             person_id = None
             tree_id = None
@@ -1718,99 +1783,77 @@ def _parse_treesui_list_response(
                 parts = gid_data.split(":")
                 if len(parts) >= 3:
                     person_id = parts[0]
-                    tree_id = parts[2]  # The third part is the Tree ID
-                    logger.debug(
-                        f"Item {idx}: Extracted person_id={person_id}, tree_id={tree_id} from gid={gid_data}"
-                    )
+                    tree_id = parts[2]
+                    logger.debug(f"Item {idx}: IDs={person_id},{tree_id}")
                 else:
-                    logger.warning(
-                        f"Item {idx}: Invalid gid format: {gid_data}. Cannot extract IDs."
-                    )
-                    continue  # Skip if we can't get IDs
+                    logger.warning(f"Item {idx}: Invalid gid format: {gid_data}")
+                    continue  # Skip this person if IDs cannot be extracted
+            # Corrected Else block placement
             else:
-                logger.warning(
-                    f"Item {idx}: Missing or invalid gid data: {gid_data}. Cannot extract IDs."
-                )
-                continue  # Skip if we can't get IDs
+                logger.warning(f"Item {idx}: Missing or invalid gid data: {gid_data}")
+                continue  # Skip this person if IDs cannot be extracted
 
-            # --- Extract Name ---
+            # Name
             first_name_part = ""
             surname_part = ""
             full_name = "Unknown"
             names_list = person_raw.get("Names", [])
             if isinstance(names_list, list) and names_list:
-                # Use the first name entry in the list
                 name_obj = names_list[0]
                 if isinstance(name_obj, dict):
-                    first_name_part = name_obj.get("g", "").strip()  # Given name(s)
-                    surname_part = name_obj.get("s", "").strip()  # Surname
-                    # Construct full name
+                    first_name_part = name_obj.get("g", "").strip()
+                    surname_part = name_obj.get("s", "").strip()
                     if first_name_part and surname_part:
                         full_name = f"{first_name_part} {surname_part}"
                     elif first_name_part:
                         full_name = first_name_part
                     elif surname_part:
                         full_name = surname_part
-                    logger.debug(
-                        f"Item {idx}: Extracted name parts: g='{first_name_part}', s='{surname_part}', Full='{full_name}'"
-                    )
+                    logger.debug(f"Item {idx}: Name='{full_name}'")
                 else:
-                    logger.warning(
-                        f"Item {idx}: First item in Names list is not a dict: {name_obj}"
-                    )
+                    logger.warning(f"Item {idx}: Name obj not dict: {name_obj}")
             else:
-                logger.warning(
-                    f"Item {idx}: Names list is missing, empty, or not a list: {names_list}"
-                )
+                logger.warning(f"Item {idx}: Names list issue: {names_list}")
 
-            # --- Extract Gender ---
-            # Key is 'l' (boolean: true=female, false=male)
-            gender_flag = person_raw.get("l")
+            # Gender - First try to get from Genders array, then fallback to 'l' field
             gender = None
-            if isinstance(gender_flag, bool):
-                gender = "f" if gender_flag else "m"
-                logger.debug(
-                    f"Item {idx}: Extracted gender flag l={gender_flag}, resulting gender='{gender}'"
-                )
-            else:
-                logger.warning(
-                    f"Item {idx}: Gender flag 'l' is missing or not a boolean: {gender_flag}"
-                )
+            genders_list = person_raw.get("Genders", [])
+            if isinstance(genders_list, list) and genders_list:
+                gender_obj = genders_list[0]
+                if isinstance(gender_obj, dict) and "g" in gender_obj:
+                    gender = gender_obj.get("g", "").lower()
+                    logger.debug(f"Item {idx}: Gender from Genders array='{gender}'")
 
-            # --- Extract Birth and Death Events ---
+            # Fallback to 'l' field if Genders array didn't provide a value
+            if not gender:
+                gender_flag = person_raw.get("l")
+                if isinstance(gender_flag, bool):
+                    gender = "f" if gender_flag else "m"
+                    logger.debug(f"Item {idx}: Gender from 'l' field='{gender}'")
+                else:
+                    logger.warning(f"Item {idx}: No gender information available")
+
+            # Events
             birth_year = None
-            birth_date_str = (
-                None  # Store the best available date string (normalized preferred)
-            )
+            birth_date_str = None
             birth_place = None
             death_year = None
-            death_date_str = None  # Store the best available date string
+            death_date_str = None
             death_place = None
-            is_living = True  # Assume living unless a Death event is found
-
+            is_living = True
             events_list = person_raw.get("Events", [])
             if isinstance(events_list, list):
                 for event in events_list:
                     if not isinstance(event, dict):
-                        logger.warning(
-                            f"Item {idx}: Skipping invalid item in Events list: {event}"
-                        )
+                        logger.warning(f"Item {idx}: Invalid event item")
                         continue
-
-                    event_type = event.get("t")  # Event type ('Birth', 'Death', etc.)
-
-                    # --- Process Birth Event ---
+                    event_type = event.get("t")
                     if event_type == "Birth":
-                        # Date: Prioritize 'nd' (normalized), fallback to 'd' (display)
                         norm_date = event.get("nd")
                         disp_date = event.get("d")
-                        current_birth_date_str = (
-                            norm_date if norm_date else disp_date
-                        )  # Use nd if available
-
+                        current_birth_date_str = norm_date if norm_date else disp_date
                         if current_birth_date_str:
-                            birth_date_str = current_birth_date_str  # Store the best string found so far
-                            # Extract year: Try parsing nd/d, fallback to regex on d
+                            birth_date_str = current_birth_date_str
                             year_match = re.search(
                                 r"\b(\d{4})\b", current_birth_date_str
                             )
@@ -1819,31 +1862,22 @@ def _parse_treesui_list_response(
                                     birth_year = int(year_match.group(1))
                                 except ValueError:
                                     logger.warning(
-                                        f"Item {idx}: Could not convert extracted birth year '{year_match.group(1)}' to int from date '{current_birth_date_str}'."
+                                        f"Item {idx}: Bad birth year convert: '{year_match.group(1)}'"
                                     )
                             logger.debug(
-                                f"Item {idx}: Found Birth event. DateStr='{birth_date_str}', Year={birth_year}"
+                                f"Item {idx}: Birth Date='{birth_date_str}', Year={birth_year}"
                             )
-
-                        # Place: Get 'p' field
                         current_birth_place = event.get("p")
                         if current_birth_place:
                             birth_place = current_birth_place.strip()
-                            logger.debug(
-                                f"Item {idx}: Found Birth place: '{birth_place}'"
-                            )
-
-                    # --- Process Death Event ---
+                            logger.debug(f"Item {idx}: Birth Place='{birth_place}'")
                     elif event_type == "Death":
-                        is_living = False  # Found a death event, so not living
-                        # Date: Prioritize 'nd', fallback to 'd'
+                        is_living = False
                         norm_date = event.get("nd")
                         disp_date = event.get("d")
                         current_death_date_str = norm_date if norm_date else disp_date
-
                         if current_death_date_str:
                             death_date_str = current_death_date_str
-                            # Extract year
                             year_match = re.search(
                                 r"\b(\d{4})\b", current_death_date_str
                             )
@@ -1852,97 +1886,91 @@ def _parse_treesui_list_response(
                                     death_year = int(year_match.group(1))
                                 except ValueError:
                                     logger.warning(
-                                        f"Item {idx}: Could not convert extracted death year '{year_match.group(1)}' to int from date '{current_death_date_str}'."
+                                        f"Item {idx}: Bad death year convert: '{year_match.group(1)}'"
                                     )
                             logger.debug(
-                                f"Item {idx}: Found Death event. DateStr='{death_date_str}', Year={death_year}. Set is_living=False."
+                                f"Item {idx}: Death Date='{death_date_str}', Year={death_year}"
                             )
-
-                        # Place: Get 'p' field
                         current_death_place = event.get("p")
                         if current_death_place:
                             death_place = current_death_place.strip()
-                            logger.debug(
-                                f"Item {idx}: Found Death place: '{death_place}'"
-                            )
+                            logger.debug(f"Item {idx}: Death Place='{death_place}'")
             else:
-                logger.warning(
-                    f"Item {idx}: Events key missing or not a list: {events_list}"
-                )
+                logger.warning(f"Item {idx}: Events key issue: {events_list}")
 
-            # --- Construct the Parsed Suggestion Dictionary ---
-            # Use the keys expected by _process_and_score_suggestions
+            # Construct suggestion dict
             suggestion = {
                 "PersonId": person_id,
                 "TreeId": tree_id,
                 "FullName": full_name,
-                # Provide components for potential use, though FullName is primary display
                 "GivenNamePart": first_name_part,
                 "SurnamePart": surname_part,
-                "BirthYear": birth_year,  # Integer or None
-                "BirthDate": birth_date_str,  # Best available date string (nd or d)
-                "BirthPlace": birth_place,  # Place string or None
-                "DeathYear": death_year,  # Integer or None
-                "DeathDate": death_date_str,  # Best available date string (nd or d)
-                "DeathPlace": death_place,  # Place string or None
-                "Gender": gender,  # 'm' / 'f' / None
-                "IsLiving": is_living,  # Boolean
+                "BirthYear": birth_year,
+                "BirthDate": birth_date_str,
+                "BirthPlace": birth_place,
+                "DeathYear": death_year,
+                "DeathDate": death_date_str,
+                "DeathPlace": death_place,
+                "Gender": gender,
+                "IsLiving": is_living,
             }
-
-            # Add the fully parsed suggestion to our results list
             parsed_results.append(suggestion)
-            logger.debug(f"Item {idx}: Successfully parsed person: {suggestion}")
+            logger.debug(f"Item {idx}: Parsed: {suggestion}")
 
         except Exception as e:
-            logger.error(
-                f"Error parsing item {idx} from TreesUI response: {e}", exc_info=True
-            )
-            logger.error(f"Problematic Raw Data: {person_raw}")
-            # Decide whether to skip this item or fail entirely
-            # For robustness, let's skip this item and continue with others
+            logger.error(f"Error parsing item {idx}: {e}", exc_info=True)
+            logger.error(f"Raw Data: {person_raw}")
             continue
 
-    logger.info(
-        f"Successfully parsed {len(parsed_results)} suggestions from API response."
-    )
     return parsed_results
 
 
 # End of _parse_treesui_list_response
 
+
+# Selection Phase (Includes Initial Comparison Call)
 def _handle_selection_phase(
     suggestions_to_score: List[Dict],
     search_criteria: Dict[str, Any],
     config_instance_local: Any,
 ) -> Optional[Tuple[Dict, Dict]]:
-    """Handles scoring, display, and selection of the top candidate."""
+    """
+    Handles scoring, display table, selection of the top candidate,
+    AND calls the initial comparison display.
+    """
     scored_candidates = _process_and_score_suggestions(
         suggestions_to_score, search_criteria, config_instance_local
     )
     if not scored_candidates:
+        # Log info and display to user
+        logger.info("No candidates after scoring.")
         print("\nNo suitable candidates found after scoring.")
-        logger.info("No candidates available after scoring process.")
         return None
-
-    # Display search results
     max_display_limit = getattr(config_instance_local, "MAX_CANDIDATES_TO_DISPLAY", 5)
     _display_search_results(scored_candidates, max_display_limit)
-
-    # Select top candidate
     selection = _select_top_candidate(
         scored_candidates, suggestions_to_score
-    )  # Pass scored list for raw data retrieval
+    )  # Pass suggestions_to_score for potential use? Currently unused by select func.
     if not selection:
-        print("\nFailed to select a top candidate (check logs for errors).")
+        # Log error and display to user
         logger.error("Failed to select top candidate.")
+        print("\nFailed to select top candidate.")
         return None
-
-    return selection  # (selected_candidate_processed, selected_candidate_raw)
+    selected_candidate_processed, selected_candidate_raw = selection
+    # --- Call Initial Comparison Display ---
+    try:
+        _display_initial_comparison(selected_candidate_processed, search_criteria)
+    except Exception as e:
+        # Log error and display to user
+        logger.error(f"Error displaying initial comparison: {e}", exc_info=True)
+        print("\nError displaying initial comparison.")
+    return selection
 
 
 # End of _handle_selection_phase
 
 
+# Details Fetch Phase
 def _handle_details_phase(
     selected_candidate_raw: Dict,
     session_manager_local: SessionManager,
@@ -1953,32 +1981,33 @@ def _handle_details_phase(
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
     api_person_id = selected_candidate_raw.get("PersonId")
     api_tree_id = selected_candidate_raw.get("TreeId")
-
     if not owner_profile_id:
-        print("\nCannot fetch details: Your User ID is required but missing.")
-        logger.error("Cannot fetch details: Owner profile ID missing.")
+        # Log error and display to user
+        logger.error("Owner profile ID missing.")
+        print("\nCannot fetch details: User ID missing.")
         return None
     if not api_person_id or not api_tree_id:
-        logger.error(
-            f"Cannot fetch details: Missing PersonId ({api_person_id}) or TreeId ({api_tree_id}) for selected candidate."
-        )
-        print("\nError: Missing essential IDs for fetching person details.")
+        # Log error and display to user
+        logger.error(f"Cannot fetch details: Missing PersonId/TreeId.")
+        print("\nError: Missing IDs for detail fetch.")
         return None
     if not callable(call_facts_user_api):
-        logger.error("Cannot fetch details: call_facts_user_api function missing.")
+        # Log error and display to user
+        logger.error("Cannot fetch details: Function missing.")
         print("\nError: Details fetching utility unavailable.")
         return None
+    # Construct the API URL for logging/display purposes
+    facts_api_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id}/tree/{api_tree_id}/person/{api_person_id}"
+    print(f"\nAPI URL: {facts_api_url}\n")
 
-    # API call helper handles retries/fallbacks internally
+    # Call the API
     person_research_data = call_facts_user_api(
         session_manager_local, owner_profile_id, api_person_id, api_tree_id, base_url
     )
-
     if person_research_data is None:
-        logger.warning("Failed to retrieve detailed information after all attempts.")
-        print(
-            "\nWarning: Could not retrieve detailed information for the selected match."
-        )
+        # Log warning and display to user
+        logger.warning("Failed to retrieve detailed info.")
+        print("\nWarning: Could not retrieve detailed info.")
         return None
     else:
         return person_research_data
@@ -1987,98 +2016,61 @@ def _handle_details_phase(
 # End of _handle_details_phase
 
 
-def _handle_display_and_relationship_phase(
-    person_research_data: Optional[Dict],  # Can be None if detail fetch failed
-    selected_candidate_processed: Dict,  # Fallback info from initial scoring
-    selected_candidate_raw: Dict,  # Raw suggestion data
-    search_criteria: Dict[str, Any],
+# Supplementary Info Phase (Displays Family/Relationships)
+def _handle_supplementary_info_phase(
+    person_research_data: Optional[Dict],
+    selected_candidate_processed: Dict,
     session_manager_local: SessionManager,
     config_instance_local: Any,
 ):
-    """Handles extracting, scoring, displaying details, family, and relationships."""
-    extracted_info = None
+    """Handles displaying family info and relationship paths using detailed data if available."""
+    print("--- Family & Relationships ---")
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
-
-    if person_research_data:  # Details were fetched successfully
-        extracted_info = _extract_detailed_info(
-            person_research_data, selected_candidate_raw
+    # Display Family
+    if person_research_data and isinstance(
+        person_research_data.get("PersonFamily"), dict
+    ):
+        _display_family_info(person_research_data["PersonFamily"])
+    elif person_research_data is None:
+        logger.warning("Cannot display family: Detail fetch failed.")
+    else:
+        logger.warning("Cannot display family: 'PersonFamily' missing/invalid.")
+    # Display Relationship
+    extracted_info_for_rel = {}
+    if person_research_data:
+        raw_cand_for_name_fallback = selected_candidate_processed.get(
+            "raw_data", {}
+        )  # Needed for name fallback
+        extracted_info_for_rel["person_id"] = person_research_data.get("PersonId")
+        extracted_info_for_rel["tree_id"] = person_research_data.get("TreeId")
+        extracted_info_for_rel["user_id"] = person_research_data.get("UserId")
+        extracted_info_for_rel["name"] = _extract_best_name_from_details(
+            person_research_data, raw_cand_for_name_fallback
         )
-        if not extracted_info:
-            print("\nError: Failed to extract details from API response.")
-            logger.error("Failed to extract details, using fallback display.")
-            # Create minimal fallback from processed suggestion data
-            extracted_info = selected_candidate_processed.get("parsed_suggestion", {})
-            extracted_info["family_data"] = {}  # Ensure family_data exists
-        else:
-            # Only score and display full details if extraction succeeded
-            final_score_info = _score_detailed_match(
-                extracted_info, search_criteria, config_instance_local
-            )
-            _display_detailed_match_info(
-                extracted_info, final_score_info, search_criteria, base_url
-            )
-            _display_family_info(extracted_info.get("family_data", {}))
-    else:  # Handle failed detail fetch explicitly using processed suggestion data
-        print("\n--- Top Match (From Initial Suggestion - Detailed Fetch Failed) ---")
-        parsed_sugg = selected_candidate_processed.get(
-            "parsed_suggestion", {}
-        )  # Get pre-parsed data
-        link_func = getattr(sys.modules.get("api_utils"), "_generate_person_link", None)
-        person_link = "(Link unavailable)"
-        if callable(link_func):
-            person_link = link_func(
-                parsed_sugg.get("user_id") or parsed_sugg.get("person_id"),
-                parsed_sugg.get("tree_id") if not parsed_sugg.get("user_id") else None,
-                base_url,
-            )
-
-        print(
-            f"  Name : {parsed_sugg.get('name', 'Unknown')} (ID: {parsed_sugg.get('user_id') or parsed_sugg.get('person_id') or 'N/A'})"
+    else:
+        logger.warning("Using initial data for relationship calc.")
+        parsed_sugg = selected_candidate_processed.get("parsed_suggestion", {})
+        extracted_info_for_rel["person_id"] = parsed_sugg.get("display_id")
+        extracted_info_for_rel["tree_id"] = selected_candidate_processed.get(
+            "raw_data", {}
+        ).get("TreeId")
+        extracted_info_for_rel["user_id"] = None
+        extracted_info_for_rel["name"] = parsed_sugg.get(
+            "full_name_disp", "Selected Match"
         )
-        print(f"  Link : {person_link}")
-        print(
-            f"  Born : {parsed_sugg.get('birth_date', '?')} in {parsed_sugg.get('birth_place') or '?'}"
-        )
-        if not parsed_sugg.get(
-            "is_living", True
-        ):  # Assume living if unknown and no death date
-            print(
-                f"  Died : {parsed_sugg.get('death_date', '?')} in {parsed_sugg.get('death_place') or '?'}"
-            )
-        elif (
-            parsed_sugg.get("death_date", "N/A") != "N/A"
-        ):  # Has death date but living status might be wrong
-            print(
-                f"  Died : {parsed_sugg.get('death_date', '?')} in {parsed_sugg.get('death_place') or '?'}"
-            )
-        else:
-            print("  Died : (Assumed Living)")
-        print(
-            f"  Score: {selected_candidate_processed.get('score', 0):.0f} (Initial Suggestion Score)"
-        )
-        # Create minimal structure for relationship function from parsed suggestion
-        extracted_info = parsed_sugg
-        extracted_info["family_data"] = {}  # Ensure family_data exists
-
-    # --- Display Relationship ---
-    if not extracted_info:
-        logger.error("Cannot display relationship path as extracted_info is missing.")
-        print("\nError: Cannot determine relationship path due to previous errors.")
-        return  # Cannot proceed
-
-    selected_person_tree_id = extracted_info.get("person_id")  # Tree-specific ID
-    selected_person_global_id = extracted_info.get("user_id")  # Global/Profile ID
-    selected_tree_id = extracted_info.get("tree_id")
-    selected_name = extracted_info.get("name", "Selected Person")
+    # Extract IDs
+    selected_person_tree_id = extracted_info_for_rel.get("person_id")
+    selected_person_global_id = extracted_info_for_rel.get("user_id")
+    selected_tree_id = extracted_info_for_rel.get("tree_id")
+    selected_name = extracted_info_for_rel.get("name", "Selected Person")
     owner_name = getattr(session_manager_local, "tree_owner_name", "the Tree Owner")
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
-
+    # Relationship calculation logic
     if not owner_profile_id:
-        logger.warning("Owner profile ID not found. Discovery relationship may fail.")
+        logger.warning("Owner profile ID missing.")
     if not owner_tree_id:
-        logger.warning("Owner tree ID not found. Tree relationship may fail.")
-
+        logger.warning("Owner tree ID missing.")
     is_owner = bool(
         selected_person_global_id
         and owner_profile_id
@@ -2088,12 +2080,8 @@ def _handle_display_and_relationship_phase(
         owner_tree_id and selected_tree_id == owner_tree_id and selected_person_tree_id
     )
     can_calc_discovery = bool(selected_person_global_id and owner_profile_id)
-
     if is_owner:
-        print(f"\n({selected_name} is the Tree Owner)")
-        logger.info(
-            f"Selected person ({selected_name}) is the Tree Owner. Skipping relationship path."
-        )
+        logger.info(f"{selected_name} is Tree Owner.")
     elif can_calc_tree:
         if all(
             isinstance(i, str)
@@ -2108,8 +2096,7 @@ def _handle_display_and_relationship_phase(
                 base_url,
             )
         else:
-            logger.error("Cannot calculate tree relationship: Invalid ID/Name types")
-            print("\nCannot calculate relationship path: Invalid IDs")
+            logger.error("Cannot calc tree rel: Invalid types")
     elif can_calc_discovery:
         if all(
             isinstance(i, str)
@@ -2129,53 +2116,20 @@ def _handle_display_and_relationship_phase(
                 base_url,
             )
         else:
-            logger.error(
-                "Cannot calculate discovery relationship: Invalid ID/Name types"
-            )
-            print("\nCannot calculate relationship path: Invalid IDs")
+            logger.error("Cannot calc discovery rel: Invalid types")
     else:
-        # Log failure conditions
-        conditions = []
-        if not owner_profile_id:
-            conditions.append("Owner Profile ID missing")
-        if not selected_person_tree_id and not selected_person_global_id:
-            conditions.append("Selected Person IDs missing")
-        if not can_calc_tree and not can_calc_discovery:
-            if owner_tree_id and selected_tree_id != owner_tree_id:
-                conditions.append(
-                    f"Target tree ({selected_tree_id}) != owner tree ({owner_tree_id})"
-                )
-            if not selected_person_global_id:
-                conditions.append("Target global ID missing")
-        elif not can_calc_tree:
-            if not selected_person_global_id:
-                conditions.append("Target global ID missing")
-        elif not can_calc_discovery:
-            if not owner_tree_id:
-                conditions.append("Owner Tree ID missing")
-            elif selected_tree_id != owner_tree_id:
-                conditions.append("Target not in owner tree")
-            elif not selected_person_tree_id:
-                conditions.append("Target tree-person ID missing")
         logger.error(
-            f"Cannot calculate relationship for {selected_name}: {'; '.join(conditions) or 'Unknown reason'}"
-        )
-        print(
-            "\n(Cannot calculate relationship path: Necessary IDs or conditions not met. Check logs.)"
+            f"Cannot calculate relationship for {selected_name}. Conditions not met."
         )
 
 
-# End of _handle_display_and_relationship_phase
+# End of _handle_supplementary_info_phase
 
 
-# --- Main Handler ---
+# --- Main Handler (Adjusted Flow) ---
 def handle_api_report():
-    """Orchestrates the process of searching, selecting, detailing, and relating a person via API."""
-    logger.info(
-        "\n--- Action 11: Person Details & Relationship (Ancestry API Report) ---"
-    )
-
-    # --- Dependency Checks ---
+    """Orchestrates the process using only initial API data for comparison."""
+    # Dependency Checks...
     if not all(
         [
             CORE_UTILS_AVAILABLE,
@@ -2186,9 +2140,6 @@ def handle_api_report():
             session_manager,
         ]
     ):
-        logger.critical(
-            "handle_api_report: One or more critical dependencies unavailable."
-        )
         missing = [
             m
             for m, v in [
@@ -2200,26 +2151,24 @@ def handle_api_report():
             ]
             if not v
         ]
-        logger.critical(f" - Missing: {', '.join(missing)}")
+        logger.critical(
+            f"handle_api_report: Dependencies missing: {', '.join(missing)}."
+        )
         print(
-            "\nCRITICAL ERROR: Required libraries, utilities, or config unavailable. Check logs."
+            f"\nCRITICAL ERROR: Dependencies unavailable ({', '.join(missing)}). Check logs."
         )
         return False
-
-    # --- Session Setup ---
-    print("Initializing Ancestry session...")
+    # Session Setup...
     if not session_manager.ensure_session_ready(action_name="API Report Session Init"):
-        logger.error("Failed to initialize Ancestry session for API report.")
-        print("\nERROR: Failed to initialize session. Cannot proceed.")
+        logger.error("Failed to init session.")
+        print("\nERROR: Failed to initialize session.")
         return False
 
-    # --- Phase 1: Search ---
-    logger.info("--- Action 11: Phase 1: Get Criteria & Search ---")
+    # Phase 1: Search...
     search_criteria = _get_search_criteria()
     if not search_criteria:
-        logger.info("Search criteria not provided. Exiting Action 11.")
-        return True  # User cancelled is not an error
-
+        logger.info("Search cancelled.")
+        return True
     suggestions_to_score = _handle_search_phase(
         session_manager, search_criteria, config_instance
     )
@@ -2228,36 +2177,30 @@ def handle_api_report():
     if not suggestions_to_score:
         return True  # Search successful, no results
 
-    # --- Phase 2: Score & Select ---
-    logger.info("--- Action 11: Phase 2: Score & Select ---")
+    # Phase 2: Score, Select & Display Initial Comparison...
     selection = _handle_selection_phase(
         suggestions_to_score, search_criteria, config_instance
-    )
+    )  # Includes initial comparison display
     if not selection:
-        return True  # Scoring/selection failed gracefully or no candidates
+        return True  # No candidate selected or comparison failed gracefully
     selected_candidate_processed, selected_candidate_raw = selection
 
-    # --- Phase 3: Fetch Details ---
-    logger.info("--- Action 11: Phase 3: Fetch Details ---")
+    # Phase 3: Fetch Detailed Data (for supplementary info)...
+
     person_research_data = _handle_details_phase(
         selected_candidate_raw, session_manager, config_instance
     )
-    # Continue even if person_research_data is None (handled in next phase)
+    # Phase 4: Display Supplementary Info (Family/Relationships)...
 
-    # --- Phase 4 & 5: Process Details, Display Info & Relationship ---
-    logger.info("--- Action 11: Phase 4/5: Display Info & Relationship ---")
-    _handle_display_and_relationship_phase(
-        person_research_data,  # Pass potentially None data
-        selected_candidate_processed,  # Pass processed suggestion data for fallback
-        selected_candidate_raw,  # Pass raw suggestion data for fallback name extraction etc.
-        search_criteria,
+    _handle_supplementary_info_phase(
+        person_research_data,
+        selected_candidate_processed,
         session_manager,
         config_instance,
-    )
+    )  # Use the renamed function
+    # Finish...
 
-    # --- Finish ---
-    logger.info("--- Action 11: Finished ---")
-    return True  # Report completed workflow (even if some steps warned/failed non-critically)
+    return True
 
 
 # End of handle_api_report
@@ -2266,50 +2209,67 @@ def handle_api_report():
 # --- Main Execution ---
 def main():
     """Main execution flow for Action 11 (API Report)."""
-    logger.info("--- Action 11: API Report Starting ---")
-    # Ensure session manager is available before calling handler
+    logger.debug("--- Action 11: API Report Starting ---")
     if not session_manager:
+        # Log critical error and display to user
         logger.critical("Session Manager instance not created. Exiting.")
         print("\nFATAL ERROR: Session Manager failed to initialize.")
         return
-
     try:
         report_successful = handle_api_report()
         if report_successful:
-            logger.info("--- Action 11: API Report Finished Successfully ---")
-            print("\nAction 11 finished.")
+            # Log success and display to user with a single message
+            success_message = "Action 11 finished successfully"
+            logger.info(f"--- {success_message} ---")
+            print(f"\n{success_message}.")
         else:
-            logger.error("--- Action 11: API Report Finished with Errors ---")
-            print("\nAction 11 finished with errors (check logs).")
+            # Log error and display to user with a single message
+            error_message = "Action 11 finished with errors"
+            logger.error(f"--- {error_message} ---")
+            print(f"\n{error_message} (check logs).")
     except Exception as e:
+        # Log critical error and display to user
         logger.critical(
             f"Unhandled exception during Action 11 execution: {e}", exc_info=True
         )
         print(f"\nCRITICAL ERROR during Action 11: {e}. Check logs.")
     finally:
-        # Optional: Close session if needed, though SessionManager might handle this
-        # if session_manager: session_manager.close_sess()
-        pass
+        pass  # Optional: session_manager.close_sess()
 
 
 # End of main
 
+
 # Script entry point check
 if __name__ == "__main__":
-    if (
-        CORE_UTILS_AVAILABLE
-        and API_UTILS_AVAILABLE
-        and GEDCOM_UTILS_AVAILABLE
-        and config_instance
-        and selenium_config
-    ):
+    # The logger is already initialized at the top of the script
+    logger.info("Starting action11.py as standalone script\n")
+    # Check critical dependencies
+    dependencies_ok = True
+    missing_deps = []
+    if not CORE_UTILS_AVAILABLE:
+        missing_deps.append("Core Utils")
+        dependencies_ok = False
+    if not API_UTILS_AVAILABLE:
+        missing_deps.append("API Utils")
+        dependencies_ok = False
+    if not GEDCOM_UTILS_AVAILABLE:
+        missing_deps.append("Gedcom Utils")
+        dependencies_ok = False  # Treat as critical
+    if not config_instance or not selenium_config:
+        missing_deps.append("Configuration")
+        dependencies_ok = False
+    if not session_manager:
+        missing_deps.append("Session Manager")
+        dependencies_ok = False
+    if dependencies_ok:
         main()
     else:
-        print(
-            "\nCRITICAL ERROR: Required utilities or configuration are not available."
+        error_message = f"\nCRITICAL ERROR: Required components unavailable.\nMissing: {', '.join(missing_deps)}\nPlease check imports, dependencies, and config files."
+        print(error_message)
+        logging.getLogger().critical(
+            f"Exiting action11: Missing: {', '.join(missing_deps)}"
         )
-        print("Please check imports, dependencies, and config files.")
-        logging.getLogger().critical("Exiting: Required components not loaded.")
         sys.exit(1)
 # End of action11.py
 # --- END OF FILE action11.py ---

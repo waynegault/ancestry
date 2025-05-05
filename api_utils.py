@@ -1060,7 +1060,6 @@ def call_suggest_api(
         }
         logger.debug(f"Direct request URL: {suggest_url}")
         logger.debug(f"Direct request headers: {direct_headers}")
-        print("Making direct API request (timeout: 30s)...")
         direct_response = requests.get(
             suggest_url, headers=direct_headers, cookies=cookies, timeout=30
         )
@@ -1134,12 +1133,8 @@ def call_facts_user_api(
     logger.info(
         f"Attempting to fetch facts for PersonID {api_person_id}: {facts_api_url}"
     )
-    print(
-        f"Fetching person details (Max timeout: {sum(timeouts or [30, 45, 60]) + 30}s)"
-    )  # Sum of fallback + direct
 
     # --- Direct Request Attempt First ---
-    print(f"Attempting direct API request first...")
     try:
         cookies = (
             session_manager._requests_session.cookies.get_dict()
@@ -1159,7 +1154,6 @@ def call_facts_user_api(
         }
         logger.debug(f"Direct facts request URL: {facts_api_url}")
         logger.debug(f"Direct facts request headers: {direct_headers}")
-        print("Making direct API request (timeout: 30s)...")
         direct_response = requests.get(
             facts_api_url, headers=direct_headers, cookies=cookies, timeout=30
         )

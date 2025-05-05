@@ -33,7 +33,7 @@ from logging_config import logger  # Use configured logger
 
 # Step 1: Define cache directory from configuration
 CACHE_DIR = config_instance.CACHE_DIR
-logger.info(f"Cache directory configured: {CACHE_DIR}")
+logger.debug(f"Cache directory configured: {CACHE_DIR}")
 
 # Step 2: Ensure the cache directory exists
 try:
@@ -57,7 +57,7 @@ try:
     # Example: cache = Cache(CACHE_DIR, size_limit=int(1e9)) # 1 GB size limit
     # Example: Use default expiry from config: expire=config_instance.CACHE_TIMEOUT
     cache = Cache(CACHE_DIR)
-    logger.info(
+    logger.debug(
         f"DiskCache instance initialized successfully at {CACHE_DIR.resolve()}."
     )
 except Exception as e:
@@ -206,7 +206,7 @@ def clear_cache():
     if cache:
         try:
             count = cache.clear()
-            logger.info(
+            logger.debug(
                 f"Cache cleared successfully via API. {count} items removed from {CACHE_DIR}."
             )
             return True
@@ -224,7 +224,7 @@ def clear_cache():
     if CACHE_DIR.exists():
         try:
             shutil.rmtree(CACHE_DIR)
-            logger.info(f"Manually removed cache directory: {CACHE_DIR}")
+            logger.debug(f"Manually removed cache directory: {CACHE_DIR}")
             # Recreate the directory immediately after removing it
             try:
                 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -242,7 +242,7 @@ def clear_cache():
             )
             return False  # Manual removal failed
     else:
-        logger.info("Cache directory does not exist. Nothing to clear manually.")
+        logger.debug("Cache directory does not exist. Nothing to clear manually.")
         return True  # Considered success as the directory is gone
 
     # Should only be reached if API clear fails AND manual removal fails
