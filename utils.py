@@ -229,7 +229,7 @@ def format_name(name: Optional[str]) -> str:
     Formats a person's name string to title case, preserving uppercase components
     (like initials or acronyms) and handling None/empty input gracefully.
     Also removes GEDCOM-style slashes around surnames anywhere in the string.
-    Handles common name particles and prefixes like Mc/Mac/O'.
+    Handles common name particles and prefixes like Mc/Mac/O' and quoted nicknames.
     """
     if not name or not isinstance(name, str):
         return "Valued Relative"
@@ -273,9 +273,7 @@ def format_name(name: Optional[str]) -> str:
         while i < len(parts):
             part = parts[i]
             part_lower = part.lower()
-            # is_multi_word_particle = False # Removed, simplified logic
 
-            # Check for lowercase particles (simplified)
             if i > 0 and part_lower in lowercase_particles:
                 formatted_parts.append(part_lower)
                 i += 1
@@ -287,47 +285,51 @@ def format_name(name: Optional[str]) -> str:
                 i += 1
                 continue
             # End of if
+
+            # *** NEW/MODIFIED LOGIC FOR QUOTED NICKNAMES AND APOSTROPHES ***
+            if part.startswith("'") and part.endswith("'") and len(part) > 2:
+                # Handles parts like 'Betty' or 'bo'
+                # Capitalize the content within the quotes
+                inner_content = part[1:-1]
+                formatted_parts.append("'" + inner_content.capitalize() + "'")
+                i += 1
+                continue
+            # End of if
+
             if "-" in part:
-                hyphenated = []
-                hp_parts = part.split("-")
-                for hp_idx, hp in enumerate(hp_parts):
-                    if hp_idx > 0 and hp.lower() in lowercase_particles:
-                        hyphenated.append(hp.lower())
-                    elif hp:
-                        hyphenated.append(hp.capitalize())
+                hyphenated_elements = []
+                sub_parts = part.split("-")
+                for idx, sub_part in enumerate(sub_parts):
+                    if idx > 0 and sub_part.lower() in lowercase_particles:
+                        hyphenated_elements.append(sub_part.lower())
+                    elif sub_part: # Ensure sub_part is not empty
+                        hyphenated_elements.append(sub_part.capitalize())
                     # End of if/elif
                 # End of for
-                formatted_parts.append("-".join(filter(None, hyphenated)))
+                formatted_parts.append("-".join(filter(None, hyphenated_elements)))
                 i += 1
                 continue
             # End of if
-            if "'" in part and len(part) > 1 and not part.endswith("'"):
-                apostrophe_parts = part.split("'")
-                if (
-                    len(apostrophe_parts) == 2
-                    and apostrophe_parts[0]
-                    and apostrophe_parts[1]
-                ):
-                    formatted_part = (
-                        apostrophe_parts[0].capitalize()
-                        + "'"
-                        + apostrophe_parts[1].capitalize()
-                    )
-                    formatted_parts.append(formatted_part)
-                else:
-                    formatted_parts.append(part.capitalize())
-                # End of if/else
+
+            # Handle names like O'Malley, D'Angelo
+            if "'" in part and len(part) > 1 and not (part.startswith("'") or part.endswith("'")):
+                # This condition targets internal apostrophes like in O'Malley
+                # It avoids single-quoted parts like 'Betty' which are handled above.
+                name_pieces = part.split("'")
+                # Capitalize the first letter of each piece around the apostrophe
+                formatted_apostrophe_part = "'".join(p.capitalize() for p in name_pieces)
+                formatted_parts.append(formatted_apostrophe_part)
                 i += 1
                 continue
             # End of if
+
             if part_lower.startswith("mc") and len(part) > 2:
                 formatted_parts.append("Mc" + part[2:].capitalize())
                 i += 1
                 continue
             # End of if
             if part_lower.startswith("mac") and len(part) > 3:
-                # Handle "Mac" itself correctly
-                if part_lower == "mac":
+                if part_lower == "mac": # Handle "Mac" itself
                     formatted_parts.append("Mac")
                 else:
                     formatted_parts.append("Mac" + part[3:].capitalize())
@@ -335,36 +337,34 @@ def format_name(name: Optional[str]) -> str:
                 i += 1
                 continue
             # End of if
-            if len(part) == 2 and part.endswith(".") and part[0].isalpha():
+
+            if len(part) == 2 and part.endswith(".") and part[0].isalpha(): # Initials like J.
                 formatted_parts.append(part[0].upper() + ".")
                 i += 1
                 continue
             # End of if
-            if len(part) == 1 and part.isalpha():
-                # Handle single letter initials (potentially without period)
+            if len(part) == 1 and part.isalpha(): # Single letter initials without period
                 formatted_parts.append(part.upper())
                 i += 1
                 continue
             # End of if
+            
             # Default: capitalize the part
             formatted_parts.append(part.capitalize())
             i += 1
         # End of while
 
         final_name = " ".join(formatted_parts)
-        final_name = re.sub(r"\s+", " ", final_name).strip()
+        final_name = re.sub(r"\s+", " ", final_name).strip() # Consolidate multiple spaces
         return final_name if final_name else "Valued Relative"
     except Exception as e:
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
-        # Fallback to simple title case if complex formatting fails
         try:
             return name.title() if isinstance(name, str) else "Valued Relative"
         except AttributeError:
             return "Valued Relative"
         # End of try/except
     # End of try/except
-
-
 # End of format_name
 
 
