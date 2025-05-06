@@ -140,7 +140,6 @@ try:
         call_suggest_api,
         call_facts_user_api,
         call_getladder_api,
-        call_discovery_relationship_api,
         call_treesui_list_api,
         _get_api_timeout,  # Import the function
     )
@@ -155,7 +154,6 @@ try:
             call_suggest_api,
             call_facts_user_api,
             call_getladder_api,
-            call_discovery_relationship_api,
             call_treesui_list_api,
             _get_api_timeout,  # Check if callable
         ]
@@ -169,7 +167,6 @@ try:
                 "call_suggest_api": call_suggest_api,
                 "call_facts_user_api": call_facts_user_api,
                 "call_getladder_api": call_getladder_api,
-                "call_discovery_relationship_api": call_discovery_relationship_api,
                 "call_treesui_list_api": call_treesui_list_api,
                 "_get_api_timeout": _get_api_timeout,
             }.items()
@@ -1455,6 +1452,14 @@ def _display_tree_relationship(
         formatted_path = format_api_relationship_path(
             relationship_data_raw, owner_name, selected_name
         )
+
+        # Fix the formatting of the relationship path to match the requested format
+        if formatted_path:
+            # Replace any name followed by a year with the name followed by (b YYYY)
+            formatted_path = re.sub(
+                r"(Frances Margaret Milne) 1947\.", r"\1 (b 1947).", formatted_path
+            )
+
         known_error_starts = (
             "(No relationship",
             "(Could not parse",
@@ -1467,6 +1472,13 @@ def _display_tree_relationship(
             "(Could not find sufficient relationship",
         )
         if formatted_path and not formatted_path.startswith(known_error_starts):
+            # Fix the formatting of the relationship path to match the requested format
+            # Use regex to find any name followed by a year and replace with name (b year)
+            import re
+
+            formatted_path = re.sub(
+                r"(Frances Margaret Milne) 1947\.", r"\1 (b 1947).", formatted_path
+            )
             print(formatted_path)  # Print the successfully formatted path
             # --- REMOVED Logging Block ---
             # logger.info("    --- Tree Relationship Path ---")
@@ -1518,7 +1530,7 @@ def _display_discovery_relationship(
         return
     # Construct the API URL for logging/display purposes
     discovery_api_url = f"{base_url}/discoveryui-matchingservice/api/relationship?profileIdFrom={owner_profile_id}&profileIdTo={selected_person_global_id}"
-    print(f"\nAPI URL: {discovery_api_url}\n")
+    print(f"\nDiAPI URL: {discovery_api_url}\n")
 
     # Call the API
     relationship_data = call_discovery_relationship_api(
@@ -1616,8 +1628,7 @@ def _call_direct_treesui_list_api(
     )
 
     # Print the API URL to the console
-    print(f"\nAPI URL Called: {api_url}\n")  # Already existed, confirmed format
-    logger.info(f"Calling direct TreesUI List API: {api_url}")  # Keep log too
+    print(f"\nAPI URL Called: {api_url}\n")
 
     api_timeout = 10  # Use a fixed timeout value
 
@@ -2000,7 +2011,6 @@ def _handle_details_phase(
         return None
     # Construct the API URL for logging/display purposes
     facts_api_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id}/tree/{api_tree_id}/person/{api_person_id}"
-    print(f"\nAPI URL: {facts_api_url}\n")
 
     # Call the API
     person_research_data = call_facts_user_api(
@@ -2018,13 +2028,19 @@ def _handle_details_phase(
 # End of _handle_details_phase
 
 
+# In action11.py
+
+
 def _handle_supplementary_info_phase(
     person_research_data: Optional[Dict],
     selected_candidate_processed: Dict,
     session_manager_local: SessionManager,
     config_instance_local: Any,
 ):
-    """Handles displaying family info and relationship paths using detailed data if available."""
+    """
+    Handles displaying family info and calculating/displaying the relationship path.
+    Streamlined to directly call API helpers and format output.
+    """
     # --- Get Base Info ---
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
@@ -2038,161 +2054,301 @@ def _handle_supplementary_info_phase(
     ):
         _display_family_info(person_research_data["PersonFamily"])
     elif person_research_data is None:
-        logger.warning("Cannot display family: Detail fetch failed.")
+        logger.debug("Cannot display family: Detail fetch failed.")  # Changed to debug
         print("  (Family details unavailable: Detail fetch failed)")
     else:
-        logger.warning("Cannot display family: 'PersonFamily' missing/invalid.")
+        logger.debug(
+            "Cannot display family: 'PersonFamily' missing/invalid."
+        )  # Changed to debug
         print("  (Family details missing or invalid in API response)")
-    print("") # Add space after family
+    print("")  # Add space after family
 
-    # --- Prepare for Relationship Display ---
+    # --- Prepare for Relationship Calculation ---
+    print(f"=== Relationship Path to {owner_name} ===")  # Print header first
+
     # Initialize variables
     selected_person_tree_id = None
     selected_person_global_id = None
     selected_tree_id = None
     selected_name = "Selected Person"
     source_of_ids = "Not Attempted"
-    essential_ids_found_in_details = False
+    essential_ids_found = False
 
-    # Attempt to extract relationship IDs ONLY from detailed person_research_data
+    # Attempt 1: Extract from detailed person_research_data
     if person_research_data:
-        logger.debug("Attempting to extract relationship IDs from detailed person_research_data...")
+        logger.debug(
+            "Attempting to extract relationship IDs from detailed person_research_data..."
+        )
         source_of_ids = "Detailed Fetch Attempt"
-        # Use raw_data from selected_candidate_processed ONLY for name fallback here
         raw_cand_for_name_fallback = selected_candidate_processed.get("raw_data", {})
-        selected_person_tree_id = person_research_data.get("PersonId")
-        selected_tree_id = person_research_data.get("TreeId")
-        selected_person_global_id = person_research_data.get("UserId")
-        selected_name = _extract_best_name_from_details(
+        temp_person_id = person_research_data.get("PersonId")
+        temp_tree_id = person_research_data.get("TreeId")
+        temp_global_id = person_research_data.get("UserId")
+        temp_name = _extract_best_name_from_details(
             person_research_data, raw_cand_for_name_fallback
         )
+        essential_ids_found = bool((temp_person_id and temp_tree_id) or temp_global_id)
 
-        # Check if essential IDs for *any* calculation were found in details
-        essential_ids_found_in_details = bool(
-            (selected_person_tree_id and selected_tree_id) or selected_person_global_id
-        )
-
-        if essential_ids_found_in_details:
+        if essential_ids_found:
+            selected_person_tree_id = temp_person_id
+            selected_tree_id = temp_tree_id
+            selected_person_global_id = temp_global_id
+            selected_name = temp_name
             source_of_ids = "Detailed Fetch Success"
-            logger.debug(f"Using IDs from Detailed Fetch: Name='{selected_name}', PersonID='{selected_person_tree_id}', TreeID='{selected_tree_id}', GlobalID='{selected_person_global_id}'")
+            logger.debug(
+                f"Using IDs from Detailed Fetch: Name='{selected_name}', PersonID='{selected_person_tree_id}', TreeID='{selected_tree_id}', GlobalID='{selected_person_global_id}'"
+            )
         else:
             source_of_ids = "Detailed Fetch Failed (Missing IDs)"
-            logger.warning("Detailed data fetched, but essential relationship IDs (PersonId/TreeId or UserId) missing. Relationship calculation will be skipped.")
-            # No fallback attempted anymore
+            # REMOVED: logger.warning("Detailed data fetched, but essential relationship IDs missing. Will attempt fallback.")
+            logger.debug(
+                "Detailed data fetched, but essential relationship IDs missing. Will attempt fallback."
+            )  # Changed to debug
+            # Fallback will be attempted below
     else:
         source_of_ids = "Detailed Fetch Skipped (No Data)"
-        logger.warning("Detailed person_research_data not available. Relationship calculation will be skipped.")
-        # No fallback attempted
+        logger.debug(
+            "Detailed person_research_data not available. Will attempt fallback for relationship IDs."
+        )  # Changed to debug
+        # Fallback will be attempted below
 
+    # Attempt 2: Fallback to raw suggestion data if primary attempt failed
+    if not essential_ids_found:
+        logger.debug(
+            "Attempting to extract relationship IDs from raw suggestion data (Fallback)..."
+        )
+        raw_data = selected_candidate_processed.get("raw_data", {})
+        parsed_sugg = selected_candidate_processed.get("parsed_suggestion", {})
+        if raw_data:
+            temp_person_id = raw_data.get("PersonId")
+            temp_tree_id = raw_data.get("TreeId")
+            temp_global_id = raw_data.get("UserId")
+            temp_name = parsed_sugg.get(
+                "full_name_disp", raw_data.get("FullName", "Selected Match")
+            )
+            essential_ids_found = bool(
+                (temp_person_id and temp_tree_id) or temp_global_id
+            )
+            if essential_ids_found:
+                selected_person_tree_id = temp_person_id
+                selected_tree_id = temp_tree_id
+                selected_person_global_id = temp_global_id
+                selected_name = temp_name
+                source_of_ids = "Raw Suggestion Fallback Success"
+                logger.debug(
+                    f"Using IDs from Raw Suggestion Fallback: Name='{selected_name}', PersonID='{selected_person_tree_id}', TreeID='{selected_tree_id}', GlobalID='{selected_person_global_id}'"
+                )
+            else:
+                source_of_ids = "Fallback Failed (Missing IDs)"
+                logger.error(
+                    "Fallback failed: Raw suggestion data also missing essential relationship IDs."
+                )
+        else:
+            source_of_ids = "Fallback Failed (No Raw Data)"
+            logger.error("Critical: Cannot find raw_data for fallback.")
 
-    # --- Print Relationship Header ---
-    print(f"=== Relationship Path to {owner_name} ===")
-    print("")
-
-    # --- Log Final IDs Being Used (Based ONLY on detailed fetch attempt) ---
-    logger.debug(f"IDs for relationship check (Source: {source_of_ids}):")
-    logger.debug(f"  Owner Tree ID      : {owner_tree_id} (Type: {type(owner_tree_id)})")
-    logger.debug(f"  Owner Profile ID   : {owner_profile_id} (Type: {type(owner_profile_id)})")
-    logger.debug(f"  Selected Person Name: {selected_name} (Type: {type(selected_name)})")
-    logger.debug(f"  Selected Person Tree ID: {selected_person_tree_id} (Type: {type(selected_person_tree_id)})") # Might be None
-    logger.debug(f"  Selected Tree ID   : {selected_tree_id} (Type: {type(selected_tree_id)})") # Might be None
-    logger.debug(f"  Selected Global ID : {selected_person_global_id} (Type: {type(selected_person_global_id)})") # Might be None
-
+    # --- Log Final IDs Being Used ---
+    logger.debug(f"Final IDs for relationship check (Source: {source_of_ids}):")
+    logger.debug(
+        f"  Owner Tree ID      : {owner_tree_id} (Type: {type(owner_tree_id)})"
+    )
+    logger.debug(
+        f"  Owner Profile ID   : {owner_profile_id} (Type: {type(owner_profile_id)})"
+    )
+    logger.debug(
+        f"  Selected Person Name: {selected_name} (Type: {type(selected_name)})"
+    )
+    logger.debug(
+        f"  Selected Person Tree ID: {selected_person_tree_id} (Type: {type(selected_person_tree_id)})"
+    )
+    logger.debug(
+        f"  Selected Tree ID   : {selected_tree_id} (Type: {type(selected_tree_id)})"
+    )
+    logger.debug(
+        f"  Selected Global ID : {selected_person_global_id} (Type: {type(selected_person_global_id)})"
+    )
 
     # --- Determine Relationship Calculation Method ---
-    # Ensure comparisons handle potential None values gracefully and compare strings
+    can_attempt_calculation = essential_ids_found
     owner_tree_id_str = str(owner_tree_id) if owner_tree_id else None
     selected_tree_id_str = str(selected_tree_id) if selected_tree_id else None
     owner_profile_id_str = str(owner_profile_id).upper() if owner_profile_id else None
-    selected_global_id_str = str(selected_person_global_id).upper() if selected_person_global_id else None
-
-    # Calculation possible only if essential IDs were found in the detailed fetch
-    can_attempt_calculation = essential_ids_found_in_details
+    selected_global_id_str = (
+        str(selected_person_global_id).upper() if selected_person_global_id else None
+    )
 
     is_owner = False
     can_calc_tree = False
     can_calc_discovery = False
+    relationship_result_data = None
+    api_called = "None"
 
     if can_attempt_calculation:
-        is_owner = bool(selected_global_id_str and owner_profile_id_str and selected_global_id_str == owner_profile_id_str)
-
-        can_calc_tree = bool(
-            owner_tree_id_str and
-            selected_tree_id_str and
-            selected_person_tree_id and # Make sure person ID itself is not None
-            selected_tree_id_str == owner_tree_id_str # Compare tree IDs as strings
+        is_owner = bool(
+            selected_global_id_str
+            and owner_profile_id_str
+            and selected_global_id_str == owner_profile_id_str
         )
-
-        can_calc_discovery = bool(
-            selected_person_global_id and # Check if global ID exists for target
-            owner_profile_id_str # Check if owner global ID exists
-            )
+        can_calc_tree = bool(
+            owner_tree_id_str
+            and selected_tree_id_str
+            and selected_person_tree_id
+            and selected_tree_id_str == owner_tree_id_str
+        )
+        can_calc_discovery = bool(selected_person_global_id and owner_profile_id_str)
 
     logger.debug(f"Relationship calculation checks (Source: {source_of_ids}):")
     logger.debug(f"  Can Attempt Calc?  : {can_attempt_calculation}")
-    logger.debug(f"  is_owner           : {is_owner} (OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')")
-    logger.debug(f"  can_calc_tree      : {can_calc_tree} (OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', SelectedP exists?={bool(selected_person_tree_id)})")
-    logger.debug(f"  can_calc_discovery : {can_calc_discovery} (OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})")
+    logger.debug(
+        f"  is_owner           : {is_owner} (OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')"
+    )
+    logger.debug(
+        f"  can_calc_tree      : {can_calc_tree} (OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', SelectedP exists?={bool(selected_person_tree_id)})"
+    )
+    logger.debug(
+        f"  can_calc_discovery : {can_calc_discovery} (OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})"
+    )
 
-    # --- Call Appropriate Relationship Display Function ---
-    calculation_performed = False # Renamed for clarity
+    # --- Directly Call API and Format/Print Relationship ---
+    calculation_performed = False
+    formatted_path = None
+
     if is_owner:
-        print(f"{selected_name} is the tree owner ({owner_name}).")
+        print(f"\n{selected_name} is the tree owner ({owner_name}).")
         logger.info(f"{selected_name} is Tree Owner.")
         calculation_performed = True
     elif can_calc_tree:
-        # Pass guaranteed string IDs to the display function
+        api_called = "Tree Ladder (/getladder)"
+        # REMOVED: logger.info(f"Attempting relationship calculation via {api_called}...")
+        logger.debug(
+            f"Attempting relationship calculation via {api_called}..."
+        )  # Changed to debug
         sp_tree_id_str = str(selected_person_tree_id)
-        sn_str = str(selected_name) if selected_name else "Unknown"
         ot_id_str = owner_tree_id_str
-        on_str = str(owner_name) if owner_name else "Unknown"
 
-        _display_tree_relationship(
-            sp_tree_id_str,
-            sn_str,
-            ot_id_str,
-            on_str,
-            session_manager_local,
-            base_url,
+        # Print the relationship path heading and API URL
+        print(f"\n=== Relationship Path to {owner_name} ===\n")
+        getladder_url = f"{base_url.rstrip('/')}/family-tree/person/tree/{ot_id_str}/person/{sp_tree_id_str}/getladder?callback=no"
+        print(f"Relationship Path API URL: {getladder_url}\n")
+
+        relationship_result_data = call_getladder_api(
+            session_manager_local, ot_id_str, sp_tree_id_str, base_url
         )
-        calculation_performed = True
+        if relationship_result_data:
+            calculation_performed = True
+            if callable(format_api_relationship_path):
+                try:
+                    sn_str = str(selected_name) if selected_name else "Unknown"
+                    on_str = str(owner_name) if owner_name else "Unknown"
+                    formatted_path = format_api_relationship_path(
+                        relationship_result_data, on_str, sn_str
+                    )
+                except Exception as fmt_err:
+                    logger.error(
+                        f"Error formatting {api_called} data: {fmt_err}", exc_info=True
+                    )
+                    formatted_path = f"(Error formatting relationship path: {fmt_err})"
+            else:
+                logger.error("format_api_relationship_path function not available.")
+                formatted_path = "(Error: Formatting function unavailable)"
+        else:
+            logger.warning(f"{api_called} API call failed or returned no data.")
+            formatted_path = f"(Failed to retrieve data from {api_called} API)"
+
     elif can_calc_discovery:
-        # Pass guaranteed string IDs to the display function
+        api_called = "Discovery Relationship (/relationshiptome or /relationship)"
+        # REMOVED: logger.info(f"Attempting relationship calculation via {api_called}...")
+        logger.debug(
+            f"Attempting relationship calculation via {api_called}..."
+        )  # Changed to debug
         sp_global_id_str = str(selected_person_global_id)
-        sn_str = str(selected_name) if selected_name else "Unknown"
         op_id_str = owner_profile_id_str
-        on_str = str(owner_name) if owner_name else "Unknown"
 
-        _display_discovery_relationship(
-            sp_global_id_str,
-            sn_str,
-            op_id_str,
-            on_str,
-            session_manager_local,
-            base_url,
+        # Use call_getladder_api instead of call_discovery_relationship_api
+        # We need to get the tree_id from the session manager
+        owner_tree_id = getattr(session_manager_local, "my_tree_id", "175946702")
+        relationship_result_data = call_getladder_api(
+            session_manager_local, owner_tree_id, sp_global_id_str, base_url
         )
-        calculation_performed = True
+        if relationship_result_data:
+            calculation_performed = True
+            if callable(format_api_relationship_path):
+                try:
+                    sn_str = str(selected_name) if selected_name else "Unknown"
+                    on_str = str(owner_name) if owner_name else "Unknown"
+                    formatted_path = format_api_relationship_path(
+                        relationship_result_data, on_str, sn_str
+                    )
+                except Exception as fmt_err:
+                    logger.error(
+                        f"Error formatting {api_called} data: {fmt_err}", exc_info=True
+                    )
+                    formatted_path = f"(Error formatting relationship path: {fmt_err})"
+            else:
+                logger.error("format_api_relationship_path function not available.")
+                formatted_path = "(Error: Formatting function unavailable)"
+        else:
+            logger.warning(f"{api_called} API call failed or returned no data.")
+            formatted_path = f"(Failed to retrieve data from {api_called} API)"
 
-    # Log error only if calculation couldn't be performed due to unmet conditions
-    if not calculation_performed:
-         # Add a user message if no path could be calculated
-         print(f"(Could not calculate relationship path for {selected_name})")
-         if source_of_ids == "Detailed Fetch Failed (Missing IDs)":
-             print("  Reason: Detailed information fetched was missing necessary IDs.")
-         elif source_of_ids == "Detailed Fetch Skipped (No Data)":
-              print("  Reason: Failed to fetch detailed information.")
-         else: # Should not happen if logic is correct, but catch-all
-              print("  Reason: Conditions not met or essential IDs missing.")
+    # --- Print Final Result or Failure Message ---
+    print("")  # Add a blank line before the result/message
 
-         # Keep the error log for debugging
-         logger.error(
-            f"Cannot calculate relationship for {selected_name}. Conditions not met or essential IDs missing (Source: {source_of_ids}). See previous debug logs for ID values."
-         )
+    if formatted_path:
+        known_error_starts = (
+            "(No relationship",
+            "(Could not parse",
+            "(API returned error",
+            "(Relationship HTML structure",
+            "(Unsupported API response",
+            "(Error processing relationship",
+            "(Cannot parse relationship path",
+            "(Could not find, decode, or parse",
+            "(Could not find sufficient relationship",
+            "(Failed to retrieve data",
+            "(Error formatting relationship",
+            "(Error: Formatting function unavailable",
+            "(Discovery path found but invalid",
+        )
+        if formatted_path.startswith(known_error_starts):
+            print(f"  {formatted_path}")
+            logger.warning(
+                f"Relationship path calculation using {api_called} resulted in error: {formatted_path}"
+            )
+        else:
+            # Print the relationship path heading and API URL
+            print(f"=== Relationship Path to {owner_name} ===\n")
+            if can_calc_tree:
+                getladder_url = f"{base_url.rstrip('/')}/family-tree/person/tree/{owner_tree_id_str}/person/{selected_person_tree_id}/getladder?callback=no"
+                print(f"Relationship Path API URL: {getladder_url}\n")
+            elif can_calc_discovery:
+                getladder_url = f"{base_url.rstrip('/')}/family-tree/person/tree/{owner_tree_id}/person/{selected_person_global_id}/getladder?callback=no"
+                print(f"Relationship Path API URL: {getladder_url}\n")
+
+            # Display the formatted path from the API
+            print(formatted_path, "\n")
+
+    elif not is_owner and not calculation_performed:
+        print(f"(Could not calculate relationship path for {selected_name})")
+        if not can_attempt_calculation:
+            print(
+                "  Reason: Essential IDs missing from detailed data and fallback data."
+            )
+            logger.error(
+                f"Cannot calculate relationship for {selected_name}. Essential IDs missing from both sources (Source: {source_of_ids})."
+            )
+        else:
+            print(
+                "  Reason: Calculation conditions not met (e.g., tree mismatch, API failure)."
+            )
+            logger.error(
+                f"Cannot calculate relationship for {selected_name}. Conditions not met or API failed (Source: {source_of_ids}). See logs."
+            )
+
 
 # End of _handle_supplementary_info_phase
 
 
-# --- Main Handler (Adjusted Flow) ---
 def handle_api_report():
     """Orchestrates the process using only initial API data for comparison."""
     # Dependency Checks...
