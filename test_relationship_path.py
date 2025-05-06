@@ -70,7 +70,7 @@ def format_name(name_str: Optional[str]) -> str:
 def ordinal_case(text: str) -> str:
     """
     Apply ordinal case to text (e.g., "1st", "2nd", "3rd").
-    Simple implementation that just returns the input.
+    Simple implementation that just returns the input, as API provides "3rd".
 
     Args:
         text: The text to format
@@ -78,6 +78,8 @@ def ordinal_case(text: str) -> str:
     Returns:
         Formatted text
     """
+    # For "3rd great-grandmother", the API already provides "3rd".
+    # This function can be a passthrough if the input is already correct.
     return str(text)
 
 
@@ -104,21 +106,26 @@ def _get_relationship_term(
             term = "Father"
         elif person_a_gender == "F":
             term = "Mother"
+        # End of if/elif
     elif rel_lower == "child":
         if person_a_gender == "M":
             term = "Son"
         elif person_a_gender == "F":
             term = "Daughter"
+        # End of if/elif
     elif rel_lower == "sibling":
         if person_a_gender == "M":
             term = "Brother"
         elif person_a_gender == "F":
             term = "Sister"
+        # End of if/elif
     elif rel_lower == "spouse":
         if person_a_gender == "M":
             term = "Husband"
         elif person_a_gender == "F":
             term = "Wife"
+        # End of if/elif
+    # End of if/elif chain
 
     # Apply ordinal case if the term contains digits
     if any(char.isdigit() for char in term):
@@ -126,10 +133,55 @@ def _get_relationship_term(
             term = ordinal_case(term)
         except Exception as ord_err:
             logger.warning(f"Failed to apply ordinal case to '{term}': {ord_err}")
+        # End of try/except
+    # End of if
     return term
 
 
 # End of _get_relationship_term
+
+
+def _extract_name_and_lifespan_from_html_text(text_content: str) -> Tuple[str, str]:
+    """
+    Parses a raw text string to separate name and format lifespan.
+    Example inputs: "Name YYYY-YYYY", "Name YYYY-", "Name"
+
+    Returns:
+        Tuple (name_part_str, formatted_lifespan_str)
+        formatted_lifespan_str is like "(YYYY-YYYY)" or "(b. YYYY)" or ""
+    """
+    name_part = text_content
+    lifespan_str_formatted = ""
+
+    # Pattern 1: "Name YYYY-YYYY" or "Name YYYY–YYYY" (long dash)
+    match_yyyy_yyyy = re.search(r"\s+(\d{4}[–-]\d{4})$", text_content)
+    if match_yyyy_yyyy:
+        lifespan_raw = match_yyyy_yyyy.group(1)
+        # Normalize dash and format
+        lifespan_str_formatted = f"({lifespan_raw.replace('–', '-')})"
+        name_part = text_content[: match_yyyy_yyyy.start()].strip()
+        return name_part, lifespan_str_formatted
+    # End of if
+
+    # Pattern 2: "Name YYYY-" (living, birth year known)
+    match_yyyy_living = re.search(r"\s+(\d{4})-$", text_content)
+    if match_yyyy_living:
+        birth_year = match_yyyy_living.group(1)
+        lifespan_str_formatted = f"(b. {birth_year})"
+        name_part = text_content[: match_yyyy_living.start()].strip()
+        return name_part, lifespan_str_formatted
+    # End of if
+
+    # Pattern 3: "Name YYYY" (could be birth or death year alone, assume birth for (b. YYYY) if ambiguous)
+    # This pattern is less specific. For getladder, explicit "YYYY-" or "YYYY-YYYY" is more common.
+    # If the HTML provides just "Name YYYY", and it's meant as birth, it would need context.
+    # For now, this helper primarily focuses on explicit "YYYY-YYYY" and "YYYY-".
+    # If no specific pattern matches, lifespan_str_formatted remains ""
+
+    return name_part.strip(), lifespan_str_formatted
+
+
+# End of _extract_name_and_lifespan_from_html_text
 
 
 def format_api_relationship_path(
@@ -155,6 +207,7 @@ def format_api_relationship_path(
             "format_api_relationship_path: Received empty API response data."
         )
         return "(No relationship data received from API)"
+    # End of if
 
     # --- Initialize variables ---
     html_content_raw: Optional[str] = None  # Raw HTML string from JSONP
@@ -164,16 +217,14 @@ def format_api_relationship_path(
     name_formatter = format_name  # Use imported or fallback formatter
 
     # --- Step 1: Process Input Data Type ---
-    # Determine if input is JSON, JSONP string, or other string, and extract key data.
     if isinstance(api_response_data, dict):
         response_source = "JSON"
         if "error" in api_response_data:
-            # Handle direct error object from API
             return f"(API returned error object: {api_response_data.get('error', 'Unknown')})"
-        elif "path" in api_response_data and isinstance(
+        # End of if
+        if "path" in api_response_data and isinstance(
             api_response_data.get("path"), list
         ):
-            # Handle Discovery API JSON format (ensure path is a list)
             logger.debug("Detected direct JSON 'path' format (Discovery API).")
             json_data = api_response_data
         elif (
@@ -181,21 +232,20 @@ def format_api_relationship_path(
             and "status" in api_response_data
             and isinstance(api_response_data.get("html"), str)
         ):
-            # Handle pre-parsed JSONP structure (e.g., if wrapper already handled it)
             logger.debug("Detected pre-parsed JSONP structure with 'html' key.")
             html_content_raw = api_response_data.get("html")
             api_status = api_response_data.get("status", "unknown")
             if api_status != "success":
                 return f"(API returned status '{api_status}': {api_response_data.get('message', 'Unknown Error')})"
+            # End of if
         else:
             logger.warning(
                 f"Received unhandled dictionary format: Keys={list(api_response_data.keys())}"
             )
             return "(Received unhandled dictionary format from API)"
-
+        # End of if
     elif isinstance(api_response_data, str):
         response_source = "JSONP/RawString"
-        # Check for common JSONP wrappers (__ancestry_jsonp_...(...) or no(...))
         if (
             api_response_data.strip().startswith("__ancestry_jsonp_")
             and api_response_data.strip().endswith(");")
@@ -205,7 +255,6 @@ def format_api_relationship_path(
         ):
             response_source = "JSONP"
             try:
-                # Extract the JSON part from the wrapper
                 json_part_match = re.search(
                     r"^\s*[\w$.]+\((.*)\)\s*;?\s*$", api_response_data, re.DOTALL
                 ) or re.search(r"^\s*no\((.*)\)\s*$", api_response_data, re.DOTALL)
@@ -213,7 +262,6 @@ def format_api_relationship_path(
                 if json_part_match:
                     json_part_str = json_part_match.group(1).strip()
                     logger.debug(f"Extracted JSON part: {json_part_str[:100]}...")
-                    # Parse the extracted JSON string
                     parsed_json = json.loads(json_part_str)
                     api_status = parsed_json.get("status", "unknown")
 
@@ -226,37 +274,38 @@ def format_api_relationship_path(
                             html_content_raw = None
                         else:
                             logger.debug("Successfully extracted 'html' from JSONP.")
+                        # End of if
                     else:
-                        # Return status message from JSONP if not successful
                         return f"(API status '{api_status}' in JSONP: {parsed_json.get('message', 'Error')})"
+                    # End of if/else
                 else:
                     logger.warning("Could not extract JSON part from JSONP wrapper.")
-                    # Fallback: Treat the original string as potential raw HTML/text
                     html_content_raw = api_response_data
                     response_source = "RawString"
+                # End of if/else
             except json.JSONDecodeError as json_err:
                 logger.error(
                     f"Error decoding JSON part from {response_source}: {json_err}"
                 )
-                # Include snippet of problematic string
                 error_context = (
                     f" near: {json_part_str[:100]}..."
                     if "json_part_str" in locals()
                     else ""
                 )
                 return f"(Error parsing JSONP data: {json_err}{error_context})"
+            # End of try/except
             except Exception as e:
                 logger.error(f"Error processing {response_source}: {e}", exc_info=True)
-                # Fallback: Treat the original string as potential raw HTML/text
                 html_content_raw = api_response_data
                 response_source = "RawString"
+            # End of try/except
         else:
-            # Input string doesn't look like JSONP, treat as raw content
             html_content_raw = api_response_data
             response_source = "RawString"
+        # End of if/else
     else:
-        # Handle unsupported input types
         return f"(Unsupported data type received: {type(api_response_data)})"
+    # End of if/elif/else
 
     # --- Step 2: Format Discovery API JSON Path (if applicable) ---
     if json_data and "path" in json_data:
@@ -264,27 +313,16 @@ def format_api_relationship_path(
         discovery_path = json_data["path"]
         if isinstance(discovery_path, list) and discovery_path:
             logger.info("Formatting relationship path from Discovery API JSON.")
-            # Start with the target person's name (provided to function)
             path_steps_json.append(f"*   {name_formatter(target_name)}")
-            # Iterate through the steps in the path from the API response
             for i, step in enumerate(discovery_path):
                 step_name = name_formatter(step.get("name", "?"))
                 step_rel = step.get("relationship", "?")
-                # Use _get_relationship_term for consistent capitalization/ordinals
                 step_rel_display = _get_relationship_term(None, step_rel).capitalize()
-
-                # Add the relationship connector line based on the *current* step's relationship
-                path_steps_json.append(f"    -> is {step_rel_display} of")  # Use " of"
-                # Add the next person in the path
+                path_steps_json.append(f"    -> is {step_rel_display} of")
                 path_steps_json.append(f"*   {step_name}")
-
-            # Add the final connector indicating the end of the explicit path from API
-            # Note: Discovery API path ends at the last known person before the owner.
+            # End of for
             path_steps_json.append(f"    -> leads to")
-            path_steps_json.append(
-                f"*   {owner_name} (You)"
-            )  # Represent owner at the end
-
+            path_steps_json.append(f"*   {owner_name} (You)")
             result_str = "\n".join(path_steps_json)
             logger.debug(f"Formatted Discovery relationship path:\n{result_str}")
             return result_str
@@ -293,315 +331,186 @@ def format_api_relationship_path(
                 f"Discovery 'path' data invalid or empty: {json_data.get('path')}"
             )
             return "(Discovery path found but is empty or invalid)"
-    # End if json_data (Discovery format)
+        # End of if/else
+    # End of if json_data
 
     # --- Step 3: Process HTML Content (from /getladder JSONP) ---
     if not html_content_raw:
         logger.warning("No processable HTML content found for relationship path.")
-        # Return specific message if JSONP was parsed but had no HTML
         if response_source == "JSONP" and api_status != "success":
-            # Message already returned earlier in this case
-            return f"(API status '{api_status}' in JSONP, no HTML content)"  # Fallback message
+            return f"(API status '{api_status}' in JSONP, no HTML content)"
+        # End of if
         return "(Could not find or extract relationship HTML content)"
+    # End of if
 
-    # Decode HTML entities (e.g., &lt; becomes <) and unicode escapes (\uXXXX)
     html_content_decoded: Optional[str] = None
     try:
-        # First, handle standard HTML entities
         html_content_intermediate = html.unescape(html_content_raw)
-        # Second, decode unicode escapes often used in JSON embedding
         html_content_decoded = bytes(html_content_intermediate, "utf-8").decode(
             "unicode_escape"
         )
         logger.debug(f"Decoded HTML content: {html_content_decoded[:250]}...")
     except Exception as decode_err:
         logger.error(f"Failed to decode HTML content: {decode_err}", exc_info=True)
-        # Fallback to using the raw content, might fail parsing later
-        html_content_decoded = html_content_raw  # Keep original if decode fails
+        html_content_decoded = html_content_raw
+    # End of try/except
 
     if not BS4_AVAILABLE or not BeautifulSoup:
         logger.error("BeautifulSoup library not available. Cannot parse HTML.")
         return "(Cannot parse relationship HTML - BeautifulSoup library missing)"
+    # End of if
 
     # --- Step 4: Parse Decoded HTML with BeautifulSoup ---
     try:
         logger.debug("Attempting to parse DECODED HTML content with BeautifulSoup...")
         soup = None
-        # Prefer lxml for speed/robustness, fall back to html.parser
         parser_to_try = ["lxml", "html.parser"]
-
         for parser_name in parser_to_try:
             try:
                 soup = BeautifulSoup(html_content_decoded, parser_name)
                 logger.info(f"Successfully parsed HTML using '{parser_name}'.")
-                break  # Stop if parsing succeeds
+                break
             except Exception as parse_err:
-                # Catch all parsing errors
                 logger.warning(
                     f"Error using '{parser_name}' parser: {parse_err}. Trying next."
                 )
-        # End for parser_name
+            # End of try/except
+        # End of for
 
         if not soup:
             logger.error("BeautifulSoup failed to parse HTML with available parsers.")
             return "(Error parsing relationship HTML - BeautifulSoup failed)"
+        # End of if
 
         # --- Step 5: Extract Path Information from Parsed HTML ---
-        # Find the list items representing the relationship path
-        # Target selector based on observed structure in getladder response
         list_items = soup.select("ul.textCenter li")
-        if not list_items:
-            logger.warning(
-                "Expected list items ('ul.textCenter li'), found none in parsed HTML."
-            )
-            logger.debug(
-                f"Parsed HTML structure (abbreviated):\n{soup.prettify()[:500]}"
-            )
-            return "(Relationship HTML structure not as expected - Found 0 list items)"
-
-        # Extract overall relationship summary (usually the first item's italic/bold text)
-        overall_relationship = "unknown relationship"
-        if list_items:  # Check if list_items is not empty
-            summary_tag = list_items[0].select_one("i")  # Look for <i> tag
-            if summary_tag:
-                # Extract the relationship part, removing the names
-                summary_text = summary_tag.get_text(strip=True)
-                # Find the relationship part after the possessive
-                match = re.search(
-                    r"is\s+.*?'s\s+(\w+(?:\s+\w+)*)",
-                    summary_text,
-                    re.IGNORECASE,
-                )
-                if match:
-                    overall_relationship = match.group(1).lower()
-                else:
-                    overall_relationship = summary_text.lower()
-        logger.debug(
-            f"Extracted overall relationship summary: '{overall_relationship}'"
-        )
-
-        # Log the HTML content for debugging
-        logger.debug(f"HTML content: {soup.prettify()[:1000]}")
-
-        # Filter out items that are just decorative arrows (often have 'iconArrowDown' class)
         path_items = [
             li for li in list_items if "iconArrowDown" not in (li.get("class") or [])
         ]
         logger.debug(f"Found {len(path_items)} relevant path items (summary + people).")
 
-        # The actual path starts from the second relevant item (index 1)
-        if len(path_items) < 2:  # Need at least summary + one person
+        if not path_items:  # Need at least the target person
             logger.warning(
-                f"Expected at least 2 relevant items (summary + 1 person), found {len(path_items)}."
+                "Expected list items ('ul.textCenter li'), found none in parsed HTML or no relevant items."
             )
-            return "(Could not find sufficient relationship path steps in HTML)"
+            logger.debug(
+                f"Parsed HTML structure (abbreviated):\n{soup.prettify()[:500]}"
+            )
+            return "(Relationship HTML structure not as expected - Found 0 relevant list items)"
+        # End of if
 
-        # --- Step 6: Build Formatted Output String (Bulleted List for HTML Path) ---
-        # Use target_name provided to the function for the summary line
-        # Extract the summary directly from the first item's <i> tag if available
-        summary_tag = None
-        if list_items:
-            summary_tag = list_items[0].select_one("i")
-
-        if summary_tag:
-            # Get the raw summary text from the first item
-            raw_summary = summary_tag.get_text(strip=True)
-            # Clean up any HTML entities or extra spaces
-            summary_line = html.unescape(raw_summary)
-            # Add colon if not present
-            if not summary_line.endswith(":"):
-                summary_line += ":"
-        else:
-            # Fallback to constructed summary if extraction fails
-            summary_line = f"{target_name} is {owner_name}'s {overall_relationship}:"
-
-        # Use the summary line from the API response
+        # --- Step 6: Build Formatted Output String ---
         path_lines = []
 
-        # Collect all people and their relationships
-        people = []
-        relationships = []
+        # 1. Extract Target Info and Overall Relationship for Summary Line
+        target_li = path_items[0]
+        target_name_tag = target_li.find("b")  # Target name usually in <b>
+        target_name_raw_html = (
+            target_name_tag.get_text(strip=True) if target_name_tag else target_name
+        )
 
-        # Iterate through the actual people items, STARTING FROM INDEX 1 (skipping the summary item)
-        # path_items[1] should be the first person in the path (target_name equivalent from HTML)
-        # path_items[len-1] should be the owner/you
-        for i in range(1, len(path_items)):  # Start loop from 1
-            item = path_items[i]
+        # Use helper to get name and lifespan from the raw text of the first item
+        # This raw text includes name and year e.g. "Elizabeth 'Betty' Cruickshank 1839-1886"
+        _, target_lifespan_from_html = _extract_name_and_lifespan_from_html_text(
+            target_name_raw_html
+        )
 
-            # a) Extract Name (usually in <a> or <b> tag)
-            name_tag = item.find("a") or item.find("b")
-            current_person_name_raw = (
-                name_tag.get_text(strip=True) if name_tag else "Unknown"
+        # Use the function argument `target_name` for display consistency in summary
+        formatted_target_name_for_summary = name_formatter(target_name)
+
+        overall_relationship_text = "Unknown Relationship"
+        # Overall relationship is in <i><b>...</b></i> or <i>...</i> within the first <li>
+        summary_tag_html = target_li.select_one("i b, i")
+        if summary_tag_html:
+            overall_relationship_text = summary_tag_html.get_text(strip=True)
+            # The API provides "3rd great-grandmother", so ordinal_case might not be needed
+            # if it's just a passthrough.
+            overall_relationship_text = ordinal_case(overall_relationship_text)
+        # End of if
+
+        summary_line = f"{formatted_target_name_for_summary} {target_lifespan_from_html} is {name_formatter(owner_name)}'s {overall_relationship_text}:"
+
+        # 2. Iterate for Path Lines
+        for i in range(1, len(path_items)):
+            current_person_li = path_items[i]
+
+            # Determine the name of the "previous person" for the relationship string
+            if i == 1:  # Current is the first person after target
+                # The relationship is to the main target_name
+                prev_person_name_for_rel_str = name_formatter(target_name)
+            else:  # Current is second person onwards in the list
+                prev_person_li_for_name = path_items[i - 1]
+                prev_name_tag_for_rel = prev_person_li_for_name.find(
+                    "a"
+                ) or prev_person_li_for_name.find("b")
+                prev_name_raw_for_rel = (
+                    prev_name_tag_for_rel.get_text(strip=True)
+                    if prev_name_tag_for_rel
+                    else "Unknown Previous"
+                )
+                parsed_prev_name, _ = _extract_name_and_lifespan_from_html_text(
+                    prev_name_raw_for_rel
+                )
+                prev_person_name_for_rel_str = name_formatter(parsed_prev_name)
+                if (
+                    prev_person_name_for_rel_str.lower() == "you"
+                ):  # Handle if previous was owner
+                    prev_person_name_for_rel_str = name_formatter(owner_name)
+                # End of if
+            # End of if/else
+
+            # Extract current person's details
+            current_name_tag = current_person_li.find("a") or current_person_li.find(
+                "b"
+            )
+            current_name_raw_from_tag = (
+                current_name_tag.get_text(strip=True)
+                if current_name_tag
+                else "Unknown Current"
             )
 
-            # b) Extract Lifespan (heuristic based on text after name or year in name)
-            lifespan = ""
-            # Look for a year at the end of the name (e.g., "Frances Margaret Milne 1947")
-            year_in_name_match = re.search(r"\s+(\d{4})$", current_person_name_raw)
-            display_name = current_person_name_raw
-            if year_in_name_match:
-                # If name ends with a year, remove it and use for lifespan
-                year = year_in_name_match.group(1)
-                # Store the year with "b." prefix for birth year
-                lifespan = f"b. {year}"
-                # Create a display name without the year
-                display_name = current_person_name_raw[
-                    : year_in_name_match.start()
-                ].strip()
-            elif (
-                name_tag
-                and name_tag.next_sibling
-                and isinstance(name_tag.next_sibling, str)
+            parsed_current_name, current_lifespan_str = (
+                _extract_name_and_lifespan_from_html_text(current_name_raw_from_tag)
+            )
+            current_name_formatted = name_formatter(parsed_current_name)
+
+            # If the current person is the owner, ensure name matches owner_name argument
+            if current_name_formatted.lower() == "you" or (
+                i == len(path_items) - 1
+                and name_formatter(owner_name).startswith(current_name_formatted)
             ):
-                # Check text immediately following the name tag for (YYYY-YYYY) or (YYYY)
-                potential_lifespan = name_tag.next_sibling.strip()
-                # Match common patterns like (YYYY-YYYY) or (YYYY)
-                lifespan_match = re.match(
-                    r"\(\s*(\d{4})\s*(?:[-–—]\s*(\d{4}))?\s*\)$", potential_lifespan
-                )
-                if lifespan_match:
-                    start_year = lifespan_match.group(1)
-                    end_year = lifespan_match.group(2)
-                    lifespan = f"{start_year}–{end_year}" if end_year else start_year
-            # End lifespan extraction
+                current_name_formatted = name_formatter(owner_name)
+                # If owner name from HTML didn't have lifespan, and current_lifespan_str is empty, it stays empty.
+            # End of if
 
-            # c) Format the extracted name
-            current_person_name = name_formatter(current_person_name_raw)
-            # Special case: If the name extracted is 'You', use the provided owner_name
-            # Check against lowercase and strip potential "(You)" part from owner_name for comparison
-            owner_name_base = owner_name.replace("(You)", "").strip()
-            # Ensure comparison handles potential "(You)" suffix in owner_name
-            if (
-                current_person_name.lower() == "you"
-                or name_formatter(current_person_name_raw) == owner_name_base
-            ):
-                current_person_name = f"{owner_name_base}"
-                is_owner = True
-            else:
-                is_owner = False
-
-            # Store the person with their lifespan
-            # Use name without year for display in relationship descriptions
-            display_name = current_person_name_raw
-            # If there's a year in the name, remove it for display purposes
-            year_in_display_match = re.search(r"\s+(\d{4})$", display_name)
-            if year_in_display_match:
-                display_name = display_name[: year_in_display_match.start()].strip()
-
-            person_info = {
-                "name": current_person_name,
-                "lifespan": lifespan,
-                "is_owner": is_owner,
-                "display_name": display_name,
-            }
-            people.append(person_info)
-
-            # e) Get relationship IF this is NOT the last person in the path
-            if i < len(path_items) - 1:
-                # Relationship description is usually in the *same* <li>'s <i> tag
-                # This describes the relationship of the *current* person (i) to the *next* person (i+1)
-                desc_tag = item.find("i")
-                desc_text = desc_tag.get_text(strip=True) if desc_tag else ""
-
-                # Extract the core relationship term (father, mother, son, daughter, etc.)
-                relationship_term = "related to"  # Default if specific term not found
-                # Regex to find common terms, ignoring surrounding words like "of X"
-                rel_match = re.search(
-                    r"\b(brother|sister|father|mother|son|daughter|husband|wife|spouse|parent|child|sibling)\b",
-                    desc_text,
+            # Extract relationship term from current <li>'s <i> tag
+            relationship_term_text = "related"  # Default
+            desc_tag_html = current_person_li.find("i")
+            if desc_tag_html:
+                desc_text_html = desc_tag_html.get_text(strip=True)
+                # Regex for "Son of Margaret Simpson", "Daughter of...", "You are the son of..."
+                rel_match_html = re.search(
+                    r"\b(son|daughter|father|mother|husband|wife|spouse|brother|sister|parent|child|sibling)\b",
+                    desc_text_html,
                     re.IGNORECASE,
                 )
-                if rel_match:
-                    relationship_term = rel_match.group(1).lower()
-                # Handle "You are the..." case specifically if needed (less common here)
-                elif "you are the" in desc_text.lower():
+                if rel_match_html:
+                    relationship_term_text = rel_match_html.group(1).lower()
+                elif "you are the" in desc_text_html.lower():
                     you_match = re.search(
-                        r"You\s+are\s+the\s+([\w\s]+)", desc_text, re.IGNORECASE
+                        r"You\s+are\s+the\s+([\w\s]+)\s+of",
+                        desc_text_html,
+                        re.IGNORECASE,
                     )
                     if you_match:
-                        # This case is less likely in the intermediate steps' descriptions
-                        relationship_term = you_match.group(1).strip().lower()
+                        relationship_term_text = you_match.group(1).strip().lower()
+                    # End of if
+                # End of if/elif
+            # End of if
 
-                relationships.append(relationship_term)
-            # End if not last item
-        # End for loop processing path items (indices 1 to end)
-
-        # Now format the path in the desired format
-        for i in range(len(people)):
-            person = people[i]
-            person_name = person["name"]
-            person_lifespan = person["lifespan"]
-
-            # Format the person line
-            # Remove any year from the person's name for display
-            clean_name = person_name
-            name_parts = person_name.split()
-            if len(name_parts) > 0 and name_parts[-1].isdigit():
-                # Extract the year from the name
-                year = name_parts[-1]
-                # Remove the year from the name
-                clean_name = " ".join(name_parts[:-1])
-                # Update the person's name to not include the year
-                person_name = clean_name
-                # Add the birth year in the desired format
-                person_line = f"*   {person_name} (b. {year})"
-            else:
-                person_line = f"*   {person_name}"
-                if person_lifespan:
-                    # Format birth year as (b. YYYY) instead of just the year
-                    if person_lifespan.startswith("b. "):
-                        person_line += f" (b. {person_lifespan.replace('b. ', '')})"
-                    else:
-                        person_line += f" ({person_lifespan})"
-
-            # Store the clean name for relationship descriptions
-            person["clean_name"] = clean_name
-
-            # Add relationship description
-            if i < len(people) - 1:
-                # Not the last person - use the relationship to the next person
-                next_person = people[i + 1]
-                relationship = relationships[i]
-
-                # Use the clean name for relationship descriptions
-                next_person_name = next_person.get(
-                    "clean_name", next_person.get("display_name", next_person["name"])
-                )
-
-                if relationship.lower() in ["father", "mother", "parent"]:
-                    person_line += f" is {next_person_name}'s {relationship}"
-                elif relationship.lower() in ["son", "daughter", "child"]:
-                    prev_person_name = target_name
-                    if i > 0:
-                        prev_person = people[i - 1]
-                        prev_person_name = prev_person.get(
-                            "clean_name",
-                            prev_person.get("display_name", prev_person["name"]),
-                        )
-                    person_line += f" is {prev_person_name}'s {relationship}"
-                elif relationship.lower() in ["brother", "sister", "sibling"]:
-                    person_line += f" is {next_person_name}'s {relationship}"
-                else:
-                    person_line += f" is {relationship} to {next_person_name}"
-            elif i > 0:
-                # Last person - use the relationship to the previous person
-                prev_person = people[i - 1]
-
-                # Use the clean name for relationship descriptions
-                prev_person_name = prev_person.get(
-                    "clean_name", prev_person.get("display_name", prev_person["name"])
-                )
-
-                # Determine the relationship based on the previous person's relationship
-                if i > 0 and i - 1 < len(relationships):
-                    prev_relationship = relationships[i - 1]
-                    if prev_relationship.lower() == "daughter":
-                        person_line += f" is {prev_person_name}'s son"
-                    else:
-                        # Default relationship for the last person
-                        person_line += f" is {prev_person_name}'s son"
-
-            path_lines.append(person_line)
+            path_line = f"*   {current_name_formatted} {current_lifespan_str} is {prev_person_name_for_rel_str}'s {relationship_term_text}"
+            path_lines.append(path_line.strip())
+        # End of for
 
         # --- Step 7: Combine and Return Formatted String ---
         result_str = f"{summary_line}\n\n" + "\n".join(path_lines)
@@ -613,7 +522,6 @@ def format_api_relationship_path(
         logger.error(
             f"Error processing relationship HTML with BeautifulSoup: {e}", exc_info=True
         )
-        # Include decoded HTML snippet in error if possible for debugging
         error_context = (
             f" near HTML: {html_content_decoded[:200]}..."
             if html_content_decoded
@@ -647,6 +555,7 @@ def extract_html_from_jsonp(jsonp_str):
         if not json_part_match:
             logger.error("Failed to extract JSON part from JSONP wrapper")
             return None
+        # End of if
 
         json_part_str = json_part_match.group(1).strip()
 
@@ -661,13 +570,16 @@ def extract_html_from_jsonp(jsonp_str):
                 f"No HTML content found or API status not success: {parsed_json.get('status')}"
             )
             return None
+        # End of if/else
 
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error: {e}")
         return None
+    # End of try/except
     except Exception as e:
         logger.error(f"Error extracting HTML from JSONP: {e}")
         return None
+    # End of try/except
 
 
 # End of extract_html_from_jsonp
@@ -678,7 +590,7 @@ def decode_html_content(html_content):
     Decode HTML content by unescaping HTML entities and unicode escapes.
 
     This function performs two-step decoding:
-    1. First, it unescapes HTML entities (e.g., &lt; becomes <)
+    1. First, it unescapes HTML entities (e.g., < becomes <)
     2. Then, it decodes unicode escapes (e.g., \u003c becomes <)
 
     This is necessary because Ancestry API responses often contain doubly-encoded HTML.
@@ -702,6 +614,7 @@ def decode_html_content(html_content):
     except Exception as e:
         logger.error(f"Error decoding HTML content: {e}")
         return html_content  # Return original if decoding fails
+    # End of try/except
 
 
 # End of decode_html_content
@@ -732,6 +645,7 @@ def test_format_relationship_path():
     if not html_content:
         print("Failed to extract HTML content from JSONP response")
         return
+    # End of if
 
     print(f"\nExtracted HTML (first 200 chars):\n{html_content[:200]}...\n")
 
@@ -743,7 +657,11 @@ def test_format_relationship_path():
     # Step 3: Parse the HTML using BeautifulSoup
     print("Step 3: Parsing HTML with BeautifulSoup...")
     try:
-        from bs4 import BeautifulSoup
+        # from bs4 import BeautifulSoup # Already imported globally if available
+
+        if not BS4_AVAILABLE or not BeautifulSoup:
+            raise ImportError("BeautifulSoup not available")
+        # End of if
 
         soup = BeautifulSoup(decoded_html, "html.parser")
 
@@ -762,23 +680,37 @@ def test_format_relationship_path():
             print(f"\nFirst item (summary): {path_items[0].get_text(strip=True)}")
 
             # Print relationship description
-            summary_tag = path_items[0].select_one("i")
+            summary_tag = path_items[0].select_one("i b, i")  # More specific selector
             if summary_tag:
                 print(f"Relationship summary: {summary_tag.get_text(strip=True)}")
+            # End of if
 
             # Print a few people in the path
             print("\nPeople in the path:")
-            for i, item in enumerate(path_items):
-                if i > 0 and i < 4:  # Just show a few examples
-                    name_tag = item.find("a") or item.find("b")
-                    name = name_tag.get_text(strip=True) if name_tag else "Unknown"
-                    desc_tag = item.find("i")
-                    desc = desc_tag.get_text(strip=True) if desc_tag else ""
-                    print(f"  Person {i}: {name} - {desc}")
+            for i_loop_var, item in enumerate(path_items):  # Renamed i to i_loop_var
+                if i_loop_var > 0 and i_loop_var < 4:  # Just show a few examples
+                    name_tag_local = item.find("a") or item.find(
+                        "b"
+                    )  # Renamed name_tag
+                    name_local = (
+                        name_tag_local.get_text(strip=True)
+                        if name_tag_local
+                        else "Unknown"
+                    )  # Renamed name
+                    desc_tag_local = item.find("i")  # Renamed desc_tag
+                    desc_local = (
+                        desc_tag_local.get_text(strip=True) if desc_tag_local else ""
+                    )  # Renamed desc
+                    print(f"  Person {i_loop_var}: {name_local} - {desc_local}")
+                # End of if
+            # End of for
+        # End of if
     except ImportError:
         print("BeautifulSoup not available - skipping HTML parsing demonstration")
+    # End of try/except
     except Exception as e:
         print(f"Error parsing HTML: {e}")
+    # End of try/except
 
     # Step 4: Format the relationship path using the raw API response directly
     print("\nStep 4: Formatting relationship path using raw API response...")
@@ -835,13 +767,17 @@ def test_format_relationship_path():
                 print(
                     "\nResults differ: Raw string and parsed JSON inputs produce different output."
                 )
+            # End of if/else
         else:
             print("Could not extract JSON part for the second test.")
+        # End of if/else
     except Exception as e:
         print(f"Error in second test: {e}")
+    # End of try/except
 
 
 # End of test_format_relationship_path
 
 if __name__ == "__main__":
     test_format_relationship_path()
+# End of if

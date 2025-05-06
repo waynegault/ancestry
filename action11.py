@@ -2028,7 +2028,6 @@ def _handle_details_phase(
 # End of _handle_details_phase
 
 
-# In action11.py
 
 
 def _handle_supplementary_info_phase(
@@ -2054,17 +2053,18 @@ def _handle_supplementary_info_phase(
     ):
         _display_family_info(person_research_data["PersonFamily"])
     elif person_research_data is None:
-        logger.debug("Cannot display family: Detail fetch failed.")  # Changed to debug
+        logger.debug("Cannot display family: Detail fetch failed.")
         print("  (Family details unavailable: Detail fetch failed)")
     else:
         logger.debug(
             "Cannot display family: 'PersonFamily' missing/invalid."
-        )  # Changed to debug
+        )
         print("  (Family details missing or invalid in API response)")
-    print("")  # Add space after family
+    # Removed redundant print("") here, let relationship section add space if needed
 
     # --- Prepare for Relationship Calculation ---
-    print(f"=== Relationship Path to {owner_name} ===")  # Print header first
+    # Print header once before any relationship calculation attempts
+    print(f"\n=== Relationship Path to {owner_name} ===")
 
     # Initialize variables
     selected_person_tree_id = None
@@ -2100,17 +2100,14 @@ def _handle_supplementary_info_phase(
             )
         else:
             source_of_ids = "Detailed Fetch Failed (Missing IDs)"
-            # REMOVED: logger.warning("Detailed data fetched, but essential relationship IDs missing. Will attempt fallback.")
             logger.debug(
                 "Detailed data fetched, but essential relationship IDs missing. Will attempt fallback."
-            )  # Changed to debug
-            # Fallback will be attempted below
+            )
     else:
         source_of_ids = "Detailed Fetch Skipped (No Data)"
         logger.debug(
             "Detailed person_research_data not available. Will attempt fallback for relationship IDs."
-        )  # Changed to debug
-        # Fallback will be attempted below
+        )
 
     # Attempt 2: Fallback to raw suggestion data if primary attempt failed
     if not essential_ids_found:
@@ -2122,7 +2119,7 @@ def _handle_supplementary_info_phase(
         if raw_data:
             temp_person_id = raw_data.get("PersonId")
             temp_tree_id = raw_data.get("TreeId")
-            temp_global_id = raw_data.get("UserId")
+            temp_global_id = raw_data.get("UserId") # Assuming UserId might be in raw_data for some cases
             temp_name = parsed_sugg.get(
                 "full_name_disp", raw_data.get("FullName", "Selected Match")
             )
@@ -2145,96 +2142,107 @@ def _handle_supplementary_info_phase(
                 )
         else:
             source_of_ids = "Fallback Failed (No Raw Data)"
-            logger.error("Critical: Cannot find raw_data for fallback.")
+            logger.error("Critical: Cannot find raw_data for fallback to get relationship IDs.")
+    # End of if not essential_ids_found
 
     # --- Log Final IDs Being Used ---
     logger.debug(f"Final IDs for relationship check (Source: {source_of_ids}):")
     logger.debug(
-        f"  Owner Tree ID      : {owner_tree_id} (Type: {type(owner_tree_id)})"
+        f"  Owner Tree ID         : {owner_tree_id} (Type: {type(owner_tree_id)})"
     )
     logger.debug(
-        f"  Owner Profile ID   : {owner_profile_id} (Type: {type(owner_profile_id)})"
+        f"  Owner Profile ID      : {owner_profile_id} (Type: {type(owner_profile_id)})"
     )
     logger.debug(
-        f"  Selected Person Name: {selected_name} (Type: {type(selected_name)})"
+        f"  Selected Person Name  : {selected_name} (Type: {type(selected_name)})"
     )
     logger.debug(
-        f"  Selected Person Tree ID: {selected_person_tree_id} (Type: {type(selected_person_tree_id)})"
+        f"  Selected PersonTreeID : {selected_person_tree_id} (Person's ID within a tree, Type: {type(selected_person_tree_id)})"
     )
     logger.debug(
-        f"  Selected Tree ID   : {selected_tree_id} (Type: {type(selected_tree_id)})"
+        f"  Selected TreeID       : {selected_tree_id} (The tree this person belongs to, Type: {type(selected_tree_id)})"
     )
     logger.debug(
-        f"  Selected Global ID : {selected_person_global_id} (Type: {type(selected_person_global_id)})"
+        f"  Selected Global ID    : {selected_person_global_id} (Often UserID/ProfileID, Type: {type(selected_person_global_id)})"
     )
 
     # --- Determine Relationship Calculation Method ---
     can_attempt_calculation = essential_ids_found
     owner_tree_id_str = str(owner_tree_id) if owner_tree_id else None
-    selected_tree_id_str = str(selected_tree_id) if selected_tree_id else None
+    selected_tree_id_str = str(selected_tree_id) if selected_tree_id else None # The tree ID of the selected person
     owner_profile_id_str = str(owner_profile_id).upper() if owner_profile_id else None
     selected_global_id_str = (
         str(selected_person_global_id).upper() if selected_person_global_id else None
     )
 
     is_owner = False
-    can_calc_tree = False
-    can_calc_discovery = False
+    can_calc_tree_ladder = False # Using /getladder for same-tree relationships
+    can_calc_discovery_api = False # Using Discovery API for cross-tree or general profile relationships
+
     relationship_result_data = None
-    api_called = "None"
+    api_called_for_rel = "None" # Renamed for clarity
+    formatted_path = None
+    calculation_performed = False
 
     if can_attempt_calculation:
+        # Check if selected person is the tree owner
         is_owner = bool(
-            selected_global_id_str
-            and owner_profile_id_str
+            selected_global_id_str # Selected person's global ID
+            and owner_profile_id_str # Owner's global ID (from session)
             and selected_global_id_str == owner_profile_id_str
         )
-        can_calc_tree = bool(
-            owner_tree_id_str
-            and selected_tree_id_str
-            and selected_person_tree_id
-            and selected_tree_id_str == owner_tree_id_str
+
+        # Conditions for using Tree Ladder API (/getladder)
+        # Requires both selected person and owner to be in the *same tree* (owner_tree_id_str).
+        # selected_person_tree_id is the ID of the person *within that tree*.
+        can_calc_tree_ladder = bool(
+            owner_tree_id_str                 # Owner's tree ID must be known
+            and selected_tree_id_str          # Selected person's tree ID must be known
+            and selected_person_tree_id       # Selected person's ID *within their tree* must be known
+            and selected_tree_id_str == owner_tree_id_str # Crucially, they must be in the same tree
         )
-        can_calc_discovery = bool(selected_person_global_id and owner_profile_id_str)
+
+        # Conditions for using Discovery Relationship API
+        # Requires global IDs (Profile IDs/UserIDs) for both selected person and owner.
+        can_calc_discovery_api = bool(
+            selected_person_global_id and owner_profile_id_str
+        )
+    # End of if can_attempt_calculation
 
     logger.debug(f"Relationship calculation checks (Source: {source_of_ids}):")
-    logger.debug(f"  Can Attempt Calc?  : {can_attempt_calculation}")
+    logger.debug(f"  Can Attempt Calc?     : {can_attempt_calculation}")
     logger.debug(
-        f"  is_owner           : {is_owner} (OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')"
+        f"  is_owner              : {is_owner} (OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')"
     )
     logger.debug(
-        f"  can_calc_tree      : {can_calc_tree} (OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', SelectedP exists?={bool(selected_person_tree_id)})"
+        f"  can_calc_tree_ladder  : {can_calc_tree_ladder} (OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', SelectedP_in_Tree exists?={bool(selected_person_tree_id)})"
     )
     logger.debug(
-        f"  can_calc_discovery : {can_calc_discovery} (OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})"
+        f"  can_calc_discovery_api: {can_calc_discovery_api} (OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})"
     )
+
 
     # --- Directly Call API and Format/Print Relationship ---
-    calculation_performed = False
-    formatted_path = None
-
     if is_owner:
-        print(f"\n{selected_name} is the tree owner ({owner_name}).")
-        logger.info(f"{selected_name} is Tree Owner.")
-        calculation_performed = True
-    elif can_calc_tree:
-        api_called = "Tree Ladder (/getladder)"
-        # REMOVED: logger.info(f"Attempting relationship calculation via {api_called}...")
-        logger.debug(
-            f"Attempting relationship calculation via {api_called}..."
-        )  # Changed to debug
-        sp_tree_id_str = str(selected_person_tree_id)
-        ot_id_str = owner_tree_id_str
+        # No API call needed, print message directly
+        print(f"\n  {selected_name} is the tree owner ({owner_name}).")
+        logger.info(f"{selected_name} is Tree Owner. No relationship path calculation needed.")
+        calculation_performed = True # Technically, a "calculation" of "is owner"
+        # formatted_path can remain None, or set to a specific string if preferred.
+        formatted_path = f"{selected_name} is the tree owner."
 
-        # Print the relationship path heading and API URL
-        print(f"\n=== Relationship Path to {owner_name} ===\n")
-        getladder_url = f"{base_url.rstrip('/')}/family-tree/person/tree/{ot_id_str}/person/{sp_tree_id_str}/getladder?callback=no"
-        print(f"Relationship Path API URL: {getladder_url}\n")
+    elif can_calc_tree_ladder:
+        api_called_for_rel = "Tree Ladder (/getladder)"
+        logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
+        # API URL is printed by call_getladder_api itself
+        # Ensure IDs are strings for the API call
+        sp_tree_id_str = str(selected_person_tree_id) # Person's ID in the tree
+        ot_id_str = str(owner_tree_id_str) # The tree ID they are both in
 
         relationship_result_data = call_getladder_api(
             session_manager_local, ot_id_str, sp_tree_id_str, base_url
         )
-        if relationship_result_data:
+        if relationship_result_data: # Successfully got data (string HTML/JSONP)
             calculation_performed = True
             if callable(format_api_relationship_path):
                 try:
@@ -2245,107 +2253,120 @@ def _handle_supplementary_info_phase(
                     )
                 except Exception as fmt_err:
                     logger.error(
-                        f"Error formatting {api_called} data: {fmt_err}", exc_info=True
+                        f"Error formatting {api_called_for_rel} data: {fmt_err}", exc_info=True
                     )
-                    formatted_path = f"(Error formatting relationship path: {fmt_err})"
-            else:
+                    formatted_path = f"(Error formatting relationship path from {api_called_for_rel}: {fmt_err})"
+                # End of try/except
+            else: # format_api_relationship_path not callable (should not happen with guards)
                 logger.error("format_api_relationship_path function not available.")
-                formatted_path = "(Error: Formatting function unavailable)"
-        else:
-            logger.warning(f"{api_called} API call failed or returned no data.")
-            formatted_path = f"(Failed to retrieve data from {api_called} API)"
+                formatted_path = "(Error: Formatting function for relationship path unavailable)"
+            # End of if/else callable
+        else: # call_getladder_api failed or returned None
+            logger.warning(f"{api_called_for_rel} API call failed or returned no data.")
+            formatted_path = f"(Failed to retrieve data from {api_called_for_rel} API)"
+        # End of if/else relationship_result_data
 
-    elif can_calc_discovery:
-        api_called = "Discovery Relationship (/relationshiptome or /relationship)"
-        # REMOVED: logger.info(f"Attempting relationship calculation via {api_called}...")
-        logger.debug(
-            f"Attempting relationship calculation via {api_called}..."
-        )  # Changed to debug
+    elif can_calc_discovery_api:
+        # This branch is for when Tree Ladder cannot be used (e.g., different trees, or selected person is not in owner's tree)
+        # but global IDs are available.
+        api_called_for_rel = "Discovery Relationship API"
+        logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
+        # API URL is printed by call_discovery_relationship_api itself
         sp_global_id_str = str(selected_person_global_id)
-        op_id_str = owner_profile_id_str
+        op_id_str = str(owner_profile_id_str) # Ensure it's a string
 
-        # Use call_getladder_api instead of call_discovery_relationship_api
-        # We need to get the tree_id from the session manager
-        owner_tree_id = getattr(session_manager_local, "my_tree_id", "175946702")
-        relationship_result_data = call_getladder_api(
-            session_manager_local, owner_tree_id, sp_global_id_str, base_url
+        # Call the Discovery API
+        discovery_api_response = call_discovery_relationship_api(
+            session_manager_local, sp_global_id_str, op_id_str, base_url
         )
-        if relationship_result_data:
+
+        if discovery_api_response and isinstance(discovery_api_response, dict):
             calculation_performed = True
-            if callable(format_api_relationship_path):
-                try:
-                    sn_str = str(selected_name) if selected_name else "Unknown"
-                    on_str = str(owner_name) if owner_name else "Unknown"
-                    formatted_path = format_api_relationship_path(
-                        relationship_result_data, on_str, sn_str
-                    )
-                except Exception as fmt_err:
-                    logger.error(
-                        f"Error formatting {api_called} data: {fmt_err}", exc_info=True
-                    )
-                    formatted_path = f"(Error formatting relationship path: {fmt_err})"
+            # This API returns JSON, not HTML directly for the path.
+            # We need a different formatter or specific parsing logic here.
+            # For now, let's represent the direct path if available.
+            if isinstance(discovery_api_response.get("path"), list) and discovery_api_response.get("path"):
+                path_steps = discovery_api_response["path"]
+                path_display_lines = [f"  {selected_name}"]
+                name_formatter_local = format_name if callable(format_name) else lambda x: str(x).title()
+                # _get_relationship_term is not available here, so use raw relationship string
+                for step in path_steps:
+                    step_name_raw = step.get("name", "?")
+                    step_rel_raw = step.get("relationship", "related to").capitalize()
+                    path_display_lines.append(f"  -> {step_rel_raw} is {name_formatter_local(step_name_raw)}")
+                # End of for
+                path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
+                formatted_path = "\n".join(path_display_lines)
+                logger.info(f"Discovery API path constructed: \n{formatted_path}")
+            elif "message" in discovery_api_response : # API might return a message on no path
+                formatted_path = f"(Discovery API: {discovery_api_response.get('message', 'No direct path found')})"
+                logger.warning(f"Discovery API response: {formatted_path}")
             else:
-                logger.error("format_api_relationship_path function not available.")
-                formatted_path = "(Error: Formatting function unavailable)"
-        else:
-            logger.warning(f"{api_called} API call failed or returned no data.")
-            formatted_path = f"(Failed to retrieve data from {api_called} API)"
+                formatted_path = "(Discovery API: Path data missing or in unexpected format)"
+                logger.warning(f"Discovery API response structure unexpected: {discovery_api_response}")
+            # End of if/elif/else path processing
+        else: # call_discovery_relationship_api failed or returned non-dict
+            logger.warning(f"{api_called_for_rel} API call failed or returned invalid data.")
+            formatted_path = f"(Failed to retrieve or parse data from {api_called_for_rel} API)"
+        # End of if/else discovery_api_response
+    # End of if/elif/elif for calculation method
 
     # --- Print Final Result or Failure Message ---
-    print("")  # Add a blank line before the result/message
+    # A blank line is already added by the initial header print if family info was displayed.
+    # If no family info, this adds a space.
+    print("")
 
     if formatted_path:
-        known_error_starts = (
-            "(No relationship",
-            "(Could not parse",
-            "(API returned error",
-            "(Relationship HTML structure",
-            "(Unsupported API response",
-            "(Error processing relationship",
-            "(Cannot parse relationship path",
-            "(Could not find, decode, or parse",
-            "(Could not find sufficient relationship",
-            "(Failed to retrieve data",
-            "(Error formatting relationship",
-            "(Error: Formatting function unavailable",
+        # Check if the formatted_path itself indicates an error/fallback condition
+        # These are common error prefixes from format_api_relationship_path or API call failures
+        known_error_starts_tuple = (
+            "(No relationship", "(Could not parse", "(API returned error",
+            "(Relationship HTML structure", "(Unsupported API response",
+            "(Error processing relationship", "(Cannot parse relationship path",
+            "(Could not find, decode, or parse", "(Could not find sufficient relationship",
+            "(Failed to retrieve data", "(Error formatting relationship",
+            "(Error: Formatting function unavailable", "(Discovery API:",
             "(Discovery path found but invalid",
+            "(No valid relationship path items found",
         )
-        if formatted_path.startswith(known_error_starts):
-            print(f"  {formatted_path}")
+        if any(formatted_path.startswith(err_start) for err_start in known_error_starts_tuple):
+            # This is an error message, print it as such
+            print(f"  {formatted_path}") # Indent error messages for clarity
             logger.warning(
-                f"Relationship path calculation using {api_called} resulted in error: {formatted_path}"
+                f"Relationship path calculation resulted in message/error: {formatted_path} (API called: {api_called_for_rel})"
             )
         else:
-            # Print the relationship path heading and API URL
-            print(f"=== Relationship Path to {owner_name} ===\n")
-            if can_calc_tree:
-                getladder_url = f"{base_url.rstrip('/')}/family-tree/person/tree/{owner_tree_id_str}/person/{selected_person_tree_id}/getladder?callback=no"
-                print(f"Relationship Path API URL: {getladder_url}\n")
-            elif can_calc_discovery:
-                getladder_url = f"{base_url.rstrip('/')}/family-tree/person/tree/{owner_tree_id}/person/{selected_person_global_id}/getladder?callback=no"
-                print(f"Relationship Path API URL: {getladder_url}\n")
-
-            # Display the formatted path from the API
-            print(formatted_path, "\n")
-
+            # This is a successfully formatted path, print it directly
+            # The header "=== Relationship Path to {owner_name} ===" is already printed.
+            # The API URL is printed by the respective call_..._api function in api_utils.
+            print(f"{formatted_path}\n") # Add a newline after the path for spacing
+            logger.info(f"Successfully displayed relationship path via {api_called_for_rel}.")
+        # End of if/else known_error_starts_tuple
     elif not is_owner and not calculation_performed:
-        print(f"(Could not calculate relationship path for {selected_name})")
+        # This case means no calculation method was viable, or essential IDs were missing
+        default_fail_message = f"(Could not calculate relationship path for {selected_name})"
+        print(f"  {default_fail_message}") # Indent for clarity
         if not can_attempt_calculation:
-            print(
-                "  Reason: Essential IDs missing from detailed data and fallback data."
-            )
+            reason_detail = "  Reason: Essential IDs missing from detailed data and fallback data."
+            print(reason_detail)
             logger.error(
-                f"Cannot calculate relationship for {selected_name}. Essential IDs missing from both sources (Source: {source_of_ids})."
+                f"{default_fail_message}. {reason_detail.strip()} (Source of IDs: {source_of_ids})."
             )
-        else:
-            print(
-                "  Reason: Calculation conditions not met (e.g., tree mismatch, API failure)."
-            )
+        else: # Calculation was attempted but conditions not met for any method, or API failed silently earlier
+            reason_detail = "  Reason: Calculation conditions not met (e.g., tree mismatch, API data issue)."
+            print(reason_detail)
             logger.error(
-                f"Cannot calculate relationship for {selected_name}. Conditions not met or API failed (Source: {source_of_ids}). See logs."
+                f"{default_fail_message}. {reason_detail.strip()} (Source of IDs: {source_of_ids}). Check prior logs for API call failures."
             )
-
-
+        # End of if/else can_attempt_calculation
+    elif not is_owner and calculation_performed and not formatted_path:
+        # This means an API was called, data might have been returned, but formatting failed to produce a path
+        # or the API explicitly returned no path (e.g. discovery API with no direct link).
+        # The `formatted_path` should have been set to an error message in these cases by the logic above.
+        # This block is a fallback for an unexpected state.
+        logger.error(f"Unexpected state: Calculation performed for {selected_name} via {api_called_for_rel}, but no formatted path or error message was generated.")
+        print(f"  (Relationship path for {selected_name} could not be determined or displayed via {api_called_for_rel}).")
+    # End of if/elif/elif for printing result
 # End of _handle_supplementary_info_phase
 
 
