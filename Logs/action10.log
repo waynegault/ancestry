@@ -1573,3 +1573,78 @@
 15:16:52 INF [action10 analyze_ 844 ] * whose father is John Innes (b. 1870)
 15:16:52 INF [action10 main     940 ] 
                                       --- Action 10 Finished ---
+15:48:58 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+15:48:59 INF [action10 main     860 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+15:48:59 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+15:48:59 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+15:48:59 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+15:48:59 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+15:48:59 INF [action10 main     882 ] Overriding max display results with: 3
+15:48:59 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+15:49:28 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 29.20s.
+15:49:28 INF [action10 load_ged 237 ] Index size: 14530
+15:49:28 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+15:49:28 INF [action10 load_ged 241 ] Build Times: Index=4.67s, Maps=4.40s, PreProcess=20.12s
+15:49:28 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+15:51:07 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+15:51:07 INF [action10 main     860 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+15:51:07 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+15:51:07 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+15:51:07 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+15:51:07 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+15:51:07 INF [action10 main     882 ] Overriding max display results with: 3
+15:51:07 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+15:51:37 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 29.60s.
+15:51:37 INF [action10 load_ged 237 ] Index size: 14530
+15:51:37 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+15:51:37 INF [action10 load_ged 241 ] Build Times: Index=4.71s, Maps=4.38s, PreProcess=20.51s
+15:51:37 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+15:52:12 INF [action10 display_ 555 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+15:52:12 INF [action10 display_ 691 ] ID               Name                   Gender    Birth            Birth Place                         Death             Death Place                           Total
+15:52:12 INF [action10 display_ 691 ] ---------------  ---------------------  --------  ---------------  ----------------------------------  ----------------  ----------------------------------  -------
+15:52:12 INF [action10 display_ 691 ] @I102537196282@  John Fraser [50][+25]  M [15]    3 FEB 1791 [20]  Troup, Gamrie, Banff... [25] [+25]  8 MAY 1840 [20]   Gamrie, Banff, Scotl... [25] [+25]      230
+15:52:12 INF [action10 display_ 691 ] @I102537537438@  John Fraser [50][+25]  M [15]    1789 [10]        Invernesshire, Scotl... [0]         30 NOV 1848 [10]  Cullen, Banffshire, ... [0]             110
+15:52:12 INF [action10 display_ 691 ] @I102588596645@  John Fraser [50][+25]  M [15]    2 OCT 1817 [0]   Haugh of Glass, Aber... [0]         19 JAN 1840 [20]  Jamaica, West Indies [0]                110
+15:52:12 INF [action10 analyze_ 771 ] 
+                                      ===John Fraser (1791–1840) (score: 230) ===
+                                      
+15:52:14 INF [action10 display_ 717 ] Parents:
+                                      
+15:52:14 INF [action10 display_ 732 ] - Hugh Fraser (b. 3 SEP 1772, d. 18 April 1850)
+15:52:14 INF [action10 display_ 732 ] - Mary Tillary (b. 22 JUL 1765)
+15:52:14 INF [action10 display_ 717 ] Siblings:
+                                      
+15:52:14 INF [action10 display_ 719 ] None found.
+15:52:14 INF [action10 display_ 717 ] Spouses:
+                                      
+15:52:14 INF [action10 display_ 732 ] - Penelope Strachan (b. 17 SEP 1793, d. 17 OCT 1873)
+15:52:14 INF [action10 display_ 717 ] Children:
+                                      
+15:52:14 INF [action10 display_ 732 ] - Alexander Fraser (b. 2 FEB 1822, d. 24 JUN 1894)
+15:52:14 INF [action10 display_ 732 ] - Joseph Fraser (b. 11th September 1820, d. 2nd April 1903)
+15:52:14 INF [action10 display_ 732 ] - Ann Fraser (b. 30 December 1827, d. 8 JULY 1881)
+15:52:14 INF [action10 display_ 732 ] - Elizabeth Fraser (b. 29 SEP 1816, d. 26 MAY 1891)
+15:52:14 INF [action10 display_ 732 ] - John Fraser (b. 22 AUG 1815, d. 1823)
+15:52:14 INF [action10 display_ 732 ] - William Fraser (b. 3 SEP 1818, d. 3 OCT 1898)
+15:52:14 INF [action10 display_ 732 ] - John Fraser (b. 21 AUG 1823)
+15:52:14 INF [action10 display_ 732 ] - James Fraser (b. 10 SEP 1828, d. Before 1830)
+15:52:14 INF [action10 display_ 732 ] - George Fraser (b. 16 FEB 1832)
+15:52:14 INF [action10 display_ 732 ] - James Fraser (b. 14 April 1830, d. 1864)
+15:52:14 INF [action10 display_ 732 ] - Jannet Fraser (b. 14 APR 1830, d. 28 SEP 1887)
+15:52:14 INF [action10 display_ 732 ] - Isabel Bartlet Fraser (b. 16 MAY 1836)
+15:52:14 INF [action10 analyze_ 784 ] 
+                                      === Relationship to me ===
+15:52:14 INF [action10 analyze_ 827 ] John Fraser (1791-1840) is Wayne Gordon Gault's relative:
+15:52:14 INF [action10 analyze_ 828 ] 
+15:52:14 INF [action10 analyze_ 840 ] * John Fraser (b. 1791)
+15:52:14 INF [action10 analyze_ 844 ] * whose son is Alexander Fraser (b. 1822)
+15:52:14 INF [action10 analyze_ 844 ] * whose son is James Fraser (b. 1861)
+15:52:14 INF [action10 analyze_ 844 ] * whose son is Alexander Fraser (b. 1888)
+15:52:14 INF [action10 analyze_ 844 ] * whose daughter is 'Dolly' Clara Alexina Fraser (b. 1908)
+15:52:14 INF [action10 analyze_ 844 ] * whose son is Derrick Wardie Gault (b. 1943)
+15:52:14 INF [action10 analyze_ 844 ] * whose son is Wayne Gordon Gault (b. 1969)
+15:52:14 INF [action10 main     940 ] 
+                                      --- Action 10 Finished ---
