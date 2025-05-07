@@ -296,7 +296,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
         # If we have a date object, extract the year
         if target_birth_date_obj:
             target_birth_year = target_birth_date_obj.year
-            logger.info(
+            logger.debug(
                 f"Successfully parsed birth date: {target_birth_date_obj}, year: {target_birth_year}"
             )
         else:
@@ -306,7 +306,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
             if year_match:
                 try:
                     target_birth_year = int(year_match.group(1))
-                    logger.info(
+                    logger.debug(
                         f"Extracted birth year {target_birth_year} from '{dob_str}' as fallback."
                     )
                 except ValueError:
@@ -327,7 +327,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
         # If we have a date object, extract the year
         if target_death_date_obj:
             target_death_year = target_death_date_obj.year
-            logger.info(
+            logger.debug(
                 f"Successfully parsed death date: {target_death_date_obj}, year: {target_death_year}"
             )
         else:
@@ -337,7 +337,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
             if year_match:
                 try:
                     target_death_year = int(year_match.group(1))
-                    logger.info(
+                    logger.debug(
                         f"Extracted death year {target_death_year} from '{dod_str}' as fallback."
                     )
                 except ValueError:
@@ -2609,7 +2609,7 @@ def _handle_supplementary_info_phase(
                 # End of for
                 path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
                 formatted_path = "\n".join(path_display_lines)
-                logger.info(f"Discovery API path constructed: \n{formatted_path}")
+                logger.debug(f"Discovery API path constructed: \n{formatted_path}")
             elif (
                 "message" in discovery_api_response
             ):  # API might return a message on no path
@@ -2672,7 +2672,7 @@ def _handle_supplementary_info_phase(
             # The header "=== Relationship Path to {owner_name} ===" is already printed.
             # The API URL is printed by the respective call_..._api function in api_utils.
             print(f"{formatted_path}\n")  # Add a newline after the path for spacing
-            logger.info(
+            logger.debug(
                 f"Successfully displayed relationship path via {api_called_for_rel}."
             )
         # End of if/else known_error_starts_tuple

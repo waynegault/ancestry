@@ -1,0 +1,767 @@
+11:53:25 INF [action10 <module> 65  ] Logging configured via setup_logging (Level: INFO).
+11:53:26 INF [action10 main     666 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+11:53:26 INF [action10 validate 178 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+11:53:26 INF [action10 validate 181 ] Configured REFERENCE_PERSON_ID: I102281560836
+11:53:26 INF [action10 validate 182 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+11:53:26 INF [action10 validate 183 ] Using GEDCOM file: Gault Family.ged
+11:53:26 INF [action10 main     688 ] Overriding max display results with: 3
+11:53:26 INF [action10 load_ged 198 ] Loading, parsing, and pre-processing GEDCOM data...
+11:53:55 INF [action10 load_ged 203 ] GEDCOM data loaded & processed successfully in 28.77s.
+11:53:55 INF [action10 load_ged 206 ] Index size: 14530
+11:53:55 INF [action10 load_ged 207 ] Pre-processed cache size: 14530
+11:53:55 INF [action10 load_ged 210 ] Build Times: Index=4.69s, Maps=4.36s, PreProcess=19.71s
+11:53:55 INF [action10 get_user 234 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+11:54:55 INF [action10 log_crit 321 ] 
+                                      --- Final Scoring Criteria Used ---
+11:54:55 INF [action10 log_crit 324 ] First Name: 'Alexander'
+11:54:55 INF [action10 log_crit 324 ] Surname: 'Simpson'
+11:54:55 INF [action10 log_crit 324 ] Gender: 'm'
+11:54:55 INF [action10 log_crit 324 ] Birth Place: 'remoir'
+11:54:55 INF [action10 log_crit 324 ] Death Place: 'keith'
+11:54:55 INF [action10 log_crit 327 ] 
+                                      --- OR Filter Logic (Year Range: +/- 10) ---
+11:54:55 INF [action10 log_crit 328 ] Individuals will be scored if ANY filter criteria met or if alive.
+11:54:55 INF [action10 filter_a 389 ] 
+                                      --- Filtering and Scoring Individuals (using pre-processed data) ---
+11:54:55 INF [action10 filter_a 406 ] Processing 14530 individuals from cache...
+11:54:55 INF [action10 filter_a 414 ] Processing: 10.0% complete (1453/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 20.0% complete (2906/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 30.0% complete (4359/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 40.0% complete (5812/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 50.0% complete (7265/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 60.0% complete (8718/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 70.0% complete (10171/14530)
+11:54:55 INF [action10 filter_a 414 ] Processing: 80.0% complete (11624/14530)
+11:54:56 INF [action10 filter_a 414 ] Processing: 90.0% complete (13077/14530)
+11:54:56 INF [action10 filter_a 414 ] Processing: 100.0% complete (14530/14530)
+11:54:56 INF [action10 filter_a 492 ] Filtering & Scoring completed in 0.25s.
+11:54:56 INF [action10 filter_a 493 ] Found 10322 individual(s) matching OR criteria and scored.
+11:54:56 INF [action10 display_ 519 ] 
+                                      --- Top 3 Highest Scoring Matches ---
+11:54:56 INF [action10 display_ 526 ] Displaying top 3 of 10322 scored matches:
+11:54:56 INF [action10 display_ 561 ] ID              | Name                           | Sex    | Birth Date         | Birth Place                                | Death Date         | Death Place                             | Total Score
+11:54:56 INF [action10 display_ 562 ] --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+11:54:56 INF [action10 display_ 586 ] @I102281560308@ | Alexander Simpson              | M      | 18 December 1840   | Remoir, Marnoch, Banffshire, Scotland      | 18 April 1878      | Yondertown, Keith, Morayshire, Scotland | 140        
+11:54:56 INF [action10 display_ 586 ] @I102281561790@ | Alexander R Simpson            | M      | 15/11/1895         | 3 Moss Street, Keith, Morayshire, Scotland | 20/11/1964         | Turner memorial hospital Keith          | 115        
+11:54:56 INF [action10 display_ 586 ] @I102567350580@ | Alexander Simpson              | M      | 4 JAN 1782         | Cairnie Aberdeenshire                      | N/A                | N/A                                     | 100        
+11:54:56 INF [action10 display_ 589 ] ... and 10319 more matches not shown.
+11:54:56 INF [action10 analyze_ 621 ] 
+                                      --- Analysis of Top Match ---
+11:54:56 INF [action10 analyze_ 633 ] Best Match: Alexander Simpson (ID: @I102281560308@, Score: 140)
+11:54:56 INF [action10 analyze_ 639 ] 
+                                      Relatives:
+11:54:58 INF [action10 display_ 607 ] Parents:
+11:54:58 INF [action10 display_ 609 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+11:54:58 INF [action10 display_ 609 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+11:54:58 INF [action10 display_ 607 ] Siblings:
+11:54:58 INF [action10 display_ 609 ] - John Simpson (b. ~1843)
+11:54:58 INF [action10 display_ 609 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+11:54:58 INF [action10 display_ 609 ] - William Brown (b. 1842, d. 10 FEB 1858)
+11:54:58 INF [action10 display_ 609 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+11:54:58 INF [action10 display_ 609 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+11:54:58 INF [action10 display_ 609 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+11:54:58 INF [action10 display_ 607 ] Spouses:
+11:54:58 INF [action10 display_ 609 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+11:54:58 INF [action10 display_ 607 ] Children:
+11:54:58 INF [action10 display_ 609 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+11:54:58 INF [action10 display_ 609 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+11:54:58 INF [action10 analyze_ 654 ] 
+                                      Relationship Path to Wayne Gordon Gault (I102281560836):
+11:54:58 INF [action10 analyze_ 661 ] No relationship path found (FastBiBFS could not connect).
+11:54:58 INF [action10 analyze_ 661 ] [PROFILE] Search: 0.00s, MapsBuild: 4.36s, IndexBuild: 4.69s, PreProcess: 19.71s
+11:54:58 INF [action10 main     726 ] 
+                                      --- Action 10 Finished ---
+12:01:33 INF [action10 <module> 83  ] Logging configured via setup_logging (Level: INFO).
+12:01:33 INF [action10 main     772 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+12:01:33 INF [action10 validate 195 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+12:01:33 INF [action10 validate 198 ] Configured REFERENCE_PERSON_ID: I102281560836
+12:01:33 INF [action10 validate 199 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+12:01:33 INF [action10 validate 200 ] Using GEDCOM file: Gault Family.ged
+12:01:33 INF [action10 main     794 ] Overriding max display results with: 3
+12:01:33 INF [action10 load_ged 223 ] Loading, parsing, and pre-processing GEDCOM data...
+12:02:02 INF [action10 load_ged 228 ] GEDCOM data loaded & processed successfully in 28.50s.
+12:02:02 INF [action10 load_ged 231 ] Index size: 14530
+12:02:02 INF [action10 load_ged 232 ] Pre-processed cache size: 14530
+12:02:02 INF [action10 load_ged 235 ] Build Times: Index=4.60s, Maps=4.21s, PreProcess=19.70s
+12:02:02 INF [action10 get_user 259 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+12:02:42 INF [action10 log_crit 346 ] 
+                                      --- Final Scoring Criteria Used ---
+12:02:42 INF [action10 log_crit 349 ] First Name: 'alexander'
+12:02:42 INF [action10 log_crit 349 ] Surname: 'simpson'
+12:02:42 INF [action10 log_crit 349 ] Gender: 'm'
+12:02:42 INF [action10 log_crit 349 ] Birth Year: '1840'
+12:02:42 INF [action10 log_crit 349 ] Birth Place: 'remoir'
+12:02:42 INF [action10 log_crit 349 ] Death Year: '1974'
+12:02:42 INF [action10 log_crit 349 ] Death Place: 'keith'
+12:02:42 INF [action10 log_crit 352 ] 
+                                      --- OR Filter Logic (Year Range: +/- 10) ---
+12:02:42 INF [action10 log_crit 353 ] Individuals will be scored if ANY filter criteria met or if alive.
+12:02:42 INF [action10 filter_a 414 ] 
+                                      --- Filtering and Scoring Individuals (using pre-processed data) ---
+12:02:42 INF [action10 filter_a 431 ] Processing 14530 individuals from cache...
+12:02:42 INF [action10 filter_a 439 ] Processing: 10.0% complete (1453/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 20.0% complete (2906/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 30.0% complete (4359/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 40.0% complete (5812/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 50.0% complete (7265/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 60.0% complete (8718/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 70.0% complete (10171/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 80.0% complete (11624/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 90.0% complete (13077/14530)
+12:02:42 INF [action10 filter_a 439 ] Processing: 100.0% complete (14530/14530)
+12:02:42 INF [action10 filter_a 520 ] Filtering & Scoring completed in 0.29s.
+12:02:42 INF [action10 filter_a 521 ] Found 10885 individual(s) matching OR criteria and scored.
+12:02:42 INF [action10 display_ 547 ] 
+                                      --- Top 3 Highest Scoring Matches ---
+12:02:42 INF [action10 display_ 554 ] Displaying top 3 of 10885 scored matches:
+12:02:42 INF [action10 display_ 589 ] ID              | Name                            | Sex    | Birth Date         | Birth Place                                 | Death Date         | Death Place                             | Total Score
+12:02:42 INF [action10 display_ 590 ] ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+12:02:42 INF [action10 display_ 614 ] @I102281560308@ | Alexander Simpson               | M      | 18 December 1840   | Remoir, Marnoch, Banffshire, Scotland       | 18 April 1878      | Yondertown, Keith, Morayshire, Scotland | 185        
+12:02:42 INF [action10 display_ 614 ] @I102281561790@ | Alexander R Simpson             | M      | 15/11/1895         | 3 Moss Street, Keith, Morayshire, Scotland  | 20/11/1964         | Turner memorial hospital Keith          | 150        
+12:02:42 INF [action10 display_ 614 ] @I102281562474@ | Alexander (sandy) Roger Simpson | M      | 12 January 1924    | 11 Moss Street, Keith, Banffshire, Scotland | 16 JULY 1984       | Guelph, Wellington, Ontario, Canada     | 100        
+12:02:42 INF [action10 display_ 617 ] ... and 10882 more matches not shown.
+12:02:42 INF [action10 analyze_ 649 ] 
+                                      === Analysis of Top Match ===
+12:02:42 INF [action10 analyze_ 667 ] === Alexander Simpson (score: 185) ===
+                                      
+12:02:42 INF [action10 analyze_ 670 ] === Scoring Explanation ===
+12:02:42 INF [action10 analyze_ 678 ] First Name: Alexander (25pts)
+12:02:42 INF [action10 analyze_ 683 ] Last Name: Simpson (25pts)
+12:02:42 INF [action10 analyze_ 688 ] Gender: m (15pts)
+12:02:42 INF [action10 analyze_ 693 ] Birth Year: 1840 (20pts)
+12:02:42 INF [action10 analyze_ 698 ] Birth Place: Remoir, Marnoch, Banffshire, Scotland (25pts)
+12:02:42 INF [action10 analyze_ 703 ] Death Year: 1878 (0pts)
+12:02:42 INF [action10 analyze_ 708 ] Death Place: Yondertown, Keith, Morayshire, Scotland (25pts)
+12:02:42 INF [action10 analyze_ 724 ] Name Bonus: (25pts)
+12:02:42 INF [action10 analyze_ 731 ] 
+                                      === Score Reasons ===
+12:02:42 INF [action10 analyze_ 733 ] Birth Place Contains (25pts)
+12:02:42 INF [action10 analyze_ 733 ] Bonus Birth Info (25pts)
+12:02:42 INF [action10 analyze_ 733 ] Bonus Both Names (25pts)
+12:02:42 INF [action10 analyze_ 733 ] Contains First Name (25pts)
+12:02:42 INF [action10 analyze_ 733 ] Contains Surname (25pts)
+12:02:42 INF [action10 analyze_ 733 ] Death Place Contains (25pts)
+12:02:42 INF [action10 analyze_ 733 ] Exact Birth Year (1840) (20pts)
+12:02:42 INF [action10 analyze_ 733 ] Gender Match (M) (15pts)
+12:02:42 INF [action10 analyze_ 736 ] 
+                                      === Family Details for Alexander Simpson ===
+12:02:42 INF [action10 analyze_ 739 ] 
+                                      Relatives:
+12:02:45 INF [action10 display_ 635 ] Parents:
+12:02:45 INF [action10 display_ 637 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+12:02:45 INF [action10 display_ 637 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+12:02:45 INF [action10 display_ 635 ] Siblings:
+12:02:45 INF [action10 display_ 637 ] - John Simpson (b. ~1843)
+12:02:45 INF [action10 display_ 637 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+12:02:45 INF [action10 display_ 637 ] - William Brown (b. 1842, d. 10 FEB 1858)
+12:02:45 INF [action10 display_ 637 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+12:02:45 INF [action10 display_ 637 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+12:02:45 INF [action10 display_ 637 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+12:02:45 INF [action10 display_ 635 ] Spouses:
+12:02:45 INF [action10 display_ 637 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+12:02:45 INF [action10 display_ 635 ] Children:
+12:02:45 INF [action10 display_ 637 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+12:02:45 INF [action10 display_ 637 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+12:02:45 INF [action10 analyze_ 750 ] 
+                                      === Relationship Path ===
+12:02:45 INF [action10 analyze_ 755 ] Relationship to Wayne Gordon Gault (I102281560836):
+12:02:45 INF [action10 analyze_ 765 ] No relationship path found (FastBiBFS could not connect).
+12:02:45 INF [action10 analyze_ 765 ] [PROFILE] Search: 0.00s, MapsBuild: 4.21s, IndexBuild: 4.60s, PreProcess: 19.70s
+12:02:45 INF [action10 main     852 ] 
+                                      --- Action 10 Finished ---
+12:08:04 INF [action10 <module> 83  ] Logging configured via setup_logging (Level: INFO).
+12:08:05 INF [action10 main     768 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+12:08:05 INF [action10 validate 195 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+12:08:05 INF [action10 validate 198 ] Configured REFERENCE_PERSON_ID: I102281560836
+12:08:05 INF [action10 validate 199 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+12:08:05 INF [action10 validate 200 ] Using GEDCOM file: Gault Family.ged
+12:08:05 INF [action10 main     790 ] Overriding max display results with: 3
+12:08:05 INF [action10 load_ged 223 ] Loading, parsing, and pre-processing GEDCOM data...
+12:08:33 INF [action10 load_ged 228 ] GEDCOM data loaded & processed successfully in 28.30s.
+12:08:33 INF [action10 load_ged 231 ] Index size: 14530
+12:08:33 INF [action10 load_ged 232 ] Pre-processed cache size: 14530
+12:08:33 INF [action10 load_ged 235 ] Build Times: Index=4.71s, Maps=4.21s, PreProcess=19.39s
+12:08:33 INF [action10 get_user 259 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+12:09:10 INF [action10 log_crit 346 ] 
+                                      --- Final Scoring Criteria Used ---
+12:09:10 INF [action10 log_crit 349 ] First Name: 'alexander'
+12:09:10 INF [action10 log_crit 349 ] Surname: 'simpson'
+12:09:10 INF [action10 log_crit 349 ] Gender: 'm'
+12:09:10 INF [action10 log_crit 349 ] Birth Year: '1840'
+12:09:10 INF [action10 log_crit 349 ] Birth Place: '1884'
+12:09:10 INF [action10 log_crit 349 ] Death Year: '1884'
+12:09:10 INF [action10 log_crit 349 ] Death Place: 'keith'
+12:09:10 INF [action10 log_crit 352 ] 
+                                      --- OR Filter Logic (Year Range: +/- 10) ---
+12:09:10 INF [action10 log_crit 353 ] Individuals will be scored if ANY filter criteria met or if alive.
+12:09:10 INF [action10 filter_a 414 ] 
+                                      --- Filtering and Scoring Individuals (using pre-processed data) ---
+12:09:10 INF [action10 filter_a 431 ] Processing 14530 individuals from cache...
+12:09:10 INF [action10 filter_a 439 ] Processing: 10.0% complete (1453/14530)
+12:09:10 INF [action10 filter_a 439 ] Processing: 20.0% complete (2906/14530)
+12:09:10 INF [action10 filter_a 439 ] Processing: 30.0% complete (4359/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 40.0% complete (5812/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 50.0% complete (7265/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 60.0% complete (8718/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 70.0% complete (10171/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 80.0% complete (11624/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 90.0% complete (13077/14530)
+12:09:11 INF [action10 filter_a 439 ] Processing: 100.0% complete (14530/14530)
+12:09:11 INF [action10 filter_a 520 ] Filtering & Scoring completed in 0.30s.
+12:09:11 INF [action10 filter_a 521 ] Found 10885 individual(s) matching OR criteria and scored.
+12:09:11 INF [action10 display_ 547 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+12:09:11 INF [action10 display_ 554 ] Displaying top 3 of 10885 scored matches:
+12:09:11 INF [action10 display_ 579 ] ID              | Name                           | Gender     | Birth                | Birth Place               | Death                | Death Place               | Total   
+12:09:11 INF [action10 display_ 580 ] ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+12:09:11 INF [action10 display_ 678 ] @I102281560308@ | Alexander Simpson [50][+25]    | M [15]     | 18 December 1840 [20] | Remoir, Marnoch, Ban... [0] | 18 April 1878 [10]   | Yondertown, Keith, M... [25] | 145     
+12:09:11 INF [action10 display_ 678 ] @I102281561790@ | Alexander R Simpson [50][+25]  | M [15]     | 15/11/1895 [0]       | 3 Moss Street, Keith... [0] | 20/11/1964 [0]       | Turner memorial hosp... [25] | 115     
+12:09:11 INF [action10 display_ 678 ] @I102588877509@ | Alexander Simpson [50][+25]    | M [15]     | 1834 [10]            | Old Deer, Aberdeensh... [0] | 27 MAY 1890 [10]     | Old Machar, Aberdeen... [0] | 110     
+12:09:11 INF [action10 display_ 681 ] ... and 10882 more matches not shown.
+12:09:11 INF [action10 analyze_ 713 ] 
+                                      === Analysis of Top Match ===
+12:09:11 INF [action10 analyze_ 729 ] === Alexander Simpson (score: 170) ===
+                                      
+12:09:11 INF [action10 analyze_ 732 ] 
+                                      === Family Details for Alexander Simpson ===
+12:09:11 INF [action10 analyze_ 735 ] 
+                                      Relatives:
+12:09:13 INF [action10 display_ 699 ] Parents:
+12:09:13 INF [action10 display_ 701 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+12:09:13 INF [action10 display_ 701 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+12:09:13 INF [action10 display_ 699 ] Siblings:
+12:09:13 INF [action10 display_ 701 ] - John Simpson (b. ~1843)
+12:09:13 INF [action10 display_ 701 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+12:09:13 INF [action10 display_ 701 ] - William Brown (b. 1842, d. 10 FEB 1858)
+12:09:13 INF [action10 display_ 701 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+12:09:13 INF [action10 display_ 701 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+12:09:13 INF [action10 display_ 701 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+12:09:13 INF [action10 display_ 699 ] Spouses:
+12:09:13 INF [action10 display_ 701 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+12:09:13 INF [action10 display_ 699 ] Children:
+12:09:13 INF [action10 display_ 701 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+12:09:13 INF [action10 display_ 701 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+12:09:13 INF [action10 analyze_ 746 ] 
+                                      === Relationship Path ===
+12:09:13 INF [action10 analyze_ 751 ] Relationship to Wayne Gordon Gault (I102281560836):
+12:09:13 INF [action10 analyze_ 761 ] No relationship path found (FastBiBFS could not connect).
+12:09:13 INF [action10 analyze_ 761 ] [PROFILE] Search: 0.00s, MapsBuild: 4.21s, IndexBuild: 4.71s, PreProcess: 19.39s
+12:09:13 INF [action10 main     848 ] 
+                                      --- Action 10 Finished ---
+12:13:34 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+12:13:35 INF [action10 main     785 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+12:13:35 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+12:13:35 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+12:13:35 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+12:13:35 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+12:13:35 INF [action10 main     807 ] Overriding max display results with: 3
+12:13:35 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+12:14:03 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 28.12s.
+12:14:03 INF [action10 load_ged 237 ] Index size: 14530
+12:14:03 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+12:14:03 INF [action10 load_ged 241 ] Build Times: Index=4.65s, Maps=4.16s, PreProcess=19.30s
+12:14:03 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+12:14:31 INF [action10 log_crit 352 ] 
+                                      --- Final Scoring Criteria Used ---
+12:14:31 INF [action10 log_crit 355 ] First Name: 'alexander'
+12:14:31 INF [action10 log_crit 355 ] Surname: 'simpson'
+12:14:31 INF [action10 log_crit 355 ] Gender: 'm'
+12:14:31 INF [action10 log_crit 355 ] Birth Year: '1840'
+12:14:31 INF [action10 log_crit 355 ] Birth Place: 'remoir'
+12:14:31 INF [action10 log_crit 355 ] Death Year: '1874'
+12:14:31 INF [action10 log_crit 355 ] Death Place: 'keith'
+12:14:31 INF [action10 log_crit 358 ] 
+                                      --- OR Filter Logic (Year Range: +/- 10) ---
+12:14:31 INF [action10 log_crit 359 ] Individuals will be scored if ANY filter criteria met or if alive.
+12:14:31 INF [action10 filter_a 420 ] 
+                                      --- Filtering and Scoring Individuals (using pre-processed data) ---
+12:14:31 INF [action10 filter_a 437 ] Processing 14530 individuals from cache...
+12:14:31 INF [action10 filter_a 445 ] Processing: 10.0% complete (1453/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 20.0% complete (2906/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 30.0% complete (4359/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 40.0% complete (5812/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 50.0% complete (7265/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 60.0% complete (8718/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 70.0% complete (10171/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 80.0% complete (11624/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 90.0% complete (13077/14530)
+12:14:31 INF [action10 filter_a 445 ] Processing: 100.0% complete (14530/14530)
+12:14:31 INF [action10 filter_a 526 ] Filtering & Scoring completed in 0.30s.
+12:14:31 INF [action10 filter_a 527 ] Found 10885 individual(s) matching OR criteria and scored.
+12:14:31 INF [action10 display_ 553 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+12:14:31 INF [action10 display_ 560 ] Displaying top 3 of 10885 scored matches:
+12:14:31 INF [action10 display_ 689 ] ID               Name                           Gender    Birth                  Birth Place                         Death               Death Place                           Total
+12:14:31 INF [action10 display_ 689 ] ---------------  -----------------------------  --------  ---------------------  ----------------------------------  ------------------  ----------------------------------  -------
+12:14:31 INF [action10 display_ 689 ] @I102281560308@  Alexander Simpson [50][+25]    M [15]    18 December 1840 [20]  Remoir, Marnoch, Ban... [25] [+25]  18 April 1878 [10]  Yondertown, Keith, M... [25] [+25]      220
+12:14:31 INF [action10 display_ 689 ] @I102281561790@  Alexander R Simpson [50][+25]  M [15]    15/11/1895 [0]         3 Moss Street, Keith... [0]         20/11/1964 [0]      Turner memorial hosp... [25]            115
+12:14:31 INF [action10 display_ 689 ] @I102557911596@  John Simpson [25]              M [15]    ~1843 [10]             Remoir, Marnoch, Ban... [25] [+25]  N/A [0]             N/A [0]                                 100
+12:14:31 INF [action10 display_ 698 ] ... and 10882 more matches not shown.
+12:14:31 INF [action10 analyze_ 730 ] 
+                                      === Analysis of Top Match ===
+12:14:31 INF [action10 analyze_ 746 ] === Alexander Simpson (score: 220) ===
+                                      
+12:14:31 INF [action10 analyze_ 749 ] 
+                                      === Family Details for Alexander Simpson ===
+12:14:31 INF [action10 analyze_ 752 ] 
+                                      Relatives:
+12:14:33 INF [action10 display_ 716 ] Parents:
+12:14:33 INF [action10 display_ 718 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+12:14:33 INF [action10 display_ 718 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+12:14:33 INF [action10 display_ 716 ] Siblings:
+12:14:33 INF [action10 display_ 718 ] - John Simpson (b. ~1843)
+12:14:33 INF [action10 display_ 718 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+12:14:33 INF [action10 display_ 718 ] - William Brown (b. 1842, d. 10 FEB 1858)
+12:14:33 INF [action10 display_ 718 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+12:14:33 INF [action10 display_ 718 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+12:14:33 INF [action10 display_ 718 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+12:14:33 INF [action10 display_ 716 ] Spouses:
+12:14:33 INF [action10 display_ 718 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+12:14:33 INF [action10 display_ 716 ] Children:
+12:14:33 INF [action10 display_ 718 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+12:14:33 INF [action10 display_ 718 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+12:14:33 INF [action10 analyze_ 763 ] 
+                                      === Relationship Path ===
+12:14:33 INF [action10 analyze_ 768 ] Relationship to Wayne Gordon Gault (I102281560836):
+12:14:33 INF [action10 analyze_ 778 ] No relationship path found (FastBiBFS could not connect).
+12:14:33 INF [action10 analyze_ 778 ] [PROFILE] Search: 0.00s, MapsBuild: 4.16s, IndexBuild: 4.65s, PreProcess: 19.30s
+12:14:33 INF [action10 main     865 ] 
+                                      --- Action 10 Finished ---
+12:21:59 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+12:22:00 INF [action10 main     815 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+12:22:00 INF [action10 validate 200 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+12:22:00 INF [action10 validate 203 ] Configured REFERENCE_PERSON_ID: I102281560836
+12:22:00 INF [action10 validate 204 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+12:22:00 INF [action10 validate 205 ] Using GEDCOM file: Gault Family.ged
+12:22:00 INF [action10 main     837 ] Overriding max display results with: 3
+12:22:00 INF [action10 load_ged 228 ] Loading, parsing, and pre-processing GEDCOM data...
+12:22:28 INF [action10 load_ged 233 ] GEDCOM data loaded & processed successfully in 28.58s.
+12:22:28 INF [action10 load_ged 236 ] Index size: 14530
+12:22:28 INF [action10 load_ged 237 ] Pre-processed cache size: 14530
+12:22:28 INF [action10 load_ged 240 ] Build Times: Index=4.55s, Maps=4.32s, PreProcess=19.70s
+12:22:28 INF [action10 get_user 264 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+12:26:55 INF [action10 log_crit 351 ] 
+                                      --- Final Scoring Criteria Used ---
+12:26:55 INF [action10 log_crit 354 ] First Name: 'alexander'
+12:26:55 INF [action10 log_crit 354 ] Surname: 'simpson'
+12:26:55 INF [action10 log_crit 354 ] Gender: 'm'
+12:26:55 INF [action10 log_crit 354 ] Birth Year: '1840'
+12:26:55 INF [action10 log_crit 354 ] Birth Place: 'remoir'
+12:26:55 INF [action10 log_crit 354 ] Death Year: '1874'
+12:26:55 INF [action10 log_crit 354 ] Death Place: 'keith'
+12:26:55 INF [action10 display_ 554 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+12:26:55 INF [action10 display_ 561 ] Displaying top 3 of 10885 scored matches:
+12:26:55 INF [action10 display_ 690 ] ID               Name                           Gender    Birth                  Birth Place                         Death               Death Place                           Total
+12:26:55 INF [action10 display_ 690 ] ---------------  -----------------------------  --------  ---------------------  ----------------------------------  ------------------  ----------------------------------  -------
+12:26:55 INF [action10 display_ 690 ] @I102281560308@  Alexander Simpson [50][+25]    M [15]    18 December 1840 [20]  Remoir, Marnoch, Ban... [25] [+25]  18 April 1878 [10]  Yondertown, Keith, M... [25] [+25]      220
+12:26:55 INF [action10 display_ 690 ] @I102281561790@  Alexander R Simpson [50][+25]  M [15]    15/11/1895 [0]         3 Moss Street, Keith... [0]         20/11/1964 [0]      Turner memorial hosp... [25]            115
+12:26:55 INF [action10 display_ 690 ] @I102557911596@  John Simpson [25]              M [15]    ~1843 [10]             Remoir, Marnoch, Ban... [25] [+25]  N/A [0]             N/A [0]                                 100
+12:26:55 INF [action10 display_ 699 ] ... and 10882 more matches not shown.
+12:26:55 INF [action10 analyze_ 748 ] 
+                                      === Analysis of Top Match ===
+12:26:55 INF [action10 analyze_ 764 ] === Alexander Simpson (score: 220) ===
+                                      
+12:26:55 INF [action10 analyze_ 780 ] 
+                                      === Family Details: Alexander Simpson (1840–1878) ===
+12:26:57 INF [action10 display_ 716 ] 
+                                      Parents:
+                                      
+13:00:41 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+13:00:42 INF [action10 main     809 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+13:00:42 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+13:00:42 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+13:00:42 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+13:00:42 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+13:00:42 INF [action10 main     831 ] Overriding max display results with: 3
+13:00:42 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+13:01:11 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 28.47s.
+13:01:11 INF [action10 load_ged 237 ] Index size: 14530
+13:01:11 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+13:01:11 INF [action10 load_ged 241 ] Build Times: Index=4.57s, Maps=4.23s, PreProcess=19.67s
+13:01:11 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+13:02:13 INF [action10 log_crit 352 ] 
+                                      --- Final Scoring Criteria Used ---
+13:02:13 INF [action10 log_crit 355 ] First Name: 'alexander'
+13:02:13 INF [action10 log_crit 355 ] Surname: 'simpson'
+13:02:13 INF [action10 log_crit 355 ] Gender: 'm'
+13:02:13 INF [action10 log_crit 355 ] Birth Year: '1840'
+13:02:13 INF [action10 log_crit 355 ] Birth Place: 'remoir'
+13:02:13 INF [action10 log_crit 355 ] Death Year: '1874'
+13:02:13 INF [action10 log_crit 355 ] Death Place: 'keithg'
+13:02:13 INF [action10 display_ 555 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+13:02:13 INF [action10 display_ 562 ] Displaying top 3 of 10885 scored matches:
+13:02:13 INF [action10 display_ 691 ] ID               Name                         Gender    Birth                  Birth Place                         Death               Death Place                    Total
+13:02:13 INF [action10 display_ 691 ] ---------------  ---------------------------  --------  ---------------------  ----------------------------------  ------------------  ---------------------------  -------
+13:02:13 INF [action10 display_ 691 ] @I102281560308@  Alexander Simpson [50][+25]  M [15]    18 December 1840 [20]  Remoir, Marnoch, Ban... [25] [+25]  18 April 1878 [10]  Yondertown, Keith, M... [0]      170
+13:02:13 INF [action10 display_ 691 ] @I102557911596@  John Simpson [25]            M [15]    ~1843 [10]             Remoir, Marnoch, Ban... [25] [+25]  N/A [0]             N/A [0]                          100
+13:02:13 INF [action10 display_ 691 ] @I102588877509@  Alexander Simpson [50][+25]  M [15]    1834 [10]              Old Deer, Aberdeensh... [0]         27 MAY 1890 [0]     Old Machar, Aberdeen... [0]      100
+13:02:13 INF [action10 display_ 700 ] ... and 10882 more matches not shown.
+13:02:13 INF [action10 analyze_ 742 ] 
+                                      === Analysis of Top Match ===
+13:02:13 INF [action10 analyze_ 758 ] === Alexander Simpson (score: 170) ===
+                                      
+13:02:13 INF [action10 analyze_ 774 ] 
+                                      === Family Details: Alexander Simpson (1840–1878) ===
+13:02:15 INF [action10 display_ 717 ] 
+                                      Parents:
+                                      
+13:02:15 INF [action10 display_ 732 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+13:02:15 INF [action10 display_ 732 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+13:02:15 INF [action10 display_ 717 ] 
+                                      Siblings:
+                                      
+13:02:15 INF [action10 display_ 732 ] - John Simpson (b. ~1843)
+13:02:15 INF [action10 display_ 732 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+13:02:15 INF [action10 display_ 732 ] - William Brown (b. 1842, d. 10 FEB 1858)
+13:02:15 INF [action10 display_ 732 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+13:02:15 INF [action10 display_ 732 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+13:02:15 INF [action10 display_ 732 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+13:02:15 INF [action10 display_ 717 ] 
+                                      Spouses:
+                                      
+13:02:15 INF [action10 display_ 732 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+13:02:15 INF [action10 display_ 717 ] 
+                                      Children:
+                                      
+13:02:15 INF [action10 display_ 732 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+13:02:15 INF [action10 display_ 732 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+13:02:15 INF [action10 analyze_ 787 ] 
+                                      === Relationship Path ===
+13:02:15 INF [action10 analyze_ 792 ] Relationship to Wayne Gordon Gault (I102281560836):
+13:02:15 INF [action10 analyze_ 802 ] No relationship path found (FastBiBFS could not connect).
+13:02:15 INF [action10 analyze_ 802 ] [PROFILE] Search: 0.00s, MapsBuild: 4.23s, IndexBuild: 4.57s, PreProcess: 19.67s
+13:02:15 INF [action10 main     889 ] 
+                                      --- Action 10 Finished ---
+13:06:03 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+13:06:04 INF [action10 main     843 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+13:06:04 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+13:06:04 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+13:06:04 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+13:06:04 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+13:06:04 INF [action10 main     865 ] Overriding max display results with: 3
+13:06:04 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+13:06:32 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 28.77s.
+13:06:32 INF [action10 load_ged 237 ] Index size: 14530
+13:06:32 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+13:06:32 INF [action10 load_ged 241 ] Build Times: Index=4.65s, Maps=4.26s, PreProcess=19.86s
+13:06:32 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+13:16:46 INF [action10 log_crit 352 ] 
+                                      --- Final Scoring Criteria Used ---
+13:16:46 INF [action10 log_crit 355 ] First Name: 'alexander'
+13:16:46 INF [action10 log_crit 355 ] Surname: 'simpson'
+13:16:46 INF [action10 log_crit 355 ] Gender: 'm'
+13:16:46 INF [action10 log_crit 355 ] Birth Year: '1840'
+13:16:46 INF [action10 log_crit 355 ] Birth Place: 'remoir'
+13:16:46 INF [action10 log_crit 355 ] Death Year: '1884'
+13:16:46 INF [action10 log_crit 355 ] Death Place: 'keith'
+13:16:46 INF [action10 display_ 555 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+13:16:46 INF [action10 display_ 562 ] Displaying top 3 of 10885 scored matches:
+13:16:46 INF [action10 display_ 691 ] ID               Name                           Gender    Birth                  Birth Place                         Death               Death Place                           Total
+13:16:46 INF [action10 display_ 691 ] ---------------  -----------------------------  --------  ---------------------  ----------------------------------  ------------------  ----------------------------------  -------
+13:16:46 INF [action10 display_ 691 ] @I102281560308@  Alexander Simpson [50][+25]    M [15]    18 December 1840 [20]  Remoir, Marnoch, Ban... [25] [+25]  18 April 1878 [10]  Yondertown, Keith, M... [25] [+25]      220
+13:16:46 INF [action10 display_ 691 ] @I102281561790@  Alexander R Simpson [50][+25]  M [15]    15/11/1895 [0]         3 Moss Street, Keith... [0]         20/11/1964 [0]      Turner memorial hosp... [25]            115
+13:16:46 INF [action10 display_ 691 ] @I102588877509@  Alexander Simpson [50][+25]    M [15]    1834 [10]              Old Deer, Aberdeensh... [0]         27 MAY 1890 [10]    Old Machar, Aberdeen... [0]             110
+13:16:46 INF [action10 display_ 700 ] ... and 10882 more matches not shown.
+13:16:46 INF [action10 analyze_ 742 ] 
+                                      === Analysis of Top Match ===
+13:16:46 INF [action10 analyze_ 758 ] === Alexander Simpson (score: 220) ===
+                                      
+13:16:46 INF [action10 analyze_ 774 ] 
+                                      === Family Details: Alexander Simpson (1840–1878) ===
+13:16:49 INF [action10 display_ 717 ] 
+                                      Parents:
+                                      
+13:16:49 INF [action10 display_ 732 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+13:16:49 INF [action10 display_ 732 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+13:16:49 INF [action10 display_ 717 ] 
+                                      Siblings:
+                                      
+13:16:49 INF [action10 display_ 732 ] - John Simpson (b. ~1843)
+13:16:49 INF [action10 display_ 732 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+13:16:49 INF [action10 display_ 732 ] - William Brown (b. 1842, d. 10 FEB 1858)
+13:16:49 INF [action10 display_ 732 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+13:16:49 INF [action10 display_ 732 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+13:16:49 INF [action10 display_ 732 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+13:16:49 INF [action10 display_ 717 ] 
+                                      Spouses:
+                                      
+13:16:49 INF [action10 display_ 732 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+13:16:49 INF [action10 display_ 717 ] 
+                                      Children:
+                                      
+13:16:49 INF [action10 display_ 732 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+13:16:49 INF [action10 display_ 732 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+13:16:49 INF [action10 analyze_ 787 ] 
+                                      === Relationship Path ===
+13:16:49 INF [action10 analyze_ 794 ] Relationship to Wayne Gordon Gault:
+13:16:49 INF [action10 analyze_ 823 ] Alexander Simpson (1840-1878) is Wayne Gordon Gault's relative:
+13:16:49 INF [action10 analyze_ 824 ] 
+13:16:49 INF [action10 analyze_ 830 ] * No relationship path found (FastBiBFS could not connect).
+13:16:49 INF [action10 analyze_ 830 ] * [PROFILE] Search: 0.00s, MapsBuild: 4.26s, IndexBuild: 4.65s, PreProcess: 19.86s
+13:16:49 INF [action10 main     923 ] 
+                                      --- Action 10 Finished ---
+14:00:20 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+14:00:21 INF [action10 main     843 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+14:00:21 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+14:00:21 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+14:00:21 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+14:00:21 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+14:00:21 INF [action10 main     865 ] Overriding max display results with: 3
+14:00:21 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+14:00:50 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 29.10s.
+14:00:50 INF [action10 load_ged 237 ] Index size: 14530
+14:00:50 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+14:00:50 INF [action10 load_ged 241 ] Build Times: Index=4.71s, Maps=4.42s, PreProcess=19.96s
+14:00:50 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+14:01:35 INF [action10 log_crit 352 ] 
+                                      --- Final Scoring Criteria Used ---
+14:01:35 INF [action10 log_crit 355 ] First Name: 'alexander'
+14:01:35 INF [action10 log_crit 355 ] Surname: 'simpson'
+14:01:35 INF [action10 log_crit 355 ] Gender: 'm'
+14:01:35 INF [action10 log_crit 355 ] Birth Year: '1840'
+14:01:35 INF [action10 log_crit 355 ] Birth Place: 'remoir'
+14:01:35 INF [action10 log_crit 355 ] Death Year: '1884'
+14:01:35 INF [action10 log_crit 355 ] Death Place: 'keith'
+14:01:36 INF [action10 display_ 555 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+14:01:36 INF [action10 display_ 562 ] Displaying top 3 of 10885 scored matches:
+14:01:36 INF [action10 display_ 691 ] ID               Name                           Gender    Birth                  Birth Place                         Death               Death Place                           Total
+14:01:36 INF [action10 display_ 691 ] ---------------  -----------------------------  --------  ---------------------  ----------------------------------  ------------------  ----------------------------------  -------
+14:01:36 INF [action10 display_ 691 ] @I102281560308@  Alexander Simpson [50][+25]    M [15]    18 December 1840 [20]  Remoir, Marnoch, Ban... [25] [+25]  18 April 1878 [10]  Yondertown, Keith, M... [25] [+25]      220
+14:01:36 INF [action10 display_ 691 ] @I102281561790@  Alexander R Simpson [50][+25]  M [15]    15/11/1895 [0]         3 Moss Street, Keith... [0]         20/11/1964 [0]      Turner memorial hosp... [25]            115
+14:01:36 INF [action10 display_ 691 ] @I102588877509@  Alexander Simpson [50][+25]    M [15]    1834 [10]              Old Deer, Aberdeensh... [0]         27 MAY 1890 [10]    Old Machar, Aberdeen... [0]             110
+14:01:36 INF [action10 display_ 700 ] ... and 10882 more matches not shown.
+14:01:36 INF [action10 analyze_ 742 ] 
+                                      === Analysis of Top Match ===
+14:01:36 INF [action10 analyze_ 758 ] === Alexander Simpson (score: 220) ===
+                                      
+14:01:36 INF [action10 analyze_ 774 ] 
+                                      === Family Details: Alexander Simpson (1840–1878) ===
+14:01:38 INF [action10 display_ 717 ] 
+                                      Parents:
+                                      
+14:01:38 INF [action10 display_ 732 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+14:01:38 INF [action10 display_ 732 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+14:01:38 INF [action10 display_ 717 ] 
+                                      Siblings:
+                                      
+14:01:38 INF [action10 display_ 732 ] - John Simpson (b. ~1843)
+14:01:38 INF [action10 display_ 732 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+14:01:38 INF [action10 display_ 732 ] - William Brown (b. 1842, d. 10 FEB 1858)
+14:01:38 INF [action10 display_ 732 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+14:01:38 INF [action10 display_ 732 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+14:01:38 INF [action10 display_ 732 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+14:01:38 INF [action10 display_ 717 ] 
+                                      Spouses:
+                                      
+14:01:38 INF [action10 display_ 732 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+14:01:38 INF [action10 display_ 717 ] 
+                                      Children:
+                                      
+14:01:38 INF [action10 display_ 732 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+14:01:38 INF [action10 display_ 732 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+14:01:38 INF [action10 analyze_ 787 ] 
+                                      === Relationship Path ===
+14:01:38 INF [action10 analyze_ 794 ] Relationship to Wayne Gordon Gault:
+14:01:40 INF [action10 analyze_ 823 ] Alexander Simpson (1840-1878) is Wayne Gordon Gault's relative:
+14:01:40 INF [action10 analyze_ 824 ] 
+14:01:40 INF [action10 analyze_ 830 ] * Alexander Simpson (b. 1840)
+14:01:40 INF [action10 analyze_ 830 ] * -> whose daughter is Margaret Simpson (b. 1865)
+14:01:40 INF [action10 analyze_ 830 ] * -> whose son is Alexander Stables (b. 1899)
+14:01:40 INF [action10 analyze_ 830 ] * -> connected to Wayne Gordon Gault (b. 1969)
+14:01:40 INF [action10 analyze_ 830 ] * [PROFILE] Total Time: 2.23s (BFS: 0.00s, Explain: 2.23s) [Build Times: Maps=4.42s, Index=4.71s, PreProcess=19.96s]
+14:01:40 INF [action10 main     923 ] 
+                                      --- Action 10 Finished ---
+14:04:02 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+14:04:03 INF [action10 main     864 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+14:04:03 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+14:04:03 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+14:04:03 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+14:04:03 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+14:04:03 INF [action10 main     886 ] Overriding max display results with: 3
+14:04:03 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+14:05:29 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+14:05:30 INF [action10 main     896 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+14:05:30 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+14:05:30 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+14:05:30 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+14:05:30 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+14:05:30 INF [action10 main     918 ] Overriding max display results with: 3
+14:05:30 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+14:06:02 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 31.93s.
+14:06:02 INF [action10 load_ged 237 ] Index size: 14530
+14:06:02 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+14:06:02 INF [action10 load_ged 241 ] Build Times: Index=5.26s, Maps=4.73s, PreProcess=21.93s
+14:06:02 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+14:06:02 INF [action10 get_inpu 277 ] First Name Contains: Alexander
+14:06:02 INF [action10 get_inpu 277 ] Surname Contains: Simpson
+14:06:02 INF [action10 get_inpu 277 ] Gender (M/F): M
+14:06:02 INF [action10 get_inpu 277 ] Birth Year (YYYY): 1840
+14:06:02 INF [action10 get_inpu 277 ] Birth Place Contains: Scotland
+14:06:02 INF [action10 get_inpu 277 ] Death Year (YYYY) [Optional]: 1878
+14:06:02 INF [action10 get_inpu 277 ] Death Place Contains [Optional]: Scotland
+14:06:02 INF [action10 log_crit 352 ] 
+                                      --- Final Scoring Criteria Used ---
+14:06:02 INF [action10 log_crit 355 ] First Name: 'Alexander'
+14:06:02 INF [action10 log_crit 355 ] Surname: 'Simpson'
+14:06:02 INF [action10 log_crit 355 ] Gender: 'm'
+14:06:02 INF [action10 log_crit 355 ] Birth Year: '1840'
+14:06:02 INF [action10 log_crit 355 ] Birth Place: 'Scotland'
+14:06:02 INF [action10 log_crit 355 ] Death Year: '1878'
+14:06:02 INF [action10 log_crit 355 ] Death Place: 'Scotland'
+14:06:02 INF [action10 display_ 555 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+14:06:02 INF [action10 display_ 562 ] Displaying top 3 of 10849 scored matches:
+14:06:02 INF [action10 display_ 691 ] ID               Name                         Gender    Birth                  Birth Place                         Death               Death Place                           Total
+14:06:02 INF [action10 display_ 691 ] ---------------  ---------------------------  --------  ---------------------  ----------------------------------  ------------------  ----------------------------------  -------
+14:06:02 INF [action10 display_ 691 ] @I102281560308@  Alexander Simpson [50][+25]  M [15]    18 December 1840 [20]  Remoir, Marnoch, Ban... [25] [+25]  18 April 1878 [20]  Yondertown, Keith, M... [25] [+25]      230
+14:06:02 INF [action10 display_ 691 ] @I102591271285@  Alexander Simpson [50][+25]  M [15]    3 OCT 1838 [10]        Sandend, Fordyce, Ba... [25] [+25]  27 JAN 1926 [0]     10 Seafield St, Port... [25]            175
+14:06:02 INF [action10 display_ 691 ] @I102281561953@  Alexander Johnstone [25]     M [15]    5 December 1831 [10]   Windyhills, Grange, ... [25] [+25]  5 FEB 1880 [10]     Todholes, Deskford, ... [25] [+25]      160
+14:06:02 INF [action10 display_ 700 ] ... and 10846 more matches not shown.
+14:06:02 INF [action10 analyze_ 742 ] 
+                                      === Analysis of Top Match ===
+14:06:02 INF [action10 analyze_ 758 ] === Alexander Simpson (score: 230) ===
+                                      
+14:06:02 INF [action10 analyze_ 774 ] 
+                                      === Family Details: Alexander Simpson (1840–1878) ===
+14:06:04 INF [action10 display_ 717 ] 
+                                      Parents:
+                                      
+14:06:04 INF [action10 display_ 732 ] - John Alexander Simpson (b. 2 JUN 1815, d. 17 APR 1885)
+14:06:04 INF [action10 display_ 732 ] - Isobel Largue Or Elder (b. 13 NOV 1814, d. 17 MAY 1899)
+14:06:04 INF [action10 display_ 717 ] 
+                                      Siblings:
+                                      
+14:06:04 INF [action10 display_ 732 ] - John Simpson (b. ~1843)
+14:06:04 INF [action10 display_ 732 ] - George Simpson (b. 6 SEP 1849, d. 15 JUL 1924)
+14:06:04 INF [action10 display_ 732 ] - William Brown (b. 1842, d. 10 FEB 1858)
+14:06:04 INF [action10 display_ 732 ] - James Simpson (b. 3 JAN 1853, d. 3 JAN 1934)
+14:06:04 INF [action10 display_ 732 ] - Margaret Simpson (b. 23 JUL 1854, d. 7 April 1860)
+14:06:04 INF [action10 display_ 732 ] - Isobella Simpson (b. 15 MAR 1845, d. 23 JUL 1922)
+14:06:04 INF [action10 display_ 717 ] 
+                                      Spouses:
+                                      
+14:06:04 INF [action10 display_ 732 ] - Elizabeth 'Betty' Cruickshank (b. 12 March 1839, d. 16 April 1886)
+14:06:04 INF [action10 display_ 717 ] 
+                                      Children:
+                                      
+14:06:04 INF [action10 display_ 732 ] - Elizabeth "eliza" Simpson (b. 23 August 1869)
+14:06:04 INF [action10 display_ 732 ] - Margaret Simpson (b. 5 November 1865, d. 20 November 1946)
+14:06:04 INF [action10 analyze_ 787 ] 
+                                      === Relationship to me ===
+14:06:04 INF [action10 analyze_ 801 ] API URL: /family-tree/person/tree/102281560544/person/I102281560308/getladder?callback=no
+14:06:04 INF [action10 analyze_ 802 ] 
+14:06:07 INF [action10 analyze_ 833 ] Alexander Simpson 1840-1878
+14:06:07 INF [action10 analyze_ 834 ] 3rd great-grandfather:
+14:06:07 INF [action10 analyze_ 835 ] 
+14:06:07 INF [action10 analyze_ 863 ] Margaret Simpson 1865-1946
+14:06:07 INF [action10 analyze_ 863 ] Daughter of Alexander Simpson
+14:06:07 INF [action10 analyze_ 863 ] Alexander Stables 1899-1948
+14:06:07 INF [action10 analyze_ 863 ] Son of Margaret Simpson
+14:06:07 INF [action10 analyze_ 863 ] Catherine Margaret Stables 1924-2004
+14:06:07 INF [action10 analyze_ 863 ] Daughter of Alexander Stables
+14:06:07 INF [action10 analyze_ 863 ] Frances Margaret Milne
+14:06:07 INF [action10 analyze_ 863 ] Daughter of Catherine Margaret Stables
+14:06:07 INF [action10 analyze_ 863 ] Wayne Gordon Gault
+14:06:07 INF [action10 analyze_ 863 ] Son of Frances Margaret Milne
+14:06:07 INF [action10 main     976 ] 
+                                      --- Action 10 Finished ---
+14:07:28 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+14:07:28 INF [action10 main     896 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+14:07:28 INF [action10 validate 201 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+14:07:28 INF [action10 validate 204 ] Configured REFERENCE_PERSON_ID: I102281560836
+14:07:28 INF [action10 validate 205 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+14:07:28 INF [action10 validate 206 ] Using GEDCOM file: Gault Family.ged
+14:07:28 INF [action10 main     918 ] Overriding max display results with: 3
+14:07:28 INF [action10 load_ged 229 ] Loading, parsing, and pre-processing GEDCOM data...
+14:07:59 INF [action10 load_ged 234 ] GEDCOM data loaded & processed successfully in 30.78s.
+14:07:59 INF [action10 load_ged 237 ] Index size: 14530
+14:07:59 INF [action10 load_ged 238 ] Pre-processed cache size: 14530
+14:07:59 INF [action10 load_ged 241 ] Build Times: Index=5.04s, Maps=4.58s, PreProcess=21.16s
+14:07:59 INF [action10 get_user 265 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+14:10:26 INF [action10 log_crit 352 ] 
+                                      --- Final Scoring Criteria Used ---
+14:10:26 INF [action10 log_crit 355 ] First Name: 'gordon'
+14:10:26 INF [action10 log_crit 355 ] Surname: 'milne'
+14:10:26 INF [action10 log_crit 355 ] Gender: 'm'
+14:10:26 INF [action10 log_crit 355 ] Birth Year: '1920'
+14:10:26 INF [action10 log_crit 355 ] Birth Place: 'young'
+14:10:26 INF [action10 log_crit 355 ] Death Year: '1994'
+14:10:26 INF [action10 log_crit 355 ] Death Place: 'elgin'
+14:10:26 INF [action10 display_ 555 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+14:10:26 INF [action10 display_ 562 ] Displaying top 3 of 11001 scored matches:
+14:10:26 INF [action10 display_ 691 ] ID               Name                    Gender    Birth                  Birth Place                         Death                  Death Place                           Total
+14:10:26 INF [action10 display_ 691 ] ---------------  ----------------------  --------  ---------------------  ----------------------------------  ---------------------  ----------------------------------  -------
+14:10:26 INF [action10 display_ 691 ] @I102281560674@  Gordon Milne [50][+25]  M [15]    16 January 1920 [20]   SE-16-33-27-W2 Young... [25] [+25]  17 JULY 1994 [20]      Spynie Hospital, Elg... [25] [+25]      230
+14:10:26 INF [action10 display_ 691 ] @I102539342789@  William Milne [25]      M [15]    2 MAY 1921 [10]        Roseilse, Morayshire... [0]         27 SEP 1994 [20]       SPYNIE HOSPITAL ELGI... [25] [+25]      120
+14:10:26 INF [action10 display_ 691 ] @I102281560582@  John Jock Milne [25]    M [15]    16 February 1914 [10]  SE-16-33-27-W2, Youn... [25] [+25]  7 September 1985 [10]  Choiceland, Saskatch... [0]             110
+14:10:26 INF [action10 display_ 700 ] ... and 10998 more matches not shown.
+14:10:26 INF [action10 analyze_ 742 ] 
+                                      === Analysis of Top Match ===
+14:10:26 INF [action10 analyze_ 758 ] === Gordon Milne (score: 230) ===
+                                      
+14:10:26 INF [action10 analyze_ 774 ] 
+                                      === Family Details: Gordon Milne (1920–1994) ===
+14:10:28 INF [action10 display_ 717 ] 
+                                      Parents:
+                                      
+14:10:28 INF [action10 display_ 732 ] - 'Maggie' Margaret Simpson (b. 4 November 1881, d. 6 February 1952)
+14:10:28 INF [action10 display_ 732 ] - George J. Lupkoski (b. 29 JUN 1882, d. 15 JUNE 1966)
+14:10:28 INF [action10 display_ 717 ] 
+                                      Siblings:
+                                      
+14:10:28 INF [action10 display_ 732 ] - Douglas James Milne (b. 16 MAY 1907, d. 22 MAY 1994)
+14:10:28 INF [action10 display_ 732 ] - Dorothy Isobel Milne (b. 14 February 1923, d. 27 November 2020)
+14:10:28 INF [action10 display_ 732 ] - Margaret Milne (b. 25 December 1910, d. 9 January 2000)
+14:10:28 INF [action10 display_ 732 ] - Alice Helen Milne (b. 10 March 1918, d. 10 MAY 1969)
+14:10:28 INF [action10 display_ 732 ] - Jean Milne (b. 16 November 1909, d. 8 March 1990)
+14:10:28 INF [action10 display_ 732 ] - John Jock Milne (b. 16 February 1914, d. 7 September 1985)
+14:10:28 INF [action10 display_ 732 ] - Archibald 'Archie' Milne (b. 15 March 1916, d. 21 February 2001)
+14:10:28 INF [action10 display_ 732 ] - John Joseph Lupkoski (b. 6 MAY 1916, d. 28 SEP 1982)
+14:10:28 INF [action10 display_ 732 ] - Mary Lupkoski (b. 23 JUNE 1919, d. 24 September 2009)
+14:10:28 INF [action10 display_ 732 ] - Leon George Lupkoski (b. 1927, d. 8 September 1956)
+14:10:28 INF [action10 display_ 732 ] - Christine Margaret Lupkoski (b. 26 JUNE 1925, d. 1 August 1963)
+14:10:28 INF [action10 display_ 732 ] - Walter William (wally) (ladzo) Lupkoski (b. 17 APR 1921, d. 8 FEB 1989)
+14:10:28 INF [action10 display_ 732 ] - Nicolas 'Mik' Lupkoski (b. 15 NOV 1912, d. 28 SEP 1988)
+14:10:28 INF [action10 display_ 732 ] - Stanley Joseph Lupkoski (b. 21 MAY 1931, d. 4 JUL 2018)
+14:10:28 INF [action10 display_ 732 ] - Peter Lupkoski (b. 28 NOV 1913, d. 9 SEP 1984)
+14:10:28 INF [action10 display_ 732 ] - Bernice Lupkoski (b. 17 MAR 1924, d. 27 APR 2004)
+14:10:28 INF [action10 display_ 732 ] - Caroline 'Carlina' Lupkoski (b. 5 MAR 1926, d. 14 APR 2009)
+14:10:28 INF [action10 display_ 732 ] - Lena (lulu) Lupkoski (b. 22 FEB 1915, d. 21 JUL 2005)
+14:10:28 INF [action10 display_ 732 ] - Ivan Lupkowski (b. Bef. 1911, d. ~1993)
+14:10:28 INF [action10 display_ 732 ] - Annie Lupkoski (b. 19 JUN 1922)
+14:10:28 INF [action10 display_ 732 ] - Michelina Lena Lupkowski (b. 4 December 1906, d. 24 February 1994)
+14:10:28 INF [action10 display_ 717 ] 
+                                      Spouses:
+                                      
+14:10:28 INF [action10 display_ 732 ] - Catherine Margaret Stables (b. 14 April 1924, d. 6 March 2004)
+14:10:28 INF [action10 display_ 717 ] 
+                                      Children:
+                                      
+14:10:28 INF [action10 display_ 732 ] - Peter Alexander Innes Milne (b. 5 September 1951)
+14:10:28 INF [action10 display_ 732 ] - Frances Margaret Milne (b. 9 March 1947)
+14:10:28 INF [action10 analyze_ 787 ] 
+                                      === Relationship to me ===
+14:10:28 INF [action10 analyze_ 801 ] API URL: /family-tree/person/tree/102281560544/person/I102281560674/getladder?callback=no
+14:10:28 INF [action10 analyze_ 802 ] 
+14:10:28 INF [action10 analyze_ 839 ] Gordon Milne (1920-1994) is Wayne Gordon Gault's relative:
+14:10:28 INF [action10 analyze_ 840 ] 
+14:10:28 INF [action10 analyze_ 876 ] * Gordon Milne (b. 1920)
+14:10:28 INF [action10 analyze_ 880 ] * whose daughter is Frances Margaret Milne (b. 1947)
+14:10:28 INF [action10 analyze_ 880 ] * whose son is Wayne Gordon Gault (b. 1969)
+14:10:28 INF [action10 main     976 ] 
+                                      --- Action 10 Finished ---

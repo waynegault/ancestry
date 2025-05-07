@@ -321,6 +321,61 @@ def test_format_relationship_path():
 
 # End of test_format_relationship_path
 
+
+def test_gedcom_relationship_path():
+    """
+    Tests the get_relationship_path function in gedcom_utils.py.
+    This tests the relationship path between Wayne Gault and Fraser Gault.
+    """
+    try:
+        # Import the necessary modules
+        from gedcom_utils import GedcomData
+        from config import config_instance
+
+        # Get the GEDCOM file path from the config
+        gedcom_path = config_instance.GEDCOM_FILE_PATH
+        if not gedcom_path:
+            print("ERROR: GEDCOM_FILE_PATH not set in config.")
+            return False
+
+        # Create a GedcomData instance
+        try:
+            gedcom_data = GedcomData(gedcom_path)
+        except Exception as e:
+            print(f"ERROR: Failed to load GEDCOM file: {e}")
+            return False
+
+        # Define the IDs for Wayne Gault and Fraser Gault
+        wayne_id = "I102281560836"  # Wayne Gordon Gault
+        fraser_id = "I102281560744"  # Fraser Gault
+
+        # Get the relationship path
+        print(f"\nGetting relationship path between Wayne Gault and Fraser Gault...")
+        relationship_path = gedcom_data.get_relationship_path(wayne_id, fraser_id)
+
+        # Print the relationship path
+        print("\n=== GEDCOM Relationship Path ===")
+        print(relationship_path)
+        print("===============================\n")
+
+        # Check if the relationship path contains the expected names
+        expected_names = ["Wayne", "Derrick", "James", "Fraser"]
+        for name in expected_names:
+            if name not in relationship_path:
+                print(
+                    f"WARNING: Expected name '{name}' not found in relationship path."
+                )
+
+        return True
+    except Exception as e:
+        print(f"ERROR: Unexpected error in test_gedcom_relationship_path: {e}")
+        return False
+
+
 if __name__ == "__main__":
+    print("=== Testing API Relationship Path Formatting ===")
     test_format_relationship_path()
+
+    print("\n=== Testing GEDCOM Relationship Path ===")
+    test_gedcom_relationship_path()
 # End of if
