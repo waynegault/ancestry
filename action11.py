@@ -125,7 +125,6 @@ except ImportError as e:
 # --- Import API Utilities ---
 # Import specific API call helpers, parsers, AND the timeout helper
 from api_utils import (
-    format_api_relationship_path,
     parse_ancestry_person_details,
     call_suggest_api,
     call_facts_user_api,
@@ -134,7 +133,16 @@ from api_utils import (
     _get_api_timeout,
 )
 
-logger.debug("Successfully imported required functions from api_utils.")
+# Import relationship utilities
+from relationship_utils import (
+    format_api_relationship_path,
+    convert_api_path_to_unified_format,
+    format_relationship_path_unified,
+)
+
+logger.debug(
+    "Successfully imported required functions from api_utils and relationship_utils."
+)
 API_UTILS_AVAILABLE = True
 
 
@@ -2316,8 +2324,8 @@ def _handle_supplementary_info_phase(
     # Removed redundant print("") here, let relationship section add space if needed
 
     # --- Prepare for Relationship Calculation ---
-    # Print header once before any relationship calculation attempts
-    print(f"\n=== Relationship Path to {owner_name} ===")
+    # We'll print the header in the formatted path, so don't print it here
+    # print(f"\n===Relationship Path to {owner_name}===")
 
     # Initialize variables
     selected_person_tree_id = None
@@ -2527,25 +2535,92 @@ def _handle_supplementary_info_phase(
                                 "message": json_data.get("message", ""),
                             }
 
-                            # Use the standard API relationship path formatter without any hardcoding
+                            # Use the unified relationship path formatter
                             sn_str = str(selected_name) if selected_name else "Unknown"
                             on_str = str(owner_name) if owner_name else "Unknown"
-                            formatted_path = format_api_relationship_path(
+
+                            # First extract relationship data from the API response
+                            relationship_data = []
+
+                            # Use the standard API relationship path formatter to get the raw data
+                            raw_formatted_path = format_api_relationship_path(
                                 api_response_dict, on_str, sn_str
                             )
 
-                            # Fix the formatting to add an asterisk to the last line
-                            if formatted_path and "\n" in formatted_path:
-                                lines = formatted_path.split("\n")
-                                # Find the last line that contains the relationship information
-                                for i in range(len(lines) - 1, -1, -1):
-                                    if "is" in lines[i] and "'s" in lines[i]:
-                                        # This is the last relationship line
-                                        if not lines[i].strip().startswith("*"):
-                                            # Add asterisk if it doesn't already have one
-                                            lines[i] = "* " + lines[i].strip()
-                                        break
-                                formatted_path = "\n".join(lines)
+                            # Log the raw formatted path for debugging
+                            logger.debug(
+                                f"Raw formatted path from format_api_relationship_path:\n{raw_formatted_path}"
+                            )
+
+                            # Extract relationship data from the HTML content
+                            try:
+                                # Parse the HTML content to extract relationship data
+                                html_content = api_response_dict.get("html", "")
+                                if html_content and isinstance(html_content, str):
+                                    # Use BeautifulSoup to parse the HTML
+                                    from bs4 import BeautifulSoup
+
+                                    soup = BeautifulSoup(html_content, "html.parser")
+
+                                    # Find all list items
+                                    list_items = soup.find_all("li")
+                                    for item in list_items:
+                                        # Skip icon items
+                                        if item.get("aria-hidden") == "true":
+                                            continue
+
+                                        # Extract name, relationship, and lifespan
+                                        name_elem = item.find("b")
+                                        name = (
+                                            name_elem.get_text()
+                                            if name_elem
+                                            else item.get_text()
+                                        )
+
+                                        # Extract relationship description
+                                        rel_elem = item.find("i")
+                                        relationship = (
+                                            rel_elem.get_text() if rel_elem else ""
+                                        )
+
+                                        # Extract lifespan
+                                        text = item.get_text()
+                                        lifespan_match = re.search(
+                                            r"(\d{4})-(\d{4}|\-)", text
+                                        )
+                                        lifespan = (
+                                            lifespan_match.group(0)
+                                            if lifespan_match
+                                            else ""
+                                        )
+
+                                        relationship_data.append(
+                                            {
+                                                "name": name,
+                                                "relationship": relationship,
+                                                "lifespan": lifespan,
+                                            }
+                                        )
+
+                                # Convert the API data to the unified format
+                                unified_path = convert_api_path_to_unified_format(
+                                    relationship_data, sn_str
+                                )
+
+                                # Format the path using the unified formatter
+                                formatted_path = format_relationship_path_unified(
+                                    unified_path, sn_str, on_str, None
+                                )
+
+                                # We don't need to manually add birth/death years anymore
+                                # The unified formatter handles this automatically
+                            except Exception as e:
+                                logger.error(
+                                    f"Error formatting relationship path: {e}",
+                                    exc_info=True,
+                                )
+                                # Fall back to the raw formatted path if conversion fails
+                                formatted_path = raw_formatted_path
                         except json.JSONDecodeError as json_err:
                             logger.error(f"Error parsing JSON from JSONP: {json_err}")
                             formatted_path = (
@@ -2824,6 +2899,11 @@ def main():
 
 
 # End of main
+
+
+def run_action11(*args):
+    """Wrapper function for main.py to call."""
+    return handle_api_report()
 
 
 # Script entry point check

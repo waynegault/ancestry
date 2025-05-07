@@ -56,10 +56,10 @@ logger = logging.getLogger("api_utils")
 # --- Local application imports ---
 # Remove try-except blocks and fallbacks. Fail early if imports fail.
 import utils  # noqa F401 # Keep utils import here if needed elsewhere in the module
-from utils import SessionManager, _api_req, format_name, ordinal_case
+from utils import SessionManager, _api_req, format_name
 
 logger.info(
-    "Successfully imported base utils module (SessionManager, _api_req, format_name, ordinal_case)"
+    "Successfully imported base utils module (SessionManager, _api_req, format_name)"
 )
 
 from gedcom_utils import _parse_date, _clean_display_date
@@ -73,6 +73,8 @@ logger.info("Successfully imported config instances")
 from database import Person  # Required for call_send_message_api
 
 logger.info("Successfully imported Person from database module")
+
+# Note: format_api_relationship_path has been moved to relationship_utils.py
 
 
 # --- Constants for moved/new functions ---
@@ -112,24 +114,7 @@ KEY_TEXT = "text"
 API_PATH_TREE_OWNER_INFO = "api/uhome/secure/rest/user/tree-info"
 KEY_OWNER = "owner"
 
-# For Relationship Path Formatting Test in self_check
-TEST_RELATIONSHIP_PATH_RAW_API_RESPONSE = r"""
-no({
-    "html": "\u003cul class=\"textCenter\"\u003e \u003cli\u003e\u003cb\u003eElizabeth \u0027Betty\u0027 Cruickshank\u003c/b\u003e 1839-1886\u003cbr /\u003e\u003ci\u003e\u003cb\u003e3rd great-grandmother\u003c/b\u003e\u003c/i\u003e\u003c/li\u003e \u003cli aria-hidden=\"true\" class=\"icon iconArrowDown\"\u003e\u003c/li\u003e \u003cli\u003e\u003ca class=\"relative\" href=\"https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560698\"\u003eMargaret Simpson 1865-1946\u003c/a\u003e\u003cbr /\u003e\u003ci\u003eDaughter of Elizabeth \u0027Betty\u0027 Cruickshank\u003c/i\u003e\u003c/li\u003e \u003cli aria-hidden=\"true\" class=\"icon iconArrowDown\"\u003e\u003c/li\u003e \u003cli\u003e\u003ca class=\"relative\" href=\"https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560684\"\u003eAlexander Stables 1899-1948\u003c/a\u003e\u003cbr /\u003e\u003ci\u003eSon of Margaret Simpson\u003c/i\u003e\u003c/li\u003e \u003cli aria-hidden=\"true\" class=\"icon iconArrowDown\"\u003e\u003c/li\u003e \u003cli\u003e\u003ca class=\"relative\" href=\"https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560677\"\u003eCatherine Margaret Stables 1924-2004\u003c/a\u003e\u003cbr /\u003e\u003ci\u003eDaughter of Alexander Stables\u003c/i\u003e\u003c/li\u003e \u003cli aria-hidden=\"true\" class=\"icon iconArrowDown\"\u003e\u003c/li\u003e \u003cli\u003e\u003ca class=\"relative\" href=\"https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560544\"\u003eFrances Margaret Milne 1947-\u003c/a\u003e\u003cbr /\u003e\u003ci\u003eDaughter of Catherine Margaret Stables\u003c/i\u003e\u003c/li\u003e \u003cli aria-hidden=\"true\" class=\"icon iconArrowDown\"\u003e\u003c/li\u003e \u003cli\u003e\u003ca class=\"bottomName\" href=\"https://www.ancestry.co.uk/family-tree/person/tree/175946702/person/102281560836\"\u003e\u003cb\u003eWayne Gordon Gault\u003c/b\u003e\u003c/a\u003e\u003cbr /\u003e\u003ci\u003eYou are the son of Frances Margaret Milne\u003c/i\u003e\u003c/li\u003e \u003c/ul\u003e ",
-    "title": "Relationship to me",
-    "printText": "Print",
-    "status": "success"
-})
-"""
-
-# Adjusted EXPECTED_FORMATTED_PATH_STRING for correct spacing and last line format
-EXPECTED_FORMATTED_PATH_STRING = """Elizabeth 'Betty' Cruickshank (1839-1886) is Wayne Gordon Gault's 3rd Great-Grandmother:
-
-* Margaret Simpson (1865-1946) is Elizabeth 'Betty' Cruickshank's daughter
-* Alexander Stables (1899-1948) is Margaret Simpson's son
-* Catherine Margaret Stables (1924-2004) is Alexander Stables's daughter
-* Frances Margaret Milne (b. 1947) is Catherine Margaret Stables's daughter
-Wayne Gordon Gault is Frances Margaret Milne's son"""
+# Note: Relationship path formatting test constants have been moved to relationship_utils.py
 
 
 # --- Helper Functions for parse_ancestry_person_details ---
@@ -506,390 +491,8 @@ def parse_ancestry_person_details(
 # End of parse_ancestry_person_details
 
 
-def format_api_relationship_path(
-    api_response_data: Union[str, Dict, None], owner_name: str, target_name: str
-) -> str:
-    """
-    Parses relationship data from Ancestry APIs and formats it into a readable path.
-    Handles getladder API HTML/JSONP response.
-    Uses format_name and ordinal_case from utils.py.
-    """
-
-    # --- Inner Helper Functions ---
-    def _inner_get_relationship_term(
-        person_a_gender: Optional[str], basic_relationship: str
-    ) -> str:
-        term = basic_relationship.capitalize()
-        rel_lower = basic_relationship.lower()
-        if rel_lower == "parent":
-            if person_a_gender == "M":
-                term = "Father"
-            elif person_a_gender == "F":
-                term = "Mother"
-            # End of if/elif
-        elif rel_lower == "child":
-            if person_a_gender == "M":
-                term = "Son"
-            elif person_a_gender == "F":
-                term = "Daughter"
-            # End of if/elif
-        elif rel_lower == "sibling":
-            if person_a_gender == "M":
-                term = "Brother"
-            elif person_a_gender == "F":
-                term = "Sister"
-            # End of if/elif
-        elif rel_lower == "spouse":
-            if person_a_gender == "M":
-                term = "Husband"
-            elif person_a_gender == "F":
-                term = "Wife"
-            # End of if/elif
-        # End of if/elif chain
-
-        if any(char.isdigit() for char in term):
-            try:
-                term = ordinal_case(term)
-            except Exception as ord_err:
-                logger.warning(f"Failed to apply ordinal case to '{term}': {ord_err}")
-            # End of try/except
-        # End of if
-        return term
-
-    # End of _inner_get_relationship_term
-
-    def _inner_extract_name_and_lifespan(text_content: str) -> Tuple[str, str]:
-        name_part = text_content
-        lifespan_str_formatted = ""
-
-        match_yyyy_yyyy = re.search(r"\s+(\d{4}[–-]\d{4})$", text_content)
-        if match_yyyy_yyyy:
-            lifespan_raw = match_yyyy_yyyy.group(1)
-            lifespan_str_formatted = f"({lifespan_raw.replace('–', '-')})"
-            name_part = text_content[: match_yyyy_yyyy.start()].strip()
-            return name_part, lifespan_str_formatted
-        # End of if
-
-        match_yyyy_living = re.search(r"\s+(\d{4})-$", text_content)
-        if match_yyyy_living:
-            birth_year = match_yyyy_living.group(1)
-            lifespan_str_formatted = f"(b. {birth_year})"
-            name_part = text_content[: match_yyyy_living.start()].strip()
-            return name_part, lifespan_str_formatted
-        # End of if
-
-        return name_part.strip(), lifespan_str_formatted
-
-    # End of _inner_extract_name_and_lifespan
-
-    # --- Main Function Logic ---
-    if not api_response_data:
-        logger.warning(
-            "format_api_relationship_path: Received empty API response data."
-        )
-        return "(No relationship data received from API)"
-    # End of if
-
-    html_content_raw: Optional[str] = None
-    json_data: Optional[Dict] = None
-    api_status: str = "unknown"
-
-    if isinstance(api_response_data, dict):
-        if "path" in api_response_data and isinstance(
-            api_response_data.get("path"), list
-        ):
-            logger.debug("Detected direct JSON 'path' format (Discovery API).")
-            json_data = api_response_data
-        elif (
-            "html" in api_response_data
-            and "status" in api_response_data
-            and isinstance(api_response_data.get("html"), str)
-        ):
-            logger.debug("Detected pre-parsed JSONP structure with 'html' key.")
-            html_content_raw = api_response_data.get("html")
-            api_status = api_response_data.get("status", "unknown")
-            if api_status != "success":
-                return f"(API returned status '{api_status}': {api_response_data.get('message', 'Unknown Error')})"
-            # End of if
-        else:
-            logger.warning(
-                f"Received unhandled dictionary format: Keys={list(api_response_data.keys())}"
-            )
-            return "(Received unhandled dictionary format from API)"
-        # End of if/elif/else
-    elif isinstance(api_response_data, str):
-        if api_response_data.strip().startswith(
-            "no("
-        ) and api_response_data.strip().endswith(")"):
-            try:
-                json_part_match = re.search(
-                    r"^\s*no\((.*)\)\s*$", api_response_data, re.DOTALL
-                )
-                if json_part_match:
-                    json_part_str_local = json_part_match.group(1).strip()
-                    parsed_json = json.loads(json_part_str_local)
-                    api_status = parsed_json.get("status", "unknown")
-                    if api_status == "success":
-                        html_content_raw = parsed_json.get("html")
-                        if not isinstance(html_content_raw, str):
-                            html_content_raw = None
-                            logger.warning(
-                                "JSONP status 'success', but 'html' key missing or not a string."
-                            )
-                        # End of if
-                    else:
-                        return f"(API status '{api_status}' in JSONP: {parsed_json.get('message', 'Error')})"
-                    # End of if/else
-                else:
-                    logger.warning("Could not extract JSON part from JSONP wrapper.")
-                    return "(Could not extract JSON from JSONP wrapper)"
-                # End of if/else
-            except json.JSONDecodeError as json_err:
-                error_context = (
-                    f" near: {json_part_str_local[:100]}..."
-                    if "json_part_str_local" in locals()
-                    else ""
-                )
-                logger.error(
-                    f"Error decoding JSON part from JSONP: {json_err}{error_context}"
-                )
-                return f"(Error parsing JSONP data: {json_err}{error_context})"
-            # End of try/except
-            except Exception as e:
-                logger.error(f"Error processing JSONP string: {e}", exc_info=True)
-                return f"(Unexpected error processing JSONP: {e})"
-            # End of try/except
-        else:
-            logger.warning(
-                "Input string not in expected no(...) JSONP format, and not a dict."
-            )
-            return "(Input string not in expected JSONP format)"
-        # End of if/else
-    else:
-        return f"(Unsupported data type received: {type(api_response_data)})"
-    # End of if/elif/else
-
-    if json_data and "path" in json_data:
-        path_steps_json = []
-        discovery_path = json_data["path"]
-        if isinstance(discovery_path, list) and discovery_path:
-            logger.info("Formatting relationship path from Discovery API JSON.")
-            path_steps_json.append(f"*   {format_name(target_name)}")
-            for i, step in enumerate(discovery_path):
-                step_name = format_name(step.get("name", "?"))
-                step_rel = step.get("relationship", "?")
-                step_rel_display = _inner_get_relationship_term(
-                    None, step_rel
-                ).capitalize()
-                path_steps_json.append(f"    -> is {step_rel_display} of")
-                path_steps_json.append(f"*   {step_name}")
-            # End of for
-            path_steps_json.append(f"    -> leads to")
-            path_steps_json.append(f"*   {owner_name} (You)")
-            result_str = "\n".join(path_steps_json)
-            logger.debug(f"Formatted Discovery relationship path:\n{result_str}")
-            return result_str
-        else:
-            logger.warning(
-                f"Discovery 'path' data invalid or empty: {json_data.get('path')}"
-            )
-            return "(Discovery path found but is empty or invalid)"
-        # End of if/else
-    # End of if json_data
-
-    if not html_content_raw:
-        logger.warning("No processable HTML content found for relationship path.")
-        return "(Could not find or extract relationship HTML content)"
-    # End of if
-
-    html_content_decoded: Optional[str] = None
-    try:
-        html_content_intermediate = html.unescape(html_content_raw)
-        html_content_decoded = bytes(html_content_intermediate, "utf-8").decode(
-            "unicode_escape"
-        )
-    except Exception as decode_err:
-        logger.error(f"Failed to decode HTML content: {decode_err}", exc_info=True)
-        html_content_decoded = html_content_raw
-    # End of try/except
-
-    if not BS4_AVAILABLE or not BeautifulSoup:
-        logger.error("BeautifulSoup library not available. Cannot parse HTML.")
-        return "(Cannot parse relationship HTML - BeautifulSoup library missing)"
-    # End of if
-
-    try:
-        soup = None
-        for parser_name in ["lxml", "html.parser"]:
-            try:
-                soup = BeautifulSoup(html_content_decoded, parser_name)
-                logger.info(f"Successfully parsed HTML using '{parser_name}'.")
-                break
-            except Exception as parse_err_bs:
-                logger.warning(
-                    f"Error using '{parser_name}' parser: {parse_err_bs}. Trying next."
-                )
-            # End of try/except
-        # End of for
-
-        if not soup:
-            logger.error("BeautifulSoup failed to parse HTML with available parsers.")
-            return "(Error parsing relationship HTML - BeautifulSoup failed)"
-        # End of if
-
-        list_items = soup.select("ul.textCenter li")
-        path_items = [
-            li for li in list_items if "iconArrowDown" not in (li.get("class") or [])
-        ]
-        logger.debug(f"Found {len(path_items)} relevant path items (summary + people).")
-
-        if not path_items:
-            logger.warning(
-                "Expected list items ('ul.textCenter li'), found none in parsed HTML or no relevant items."
-            )
-            return "(Relationship HTML structure not as expected - Found 0 relevant list items)"
-        # End of if
-
-        target_li = path_items[0]
-        target_b_tag = target_li.find("b")
-        target_year_text_raw = ""
-        if (
-            target_b_tag
-            and target_b_tag.next_sibling
-            and isinstance(target_b_tag.next_sibling, str)
-        ):
-            target_year_text_raw = target_b_tag.next_sibling.strip()
-        # End of if
-
-        target_lifespan_formatted = ""
-        if re.fullmatch(r"\d{4}[–-]\d{4}", target_year_text_raw):
-            target_lifespan_formatted = f"({target_year_text_raw.replace('–','-')})"
-        # End of if
-
-        overall_relationship_text = "Unknown Relationship"
-        summary_tag_html = target_li.select_one("i b, i")
-        if summary_tag_html:
-            raw_overall_rel = summary_tag_html.get_text(strip=True)
-            ordinal_match = re.match(
-                r"(\d+(?:st|nd|rd|th))\s*(.*)", raw_overall_rel, re.IGNORECASE
-            )
-            if ordinal_match:
-                ordinal_part = ordinal_match.group(1)
-                text_part = ordinal_match.group(2)
-                overall_relationship_text = f"{ordinal_part} {format_name(text_part)}"
-            else:
-                overall_relationship_text = format_name(raw_overall_rel)
-            # End of if/else
-        # End of if
-
-        # Use format_name on target_name argument for the summary line
-        # This should use the version of format_name from utils.py
-        formatted_target_name_for_summary = format_name(target_name)
-
-        summary_line_parts = [formatted_target_name_for_summary]
-        if target_lifespan_formatted:
-            summary_line_parts.append(target_lifespan_formatted)
-        # End of if
-        summary_line_parts.append(
-            f"is {format_name(owner_name)}'s {overall_relationship_text}:"
-        )
-        summary_line = " ".join(summary_line_parts)
-
-        path_lines = []
-        for i in range(1, len(path_items)):
-            current_person_li = path_items[i]
-
-            current_name_tag = current_person_li.find("a") or current_person_li.find(
-                "b"
-            )
-            current_name_raw_from_tag = (
-                current_name_tag.get_text(strip=True)
-                if current_name_tag
-                else "Unknown Current"
-            )
-
-            current_name_parsed, current_lifespan_formatted = (
-                _inner_extract_name_and_lifespan(current_name_raw_from_tag)
-            )
-            current_name_display = format_name(current_name_parsed)
-
-            if current_name_parsed.lower() == "you" or (
-                i == len(path_items) - 1
-                and format_name(owner_name).startswith(current_name_display)
-            ):
-                current_name_display = format_name(owner_name)
-            # End of if
-
-            prev_name_display_for_relation: str
-            if i == 1:
-                prev_name_display_for_relation = format_name(target_name)
-            else:
-                prev_li = path_items[i - 1]
-                prev_name_tag = prev_li.find("a") or prev_li.find("b")
-                prev_name_raw = (
-                    prev_name_tag.get_text(strip=True)
-                    if prev_name_tag
-                    else "Unknown Previous"
-                )
-                parsed_prev_name, _ = _inner_extract_name_and_lifespan(prev_name_raw)
-                prev_name_display_for_relation = format_name(parsed_prev_name)
-                if parsed_prev_name.lower() == "you":
-                    prev_name_display_for_relation = format_name(owner_name)
-                # End of if
-            # End of if/else
-
-            relationship_term = "related"
-            desc_tag_html = current_person_li.find("i")
-            if desc_tag_html:
-                desc_text_html = desc_tag_html.get_text(strip=True)
-                rel_match_html = re.search(
-                    r"\b(son|daughter|father|mother|husband|wife|spouse|brother|sister|parent|child|sibling)\b",
-                    desc_text_html,
-                    re.IGNORECASE,
-                )
-                if rel_match_html:
-                    relationship_term = rel_match_html.group(1).lower()
-                elif "you are the" in desc_text_html.lower():
-                    you_match = re.search(
-                        r"You\s+are\s+the\s+([\w\s]+)\s+of",
-                        desc_text_html,
-                        re.IGNORECASE,
-                    )
-                    if you_match:
-                        relationship_term = you_match.group(1).strip().lower()
-                    # End of if
-                # End of if/elif
-            # End of if
-
-            line_parts = []
-            line_parts.extend(["*", current_name_display]) 
-
-            if current_lifespan_formatted:
-                line_parts.append(current_lifespan_formatted)
-            # End of if
-            line_parts.append(
-                f"is {prev_name_display_for_relation}'s {relationship_term}"
-            )
-            path_lines.append(" ".join(line_parts))
-        # End of for
-
-        result_str = f"{summary_line}\n\n" + "\n".join(path_lines)
-        logger.info("Formatted relationship path from HTML successfully.")
-        return result_str
-
-    except Exception as e:
-        logger.error(
-            f"Error processing relationship HTML with BeautifulSoup: {e}", exc_info=True
-        )
-        error_context = (
-            f" near HTML: {html_content_decoded[:200]}..."
-            if html_content_decoded
-            else ""  # pyright: ignore[reportUnboundVariable]
-        )
-        return f"(Error parsing relationship HTML: {e}{error_context})"
-
-
-# End of format_api_relationship_path
+# Note: format_api_relationship_path has been moved to relationship_utils.py
+# Import it from there instead of defining it here
 
 
 def print_group(label: str, items: List[Dict]):
@@ -2303,12 +1906,15 @@ def self_check() -> bool:
 
     logger_sc.info("--- Phase 0: Prerequisite & Static Function Checks ---")
     core_funcs = {
-        "format_name": format_name,
-        "ordinal_case": ordinal_case,
-        "_parse_date": _parse_date,
-        "_clean_display_date": _clean_display_date,
+        # Helper functions
+        "_extract_name_from_api_details": _extract_name_from_api_details,
+        "_extract_gender_from_api_details": _extract_gender_from_api_details,
+        "_extract_living_status_from_api_details": _extract_living_status_from_api_details,
+        "_extract_event_from_api_details": _extract_event_from_api_details,
+        "_generate_person_link": _generate_person_link,
+        # Main parser function
         "parse_ancestry_person_details": parse_ancestry_person_details,
-        "format_api_relationship_path": format_api_relationship_path,
+        # API functions
         "call_suggest_api": call_suggest_api,
         "call_facts_user_api": call_facts_user_api,
         "call_getladder_api": call_getladder_api,
@@ -2317,7 +1923,6 @@ def self_check() -> bool:
         "call_profile_details_api": call_profile_details_api,
         "call_header_trees_api_for_tree_id": call_header_trees_api_for_tree_id,
         "call_tree_owner_api": call_tree_owner_api,
-        "_api_req": _api_req,
     }
     for name, func in core_funcs.items():
         _, s0_f_stat, _ = _sc_run_test(
@@ -2970,53 +2575,8 @@ def self_check() -> bool:
                 )
             # End of if/else
 
-            # --- Phase 5: Test Relationship Path Formatting ---
-            logger_sc.info("--- Phase 5: Test Relationship Path Formatting ---")
-            if BS4_AVAILABLE:
-                target_rel_name = "Elizabeth 'Betty' Cruickshank"
-                owner_rel_name_for_test = "Wayne Gordon Gault"
-
-                def rel_path_test_lambda():
-                    return format_api_relationship_path(
-                        TEST_RELATIONSHIP_PATH_RAW_API_RESPONSE,
-                        owner_name=owner_rel_name_for_test,
-                        target_name=target_rel_name,
-                    )
-
-                # End of rel_path_test_lambda
-
-                _, rel_path_status, rel_path_msg_detail = _sc_run_test(
-                    "Format Relationship Path (HTML)",
-                    rel_path_test_lambda,
-                    test_results_sc,
-                    logger_sc,
-                    expected_value=EXPECTED_FORMATTED_PATH_STRING,
-                )
-                if rel_path_status == "FAIL":
-                    overall_status = False
-                    try:
-                        actual_output = rel_path_test_lambda()
-                        logger_sc.error(
-                            f"Format Relationship Path (HTML) - Actual Output:\n{actual_output}"
-                        )
-                        logger_sc.error(
-                            f"Format Relationship Path (HTML) - Expected Output:\n{EXPECTED_FORMATTED_PATH_STRING}"
-                        )
-                    except Exception as e_log:
-                        logger_sc.error(
-                            f"Error re-running lambda for logging failed test: {e_log}"
-                        )
-                    # End of try/except
-                # End of if
-            else:
-                _sc_run_test(
-                    "Format Relationship Path (HTML)",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                    message="BeautifulSoup (bs4) not available.",
-                )
-            # End of if BS4_AVAILABLE
+            # Note: We no longer test format_api_relationship_path here as it has been moved to relationship_utils.py
+            # and is tested there
 
         except RuntimeError as rt_err:
             logger_sc.critical(f"RUNTIME ERROR during SC live tests: {rt_err}")
@@ -3028,7 +2588,7 @@ def self_check() -> bool:
                 message=f"RUNTIME ERROR: {rt_err}",
             )
             overall_status = False
-        except Exception as e:
+        except Exception:
             logger_sc.critical(
                 "UNEXPECTED EXCEPTION during SC live tests", exc_info=True
             )
@@ -3094,7 +2654,6 @@ def self_check() -> bool:
             "API Helper: call_profile_details_api",
             "API Helper: call_header_trees_api_for_tree_id",
             "API Helper: call_tree_owner_api",
-            "Format Relationship Path (HTML)",
             "SessionManager.close_sess()",
             "Self-Check Live Execution",
         ]
@@ -3128,12 +2687,69 @@ def self_check() -> bool:
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    print(
-        "Running api_utils.py self-check (requires config, may perform live API calls)..."
-    )
-    log_file_path = Path("api_utils_self_check.log").resolve()
-    logger_standalone = None
+    import sys
+    import traceback
+    from typing import Callable, Any, List, Tuple, Dict, Optional
 
+    # --- Test Runner Setup ---
+    test_results: List[Tuple[str, str, str]] = []
+    test_logger = logging.getLogger("api_utils_test")
+    test_logger.setLevel(logging.INFO)
+
+    # Configure console handler if not already configured
+    if not test_logger.handlers:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        test_logger.addHandler(console_handler)
+
+    def _run_test(
+        test_name: str,
+        test_func: Callable[[], Any],
+        expected_value: Any = None,
+        expected_none: bool = False,
+    ) -> Tuple[str, str, str]:
+        """Run a test function and report results."""
+        try:
+            result = test_func()
+
+            if expected_value is not None:
+                if result == expected_value:
+                    status = "PASS"
+                    message = f"Expected: {expected_value}, Got: {result}"
+                else:
+                    status = "FAIL"
+                    message = f"Expected: {expected_value}, Got: {result}"
+            elif expected_none:
+                if result is None:
+                    status = "PASS"
+                    message = "Expected None result"
+                else:
+                    status = "FAIL"
+                    message = f"Expected None, Got: {result}"
+            elif isinstance(result, bool):
+                if result:
+                    status = "PASS"
+                    message = ""
+                else:
+                    status = "FAIL"
+                    message = "Boolean test returned False"
+            else:
+                status = "PASS" if result else "FAIL"
+                message = f"Result: {result}"
+        except Exception as e:
+            status = "ERROR"
+            message = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+
+        log_level = logging.INFO if status == "PASS" else logging.ERROR
+        log_message = f"[ {status:<6} ] {test_name}{f': {message}' if message and status != 'PASS' else ''}"
+        test_logger.log(log_level, log_message)
+        test_results.append((test_name, status, message))
+        return (test_name, status, message)
+
+    # Configure logging for the self-test
+    log_file_path = Path("api_utils_self_check.log").resolve()
     try:
         import logging_config
 
@@ -3141,68 +2757,293 @@ if __name__ == "__main__":
             log_file=str(log_file_path), log_level="DEBUG"
         )
         print(f"Detailed logs (DEBUG level) will be written to: {log_file_path}")
-        logger_standalone.info(
-            f"Logging configured via logging_config.py to {log_file_path}"
-        )
 
-        logger_main_module = logging.getLogger("api_utils")
-        if not logger_main_module.hasHandlers() and logger_standalone:
-            for handler in logger_standalone.handlers:
-                logger_main_module.addHandler(handler)
-            # End of for
-            logger_main_module.setLevel(logger_standalone.level)
-        # End of if
+        # Add file handler to test_logger
+        for handler in logger_standalone.handlers:
+            if not any(isinstance(h, type(handler)) for h in test_logger.handlers):
+                test_logger.addHandler(handler)
     except Exception as log_setup_err:
         print(
             f"Error setting up logging via logging_config: {log_setup_err}. Using basic file logging."
         )
-        logging.basicConfig(
-            level=logging.DEBUG,
-            filename=str(log_file_path),
-            filemode="w",
-            format="%(asctime)s %(levelname)-8s [%(name)-15s] %(message)s",
+        file_handler = logging.FileHandler(str(log_file_path), mode="w")
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)-8s [%(name)-15s] %(message)s")
         )
-        logger_standalone = logging.getLogger("api_utils_standalone_error")
-        logger_standalone.exception(
-            "Error setting up logging_config, using basicConfig."
-        )
-        logger_main_module = logging.getLogger("api_utils")
-        logger_main_module.setLevel(logging.DEBUG)
-    # End of try/except
+        test_logger.addHandler(file_handler)
+        test_logger.setLevel(logging.DEBUG)
 
-    config_ok_for_tests = False
+    print("\n=== api_utils.py Standalone Test Suite ===")
+    overall_status = "PASS"
+
+    # === Section 1: Configuration Tests ===
+    print("\n--- Section 1: Configuration Tests ---")
+
+    # Check config values
     test_person_id = getattr(config_instance, "TESTING_PERSON_TREE_ID", None)
     test_profile_id = getattr(config_instance, "TESTING_PROFILE_ID", None)
     tree_name_check = getattr(config_instance, "TREE_NAME", None)
 
-    if not test_person_id or not test_profile_id or not tree_name_check:
-        print("\n" + "=" * 70)
-        print(" WARNING: Configuration Incomplete for Full Self-Check ".center(70, "="))
-        print("=".center(70, "="))
-        if not test_person_id:
-            print("- config.TESTING_PERSON_TREE_ID is not set.")
-        # End of if
-        if not test_profile_id:
-            print("- config.TESTING_PROFILE_ID is not set.")
-        # End of if
-        if not tree_name_check:
-            print("- config.TREE_NAME is not set.")
-        # End of if
-        print("\nLive API tests requiring these IDs/Names may be skipped or fail.")
-        print("Ensure these are set in config.py or .env for comprehensive testing.")
-        print("=".ljust(70, "="))
-        config_ok_for_tests = False
-    else:
-        config_ok_for_tests = True
-        print(
-            "\nConfiguration check: TESTING_PERSON_TREE_ID, TESTING_PROFILE_ID, and TREE_NAME found."
+    _run_test(
+        "Config BASE_URL Available",
+        lambda: hasattr(config_instance, "BASE_URL"),
+    )
+
+    _run_test(
+        "TESTING_PERSON_TREE_ID Available",
+        lambda: test_person_id is not None,
+    )
+
+    _run_test(
+        "TESTING_PROFILE_ID Available",
+        lambda: test_profile_id is not None,
+    )
+
+    _run_test(
+        "TREE_NAME Available",
+        lambda: tree_name_check is not None,
+    )
+
+    # Check core functions defined in this module are available
+    core_funcs = {
+        # Helper functions
+        "_extract_name_from_api_details": _extract_name_from_api_details,
+        "_extract_gender_from_api_details": _extract_gender_from_api_details,
+        "_extract_living_status_from_api_details": _extract_living_status_from_api_details,
+        "_extract_event_from_api_details": _extract_event_from_api_details,
+        "_generate_person_link": _generate_person_link,
+        # Main parser function
+        "parse_ancestry_person_details": parse_ancestry_person_details,
+        # API functions
+        "call_suggest_api": call_suggest_api,
+        "call_facts_user_api": call_facts_user_api,
+        "call_getladder_api": call_getladder_api,
+        "call_treesui_list_api": call_treesui_list_api,
+        "call_send_message_api": call_send_message_api,
+        "call_profile_details_api": call_profile_details_api,
+        "call_header_trees_api_for_tree_id": call_header_trees_api_for_tree_id,
+        "call_tree_owner_api": call_tree_owner_api,
+    }
+
+    for name, func in core_funcs.items():
+        _run_test(
+            f"Function '{name}' Available",
+            lambda f=func: callable(f),
         )
-    # End of if/else
 
-    print("\nStarting self_check function...")
-    self_check_passed = self_check()
+    # === Section 2: Helper Function Tests ===
+    print("\n--- Section 2: Helper Function Tests ---")
 
-    print("\napi_utils module self-check complete.")
-    print("Import this module into other scripts to use its functions.")
-    sys.exit(0 if self_check_passed else 1)
+    # Test _extract_name_from_api_details
+    person_card_test = {
+        "FullName": "John Smith",
+        "GivenName": "John",
+        "Surname": "Smith",
+    }
+
+    facts_data_test = {
+        "person": {
+            "personName": "John William Smith",
+            "gender": "male",
+            "isLiving": False,
+        }
+    }
+
+    _run_test(
+        "_extract_name_from_api_details (from facts)",
+        lambda: _extract_name_from_api_details(person_card_test, facts_data_test)
+        == "John William Smith",
+    )
+
+    _run_test(
+        "_extract_name_from_api_details (from card)",
+        lambda: _extract_name_from_api_details(person_card_test, None) == "John Smith",
+    )
+
+    # Test _extract_gender_from_api_details
+    _run_test(
+        "_extract_gender_from_api_details (from facts)",
+        lambda: _extract_gender_from_api_details(person_card_test, facts_data_test)
+        == "M",
+    )
+
+    person_card_gender_test = {
+        "Gender": "Female",
+    }
+
+    _run_test(
+        "_extract_gender_from_api_details (from card)",
+        lambda: _extract_gender_from_api_details(person_card_gender_test, None) == "F",
+    )
+
+    # Test _extract_living_status_from_api_details
+    _run_test(
+        "_extract_living_status_from_api_details (from facts)",
+        lambda: _extract_living_status_from_api_details(
+            person_card_test, facts_data_test
+        )
+        is False,
+    )
+
+    person_card_living_test = {
+        "IsLiving": True,
+    }
+
+    _run_test(
+        "_extract_living_status_from_api_details (from card)",
+        lambda: _extract_living_status_from_api_details(person_card_living_test, None)
+        is True,
+    )
+
+    # Test _extract_event_from_api_details
+    birth_facts_test = {
+        "PersonFacts": [
+            {
+                "TypeString": "Birth",
+                "Date": "1950",
+                "Place": "New York",
+                "ParsedDate": {"Year": 1950, "Month": 1, "Day": 1},
+                "IsAlternate": False,
+            }
+        ]
+    }
+
+    birth_date, birth_place, birth_obj = _extract_event_from_api_details(
+        "Birth", {}, birth_facts_test
+    )
+
+    _run_test(
+        "_extract_event_from_api_details (birth date)",
+        lambda: birth_date == "1950",
+    )
+
+    _run_test(
+        "_extract_event_from_api_details (birth place)",
+        lambda: birth_place == "New York",
+    )
+
+    # Test _generate_person_link
+    _run_test(
+        "_generate_person_link (with tree and person)",
+        lambda: _generate_person_link("123", "456", "https://ancestry.com")
+        == "https://ancestry.com/family-tree/person/tree/456/person/123/facts",
+    )
+
+    _run_test(
+        "_generate_person_link (person only)",
+        lambda: _generate_person_link("123", None, "https://ancestry.com")
+        == "https://ancestry.com/discoveryui-matches/list/summary/123",
+    )
+
+    # === Section 3: Parser Function Tests ===
+    print("\n--- Section 3: Parser Function Tests ---")
+
+    # Test parse_ancestry_person_details
+    person_card_full = {
+        "PersonId": "123456",
+        "TreeId": "789012",
+        "UserId": "USER123",
+        "FullName": "John William Smith",
+        "GivenName": "John",
+        "Surname": "Smith",
+        "BirthYear": 1950,
+        "BirthPlace": "New York, USA",
+        "DeathYear": 2020,
+        "DeathPlace": "Los Angeles, USA",
+        "Gender": "Male",
+        "IsLiving": False,
+    }
+
+    parsed_details = parse_ancestry_person_details(person_card_full)
+
+    _run_test(
+        "parse_ancestry_person_details (name)",
+        lambda: parsed_details["name"] == "John William Smith",
+    )
+
+    _run_test(
+        "parse_ancestry_person_details (birth)",
+        lambda: parsed_details["birth_date"] == "1950"
+        and parsed_details["birth_place"] == "New York, USA",
+    )
+
+    _run_test(
+        "parse_ancestry_person_details (death)",
+        lambda: parsed_details["death_date"] == "2020"
+        and parsed_details["death_place"] == "Los Angeles, USA",
+    )
+
+    _run_test(
+        "parse_ancestry_person_details (gender)",
+        lambda: parsed_details["gender"] == "M",
+    )
+
+    _run_test(
+        "parse_ancestry_person_details (IDs)",
+        lambda: parsed_details["person_id"] == "123456"
+        and parsed_details["tree_id"] == "789012",
+    )
+
+    # Note: We're skipping testing format_api_relationship_path since it's now imported from relationship_utils.py
+    # and has its own tests there
+
+    # Note: Mock API tests have been removed as they require complex mocking of SessionManager
+    # The API functions are tested in the live tests when run with authentication
+
+    # === Section 5: Live API Tests ===
+    print("\n--- Section 5: Live API Tests ---")
+
+    # Only run live tests if config is available
+    config_ok_for_tests = all([test_person_id, test_profile_id, tree_name_check])
+
+    if config_ok_for_tests:
+        print("\nLive API tests require Ancestry authentication.")
+        # Always run live API tests if configuration is available
+        print("Always running live API tests when configuration is available.")
+
+        print("\nRunning self_check function for live API tests...")
+        self_check_passed = self_check()
+
+        _run_test(
+            "Live API Tests (via self_check)",
+            lambda: self_check_passed,
+        )
+    else:
+        print("\nConfiguration incomplete for live API tests.")
+        print(
+            "Missing one or more of: TESTING_PERSON_TREE_ID, TESTING_PROFILE_ID, TREE_NAME"
+        )
+        print("Please set these values in .env file to run live API tests.")
+        print("Skipping live API tests due to incomplete configuration.")
+
+    # === Print Test Summary ===
+    print("\n=== Test Summary ===")
+
+    # Count results by status
+    pass_count = sum(1 for _, status, _ in test_results if status == "PASS")
+    fail_count = sum(1 for _, status, _ in test_results if status == "FAIL")
+    error_count = sum(1 for _, status, _ in test_results if status == "ERROR")
+    skip_count = sum(1 for _, status, _ in test_results if status == "SKIPPED")
+
+    print(f"Total Tests: {len(test_results)}")
+    print(f"Passed: {pass_count}")
+    print(f"Failed: {fail_count}")
+    print(f"Errors: {error_count}")
+    print(f"Skipped: {skip_count}")
+
+    # Set overall status
+    if fail_count > 0 or error_count > 0:
+        overall_status = "FAIL"
+
+    print(f"\nOverall Status: {overall_status}")
+
+    # Print failed tests for quick reference
+    if fail_count > 0 or error_count > 0:
+        print("\nFailed Tests:")
+        for name, status, message in test_results:
+            if status in ["FAIL", "ERROR"]:
+                print(f"  - {name}: {status} - {message}")
+
+    # Exit with appropriate code
+    sys.exit(0 if overall_status == "PASS" else 1)
 # End of __main__

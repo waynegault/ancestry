@@ -302,7 +302,7 @@ def format_name(name: Optional[str]) -> str:
                 for idx, sub_part in enumerate(sub_parts):
                     if idx > 0 and sub_part.lower() in lowercase_particles:
                         hyphenated_elements.append(sub_part.lower())
-                    elif sub_part: # Ensure sub_part is not empty
+                    elif sub_part:  # Ensure sub_part is not empty
                         hyphenated_elements.append(sub_part.capitalize())
                     # End of if/elif
                 # End of for
@@ -312,12 +312,18 @@ def format_name(name: Optional[str]) -> str:
             # End of if
 
             # Handle names like O'Malley, D'Angelo
-            if "'" in part and len(part) > 1 and not (part.startswith("'") or part.endswith("'")):
+            if (
+                "'" in part
+                and len(part) > 1
+                and not (part.startswith("'") or part.endswith("'"))
+            ):
                 # This condition targets internal apostrophes like in O'Malley
                 # It avoids single-quoted parts like 'Betty' which are handled above.
                 name_pieces = part.split("'")
                 # Capitalize the first letter of each piece around the apostrophe
-                formatted_apostrophe_part = "'".join(p.capitalize() for p in name_pieces)
+                formatted_apostrophe_part = "'".join(
+                    p.capitalize() for p in name_pieces
+                )
                 formatted_parts.append(formatted_apostrophe_part)
                 i += 1
                 continue
@@ -329,7 +335,7 @@ def format_name(name: Optional[str]) -> str:
                 continue
             # End of if
             if part_lower.startswith("mac") and len(part) > 3:
-                if part_lower == "mac": # Handle "Mac" itself
+                if part_lower == "mac":  # Handle "Mac" itself
                     formatted_parts.append("Mac")
                 else:
                     formatted_parts.append("Mac" + part[3:].capitalize())
@@ -338,24 +344,30 @@ def format_name(name: Optional[str]) -> str:
                 continue
             # End of if
 
-            if len(part) == 2 and part.endswith(".") and part[0].isalpha(): # Initials like J.
+            if (
+                len(part) == 2 and part.endswith(".") and part[0].isalpha()
+            ):  # Initials like J.
                 formatted_parts.append(part[0].upper() + ".")
                 i += 1
                 continue
             # End of if
-            if len(part) == 1 and part.isalpha(): # Single letter initials without period
+            if (
+                len(part) == 1 and part.isalpha()
+            ):  # Single letter initials without period
                 formatted_parts.append(part.upper())
                 i += 1
                 continue
             # End of if
-            
+
             # Default: capitalize the part
             formatted_parts.append(part.capitalize())
             i += 1
         # End of while
 
         final_name = " ".join(formatted_parts)
-        final_name = re.sub(r"\s+", " ", final_name).strip() # Consolidate multiple spaces
+        final_name = re.sub(
+            r"\s+", " ", final_name
+        ).strip()  # Consolidate multiple spaces
         return final_name if final_name else "Valued Relative"
     except Exception as e:
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
@@ -365,6 +377,8 @@ def format_name(name: Optional[str]) -> str:
             return "Valued Relative"
         # End of try/except
     # End of try/except
+
+
 # End of format_name
 
 
@@ -841,10 +855,11 @@ class SessionManager:
     Includes methods for session startup, validation, readiness checks, and cleanup.
     """
 
-    def __init__(self):
+    def __init__(self, skip_browser: bool = False):
         self.driver: DriverType = None
         self.driver_live: bool = False
         self.session_ready: bool = False
+        self.skip_browser: bool = skip_browser
         # Assume config instances are available due to strict imports at top
         self.db_path: str = str(config_instance.DATABASE_FILE.resolve())
         self.selenium_config = selenium_config
@@ -959,6 +974,14 @@ class SessionManager:
             self._requests_session = requests.Session()  # type: ignore
         # End of if
 
+        # If skip_browser is True, skip browser initialization and return success
+        if self.skip_browser:
+            logger.debug("Skipping browser initialization (skip_browser=True)")
+            # For database-only operations, we consider the session "live" even without a browser
+            self.driver_live = True
+            self.session_start_time = time.time()
+            return True
+
         logger.debug("Initializing WebDriver instance (using init_webdvr)...")
         try:
             # Assume init_webdvr is imported
@@ -1027,6 +1050,15 @@ class SessionManager:
         logger.debug(
             f"TRACE: Entered ensure_session_ready (Action: {action_name or 'Default'})"
         )
+
+        # If skip_browser is True, skip browser-dependent checks
+        if self.skip_browser:
+            logger.debug(
+                f"Skipping browser-dependent session readiness checks (skip_browser=True)"
+            )
+            self.session_ready = True
+            return True
+
         if not self.ensure_driver_live(action_name=f"{action_name} - Ensure Driver"):
             logger.error(
                 f"Cannot ensure session ready for '{action_name}': Driver start failed."

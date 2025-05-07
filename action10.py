@@ -105,11 +105,18 @@ try:
         _normalize_id,
         format_relative_info,
     )
+
+    # Import relationship utilities
+    from relationship_utils import (
+        fast_bidirectional_bfs,
+        convert_gedcom_path_to_unified_format,
+        format_relationship_path_unified,
+    )
 except ImportError as e:
-    logger.critical(f"Failed to import gedcom_utils: {e}. Script cannot run.")
+    logger.critical(f"Failed to import required utilities: {e}. Script cannot run.")
     sys.exit(1)
 except Exception as e:
-    logger.critical(f"Unexpected error importing gedcom_utils: {e}", exc_info=True)
+    logger.critical(f"Unexpected error importing utilities: {e}", exc_info=True)
     sys.exit(1)
 
 
@@ -781,9 +788,8 @@ def analyze_top_match(
         return
 
     # Display relationship path
-    logger.info(f"\n=== Relationship to me ===")
-
     if top_match_norm_id == reference_person_id_norm:
+        logger.info(f"\n===Relationship Path to {reference_person_name}===")
         logger.info(
             f"{display_name} is the reference person ({reference_person_name})."
         )
@@ -800,57 +806,40 @@ def analyze_top_match(
         if isinstance(top_match_norm_id, str) and isinstance(
             reference_person_id_norm, str
         ):
-            # Get the relationship path
-            relationship_explanation = gedcom_data.get_relationship_path(
-                top_match_norm_id, reference_person_id_norm
+            # Find the relationship path using the consolidated function
+            path_ids = fast_bidirectional_bfs(
+                top_match_norm_id,
+                reference_person_id_norm,
+                gedcom_data.id_to_parents,
+                gedcom_data.id_to_children,
+                max_depth=25,
+                node_limit=150000,
+                timeout_sec=45,
             )
 
-            # Format the relationship path
-            if relationship_explanation and not relationship_explanation.startswith(
-                "(Error"
-            ):
-                # Get birth and death years for the top match
-                birth_year = top_match.get("raw_data", {}).get("birth_year", "")
-                death_year = top_match.get("raw_data", {}).get("death_year", "")
+            # Convert the GEDCOM path to the unified format
+            unified_path = convert_gedcom_path_to_unified_format(
+                path_ids,
+                gedcom_data.reader,
+                gedcom_data.id_to_parents,
+                gedcom_data.id_to_children,
+                gedcom_data.indi_index,
+            )
 
-                # Format years display for the summary line
-                years_display = ""
-                if birth_year and death_year:
-                    years_display = f" ({birth_year}-{death_year})"
-                elif birth_year:
-                    years_display = f" (b. {birth_year})"
-                elif death_year:
-                    years_display = f" (d. {death_year})"
+            if unified_path:
+                # Format the path using the unified formatter
+                relationship_explanation = format_relationship_path_unified(
+                    unified_path, display_name, reference_person_name, None
+                )
 
-                # Create a summary line for all individuals
-                summary_line = f"{display_name}{years_display} is {reference_person_name}'s relative:"
-                logger.info(summary_line)
-                logger.info("")  # Empty line after summary
-
-                # Extract the relationship path lines for all individuals, skipping the profile info at the end
-                path_lines = []
-                for line in relationship_explanation.splitlines():
-                    if line.startswith("[PROFILE]"):
-                        break
-                    path_lines.append(line)
-
-                # Format each line of the relationship path
-                for i, line in enumerate(path_lines):
-                    if i == 0:  # First line is the starting person
-                        logger.info(f"* {line.strip()}")
-                    elif line.strip() and line.strip().startswith("->"):
-                        # Format the relationship line with an asterisk
-                        formatted_line = line.strip().replace("->", "").strip()
-                        logger.info(f"* {formatted_line}")
-                    else:
-                        # Keep other lines as is
-                        logger.info(f"  {line.strip()}")
+                # Print the formatted relationship path
+                logger.info(relationship_explanation)
             else:
-                # Just log the explanation as is if it's an error message
-                for line in relationship_explanation.splitlines():
-                    if line.startswith("[PROFILE]"):
-                        break
-                    logger.info(f"  {line}")
+                # Just log an error message if conversion failed
+                logger.info(f"\n===Relationship Path to {reference_person_name}===")
+                logger.info(
+                    f"(Error: Could not determine relationship path for {display_name})"
+                )
         else:
             logger.warning("Cannot calculate relationship path: Invalid IDs")
 
@@ -938,6 +927,12 @@ def main() -> None:
         logger.info("\n--- No matches found to analyze. ---")
 
     logger.info("\n--- Action 10 Finished ---")
+
+
+def run_action10(*args):
+    """Wrapper function for main.py to call."""
+    main()
+    return True
 
 
 if __name__ == "__main__":

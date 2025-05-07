@@ -622,4 +622,296 @@ def extract_and_suggest_tasks(
 
 # End of extract_and_suggest_tasks
 
+
+def self_check() -> bool:
+    """
+    Performs a self-check of the AI interface functionality using real API calls.
+    Tests both intent classification and data extraction/task suggestion.
+
+    Returns:
+        bool: True if all tests pass, False otherwise
+    """
+    from utils import SessionManager
+
+    print("\n=== AI Interface Self-Check Starting ===")
+
+    # Track overall status
+    all_tests_passed = True
+
+    # Step 1: Check configuration
+    ai_provider = config_instance.AI_PROVIDER
+    print(f"Using AI Provider: {ai_provider}")
+
+    if ai_provider == "deepseek":
+        if not openai_available:
+            print("ERROR: OpenAI library not available. Cannot test DeepSeek.")
+            return False
+        api_key = config_instance.DEEPSEEK_API_KEY
+        model = config_instance.DEEPSEEK_AI_MODEL
+        base_url = config_instance.DEEPSEEK_AI_BASE_URL
+        if not all([api_key, model, base_url]):
+            print("ERROR: DeepSeek configuration incomplete.")
+            return False
+        print(f"DeepSeek Model: {model}")
+    elif ai_provider == "gemini":
+        if not genai_available:
+            print(
+                "ERROR: Google GenerativeAI library not available. Cannot test Gemini."
+            )
+            return False
+        api_key = config_instance.GOOGLE_API_KEY
+        model_name = config_instance.GOOGLE_AI_MODEL
+        if not api_key or not model_name:
+            print("ERROR: Gemini configuration incomplete.")
+            return False
+        print(f"Gemini Model: {model_name}")
+    else:
+        print(f"ERROR: Unsupported AI provider: {ai_provider}")
+        return False
+
+    # Step 2: Create a SessionManager for testing
+    try:
+        # Create SessionManager without starting a browser
+        session_manager = SessionManager()
+        print("Created SessionManager for testing (without browser)")
+    except Exception as e:
+        print(f"ERROR: Failed to create SessionManager: {e}")
+        return False
+
+    # Step 3: Test conversation histories
+    # Test case 1: PRODUCTIVE intent
+    productive_conversation = """
+SCRIPT: Hello, I'm researching my family tree and we appear to be DNA matches. I'm trying to find our common ancestor. My tree includes the Simpson family from Aberdeen, Scotland in the 1800s. Does that connect with your research?
+
+USER: Yes, I have Simpsons in my tree from Aberdeen! My great-grandmother was Margaret Simpson born around 1865. Her father was Alexander Simpson who was a fisherman. I'd be happy to share what I know about them.
+
+SCRIPT: That's wonderful! Margaret Simpson sounds familiar. Do you know who Alexander's parents were or if he had any siblings?
+
+USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. He had a sister named Isobella who was born in 1840. I found their marriage certificate in the Scottish records. Would you like me to send you a copy?
+"""
+
+    # Test case 2: UNINTERESTED intent
+    uninterested_conversation = """
+SCRIPT: Hello, I'm researching my family tree and we appear to be DNA matches. I'm trying to find our common ancestor. My tree includes the Simpson family from Aberdeen, Scotland in the 1800s. Does that connect with your research?
+
+USER: I don't really work on my family tree much anymore.
+
+SCRIPT: I understand. If you happen to have any information about the Simpson family from Aberdeen, particularly from the 1800s, it could be very helpful. Even small details might help connect our trees.
+
+USER: Sorry, I don't think I can help you. Good luck with your research.
+"""
+
+    # Test case 3: For data extraction and task suggestion
+    extraction_conversation = """
+SCRIPT: Hello, I'm researching my family tree and we appear to be DNA matches. I'm trying to find our common ancestor. My tree includes the Simpson family from Aberdeen, Scotland in the 1800s. Does that connect with your research?
+
+USER: Yes, I have Simpsons in my tree from Aberdeen! My great-grandmother was Margaret Simpson born around 1865. Her father was Alexander Simpson who was a fisherman. He was born about 1835 and died in 1890. The family lived in a fishing village in Aberdeen.
+
+SCRIPT: That's wonderful! Margaret Simpson sounds familiar. Do you know who Alexander's parents were or if he had any siblings?
+
+USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They married in 1833 in Aberdeen. John was born around 1810 and worked as a fisherman like his son. Elizabeth was from Peterhead originally. Alexander had a sister named Isobella who was born in 1840. I found their marriage certificate in the Scottish records.
+"""
+
+    # Step 4: Test intent classification
+    print("\n--- Testing Intent Classification ---")
+
+    # Test PRODUCTIVE intent
+    print("Testing PRODUCTIVE intent classification...")
+    productive_result = classify_message_intent(
+        productive_conversation, session_manager
+    )
+    if productive_result == "PRODUCTIVE":
+        print("✓ PRODUCTIVE intent correctly classified")
+    else:
+        print(f"✗ PRODUCTIVE intent test failed. Got: {productive_result}")
+        all_tests_passed = False
+
+    # Test UNINTERESTED intent
+    print("Testing UNINTERESTED intent classification...")
+    uninterested_result = classify_message_intent(
+        uninterested_conversation, session_manager
+    )
+    if uninterested_result == "UNINTERESTED":
+        print("✓ UNINTERESTED intent correctly classified")
+    else:
+        print(f"✗ UNINTERESTED intent test failed. Got: {uninterested_result}")
+        all_tests_passed = False
+
+    # Step 5: Test data extraction and task suggestion
+    print("\n--- Testing Data Extraction and Task Suggestion ---")
+    extraction_result = extract_and_suggest_tasks(
+        extraction_conversation, session_manager
+    )
+
+    if extraction_result and isinstance(extraction_result, dict):
+        print("✓ Data extraction returned valid result structure")
+
+        # Check for expected data in the result
+        extracted_data = extraction_result.get("extracted_data", {})
+
+        # Check for names
+        if "mentioned_names" in extracted_data and isinstance(
+            extracted_data["mentioned_names"], list
+        ):
+            names = extracted_data["mentioned_names"]
+            if any("Margaret Simpson" in name for name in names) and any(
+                "Alexander Simpson" in name for name in names
+            ):
+                print("✓ Expected names found in extraction result")
+            else:
+                print("WARNING: Expected names not found in extraction result")
+                print(f"Found names: {names}")
+
+        # Check for locations
+        if "mentioned_locations" in extracted_data and isinstance(
+            extracted_data["mentioned_locations"], list
+        ):
+            locations = extracted_data["mentioned_locations"]
+            if any("Aberdeen" in loc for loc in locations):
+                print("✓ Expected locations found in extraction result")
+            else:
+                print("WARNING: Expected locations not found in extraction result")
+                print(f"Found locations: {locations}")
+
+        # Check for dates
+        if "mentioned_dates" in extracted_data and isinstance(
+            extracted_data["mentioned_dates"], list
+        ):
+            dates = extracted_data["mentioned_dates"]
+            if len(dates) > 0:
+                print("✓ Dates found in extraction result")
+                print(f"Found dates: {dates}")
+            else:
+                print("WARNING: No dates found in extraction result")
+
+        # Check for suggested tasks
+        if "suggested_tasks" in extraction_result and isinstance(
+            extraction_result["suggested_tasks"], list
+        ):
+            tasks = extraction_result["suggested_tasks"]
+            if len(tasks) > 0:
+                print(f"✓ {len(tasks)} suggested tasks generated")
+                for i, task in enumerate(tasks, 1):
+                    print(f"  Task {i}: {task}")
+            else:
+                print("WARNING: No suggested tasks generated")
+
+        # Print full extraction result for reference
+        print("\nFull extraction result:")
+        import json
+
+        print(json.dumps(extraction_result, indent=2))
+
+    else:
+        print("✗ Data extraction test failed")
+        all_tests_passed = False
+
+    # Step 6: Collect test results for summary
+    test_results = [
+        {
+            "name": "PRODUCTIVE Intent Classification",
+            "result": productive_result == "PRODUCTIVE",
+        },
+        {
+            "name": "UNINTERESTED Intent Classification",
+            "result": uninterested_result == "UNINTERESTED",
+        },
+        {
+            "name": "Data Extraction Valid Structure",
+            "result": extraction_result is not None
+            and isinstance(extraction_result, dict),
+        },
+    ]
+
+    # Add extraction detail tests if extraction was successful
+    if extraction_result and isinstance(extraction_result, dict):
+        extracted_data = extraction_result.get("extracted_data", {})
+
+        # Check for names
+        names_found = False
+        if "mentioned_names" in extracted_data and isinstance(
+            extracted_data["mentioned_names"], list
+        ):
+            names = extracted_data["mentioned_names"]
+            names_found = any("Margaret Simpson" in name for name in names) and any(
+                "Alexander Simpson" in name for name in names
+            )
+        test_results.append(
+            {"name": "Expected Names Extraction", "result": names_found}
+        )
+
+        # Check for locations
+        locations_found = False
+        if "mentioned_locations" in extracted_data and isinstance(
+            extracted_data["mentioned_locations"], list
+        ):
+            locations = extracted_data["mentioned_locations"]
+            locations_found = any("Aberdeen" in loc for loc in locations)
+        test_results.append(
+            {"name": "Expected Locations Extraction", "result": locations_found}
+        )
+
+        # Check for dates
+        dates_found = False
+        if "mentioned_dates" in extracted_data and isinstance(
+            extracted_data["mentioned_dates"], list
+        ):
+            dates = extracted_data["mentioned_dates"]
+            dates_found = len(dates) > 0
+        test_results.append({"name": "Dates Extraction", "result": dates_found})
+
+        # Check for tasks
+        tasks_generated = False
+        task_count = 0
+        if "suggested_tasks" in extraction_result and isinstance(
+            extraction_result["suggested_tasks"], list
+        ):
+            tasks = extraction_result["suggested_tasks"]
+            task_count = len(tasks)
+            tasks_generated = task_count > 0
+        test_results.append(
+            {"name": f"Task Generation ({task_count} tasks)", "result": tasks_generated}
+        )
+
+    # Step 7: Display test summary
+    passed_tests = sum(1 for test in test_results if test["result"])
+    total_tests = len(test_results)
+
+    print("\n=== AI Interface Self-Test Summary ===")
+    print(f"{'Test Name':<40} {'Result':<10}")
+    print("-" * 50)
+
+    for test in test_results:
+        result_str = "✓ PASSED" if test["result"] else "✗ FAILED"
+        print(f"{test['name']:<40} {result_str:<10}")
+
+    print("-" * 50)
+    print(f"{'Overall Statistics':<40}")
+    print(f"{'Total Tests':<30}: {total_tests}")
+    print(f"{'Passed':<30}: {passed_tests}")
+    print(f"{'Failed':<30}: {total_tests - passed_tests}")
+    print(f"{'Success Rate':<30}: {(passed_tests / total_tests) * 100:.0f}%")
+
+    # Final result
+    if all_tests_passed:
+        print("\n=== All AI Interface tests PASSED ===")
+    else:
+        print("\n=== Some AI Interface tests FAILED ===")
+
+    return all_tests_passed
+
+
+# End of self_check
+
+
+# Add main block to run self-test when script is executed directly
+if __name__ == "__main__":
+    import os
+
+    print(f"\nRunning self-check for {os.path.basename(__file__)}")
+    success = self_check()
+
+    # Exit with appropriate code
+    sys.exit(0 if success else 1)
+
 # End of ai_interface.py

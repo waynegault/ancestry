@@ -78,7 +78,6 @@ from utils import (
     retry_api,
     time_wait,
     urljoin,
-    _fetch_profile_details_for_person,
 )
 
 
@@ -583,10 +582,8 @@ class InboxProcessor:
         else:
             # --- Person Not Found: Create New ---
             logger.debug(f"Person {log_ref} not found. Creating new record...")
-            # Fetch additional details via API before creating
-            profile_details = _fetch_profile_details_for_person(
-                self.session_manager, profile_id
-            )
+            # Skip fetching additional details via API (function no longer available)
+            profile_details = None
 
             # Prepare data for new Person object
             new_person_data = {
