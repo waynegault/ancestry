@@ -349,10 +349,10 @@ def log_criteria_summary(
     scoring_criteria: Dict[str, Any], date_flex: Dict[str, Any]
 ) -> None:
     """Log summary of criteria to be used."""
-    logger.info("\n--- Final Scoring Criteria Used ---")
+    logger.debug("--- Final Scoring Criteria Used ---")
     for k, v in scoring_criteria.items():
         if v is not None and k not in ["birth_date_obj", "death_date_obj"]:
-            logger.info(f"  {k.replace('_',' ').title()}: '{v}'")
+            logger.debug(f"  {k.replace('_',' ').title()}: '{v}'")
 
     year_range = date_flex.get("year_match_range", 10)
     logger.debug(f"\n--- OR Filter Logic (Year Range: +/- {year_range}) ---")
@@ -559,7 +559,7 @@ def display_top_matches(
         return None
 
     display_matches = scored_matches[:max_results]
-    logger.info(
+    logger.debug(
         f"Displaying top {len(display_matches)} of {len(scored_matches)} scored matches:"
     )
 
@@ -697,7 +697,7 @@ def display_top_matches(
             logger.info(" | ".join(row))
 
     if len(scored_matches) > len(display_matches):
-        logger.info(
+        logger.debug(
             f"... and {len(scored_matches) - len(display_matches)} more matches not shown."
         )
 
@@ -714,7 +714,7 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
     }
 
     for relation_type, relatives in relatives_data.items():
-        logger.info(f"\n{relation_type}:\n")
+        logger.info(f"{relation_type}:\n")
         if not relatives:
             logger.info("    None found.")
             continue
@@ -739,7 +739,6 @@ def analyze_top_match(
     reference_person_name: str,
 ) -> None:
     """Analyze top match and find relationship path."""
-    logger.info("\n=== Analysis of Top Match ===")
 
     top_match_norm_id = top_match.get("id")
     top_match_indi = gedcom_data.find_individual_by_id(top_match_norm_id)
@@ -753,9 +752,6 @@ def analyze_top_match(
     # Get display name and score
     display_name = top_match.get("full_name_disp", "Unknown")
     score = top_match.get("total_score", 0)
-
-    # Display top match header with name and total score
-    logger.info(f"=== {display_name} (score: {score:.0f}) ===\n")
 
     # Get birth and death years for display
     birth_year = top_match.get("raw_data", {}).get("birth_year")
@@ -771,7 +767,8 @@ def analyze_top_match(
         years_display = f" (d. {death_year})"
 
     # Display family details header with name and years
-    logger.info(f"\n=== Family Details: {display_name}{years_display} ===")
+
+    logger.info(f"\n==={display_name}{years_display} (score: {score:.0f}) ===\n")
 
     # Display relatives
     display_relatives(gedcom_data, top_match_indi)
@@ -798,8 +795,7 @@ def analyze_top_match(
             else "unknown_tree_id"
         )
         api_url = f"/family-tree/person/tree/{tree_id}/person/{top_match_norm_id}/getladder?callback=no"
-        logger.info(f"API URL: {api_url}")
-        logger.info("")  # Empty line after API URL
+        logger.debug(f"API URL: {api_url}")
 
         if isinstance(top_match_norm_id, str) and isinstance(
             reference_person_id_norm, str
@@ -826,61 +822,29 @@ def analyze_top_match(
                 elif death_year:
                     years_display = f" (d. {death_year})"
 
-                # Create a summary line
-                if "Alexander Simpson" in display_name and birth_year == 1840:
-                    # Special case for Alexander Simpson
-                    summary_line = f"{display_name} {birth_year}-{death_year}"
-                    logger.info(summary_line)
-                    logger.info("3rd great-grandfather:")
-                    logger.info("")  # Empty line after summary
-                else:
-                    # Default summary line for other individuals
-                    summary_line = f"{display_name}{years_display} is {reference_person_name}'s relative:"
-                    logger.info(summary_line)
-                    logger.info("")  # Empty line after summary
+                # Create a summary line for all individuals
+                summary_line = f"{display_name}{years_display} is {reference_person_name}'s relative:"
+                logger.info(summary_line)
+                logger.info("")  # Empty line after summary
 
-                # Instead of using the GEDCOM relationship path, let's construct our own
-                # based on the known relationship between Alexander Simpson and Wayne Gordon Gault
+                # Extract the relationship path lines for all individuals, skipping the profile info at the end
+                path_lines = []
+                for line in relationship_explanation.splitlines():
+                    if line.startswith("[PROFILE]"):
+                        break
+                    path_lines.append(line)
 
-                # Check if this is Alexander Simpson
-                if "Alexander Simpson" in display_name and birth_year == 1840:
-                    # Manually construct the complete relationship path in the format provided
-                    relationship_lines = [
-                        "Margaret Simpson 1865-1946",
-                        "Daughter of Alexander Simpson",
-                        "Alexander Stables 1899-1948",
-                        "Son of Margaret Simpson",
-                        "Catherine Margaret Stables 1924-2004",
-                        "Daughter of Alexander Stables",
-                        "Frances Margaret Milne",
-                        "Daughter of Catherine Margaret Stables",
-                        f"{reference_person_name}",
-                        "Son of Frances Margaret Milne",
-                    ]
-
-                    # Log each line of the relationship path
-                    for line in relationship_lines:
-                        logger.info(line)
-                else:
-                    # For other individuals, use the standard approach
-                    # Extract the relationship path lines, skipping the profile info at the end
-                    path_lines = []
-                    for line in relationship_explanation.splitlines():
-                        if line.startswith("[PROFILE]"):
-                            break
-                        path_lines.append(line)
-
-                    # Format each line of the relationship path
-                    for i, line in enumerate(path_lines):
-                        if i == 0:  # First line is the starting person
-                            logger.info(f"* {line.strip()}")
-                        elif line.strip() and line.strip().startswith("->"):
-                            # Format the relationship line with an asterisk
-                            formatted_line = line.strip().replace("->", "").strip()
-                            logger.info(f"* {formatted_line}")
-                        else:
-                            # Keep other lines as is
-                            logger.info(f"  {line.strip()}")
+                # Format each line of the relationship path
+                for i, line in enumerate(path_lines):
+                    if i == 0:  # First line is the starting person
+                        logger.info(f"* {line.strip()}")
+                    elif line.strip() and line.strip().startswith("->"):
+                        # Format the relationship line with an asterisk
+                        formatted_line = line.strip().replace("->", "").strip()
+                        logger.info(f"* {formatted_line}")
+                    else:
+                        # Keep other lines as is
+                        logger.info(f"  {line.strip()}")
             else:
                 # Just log the explanation as is if it's an error message
                 for line in relationship_explanation.splitlines():
