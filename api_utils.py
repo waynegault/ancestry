@@ -862,11 +862,7 @@ def format_api_relationship_path(
             # End of if
 
             line_parts = []
-            if i == len(path_items) - 1:  # Last person in the path (owner)
-                line_parts.append(current_name_display)
-            else:
-                line_parts.extend(["*", current_name_display])  # Asterisk and ONE space
-            # End of if/else
+            line_parts.extend(["*", current_name_display]) 
 
             if current_lifespan_formatted:
                 line_parts.append(current_lifespan_formatted)

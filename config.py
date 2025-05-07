@@ -206,12 +206,15 @@ class Config_Class(BaseConfig):
         "year_death": 20,  # if input year of death is exact with candidate year of death even if the day and month is wrong or not given
         "approx_year_birth": 10,  # if input year of death is within year_match_range years of candidate year of death even if the day and month is wrong or not given
         "approx_year_death": 10,  # if input year of death is within year_match_range years of candidate year of death even if the day and month is wrong or not given
-        "death_dates_both_absent": 15,  # if both the input and candidate have no death dates
+        "death_dates_both_absent": 10,  # if both the input and candidate have no death dates
         # --- Gender Weights ---
-        "gender_match": 25,  # if the input gender indication eg m/man/male/boy or f/fem/female/woman/girl matches the candidate gender indication.
+        "gender_match": 15,  # if the input gender indication eg m/man/male/boy or f/fem/female/woman/girl matches the candidate gender indication.
         # --- Place Weights ---
-        "contains_pob": 15,  # if the input place of birth is contained in the candidate place of birth
-        "contains_pod": 15,  # if the input place of death is contained in the candidate place of death
+        "contains_pob": 25,  # if the input place of birth is contained in the candidate place of birth
+        "contains_pod": 25,  # if the input place of death is contained in the candidate place of death
+        # --- Bonus Weights ---
+        "bonus_birth_info": 25,  # additional bonus if both birth year and birth place achieved a score
+        "bonus_death_info": 25,  # additional bonus if both death year and death place achieved a score
     }
     NAME_FLEXIBILITY: Dict[str, Union[float, bool]] = {
         # Fuzzy threshold might still be useful for other potential matching logic
@@ -485,28 +488,28 @@ class Config_Class(BaseConfig):
                 "Content-Type": "application/json",
             },
             # Headers for Action 11 APIs (simplified without Cloudscraper)
-            "Suggest API": { # Replaces "Suggest API (Fallback)"
+            "Suggest API": {  # Replaces "Suggest API (Fallback)"
                 "Accept": "application/json",
-                "Referer": None, # Referer will be set dynamically
+                "Referer": None,  # Referer will be set dynamically
             },
-             "TreesUI List API": { # Replaces "TreesUI List API (Fallback)"
+            "TreesUI List API": {  # Replaces "TreesUI List API (Fallback)"
                 "Accept": "application/json",
-                "Referer": None, # Referer will be set dynamically
+                "Referer": None,  # Referer will be set dynamically
             },
-            "Person Facts API": { # Replaces "Person Facts API (_api_req fallback)"
+            "Person Facts API": {  # Replaces "Person Facts API (_api_req fallback)"
                 "Accept": "application/json",
-                "X-Requested-With": "XMLHttpRequest", # Kept as potentially important
-                "Referer": None, # Referer will be set dynamically
+                "X-Requested-With": "XMLHttpRequest",  # Kept as potentially important
+                "Referer": None,  # Referer will be set dynamically
                 # Consider adding other headers from V16.15 if _api_req fails without them
             },
-            "Get Tree Ladder API": { # Replaces "Get Tree Ladder API (Action 11)"
+            "Get Tree Ladder API": {  # Replaces "Get Tree Ladder API (Action 11)"
                 "Accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": None, # Referer will be set dynamically
+                "Referer": None,  # Referer will be set dynamically
             },
-            "Discovery Relationship API": { # Replaces "API Relationship Ladder (Discovery)"
+            "Discovery Relationship API": {  # Replaces "API Relationship Ladder (Discovery)"
                 "Accept": "application/json",
-                "Referer": None, # Referer will be set dynamically
+                "Referer": None,  # Referer will be set dynamically
             },
             # CSRF and other internal APIs
             "CSRF Token API": {},
@@ -515,7 +518,7 @@ class Config_Class(BaseConfig):
             "Match Details API (Batch)": {},
             "Badge Details API (Batch)": {},
             # Self-check headers
-            "Get Ladder API (Self Check)": {}, # Keep specific keys for self-check if needed
+            "Get Ladder API (Self Check)": {},  # Keep specific keys for self-check if needed
             "Get Tree Ladder API (Self Check)": {},
             "Tree Person Search API (Self Check)": {},
             "Person Picker Suggest API (Self Check)": {},
@@ -647,7 +650,7 @@ class SeleniumConfig(BaseConfig):
     DNA_LIST_PAGE_TIMEOUT: int = 30
     NEW_TAB_TIMEOUT: int = 15
     TWO_FA_CODE_ENTRY_TIMEOUT: int = 300
-    API_TIMEOUT: int = 60 # Default timeout for requests library calls via _api_req
+    API_TIMEOUT: int = 60  # Default timeout for requests library calls via _api_req
 
     # --- Initializer ---
     def __init__(self):
@@ -857,7 +860,9 @@ if __name__ == "__main__":
         print(f"  TREE_SEARCH_METHOD: {config_instance.TREE_SEARCH_METHOD}")
         # Print Action 11 limits
         print(f"  MAX_SUGGESTIONS_TO_SCORE: {config_instance.MAX_SUGGESTIONS_TO_SCORE}")
-        print(f"  MAX_CANDIDATES_TO_DISPLAY: {config_instance.MAX_CANDIDATES_TO_DISPLAY}")
+        print(
+            f"  MAX_CANDIDATES_TO_DISPLAY: {config_instance.MAX_CANDIDATES_TO_DISPLAY}"
+        )
 
         print("\n--- AI Config ---")
         print(f"  AI_PROVIDER: {config_instance.AI_PROVIDER or 'Not Set'}")
@@ -871,7 +876,7 @@ if __name__ == "__main__":
 
         print("\n--- Selenium Config (selenium_config) ---")
         print(f"  HEADLESS_MODE: {selenium_config.HEADLESS_MODE}")
-        print(f"  API_TIMEOUT: {selenium_config.API_TIMEOUT}s") # Print API timeout
+        print(f"  API_TIMEOUT: {selenium_config.API_TIMEOUT}s")  # Print API timeout
         # Print other Selenium details...
 
         print(
@@ -880,4 +885,3 @@ if __name__ == "__main__":
 # End of config.py standalone test block
 
 # --- End of config.py ---
-
