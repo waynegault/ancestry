@@ -114,3 +114,19 @@
 21:11:20 INF [main     exec_act 333 ] Memory used: 0.9 MB
 21:11:20 INF [main     exec_act 334 ] ------------------------------------------
                                       
+21:11:59 INF [main     exec_act 190 ] 
+                                      ------------------------------------------
+21:11:59 INF [main     exec_act 191 ] Action 0: Starting all_but_first_actn...
+21:11:59 INF [main     exec_act 192 ] ------------------------------------------
+                                      
+21:11:59 INF [main     all_but_ 380 ] Deleting data for all people except Profile ID: 08FA6E79-0006-0000-0000-000000000000...
+21:11:59 INF [main     all_but_ 428 ] Deleted 31 conversation_log records.
+21:11:59 INF [main     all_but_ 442 ] Deleted 1226 dna_match records.
+21:11:59 INF [main     all_but_ 454 ] Deleted 60 family_tree records.
+21:11:59 INF [main     all_but_ 464 ] Deleted 1232 people records.
+21:11:59 INF [main     exec_act 330 ] ------------------------------------------
+21:11:59 INF [main     exec_act 331 ] Action 0 (all_but_first_actn) finished.
+21:11:59 INF [main     exec_act 332 ] Duration: 0 hr 0 min 0.05 sec
+21:11:59 INF [main     exec_act 333 ] Memory used: 1.2 MB
+21:11:59 INF [main     exec_act 334 ] ------------------------------------------
+                                      
