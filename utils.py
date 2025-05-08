@@ -30,6 +30,7 @@ from typing import (
 
 # --- Standard library imports ---
 import base64
+import binascii
 import contextlib
 import inspect
 import json
@@ -55,7 +56,9 @@ from urllib.parse import urljoin, urlparse, unquote, urlunparse
 
 
 # --- Type Aliases ---
-ApiResponseType: TypeAlias = Union[Dict[str, Any], List[Any], str, bytes, None]
+ApiResponseType: TypeAlias = Union[
+    Dict[str, Any], List[Any], str, bytes, None, "RequestsResponse"
+]
 # Forward references defined within SessionManager docstring or below if needed elsewhere
 DriverType: TypeAlias = Optional["WebDriver"]
 SessionManagerType: TypeAlias = Optional["SessionManager"]
@@ -861,7 +864,8 @@ class SessionManager:
         self.session_ready: bool = False
         self.skip_browser: bool = skip_browser
         # Assume config instances are available due to strict imports at top
-        self.db_path: str = str(config_instance.DATABASE_FILE.resolve())
+        db_file = config_instance.DATABASE_FILE
+        self.db_path: str = str(db_file.resolve()) if db_file else ""
         self.selenium_config = selenium_config
         self.ancestry_username: str = config_instance.ANCESTRY_USERNAME
         self.ancestry_password: str = config_instance.ANCESTRY_PASSWORD
@@ -882,7 +886,8 @@ class SessionManager:
         self.engine = None
         self.Session: Optional[sessionmaker] = None  # type: ignore # Assume imported
         self._db_init_attempted: bool = False
-        self.cache_dir: Path = config_instance.CACHE_DIR
+        cache_dir = config_instance.CACHE_DIR
+        self.cache_dir: Optional[Path] = cache_dir
         self.csrf_token: Optional[str] = None
         self.my_profile_id: Optional[str] = None
         self.my_uuid: Optional[str] = None
@@ -1119,7 +1124,166 @@ class SessionManager:
 
     # End of ensure_session_ready
 
+    def _check_login_and_attempt_relogin(
+        self, attempt: int
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Checks login status and attempts relogin if needed.
+
+        Args:
+            attempt: The current attempt number
+
+        Returns:
+            Tuple of (success, error_message)
+            - success: True if logged in, False otherwise
+            - error_message: Error message if any, None if successful
+        """
+        # --- Check Login Status ---
+        login_status_result = login_status(
+            self, disable_ui_fallback=False
+        )  # Use UI fallback for reliability during login checks
+
+        # --- Handle Login Check Error ---
+        if login_status_result is None:
+            logger.error("Critical error checking login status (returned None).")
+            return False, "login_status returned None"  # Critical failure
+
+        # --- Handle Not Logged In ---
+        if login_status_result is False:
+            logger.info("Not logged in. Attempting remedial actions...")
+            # Removed cookie import logic
+
+            # If still not logged in, try automated login
+            # This block now always runs if login_status_result is False
+            logger.info("Attempting login via automation...")
+            # Assume log_in function is available
+            login_result_str = log_in(self)
+            if login_result_str != "LOGIN_SUCCEEDED":
+                logger.error(
+                    f"Login attempt failed ({login_result_str}). Readiness check failed on attempt {attempt}."
+                )
+                return False, f"Login attempt failed: {login_result_str}"
+            # End of if
+            logger.info("Login successful via automation.")
+
+            # Export cookies after successful login (optional but kept)
+            cookies_backup_path = self._get_cookie_backup_path()
+            if cookies_backup_path:
+                try:
+                    # Assume export_cookies exists (from selenium_utils likely)
+                    # Check if function exists before calling
+                    if "export_cookies" in globals() and callable(
+                        globals()["export_cookies"]
+                    ):
+                        export_cookies(self.driver, str(cookies_backup_path))  # type: ignore
+                        logger.info(f"Cookies exported to {cookies_backup_path}")
+                    else:
+                        logger.warning(
+                            "export_cookies function not available (likely selenium_utils import issue)."
+                        )
+                    # End of if/else callable check
+                except NameError:
+                    logger.warning(
+                        "export_cookies function not available (likely selenium_utils import issue)."
+                    )
+                except (WebDriverException, OSError, IOError) as export_err:  # type: ignore
+                    logger.warning(
+                        f"Failed to export cookies after login: {export_err}"
+                    )
+                # End of try/except
+            # End of if
+
+            # Final status check after automated login
+            login_status_result = login_status(
+                self, disable_ui_fallback=False
+            )  # Use UI fallback for reliability during login checks
+            if login_status_result is not True:
+                logger.error(
+                    "Login status verification failed even after successful login report."
+                )
+                return False, "Login status False after reported success"
+            # End of if
+            logger.debug("Login status re-verified successfully after automation.")
+        # End of if login_status_result is False
+
+        return True, None  # Login successful
+
+    # End of _check_login_and_attempt_relogin
+
+    def _check_essential_cookies(self) -> Tuple[bool, Optional[str]]:
+        """
+        Verifies that essential cookies are present.
+
+        Returns:
+            Tuple of (success, error_message)
+            - success: True if all essential cookies are present, False otherwise
+            - error_message: Error message if any, None if successful
+        """
+        logger.debug("Verifying essential cookies...")
+        essential_cookies = ["ANCSESSIONID", "SecureATT"]
+        if not self.get_cookies(essential_cookies, timeout=5):
+            logger.error(f"Essential cookies {essential_cookies} not found.")
+            return False, f"Essential cookies missing: {essential_cookies}"
+        # End of if
+        logger.debug("Essential cookies OK.")
+        return True, None
+
+    # End of _check_essential_cookies
+
+    def _sync_cookies_to_requests(self) -> Tuple[bool, Optional[str]]:
+        """
+        Synchronizes cookies from the WebDriver to the requests session.
+
+        Returns:
+            Tuple of (success, error_message)
+            - success: True if cookies were synced successfully, False otherwise
+            - error_message: Error message if any, None if successful
+        """
+        logger.debug("Syncing cookies to requests session...")
+        try:
+            self._sync_cookies()
+            logger.debug("Cookies synced.")
+            return True, None
+        except Exception as sync_e:
+            logger.error(f"Cookie sync failed: {sync_e}", exc_info=True)
+            return False, f"Cookie sync failed: {sync_e}"
+        # End of try/except
+
+    # End of _sync_cookies_to_requests
+
+    def _check_csrf_token(self) -> Tuple[bool, Optional[str]]:
+        """
+        Ensures a valid CSRF token is available.
+
+        Returns:
+            Tuple of (success, error_message)
+            - success: True if a valid CSRF token is available, False otherwise
+            - error_message: Error message if any, None if successful
+        """
+        logger.debug("Ensuring CSRF token...")
+        # Fetch CSRF token if missing or seems invalid
+        if not self.csrf_token or len(self.csrf_token) < 20:
+            self.csrf_token = self.get_csrf()
+        # End of if
+        if not self.csrf_token or len(self.csrf_token) < 20:
+            logger.error("Failed to retrieve/verify valid CSRF token.")
+            return False, "CSRF token missing/invalid"
+        # End of if
+        logger.debug("CSRF token OK.")
+        return True, None
+
+    # End of _check_csrf_token
+
     def _perform_readiness_checks(self, action_name: Optional[str] = None) -> bool:
+        """
+        Performs a series of checks to ensure the session is ready for use.
+
+        Args:
+            action_name: Optional name of the action requiring readiness
+
+        Returns:
+            True if all checks pass, False otherwise
+        """
         max_attempts = 2
         attempt = 0
         last_check_error: Optional[str] = None
@@ -1132,90 +1296,22 @@ class SessionManager:
             last_check_error = None  # Reset error for this attempt
 
             try:
+                # --- Check Driver Status ---
                 if not self.driver_live or not self.driver:
                     logger.error("Cannot perform readiness checks: Driver not live.")
                     last_check_error = "Driver not live"
                     return False  # Cannot proceed without driver
                 # End of if
 
-                # --- Check Login Status ---
-                login_status_result = login_status(
-                    self
-                )  # Assume login_status available
+                # --- Check Login Status and Attempt Relogin if Needed ---
+                login_success, login_error = self._check_login_and_attempt_relogin(
+                    attempt
+                )
+                if not login_success:
+                    last_check_error = login_error
+                    continue  # Try next readiness attempt
 
-                # --- Handle Not Logged In ---
-                if login_status_result is False:
-                    logger.info("Not logged in. Attempting remedial actions...")
-                    # Removed cookie import logic
-
-                    # If still not logged in, try automated login
-                    # This block now always runs if login_status_result is False
-                    logger.info("Attempting login via automation...")
-                    # Assume log_in function is available
-                    login_result_str = log_in(self)
-                    if login_result_str != "LOGIN_SUCCEEDED":
-                        logger.error(
-                            f"Login attempt failed ({login_result_str}). Readiness check failed on attempt {attempt}."
-                        )
-                        last_check_error = f"Login attempt failed: {login_result_str}"
-                        continue  # Try next readiness attempt
-                    # End of if
-                    logger.info("Login successful via automation.")
-
-                    # Export cookies after successful login (optional but kept)
-                    cookies_backup_path = self._get_cookie_backup_path()
-                    if cookies_backup_path:
-                        try:
-                            # Assume export_cookies exists (from selenium_utils likely)
-                            # Check if function exists before calling
-                            if "export_cookies" in globals() and callable(
-                                globals()["export_cookies"]
-                            ):
-                                export_cookies(self.driver, str(cookies_backup_path))  # type: ignore
-                                logger.info(
-                                    f"Cookies exported to {cookies_backup_path}"
-                                )
-                            else:
-                                logger.warning(
-                                    "export_cookies function not available (likely selenium_utils import issue)."
-                                )
-                            # End of if/else callable check
-                        except NameError:
-                            logger.warning(
-                                "export_cookies function not available (likely selenium_utils import issue)."
-                            )
-                        except (WebDriverException, OSError, IOError) as export_err:  # type: ignore
-                            logger.warning(
-                                f"Failed to export cookies after login: {export_err}"
-                            )
-                        # End of try/except
-                    # End of if
-
-                    # Final status check after automated login
-                    login_status_result = login_status(self)
-                    if login_status_result is not True:
-                        logger.error(
-                            "Login status verification failed even after successful login report."
-                        )
-                        last_check_error = "Login status False after reported success"
-                        continue  # Try next readiness attempt
-                    # End of if
-                    logger.debug(
-                        "Login status re-verified successfully after automation."
-                    )
-                # --- Handle Login Check Error ---
-                elif login_status_result is None:
-                    logger.error(
-                        "Critical error checking login status (returned None)."
-                    )
-                    last_check_error = "login_status returned None"
-                    return False  # Critical failure
-                # End of if/elif (login_status_result)
-
-                # --- If Logged In ---
-                # Checks to perform only if login status is True
-                # This block now runs if login was initially True or became True after login attempt
-                logger.debug("Checking/Handling current URL...")
+                # --- Check and Handle Current URL ---
                 if not self._check_and_handle_url():
                     logger.error("URL check/handling failed.")
                     last_check_error = "URL check/handling failed"
@@ -1223,36 +1319,23 @@ class SessionManager:
                 # End of if
                 logger.debug("URL check/handling OK.")
 
-                logger.debug("Verifying essential cookies...")
-                essential_cookies = ["ANCSESSIONID", "SecureATT"]
-                if not self.get_cookies(essential_cookies, timeout=5):
-                    logger.error(f"Essential cookies {essential_cookies} not found.")
-                    last_check_error = f"Essential cookies missing: {essential_cookies}"
+                # --- Check Essential Cookies ---
+                cookies_success, cookies_error = self._check_essential_cookies()
+                if not cookies_success:
+                    last_check_error = cookies_error
                     continue  # Try next readiness attempt
-                # End of if
-                logger.debug("Essential cookies OK.")
 
-                logger.debug("Syncing cookies to requests session...")
-                try:
-                    self._sync_cookies()
-                    logger.debug("Cookies synced.")
-                except Exception as sync_e:
-                    logger.error(f"Cookie sync failed: {sync_e}", exc_info=True)
-                    last_check_error = f"Cookie sync failed: {sync_e}"
+                # --- Sync Cookies to Requests Session ---
+                sync_success, sync_error = self._sync_cookies_to_requests()
+                if not sync_success:
+                    last_check_error = sync_error
                     continue  # Try next readiness attempt
-                # End of try/except
 
-                logger.debug("Ensuring CSRF token...")
-                # Fetch CSRF token if missing or seems invalid
-                if not self.csrf_token or len(self.csrf_token) < 20:
-                    self.csrf_token = self.get_csrf()
-                # End of if
-                if not self.csrf_token or len(self.csrf_token) < 20:
-                    logger.error("Failed to retrieve/verify valid CSRF token.")
-                    last_check_error = "CSRF token missing/invalid"
+                # --- Check CSRF Token ---
+                csrf_success, csrf_error = self._check_csrf_token()
+                if not csrf_success:
+                    last_check_error = csrf_error
                     continue  # Try next readiness attempt
-                # End of if
-                logger.debug("CSRF token OK.")
 
                 # --- Reached end of checks for this attempt ---
                 logger.info(f"Readiness checks PASSED on attempt {attempt}.")
@@ -2336,7 +2419,9 @@ class SessionManager:
     def verify_sess(self) -> bool:
         logger.debug("Verifying session status (using login_status)...")
         try:
-            login_ok = login_status(self)  # Assume login_status available
+            login_ok = login_status(
+                self, disable_ui_fallback=False
+            )  # Use UI fallback for reliability during verification
             if login_ok is True:
                 logger.debug("Session verification successful (logged in).")
                 return True
@@ -2359,25 +2444,37 @@ class SessionManager:
     # End of verify_sess
 
     def _verify_api_login_status(self) -> Optional[bool]:
+        """
+        Verifies login status using the API. This is the primary and most reliable method
+        to check if a user is logged in.
+
+        Returns:
+            True if definitely logged in, False if definitely not logged in,
+            None only if the check is truly ambiguous.
+        """
         api_url = urljoin(config_instance.BASE_URL, API_PATH_UUID)
         api_description = "API Login Verification (header/dna)"
         logger.debug(f"Verifying login status via API endpoint: {api_url}...")
 
+        # --- Check 1: Validate session and driver ---
         if not self.driver or not self.is_sess_valid():
             logger.warning(
                 f"{api_description}: Driver/session not valid for API check."
             )
-            # Return None as status is unknown, but don't treat as explicitly False
-            return None
+            # If session is invalid, we can definitively say user is not logged in
+            return False
         # End of if
 
+        # --- Check 2: Sync cookies to ensure requests session has latest cookies ---
         try:
             logger.debug("Syncing cookies before API login check...")
             self._sync_cookies()
         except Exception as sync_e:
             logger.warning(f"Error syncing cookies before API login check: {sync_e}")
+            # Continue despite sync error - we might still have valid cookies
         # End of try/except
 
+        # --- Check 3: Make API request and analyze response ---
         try:
             response_data: ApiResponseType = _api_req(
                 url=api_url,
@@ -2389,26 +2486,97 @@ class SessionManager:
                 timeout=15,  # Shorter timeout for quick check
             )
 
+            # --- Case 1: API request failed completely ---
             if response_data is None:
+                logger.warning(f"{api_description}: _api_req returned None.")
+                # Check if we have essential cookies as a secondary indicator
+                essential_cookies = ["ANCSESSIONID", "SecureATT"]
+                if not self.get_cookies(essential_cookies, timeout=3):
+                    logger.debug(
+                        f"Essential cookies {essential_cookies} not found. User is likely NOT logged in."
+                    )
+                    return False
+                # End of if
                 logger.warning(
-                    f"{api_description}: _api_req returned None. Login status unknown."
+                    f"{api_description}: API check failed but essential cookies present. Status ambiguous."
                 )
                 return None
+
+            # --- Case 2: API returned a Response object (usually an error) ---
             elif isinstance(response_data, requests.Response):  # type: ignore
                 status_code = response_data.status_code
-                # Explicitly check for unauthenticated/forbidden
+
+                # Authentication failures are definitive indicators of not being logged in
                 if status_code in [401, 403]:
                     logger.debug(
                         f"{api_description}: API check failed with status {status_code}. User NOT logged in."
                     )
                     return False
-                else:
-                    # Other errors are ambiguous regarding login status
+
+                # Redirect to login page is a clear indicator of not being logged in
+                elif status_code in [301, 302, 307, 308]:
+                    try:
+                        redirect_url = response_data.headers.get("Location", "")
+                        if (
+                            "signin" in redirect_url.lower()
+                            or "login" in redirect_url.lower()
+                        ):
+                            logger.debug(
+                                f"{api_description}: API redirected to login page. User NOT logged in."
+                            )
+                            return False
+                        # End of if
+                    except Exception:
+                        pass
+                    # End of try/except
+
+                # Server errors are ambiguous - could be temporary issues
+                elif 500 <= status_code < 600:
                     logger.warning(
-                        f"{api_description}: API check failed with unexpected status {status_code}. Login status unknown."
+                        f"{api_description}: Server error {status_code}. Status ambiguous."
                     )
                     return None
-                # End of if/else
+
+                # For other status codes, check response content for clues
+                try:
+                    content_type = response_data.headers.get("Content-Type", "")
+                    if "json" in content_type.lower():
+                        try:
+                            json_data = response_data.json()
+                            # Check for error messages that indicate auth issues
+                            error_msg = (
+                                json_data.get("error", {}).get("message", "").lower()
+                            )
+                            if any(
+                                term in error_msg
+                                for term in [
+                                    "auth",
+                                    "login",
+                                    "signin",
+                                    "session",
+                                    "token",
+                                ]
+                            ):
+                                logger.debug(
+                                    f"{api_description}: Auth-related error message found. User NOT logged in."
+                                )
+                                return False
+                            # End of if
+                        except Exception:
+                            pass
+                        # End of try/except
+                    # End of if
+                except Exception:
+                    pass
+                # End of try/except
+
+                # If we couldn't determine status from the error response
+                logger.warning(
+                    f"{api_description}: API check failed with status {status_code}. Status ambiguous."
+                )
+                return None
+
+            # --- Case 3: API returned a dictionary (successful JSON response) ---
             elif isinstance(response_data, dict):
                 # Check for expected key as sign of successful (authenticated) response
                 if KEY_TEST_ID in response_data:
@@ -2416,31 +2584,121 @@ class SessionManager:
                         f"{api_description}: API login check successful ('{KEY_TEST_ID}' found)."
                     )
                     return True
-                else:
-                    logger.warning(
-                        f"{api_description}: API check succeeded (2xx), but response format unexpected (missing '{KEY_TEST_ID}'). Status unknown."
+
+                # Check for other keys that might indicate a successful response
+                elif (
+                    "data" in response_data
+                    or "user" in response_data
+                    or "profile" in response_data
+                ):
+                    logger.debug(
+                        f"{api_description}: API login check successful (alternative keys found)."
                     )
-                    logger.debug(f"API Response Content: {response_data}")
-                    return None  # Ambiguous
-                # End of if/else
-            else:
-                # Unexpected successful response type
-                logger.error(
-                    f"{api_description}: _api_req returned unexpected type {type(response_data)}. Status unknown."
+                    return True
+
+                # Check for error messages that indicate auth issues
+                elif "error" in response_data:
+                    error_msg = str(response_data.get("error", {})).lower()
+                    if any(
+                        term in error_msg
+                        for term in ["auth", "login", "signin", "session", "token"]
+                    ):
+                        logger.debug(
+                            f"{api_description}: Auth-related error message found. User NOT logged in."
+                        )
+                        return False
+                    # End of if
+
+                # If we couldn't determine status from the JSON response
+                logger.warning(
+                    f"{api_description}: API check succeeded, but response format unexpected. Status ambiguous."
                 )
-                logger.debug(f"API Response Data: {response_data}")
+                logger.debug(f"API Response Content: {response_data}")
+                return None
+
+            # --- Case 4: API returned a string ---
+            elif isinstance(response_data, str):
+                # Some APIs return plain text responses
+                if len(response_data.strip()) > 0:
+                    # If it looks like JSON, try to parse it
+                    if response_data.strip().startswith(
+                        "{"
+                    ) or response_data.strip().startswith("["):
+                        try:
+                            json_data = json.loads(response_data)
+                            # Recursively call with the parsed JSON
+                            if isinstance(json_data, dict) and KEY_TEST_ID in json_data:
+                                logger.debug(
+                                    f"{api_description}: API login check successful ('{KEY_TEST_ID}' found in parsed JSON string)."
+                                )
+                                return True
+                            # End of if
+                        except json.JSONDecodeError:
+                            pass
+                        # End of try/except
+                    # End of if
+
+                    # Check for error messages in the string
+                    if any(
+                        term in response_data.lower()
+                        for term in [
+                            "not logged in",
+                            "login required",
+                            "authentication required",
+                        ]
+                    ):
+                        logger.debug(
+                            f"{api_description}: Auth-related error message found in string response. User NOT logged in."
+                        )
+                        return False
+                    # End of if
+                # End of if
+
+                logger.warning(
+                    f"{api_description}: API returned string response. Status ambiguous."
+                )
+                return None
+
+            # --- Case 5: Other response types ---
+            else:
+                logger.error(
+                    f"{api_description}: _api_req returned unexpected type {type(response_data)}. Status ambiguous."
+                )
+                logger.debug(f"API Response Data: {str(response_data)[:500]}")
                 return None
             # End of if/elif/else
+
+        # --- Handle exceptions during API check ---
         except RequestException as req_e:  # type: ignore
             logger.error(
                 f"RequestException during {api_description}: {req_e}", exc_info=False
             )
-            return None  # Network/request error means status unknown
+
+            # Check if the error message indicates auth issues
+            error_msg = str(req_e).lower()
+            if any(
+                term in error_msg
+                for term in [
+                    "auth",
+                    "login",
+                    "signin",
+                    "session",
+                    "token",
+                    "unauthorized",
+                ]
+            ):
+                logger.debug(
+                    f"{api_description}: Auth-related RequestException. User NOT logged in."
+                )
+                return False
+            # End of if
+
+            return None  # Other network/request errors are ambiguous
         except Exception as e:
             logger.error(
                 f"Unexpected error during {api_description}: {e}", exc_info=True
             )
-            return None  # Other errors mean status unknown
+            return None  # Other errors are ambiguous
         # End of try/except
 
     # End of _verify_api_login_status
@@ -2832,6 +3090,56 @@ class SessionManager:
 # ----------------------------------------------------------------------------
 
 
+def _prepare_base_headers(
+    method: str,
+    api_description: str,
+    referer_url: Optional[str] = None,
+    headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """
+    Prepares the base headers for an API request.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        api_description: Description of the API being called
+        referer_url: Optional referer URL
+        headers: Optional additional headers
+
+    Returns:
+        Dictionary of base headers
+    """
+    cfg = config_instance  # Assume available
+
+    # Create base headers
+    base_headers: Dict[str, str] = {
+        "Accept": "application/json, text/plain, */*",
+        "Referer": referer_url or cfg.BASE_URL,
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "_method": method.upper(),  # Internal key for _prepare_api_headers
+    }
+
+    # Apply contextual headers from config
+    contextual_headers = cfg.API_CONTEXTUAL_HEADERS.get(api_description, {})
+    base_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
+
+    # Apply explicit overrides
+    if headers:
+        filtered_overrides = {k: v for k, v in headers.items() if v is not None}
+        base_headers.update(filtered_overrides)
+        if filtered_overrides:
+            logger.debug(
+                f"[{api_description}] Applied {len(filtered_overrides)} explicit header overrides."
+            )
+        # End of if
+    # End of if
+
+    return base_headers
+
+
+# End of _prepare_base_headers
+
+
 def _prepare_api_headers(
     session_manager: SessionManager,  # Assume available
     driver: DriverType,
@@ -2960,6 +3268,410 @@ def _prepare_api_headers(
 # End of _prepare_api_headers
 
 
+def _sync_cookies_for_request(
+    session_manager: SessionManager,
+    driver: DriverType,
+    api_description: str,
+    attempt: int = 1,
+) -> bool:
+    """
+    Synchronizes cookies from the WebDriver to the requests session.
+
+    Args:
+        session_manager: The session manager instance
+        driver: The WebDriver instance
+        api_description: Description of the API being called
+        attempt: The current attempt number
+
+    Returns:
+        True if cookies were synced successfully, False otherwise
+    """
+    # Check driver validity for dynamic headers/cookies
+    driver_is_valid = driver and session_manager.is_sess_valid()
+    if not driver_is_valid:
+        if attempt == 1:  # Only log on first attempt
+            logger.warning(
+                f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). Dynamic headers might be incomplete/stale."
+            )
+        # End of if
+        return False
+    # End of if
+
+    # Sync cookies if driver is valid
+    try:
+        session_manager._sync_cookies()
+        logger.debug(f"[{api_description}] Cookies synced (Attempt {attempt}).")
+        return True
+    except Exception as sync_err:
+        logger.warning(
+            f"[{api_description}] Error syncing cookies (Attempt {attempt}): {sync_err}"
+        )
+        return False
+    # End of try/except
+
+
+# End of _sync_cookies_for_request
+
+
+def _apply_rate_limiting(
+    session_manager: SessionManager,
+    api_description: str,
+    attempt: int = 1,
+) -> float:
+    """
+    Applies rate limiting wait time.
+
+    Args:
+        session_manager: The session manager instance
+        api_description: Description of the API being called
+        attempt: The current attempt number
+
+    Returns:
+        The wait time applied
+    """
+    wait_time = session_manager.dynamic_rate_limiter.wait()
+    if wait_time > 0.1:  # Log only significant waits
+        logger.debug(
+            f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
+        )
+    # End of if
+    return wait_time
+
+
+# End of _apply_rate_limiting
+
+
+def _log_request_details(
+    api_description: str,
+    attempt: int,
+    http_method: str,
+    url: str,
+    headers: Dict[str, str],
+    data: Optional[Dict] = None,
+    json_data: Optional[Dict] = None,
+) -> None:
+    """
+    Logs the details of the API request.
+
+    Args:
+        api_description: Description of the API being called
+        attempt: The current attempt number
+        http_method: The HTTP method being used
+        url: The URL being requested
+        headers: The headers being sent
+        data: Optional form data
+        json_data: Optional JSON data
+    """
+    # Mask sensitive headers for logging
+    log_hdrs_debug = {}
+    sensitive_keys_debug = {
+        "authorization",
+        "cookie",
+        "x-csrf-token",
+        "ancestry-context-ube",
+        "newrelic",
+        "traceparent",
+        "tracestate",
+    }
+    for k, v_val in headers.items():
+        # Ensure value is string for processing
+        str_v = str(v_val)
+        if k.lower() in sensitive_keys_debug and str_v and len(str_v) > 20:
+            log_hdrs_debug[k] = str_v[:10] + "..." + str_v[-5:]
+        else:
+            log_hdrs_debug[k] = str_v
+        # End of if/else
+    # End of for
+
+    logger.debug(
+        f"[_api_req Attempt {attempt} '{api_description}'] >> Sending Request:"
+    )
+    logger.debug(f"   >> Method: {http_method}")
+    logger.debug(f"   >> URL: {url}")
+    logger.debug(f"   >> Headers: {log_hdrs_debug}")
+
+    # Log body carefully (limit size, mask sensitive data if needed)
+    log_body = ""
+    if json_data:
+        try:
+            log_body = json.dumps(json_data)
+            if len(log_body) > 500:
+                log_body = log_body[:500] + "..."
+            # Add masking here if json_data contains sensitive fields
+        except TypeError:
+            log_body = "[Unloggable JSON Data]"
+        # End of try/except
+        logger.debug(f"   >> JSON Body: {log_body}")
+    elif data:
+        log_body = str(data)
+        if len(log_body) > 500:
+            log_body = log_body[:500] + "..."
+        # Add masking here if data contains sensitive fields
+        logger.debug(f"   >> Form Data: {log_body}")
+    # End of if/elif
+
+
+# End of _log_request_details
+
+
+def _prepare_api_request(
+    session_manager: SessionManager,
+    driver: DriverType,
+    url: str,
+    method: str,
+    api_description: str,
+    attempt: int,
+    headers: Optional[Dict[str, str]] = None,
+    referer_url: Optional[str] = None,
+    use_csrf_token: bool = True,
+    add_default_origin: bool = True,
+    timeout: Optional[int] = None,
+    cookie_jar: Optional[RequestsCookieJar] = None,  # type: ignore
+    allow_redirects: bool = True,
+    data: Optional[Dict] = None,
+    json_data: Optional[Dict] = None,
+) -> Dict[str, Any]:
+    """
+    Prepares all aspects of an API request including headers, cookies, and rate limiting.
+
+    Args:
+        session_manager: The session manager instance
+        driver: The WebDriver instance
+        url: The URL to request
+        method: The HTTP method to use
+        api_description: Description of the API being called
+        attempt: The current attempt number
+        headers: Optional additional headers
+        referer_url: Optional referer URL
+        use_csrf_token: Whether to include the CSRF token
+        add_default_origin: Whether to add the default origin header
+        timeout: Optional request timeout
+        cookie_jar: Optional cookie jar to use
+        allow_redirects: Whether to follow redirects
+        data: Optional form data
+        json_data: Optional JSON data
+
+    Returns:
+        Dictionary containing all prepared request parameters
+    """
+    sel_cfg = selenium_config  # Assume available
+
+    # Prepare base headers
+    base_headers = _prepare_base_headers(
+        method=method,
+        api_description=api_description,
+        referer_url=referer_url,
+        headers=headers,
+    )
+
+    # Prepare request details
+    request_timeout = timeout if timeout is not None else sel_cfg.API_TIMEOUT
+    req_session = session_manager._requests_session
+    effective_cookie_jar = cookie_jar if cookie_jar is not None else req_session.cookies
+    http_method = method.upper()
+
+    # Handle specific API quirks (e.g., allow_redirects)
+    effective_allow_redirects = allow_redirects
+    if api_description == "Match List API" and effective_allow_redirects:
+        logger.debug(f"Forcing allow_redirects=False for '{api_description}'.")
+        effective_allow_redirects = False
+    # End of if
+
+    logger.debug(
+        f"[{api_description}] Preparing Request: Method={http_method}, URL={url}, Timeout={request_timeout}s, AllowRedirects={effective_allow_redirects}"
+    )
+
+    # Sync cookies
+    _sync_cookies_for_request(
+        session_manager=session_manager,
+        driver=driver,
+        api_description=api_description,
+        attempt=attempt,
+    )
+
+    # Generate final headers
+    final_headers = _prepare_api_headers(
+        session_manager=session_manager,
+        driver=driver,
+        api_description=api_description,
+        base_headers=base_headers,
+        use_csrf_token=use_csrf_token,
+        add_default_origin=add_default_origin,
+    )
+
+    # Apply rate limiting
+    _apply_rate_limiting(
+        session_manager=session_manager,
+        api_description=api_description,
+        attempt=attempt,
+    )
+
+    # Log request details
+    _log_request_details(
+        api_description=api_description,
+        attempt=attempt,
+        http_method=http_method,
+        url=url,
+        headers=final_headers,
+        data=data,
+        json_data=json_data,
+    )
+
+    # Return all prepared request parameters
+    return {
+        "method": http_method,
+        "url": url,
+        "headers": final_headers,
+        "data": data,
+        "json": json_data,
+        "timeout": request_timeout,
+        "verify": True,  # Standard verification
+        "allow_redirects": effective_allow_redirects,
+        "cookies": effective_cookie_jar,
+    }
+
+
+# End of _prepare_api_request
+
+
+def _execute_api_request(
+    session_manager: SessionManager,
+    api_description: str,
+    request_params: Dict[str, Any],
+    attempt: int = 1,
+) -> RequestsResponseTypeOptional:
+    """
+    Executes an API request using the prepared request parameters.
+
+    Args:
+        session_manager: The session manager instance
+        api_description: Description of the API being called
+        request_params: Dictionary containing all request parameters
+        attempt: The current attempt number
+
+    Returns:
+        The response object from the request, or None if an error occurred
+    """
+    req_session = session_manager._requests_session
+
+    try:
+        # Log that we're making the request
+        logger.debug(
+            f"[_api_req Attempt {attempt} '{api_description}'] >>> Calling requests.request..."
+        )
+
+        # Execute the request
+        response = req_session.request(**request_params)
+
+        # Log that the request returned
+        logger.debug(
+            f"[_api_req Attempt {attempt} '{api_description}'] <<< requests.request returned."
+        )
+
+        # Log response details
+        status = response.status_code
+        reason = response.reason
+        logger.debug(
+            f"[_api_req Attempt {attempt} '{api_description}'] << Response Status: {status} {reason}"
+        )
+        logger.debug(f"   << Response Headers: {response.headers}")
+
+        return response
+
+    except RequestException as e:  # type: ignore
+        logger.warning(
+            f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}"
+        )
+        return None
+    except Exception as e:
+        logger.critical(
+            f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
+            exc_info=True,
+        )
+        return None
+
+
+# End of _execute_api_request
+
+
+def _process_api_response(
+    response: RequestsResponseTypeOptional,
+    api_description: str,
+    force_text_response: bool = False,
+) -> ApiResponseType:
+    """
+    Processes the response from an API request.
+
+    Args:
+        response: The response object from the request
+        api_description: Description of the API being called
+        force_text_response: Whether to force the response to be returned as text
+
+    Returns:
+        The processed response data (JSON, text, or None)
+    """
+    if response is None:
+        return None
+
+    # Get status code and reason
+    status = response.status_code
+    reason = response.reason
+
+    # Handle successful responses (2xx)
+    if response.ok:
+        logger.debug(f"{api_description}: Successful response ({status} {reason}).")
+
+        # Force text response if requested
+        if force_text_response:
+            logger.debug(f"{api_description}: Force text response requested.")
+            return response.text
+
+        # Process based on content type
+        content_type = response.headers.get("content-type", "").lower()
+        logger.debug(f"{api_description}: Content-Type: '{content_type}'")
+
+        if "application/json" in content_type:
+            try:
+                # Handle empty response body for JSON
+                json_result = response.json() if response.content else None
+                logger.debug(f"{api_description}: Successfully parsed JSON response.")
+                return json_result
+            except JSONDecodeError as json_err:  # type: ignore
+                logger.error(
+                    f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
+                )
+                try:
+                    logger.debug(
+                        f"   << Response Text (JSON Error): {response.text[:500]}..."
+                    )
+                except Exception:
+                    pass
+                # End of try/except
+                # Return None because caller expected JSON but didn't get it
+                return None
+            # End of try/except
+        elif api_description == "CSRF Token API" and "text/plain" in content_type:
+            csrf_text = response.text.strip()
+            logger.debug(
+                f"{api_description}: Received text/plain as expected for CSRF."
+            )
+            return csrf_text if csrf_text else None
+        else:
+            logger.debug(
+                f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning raw TEXT."
+            )
+            return response.text
+        # End of if/elif/else content_type
+    # End of if response.ok
+
+    # For non-successful responses, return the response object itself
+    # This allows the caller to handle specific error cases
+    return response
+
+
+# End of _process_api_response
+
+
 def _api_req(
     url: str,
     driver: DriverType,
@@ -3016,46 +3728,7 @@ def _api_req(
         f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
     )
 
-    # --- Step 3: Prepare Base Headers ---
-    base_headers: Dict[str, str] = {
-        "Accept": "application/json, text/plain, */*",
-        "Referer": referer_url or cfg.BASE_URL,
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "_method": method.upper(),  # Internal key for _prepare_api_headers
-    }
-    # Apply contextual headers from config
-    contextual_headers = cfg.API_CONTEXTUAL_HEADERS.get(api_description, {})
-    base_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
-    # Apply explicit overrides
-    if headers:
-        filtered_overrides = {k: v for k, v in headers.items() if v is not None}
-        base_headers.update(filtered_overrides)
-        if filtered_overrides:
-            logger.debug(
-                f"[{api_description}] Applied {len(filtered_overrides)} explicit header overrides."
-            )
-        # End of if
-    # End of if
-
-    # --- Step 4: Prepare Request Details ---
-    request_timeout = timeout if timeout is not None else sel_cfg.API_TIMEOUT
-    req_session = session_manager._requests_session
-    effective_cookie_jar = cookie_jar if cookie_jar is not None else req_session.cookies
-    http_method = method.upper()
-
-    # Handle specific API quirks (e.g., allow_redirects)
-    effective_allow_redirects = allow_redirects
-    if api_description == "Match List API" and effective_allow_redirects:
-        logger.debug(f"Forcing allow_redirects=False for '{api_description}'.")
-        effective_allow_redirects = False
-    # End of if
-
-    logger.debug(
-        f"[{api_description}] Preparing Request: Method={http_method}, URL={url}, Timeout={request_timeout}s, AllowRedirects={effective_allow_redirects}, ForceText={force_text_response}"
-    )
-
-    # --- Step 5: Execute Request with Retry Loop ---
+    # --- Step 3: Execute Request with Retry Loop ---
     retries_left = max_retries
     last_exception: Optional[Exception] = None
     response: RequestsResponseTypeOptional = None
@@ -3068,126 +3741,60 @@ def _api_req(
             f"[_api_req LOOP ENTRY] api_description: '{api_description}', attempt: {attempt}/{max_retries}, retries_left: {retries_left}"
         )
 
-        # Check driver validity for dynamic headers/cookies
-        driver_is_valid = driver and session_manager.is_sess_valid()
-        if not driver_is_valid and attempt == 1:
-            logger.warning(
-                f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). Dynamic headers might be incomplete/stale."
-            )
-        # End of if
-
         try:
-            # --- Sync Cookies (if driver is valid) ---
-            if driver_is_valid:
-                try:
-                    session_manager._sync_cookies()
-                    logger.debug(
-                        f"[{api_description}] Cookies synced (Attempt {attempt})."
-                    )
-                except Exception as sync_err:
-                    logger.warning(
-                        f"[{api_description}] Error syncing cookies (Attempt {attempt}): {sync_err}"
-                    )
-                # End of try/except
-            else:
-                logger.debug(
-                    f"[{api_description}] Skipping cookie sync - driver invalid (Attempt {attempt})"
-                )
-            # End of if/else
-
-            # --- Generate Headers ---
-            final_headers = _prepare_api_headers(
-                session_manager,
-                driver,
-                api_description,
-                base_headers,
-                use_csrf_token,
-                add_default_origin,
-            )
-
-            # --- Apply Rate Limit Wait ---
-            wait_time = session_manager.dynamic_rate_limiter.wait()
-            if wait_time > 0.1:  # Log only significant waits
-                logger.debug(
-                    f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
-                )
-            # End of if
-
-            # --- Log Request Details (More Verbose) ---
-            # Mask sensitive headers for logging
-            log_hdrs_debug = {}
-            sensitive_keys_debug = {
-                "authorization",
-                "cookie",
-                "x-csrf-token",
-                "ancestry-context-ube",
-                "newrelic",
-                "traceparent",
-                "tracestate",
-            }
-            for k, v_val in final_headers.items():
-                # Ensure value is string for processing
-                str_v = str(v_val)
-                if k.lower() in sensitive_keys_debug and str_v and len(str_v) > 20:
-                    log_hdrs_debug[k] = str_v[:10] + "..." + str_v[-5:]
-                else:
-                    log_hdrs_debug[k] = str_v
-                # End of if/else
-            # End of for
-            logger.debug(
-                f"[_api_req Attempt {attempt} '{api_description}'] >> Sending Request:"
-            )
-            logger.debug(f"   >> Method: {http_method}")
-            logger.debug(f"   >> URL: {url}")
-            logger.debug(f"   >> Headers: {log_hdrs_debug}")
-            # Log body carefully (limit size, mask sensitive data if needed)
-            log_body = ""
-            if json_data:
-                try:
-                    log_body = json.dumps(json_data)
-                    if len(log_body) > 500:
-                        log_body = log_body[:500] + "..."
-                    # Add masking here if json_data contains sensitive fields
-                except TypeError:
-                    log_body = "[Unloggable JSON Data]"
-                # End of try/except
-                logger.debug(f"   >> JSON Body: {log_body}")
-            elif data:
-                log_body = str(data)
-                if len(log_body) > 500:
-                    log_body = log_body[:500] + "..."
-                # Add masking here if data contains sensitive fields
-                logger.debug(f"   >> Form Data: {log_body}")
-            # End of if/elif
-
-            # --- Make the request ---
-            logger.debug(
-                f"[_api_req Attempt {attempt} '{api_description}'] >>> Calling requests.request..."
-            )
-            response = req_session.request(
-                method=http_method,
+            # --- Step 3.1: Prepare the request ---
+            request_params = _prepare_api_request(
+                session_manager=session_manager,
+                driver=driver,
                 url=url,
-                headers=final_headers,
+                method=method,
+                api_description=api_description,
+                attempt=attempt,
+                headers=headers,
+                referer_url=referer_url,
+                use_csrf_token=use_csrf_token,
+                add_default_origin=add_default_origin,
+                timeout=timeout,
+                cookie_jar=cookie_jar,
+                allow_redirects=allow_redirects,
                 data=data,
-                json=json_data,
-                timeout=request_timeout,
-                verify=True,  # Standard verification
-                allow_redirects=effective_allow_redirects,
-                cookies=effective_cookie_jar,
-            )
-            logger.debug(
-                f"[_api_req Attempt {attempt} '{api_description}'] <<< requests.request returned."
+                json_data=json_data,
             )
 
-            # --- Process Response ---
+            # --- Step 3.2: Execute the request ---
+            response = _execute_api_request(
+                session_manager=session_manager,
+                api_description=api_description,
+                request_params=request_params,
+                attempt=attempt,
+            )
+
+            # If request failed with an exception, response will be None
+            if response is None:
+                retries_left -= 1
+                if retries_left <= 0:
+                    logger.error(
+                        f"{api_description}: Request failed after {max_retries} attempts."
+                    )
+                    return None
+                else:
+                    sleep_time = min(
+                        current_delay * (backoff_factor ** (attempt - 1)), max_delay
+                    ) + random.uniform(0, 0.2)
+                    sleep_time = max(0.1, sleep_time)
+                    logger.warning(
+                        f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                    )
+                    time.sleep(sleep_time)
+                    current_delay *= backoff_factor
+                    continue  # Go to next iteration of the while loop
+                # End of if/else retries_left
+            # End of if response is None
+
+            # --- Step 3.3: Check for retryable status codes ---
             status = response.status_code
             reason = response.reason
-            logger.debug(
-                f"[_api_req Attempt {attempt} '{api_description}'] << Response Status: {status} {reason}"
-            )
-            logger.debug(f"   << Response Headers: {response.headers}")
 
-            # Check for retryable status codes
             if status in retry_status_codes:
                 retries_left -= 1
                 logger.warning(
@@ -3230,8 +3837,9 @@ def _api_req(
                 # End of if/else retries_left
             # End of if status in retry_status_codes
 
+            # --- Step 3.4: Handle redirects ---
             # Handle redirects if allow_redirects is False
-            elif 300 <= status < 400 and not effective_allow_redirects:
+            if 300 <= status < 400 and not request_params["allow_redirects"]:
                 logger.warning(
                     f"{api_description}: Status {status} {reason} (Redirects Disabled). Returning Response object."
                 )
@@ -3239,10 +3847,10 @@ def _api_req(
                     f"   << Redirect Location: {response.headers.get('Location')}"
                 )
                 return response
-            # End of elif
+            # End of if
 
             # Handle unexpected redirects if allow_redirects is True (should have been followed)
-            elif 300 <= status < 400 and effective_allow_redirects:
+            if 300 <= status < 400 and request_params["allow_redirects"]:
                 logger.warning(
                     f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
                 )
@@ -3250,63 +3858,10 @@ def _api_req(
                     f"   << Redirect Location: {response.headers.get('Location')}"
                 )
                 return response
-            # End of elif
+            # End of if
 
-            # Handle successful responses (2xx)
-            elif response.ok:
-                logger.debug(
-                    f"{api_description}: Successful response ({status} {reason})."
-                )
-                session_manager.dynamic_rate_limiter.decrease_delay()  # Success, decrease future delay
-
-                if force_text_response:
-                    logger.debug(f"{api_description}: Force text response requested.")
-                    return response.text
-                # End of if
-
-                content_type = response.headers.get("content-type", "").lower()
-                logger.debug(f"{api_description}: Content-Type: '{content_type}'")
-
-                if "application/json" in content_type:
-                    try:
-                        # Handle empty response body for JSON
-                        json_result = response.json() if response.content else None
-                        logger.debug(
-                            f"{api_description}: Successfully parsed JSON response."
-                        )
-                        return json_result
-                    except JSONDecodeError as json_err:  # type: ignore
-                        logger.error(
-                            f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
-                        )
-                        try:
-                            logger.debug(
-                                f"   << Response Text (JSON Error): {response.text[:500]}..."
-                            )
-                        except Exception:
-                            pass
-                        # End of try/except
-                        # Return None because caller expected JSON but didn't get it
-                        return None
-                    # End of try/except
-                elif (
-                    api_description == "CSRF Token API" and "text/plain" in content_type
-                ):
-                    csrf_text = response.text.strip()
-                    logger.debug(
-                        f"{api_description}: Received text/plain as expected for CSRF."
-                    )
-                    return csrf_text if csrf_text else None
-                else:
-                    logger.debug(
-                        f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning raw TEXT."
-                    )
-                    return response.text
-                # End of if/elif/else content_type
-            # End of elif response.ok
-
-            # Handle non-retryable error status codes (4xx, 5xx not in retry list)
-            else:
+            # --- Step 3.5: Handle non-retryable error status codes ---
+            if not response.ok:
                 logger.warning(
                     f"[_api_req Attempt {attempt} '{api_description}'] Received NON-retryable error status: {status} {reason}"
                 )
@@ -3326,7 +3881,22 @@ def _api_req(
                     pass
                 # End of try/except
                 return response  # Return the Response object for the caller to handle
-            # End of status code processing
+            # End of if not response.ok
+
+            # --- Step 3.6: Process successful response ---
+            if response.ok:
+                logger.debug(
+                    f"{api_description}: Successful response ({status} {reason})."
+                )
+                session_manager.dynamic_rate_limiter.decrease_delay()  # Success, decrease future delay
+
+                # Process the response
+                return _process_api_response(
+                    response=response,
+                    api_description=api_description,
+                    force_text_response=force_text_response,
+                )
+            # End of if response.ok
 
         # --- Handle exceptions during the request attempt ---
         except RequestException as e:  # type: ignore
@@ -3360,29 +3930,29 @@ def _api_req(
             )
             return None  # Return None on unexpected errors within the loop
         # End of try/except block for request attempt
+
+        # If we get here, the request was successful and processed
+        break  # Exit the retry loop
     # End of while retries_left > 0
 
-    # --- Should only be reached if loop completes without success (e.g., retries exhausted) ---
-    logger.error(
-        f"{api_description}: Exited retry loop. Last Status: {getattr(response, 'status_code', 'N/A')}, Last Exception: {last_exception}."
+    # --- Diagnostic Log: Function Exit ---
+    logger.debug(
+        f"[_api_req EXIT] api_description: '{api_description}', attempts: {max_retries - retries_left + 1}/{max_retries}"
     )
-    # Return the last response OR None if last_exception is set (indicating network/retry failure)
-    if last_exception and not response:
-        logger.debug(
-            f"[_api_req '{api_description}'] Returning None due to exhausted retries on RequestException."
-        )
-        return None
-    elif response:  # This implies the last attempt resulted in a non-retryable error
-        logger.debug(
-            f"[_api_req '{api_description}'] Returning last Response object (Status: {response.status_code})."
-        )
-        return response
-    else:  # Should be rare - loop finished without response or exception?
+
+    # --- Should only be reached if loop completes without success (e.g., retries exhausted) ---
+    if response is None:
         logger.error(
-            f"[_api_req '{api_description}'] Reached end of function unexpectedly, returning None."
+            f"{api_description}: Exited retry loop. Last Exception: {last_exception}."
         )
         return None
-    # End of if/elif/else final return
+    # End of if
+
+    # Return the last response (this should be a non-retryable error response)
+    logger.debug(
+        f"[_api_req '{api_description}'] Returning last Response object (Status: {response.status_code})."
+    )
+    return response
 
 
 # End of _api_req
@@ -3455,7 +4025,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
         return encoded_payload
-    except (json.JSONDecodeError, TypeError, base64.binascii.Error) as encode_e:
+    except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
         logger.error(f"Error encoding UBE header data: {encode_e}", exc_info=True)
         return None
     except Exception as e:
@@ -3494,7 +4064,7 @@ def make_newrelic(driver: DriverType) -> Optional[str]:
         json_payload = json.dumps(newrelic_data, separators=(",", ":")).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
         return encoded_payload
-    except (json.JSONDecodeError, TypeError, base64.binascii.Error) as encode_e:
+    except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
         logger.error(f"Error generating NewRelic header: {encode_e}", exc_info=True)
         return None
     except Exception as e:
@@ -3580,7 +4150,9 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
             logger.debug("2FA page header detected.")
         except TimeoutException:  # type: ignore
             logger.debug("Did not detect 2FA page header within timeout.")
-            if login_status(session_manager) is True:
+            if (
+                login_status(session_manager, disable_ui_fallback=True) is True
+            ):  # API check only for speed
                 logger.info(
                     "User appears logged in after checking for 2FA page. Assuming 2FA handled/skipped."
                 )
@@ -3707,7 +4279,9 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
         if user_action_detected:
             logger.info("Re-checking login status after potential 2FA submission...")
             time.sleep(1)  # Allow page to settle
-            final_status = login_status(session_manager)
+            final_status = login_status(
+                session_manager, disable_ui_fallback=False
+            )  # Use UI fallback for reliability
             if final_status is True:
                 logger.info(
                     "User completed 2FA successfully (login confirmed after page change)."
@@ -4106,7 +4680,9 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
             logger.debug(
                 "Navigation to sign-in page failed/redirected. Checking login status..."
             )
-            current_status = login_status(session_manager)
+            current_status = login_status(
+                session_manager, disable_ui_fallback=True
+            )  # API check only for speed
             if current_status is True:
                 logger.info(
                     "Detected as already logged in during navigation attempt. Login considered successful."
@@ -4199,7 +4775,9 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
         except WebDriverException as e:  # type: ignore
             logger.error(f"WebDriver error checking for 2FA page: {e}")
             # If error checking, verify login status as fallback
-            status = login_status(session_manager)
+            status = login_status(
+                session_manager, disable_ui_fallback=True
+            )  # API check only for speed
             if status is True:
                 return "LOGIN_SUCCEEDED"
             elif status is False:
@@ -4229,7 +4807,9 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
         else:
             # No 2FA detected, check login status directly
             logger.debug("Checking login status directly (no 2FA detected)...")
-            login_check_result = login_status(session_manager)
+            login_check_result = login_status(
+                session_manager, disable_ui_fallback=False
+            )  # Use UI fallback for reliability
             if login_check_result is True:
                 logger.info("Direct login check successful.")
                 return "LOGIN_SUCCEEDED"
@@ -4329,58 +4909,69 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
 
 
 # Login Status Check Function
-@retry(MAX_RETRIES=2)  # Add retry in case of transient UI issues during check
-def login_status(session_manager: SessionManager) -> Optional[bool]:  # type: ignore
+@retry(MAX_RETRIES=2)  # Add retry in case of transient API issues during check
+def login_status(session_manager: SessionManager, disable_ui_fallback: bool = False) -> Optional[bool]:  # type: ignore
     """
-    Checks if the user is currently logged in. Prioritizes API check, falls back to UI check.
+    Checks if the user is currently logged in. Prioritizes API check, with optional UI fallback.
+
+    Args:
+        session_manager: The session manager instance
+        disable_ui_fallback: If True, only use API check and never fall back to UI check
 
     Returns:
         True if logged in, False if not logged in, None if the check fails critically.
     """
     logger.debug("Checking login status (API prioritized)...")
+
+    # --- Validate arguments and session state ---
     if not isinstance(session_manager, SessionManager):  # type: ignore
         logger.error(
             f"Invalid argument: Expected SessionManager, got {type(session_manager)}."
         )
         return None  # Critical argument error
     # End of if
+
     if not session_manager.is_sess_valid():
         logger.debug("Login status check: Session invalid or browser closed.")
         return False  # Cannot be logged in if session is invalid
     # End of if
+
     driver = session_manager.driver
     if driver is None:
         logger.error("Login status check: Driver is None within SessionManager.")
         return None  # Critical state error
     # End of if
 
-    # --- Attempt 1: API Check ---
+    # --- Primary Check: API Verification ---
     logger.debug("Attempting API login verification (_verify_api_login_status)...")
     api_check_result = session_manager._verify_api_login_status()
 
+    # If API check is definitive, return its result
     if api_check_result is True:
         logger.debug("Login status confirmed TRUE via API check.")
         return True
     elif api_check_result is False:
-        logger.debug(
-            "API check indicates user NOT logged in. Proceeding to UI check as confirmation."
-        )
-        # Fall through to UI check
-    else:  # api_check_result is None
-        logger.warning(
-            "API login check returned None (error during check). Falling back to UI check."
-        )
-        # Fall through to UI check
-    # End of if/elif/else API check
+        logger.debug("Login status confirmed FALSE via API check.")
+        return False
+    # End of if/elif
 
-    # --- Attempt 2: UI Check (Fallback) ---
-    logger.debug("Performing fallback UI login check...")
+    # If API check is ambiguous (None) and UI fallback is disabled, return None
+    if disable_ui_fallback:
+        logger.warning(
+            "API login check was ambiguous and UI fallback is disabled. Status unknown."
+        )
+        return None
+    # End of if
+
+    # --- Secondary Check: UI Verification (Fallback) ---
+    logger.debug("API check was ambiguous. Performing fallback UI login check...")
     try:
         # Check 1: Absence of login button (a strong indicator when logged in)
         login_button_selector = LOG_IN_BUTTON_SELECTOR  # type: ignore # Assumes defined in my_selectors
         logger.debug(
             f"UI Check Step 1: Checking ABSENCE of login button: '{login_button_selector}'"
         )
+
         login_button_present = False
         try:
             # Use a short wait to check for visibility
@@ -4412,8 +5003,8 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:  # type: ig
         logger.debug(
             f"UI Check Step 2: Checking PRESENCE of logged-in element: '{logged_in_selector}'"
         )
+
         # Use helper function is_elem_there for robust check
-        # Assume is_elem_there is imported
         ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)  # type: ignore
 
         if ui_element_present:
@@ -4421,20 +5012,25 @@ def login_status(session_manager: SessionManager) -> Optional[bool]:  # type: ig
                 "Login status confirmed TRUE via UI check (login button absent AND logged-in element found)."
             )
             return True
-        else:
-            # Login button absent, logged-in element also absent. Ambiguous state.
-            current_url_context = "Unknown"
-            try:
-                current_url_context = driver.current_url
-            except Exception:
-                pass
-            # End of try/except
-            logger.warning(
-                f"Login status ambiguous: API failed/false, UI elements inconclusive at URL: {current_url_context}"
-            )
-            # Default to False if UI check is ambiguous after API check indicated False or failed
-            return False
-        # End of if/else ui_element_present
+        # End of if
+
+        # If we get here, the UI check is also ambiguous (login button absent, but logged-in element also absent)
+        current_url = "Unknown"
+        try:
+            current_url = driver.current_url
+        except Exception:
+            pass
+        # End of try/except
+
+        logger.warning(
+            f"Login status remains ambiguous after UI check at URL: {current_url}"
+        )
+
+        # Default to False in ambiguous cases for security reasons
+        logger.debug(
+            "Defaulting to NOT logged in for ambiguous state (security precaution)."
+        )
+        return False
 
     except WebDriverException as e:  # type: ignore
         logger.error(f"WebDriverException during UI login_status check: {e}")
@@ -4538,7 +5134,10 @@ def nav_to_page(
                     logger.warning("Attempting session restart...")
                     if session_manager.restart_sess():
                         logger.info("Session restarted. Retrying navigation...")
-                        driver = session_manager.driver  # Get the new driver instance
+                        # Get the new driver instance with type assertion
+                        driver_instance = session_manager.driver
+                        if driver_instance is not None:
+                            driver = driver_instance  # Only assign if not None
                         if not driver:  # Check if restart actually provided a driver
                             logger.error(
                                 "Session restart reported success but driver is still None."
@@ -4644,8 +5243,8 @@ def nav_to_page(
                 )
                 if session_manager:
                     login_stat = login_status(
-                        session_manager
-                    )  # Check if maybe login just happened
+                        session_manager, disable_ui_fallback=True
+                    )  # API check only for speed
                     if login_stat is True:
                         logger.info(
                             "Login status OK after landing on login page redirect. Retrying original navigation."
@@ -4688,7 +5287,11 @@ def nav_to_page(
                         "Redirected from signin page to base URL. Verifying login status..."
                     )
                     time.sleep(1)  # Allow settling
-                    if session_manager and login_status(session_manager) is True:
+                    if (
+                        session_manager
+                        and login_status(session_manager, disable_ui_fallback=True)
+                        is True
+                    ):  # API check only for speed
                         logger.info(
                             "Redirect after signin confirmed as logged in. Considering original navigation target 'signin' successful."
                         )
@@ -4806,7 +5409,10 @@ def nav_to_page(
                 )
                 if session_manager.restart_sess():
                     logger.info("Session restarted. Retrying navigation...")
-                    driver = session_manager.driver  # Get new driver
+                    # Get the new driver instance with type assertion
+                    driver_instance = session_manager.driver
+                    if driver_instance is not None:
+                        driver = driver_instance  # Only assign if not None
                     if not driver:
                         return False  # Fail if restart didn't provide driver
                     # End of if
@@ -4899,11 +5505,20 @@ def main():
     # Setup logging for the test run
     try:
         db_file_path = config_instance.DATABASE_FILE
-        # Use Path object methods for robustness
-        log_filename_only = db_file_path.with_suffix(".log").name
-        log_dir = db_file_path.parent / "Logs"  # Assuming Logs dir is sibling to Data
-        log_dir.mkdir(exist_ok=True)
-        full_log_path = log_dir / log_filename_only
+        if db_file_path:
+            # Use Path object methods for robustness
+            log_filename_only = db_file_path.with_suffix(".log").name
+            log_dir = (
+                db_file_path.parent / "Logs"
+            )  # Assuming Logs dir is sibling to Data
+            log_dir.mkdir(exist_ok=True)
+            full_log_path = log_dir / log_filename_only
+        else:
+            # Fallback if DATABASE_FILE is None
+            log_filename_only = "ancestry.log"
+            log_dir = Path("Logs")
+            log_dir.mkdir(exist_ok=True)
+            full_log_path = log_dir / log_filename_only
 
         logger = setup_logging(log_file=str(full_log_path), log_level="INFO")
         logger.info("--- Starting utils.py Standalone Test Suite ---")
@@ -5317,11 +5932,17 @@ def main():
             initial_handles = []
             try:
                 initial_handles = driver_instance.window_handles  # type: ignore
-                _run_test(
-                    "SessionManager.make_tab()",
-                    session_manager.make_tab,
-                    expected_type=str,
-                )  # Expects handle string # type: ignore
+                # Check if session_manager is not None before calling make_tab
+                if session_manager is not None:
+                    _run_test(
+                        "SessionManager.make_tab()",
+                        session_manager.make_tab,
+                        expected_type=str,
+                    )  # Expects handle string # type: ignore
+                else:
+                    print(
+                        "SKIPPED: SessionManager.make_tab() - session_manager is None"
+                    )
                 make_tab_status = next(
                     (
                         res[1]

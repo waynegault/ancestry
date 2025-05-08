@@ -8,17 +8,13 @@
 #####################################################
 
 # Standard library imports
-import logging
-import time
-import json
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timezone
 
 # Third-party imports
-import msal  # For MS Graph auth if needed directly (ms_graph_utils handles it mostly)
 from sqlalchemy.orm import Session as DbSession, joinedload
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import desc, and_, func
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import and_, func
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -26,55 +22,69 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from config import config_instance  # Configuration singleton
 from database import (
     ConversationLog,
-    DnaMatch,
-    FamilyTree,
     MessageDirectionEnum,
     MessageType,
     Person,
     PersonStatusEnum,
-    RoleType,
-    db_transn,
     commit_bulk_data,
 )
 from logging_config import logger  # Use configured logger
 import ms_graph_utils  # Utility functions for MS Graph API interaction
 from utils import SessionManager, format_name  # Core utilities
-from ai_interface import (  # AI interaction functions
-    classify_message_intent,  # Although not used here, keep import? Maybe remove later.
-    extract_and_suggest_tasks,
-)
+from ai_interface import extract_and_suggest_tasks  # AI interaction functions
 from cache import cache_result  # Caching utility (used for templates)
+from api_utils import call_send_message_api  # Real API function for sending messages
 
+# Flag to control GEDCOM utilities availability
+GEDCOM_UTILS_AVAILABLE = False
+API_UTILS_AVAILABLE = False
 
-# --- Helper Functions ---
-def _send_message_via_api(
-    session_manager: SessionManager,
-    person: Person,
-    message_text: str,
-    existing_conversation_id: Optional[str] = None,
-) -> Tuple[str, str]:
-    """
-    Simplified implementation of message sending function.
-    This is a placeholder since the original function is no longer available.
+# Import required modules and functions
+# This will fail explicitly if imports are missing
+try:
+    # Import from gedcom_utils
+    from gedcom_utils import (
+        calculate_match_score,
+        _normalize_id,
+        load_gedcom_data,
+        GedcomData,
+    )
 
-    Args:
-        session_manager: The active SessionManager instance
-        person: The Person object to send the message to
-        message_text: The message content to send
-        existing_conversation_id: Optional existing conversation ID
+    # Import from relationship_utils
+    from relationship_utils import (
+        fast_bidirectional_bfs,
+        convert_gedcom_path_to_unified_format,
+        format_relationship_path_unified,
+    )
 
-    Returns:
-        Tuple of (status, conversation_id)
-    """
-    logger.info(f"Simulating message send to {person.username} (ID: {person.id})")
-    logger.debug(f"Message content: {message_text[:50]}...")
+    # If we got here, all GEDCOM imports succeeded
+    logger.info("Successfully imported all required GEDCOM utilities.")
+    GEDCOM_UTILS_AVAILABLE = True
 
-    # In a real implementation, this would call the API
-    # For now, just return success and a placeholder conversation ID
-    status = "sent"
-    conv_id = existing_conversation_id or f"simulated_{uuid.uuid4()}"
+except ImportError as e:
+    # Log the specific import error
+    logger.error(f"Failed to import GEDCOM utilities: {e}")
+    logger.error("GEDCOM tree search functionality will be disabled.")
+    logger.error(
+        "Please ensure gedcom_utils.py and relationship_utils.py are available."
+    )
 
-    return status, conv_id
+# Try to import API utilities separately
+try:
+    # Import from action11
+    from action11 import _search_ancestry_api, _process_and_score_suggestions
+
+    # If we got here, all API imports succeeded
+    logger.info("Successfully imported all required API utilities.")
+    API_UTILS_AVAILABLE = True
+
+except ImportError as e:
+    # Log the specific import error
+    logger.error(f"Failed to import API utilities: {e}")
+    logger.error("API tree search functionality will be disabled.")
+    logger.error(
+        "Please ensure action11.py is available and contains the required functions."
+    )
 
 
 # --- Constants ---
@@ -92,7 +102,7 @@ ACKNOWLEDGEMENT_SUBJECT = (
 
 def _get_message_context(
     db_session: DbSession,
-    person_id: int,
+    person_id: Union[int, Any],  # Accept SQLAlchemy Column type or int
     limit: int = config_instance.AI_CONTEXT_MESSAGES_COUNT,
 ) -> List[ConversationLog]:
     """
@@ -116,15 +126,19 @@ def _get_message_context(
             .limit(limit)  # Limit the number fetched
             .all()
         )
+
         # Step 2: Sort the fetched logs by timestamp ascending (oldest first) for AI context
-        return sorted(
-            context_logs,
-            key=lambda log: (
-                log.latest_timestamp
-                if log.latest_timestamp
-                else datetime.min.replace(tzinfo=timezone.utc)
-            ),
-        )
+        # Convert SQLAlchemy Column objects to Python datetime objects for sorting
+        def get_sort_key(log):
+            # Extract timestamp value from SQLAlchemy Column if needed
+            ts = log.latest_timestamp
+            # If it's already a datetime or can be used as one, use it
+            if hasattr(ts, "year") and hasattr(ts, "month"):
+                return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            # Otherwise use minimum date
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+        return sorted(context_logs, key=get_sort_key)
     except SQLAlchemyError as e:
         # Step 3: Log database errors
         logger.error(
@@ -145,7 +159,10 @@ def _get_message_context(
 
 
 def _format_context_for_ai_extraction(
-    context_logs: List[ConversationLog], my_pid_lower: str
+    context_logs: List[ConversationLog],
+    # my_pid_lower parameter is kept for compatibility but not used
+    # pylint: disable=unused-argument
+    _: str = "",  # Renamed to underscore to indicate unused parameter
 ) -> str:
     """
     Formats a list of ConversationLog objects (sorted oldest to newest) into a
@@ -170,12 +187,36 @@ def _format_context_for_ai_extraction(
         # Note: Assumes IN logs have author != my_pid_lower, OUT logs have author == my_pid_lower
         # This might need adjustment if author field isn't reliably populated or needed.
         # Using direction is simpler and more reliable here.
-        author_label = (
-            "USER: " if log.direction == MessageDirectionEnum.IN else "SCRIPT: "
-        )
+        # Handle SQLAlchemy Column type safely
+        is_in_direction = False
+
+        try:
+            # Try to get the direction value
+            if hasattr(log, "direction"):
+                direction_value = log.direction
+
+                # Check if it's a MessageDirectionEnum or can be compared to one
+                if hasattr(direction_value, "value"):
+                    # It's an enum object
+                    is_in_direction = direction_value == MessageDirectionEnum.IN
+                elif isinstance(direction_value, str):
+                    # It's a string
+                    is_in_direction = direction_value == MessageDirectionEnum.IN.value
+                elif str(direction_value) == str(MessageDirectionEnum.IN):
+                    # Try string comparison as last resort
+                    is_in_direction = True
+        except:
+            # Default to OUT if any error occurs
+            is_in_direction = False
+
+        # Use a simple boolean value to avoid SQLAlchemy type issues
+        author_label = "USER: " if bool(is_in_direction) else "SCRIPT: "
 
         # Step 3b: Get message content and handle potential None
         content = log.latest_message_content or ""
+        # Ensure content is a string
+        if not isinstance(content, str):
+            content = str(content)
 
         # Step 3c: Truncate content by word count if necessary
         words = content.split()
@@ -194,70 +235,430 @@ def _format_context_for_ai_extraction(
 # End of _format_context_for_ai_extraction
 
 
-def _search_gedcom_for_names(names: List[str]):
-    """Placeholder: Searches the configured GEDCOM file for names."""
-    # TODO: Implement GEDCOM parsing and search logic.
+def _search_gedcom_for_names(names: List[str]) -> List[Dict[str, Any]]:
+    """
+    Searches the configured GEDCOM file for names and returns matching individuals.
+
+    Args:
+        names: List of names to search for in the GEDCOM file
+
+    Returns:
+        List of dictionaries containing information about matching individuals
+
+    Raises:
+        RuntimeError: If GEDCOM utilities are not available or if the GEDCOM file is not found
+    """
+    # Check if GEDCOM utilities are available
+    if not GEDCOM_UTILS_AVAILABLE:
+        error_msg = "GEDCOM utilities not available. Cannot search GEDCOM file."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Check if GEDCOM path is configured
     gedcom_path = config_instance.GEDCOM_FILE_PATH
-    if gedcom_path and gedcom_path.exists():
-        logger.info(
-            f"(Placeholder) Would search GEDCOM {gedcom_path.name} for: {names}"
+    if not gedcom_path:
+        error_msg = "GEDCOM_FILE_PATH not configured. Cannot search GEDCOM file."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Check if GEDCOM file exists
+    if not gedcom_path.exists():
+        error_msg = (
+            f"GEDCOM file not found at {gedcom_path}. Cannot search GEDCOM file."
         )
-        # Add actual search logic here
-        pass
-    elif gedcom_path:
-        logger.warning(f"GEDCOM search configured but file not found: {gedcom_path}")
-    else:
-        logger.warning("GEDCOM search called but GEDCOM_FILE_PATH not configured.")
-    return None  # Placeholder return
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    logger.info(f"Searching GEDCOM {gedcom_path.name} for: {names}")
+
+    try:
+        # Load GEDCOM data
+        gedcom_data = load_gedcom_data(gedcom_path)
+        if not gedcom_data:
+            error_msg = f"Failed to load GEDCOM data from {gedcom_path}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # Prepare search criteria
+        search_results = []
+
+        # For each name, create a simple search criteria and filter individuals
+        for name in names:
+            if not name or len(name.strip()) < 2:
+                continue
+
+            # Split name into first name and surname if possible
+            name_parts = name.strip().split()
+            first_name = name_parts[0] if name_parts else ""
+            surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+            # Create basic filter criteria (just names)
+            filter_criteria = {
+                "first_name": first_name.lower() if first_name else None,
+                "surname": surname.lower() if surname else None,
+            }
+
+            # Use the same criteria for scoring
+            scoring_criteria = filter_criteria.copy()
+
+            # Get scoring weights from config or use defaults
+            # These attributes might not exist in all config instances
+            scoring_weights = {
+                "first_name": getattr(config_instance, "SCORE_WEIGHT_FIRST_NAME", 25),
+                "surname": getattr(config_instance, "SCORE_WEIGHT_SURNAME", 25),
+                "gender": getattr(config_instance, "SCORE_WEIGHT_GENDER", 10),
+                "birth_year": getattr(config_instance, "SCORE_WEIGHT_BIRTH_YEAR", 20),
+                "birth_place": getattr(config_instance, "SCORE_WEIGHT_BIRTH_PLACE", 15),
+                "death_year": getattr(config_instance, "SCORE_WEIGHT_DEATH_YEAR", 15),
+                "death_place": getattr(config_instance, "SCORE_WEIGHT_DEATH_PLACE", 10),
+            }
+
+            # Date flexibility settings with defaults
+            date_flex = {
+                "year_flex": getattr(config_instance, "YEAR_FLEXIBILITY", 2),
+                "exact_bonus": getattr(config_instance, "EXACT_DATE_BONUS", 25),
+            }
+
+            # Filter and score individuals
+            # This is a simplified version of the function from action10.py
+            scored_matches = []
+
+            # Process each individual in the GEDCOM data
+            if (
+                gedcom_data
+                and hasattr(gedcom_data, "indi_index")
+                and gedcom_data.indi_index
+                and hasattr(gedcom_data.indi_index, "items")
+            ):
+                # Convert to dict if it's not already to ensure it's iterable
+                indi_index = (
+                    dict(gedcom_data.indi_index)
+                    if not isinstance(gedcom_data.indi_index, dict)
+                    else gedcom_data.indi_index
+                )
+                for indi_id, indi_data in indi_index.items():
+                    try:
+                        # Skip individuals with no name
+                        if not indi_data.get("first_name") and not indi_data.get(
+                            "surname"
+                        ):
+                            continue
+
+                        # Simple OR filter: match on first name OR surname
+                        fn_match = filter_criteria["first_name"] and indi_data.get(
+                            "first_name", ""
+                        ).lower().startswith(filter_criteria["first_name"])
+                        sn_match = filter_criteria["surname"] and indi_data.get(
+                            "surname", ""
+                        ).lower().startswith(filter_criteria["surname"])
+
+                        if fn_match or sn_match:
+                            # Calculate match score
+                            total_score, field_scores, reasons = calculate_match_score(
+                                search_criteria=scoring_criteria,
+                                candidate_processed_data=indi_data,
+                                scoring_weights=scoring_weights,
+                                date_flexibility=date_flex,
+                            )
+
+                            # Only include if score is above threshold
+                            if total_score > 0:
+                                # Create a match record
+                                match_record = {
+                                    "id": indi_id,
+                                    "display_id": indi_id,
+                                    "first_name": indi_data.get("first_name", ""),
+                                    "surname": indi_data.get("surname", ""),
+                                    "gender": indi_data.get("gender", ""),
+                                    "birth_year": indi_data.get("birth_year"),
+                                    "birth_place": indi_data.get("birth_place", ""),
+                                    "death_year": indi_data.get("death_year"),
+                                    "death_place": indi_data.get("death_place", ""),
+                                    "total_score": total_score,
+                                    "field_scores": field_scores,
+                                    "reasons": reasons,
+                                    "source": "GEDCOM",
+                                }
+                                scored_matches.append(match_record)
+                    except Exception as e:
+                        logger.error(f"Error processing individual {indi_id}: {e}")
+                        continue
+
+            # Sort matches by score (highest first) and take top 3
+            scored_matches.sort(key=lambda x: x["total_score"], reverse=True)
+            top_matches = scored_matches[:3]
+
+            # Add to overall results
+            search_results.extend(top_matches)
+
+        # Return the combined results
+        return search_results
+
+    except Exception as e:
+        error_msg = f"Error searching GEDCOM file: {e}"
+        logger.error(error_msg, exc_info=True)
+        raise RuntimeError(error_msg)
 
 
 # End of _search_gedcom_for_names
 
 
-def _search_api_for_names(session_manager: SessionManager, names: List[str]):
-    """Placeholder: Searches Ancestry (potentially via API) for names."""
-    # TODO: Implement Ancestry API search logic (likely undocumented).
-    logger.info(f"(Placeholder) Would search Ancestry API for names: {names}")
-    # Add actual API search logic here
-    return None  # Placeholder return
+def _search_api_for_names(
+    session_manager: Optional[SessionManager] = None,
+    names: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Searches Ancestry API for names and returns matching individuals.
+
+    Args:
+        session_manager: The active SessionManager instance
+        names: List of names to search for via the Ancestry API
+
+    Returns:
+        List of dictionaries containing information about matching individuals
+
+    Raises:
+        RuntimeError: If API utilities are not available or if required parameters are missing
+    """
+    # Check if API utilities are available
+    if not API_UTILS_AVAILABLE:
+        error_msg = "API utilities not available. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Check if session manager is provided
+    if not session_manager:
+        error_msg = "Session manager not provided. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Check if names are provided
+    names = names or []
+    if not names:
+        error_msg = "No names provided for API search."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    logger.info(f"Searching Ancestry API for: {names}")
+
+    try:
+        # Get owner tree ID from session manager
+        owner_tree_id = getattr(session_manager, "my_tree_id", None)
+        if not owner_tree_id:
+            error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # Get base URL from config
+        base_url = getattr(config_instance, "BASE_URL", "").rstrip("/")
+        if not base_url:
+            error_msg = "Ancestry URL not configured. Base URL missing."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        search_results = []
+
+        # For each name, create a search criteria and search the API
+        for name in names:
+            if not name or len(name.strip()) < 2:
+                continue
+
+            # Split name into first name and surname if possible
+            name_parts = name.strip().split()
+            first_name = name_parts[0] if name_parts else ""
+            surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+            # Skip if both first name and surname are empty
+            if not first_name and not surname:
+                continue
+
+            # Create search criteria
+            search_criteria = {
+                "first_name_raw": first_name,
+                "surname_raw": surname,
+            }
+
+            # Call the API search function from action11
+            api_results = _search_ancestry_api(
+                session_manager,
+                owner_tree_id,
+                base_url,
+                first_name,
+                surname,
+                None,  # gender
+                None,  # birth year
+                None,  # birth place
+                None,  # death year
+                None,  # death place
+            )
+
+            if api_results is None:
+                error_msg = f"API search failed for name: {name}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
+            # Empty results are OK - just log and continue
+            if not api_results:
+                logger.info(f"API search returned no results for name: {name}")
+                continue
+
+            # Process and score the API results
+            scored_suggestions = _process_and_score_suggestions(
+                api_results, search_criteria, config_instance
+            )
+
+            # Take top 3 results
+            top_matches = scored_suggestions[:3] if scored_suggestions else []
+
+            # Add source information
+            for match in top_matches:
+                match["source"] = "API"
+
+            # Add to overall results
+            search_results.extend(top_matches)
+
+        # Return the combined results
+        return search_results
+
+    except Exception as e:
+        error_msg = f"Error searching Ancestry API: {e}"
+        logger.error(error_msg, exc_info=True)
+        raise RuntimeError(error_msg)
 
 
 # End of _search_api_for_names
 
 
-def _search_ancestry_tree(session_manager: SessionManager, names: List[str]):
+def _search_ancestry_tree(
+    session_manager: SessionManager, names: List[str]
+) -> Dict[str, Any]:
     """
-    Placeholder dispatcher for searching the user's tree (GEDCOM or API)
-    for names extracted by the AI, based on configuration.
+    Searches the user's tree (GEDCOM or API) for names extracted by the AI.
+
+    This function dispatches to the appropriate search method based on configuration
+    and returns a dictionary containing the search results and relationship paths.
 
     Args:
         session_manager: The SessionManager instance.
         names: A list of names extracted from the conversation.
 
     Returns:
-        Currently None. Intended to return search results eventually.
+        Dictionary containing search results and relationship paths
     """
     # Step 1: Check if there are names to search for
     if not names:
         logger.debug("Action 9 Tree Search: No names extracted to search.")
-        return None
+        return {"results": [], "relationship_paths": {}}
 
+    # Step 2: Get search method from config
     search_method = config_instance.TREE_SEARCH_METHOD
     logger.info(f"Action 9 Tree Search: Method configured as '{search_method}'.")
 
-    # Step 2: Dispatch based on configured method
-    if search_method == "GEDCOM":
-        return _search_gedcom_for_names(names)
-    elif search_method == "API":
-        return _search_api_for_names(session_manager, names)
-    elif search_method == "NONE":
-        logger.info("Action 9 Tree Search: Method set to NONE. Skipping search.")
-        return None
-    else:  # Should be caught by config loading, but safety check
-        logger.error(
-            f"Action 9 Tree Search: Invalid TREE_SEARCH_METHOD '{search_method}' encountered."
-        )
-        return None
+    # Step 3: Dispatch based on configured method
+    search_results = []
+
+    try:
+        if search_method == "GEDCOM":
+            search_results = _search_gedcom_for_names(names)
+        elif search_method == "API":
+            search_results = _search_api_for_names(session_manager, names)
+        elif search_method == "NONE":
+            logger.info("Action 9 Tree Search: Method set to NONE. Skipping search.")
+            return {"results": [], "relationship_paths": {}}
+        else:  # Should be caught by config loading, but safety check
+            error_msg = f"Action 9 Tree Search: Invalid TREE_SEARCH_METHOD '{search_method}' encountered."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+    except Exception as e:
+        # Log the error but don't re-raise it - we want to continue processing
+        # even if tree search fails
+        logger.error(f"Action 9 Tree Search: Failed to search tree: {e}", exc_info=True)
+        # Return empty results
+        return {"results": [], "relationship_paths": {}}
+
+    # Step 4: Process search results
+    if not search_results:
+        logger.info("Action 9 Tree Search: No matches found.")
+        return {"results": [], "relationship_paths": {}}
+
+    logger.info(f"Action 9 Tree Search: Found {len(search_results)} potential matches.")
+
+    # Step 5: Find relationship paths for top matches
+    relationship_paths = {}
+
+    # Get reference person ID from config
+    reference_person_id = config_instance.REFERENCE_PERSON_ID
+    reference_person_name = config_instance.REFERENCE_PERSON_NAME or "Reference Person"
+
+    # Only try to find relationship paths if we have a reference person ID
+    if reference_person_id and search_method == "GEDCOM" and GEDCOM_UTILS_AVAILABLE:
+        try:
+            # Load GEDCOM data
+            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            if gedcom_path and gedcom_path.exists():
+                gedcom_data = load_gedcom_data(gedcom_path)
+
+                if gedcom_data:
+                    # Normalize reference ID
+                    reference_person_id_norm = _normalize_id(reference_person_id)
+
+                    # Find relationship paths for top matches
+                    for match in search_results:
+                        match_id = match.get("id")
+                        if not match_id:
+                            continue
+
+                        # Normalize match ID
+                        match_id_norm = _normalize_id(match_id)
+
+                        # Find relationship path - ensure IDs are not None
+                        if match_id_norm and reference_person_id_norm:
+                            path_ids = fast_bidirectional_bfs(
+                                match_id_norm,
+                                reference_person_id_norm,
+                                gedcom_data.id_to_parents,
+                                gedcom_data.id_to_children,
+                                max_depth=25,
+                                node_limit=150000,
+                                timeout_sec=45,
+                            )
+                        else:
+                            # Skip if either ID is None
+                            logger.warning(
+                                f"Cannot find relationship path: match_id_norm={match_id_norm}, reference_person_id_norm={reference_person_id_norm}"
+                            )
+                            path_ids = []
+
+                        if path_ids and len(path_ids) > 1:
+                            # Convert the GEDCOM path to the unified format
+                            unified_path = convert_gedcom_path_to_unified_format(
+                                path_ids,
+                                gedcom_data.reader,
+                                gedcom_data.id_to_parents,
+                                gedcom_data.id_to_children,
+                                gedcom_data.indi_index,
+                            )
+
+                            if unified_path:
+                                # Format the relationship path
+                                match_name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
+                                relationship_path = format_relationship_path_unified(
+                                    unified_path,
+                                    match_name,
+                                    reference_person_name,
+                                    "relative",
+                                )
+
+                                # Store the relationship path
+                                relationship_paths[match_id] = relationship_path
+        except Exception as e:
+            logger.error(f"Error finding relationship paths: {e}", exc_info=True)
+
+    # Step 6: Return the results
+    return {
+        "results": search_results,
+        "relationship_paths": relationship_paths,
+    }
 
 
 # End of _search_ancestry_tree
@@ -496,8 +897,9 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
                 try:
                     # --- Step 5a: Rate Limit ---
-                    wait_time = session_manager.dynamic_rate_limiter.wait()
-                    # Optional log: if wait_time > 0.1: logger.debug(f"{log_prefix}: Rate limit wait: {wait_time:.2f}s")
+                    # Apply rate limiting but don't need to store the wait time
+                    session_manager.dynamic_rate_limiter.wait()
+                    # Optional log can be added here if needed
 
                     # --- Step 5b: Get Message Context ---
                     logger.debug(f"{log_prefix}: Getting message context...")
@@ -679,10 +1081,88 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         )
 
                     # --- Step 5e: Optional Tree Search ---
+                    # Search for names in the user's tree (GEDCOM or API)
                     tree_search_results = _search_ancestry_tree(
                         session_manager, extracted_data.get("mentioned_names", [])
                     )
-                    # TODO: Process tree_search_results if needed
+
+                    # Process tree search results if any were found
+                    if tree_search_results and tree_search_results.get("results"):
+                        matches = tree_search_results.get("results", [])
+                        relationship_paths = tree_search_results.get(
+                            "relationship_paths", {}
+                        )
+
+                        # Log the number of matches found
+                        logger.info(
+                            f"{log_prefix}: Found {len(matches)} potential matches in tree search."
+                        )
+
+                        # Add tree search results to the summary for acknowledgement
+                        if matches:
+                            # Format match names for summary
+                            match_names = []
+                            for match in matches[:3]:  # Limit to top 3
+                                name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
+                                if name:
+                                    # Add birth year if available
+                                    birth_year = match.get("birth_year")
+                                    if birth_year:
+                                        name = f"{name} (b. {birth_year})"
+                                    match_names.append(name)
+
+                            # Add match names to summary parts if not already present
+                            if match_names:
+                                match_summary = ", ".join(
+                                    [f"'{name}'" for name in match_names]
+                                )
+                                if len(matches) > 3:
+                                    match_summary += f" and {len(matches) - 3} more"
+
+                                # Add to summary parts if not already present
+                                if "matches in your tree" not in summary_for_ack:
+                                    if summary_parts:
+                                        summary_parts.append(
+                                            f"potential matches in your tree including {match_summary}"
+                                        )
+                                    else:
+                                        summary_parts = [
+                                            f"potential matches in your tree including {match_summary}"
+                                        ]
+
+                                    # Regenerate summary_for_ack with the new summary parts
+                                    if summary_parts:
+                                        summary_for_ack = (
+                                            "the details about "
+                                            + ", ".join(summary_parts[:-1])
+                                            + (
+                                                f" and {summary_parts[-1]}"
+                                                if len(summary_parts) > 1
+                                                else summary_parts[0]
+                                            )
+                                        )
+
+                        # If we have relationship paths, add them to the message
+                        if relationship_paths:
+                            logger.info(
+                                f"{log_prefix}: Found {len(relationship_paths)} relationship paths."
+                            )
+
+                            # We'll add relationship paths to the message later if needed
+                            # For now, just log that we found them
+                            for match_id in relationship_paths:
+                                # Find the match name
+                                match_name = "Unknown"
+                                for match in matches:
+                                    if match.get("id") == match_id:
+                                        match_name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
+                                        break
+
+                                logger.debug(
+                                    f"{log_prefix}: Found relationship path for {match_name}."
+                                )
+                    else:
+                        logger.debug(f"{log_prefix}: No matches found in tree search.")
 
                     # --- Step 5f: MS Graph Task Creation ---
                     if suggested_tasks:
@@ -751,9 +1231,31 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     # --- Step 5g: Format Acknowledgement Message ---
                     try:
                         # Use first name if available, else username
-                        name_to_use_ack = format_name(
-                            person.first_name or person.username
-                        )
+                        # Safely convert SQLAlchemy Column types to strings if needed
+                        first_name = ""
+                        username = ""
+
+                        # Handle first_name safely
+                        try:
+                            if (
+                                hasattr(person, "first_name")
+                                and person.first_name is not None
+                            ):
+                                first_name = str(person.first_name)
+                        except:
+                            first_name = ""
+
+                        # Handle username safely
+                        try:
+                            if (
+                                hasattr(person, "username")
+                                and person.username is not None
+                            ):
+                                username = str(person.username)
+                        except:
+                            username = ""
+
+                        name_to_use_ack = format_name(first_name or username)
                         message_text = ack_template.format(
                             name=name_to_use_ack, summary=summary_for_ack
                         )
@@ -761,17 +1263,50 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         logger.error(
                             f"{log_prefix}: ACK template formatting error (Key {ke}). Using generic fallback."
                         )
-                        message_text = f"Dear {format_name(person.username)},\n\nThank you for your message and the information!\n\nWayne"  # Simple fallback
+                        # Safely convert username to string
+                        safe_username = "User"
+                        try:
+                            if (
+                                hasattr(person, "username")
+                                and person.username is not None
+                            ):
+                                safe_username = str(person.username)
+                        except:
+                            safe_username = "User"
+
+                        message_text = f"Dear {format_name(safe_username)},\n\nThank you for your message and the information!\n\nWayne"  # Simple fallback
                     except Exception as fmt_e:
                         logger.error(
                             f"{log_prefix}: Unexpected ACK formatting error: {fmt_e}. Using generic fallback."
                         )
-                        message_text = f"Dear {format_name(person.username)},\n\nThank you!\n\nWayne"  # Simpler fallback
+                        # Safely convert username to string
+                        safe_username = "User"
+                        try:
+                            if (
+                                hasattr(person, "username")
+                                and person.username is not None
+                            ):
+                                safe_username = str(person.username)
+                        except:
+                            safe_username = "User"
+
+                        message_text = f"Dear {format_name(safe_username)},\n\nThank you!\n\nWayne"  # Simpler fallback
 
                     # --- Step 5h: Apply Mode/Recipient Filtering ---
                     app_mode = config_instance.APP_MODE
                     testing_profile_id_config = config_instance.TESTING_PROFILE_ID
-                    current_profile_id = person.profile_id or "UNKNOWN"
+
+                    # Safely convert profile_id to string
+                    current_profile_id = "UNKNOWN"
+                    try:
+                        if (
+                            hasattr(person, "profile_id")
+                            and person.profile_id is not None
+                        ):
+                            current_profile_id = str(person.profile_id)
+                    except:
+                        current_profile_id = "UNKNOWN"
+
                     send_ack_flag = True
                     skip_log_reason_ack = ""
 
@@ -782,28 +1317,43 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                             )
                             send_ack_flag = False
                             skip_log_reason_ack = "skipped (config_error)"
-                        elif current_profile_id != testing_profile_id_config:
+                        # Safe string comparison
+                        elif current_profile_id != str(testing_profile_id_config):
                             send_ack_flag = False
                             skip_log_reason_ack = f"skipped (testing_mode_filter: not {testing_profile_id_config})"
                             logger.info(
                                 f"Testing Mode: Skipping ACK send to {log_prefix} ({skip_log_reason_ack})."
                             )
+                    # Safe string comparison for production mode
                     elif (
                         app_mode == "production"
                         and testing_profile_id_config
-                        and current_profile_id == testing_profile_id_config
+                        and current_profile_id == str(testing_profile_id_config)
                     ):
                         send_ack_flag = False
                         skip_log_reason_ack = f"skipped (production_mode_filter: is {testing_profile_id_config})"
                         logger.info(
                             f"Production Mode: Skipping ACK send to test profile {log_prefix} ({skip_log_reason_ack})."
                         )
-                    # dry_run handled by _send_message_via_api
+                    # dry_run handled by call_send_message_api
 
                     # --- Step 5i: Send/Simulate Acknowledgement Message ---
-                    conv_id_for_send = (
-                        context_logs[-1].conversation_id if context_logs else None
-                    )  # Get conv ID from last log entry
+                    # Get conversation ID from the last log entry, ensuring it's a string
+                    conv_id_for_send = None
+                    if context_logs:
+                        raw_conv_id = context_logs[-1].conversation_id
+                        # Convert to string if it's not None
+                        if raw_conv_id is not None:
+                            # Handle SQLAlchemy Column type if needed
+                            if hasattr(raw_conv_id, "startswith"):  # String-like object
+                                conv_id_for_send = str(raw_conv_id)
+                            else:
+                                # Try to convert to string
+                                try:
+                                    conv_id_for_send = str(raw_conv_id)
+                                except:
+                                    conv_id_for_send = None
+
                     if not conv_id_for_send:
                         logger.error(
                             f"{log_prefix}: Cannot find conversation ID to send ACK. Skipping send."
@@ -825,12 +1375,14 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         logger.info(
                             f"{log_prefix}: Sending/Simulating '{ACKNOWLEDGEMENT_MESSAGE_TYPE}'..."
                         )
-                        send_status, effective_conv_id = _send_message_via_api(
+                        # Call the real API send function
+                        log_prefix_for_api = f"Action9: {person.username} #{person.id}"
+                        send_status, effective_conv_id = call_send_message_api(
                             session_manager,
                             person,
                             message_text,
-                            conv_id_for_send,  # Pass existing conv ID
-                            log_prefix,
+                            conv_id_for_send,  # Pass existing conv ID as string
+                            log_prefix_for_api,
                         )
                     else:  # Skipped due to filter
                         send_status = skip_log_reason_ack
@@ -863,29 +1415,60 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                             f"{log_prefix}: Staging DB updates for ACK (Status: {send_status})."
                         )
                         # Prepare the dictionary for the log entry
-                        log_data = {
-                            "conversation_id": effective_conv_id,  # Use the confirmed/existing ID
-                            "direction": MessageDirectionEnum.OUT,  # Pass Enum
-                            "people_id": person.id,
-                            "latest_message_content": (
-                                f"[{send_status.upper()}] {message_text}"
-                                if not send_ack_flag
-                                else message_text  # Prepend skip reason if skipped
-                            )[
-                                : config_instance.MESSAGE_TRUNCATION_LENGTH
-                            ],  # Truncate
-                            "latest_timestamp": datetime.now(
-                                timezone.utc
-                            ),  # Use current UTC time
-                            "message_type_id": ack_msg_type_id,
-                            "script_message_status": send_status,  # Log outcome/skip reason
-                            "ai_sentiment": None,  # N/A for OUT
-                        }
-                        logs_to_add_dicts.append(log_data)
-                        # Stage person update to ARCHIVE
-                        person_updates[person.id] = PersonStatusEnum.ARCHIVE
-                        archived_count += 1
-                        logger.debug(f"{log_prefix}: Person status staged for ARCHIVE.")
+                        # Safely convert person.id to int for database
+                        person_id_for_log = None
+                        try:
+                            # Handle SQLAlchemy Column type if needed
+                            # Convert to string first, then to int to avoid SQLAlchemy type issues
+                            person_id_str = str(person.id)
+                            person_id_for_log = int(person_id_str)
+                        except (TypeError, ValueError):
+                            logger.error(
+                                f"{log_prefix}: Could not convert person.id to int for log entry"
+                            )
+                            person_id_for_log = None
+
+                        # Only proceed if we have a valid person_id
+                        if person_id_for_log is not None:
+                            log_data = {
+                                "conversation_id": str(
+                                    effective_conv_id
+                                ),  # Ensure string
+                                "direction": MessageDirectionEnum.OUT,  # Pass Enum
+                                "people_id": person_id_for_log,  # Use converted int
+                                "latest_message_content": (
+                                    f"[{send_status.upper()}] {message_text}"
+                                    if not send_ack_flag
+                                    else message_text  # Prepend skip reason if skipped
+                                )[
+                                    : config_instance.MESSAGE_TRUNCATION_LENGTH
+                                ],  # Truncate
+                                "latest_timestamp": datetime.now(
+                                    timezone.utc
+                                ),  # Use current UTC time
+                                "message_type_id": ack_msg_type_id,
+                                "script_message_status": send_status,  # Log outcome/skip reason
+                                "ai_sentiment": None,  # N/A for OUT
+                            }
+                            logs_to_add_dicts.append(log_data)
+                        # Stage person update to ARCHIVE - ensure person.id is an int
+                        person_id_int = None
+                        try:
+                            # Handle SQLAlchemy Column type if needed
+                            # Convert to string first, then to int to avoid SQLAlchemy type issues
+                            person_id_str = str(person.id)
+                            person_id_int = int(person_id_str)
+                        except (TypeError, ValueError):
+                            logger.error(
+                                f"{log_prefix}: Could not convert person.id to int for DB update"
+                            )
+
+                        if person_id_int is not None:
+                            person_updates[person_id_int] = PersonStatusEnum.ARCHIVE
+                            archived_count += 1
+                            logger.debug(
+                                f"{log_prefix}: Person status staged for ARCHIVE."
+                            )
                     else:  # Send failed with specific error status
                         logger.error(
                             f"{log_prefix}: Failed to send ACK (Status: {send_status}). No DB changes staged for this person."

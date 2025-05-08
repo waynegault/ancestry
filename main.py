@@ -779,7 +779,9 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
         return False
 
     # Call login_status directly to check
-    status = login_status(session_manager)
+    status = login_status(
+        session_manager, disable_ui_fallback=False
+    )  # Use UI fallback for reliability
 
     if status is True:
         logger.info("Login verification successful (already logged in).")

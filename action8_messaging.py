@@ -85,37 +85,11 @@ from utils import (  # Core utilities
     retry_api,  # Decorators (unused here)
     time_wait,  # Decorators (unused here)
 )
-
-
-# --- Helper Functions ---
-def _send_message_via_api(
-    session_manager: SessionManager,
-    person: Person,
-    message_text: str,
-    existing_conversation_id: Optional[str] = None,
-) -> Tuple[str, str]:
-    """
-    Simplified implementation of message sending function.
-    This is a placeholder since the original function is no longer available.
-
-    Args:
-        session_manager: The active SessionManager instance
-        person: The Person object to send the message to
-        message_text: The message content to send
-        existing_conversation_id: Optional existing conversation ID
-
-    Returns:
-        Tuple of (status, conversation_id)
-    """
-    logger.info(f"Simulating message send to {person.username} (ID: {person.id})")
-    logger.debug(f"Message content: {message_text[:50]}...")
-
-    # In a real implementation, this would call the API
-    # For now, just return success and a placeholder conversation ID
-    status = "sent"
-    conv_id = existing_conversation_id or f"simulated_{uuid.uuid4()}"
-
-    return status, conv_id
+from api_utils import (  # API utilities
+    call_send_message_api,  # Real API function for sending messages
+    SEND_SUCCESS_DELIVERED,  # Status constants
+    SEND_SUCCESS_DRY_RUN,
+)
 
 
 # --- Initialization & Template Loading ---
@@ -1054,12 +1028,14 @@ def _process_single_person(
                     else None
                 )
             )
-            # Call the API send helper function
-            message_status, effective_conv_id = _send_message_via_api(
+            # Call the real API send function
+            log_prefix_for_api = f"Action8: {person.username} #{person.id}"
+            message_status, effective_conv_id = call_send_message_api(
                 session_manager,
                 person,
                 message_text,
                 existing_conversation_id,
+                log_prefix_for_api,
             )
         else:
             # If filtered out, use the skip reason as the status for logging
@@ -1193,7 +1169,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     if not MESSAGE_TEMPLATES:
         logger.error("Action 8: Message templates not loaded.")
         return False
-    if login_status(session_manager) is not True:
+    if (
+        login_status(session_manager, disable_ui_fallback=True) is not True
+    ):  # API check only for speed
         logger.error("Action 8: Not logged in.")
         return False
 
