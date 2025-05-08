@@ -1472,4 +1472,271 @@ class InboxProcessor:
 # End of InboxProcessor class
 
 
+# --- Test Harness ---
+def self_test():
+    """
+    Test harness for the InboxProcessor class.
+
+    This function tests the functionality of the InboxProcessor class without making
+    actual API calls to Ancestry. It uses mock data and responses to simulate the
+    behavior of the Ancestry API.
+
+    Returns:
+        bool: True if all tests pass, False otherwise.
+    """
+    from unittest.mock import MagicMock, patch
+
+    print("\n=== Running Action 7 (Inbox Processor) Self-Test ===\n")
+
+    # Track test results
+    tests_run = 0
+    tests_passed = 0
+
+    # --- Test 1: _extract_conversation_info method ---
+    print("Test 1: Testing _extract_conversation_info method...")
+    tests_run += 1
+
+    # Create a mock session manager
+    mock_session_manager = MagicMock()
+    mock_session_manager.my_profile_id = "12345"
+
+    # Create an instance of InboxProcessor with the mock session manager
+    processor = InboxProcessor(mock_session_manager)
+
+    # Test data for a conversation
+    test_conv_data = {
+        "id": "67890",
+        "last_message": {
+            "created": 1625097600,  # July 1, 2021 UTC
+            "content": "Hello, how are you?",
+        },
+        "members": [
+            {
+                "user_id": "12345",  # This is the script user
+                "display_name": "Script User",
+            },
+            {
+                "user_id": "54321",  # This is the other person
+                "display_name": "Test User",
+            },
+        ],
+    }
+
+    # Call the method
+    result = processor._extract_conversation_info(test_conv_data, "12345")
+
+    # Verify the result
+    expected_profile_id = "54321"
+    expected_username = "Test User"
+
+    if (
+        result
+        and result.get("conversation_id") == "67890"
+        and result.get("profile_id") == expected_profile_id.upper()
+        and result.get("username") == expected_username
+        and result.get("last_message_timestamp")
+    ):
+        print("  ✓ _extract_conversation_info correctly extracted conversation info")
+        tests_passed += 1
+    else:
+        print("  ✗ _extract_conversation_info failed to extract correct info")
+        print(
+            f"  Expected: conversation_id=67890, profile_id={expected_profile_id.upper()}, username={expected_username}"
+        )
+        print(f"  Got: {result}")
+
+    # --- Test 2: _format_context_for_ai method ---
+    print("\nTest 2: Testing _format_context_for_ai method...")
+    tests_run += 1
+
+    # Test data for context messages
+    test_context_messages = [
+        {
+            "content": "Hello, how are you?",
+            "author": "12345",  # Script user
+            "timestamp": datetime.now(timezone.utc),
+            "conversation_id": "67890",
+        },
+        {
+            "content": "I'm doing well, thank you! How about you?",
+            "author": "54321",  # Other user
+            "timestamp": datetime.now(timezone.utc),
+            "conversation_id": "67890",
+        },
+        {
+            "content": "I'm good too. I wanted to ask about our shared ancestor.",
+            "author": "12345",  # Script user
+            "timestamp": datetime.now(timezone.utc),
+            "conversation_id": "67890",
+        },
+    ]
+
+    # Call the method
+    result = processor._format_context_for_ai(test_context_messages, "12345")
+
+    # Verify the result contains the expected format
+    expected_lines = 3
+    actual_lines = result.count("\n") + 1
+
+    if (
+        result
+        and "SCRIPT: Hello, how are you?" in result
+        and "USER: I'm doing well, thank you!" in result
+        and actual_lines == expected_lines
+    ):
+        print("  ✓ _format_context_for_ai correctly formatted context messages")
+        tests_passed += 1
+    else:
+        print("  ✗ _format_context_for_ai failed to format context messages correctly")
+        print(f"  Expected {expected_lines} lines with proper SCRIPT/USER prefixes")
+        print(f"  Got: {result}")
+
+    # --- Test 3: _create_comparator method ---
+    print("\nTest 3: Testing _create_comparator method...")
+    tests_run += 1
+
+    # Mock a database session with a query result
+    mock_db_session = MagicMock()
+
+    # Create a mock ConversationLog object with the necessary attributes
+    mock_log = MagicMock()
+    mock_log.conversation_id = "12345"
+    mock_log.latest_timestamp = datetime.now(timezone.utc)
+
+    # Configure the session to return our mock log
+    mock_db_session.query.return_value.order_by.return_value.first.return_value = (
+        mock_log
+    )
+
+    # Call the method
+    result = processor._create_comparator(mock_db_session)
+
+    # Verify the result
+    if (
+        result
+        and result.get("conversation_id") == "12345"
+        and isinstance(result.get("latest_timestamp"), datetime)
+    ):
+        print("  ✓ _create_comparator correctly created a comparator")
+        tests_passed += 1
+    else:
+        print("  ✗ _create_comparator failed to create a valid comparator")
+        print(f"  Expected: conversation_id=12345, timestamp=<datetime>")
+        print(f"  Got: {result}")
+
+    # --- Test 4: Mock _get_all_conversations_api method ---
+    print("\nTest 4: Testing conversation fetching with mocked API...")
+    tests_run += 1
+
+    # Create a patch for the _get_all_conversations_api method
+    with patch.object(InboxProcessor, "_get_all_conversations_api") as mock_get_convs:
+        # Set up the mock to return test data
+        mock_conversations = [
+            {
+                "conversation_id": "67890",
+                "profile_id": "54321",
+                "username": "Test User",
+                "last_message_timestamp": datetime.now(timezone.utc),
+            },
+            {
+                "conversation_id": "12345",
+                "profile_id": "98765",
+                "username": "Another User",
+                "last_message_timestamp": datetime.now(timezone.utc),
+            },
+        ]
+        mock_get_convs.return_value = (mock_conversations, None)  # No next cursor
+
+        # Create a mock DB session with more detailed configuration
+        mock_db_session = MagicMock()
+
+        # Create a mock Person object with a valid ID
+        mock_person = MagicMock()
+        mock_person.id = 123  # Use a valid integer ID
+        mock_person.profile_id = "54321"
+        mock_person.username = "Test User"
+
+        # Configure the mock to return our mock Person for queries
+        mock_query = MagicMock()
+        mock_filter = MagicMock()
+        mock_all = MagicMock(return_value=[mock_person])  # Return our mock Person
+        mock_first = MagicMock(return_value=mock_person)  # Return our mock Person
+
+        mock_filter.return_value.all = mock_all
+        mock_filter.return_value.first = mock_first
+        mock_query.return_value.filter = mock_filter
+        mock_db_session.query = mock_query
+
+        # Set up the session manager to return our configured mock session
+        mock_session_manager.get_db_conn.return_value = mock_db_session
+
+        # Mock the _create_comparator method
+        with patch.object(
+            InboxProcessor, "_create_comparator"
+        ) as mock_create_comparator:
+            mock_create_comparator.return_value = None  # No comparator
+
+            # Mock the _fetch_conversation_context method
+            with patch.object(
+                InboxProcessor, "_fetch_conversation_context"
+            ) as mock_fetch_context:
+                mock_fetch_context.return_value = test_context_messages
+
+                # Mock the classify_message_intent function
+                with patch("action7_inbox.classify_message_intent") as mock_classify:
+                    mock_classify.return_value = ("INQUIRY", 0.95)
+
+                    # Mock commit_bulk_data to handle the person updates properly
+                    with patch("action7_inbox.commit_bulk_data") as mock_commit:
+                        # Define a side effect function to properly handle the arguments
+                        def commit_side_effect(
+                            _session, log_upserts, person_updates, _context
+                        ):
+                            # Filter out any invalid person IDs to avoid warnings
+                            valid_person_updates = {
+                                pid: status
+                                for pid, status in person_updates.items()
+                                if isinstance(pid, int) and pid > 0
+                            }
+                            # Return a tuple of (logs_saved, persons_updated)
+                            return (len(log_upserts), len(valid_person_updates))
+
+                        # Set the side effect
+                        mock_commit.side_effect = commit_side_effect
+
+                        # Set a small max_inbox_limit for testing
+                        processor.max_inbox_limit = 5
+
+                        # Call the search_inbox method
+                        result = processor.search_inbox()
+
+                        # Verify the result
+                        if result is True:
+                            print(
+                                "  ✓ search_inbox completed successfully with mocked API"
+                            )
+                            tests_passed += 1
+                        else:
+                            print("  ✗ search_inbox failed with mocked API")
+                            print("  Expected: True")
+                            print(f"  Got: {result}")
+
+    # --- Print test summary ---
+    print(f"\n=== Test Summary: {tests_passed}/{tests_run} tests passed ===")
+
+    return tests_passed == tests_run
+
+
+# End of self_test function
+
+
+# --- Main Execution Block ---
+if __name__ == "__main__":
+    # When run directly, automatically run the self-test
+    import sys
+
+    print("Running Action 7 (Inbox Processor) self-test...")
+    success = self_test()
+    sys.exit(0 if success else 1)
+
 # End of action7_inbox.py

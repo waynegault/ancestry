@@ -130,3 +130,59 @@
 21:11:59 INF [main     exec_act 333 ] Memory used: 1.2 MB
 21:11:59 INF [main     exec_act 334 ] ------------------------------------------
                                       
+13:50:21 INF [action10 <module> 89  ] Logging configured via setup_logging (Level: INFO).
+13:50:22 INF [action10 main     849 ] --- Starting Action 10: User Input -> Filter -> Score -> Analyze ---
+13:50:22 INF [action10 validate 208 ] Configured TREE_OWNER_NAME: Wayne Gordon Gault
+13:50:22 INF [action10 validate 211 ] Configured REFERENCE_PERSON_ID: I102281560836
+13:50:22 INF [action10 validate 212 ] Configured REFERENCE_PERSON_NAME: Wayne Gordon Gault
+13:50:22 INF [action10 validate 213 ] Using GEDCOM file: Gault Family.ged
+13:50:22 INF [action10 main     871 ] Overriding max display results with: 3
+13:50:22 INF [action10 load_ged 236 ] Loading, parsing, and pre-processing GEDCOM data...
+13:50:50 INF [action10 load_ged 241 ] GEDCOM data loaded & processed successfully in 28.47s.
+13:50:50 INF [action10 load_ged 244 ] Index size: 14530
+13:50:50 INF [action10 load_ged 245 ] Pre-processed cache size: 14530
+13:50:50 INF [action10 load_ged 248 ] Build Times: Index=4.75s, Maps=4.25s, PreProcess=19.47s
+13:50:50 INF [action10 get_user 272 ] 
+                                      --- Enter Search Criteria (Press Enter to skip optional fields) ---
+13:51:18 INF [action10 display_ 562 ] 
+                                      === SEARCH RESULTS (Top 3 Matches) ===
+13:51:18 INF [action10 display_ 698 ] ID               Name                               Gender    Birth             Birth Place                         Death     Death Place       Total
+13:51:18 INF [action10 display_ 698 ] ---------------  ---------------------------------  --------  ----------------  ----------------------------------  --------  --------------  -------
+13:51:18 INF [action10 display_ 698 ] @I102281560744@  Fraser Gault [50][+25]             M [15]    15/6/1941 [20]    Banff, Banffshire, S... [25] [+25]  N/A [10]  N/A [25] [+25]      220
+13:51:18 INF [action10 display_ 698 ] @I102281560714@  Derrick Wardie Gault [25]          M [15]    16 MAY 1943 [10]  Banff, Banffshire, S... [25] [+25]  N/A [10]  N/A [25] [+25]      160
+13:51:18 INF [action10 display_ 698 ] @I102281560766@  William 'Billy' George Gault [25]  M [15]    07/05/1947 [10]   Banff, Banffshire, S... [25] [+25]  N/A [10]  N/A [25] [+25]      160
+13:51:18 INF [action10 analyze_ 778 ] 
+                                      ===Fraser Gault (b. 1941) (score: 220) ===
+                                      
+13:51:20 INF [action10 display_ 724 ] Parents:
+                                      
+13:51:20 INF [action10 display_ 739 ] - James Gault (b. 26 April 1906, d. 16 JULY 1988)
+13:51:20 INF [action10 display_ 739 ] - 'Dolly' Clara Alexina Fraser (b. 28 April 1908, d. 8 April 2008)
+13:51:20 INF [action10 display_ 724 ] Siblings:
+                                      
+13:51:20 INF [action10 display_ 739 ] - Derrick Wardie Gault (b. 16 MAY 1943)
+13:51:20 INF [action10 display_ 739 ] - Margaret Milne Gault (b. 19 AUG 1930, d. 28 OCT 2017)
+13:51:20 INF [action10 display_ 739 ] - Henry Gault (b. 1 April 1939, d. 8 SEP 2021)
+13:51:20 INF [action10 display_ 739 ] - Evelyn Jane Gault (b. 30 AUG 1949, d. 6 FEB 2025)
+13:51:20 INF [action10 display_ 739 ] - Sheila Gault (b. 4 OCT 1931, d. 4 SEP 2022)
+13:51:20 INF [action10 display_ 739 ] - William 'Billy' George Gault (b. 07/05/1947)
+13:51:20 INF [action10 display_ 739 ] - Alexander Gault (b. 09/04/1937, d. 13th February 2024)
+13:51:20 INF [action10 display_ 739 ] - James Thomas Gault (b. 16 March 1935, d. 18 August 1996)
+13:51:20 INF [action10 display_ 739 ] - Helen Gault (b. 20/2/1933)
+13:51:20 INF [action10 display_ 739 ] - Thomas Gault (b. 1929, d. 1929)
+13:51:20 INF [action10 display_ 724 ] Spouses:
+                                      
+13:51:20 INF [action10 display_ 739 ] - Nellie Mason Smith
+13:51:20 INF [action10 display_ 724 ] Children:
+                                      
+13:51:20 INF [action10 display_ 739 ] - David Gault
+13:51:20 INF [action10 display_ 739 ] - Caroline Gault
+13:51:20 INF [action10 display_ 739 ] - Barry Gault
+13:51:20 INF [action10 analyze_ 836 ] ===Relationship Path to Wayne Gordon Gault===
+                                      Fraser Gault is Wayne Gordon Gault's Uncle:
+                                      
+                                      - Fraser Gault's father is James Gault
+                                      - James Gault's son is Derrick Wardie Gault
+                                      - Derrick Wardie Gault's son is Wayne Gordon Gault
+13:51:20 INF [action10 main     929 ] 
+                                      --- Action 10 Finished ---
