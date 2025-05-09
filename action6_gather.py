@@ -31,10 +31,7 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
-
-# For type hints only
-if TYPE_CHECKING:
-    from config import Config
+from config import config_instance, selenium_config
 import json
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
@@ -1709,7 +1706,7 @@ def _prepare_person_operation_data(
     existing_person: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_instance: "Config",
+    config_instance:Any,
     match_uuid: str,
     formatted_match_username: str,
     match_in_my_tree: bool,
@@ -2068,7 +2065,7 @@ def _prepare_family_tree_operation_data(
     match_uuid: str,
     match_in_my_tree: bool,
     session_manager: SessionManager,
-    config_instance: "Config",
+    config_instance: Any,
     log_ref_short: str,
     logger_instance: logging.Logger,
 ) -> Tuple[Optional[Dict[str, Any]], Literal["create", "update", "none"]]:
@@ -2193,7 +2190,7 @@ def _do_match(
     existing_person_arg: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_instance: "Config",
+    config_instance: Any,
     logger_instance: logging.Logger,
 ) -> Tuple[
     Optional[Dict[str, Any]],
