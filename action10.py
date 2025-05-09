@@ -75,49 +75,26 @@ DEFAULT_CONFIG = {
 }
 
 # --- Local application imports ---
-try:
-    from config import config_instance
-    from logging_config import setup_logging
+from config import config_instance
+from logging_config import setup_logging
 
-    log_filename = "action10.log"
-    if hasattr(config_instance, "LOG_DIR") and config_instance.LOG_DIR:
-        log_filename = config_instance.LOG_DIR / "action10.log"
-    else:
-        log_filename = Path(__file__).parent / "action10.log"
-
-    logger = setup_logging(log_file=str(log_filename), log_level="INFO")
-    logger.info("Logging configured via setup_logging (Level: INFO).")
-
-except ImportError as e:
-    logger.critical(f"Failed to import configuration or logging setup: {e}")
-    logger.warning("Continuing with basic logging configuration.")
-    config_instance = None
-except Exception as e:
-    logger.critical(f"Unexpected error during logging setup: {e}", exc_info=True)
-    logger.warning("Continuing with basic logging configuration.")
-    config_instance = None
+logger = setup_logging()
+logger.info("Logging configured via setup_logging (Level: INFO).")
 
 # Import GEDCOM utilities
-try:
-    from gedcom_utils import (
-        GedcomData,
-        calculate_match_score,
-        _normalize_id,
-        format_relative_info,
-    )
+from gedcom_utils import (
+    GedcomData,
+    calculate_match_score,
+    _normalize_id,
+    format_relative_info,
+)
 
-    # Import relationship utilities
-    from relationship_utils import (
-        fast_bidirectional_bfs,
-        convert_gedcom_path_to_unified_format,
-        format_relationship_path_unified,
-    )
-except ImportError as e:
-    logger.critical(f"Failed to import required utilities: {e}. Script cannot run.")
-    sys.exit(1)
-except Exception as e:
-    logger.critical(f"Unexpected error importing utilities: {e}", exc_info=True)
-    sys.exit(1)
+# Import relationship utilities
+from relationship_utils import (
+    fast_bidirectional_bfs,
+    convert_gedcom_path_to_unified_format,
+    format_relationship_path_unified,
+)
 
 
 # --- Helper Functions ---

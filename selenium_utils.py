@@ -277,6 +277,57 @@ def get_driver_cookies(driver: Optional[WebDriver]) -> Dict[str, str]:
 # End of get_driver_cookies
 
 
+def export_cookies(driver: Optional[WebDriver], file_path: str) -> bool:
+    """
+    Exports WebDriver cookies to a JSON file.
+
+    Args:
+        driver: The WebDriver instance
+        file_path: Path to save the cookies JSON file
+
+    Returns:
+        True if cookies were successfully exported, False otherwise
+    """
+    if not driver:
+        logger.warning("Cannot export cookies: WebDriver is None.")
+        return False
+
+    try:
+        cookies_list = driver.get_cookies()
+        if not cookies_list:
+            logger.warning("No cookies to export (empty list returned).")
+            return False
+
+        import json
+        import os
+
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(cookies_list, f, indent=2)
+
+        logger.info(f"Successfully exported {len(cookies_list)} cookies to {file_path}")
+        return True
+
+    except WebDriverException as e:
+        logger.error(f"WebDriverException exporting cookies: {e}")
+        return False
+    except (OSError, IOError) as io_err:
+        logger.error(f"I/O error exporting cookies to {file_path}: {io_err}")
+        return False
+    except Exception as e:
+        # Only show traceback if not running in test mode
+        show_traceback = __name__ != "__main__"
+        logger.error(
+            f"Unexpected error exporting cookies: {e}", exc_info=show_traceback
+        )
+        return False
+
+
+# End of export_cookies
+
+
 if __name__ == "__main__":
     """
     Self-test for selenium_utils.py module.

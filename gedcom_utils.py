@@ -1650,8 +1650,16 @@ class GedcomData:
             load_time = time.time() - load_start
             logger.info(f"GEDCOM file loaded in {load_time:.2f}s.")
         except Exception as e:
+            file_size_mb = (
+                self.path.stat().st_size / (1024 * 1024)
+                if self.path.exists()
+                else "unknown"
+            )
             logger.critical(
-                f"Failed to load/parse GEDCOM file {self.path}: {e}", exc_info=True
+                f"Failed to load/parse GEDCOM file {self.path} (size: {file_size_mb:.2f}MB): {e}. "
+                f"Error type: {type(e).__name__}. This may indicate file corruption, "
+                f"unsupported GEDCOM format, or encoding issues.",
+                exc_info=True,
             )
             raise
         self.build_caches()  # Build caches upon initialization
@@ -1681,8 +1689,16 @@ class GedcomData:
         self.indi_index = {}
         count = 0
         skipped = 0
+        current_record_id = "None"
         try:
             for indi_record in self.reader.records0(TAG_INDI):
+                # Track current record ID for error reporting
+                current_record_id = (
+                    getattr(indi_record, "xref_id", "Unknown")
+                    if indi_record
+                    else "None"
+                )
+
                 if (
                     _is_individual(indi_record)
                     and hasattr(indi_record, "xref_id")
@@ -1714,8 +1730,12 @@ class GedcomData:
         except StopIteration:
             logger.info("[Cache] Finished iterating INDI records for index.")
         except Exception as e:
+            # Enhanced error reporting with record context
+            record_context = f"while processing record ID: {current_record_id}"
             logger.error(
-                f"[Cache Build] Error during INDI index build: {e}. Index may be incomplete.",
+                f"[Cache Build] Error during INDI index build {record_context}: {e}. "
+                f"Error type: {type(e).__name__}. Index may be incomplete. "
+                f"Records processed so far: {count}, skipped: {skipped}.",
                 exc_info=True,
             )
         elapsed = time.time() - start_time
@@ -1880,8 +1900,12 @@ class GedcomData:
                 }
                 processed_count += 1
             except Exception as e:
+                # Enhanced error reporting with more context
+                error_type = type(e).__name__
                 logger.error(
-                    f"Error pre-processing individual {norm_id}: {e}", exc_info=False
+                    f"Error pre-processing individual {norm_id}: {error_type}: {e}. "
+                    f"This may affect search results and relationship paths for this individual.",
+                    exc_info=True,
                 )
                 errors += 1
         elapsed = time.time() - start_time

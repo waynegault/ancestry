@@ -15,19 +15,16 @@ in specific fields (status, direction). Implements a transactional context manag
 import contextlib
 import enum
 import gc
-import inspect
 import json
 import logging
 import os
-import re
 import shutil
 import sys
 import time
-import traceback
-from contextlib import contextmanager
-from datetime import datetime, timezone
+from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 # --- Third-party imports ---
 from sqlalchemy import (
@@ -39,14 +36,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    PrimaryKeyConstraint,
     String,
     Text,
-    UniqueConstraint,
     create_engine,
     event,
     func,
-    inspect as sa_inspect,
+    select,
     text,
     tuple_,
 )
@@ -130,9 +125,7 @@ class ConversationLog(Base):
         comment="Unique identifier for the conversation thread.",
     )
     direction = Column(
-        SQLEnum(
-            MessageDirectionEnum, name="message_direction_enum"
-        ),  # Removed _v5 suffix for clarity
+        SQLEnum(MessageDirectionEnum),
         primary_key=True,
         comment="Direction of the latest message logged (IN or OUT).",
     )
@@ -452,9 +445,7 @@ class Person(Base):
         comment="Display name of the kit administrator, if different.",
     )
     status = Column(
-        SQLEnum(
-            PersonStatusEnum, name="person_status_enum"
-        ),  # Link to the PersonStatusEnum
+        SQLEnum(PersonStatusEnum),
         nullable=False,
         default=PersonStatusEnum.ACTIVE,  # Default new persons to ACTIVE
         server_default=PersonStatusEnum.ACTIVE.value,  # Set DB default
@@ -471,6 +462,12 @@ class Person(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp when this person was soft-deleted. Null for active records.",
     )
 
     # --- Relationships ---
@@ -516,14 +513,16 @@ CREATE_VIEW_SQL = text(
     LEFT JOIN
         message_types mt ON cl.message_type_id = mt.id
     LEFT JOIN
-        people p ON cl.people_id = p.id;
+        people p ON cl.people_id = p.id
+    WHERE
+        p.deleted_at IS NULL OR p.deleted_at IS NOT NULL;  -- Include all records for now, will be filtered in queries
     """
 )
 # End of CREATE_VIEW_SQL
 
 
 @event.listens_for(Base.metadata, "after_create")
-def _create_views(target, connection, **kw):
+def _create_views(_target, connection, **_kw):
     """SQLAlchemy event listener to create the 'messages' view after tables are created."""
     logger.debug("Executing CREATE VIEW statement for 'messages' view...")
     try:
@@ -680,7 +679,7 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
             "profile_id": profile_id_upper,
             "username": username,
             "administrator_profile_id": (
-                person_data.get("administrator_profile_id").upper()
+                person_data.get("administrator_profile_id", "").upper()
                 if person_data.get("administrator_profile_id")
                 else None
             ),
@@ -706,8 +705,21 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
             logger.error(f"ID not assigned after flush for {log_ref}! Rolling back.")
             session.rollback()  # Explicit rollback on unexpected failure
             return 0
-        logger.debug(f"Created Person ID {new_person.id} for {log_ref}.")
-        return int(new_person.id)  # Return the new ID
+        # Get the ID safely using SQLAlchemy's inspection API
+        person_id = 0
+        try:
+            # Use the SQLAlchemy inspection API to get the actual value
+            person_id = session.scalar(
+                select(Person.id).where(Person.id == new_person.id)
+            )
+            if person_id is None:
+                person_id = 0
+        except Exception as e:
+            logger.warning(f"Error getting person ID: {e}")
+            person_id = 0
+
+        logger.debug(f"Created Person ID {person_id} for {log_ref}.")
+        return person_id  # Return the new ID as int
 
     # Step 7: Handle specific database errors
     except IntegrityError as ie:
@@ -777,7 +789,7 @@ def create_or_update_dna_match(
 
     # Optional numeric fields validation helper
     def validate_optional_numeric(
-        key: str, value: Any, allow_float: bool = False
+        _key: str, value: Any, allow_float: bool = False
     ) -> Optional[Union[int, float]]:
         if value is None:
             return None
@@ -856,8 +868,9 @@ def create_or_update_dna_match(
                     updated = True
 
             if updated:
-                existing_dna_match.updated_at = datetime.now(
-                    timezone.utc
+                # Use setattr to avoid type checking issues with SQLAlchemy columns
+                setattr(
+                    existing_dna_match, "updated_at", datetime.now(timezone.utc)
                 )  # Update timestamp
                 logger.debug(f"Updating existing DnaMatch record for {log_ref}.")
                 # No need to session.add() for updates if object fetched within session
@@ -952,8 +965,9 @@ def create_or_update_family_tree(
                     updated = True
 
             if updated:
-                existing_tree.updated_at = datetime.now(
-                    timezone.utc
+                # Use setattr to avoid type checking issues with SQLAlchemy columns
+                setattr(
+                    existing_tree, "updated_at", datetime.now(timezone.utc)
                 )  # Update timestamp
                 logger.debug(f"Updating existing FamilyTree record for {log_ref}.")
                 # No need to session.add() for updates
@@ -1054,7 +1068,7 @@ def create_or_update_person(
                 "profile_id": profile_id_val,  # Update Profile ID if provided and different
                 "username": username_val,  # Update username
                 "administrator_profile_id": (
-                    person_data.get("administrator_profile_id").upper()
+                    person_data.get("administrator_profile_id", "").upper()
                     if person_data.get("administrator_profile_id")
                     else None
                 ),
@@ -1176,7 +1190,8 @@ def create_or_update_person(
 
             # Step 4c: Set updated_at timestamp if any field changed
             if person_update_needed:
-                existing_person.updated_at = datetime.now(timezone.utc)
+                # Use setattr to avoid type checking issues with SQLAlchemy columns
+                setattr(existing_person, "updated_at", datetime.now(timezone.utc))
                 session.flush()  # Apply updates to DB session state
                 return existing_person, "updated"
             else:
@@ -1243,9 +1258,21 @@ def create_or_update_person(
 
 
 def get_person_by_profile_id_and_username(
-    session: Session, profile_id: str, username: str
+    session: Session, profile_id: str, username: str, include_deleted: bool = False
 ) -> Optional[Person]:
-    """Retrieves a Person record matching both profile_id (case-insensitive) AND username."""
+    """
+    Retrieves a Person record matching both profile_id (case-insensitive) AND username.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        profile_id: The profile ID to search for (case-insensitive).
+        username: The username to search for (case-sensitive).
+        include_deleted: If True, includes soft-deleted records in the search.
+                         Default is False (exclude soft-deleted records).
+
+    Returns:
+        The matching Person object, or None if not found.
+    """
     # Step 1: Validate inputs
     if not profile_id or not username:
         logger.warning(
@@ -1254,16 +1281,18 @@ def get_person_by_profile_id_and_username(
         return None
     # Step 2: Query database
     try:
-        return (
-            session.query(Person)
-            .filter(
-                func.upper(Person.profile_id)
-                == profile_id.upper(),  # Case-insensitive profile ID compare
-                Person.username
-                == username,  # Case-sensitive username compare (default SQLite)
-            )
-            .first()
+        query = session.query(Person).filter(
+            func.upper(Person.profile_id)
+            == profile_id.upper(),  # Case-insensitive profile ID compare
+            Person.username
+            == username,  # Case-sensitive username compare (default SQLite)
         )
+
+        # Apply deleted filter unless include_deleted is True
+        if not include_deleted:
+            query = exclude_deleted_persons(query)
+
+        return query.first()
     except SQLAlchemyError as e:
         logger.error(
             f"DB error retrieving person by profile_id/username '{profile_id}/{username}': {e}",
@@ -1281,8 +1310,21 @@ def get_person_by_profile_id_and_username(
 # End of get_person_by_profile_id_and_username
 
 
-def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Person]:
-    """Retrieves a Person record based on profile_id (case-insensitive)."""
+def get_person_by_profile_id(
+    session: Session, profile_id: str, include_deleted: bool = False
+) -> Optional[Person]:
+    """
+    Retrieves a Person record based on profile_id (case-insensitive).
+
+    Args:
+        session: The SQLAlchemy Session object.
+        profile_id: The profile ID to search for (case-insensitive).
+        include_deleted: If True, includes soft-deleted records in the search.
+                         Default is False (exclude soft-deleted records).
+
+    Returns:
+        The matching Person object, or None if not found.
+    """
     # Step 1: Validate input
     if not profile_id:
         logger.warning("get_person_by_profile_id: profile_id required.")
@@ -1291,11 +1333,15 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
     try:
         # Use func.upper for case-insensitive comparison if needed (depends on DB collation)
         # For SQLite, default is often case-sensitive, so explicit upper is safer.
-        return (
-            session.query(Person)
-            .filter(func.upper(Person.profile_id) == profile_id.upper())
-            .first()
+        query = session.query(Person).filter(
+            func.upper(Person.profile_id) == profile_id.upper()
         )
+
+        # Apply deleted filter unless include_deleted is True
+        if not include_deleted:
+            query = exclude_deleted_persons(query)
+
+        return query.first()
     except SQLAlchemyError as e:
         logger.error(
             f"DB error retrieving person by profile_id '{profile_id}': {e}",
@@ -1314,11 +1360,20 @@ def get_person_by_profile_id(session: Session, profile_id: str) -> Optional[Pers
 
 
 def get_person_and_dna_match(
-    session: Session, match_data: Dict[str, Any]
+    session: Session, match_data: Dict[str, Any], include_deleted: bool = False
 ) -> Tuple[Optional[Person], Optional[DnaMatch]]:
     """
     Retrieves a Person and their associated DnaMatch record using profile_id
     (case-insensitive) and exact username. Eager loads the DnaMatch data.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        match_data: Dictionary containing at least 'profile_id' and 'username' keys.
+        include_deleted: If True, includes soft-deleted records in the search.
+                         Default is False (exclude soft-deleted records).
+
+    Returns:
+        A tuple containing (Person, DnaMatch) objects, or (None, None) if not found.
     """
     # Step 1: Extract identifiers
     profile_id = match_data.get("profile_id")
@@ -1329,7 +1384,7 @@ def get_person_and_dna_match(
         return None, None
     # Step 3: Query database with eager loading
     try:
-        person = (
+        query = (
             session.query(Person)
             .options(joinedload(Person.dna_match))  # Eager load DnaMatch relationship
             .filter(
@@ -1337,8 +1392,13 @@ def get_person_and_dna_match(
                 == profile_id.upper(),  # Case-insensitive profile ID
                 Person.username == username,  # Case-sensitive username
             )
-            .first()
         )
+
+        # Apply deleted filter unless include_deleted is True
+        if not include_deleted:
+            query = exclude_deleted_persons(query)
+
+        person = query.first()
         # Step 4: Return results
         if person:
             return person, person.dna_match  # dna_match is already loaded
@@ -1361,8 +1421,24 @@ def get_person_and_dna_match(
 # End of get_person_and_dna_match
 
 
+def exclude_deleted_persons(query):
+    """
+    Helper function to filter out soft-deleted Person records from a query.
+
+    Args:
+        query: A SQLAlchemy query object that includes the Person model.
+
+    Returns:
+        The modified query with a filter for Person.deleted_at == None.
+    """
+    return query.filter(Person.deleted_at == None)
+
+
+# End of exclude_deleted_persons
+
+
 def find_existing_person(
-    session: Session, identifier_data: Dict[str, Any]
+    session: Session, identifier_data: Dict[str, Any], include_deleted: bool = False
 ) -> Optional[Person]:
     """
     Attempts to find an existing Person record based on available identifiers
@@ -1396,9 +1472,16 @@ def find_existing_person(
 
     person: Optional[Person] = None
     try:
+        # Create base query
+        base_query = session.query(Person)
+
+        # Apply deleted filter unless include_deleted is True
+        if not include_deleted:
+            base_query = exclude_deleted_persons(base_query)
+
         # Step 2: Prioritize lookup by UUID (should be unique)
         if person_uuid:
-            person = session.query(Person).filter(Person.uuid == person_uuid).first()
+            person = base_query.filter(Person.uuid == person_uuid).first()
             if person:
                 # logger.debug(f"Found existing person by UUID for {log_ref} (ID: {person.id}).")
                 return person  # Found by UUID, return immediately
@@ -1406,11 +1489,9 @@ def find_existing_person(
         # Step 3: If not found by UUID, try lookup by Profile ID (case-insensitive)
         if person is None and person_profile_id:
             # Find all potential matches for the profile ID
-            potential_matches = (
-                session.query(Person)
-                .filter(Person.profile_id == person_profile_id)
-                .all()
-            )
+            potential_matches = base_query.filter(
+                Person.profile_id == person_profile_id
+            ).all()
 
             if not potential_matches:
                 pass  # No matches found by profile ID, proceed to final check
@@ -1475,23 +1556,41 @@ def find_existing_person(
 # End of find_existing_person
 
 
-def get_person_by_uuid(session: Session, uuid: str) -> Optional[Person]:
-    """Retrieves a Person record based on their UUID (case-insensitive), eager loading related data."""
+def get_person_by_uuid(
+    session: Session, uuid: str, include_deleted: bool = False
+) -> Optional[Person]:
+    """
+    Retrieves a Person record based on their UUID (case-insensitive), eager loading related data.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        uuid: The UUID to search for (case-insensitive).
+        include_deleted: If True, includes soft-deleted records in the search.
+                         Default is False (exclude soft-deleted records).
+
+    Returns:
+        The matching Person object with eager-loaded relationships, or None if not found.
+    """
     # Step 1: Validate input
     if not uuid:
         logger.warning("get_person_by_uuid: UUID required.")
         return None
     # Step 2: Query database with eager loading
     try:
-        return (
+        query = (
             session.query(Person)
             .options(
                 joinedload(Person.dna_match),  # Eager load DnaMatch
                 joinedload(Person.family_tree),  # Eager load FamilyTree
             )
             .filter(Person.uuid == str(uuid).upper())  # Ensure uppercase comparison
-            .first()
         )
+
+        # Apply deleted filter unless include_deleted is True
+        if not include_deleted:
+            query = exclude_deleted_persons(query)
+
+        return query.first()
     except SQLAlchemyError as e:
         logger.error(f"DB error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
@@ -1600,23 +1699,30 @@ def commit_bulk_data(
                         continue
 
                     # Normalize timestamp to aware UTC
-                    aware_timestamp = (
-                        ts_val.astimezone(timezone.utc)
-                        if ts_val.tzinfo
-                        else ts_val.replace(tzinfo=timezone.utc)
-                    )
-                    data["latest_timestamp"] = (
-                        aware_timestamp  # Update dict with normalized ts
-                    )
+                    if ts_val is not None:
+                        aware_timestamp = (
+                            ts_val.astimezone(timezone.utc)
+                            if hasattr(ts_val, "tzinfo") and ts_val.tzinfo
+                            else ts_val.replace(tzinfo=timezone.utc)
+                        )
+                        data["latest_timestamp"] = (
+                            aware_timestamp  # Update dict with normalized ts
+                        )
+                    else:
+                        # Use current time if timestamp is None
+                        data["latest_timestamp"] = datetime.now(timezone.utc)
 
-                    log_keys_to_check.add((conv_id, direction_enum))
+                    # Ensure conv_id is a string before adding to set
+                    conv_id_str = str(conv_id) if conv_id is not None else ""
+                    log_keys_to_check.add((conv_id_str, direction_enum))
                     data["direction"] = (
                         direction_enum  # Update dict with normalized enum
                     )
                     valid_log_data_list.append(data)
 
                 # Query for existing logs matching the keys in this batch
-                existing_logs_map: Dict[
+                # Use a different name to avoid shadowing the previous declaration
+                existing_logs_dict: Dict[
                     Tuple[str, MessageDirectionEnum], ConversationLog
                 ] = {}
                 if log_keys_to_check:
@@ -1630,11 +1736,37 @@ def commit_bulk_data(
                         )
                         .all()
                     )
-                    existing_logs_map = {
-                        (log.conversation_id, log.direction): log
-                        for log in existing_logs
-                        if log.direction  # Ensure direction is not None
-                    }
+                    # Define as Dict[str, ConversationLog] to use string keys
+                    existing_logs_map: Dict[str, ConversationLog] = {}
+                    for log in existing_logs:
+                        # Convert SQLAlchemy Column objects to Python types
+                        conv_id = (
+                            str(log.conversation_id)
+                            if log.conversation_id is not None
+                            else ""
+                        )
+                        # Get direction enum value safely
+                        if hasattr(log.direction, "value"):
+                            direction = log.direction  # It's already an enum
+                        else:
+                            # Try to convert string to enum
+                            try:
+                                direction = MessageDirectionEnum(str(log.direction))
+                            except (ValueError, TypeError):
+                                # Skip invalid direction values
+                                logger.warning(
+                                    f"{log_prefix}Invalid direction value in log: {log.direction}"
+                                )
+                                continue
+
+                        # Add to map with proper types - use a string key to avoid type issues
+                        direction_value = (
+                            direction.value
+                            if hasattr(direction, "value")
+                            else str(direction)
+                        )
+                        key = f"{conv_id}:{direction_value}"
+                        existing_logs_map[key] = log
                     logger.debug(
                         f"{log_prefix}Prefetched {len(existing_logs_map)} existing ConversationLog entries."
                     )
@@ -1643,7 +1775,13 @@ def commit_bulk_data(
                 for data in valid_log_data_list:
                     conv_id = data["conversation_id"]  # Known to exist from validation
                     direction_enum = data["direction"]  # Known to be Enum
-                    log_key = (conv_id, direction_enum)
+                    # Create string key to match our map
+                    direction_value = (
+                        direction_enum.value
+                        if hasattr(direction_enum, "value")
+                        else str(direction_enum)
+                    )
+                    log_key = f"{conv_id}:{direction_value}"
                     existing_log = existing_logs_map.get(log_key)
 
                     # Prepare data dictionary for insert/update (excluding keys handled separately)
@@ -1830,10 +1968,89 @@ def commit_bulk_data(
 # --- Delete ---
 
 
-def delete_person(session: Session, profile_id: str, username: str) -> bool:
+def soft_delete_person(session: Session, profile_id: str, username: str) -> bool:
     """
-    Deletes a Person record and associated cascaded records (DnaMatch, FamilyTree,
+    Soft-deletes a Person record by setting the deleted_at timestamp.
+    This preserves the record and all related data (DnaMatch, FamilyTree, ConversationLog)
+    but marks it as deleted so it won't appear in normal queries.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        profile_id: The profile ID of the person to soft-delete.
+        username: The username of the person to soft-delete.
+
+    Returns:
+        True if the person was found and soft-deletion was successful, False otherwise.
+    """
+    # Step 1: Validate inputs
+    if not profile_id or not username:
+        logger.warning("soft_delete_person: profile_id and username required.")
+        return False
+    log_ref = f"ProfileID={profile_id}/User='{username}'"
+
+    # Step 2: Find the person to soft-delete
+    try:
+        person = (
+            session.query(Person)
+            .filter(
+                func.upper(Person.profile_id) == profile_id.upper(),
+                Person.username == username,
+                Person.deleted_at == None,  # Only consider non-deleted records
+            )
+            .first()
+        )
+
+        # Step 3: Handle case where person not found
+        if not person:
+            logger.warning(
+                f"soft_delete_person: Person {log_ref} not found or already deleted. Cannot soft-delete."
+            )
+            return False  # Indicate person wasn't found
+
+        # Step 4: Set the deleted_at timestamp
+        person_id_for_log = person.id  # Get ID for logging
+        logger.info(f"Soft-deleting Person ID {person_id_for_log} ({log_ref})...")
+        # Use setattr to avoid type checking issues with SQLAlchemy columns
+        setattr(person, "deleted_at", datetime.now(timezone.utc))
+        setattr(
+            person, "status", PersonStatusEnum.ARCHIVE
+        )  # Also set status to ARCHIVE
+        session.flush()  # Apply changes to session state immediately
+        logger.info(
+            f"Soft-deleted Person ID {person_id_for_log} ({log_ref}) successfully."
+        )
+        return True  # Indicate success
+
+    # Step 5: Handle database errors
+    except SQLAlchemyError as e:
+        logger.error(f"DB error soft-deleting person {log_ref}: {e}", exc_info=True)
+        try:
+            session.rollback()  # Attempt rollback
+        except Exception:
+            pass
+        return False
+    # Step 6: Handle unexpected errors
+    except Exception as e:
+        logger.critical(
+            f"Unexpected error soft_delete_person {log_ref}: {e}", exc_info=True
+        )
+        try:
+            session.rollback()  # Attempt rollback
+        except Exception:
+            pass
+        return False
+
+
+# End of soft_delete_person
+
+
+def hard_delete_person(session: Session, profile_id: str, username: str) -> bool:
+    """
+    Permanently deletes a Person record and associated cascaded records (DnaMatch, FamilyTree,
     ConversationLog) identified by profile_id (case-insensitive) and exact username.
+
+    This function should only be used during development or when absolutely necessary.
+    For normal operations, use soft_delete_person instead.
 
     Args:
         session: The SQLAlchemy Session object.
@@ -1845,7 +2062,7 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
     """
     # Step 1: Validate inputs
     if not profile_id or not username:
-        logger.warning("delete_person: profile_id and username required.")
+        logger.warning("hard_delete_person: profile_id and username required.")
         return False
     log_ref = f"ProfileID={profile_id}/User='{username}'"
 
@@ -1862,22 +2079,26 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
 
         # Step 3: Handle case where person not found
         if not person:
-            logger.warning(f"delete_person: Person {log_ref} not found. Cannot delete.")
+            logger.warning(
+                f"hard_delete_person: Person {log_ref} not found. Cannot delete."
+            )
             return False  # Indicate person wasn't found
 
         # Step 4: Delete the person object (cascades should handle related records)
         person_id_for_log = person.id  # Get ID for logging before deletion
         logger.info(
-            f"Attempting to delete Person ID {person_id_for_log} ({log_ref})..."
+            f"Permanently deleting Person ID {person_id_for_log} ({log_ref})..."
         )
         session.delete(person)
         session.flush()  # Apply deletion to session state immediately
-        logger.info(f"Deleted Person ID {person_id_for_log} ({log_ref}) successfully.")
+        logger.info(
+            f"Permanently deleted Person ID {person_id_for_log} ({log_ref}) successfully."
+        )
         return True  # Indicate success
 
     # Step 5: Handle database errors
     except SQLAlchemyError as e:
-        logger.error(f"DB error deleting person {log_ref}: {e}", exc_info=True)
+        logger.error(f"DB error hard-deleting person {log_ref}: {e}", exc_info=True)
         try:
             session.rollback()  # Attempt rollback
         except Exception:
@@ -1885,7 +2106,9 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         return False
     # Step 6: Handle unexpected errors
     except Exception as e:
-        logger.critical(f"Unexpected error delete_person {log_ref}: {e}", exc_info=True)
+        logger.critical(
+            f"Unexpected error hard_delete_person {log_ref}: {e}", exc_info=True
+        )
         try:
             session.rollback()  # Attempt rollback
         except Exception:
@@ -1893,11 +2116,37 @@ def delete_person(session: Session, profile_id: str, username: str) -> bool:
         return False
 
 
+# End of hard_delete_person
+
+
+def delete_person(
+    session: Session, profile_id: str, username: str, soft_delete: bool = True
+) -> bool:
+    """
+    Deletes a Person record identified by profile_id and username.
+    By default, performs a soft delete (sets deleted_at timestamp) to preserve data.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        profile_id: The profile ID of the person to delete.
+        username: The username of the person to delete.
+        soft_delete: If True (default), performs a soft delete by setting the deleted_at timestamp.
+                     If False, permanently deletes the record and all related data.
+
+    Returns:
+        True if the person was found and deletion was successful, False otherwise.
+    """
+    if soft_delete:
+        return soft_delete_person(session, profile_id, username)
+    else:
+        return hard_delete_person(session, profile_id, username)
+
+
 # End of delete_person
 
 
 def delete_database(
-    session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
+    _session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
 ):
     """
     Deletes the physical database file with retry logic.
@@ -2015,43 +2264,452 @@ def delete_database(
 # --- Backup and Recovery ---
 
 
-def backup_database(session_manager=None):
+def backup_database(_session_manager=None):
     """
     Creates a backup copy of the current database file.
     The backup is named 'ancestry_backup.db' and stored in the DATA_DIR.
 
     Args:
         session_manager: Not used, kept for signature consistency in main.py.
+
+    Returns:
+        True if backup was successful, False otherwise.
     """
     # Step 1: Get paths from config
     db_path = config_instance.DATABASE_FILE
     backup_dir = config_instance.DATA_DIR
-    # Step 2: Ensure backup directory exists
+
+    # Step 2: Validate paths
+    if db_path is None:
+        logger.error("Cannot backup database: DATABASE_FILE is not configured.")
+        return False
+
+    if backup_dir is None:
+        logger.error("Cannot backup database: DATA_DIR is not configured.")
+        return False
+
+    # Step 3: Ensure backup directory exists
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_path = backup_dir / "ancestry_backup.db"
     logger.debug(
         f"Attempting to back up database '{db_path.name}' to '{backup_path}'..."
     )
 
-    # Step 3: Perform backup if source exists
+    # Step 4: Perform backup if source exists
     try:
         if db_path.exists():
             # Use copy2 to preserve metadata (like modification time)
             shutil.copy2(db_path, backup_path)
             logger.info(f"Database backed up to '{backup_path.name}'.")
+            return True
         else:
             logger.warning(
                 f"Database file '{db_path.name}' not found. Cannot create backup."
             )
-    # Step 4: Handle errors during backup
+            return False
+    # Step 5: Handle errors during backup
     except Exception as e:
         logger.error(
             f"Error backing up database from '{db_path}' to '{backup_path}': {e}",
             exc_info=True,
         )
+        return False
 
 
 # End of backup_database
+
+
+# --- Cleanup Functions ---
+
+
+def cleanup_soft_deleted_records(
+    session: Session, older_than_days: int = 30
+) -> Dict[str, int]:
+    """
+    Permanently deletes Person records (and their related records through cascade)
+    that were soft-deleted more than the specified number of days ago.
+
+    Args:
+        session: The SQLAlchemy Session object.
+        older_than_days: Only delete records that were soft-deleted more than this many days ago.
+                         Default is 30 days.
+
+    Returns:
+        A dictionary with the count of deleted records by type.
+    """
+    # Calculate the cutoff date
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+
+    # Initialize counters
+    deleted_counts = {
+        "people": 0,
+        # Related records will be deleted via cascade
+    }
+
+    try:
+        # Find all Person records that were soft-deleted before the cutoff date
+        to_delete = session.query(Person).filter(Person.deleted_at < cutoff_date).all()
+
+        if not to_delete:
+            logger.info(
+                f"No soft-deleted records older than {older_than_days} days found."
+            )
+            return deleted_counts
+
+        # Log the number of records to be deleted
+        logger.info(
+            f"Found {len(to_delete)} soft-deleted Person records older than {older_than_days} days."
+        )
+
+        # Delete each record
+        for person in to_delete:
+            person_id = person.id
+            profile_id = person.profile_id
+            username = person.username
+            log_ref = f"ID={person_id}/ProfileID={profile_id}/User='{username}'"
+
+            logger.debug(f"Permanently deleting soft-deleted Person {log_ref}...")
+            session.delete(person)
+            deleted_counts["people"] += 1
+
+        # Flush changes to the session
+        session.flush()
+        logger.info(
+            f"Permanently deleted {deleted_counts['people']} soft-deleted Person records."
+        )
+
+        return deleted_counts
+
+    except SQLAlchemyError as e:
+        logger.error(f"DB error cleaning up soft-deleted records: {e}", exc_info=True)
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        return deleted_counts
+    except Exception as e:
+        logger.critical(
+            f"Unexpected error cleaning up soft-deleted records: {e}", exc_info=True
+        )
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        return deleted_counts
+
+
+# End of cleanup_soft_deleted_records
+
+
+# --- Tests ---
+
+
+def test_soft_delete_functionality(session: Session) -> bool:
+    """
+    Tests the soft delete functionality by:
+    1. Creating a test person
+    2. Soft-deleting the person
+    3. Verifying the person is not found in normal queries
+    4. Verifying the person is found when include_deleted=True
+    5. Hard-deleting the person to clean up
+
+    Args:
+        session: The SQLAlchemy Session object.
+
+    Returns:
+        True if all tests pass, False otherwise.
+    """
+    logger.info("=== Testing Soft Delete Functionality ===")
+
+    # Generate unique test data
+    test_uuid = f"TEST-{uuid4()}"
+    test_profile_id = f"TEST-{uuid4()}"
+    test_username = f"Test User {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+
+    # Step 1: Create a test person
+    logger.info(
+        f"Creating test person: UUID={test_uuid}, ProfileID={test_profile_id}, Username={test_username}"
+    )
+    person_data = {
+        "uuid": test_uuid,
+        "profile_id": test_profile_id,
+        "username": test_username,
+        "status": PersonStatusEnum.ACTIVE,
+    }
+
+    try:
+        # Create the person
+        person_id = create_person(session, person_data)
+        if person_id == 0:
+            logger.error("Failed to create test person.")
+            return False
+
+        logger.info(f"Created test person with ID: {person_id}")
+
+        # Step 2: Verify the person exists
+        person = get_person_by_profile_id(session, test_profile_id)
+        if not person:
+            logger.error(
+                f"Test person with ProfileID={test_profile_id} not found after creation."
+            )
+            return False
+
+        logger.info(
+            f"Verified test person exists: ID={person.id}, ProfileID={person.profile_id}"
+        )
+
+        # Step 3: Soft-delete the person
+        logger.info(
+            f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}"
+        )
+        result = soft_delete_person(session, test_profile_id, test_username)
+        if not result:
+            logger.error(
+                f"Failed to soft-delete test person: ProfileID={test_profile_id}"
+            )
+            return False
+
+        logger.info(f"Soft-deleted test person: ProfileID={test_profile_id}")
+
+        # Step 4: Verify the person is not found in normal queries
+        person = get_person_by_profile_id(session, test_profile_id)
+        if person:
+            logger.error(
+                f"Test person with ProfileID={test_profile_id} still found after soft-delete in normal query."
+            )
+            return False
+
+        logger.info(
+            f"Verified test person not found in normal query after soft-delete."
+        )
+
+        # Step 5: Verify the person is found when include_deleted=True
+        person = get_person_by_profile_id(
+            session, test_profile_id, include_deleted=True
+        )
+        if not person:
+            logger.error(
+                f"Test person with ProfileID={test_profile_id} not found after soft-delete with include_deleted=True."
+            )
+            return False
+
+        logger.info(
+            f"Verified test person found with include_deleted=True after soft-delete."
+        )
+
+        # Step 6: Verify deleted_at timestamp is set - use safer comparison
+        deleted_at_value = getattr(person, "deleted_at", None)
+        if deleted_at_value is None:
+            logger.error(
+                f"Test person with ProfileID={test_profile_id} has no deleted_at timestamp after soft-delete."
+            )
+            return False
+
+        logger.info(
+            f"Verified test person has deleted_at timestamp: {deleted_at_value}"
+        )
+
+        # Step 7: Verify status is set to ARCHIVE - use safer comparison
+        status_value = getattr(person, "status", None)
+        if status_value != PersonStatusEnum.ARCHIVE:
+            logger.error(
+                f"Test person with ProfileID={test_profile_id} has status {status_value} instead of ARCHIVE after soft-delete."
+            )
+            return False
+
+        logger.info(f"Verified test person has status ARCHIVE after soft-delete.")
+
+        # Step 8: Hard-delete the person to clean up
+        logger.info(
+            f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}"
+        )
+        result = hard_delete_person(session, test_profile_id, test_username)
+        if not result:
+            logger.error(
+                f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}"
+            )
+            return False
+
+        logger.info(
+            f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}"
+        )
+
+        # Step 9: Verify the person is permanently deleted
+        person = get_person_by_profile_id(
+            session, test_profile_id, include_deleted=True
+        )
+        if person:
+            logger.error(
+                f"Test person with ProfileID={test_profile_id} still found after hard-delete."
+            )
+            return False
+
+        logger.info(f"Verified test person permanently deleted.")
+
+        logger.info("=== All Soft Delete Tests Passed ===")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error during soft delete test: {e}", exc_info=True)
+        return False
+
+
+# End of test_soft_delete_functionality
+
+
+def test_cleanup_soft_deleted_records(session: Session) -> bool:
+    """
+    Tests the cleanup_soft_deleted_records function by:
+    1. Creating test persons
+    2. Soft-deleting the persons with different timestamps
+    3. Running the cleanup function with a specific cutoff
+    4. Verifying only the appropriate records are deleted
+
+    Args:
+        session: The SQLAlchemy Session object.
+
+    Returns:
+        True if all tests pass, False otherwise.
+    """
+    logger.info("=== Testing Cleanup of Soft-Deleted Records ===")
+
+    # Create test data for multiple persons
+    test_persons = []
+    for i in range(3):
+        test_uuid = f"TEST-CLEANUP-{uuid4()}"
+        test_profile_id = f"TEST-CLEANUP-{uuid4()}"
+        test_username = f"Test Cleanup User {i} {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+
+        test_persons.append(
+            {
+                "uuid": test_uuid,
+                "profile_id": test_profile_id,
+                "username": test_username,
+            }
+        )
+
+    try:
+        created_ids = []
+
+        # Step 1: Create test persons
+        for i, person_data in enumerate(test_persons):
+            logger.info(
+                f"Creating test person {i+1}: ProfileID={person_data['profile_id']}"
+            )
+            person_id = create_person(session, person_data)
+            if person_id == 0:
+                logger.error(f"Failed to create test person {i+1}.")
+                return False
+            created_ids.append(person_id)
+
+        logger.info(f"Created {len(created_ids)} test persons with IDs: {created_ids}")
+
+        # Step 2: Soft-delete the persons with different timestamps
+        for i, person_data in enumerate(test_persons):
+            logger.info(
+                f"Soft-deleting test person {i+1}: ProfileID={person_data['profile_id']}"
+            )
+            result = soft_delete_person(
+                session, person_data["profile_id"], person_data["username"]
+            )
+            if not result:
+                logger.error(f"Failed to soft-delete test person {i+1}.")
+                return False
+
+            # Get the person and manually set the deleted_at timestamp for testing
+            person = get_person_by_profile_id(
+                session, person_data["profile_id"], include_deleted=True
+            )
+            if not person:
+                logger.error(f"Test person {i+1} not found after soft-delete.")
+                return False
+
+            # Set different deleted_at timestamps using setattr to avoid type checking issues
+            if i == 0:
+                # 40 days ago (should be cleaned up)
+                setattr(
+                    person,
+                    "deleted_at",
+                    datetime.now(timezone.utc) - timedelta(days=40),
+                )
+            elif i == 1:
+                # 20 days ago (should not be cleaned up with 30-day cutoff)
+                setattr(
+                    person,
+                    "deleted_at",
+                    datetime.now(timezone.utc) - timedelta(days=20),
+                )
+            # Leave the third person with the current timestamp
+
+            logger.info(f"Set deleted_at for test person {i+1} to {person.deleted_at}")
+
+        # Flush changes to the database
+        session.flush()
+
+        # Step 3: Run the cleanup function with a 30-day cutoff
+        logger.info("Running cleanup_soft_deleted_records with 30-day cutoff")
+        deleted_counts = cleanup_soft_deleted_records(session, older_than_days=30)
+
+        # Step 4: Verify only the appropriate records are deleted
+        if deleted_counts["people"] != 1:
+            logger.error(
+                f"Expected 1 person to be deleted, but got {deleted_counts['people']}."
+            )
+            return False
+
+        logger.info(f"Cleanup deleted {deleted_counts['people']} persons as expected.")
+
+        # Verify person 1 is deleted
+        person1 = get_person_by_profile_id(
+            session, test_persons[0]["profile_id"], include_deleted=True
+        )
+        if person1:
+            logger.error(f"Test person 1 still exists after cleanup.")
+            return False
+
+        logger.info("Verified test person 1 was permanently deleted.")
+
+        # Verify person 2 still exists
+        person2 = get_person_by_profile_id(
+            session, test_persons[1]["profile_id"], include_deleted=True
+        )
+        if not person2:
+            logger.error(f"Test person 2 was unexpectedly deleted.")
+            return False
+
+        logger.info("Verified test person 2 still exists (soft-deleted).")
+
+        # Verify person 3 still exists
+        person3 = get_person_by_profile_id(
+            session, test_persons[2]["profile_id"], include_deleted=True
+        )
+        if not person3:
+            logger.error(f"Test person 3 was unexpectedly deleted.")
+            return False
+
+        logger.info("Verified test person 3 still exists (soft-deleted).")
+
+        # Clean up remaining test persons
+        for i in range(1, 3):  # Persons 2 and 3
+            logger.info(f"Hard-deleting test person {i+1} for cleanup")
+            result = hard_delete_person(
+                session, test_persons[i]["profile_id"], test_persons[i]["username"]
+            )
+            if not result:
+                logger.error(f"Failed to hard-delete test person {i+1} for cleanup.")
+                return False
+
+        logger.info("Hard-deleted remaining test persons for cleanup.")
+
+        logger.info("=== All Cleanup Tests Passed ===")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error during cleanup test: {e}", exc_info=True)
+        return False
+
+
+# End of test_cleanup_soft_deleted_records
 
 
 # Note: restore_database function (Action 4) is implemented in main.py (restore_db_actn)
@@ -2069,8 +2727,16 @@ if __name__ == "__main__":
         from logging_config import setup_logging  # Local import
 
         db_file_path = config_instance.DATABASE_FILE
-        log_filename_only = db_file_path.with_suffix(".log").name
-        standalone_logger = setup_logging(log_file=log_filename_only, log_level="DEBUG")
+        if db_file_path is not None:
+            log_filename_only = db_file_path.with_suffix(".log").name
+            standalone_logger = setup_logging(
+                log_file=log_filename_only, log_level="DEBUG"
+            )
+        else:
+            # Fallback to default log name if DATABASE_FILE is not configured
+            standalone_logger = setup_logging(
+                log_file="database.log", log_level="DEBUG"
+            )
         standalone_logger.info("--- Starting database.py standalone run ---")
     except Exception as log_err:
         # Fallback basic config if setup_logging fails
@@ -2093,7 +2759,14 @@ if __name__ == "__main__":
     try:
         # Step 2: Get database path and create engine
         db_path_obj = config_instance.DATABASE_FILE
-        db_path_str = str(db_path_obj.resolve())
+        if db_path_obj is None:
+            standalone_logger.error(
+                "DATABASE_FILE is not configured. Using in-memory database."
+            )
+            db_path_str = ":memory:"
+        else:
+            db_path_str = str(db_path_obj.resolve())
+
         standalone_logger.info(f"Target database file: {db_path_str}")
         engine = create_engine(
             f"sqlite:///{db_path_str}", echo=False
@@ -2101,8 +2774,8 @@ if __name__ == "__main__":
 
         # Step 3: Add PRAGMA event listener for new connections
         @event.listens_for(engine, "connect")
-        def enable_sqlite_settings_standalone(dbapi_connection, connection_record):
-            """Listener to set PRAGMA settings upon connection."""
+        def enable_sqlite_settings_standalone(dbapi_connection, _):
+            """Listener to set PRAGMA settings upon connection. The second parameter is unused."""
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute("PRAGMA journal_mode=WAL;")
@@ -2190,10 +2863,59 @@ if __name__ == "__main__":
             # Ensure seed session is closed
             if seed_session:
                 try:
+                    # Run tests for soft delete functionality
+                    standalone_logger.info(
+                        "Running tests for soft delete functionality..."
+                    )
+                    with db_transn(seed_session) as sess:
+                        # Test soft delete functionality
+                        soft_delete_test_result = test_soft_delete_functionality(sess)
+                        if soft_delete_test_result:
+                            standalone_logger.info(
+                                "Soft delete functionality tests PASSED."
+                            )
+                        else:
+                            standalone_logger.error(
+                                "Soft delete functionality tests FAILED."
+                            )
+
+                        # Test cleanup of soft-deleted records
+                        cleanup_test_result = test_cleanup_soft_deleted_records(sess)
+                        if cleanup_test_result:
+                            standalone_logger.info(
+                                "Cleanup of soft-deleted records tests PASSED."
+                            )
+                        else:
+                            standalone_logger.error(
+                                "Cleanup of soft-deleted records tests FAILED."
+                            )
+
+                        # Print summary of test results
+                        standalone_logger.info("=== Test Summary ===")
+                        standalone_logger.info(
+                            f"Soft Delete Functionality: {'PASSED' if soft_delete_test_result else 'FAILED'}"
+                        )
+                        standalone_logger.info(
+                            f"Cleanup of Soft-Deleted Records: {'PASSED' if cleanup_test_result else 'FAILED'}"
+                        )
+                        standalone_logger.info(
+                            f"Overall Test Result: {'PASSED' if soft_delete_test_result and cleanup_test_result else 'FAILED'}"
+                        )
+                        standalone_logger.info("===================")
+
+                        # If any test failed, log a warning
+                        if not (soft_delete_test_result and cleanup_test_result):
+                            standalone_logger.warning(
+                                "Some tests failed. See logs for details."
+                            )
+
+                    standalone_logger.info("Tests completed.")
+
+                    # Close the session
                     seed_session.close()
                 except Exception as close_err:
                     standalone_logger.warning(
-                        f"Error closing seed session: {close_err}"
+                        f"Error during tests or closing seed session: {close_err}"
                     )
 
     # Step 6: Handle any exceptions during the setup process

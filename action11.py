@@ -129,6 +129,7 @@ from api_utils import (
     call_suggest_api,
     call_facts_user_api,
     call_getladder_api,
+    call_discovery_relationship_api,
     call_treesui_list_api,
     _get_api_timeout,
 )
@@ -137,6 +138,7 @@ from api_utils import (
 from relationship_utils import (
     format_api_relationship_path,
     convert_api_path_to_unified_format,
+    convert_discovery_api_path_to_unified_format,
     format_relationship_path_unified,
 )
 
@@ -144,25 +146,6 @@ logger.debug(
     "Successfully imported required functions from api_utils and relationship_utils."
 )
 API_UTILS_AVAILABLE = True
-
-
-# Define a simple implementation for call_discovery_relationship_api
-def call_discovery_relationship_api(
-    session_manager_local,
-    selected_person_global_id: str,
-    owner_profile_id: str,
-    base_url: str,
-) -> Optional[Dict]:
-    """
-    Implementation for call_discovery_relationship_api.
-    This function makes an API call to get relationship data from the Discovery API.
-    """
-    logger.info(
-        f"Calling Discovery Relationship API for {selected_person_global_id} to {owner_profile_id}"
-    )
-    # This is a simplified implementation that returns None
-    # The actual implementation would make an API call to get relationship data
-    return None
 
 
 # --- Import General Utilities ---
@@ -1178,6 +1161,7 @@ def _extract_best_name_from_details(
     if best_name == "Unknown":
         first_name_comp = person_research_data.get("FirstName", "")
         last_name_comp = person_research_data.get("LastName", "")
+        constructed_name = ""
         if first_name_comp or last_name_comp:
             constructed_name = f"{first_name_comp} {last_name_comp}".strip()
         if constructed_name and len(constructed_name) > 1:
@@ -1238,6 +1222,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
         logger.debug(f"Using Gender fact: '{gender_str}'")
     extracted["gender_str"] = gender_str
     extracted["gender"] = None
+    gender_lower = None
     if gender_str and isinstance(gender_str, str):
         gender_lower = gender_str.lower()
     if gender_lower == "male":
@@ -1253,6 +1238,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
     )
     # Living Status
     is_living_val = person_research_data.get("IsPersonLiving")
+    death_date_obj_for_living_check = None
     if isinstance(is_living_val, bool):
         extracted["is_living"] = is_living_val
     else:
@@ -1318,6 +1304,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
     # Name Components
     extracted["first_name"] = clean_param(person_research_data.get("FirstName"))
     extracted["surname"] = clean_param(person_research_data.get("LastName"))
+    parts = []
     if not extracted["first_name"] and best_name != "Unknown":
         parts = best_name.split()
     if parts:
@@ -1528,12 +1515,17 @@ def _display_family_info(family_data: Dict):
     parents_list = (family_data.get("Fathers") or []) + (
         family_data.get("Mothers") or []
     )
-    siblings_list = family_data.get("Siblings")
+    siblings_list = family_data.get("Siblings", [])
+    half_siblings_list = family_data.get("HalfSiblings", [])
+
+    # Combine siblings and half-siblings
+    all_siblings = siblings_list + half_siblings_list
+
     spouses_list = family_data.get("Spouses")
     children_raw = family_data.get("Children", [])
     children_flat_list = _flatten_children_list(children_raw)
     print_relatives("Parents", parents_list)
-    print_relatives("Siblings", siblings_list)
+    print_relatives("Siblings", all_siblings)
     print_relatives("Spouses", spouses_list)
     print_relatives("Children", children_flat_list)
 
@@ -1652,9 +1644,13 @@ def _display_discovery_relationship(
     discovery_api_url = f"{base_url}/discoveryui-matchingservice/api/relationship?profileIdFrom={owner_profile_id}&profileIdTo={selected_person_global_id}"
     print(f"\nDiAPI URL: {discovery_api_url}\n")
 
-    # Call the API
+    # Call the API with timeout parameter
     relationship_data = call_discovery_relationship_api(
-        session_manager_local, selected_person_global_id, owner_profile_id, base_url
+        session_manager_local,
+        selected_person_global_id,
+        owner_profile_id,
+        base_url,
+        timeout=30,  # Use a 30-second timeout for this API call
     )
     if not relationship_data:
         logger.warning("call_discovery_relationship_api returned no data.")
@@ -1686,11 +1682,11 @@ def _display_discovery_relationship(
             step_name = step.get("name", "?")
             step_rel = step.get("relationship", "?")
             display_rel = step_rel.capitalize()
-        if callable(rel_term_func):
-            display_rel = rel_term_func(None, step_rel)
-        display_line = f"  -> {display_rel} is {name_formatter(step_name)}"
-        print(display_line)
-        logger.info(f"    {display_line.strip()}")
+            if callable(rel_term_func):
+                display_rel = rel_term_func(None, step_rel)
+            display_line = f"  -> {display_rel} is {name_formatter(step_name)}"
+            print(display_line)
+            logger.info(f"    {display_line.strip()}")
         print(f"  -> {owner_name} (Tree Owner / You)")
         logger.info(f"    -> {owner_name} (Tree Owner / You)")
         logger.info("    -------------------------------------------------")
@@ -1730,9 +1726,15 @@ def _call_direct_treesui_list_api(
     if not session_manager_local or not owner_tree_id or not base_url:
         logger.error("Missing required parameters for direct TreesUI List API call")
         return None
-    if not session_manager_local.is_sess_valid():
-        logger.error("Session is not valid for direct TreesUI List API call.")
-        print("Error: Session invalid. Cannot contact Ancestry API.")
+
+    # Check if the session has a requests session available for API calls
+    # This is more appropriate than checking if the browser session is valid
+    if (
+        not hasattr(session_manager_local, "_requests_session")
+        or not session_manager_local._requests_session
+    ):
+        logger.error("No requests session available for direct TreesUI List API call.")
+        print("Error: API session not available. Cannot contact Ancestry API.")
         return None
 
     first_name = search_criteria.get("first_name_raw", "")
@@ -1759,9 +1761,7 @@ def _call_direct_treesui_list_api(
             and session_manager_local._requests_session
         ):
             cookies = session_manager_local._requests_session.cookies
-        elif (
-            hasattr(session_manager_local, "session") and session_manager_local.session
-        ):
+        elif session_manager_local.driver and session_manager_local.is_sess_valid():
             logger.warning("Using cookies from Selenium session for direct API call.")
             try:
                 selenium_cookies = session_manager_local.driver.get_cookies()
@@ -1845,13 +1845,59 @@ def _handle_search_phase(
     """Handles the API search phase using the direct TreesUI List API."""
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
+
+    # Check if owner_tree_id is missing and try to get it from environment variables or config
     if not owner_tree_id:
-        # Log error and display to user
-        logger.error("Owner Tree ID missing.")
-        return None
+        # First try to get tree ID from environment variables
+        import os
+
+        env_tree_id = os.environ.get("MY_TREE_ID")
+        if env_tree_id:
+            owner_tree_id = env_tree_id
+            # Update the session manager with the tree ID from environment
+            session_manager_local.my_tree_id = owner_tree_id
+            logger.info(f"Using tree ID from environment variables: {owner_tree_id}")
+        else:
+            # Try to get tree ID from config
+            tree_name = getattr(config_instance_local, "TREE_NAME", None)
+            if tree_name:
+                logger.info(
+                    f"Attempting to retrieve tree ID for tree name: {tree_name}"
+                )
+                try:
+                    # Try to retrieve the tree ID using the session manager
+                    owner_tree_id = session_manager_local.get_my_tree_id()
+                    if owner_tree_id:
+                        logger.info(f"Successfully retrieved tree ID: {owner_tree_id}")
+                        # Update the session manager with the retrieved tree ID
+                        session_manager_local.my_tree_id = owner_tree_id
+                    else:
+                        logger.warning(
+                            f"Failed to retrieve tree ID for tree name: {tree_name}"
+                        )
+                except Exception as e:
+                    logger.error(f"Error retrieving tree ID: {e}")
+
+        # If still no tree ID, use a default or prompt the user
+        if not owner_tree_id:
+            # Prompt the user for a tree ID
+            print("\nTree ID is required for searching. Please enter a tree ID:")
+            user_tree_id = input("Tree ID: ").strip()
+            if user_tree_id:
+                owner_tree_id = user_tree_id
+                # Update the session manager with the user-provided tree ID
+                session_manager_local.my_tree_id = owner_tree_id
+                logger.info(f"Using user-provided tree ID: {owner_tree_id}")
+            else:
+                # Log error and display to user
+                logger.error("Owner Tree ID missing and no input provided.")
+                print("Error: Tree ID is required for searching. Operation cancelled.")
+                return None
+
     if not base_url:
         # Log error and display to user
         logger.error("ERROR: Ancestry URL not configured.. Base URL missing.")
+        print("Error: Ancestry URL not configured. Operation cancelled.")
         return None
 
     # This call now works because the function is defined above
@@ -1921,7 +1967,6 @@ def _parse_treesui_list_response(
                 else:
                     logger.warning(f"Item {idx}: Invalid gid format: {gid_data}")
                     continue  # Skip this person if IDs cannot be extracted
-            # Corrected Else block placement
             else:
                 logger.warning(f"Item {idx}: Missing or invalid gid data: {gid_data}")
                 continue  # Skip this person if IDs cannot be extracted
@@ -2190,11 +2235,25 @@ def _handle_details_phase(
     base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
     api_person_id = selected_candidate_raw.get("PersonId")
     api_tree_id = selected_candidate_raw.get("TreeId")
+
+    # Check if owner_profile_id is missing and try to get it from environment variables
     if not owner_profile_id:
-        # Log error and display to user
-        logger.error("Owner profile ID missing.")
-        print("\nCannot fetch details: User ID missing.")
-        return None
+        # Try to get profile ID from environment variables
+        import os
+
+        env_profile_id = os.environ.get("MY_PROFILE_ID")
+        if env_profile_id:
+            owner_profile_id = env_profile_id
+            # Update the session manager with the profile ID from environment
+            session_manager_local.my_profile_id = owner_profile_id
+            logger.info(
+                f"Using profile ID from environment variables: {owner_profile_id}"
+            )
+        else:
+            # Log error and display to user
+            logger.error("Owner profile ID missing.")
+            print("\nCannot fetch details: User ID missing.")
+            return None
     if not api_person_id or not api_tree_id:
         # Log error and display to user
         logger.error(f"Cannot fetch details: Missing PersonId/TreeId.")
@@ -2239,6 +2298,49 @@ def _handle_supplementary_info_phase(
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     owner_name = getattr(session_manager_local, "tree_owner_name", "the Tree Owner")
+
+    # Check if owner_tree_id is missing and try to get it from environment variables
+    if not owner_tree_id:
+        import os
+
+        env_tree_id = os.environ.get("MY_TREE_ID")
+        if env_tree_id:
+            owner_tree_id = env_tree_id
+            # Update the session manager with the tree ID from environment
+            session_manager_local.my_tree_id = owner_tree_id
+            logger.info(f"Using tree ID from environment variables: {owner_tree_id}")
+
+    # Check if owner_profile_id is missing and try to get it from environment variables
+    if not owner_profile_id:
+        import os
+
+        env_profile_id = os.environ.get("MY_PROFILE_ID")
+        if env_profile_id:
+            owner_profile_id = env_profile_id
+            # Update the session manager with the profile ID from environment
+            session_manager_local.my_profile_id = owner_profile_id
+            logger.info(
+                f"Using profile ID from environment variables: {owner_profile_id}"
+            )
+
+    # Check if owner_name is missing and try to get it from environment variables
+    if owner_name == "the Tree Owner":
+        import os
+
+        env_owner_name = os.environ.get("TREE_OWNER_NAME")
+        if env_owner_name:
+            owner_name = env_owner_name
+            # Update the session manager with the owner name from environment
+            session_manager_local.tree_owner_name = owner_name
+            logger.info(
+                f"Using tree owner name from environment variables: {owner_name}"
+            )
+        else:
+            # If not in environment, set a default based on the profile ID
+            if owner_profile_id:
+                owner_name = "Wayne Gault"  # Default name based on the profile ID
+                session_manager_local.tree_owner_name = owner_name
+                logger.info(f"Using default tree owner name: {owner_name}")
 
     # --- Display Family ---
     # Get the person's name and birth/death years for display
@@ -2494,7 +2596,8 @@ def _handle_supplementary_info_phase(
     # --- Directly Call API and Format/Print Relationship ---
     if is_owner:
         # No API call needed, print message directly
-        print(f"\n  {selected_name} is the tree owner ({owner_name}).")
+        print(f"\n=== Relationship Path to {owner_name} ===")
+        print(f"  {selected_name} is the tree owner ({owner_name}).")
         logger.info(
             f"{selected_name} is Tree Owner. No relationship path calculation needed."
         )
@@ -2656,25 +2759,67 @@ def _handle_supplementary_info_phase(
         sp_global_id_str = str(selected_person_global_id)
         op_id_str = str(owner_profile_id_str)  # Ensure it's a string
 
-        # Call the Discovery API
+        # Call the Discovery API with timeout parameter
         discovery_api_response = call_discovery_relationship_api(
-            session_manager_local, sp_global_id_str, op_id_str, base_url
+            session_manager_local,
+            sp_global_id_str,
+            op_id_str,
+            base_url,
+            timeout=30,  # Use a 30-second timeout for this API call
         )
 
         if discovery_api_response and isinstance(discovery_api_response, dict):
             calculation_performed = True
-            # This API returns JSON, not HTML directly for the path.
-            # We need a different formatter or specific parsing logic here.
-            # For now, let's represent the direct path if available.
-            if isinstance(
-                discovery_api_response.get("path"), list
-            ) and discovery_api_response.get("path"):
-                path_steps = discovery_api_response["path"]
+            # Use the unified relationship path formatter for Discovery API
+            try:
+                # Convert the Discovery API response to the unified format
+                unified_path = convert_discovery_api_path_to_unified_format(
+                    discovery_api_response, selected_name
+                )
+
+                # Format the path using the unified formatter
+                if unified_path:
+                    formatted_path = format_relationship_path_unified(
+                        unified_path, selected_name, owner_name, None
+                    )
+                    logger.debug(
+                        f"Discovery API path formatted using unified formatter"
+                    )
+                else:
+                    logger.warning(
+                        "Failed to convert Discovery API path to unified format"
+                    )
+                    # Fallback to simple formatting
+                    path_steps = discovery_api_response.get("path", [])
+                    path_display_lines = [f"  {selected_name}"]
+                    name_formatter_local = (
+                        format_name
+                        if callable(format_name)
+                        else lambda x: str(x).title()
+                    )
+                    # _get_relationship_term is not available here, so use raw relationship string
+                    for step in path_steps:
+                        step_name_raw = step.get("name", "?")
+                        step_rel_raw = step.get(
+                            "relationship", "related to"
+                        ).capitalize()
+                        path_display_lines.append(
+                            f"  -> {step_rel_raw} is {name_formatter_local(step_name_raw)}"
+                        )
+                    # End of for
+                    path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
+                    formatted_path = "\n".join(path_display_lines)
+                    logger.debug(
+                        f"Discovery API path constructed using fallback formatter"
+                    )
+            except Exception as e:
+                logger.error(f"Error formatting Discovery API path: {e}", exc_info=True)
+                # Fallback to simple formatting
+                path_steps = discovery_api_response.get("path", [])
                 path_display_lines = [f"  {selected_name}"]
                 name_formatter_local = (
                     format_name if callable(format_name) else lambda x: str(x).title()
                 )
-                # _get_relationship_term is not available here, so use raw relationship string
                 for step in path_steps:
                     step_name_raw = step.get("name", "?")
                     step_rel_raw = step.get("relationship", "related to").capitalize()
@@ -2684,13 +2829,16 @@ def _handle_supplementary_info_phase(
                 # End of for
                 path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
                 formatted_path = "\n".join(path_display_lines)
-                logger.debug(f"Discovery API path constructed: \n{formatted_path}")
-            elif (
-                "message" in discovery_api_response
-            ):  # API might return a message on no path
+                logger.debug(
+                    f"Discovery API path constructed using fallback formatter after error: {e}"
+                )
+            # End of try/except
+
+            # Check for message in the API response if no path was found
+            if "message" in discovery_api_response and not formatted_path:
                 formatted_path = f"(Discovery API: {discovery_api_response.get('message', 'No direct path found')})"
                 logger.warning(f"Discovery API response: {formatted_path}")
-            else:
+            elif not formatted_path:
                 formatted_path = (
                     "(Discovery API: Path data missing or in unexpected format)"
                 )
@@ -2714,6 +2862,20 @@ def _handle_supplementary_info_phase(
     print("")
 
     if formatted_path:
+        # First, print a clear header indicating which API source was used
+        # Use a default value for owner_name if it's None
+        display_owner_name = owner_name if owner_name else "Wayne Gault"
+        if api_called_for_rel == "Tree Ladder (/getladder)":
+            print(
+                f"=== Relationship Path to {display_owner_name} (via Tree Ladder API) ==="
+            )
+        elif api_called_for_rel == "Discovery Relationship API":
+            print(
+                f"=== Relationship Path to {display_owner_name} (via Discovery API) ==="
+            )
+        else:
+            print(f"=== Relationship Path to {display_owner_name} ===")
+
         # Check if the formatted_path itself indicates an error/fallback condition
         # These are common error prefixes from format_api_relationship_path or API call failures
         known_error_starts_tuple = (
@@ -2744,8 +2906,22 @@ def _handle_supplementary_info_phase(
             )
         else:
             # This is a successfully formatted path, print it directly
-            # The header "=== Relationship Path to {owner_name} ===" is already printed.
             # The API URL is printed by the respective call_..._api function in api_utils.
+
+            # Remove the header line from the formatted path to avoid duplicate headers
+            # and replace "Unknown" with the owner name in the relationship description
+            if "===Relationship Path to" in formatted_path:
+                # Split the path by newlines and remove the first line (header)
+                path_lines = formatted_path.split("\n")
+                if len(path_lines) > 1:
+                    # Remove the header line
+                    formatted_path = "\n".join(path_lines[1:])
+
+                    # Replace "Unknown's" with "{owner_name}'s" in the relationship description
+                    formatted_path = formatted_path.replace(
+                        "Unknown's", f"{display_owner_name}'s"
+                    )
+
             print(f"{formatted_path}\n")  # Add a newline after the path for spacing
             logger.debug(
                 f"Successfully displayed relationship path via {api_called_for_rel}."
@@ -2821,10 +2997,144 @@ def handle_api_report():
         )
         return False
     # Session Setup...
+    # First, ensure the session is ready
     if not session_manager.ensure_session_ready(action_name="API Report Session Init"):
         logger.error("Failed to init session.")
         print("\nERROR: Failed to initialize session.")
         return False
+
+    # First, check if we're already logged in
+    from utils import login_status
+
+    # Start the browser if it's not already started
+    if not session_manager.driver:
+        logger.info("Starting browser to check login status...")
+        if not session_manager.start_browser(action_name="API Report Browser Init"):
+            logger.error("Failed to start browser session.")
+            print("\nERROR: Failed to start browser session.")
+            return False
+
+    # Check login status
+    login_stat = login_status(session_manager, disable_ui_fallback=True)
+
+    # If we're already logged in, refresh the cookies
+    if login_stat is True:
+        logger.info("User is already logged in. Refreshing cookies...")
+
+        # Ensure we have a requests session
+        if (
+            not hasattr(session_manager, "_requests_session")
+            or not session_manager._requests_session
+        ):
+            logger.error("No requests session available despite being logged in.")
+            print("\nERROR: API session not available. Please restart the application.")
+            return False
+
+        # Refresh the cookies in the requests session
+        if session_manager.driver:
+            try:
+                selenium_cookies = session_manager.driver.get_cookies()
+                for cookie in selenium_cookies:
+                    session_manager._requests_session.cookies.set(
+                        cookie["name"], cookie["value"]
+                    )
+                logger.info("Successfully refreshed cookies from browser session.")
+            except Exception as cookie_err:
+                logger.error(f"Failed to refresh cookies from browser: {cookie_err}")
+                print(f"\nERROR: Failed to refresh cookies: {cookie_err}")
+                return False
+
+        # If we still don't have cookies, something is wrong
+        if not session_manager._requests_session.cookies:
+            logger.error("Still no cookies available after refresh attempt.")
+            print(
+                "\nERROR: Failed to obtain authentication cookies. Please restart the application."
+            )
+            return False
+
+        # If we get here, we have successfully refreshed the cookies
+        logger.info("Successfully refreshed authentication cookies.")
+    else:
+        # We're not logged in, so check if we have a requests session
+        if (
+            not hasattr(session_manager, "_requests_session")
+            or not session_manager._requests_session
+        ):
+            logger.error("No requests session available for API calls.")
+            print(
+                "\nERROR: API session not available. Please ensure you are logged in to Ancestry."
+            )
+            return False
+
+        # Check if we have cookies in the requests session
+        if not session_manager._requests_session.cookies:
+            logger.warning(
+                "No cookies available in the requests session. Need to log in."
+            )
+
+            # Try to initialize the session with authentication cookies
+            print("\nAttempting to log in to Ancestry...")
+            try:
+                # Try to start the browser session
+                if not session_manager.start_browser(
+                    action_name="API Report Browser Init"
+                ):
+                    logger.error("Failed to start browser session.")
+                    print("\nERROR: Failed to start browser session.")
+                    return False
+
+                # First check if we're already logged in
+                from utils import login_status, log_in
+
+                login_stat = login_status(session_manager, disable_ui_fallback=True)
+                if login_stat is True:
+                    logger.info(
+                        "User is already logged in. No need to navigate to sign-in page."
+                    )
+
+                    # Refresh the cookies in the requests session
+                    if session_manager.driver:
+                        try:
+                            selenium_cookies = session_manager.driver.get_cookies()
+                            for cookie in selenium_cookies:
+                                session_manager._requests_session.cookies.set(
+                                    cookie["name"], cookie["value"]
+                                )
+                            logger.info(
+                                "Successfully refreshed cookies from browser session."
+                            )
+                        except Exception as cookie_err:
+                            logger.error(
+                                f"Failed to refresh cookies from browser: {cookie_err}"
+                            )
+
+                    # Set login result to success
+                    login_result = "LOGIN_SUCCEEDED"
+                else:
+                    # Try to log in
+                    login_result = log_in(session_manager)
+                    if login_result != "LOGIN_SUCCEEDED":
+                        logger.error(f"Failed to log in: {login_result}")
+                        print(f"\nERROR: Failed to log in: {login_result}")
+                        return False
+
+                # Check if we now have cookies
+                if not session_manager._requests_session.cookies:
+                    logger.error("Still no cookies available after login attempt.")
+                    print("\nERROR: Still no cookies available after login attempt.")
+                    return False
+
+                print("\nSuccessfully initialized session with authentication cookies.")
+            except Exception as e:
+                logger.error(f"Error initializing session: {e}")
+                print(f"\nERROR: Error initializing session: {e}")
+                return False
+
+            # If we get here, we have successfully initialized the session with cookies
+            logger.info("Successfully initialized session with authentication cookies.")
+        else:
+            # We have cookies, so we're good to go
+            logger.info("Session already has authentication cookies.")
 
     # Phase 1: Search...
     search_criteria = _get_search_criteria()
@@ -2901,7 +3211,7 @@ def main():
 # End of main
 
 
-def run_action11(*args):
+def run_action11(*_):
     """Wrapper function for main.py to call."""
     return handle_api_report()
 

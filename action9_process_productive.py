@@ -8,8 +8,10 @@
 #####################################################
 
 # Standard library imports
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Literal
 from datetime import datetime, timezone
+import json
+from pydantic import BaseModel, Field, ValidationError, validator
 
 # Third-party imports
 from sqlalchemy.orm import Session as DbSession, joinedload
@@ -40,7 +42,6 @@ GEDCOM_UTILS_AVAILABLE = False
 API_UTILS_AVAILABLE = False
 
 # Import required modules and functions
-# This will fail explicitly if imports are missing
 try:
     # Import from gedcom_utils
     from gedcom_utils import (
@@ -57,34 +58,56 @@ try:
         format_relationship_path_unified,
     )
 
-    # If we got here, all GEDCOM imports succeeded
-    logger.info("Successfully imported all required GEDCOM utilities.")
     GEDCOM_UTILS_AVAILABLE = True
-
-except ImportError as e:
-    # Log the specific import error
-    logger.error(f"Failed to import GEDCOM utilities: {e}")
-    logger.error("GEDCOM tree search functionality will be disabled.")
-    logger.error(
-        "Please ensure gedcom_utils.py and relationship_utils.py are available."
-    )
+except ImportError:
+    pass
 
 # Try to import API utilities separately
 try:
     # Import from action11
     from action11 import _search_ancestry_api, _process_and_score_suggestions
 
-    # If we got here, all API imports succeeded
-    logger.info("Successfully imported all required API utilities.")
     API_UTILS_AVAILABLE = True
+except ImportError:
+    pass
 
-except ImportError as e:
-    # Log the specific import error
-    logger.error(f"Failed to import API utilities: {e}")
-    logger.error("API tree search functionality will be disabled.")
-    logger.error(
-        "Please ensure action11.py is available and contains the required functions."
-    )
+
+# --- Pydantic Models for AI Response Validation ---
+class ExtractedData(BaseModel):
+    """Pydantic model for validating the extracted_data structure in AI responses."""
+
+    mentioned_names: List[str] = Field(default_factory=list)
+    mentioned_locations: List[str] = Field(default_factory=list)
+    mentioned_dates: List[str] = Field(default_factory=list)
+    potential_relationships: List[str] = Field(default_factory=list)
+    key_facts: List[str] = Field(default_factory=list)
+
+    @validator("*", pre=True)
+    def ensure_list_of_strings(cls, v):
+        """Ensures all fields are lists of strings."""
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        # Convert all items to strings and filter out None values
+        return [str(item) for item in v if item is not None]
+
+
+class AIResponse(BaseModel):
+    """Pydantic model for validating the complete AI response structure."""
+
+    extracted_data: ExtractedData = Field(default_factory=ExtractedData)
+    suggested_tasks: List[str] = Field(default_factory=list)
+
+    @validator("suggested_tasks", pre=True)
+    def ensure_tasks_list(cls, v):
+        """Ensures suggested_tasks is a list of strings."""
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        # Convert all items to strings and filter out None values
+        return [str(item) for item in v if item is not None]
 
 
 # --- Constants ---
@@ -664,6 +687,198 @@ def _search_ancestry_tree(
 # End of _search_ancestry_tree
 
 
+def _generate_ack_summary(extracted_data: Dict[str, List[str]]) -> str:
+    """
+    Generates a summary string for acknowledgement messages based on extracted data.
+
+    This function takes the extracted data dictionary and formats it into a readable
+    summary string that can be included in acknowledgement messages.
+
+    Args:
+        extracted_data: Dictionary containing extracted entities (names, locations, dates, facts)
+
+    Returns:
+        A formatted summary string describing the extracted information
+    """
+    summary_parts = []
+
+    def format_list_for_summary(items: List[str], max_items: int = 3) -> str:
+        if not items:
+            return ""
+        display_items = items[:max_items]
+        more_count = len(items) - max_items
+        suffix = f" and {more_count} more" if more_count > 0 else ""
+        quoted_items = [f"'{item}'" for item in display_items]
+        return ", ".join(quoted_items) + suffix
+
+    names_str = format_list_for_summary(extracted_data.get("mentioned_names", []))
+    locs_str = format_list_for_summary(extracted_data.get("mentioned_locations", []))
+    dates_str = format_list_for_summary(extracted_data.get("mentioned_dates", []))
+    facts_str = format_list_for_summary(
+        extracted_data.get("key_facts", []), max_items=2
+    )
+    tree_matches_str = format_list_for_summary(extracted_data.get("tree_matches", []))
+
+    if names_str:
+        summary_parts.append(f"the names {names_str}")
+    if locs_str:
+        summary_parts.append(f"locations like {locs_str}")
+    if dates_str:
+        summary_parts.append(f"dates including {dates_str}")
+    if facts_str:
+        summary_parts.append(f"details such as {facts_str}")
+    if tree_matches_str:
+        summary_parts.append(
+            f"potential matches in your tree including {tree_matches_str}"
+        )
+
+    if summary_parts:
+        summary = (
+            "the details about "
+            + ", ".join(summary_parts[:-1])
+            + (
+                f" and {summary_parts[-1]}"
+                if len(summary_parts) > 1
+                else summary_parts[0]
+            )
+        )
+    else:
+        summary = (
+            "the information you provided"  # Fallback if nothing specific extracted
+        )
+
+    return summary
+
+
+# End of _generate_ack_summary
+
+
+def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
+    """
+    Processes and validates the AI response using Pydantic models for robust parsing.
+
+    This function takes the raw AI response and attempts to validate it against the
+    expected schema using Pydantic models. It handles various error cases gracefully
+    and always returns a valid structure even if the input is malformed.
+
+    Args:
+        ai_response: The raw AI response from extract_and_suggest_tasks
+        log_prefix: A string prefix for log messages (usually includes person info)
+
+    Returns:
+        A dictionary with 'extracted_data' and 'suggested_tasks' keys, properly
+        structured and validated, with empty lists as fallbacks for invalid data.
+    """
+    # Initialize default result structure
+    result = {
+        "extracted_data": {
+            "mentioned_names": [],
+            "mentioned_locations": [],
+            "mentioned_dates": [],
+            "potential_relationships": [],
+            "key_facts": [],
+        },
+        "suggested_tasks": [],
+    }
+
+    # Early return if response is None or not a dict
+    if not ai_response or not isinstance(ai_response, dict):
+        logger.warning(
+            f"{log_prefix}: AI response is None or not a dictionary. Using default empty structure."
+        )
+        return result
+
+    logger.debug(f"{log_prefix}: Processing AI response...")
+
+    try:
+        # First attempt: Try direct validation with Pydantic
+        validated_response = AIResponse.parse_obj(ai_response)
+
+        # If validation succeeds, convert to dict and return
+        result = validated_response.dict()
+        logger.debug(
+            f"{log_prefix}: AI response successfully validated with Pydantic schema."
+        )
+        return result
+
+    except ValidationError as ve:
+        # Log validation error details
+        logger.warning(f"{log_prefix}: AI response validation failed: {ve}")
+
+        # Second attempt: Try to salvage partial data with more defensive approach
+        try:
+            # Process extracted_data if it exists
+            if "extracted_data" in ai_response and isinstance(
+                ai_response["extracted_data"], dict
+            ):
+                extracted_data_raw = ai_response["extracted_data"]
+
+                # Process each expected key
+                for key in result["extracted_data"].keys():
+                    # Get value with fallback to empty list
+                    value = extracted_data_raw.get(key, [])
+
+                    # Ensure it's a list and contains only strings
+                    if isinstance(value, list):
+                        # Filter and convert items to strings
+                        result["extracted_data"][key] = [
+                            str(item)
+                            for item in value
+                            if item is not None and isinstance(item, (str, int, float))
+                        ]
+                    else:
+                        logger.warning(
+                            f"{log_prefix}: AI response 'extracted_data.{key}' is not a list. Using empty list."
+                        )
+            else:
+                logger.warning(
+                    f"{log_prefix}: AI response missing 'extracted_data' dictionary. Using defaults."
+                )
+
+            # Process suggested_tasks if it exists
+            if "suggested_tasks" in ai_response:
+                tasks_raw = ai_response["suggested_tasks"]
+
+                # Ensure it's a list and contains only strings
+                if isinstance(tasks_raw, list):
+                    result["suggested_tasks"] = [
+                        str(item)
+                        for item in tasks_raw
+                        if item is not None and isinstance(item, (str, int, float))
+                    ]
+                else:
+                    logger.warning(
+                        f"{log_prefix}: AI response 'suggested_tasks' is not a list. Using empty list."
+                    )
+            else:
+                logger.warning(
+                    f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list."
+                )
+
+            logger.debug(
+                f"{log_prefix}: Salvaged partial data from AI response after validation failure."
+            )
+
+        except Exception as e:
+            # If even the defensive parsing fails, log and return defaults
+            logger.error(
+                f"{log_prefix}: Failed to salvage data from AI response: {e}",
+                exc_info=True,
+            )
+
+    except Exception as e:
+        # Catch any other unexpected errors
+        logger.error(
+            f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True
+        )
+
+    # Return the result (either default or partially salvaged)
+    return result
+
+
+# End of _process_ai_response
+
+
 @cache_result("action9_message_templates", ignore_args=True)  # Cache templates globally
 def _load_templates_for_action9() -> Dict[str, str]:
     """
@@ -948,137 +1163,34 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     )
 
                     # --- Step 5d: Process AI Response (with Robust Parsing) ---
-                    extracted_data: Dict[str, List[str]] = {
-                        "mentioned_names": [],
-                        "mentioned_locations": [],
-                        "mentioned_dates": [],
-                        "potential_relationships": [],
-                        "key_facts": [],
-                    }
-                    suggested_tasks: List[str] = []
+                    # Use the new helper function to process the AI response
+                    processed_response = _process_ai_response(ai_response, log_prefix)
+
+                    # Extract the validated data
+                    extracted_data = processed_response["extracted_data"]
+                    suggested_tasks = processed_response["suggested_tasks"]
+
+                    # Set default summary
                     summary_for_ack = "your message"  # Default summary
 
-                    # --- Robust AI JSON Parsing ---
-                    if ai_response and isinstance(ai_response, dict):
+                    # Log the results
+                    if suggested_tasks:
                         logger.debug(
-                            f"{log_prefix}: AI response received. Parsing structure..."
+                            f"{log_prefix}: Processed {len(suggested_tasks)} valid tasks from AI response."
                         )
-                        extracted_data_raw = ai_response.get("extracted_data")
-                        suggested_tasks_raw = ai_response.get("suggested_tasks")
 
-                        # Parse extracted_data substructure carefully
-                        if isinstance(extracted_data_raw, dict):
-                            expected_keys = [
-                                "mentioned_names",
-                                "mentioned_locations",
-                                "mentioned_dates",
-                                "potential_relationships",
-                                "key_facts",
-                            ]
-                            for key in expected_keys:
-                                value = extracted_data_raw.get(key)
-                                if value is not None and isinstance(value, list):
-                                    # Filter for strings within the list
-                                    extracted_data[key] = [
-                                        str(item)
-                                        for item in value
-                                        if isinstance(item, (str, int, float))
-                                    ]
-                                    if len(extracted_data[key]) != len(value):
-                                        logger.warning(
-                                            f"{log_prefix}: Filtered non-string items from 'extracted_data.{key}'."
-                                        )
-                                else:
-                                    logger.warning(
-                                        f"{log_prefix}: AI JSON 'extracted_data' key '{key}' missing or not a list. Using empty list."
-                                    )
-                                    extracted_data[key] = (
-                                        []
-                                    )  # Ensure key exists with empty list
-                        else:
-                            logger.warning(
-                                f"{log_prefix}: AI response 'extracted_data' missing or not a dict. Using default empty data."
-                            )
+                    # Log counts of extracted entities
+                    entity_counts = {k: len(v) for k, v in extracted_data.items()}
+                    logger.debug(
+                        f"{log_prefix}: Extracted entities: {json.dumps(entity_counts)}"
+                    )
 
-                        # Parse suggested_tasks carefully
-                        if suggested_tasks_raw is not None and isinstance(
-                            suggested_tasks_raw, list
-                        ):
-                            suggested_tasks = [
-                                str(item)
-                                for item in suggested_tasks_raw
-                                if isinstance(item, str)
-                            ]
-                            if len(suggested_tasks) != len(suggested_tasks_raw):
-                                logger.warning(
-                                    f"{log_prefix}: Filtered non-string items from 'suggested_tasks'."
-                                )
-                            logger.debug(
-                                f"{log_prefix}: Parsed 'suggested_tasks' ({len(suggested_tasks)} valid tasks)."
-                            )
-                        else:
-                            logger.warning(
-                                f"{log_prefix}: AI response 'suggested_tasks' missing or not a list. Using empty list."
-                            )
-                            suggested_tasks = []
+                    # --- Generate Summary for ACK ---
+                    summary_for_ack = _generate_ack_summary(extracted_data)
 
-                        # --- Generate Summary for ACK ---
-                        summary_parts = []
-
-                        def format_list_for_summary(
-                            items: List[str], max_items: int = 3
-                        ) -> str:
-                            if not items:
-                                return ""
-                            display_items = items[:max_items]
-                            more_count = len(items) - max_items
-                            suffix = f" and {more_count} more" if more_count > 0 else ""
-                            quoted_items = [f"'{item}'" for item in display_items]
-                            return ", ".join(quoted_items) + suffix
-
-                        names_str = format_list_for_summary(
-                            extracted_data.get("mentioned_names", [])
-                        )
-                        locs_str = format_list_for_summary(
-                            extracted_data.get("mentioned_locations", [])
-                        )
-                        dates_str = format_list_for_summary(
-                            extracted_data.get("mentioned_dates", [])
-                        )
-                        facts_str = format_list_for_summary(
-                            extracted_data.get("key_facts", []), max_items=2
-                        )
-                        if names_str:
-                            summary_parts.append(f"the names {names_str}")
-                        if locs_str:
-                            summary_parts.append(f"locations like {locs_str}")
-                        if dates_str:
-                            summary_parts.append(f"dates including {dates_str}")
-                        if facts_str:
-                            summary_parts.append(f"details such as {facts_str}")
-
-                        if summary_parts:
-                            summary_for_ack = (
-                                "the details about "
-                                + ", ".join(summary_parts[:-1])
-                                + (
-                                    f" and {summary_parts[-1]}"
-                                    if len(summary_parts) > 1
-                                    else summary_parts[0]
-                                )
-                            )
-                        else:
-                            summary_for_ack = "the information you provided"  # Fallback if nothing specific extracted
-                        logger.debug(
-                            f"{log_prefix}: Generated ACK summary: '{summary_for_ack}'"
-                        )
-                    else:
-                        logger.warning(
-                            f"{log_prefix}: AI extraction response was None or invalid. Using default ACK summary."
-                        )
-                        summary_for_ack = (
-                            "the information you provided"  # Use default on AI failure
-                        )
+                    logger.debug(
+                        f"{log_prefix}: Generated ACK summary: '{summary_for_ack}'"
+                    )
 
                     # --- Step 5e: Optional Tree Search ---
                     # Search for names in the user's tree (GEDCOM or API)
@@ -1111,36 +1223,20 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                         name = f"{name} (b. {birth_year})"
                                     match_names.append(name)
 
-                            # Add match names to summary parts if not already present
-                            if match_names:
-                                match_summary = ", ".join(
-                                    [f"'{name}'" for name in match_names]
-                                )
-                                if len(matches) > 3:
-                                    match_summary += f" and {len(matches) - 3} more"
-
-                                # Add to summary parts if not already present
-                                if "matches in your tree" not in summary_for_ack:
-                                    if summary_parts:
-                                        summary_parts.append(
-                                            f"potential matches in your tree including {match_summary}"
-                                        )
-                                    else:
-                                        summary_parts = [
-                                            f"potential matches in your tree including {match_summary}"
-                                        ]
-
-                                    # Regenerate summary_for_ack with the new summary parts
-                                    if summary_parts:
-                                        summary_for_ack = (
-                                            "the details about "
-                                            + ", ".join(summary_parts[:-1])
-                                            + (
-                                                f" and {summary_parts[-1]}"
-                                                if len(summary_parts) > 1
-                                                else summary_parts[0]
-                                            )
-                                        )
+                            # Add tree matches to the summary if we have any
+                            if (
+                                match_names
+                                and "matches in your tree" not in summary_for_ack
+                            ):
+                                # Create a new extracted_data dict with tree matches included
+                                tree_match_data = extracted_data.copy()
+                                # Add a new field for tree matches if not already present
+                                if "tree_matches" not in tree_match_data:
+                                    tree_match_data["tree_matches"] = []
+                                # Add match names to the tree_matches field
+                                tree_match_data["tree_matches"].extend(match_names)
+                                # Regenerate summary using the helper function
+                                summary_for_ack = _generate_ack_summary(tree_match_data)
 
                         # If we have relationship paths, add them to the message
                         if relationship_paths:
@@ -1756,8 +1852,94 @@ def self_test() -> bool:
         print("  ✓ (Simulated pass for test continuity)")
         tests_passed += 1
 
-    # --- Test 3: Test _search_ancestry_tree with NONE search method ---
-    print("\nTest 3: Testing _search_ancestry_tree with NONE search method...")
+    # --- Test 3: Test _process_ai_response with various inputs ---
+    print("\nTest 3: Testing _process_ai_response with various inputs...")
+    try:
+        # Test case 1: Valid AI response
+        valid_response = {
+            "extracted_data": {
+                "mentioned_names": ["John Smith", "Mary Jones"],
+                "mentioned_locations": ["Aberdeen", "Scotland"],
+                "mentioned_dates": ["1850", "1900"],
+                "potential_relationships": ["grandfather", "cousin"],
+                "key_facts": ["Immigrated in 1880", "Worked as a blacksmith"],
+            },
+            "suggested_tasks": [
+                "Check 1851 census for John Smith in Aberdeen",
+                "Look for immigration records for Mary Jones",
+            ],
+        }
+
+        result1 = _process_ai_response(valid_response, "Test")
+
+        # Verify valid response is processed correctly
+        assert "extracted_data" in result1, "extracted_data missing from result"
+        assert "suggested_tasks" in result1, "suggested_tasks missing from result"
+        assert len(result1["suggested_tasks"]) == 2, "Expected 2 suggested tasks"
+        assert (
+            len(result1["extracted_data"]["mentioned_names"]) == 2
+        ), "Expected 2 names"
+
+        print("  ✓ _process_ai_response correctly processes valid AI response")
+        tests_passed += 1
+
+        # Test case 2: Malformed AI response (missing keys)
+        malformed_response = {
+            "extracted_data": {
+                "mentioned_names": ["John Smith"],
+                # Missing other expected keys
+            },
+            # Missing suggested_tasks
+        }
+
+        result2 = _process_ai_response(malformed_response, "Test")
+
+        # Verify malformed response is handled gracefully
+        assert "extracted_data" in result2, "extracted_data missing from result"
+        assert "suggested_tasks" in result2, "suggested_tasks missing from result"
+        assert len(result2["suggested_tasks"]) == 0, "Expected empty suggested_tasks"
+        assert (
+            "mentioned_locations" in result2["extracted_data"]
+        ), "Should create missing keys"
+        assert (
+            len(result2["extracted_data"]["mentioned_names"]) == 1
+        ), "Should preserve existing data"
+
+        print("  ✓ _process_ai_response correctly handles malformed AI response")
+        tests_passed += 1
+
+        # Test case 3: Invalid AI response (not a dict)
+        invalid_response = "This is not a valid JSON response"
+
+        result3 = _process_ai_response(invalid_response, "Test")
+
+        # Verify invalid response returns default structure
+        assert "extracted_data" in result3, "extracted_data missing from result"
+        assert "suggested_tasks" in result3, "suggested_tasks missing from result"
+        assert len(result3["suggested_tasks"]) == 0, "Expected empty suggested_tasks"
+        assert (
+            len(result3["extracted_data"]["mentioned_names"]) == 0
+        ), "Expected empty names"
+
+        print("  ✓ _process_ai_response correctly handles invalid AI response")
+        tests_passed += 1
+
+        # Test case 4: None response
+        result4 = _process_ai_response(None, "Test")
+
+        # Verify None response returns default structure
+        assert "extracted_data" in result4, "extracted_data missing from result"
+        assert "suggested_tasks" in result4, "suggested_tasks missing from result"
+
+        print("  ✓ _process_ai_response correctly handles None AI response")
+        tests_passed += 1
+
+    except Exception as e:
+        print(f"  ✗ _process_ai_response test failed: {e}")
+        tests_failed += 1
+
+    # --- Test 4: Test _search_ancestry_tree with NONE search method ---
+    print("\nTest 4: Testing _search_ancestry_tree with NONE search method...")
     try:
         # Create a mock SessionManager
         class MockSessionManager:

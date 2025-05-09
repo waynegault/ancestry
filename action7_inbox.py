@@ -529,7 +529,7 @@ class InboxProcessor:
                 )
                 person = (
                     session.query(Person)
-                    .filter(Person.profile_id == profile_id)
+                    .filter(Person.profile_id == profile_id, Person.deleted_at == None)
                     .first()
                 )
             except SQLAlchemyError as e:
@@ -987,7 +987,10 @@ class InboxProcessor:
                     if batch_profile_ids:
                         persons = (
                             session.query(Person)
-                            .filter(Person.profile_id.in_(batch_profile_ids))
+                            .filter(
+                                Person.profile_id.in_(batch_profile_ids),
+                                Person.deleted_at == None,
+                            )
                             .all()
                         )
                         existing_persons_map = {

@@ -16,7 +16,6 @@ V4: Added Action 11 display limits (MAX_SUGGESTIONS_TO_SCORE, MAX_CANDIDATES_TO_
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import (
     Any,
@@ -193,6 +192,7 @@ class Config_Class(BaseConfig):
     MAX_CANDIDATES_TO_DISPLAY: int = 10
 
     # --- Scoring Configuration (Class Attributes) ---
+    # Dictionary mapping score category names to their integer point values
     COMMON_SCORING_WEIGHTS: Dict[str, int] = {
         # cases are ignored
         # --- Name Weights ---
@@ -216,12 +216,14 @@ class Config_Class(BaseConfig):
         "bonus_birth_info": 25,  # additional bonus if both birth year and birth place achieved a score
         "bonus_death_info": 25,  # additional bonus if both death year and death place achieved a score
     }
+    # Dictionary mapping name matching configuration options to their values (float or boolean)
     NAME_FLEXIBILITY: Dict[str, Union[float, bool]] = {
         # Fuzzy threshold might still be useful for other potential matching logic
         "fuzzy_threshold": 0.8,
         # check_starts_with is no longer directly used by the primary name scoring
         "check_starts_with": False,  # Set to False as 'contains' is primary
     }
+    # Dictionary mapping date matching configuration options to their integer values
     DATE_FLEXIBILITY: Dict[str, int] = {
         "year_match_range": 10,
     }
@@ -587,20 +589,25 @@ class Config_Class(BaseConfig):
 
         # === Database Path ===
         try:
-            db_parent_dir = self.DATABASE_FILE.parent
-            if not db_parent_dir.is_dir():
-                if not db_parent_dir.exists():
-                    try:
-                        db_parent_dir.mkdir(parents=True, exist_ok=True)
-                        logger.info(f"Created DB dir: {db_parent_dir}")
-                    except OSError as mkdir_err:
+            # DATABASE_FILE is initialized in _load_values before this method is called
+            # and should never be None at this point
+            if self.DATABASE_FILE is None:
+                errors_found.append("DATABASE_FILE is not initialized.")
+            else:
+                db_parent_dir = self.DATABASE_FILE.parent
+                if not db_parent_dir.is_dir():
+                    if not db_parent_dir.exists():
+                        try:
+                            db_parent_dir.mkdir(parents=True, exist_ok=True)
+                            logger.info(f"Created DB dir: {db_parent_dir}")
+                        except OSError as mkdir_err:
+                            errors_found.append(
+                                f"Cannot create DB dir '{db_parent_dir}': {mkdir_err}"
+                            )
+                    else:
                         errors_found.append(
-                            f"Cannot create DB dir '{db_parent_dir}': {mkdir_err}"
+                            f"DB parent path '{db_parent_dir}' is not a directory."
                         )
-                else:
-                    errors_found.append(
-                        f"DB parent path '{db_parent_dir}' is not a directory."
-                    )
         except Exception as path_err:
             errors_found.append(
                 f"Error checking DB path '{self.DATABASE_FILE}': {path_err}"

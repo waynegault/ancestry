@@ -562,8 +562,8 @@ def _lookup_existing_persons(
             session.query(Person)
             # Eager load related tables to avoid N+1 queries later
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            # Filter by the list of uppercase UUIDs
-            .filter(Person.uuid.in_(uuids_upper)).all()
+            # Filter by the list of uppercase UUIDs and exclude soft-deleted records
+            .filter(Person.uuid.in_(uuids_upper), Person.deleted_at == None).all()
         )
         # Step 4: Populate the result map (key by UUID)
         existing_persons_map = {
@@ -2655,7 +2655,9 @@ def get_matches(
                 driver=driver,
                 session_manager=session_manager,
                 method="POST",
-                json={"sampleIds": sample_ids_on_page},
+                json_data={
+                    "sampleIds": sample_ids_on_page
+                },  # This is correct - _api_req expects json_data
                 headers=in_tree_headers,
                 use_csrf_token=False,
                 api_description="In-Tree Status Check",

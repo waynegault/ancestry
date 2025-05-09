@@ -16,13 +16,10 @@ Features:
 # --- Standard library imports ---
 import copy
 import logging
-import logging.handlers
 import os
 import sys
-import threading  # Currently unused, but available if needed
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import List
 
 # --- Third-party imports ---
 from dotenv import load_dotenv
@@ -42,40 +39,17 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s: %(mes
 logger_for_setup = logging.getLogger("logger_setup")
 logger_for_setup.setLevel(logging.DEBUG)  # Log setup details at DEBUG level
 
-# --- Import Config Instance & Determine Log Directory ---
-LOG_DIRECTORY: Optional[Path] = None
+# --- Determine Log Directory ---
 try:
     from config import config_instance
 
-    try:
-        _log_dir_path = Path(config_instance.LOG_DIR)
-        LOG_DIRECTORY = _log_dir_path.resolve()  # Resolve to absolute path
-        logger_for_setup.info(
-            f"Log directory determined from config: {LOG_DIRECTORY}\n"
-        )
-    except AttributeError:
-        logger_for_setup.warning("config_instance.LOG_DIR not found. Using fallback.\n")
-    except (TypeError, ValueError) as e:
-        logger_for_setup.warning(
-            f"config_instance.LOG_DIR invalid path ({e}). Using fallback.\n"
-        )
-    except Exception as e:
-        logger_for_setup.error(
-            f"Error resolving LOG_DIRECTORY from config: {e}.\n", exc_info=True
-        )
-except ImportError as e:
-    logger_for_setup.error(
-        f"Failed to import config_instance: {e}. Using fallback directory."
-    )
-except Exception as e:
-    logger_for_setup.critical(
-        f"Unexpected error during config import/LOG_DIR access: {e}", exc_info=True
-    )
+    LOG_DIRECTORY = Path(getattr(config_instance, "LOG_DIR", "Logs"))
+except ImportError:
+    LOG_DIRECTORY = Path("Logs")
 
-# Fallback log directory if config fails or attribute missing
-if LOG_DIRECTORY is None:
-    LOG_DIRECTORY = (Path(__file__).parent.resolve() / "Logs").resolve()
-    logger_for_setup.warning(f"Using fallback LOG_DIRECTORY: {LOG_DIRECTORY}")
+# Ensure LOG_DIRECTORY is absolute
+if not LOG_DIRECTORY.is_absolute():
+    LOG_DIRECTORY = (Path(__file__).parent.resolve() / LOG_DIRECTORY).resolve()
 
 import logging
 
@@ -219,153 +193,79 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     Returns:
         The configured 'logger' instance.
     """
-    global _logging_initialized, logger, LOG_DIRECTORY, logger_for_setup
+    global _logging_initialized, logger, LOG_DIRECTORY
 
-    # Step 1: Validate and determine the numeric log level
+    # Validate log level
     log_level_upper = log_level.upper()
-    numeric_log_level = getattr(logging, log_level_upper, None)
-    if numeric_log_level is None:
-        logger_for_setup.warning(
-            f"Invalid log level '{log_level}'. Defaulting to INFO."
-        )
-        log_level_upper = "INFO"
-        numeric_log_level = logging.INFO
+    numeric_log_level = getattr(logging, log_level_upper, logging.INFO)
 
-    # Step 2: If already initialized, just update handler levels
+    # If already initialized, just update handler levels
     if _logging_initialized:
-        updated_console = False
-        updated_file = False
         for handler in logger.handlers:
-            # Identify console handler (assumes stderr)
-            if (
-                isinstance(handler, logging.StreamHandler)
-                and handler.stream == sys.stderr
-            ):
-                if handler.level != numeric_log_level:
-                    handler.setLevel(numeric_log_level)
-                    updated_console = True
-            # Identify file handler
-            elif isinstance(handler, logging.FileHandler):
-                if handler.level != numeric_log_level:
-                    handler.setLevel(numeric_log_level)
-                    updated_file = True
-        return logger  # Return existing logger instance
+            handler.setLevel(numeric_log_level)
+        return logger
 
-    # Step 3: Ensure log directory exists
-    try:
-        logs_dir = LOG_DIRECTORY.resolve()
-        logs_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        # Log critical error but continue, handlers might fail later
-        logger_for_setup.critical(
-            f"Failed to create log directory '{logs_dir}': {e}", exc_info=True
-        )
-    except Exception as e:
-        logger_for_setup.critical(
-            f"Unexpected error ensuring log directory '{logs_dir}': {e}", exc_info=True
-        )
+    # Ensure log directory exists
+    logs_dir = LOG_DIRECTORY.resolve()
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 4: Construct full log file path
-    log_file_path = logs_dir / Path(log_file).name  # Use only filename part
+    # Construct full log file path
+    log_file_path = logs_dir / Path(log_file).name
     log_file_for_handler = str(log_file_path)
 
-    # Step 5: Clear any potential pre-existing handlers on the target logger
-    if logger.hasHandlers():
-        logger_for_setup.warning(
-            f"Clearing {len(logger.handlers)} unexpected existing handlers from logger '{logger.name}'."
-        )
-        for handler in logger.handlers[:]:
-            try:
-                if hasattr(handler, "flush"):
-                    handler.flush()
-                if hasattr(handler, "close"):
-                    handler.close()
-            except Exception as close_err:
-                logger_for_setup.warning(
-                    f"Error closing handler {handler}: {close_err}", exc_info=False
-                )
-            logger.removeHandler(handler)
+    # Clear any existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
 
-    # Step 6: Create the custom formatter
+    # Create formatter
     formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
-    # Step 7: Configure File Handler
-    try:
-        # Use 'a' for append mode. Ensure directory exists before creating handler.
-        os.makedirs(os.path.dirname(log_file_for_handler), exist_ok=True)
-        file_handler = logging.FileHandler(
-            log_file_for_handler, mode="a", encoding="utf-8"
+
+    # Configure File Handler
+    os.makedirs(os.path.dirname(log_file_for_handler), exist_ok=True)
+    file_handler = logging.FileHandler(log_file_for_handler, mode="a", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(numeric_log_level)
+    logger.addHandler(file_handler)
+
+    # Configure Console Handler
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(numeric_log_level)
+
+    # Add filters to console handler
+    console_handler.addFilter(RemoteConnectionFilter())
+    console_handler.addFilter(
+        NameFilter(
+            [
+                "selenium",
+                "urllib3",
+                "websockets",
+                "undetected_chromedriver",
+                "asyncio",
+                "hpack",
+            ]
         )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(numeric_log_level)  # Set level based on parameter
-        logger.addHandler(file_handler)
+    )
+    logger.addHandler(console_handler)
 
-    except Exception as e:
-        # Log critical error if file handler setup fails
-        logger_for_setup.critical(
-            f"Failed to create/add file handler for '{log_file_for_handler}': {e}",
-            exc_info=True,
-        )
+    # Configure logging levels for external libraries
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+    logging.getLogger("selenium").setLevel(logging.INFO)
+    logging.getLogger("selenium.webdriver.remote.remote_connection").setLevel(
+        logging.INFO
+    )
+    logging.getLogger("websockets").setLevel(logging.INFO)
+    logging.getLogger("undetected_chromedriver").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    # Step 8: Configure Console Handler (stderr)
-    try:
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(numeric_log_level)  # Set level based on parameter
+    # Disable propagation
+    logging.getLogger("urllib3").propagate = False
+    logging.getLogger("selenium").propagate = False
 
-        # Step 8a: Add filters to console handler to reduce noise
-        console_handler.addFilter(
-            RemoteConnectionFilter()
-        )  # Filter selenium remote debug logs
-        console_handler.addFilter(
-            NameFilter(
-                excluded_names=[  # Filter external libraries
-                    "selenium",
-                    "urllib3",
-                    "websockets",
-                    "undetected_chromedriver",
-                    "asyncio",
-                    "hpack",  # Add more if needed
-                ]
-            )
-        )
-        logger.addHandler(console_handler)
-
-    except Exception as e:
-        # Log critical error if console handler setup fails
-        logger_for_setup.critical(
-            f"Failed to create/add console handler: {e}", exc_info=True
-        )
-
-    # Step 9: Configure logging levels for noisy external libraries
-    try:
-        # Set higher levels globally for these loggers
-        # *** Set urllib3.connectionpool to ERROR to suppress pool full warnings ***
-        logging.getLogger("urllib3").setLevel(logging.ERROR)  # Changed from WARNING
-        logging.getLogger("urllib3.connectionpool").setLevel(
-            logging.ERROR
-        )  # Changed from WARNING
-        logging.getLogger("selenium.webdriver.remote.remote_connection").setLevel(
-            logging.INFO
-        )
-        logging.getLogger("selenium").setLevel(logging.INFO)
-        logging.getLogger("websockets").setLevel(logging.INFO)
-        logging.getLogger("undetected_chromedriver").setLevel(logging.WARNING)
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-
-        # Optional: Disable propagation if needed (usually good practice)
-        logging.getLogger("urllib3").propagate = False
-        logging.getLogger("selenium").propagate = False
-        # ... etc.
-
-    except Exception as e:
-        logger_for_setup.error(
-            f"Error setting external library log levels: {e}", exc_info=True
-        )
-
-    # Step 10: Mark logging as initialized and log completion
+    # Mark logging as initialized
     _logging_initialized = True
 
-    # Step 11: Return the configured logger instance
     return logger
 
 

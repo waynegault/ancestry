@@ -208,6 +208,40 @@ if not MESSAGE_TEMPLATES or not all(
 # ------------------------------------------------------------------------------
 
 
+# Define message transition table as a module-level constant
+# Maps (current_message_type, is_in_family_tree) to next_message_type
+# None as current_message_type means no previous message
+# None as next_message_type means end of sequence or no appropriate next message
+MESSAGE_TRANSITION_TABLE = {
+    # Initial message cases (no previous message)
+    (None, True): "In_Tree-Initial",
+    (None, False): "Out_Tree-Initial",
+    # In-Tree sequences
+    ("In_Tree-Initial", True): "In_Tree-Follow_Up",
+    ("In_Tree-Initial_for_was_Out_Tree", True): "In_Tree-Follow_Up",
+    ("In_Tree-Follow_Up", True): "In_Tree-Final_Reminder",
+    ("In_Tree-Final_Reminder", True): None,  # End of In-Tree sequence
+    # Out-Tree sequences
+    ("Out_Tree-Initial", False): "Out_Tree-Follow_Up",
+    ("Out_Tree-Follow_Up", False): "Out_Tree-Final_Reminder",
+    ("Out_Tree-Final_Reminder", False): None,  # End of Out-Tree sequence
+    # Tree status change transitions
+    # Any Out-Tree message -> In-Tree status
+    ("Out_Tree-Initial", True): "In_Tree-Initial_for_was_Out_Tree",
+    ("Out_Tree-Follow_Up", True): "In_Tree-Initial_for_was_Out_Tree",
+    ("Out_Tree-Final_Reminder", True): "In_Tree-Initial_for_was_Out_Tree",
+    # Special case: Was Out->In->Out again
+    ("In_Tree-Initial_for_was_Out_Tree", False): "Out_Tree-Initial",
+    # General case: Was In-Tree, now Out-Tree (stop messaging)
+    ("In_Tree-Initial", False): None,
+    ("In_Tree-Follow_Up", False): None,
+    ("In_Tree-Final_Reminder", False): None,
+    # Desist acknowledgment always ends the sequence
+    ("User_Requested_Desist", True): None,
+    ("User_Requested_Desist", False): None,
+}
+
+
 def determine_next_message_type(
     last_message_details: Optional[
         Tuple[str, datetime, str]
@@ -218,6 +252,9 @@ def determine_next_message_type(
     Determines the next standard message type key (from MESSAGE_TYPES_ACTION8)
     to send based on the last *script-sent* message and the match's current
     tree status.
+
+    Uses a state machine approach with a transition table that maps
+    (current_message_type, is_in_family_tree) tuples to the next message type.
 
     Args:
         last_message_details: A tuple containing details of the last OUT message
@@ -236,98 +273,48 @@ def determine_next_message_type(
     logger.debug(f"  Is In Tree: {is_in_family_tree}")
     logger.debug(f"  Last Script Msg Details: {last_message_details}")
 
-    # Step 2: Handle initial message case (no previous script message logged)
-    if not last_message_details:
-        next_type = (
-            MESSAGE_TYPES_ACTION8["In_Tree-Initial"]
-            if is_in_family_tree
-            else MESSAGE_TYPES_ACTION8["Out_Tree-Initial"]
-        )
+    # Step 2: Extract the last message type (or None if no previous message)
+    last_message_type = None
+    if last_message_details:
+        last_message_type, last_sent_at_utc, last_message_status = last_message_details
         logger.debug(
-            f"  Decision: Send '{next_type}' (Reason: No prior script message)."
+            f"  Last Sent Type: '{last_message_type}', SentAt: {last_sent_at_utc}, Status: '{last_message_status}'"
         )
-        return next_type
 
-    # Step 3: Unpack details of the last script message
-    last_message_type, last_sent_at_utc, last_message_status = last_message_details
-    next_type: Optional[str] = None  # Initialize next type
-    skip_reason: str = "End of sequence or other condition met"  # Default skip reason
-    logger.debug(
-        f"  Last Sent Type: '{last_message_type}', SentAt: {last_sent_at_utc}, Status: '{last_message_status}'"
-    )
+    # Step 3: Look up the next message type in the transition table
+    transition_key = (last_message_type, is_in_family_tree)
+    next_type = None
+    reason = "Unknown transition"
 
-    # --- Add Check: If last message was Desist ACK, stop standard sequence ---
-    if last_message_type == MESSAGE_TYPES_ACTION8["User_Requested_Desist"]:
-        skip_reason = "Last script message was Desist ACK."
-        logger.debug(f"  Decision: Skip ({skip_reason})")
-        return None  # Do not send further standard messages after ACK
-
-    # Step 4: Determine next message based on tree status and last message type
-    if is_in_family_tree:
-        # --- Logic for IN_TREE matches ---
-        if last_message_type.startswith("Out_Tree"):
-            # Switched from Out-of-Tree to In-Tree: Send specific initial message
-            next_type = MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"]
-            logger.debug("  Reason: Match was Out_Tree, now In_Tree.")
-        elif last_message_type in [
-            MESSAGE_TYPES_ACTION8["In_Tree-Initial"],
-            MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"],
-        ]:
-            # Sent initial In-Tree message -> Send Follow-Up
-            next_type = MESSAGE_TYPES_ACTION8["In_Tree-Follow_Up"]
-            logger.debug(f"  Reason: Following up on '{last_message_type}'.")
-        elif last_message_type == MESSAGE_TYPES_ACTION8["In_Tree-Follow_Up"]:
-            # Sent Follow-Up -> Send Final Reminder
-            next_type = MESSAGE_TYPES_ACTION8["In_Tree-Final_Reminder"]
-            logger.debug("  Reason: Sending final In_Tree reminder.")
-        elif last_message_type == MESSAGE_TYPES_ACTION8["In_Tree-Final_Reminder"]:
-            # Sent Final Reminder -> End of sequence
-            skip_reason = f"End of In_Tree sequence (last was {last_message_type})"
-            logger.debug(f"  Skip Reason: {skip_reason}.")
-        else:  # Handle unexpected previous type for In_Tree match
-            skip_reason = f"Unexpected previous In_Tree type: '{last_message_type}'"
-            logger.warning(f"  Decision: Skip ({skip_reason})")
-
-    else:  # Not in family tree
-        # --- Logic for OUT_OF_TREE matches ---
-        if last_message_type.startswith("In_Tree"):
-            # Match was previously In_Tree but is now Out_Tree
-            if (
-                last_message_type
-                == MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"]
-            ):
-                # Specific case: Was Out -> In -> Out again. Restart Out sequence?
-                logger.warning(
-                    "  Reason: Match was Out->In->Out. Restarting Out_Tree sequence."
-                )
-                next_type = MESSAGE_TYPES_ACTION8["Out_Tree-Initial"]
-            else:
-                # General case: Was In_Tree, now Out_Tree. Usually stop messaging.
-                skip_reason = (
-                    f"Match was In_Tree ('{last_message_type}') but is now Out_Tree."
-                )
-                logger.warning(f"  Decision: Skip ({skip_reason})")
-        elif last_message_type == MESSAGE_TYPES_ACTION8["Out_Tree-Initial"]:
-            # Sent initial Out_Tree -> Send Follow-Up
-            next_type = MESSAGE_TYPES_ACTION8["Out_Tree-Follow_Up"]
-            logger.debug("  Reason: Following up on Out_Tree-Initial.")
-        elif last_message_type == MESSAGE_TYPES_ACTION8["Out_Tree-Follow_Up"]:
-            # Sent Follow-Up -> Send Final Reminder
-            next_type = MESSAGE_TYPES_ACTION8["Out_Tree-Final_Reminder"]
-            logger.debug("  Reason: Sending final Out_Tree reminder.")
-        elif last_message_type == MESSAGE_TYPES_ACTION8["Out_Tree-Final_Reminder"]:
-            # Sent Final Reminder -> End of sequence
-            skip_reason = f"End of Out_Tree sequence (last was {last_message_type})"
-            logger.debug(f"  Skip Reason: {skip_reason}.")
-        else:  # Handle unexpected previous type for Out_Tree match
-            skip_reason = f"Unexpected previous Out_Tree type: '{last_message_type}'"
-            logger.warning(f"  Decision: Skip ({skip_reason})")
-
-    # Step 5: Log final decision and return key or None
-    if next_type:
-        logger.debug(f"  Final Decision: Send '{next_type}'.")
+    if transition_key in MESSAGE_TRANSITION_TABLE:
+        # Standard transition found in table
+        next_type = MESSAGE_TRANSITION_TABLE[transition_key]
+        if next_type:
+            reason = f"Standard transition from '{last_message_type or 'None'}' with in_tree={is_in_family_tree}"
+        else:
+            reason = f"End of sequence for '{last_message_type}' with in_tree={is_in_family_tree}"
     else:
-        logger.debug(f"  Final Decision: Skip ({skip_reason}).")
+        # Handle unexpected previous message type
+        if last_message_type:
+            tree_status = "In_Tree" if is_in_family_tree else "Out_Tree"
+            reason = f"Unexpected previous {tree_status} type: '{last_message_type}'"
+            logger.warning(f"  Decision: Skip ({reason})")
+        else:
+            # Fallback for initial message if somehow not in transition table
+            next_type = (
+                MESSAGE_TYPES_ACTION8["In_Tree-Initial"]
+                if is_in_family_tree
+                else MESSAGE_TYPES_ACTION8["Out_Tree-Initial"]
+            )
+            reason = "Fallback for initial message (no prior message)"
+
+    # Step 4: Convert next_type string to actual message type from MESSAGE_TYPES_ACTION8
+    if next_type:
+        next_type = MESSAGE_TYPES_ACTION8.get(next_type, next_type)
+        logger.debug(f"  Decision: Send '{next_type}' (Reason: {reason}).")
+    else:
+        logger.debug(f"  Decision: Skip ({reason}).")
+
     return next_type
 
 
@@ -661,6 +648,7 @@ def _prefetch_messaging_data(
                 Person.status.in_(
                     [PersonStatusEnum.ACTIVE, PersonStatusEnum.DESIST]
                 ),  # Eligible statuses
+                Person.deleted_at == None,  # Exclude soft-deleted records
             )
             .order_by(Person.id)  # Consistent order
             .all()
@@ -1002,8 +990,7 @@ def _process_single_person(
             app_mode == "production"
             and testing_profile_id_config
             and current_profile_id == testing_profile_id_config
-        ):
-            # In production, skip sending to the designated test profile
+        ): 
             send_message_flag = False
             skip_log_reason = (
                 f"skipped (production_mode_filter: is {testing_profile_id_config})"
@@ -1494,6 +1481,179 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
 
 # --- Standalone Testing ---
+def test_determine_next_message_type():
+    """
+    Test function for the determine_next_message_type function.
+    Verifies that the state machine approach produces the same results as the original logic.
+    """
+    print("\n=== Testing determine_next_message_type function ===")
+
+    # Create a mock datetime for testing
+    test_datetime = datetime.now(timezone.utc)
+
+    # Test cases: (last_message_details, is_in_family_tree, expected_result)
+    test_cases = [
+        # Initial message cases (no previous message)
+        (None, True, MESSAGE_TYPES_ACTION8["In_Tree-Initial"]),
+        (None, False, MESSAGE_TYPES_ACTION8["Out_Tree-Initial"]),
+        # In-Tree sequences
+        (
+            (MESSAGE_TYPES_ACTION8["In_Tree-Initial"], test_datetime, "delivered OK"),
+            True,
+            MESSAGE_TYPES_ACTION8["In_Tree-Follow_Up"],
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"],
+                test_datetime,
+                "delivered OK",
+            ),
+            True,
+            MESSAGE_TYPES_ACTION8["In_Tree-Follow_Up"],
+        ),
+        (
+            (MESSAGE_TYPES_ACTION8["In_Tree-Follow_Up"], test_datetime, "delivered OK"),
+            True,
+            MESSAGE_TYPES_ACTION8["In_Tree-Final_Reminder"],
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["In_Tree-Final_Reminder"],
+                test_datetime,
+                "delivered OK",
+            ),
+            True,
+            None,
+        ),
+        # Out-Tree sequences
+        (
+            (MESSAGE_TYPES_ACTION8["Out_Tree-Initial"], test_datetime, "delivered OK"),
+            False,
+            MESSAGE_TYPES_ACTION8["Out_Tree-Follow_Up"],
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["Out_Tree-Follow_Up"],
+                test_datetime,
+                "delivered OK",
+            ),
+            False,
+            MESSAGE_TYPES_ACTION8["Out_Tree-Final_Reminder"],
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["Out_Tree-Final_Reminder"],
+                test_datetime,
+                "delivered OK",
+            ),
+            False,
+            None,
+        ),
+        # Tree status change transitions
+        (
+            (MESSAGE_TYPES_ACTION8["Out_Tree-Initial"], test_datetime, "delivered OK"),
+            True,
+            MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"],
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["Out_Tree-Follow_Up"],
+                test_datetime,
+                "delivered OK",
+            ),
+            True,
+            MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"],
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["Out_Tree-Final_Reminder"],
+                test_datetime,
+                "delivered OK",
+            ),
+            True,
+            MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"],
+        ),
+        # Special case: Was Out->In->Out again
+        (
+            (
+                MESSAGE_TYPES_ACTION8["In_Tree-Initial_for_was_Out_Tree"],
+                test_datetime,
+                "delivered OK",
+            ),
+            False,
+            MESSAGE_TYPES_ACTION8["Out_Tree-Initial"],
+        ),
+        # General case: Was In-Tree, now Out-Tree (stop messaging)
+        (
+            (MESSAGE_TYPES_ACTION8["In_Tree-Initial"], test_datetime, "delivered OK"),
+            False,
+            None,
+        ),
+        (
+            (MESSAGE_TYPES_ACTION8["In_Tree-Follow_Up"], test_datetime, "delivered OK"),
+            False,
+            None,
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["In_Tree-Final_Reminder"],
+                test_datetime,
+                "delivered OK",
+            ),
+            False,
+            None,
+        ),
+        # Desist acknowledgment always ends the sequence
+        (
+            (
+                MESSAGE_TYPES_ACTION8["User_Requested_Desist"],
+                test_datetime,
+                "delivered OK",
+            ),
+            True,
+            None,
+        ),
+        (
+            (
+                MESSAGE_TYPES_ACTION8["User_Requested_Desist"],
+                test_datetime,
+                "delivered OK",
+            ),
+            False,
+            None,
+        ),
+        # Unexpected message type
+        (("Unknown_Message_Type", test_datetime, "delivered OK"), True, None),
+        (("Unknown_Message_Type", test_datetime, "delivered OK"), False, None),
+    ]
+
+    # Run tests
+    passed = 0
+    failed = 0
+
+    for i, (last_message_details, is_in_family_tree, expected) in enumerate(test_cases):
+        result = determine_next_message_type(last_message_details, is_in_family_tree)
+
+        # Format the test case description for better readability
+        last_msg_type = last_message_details[0] if last_message_details else "None"
+        tree_status = "In_Tree" if is_in_family_tree else "Out_Tree"
+
+        if result == expected:
+            print(f"✓ Test {i+1}: {last_msg_type} → {tree_status} = {result or 'None'}")
+            passed += 1
+        else:
+            print(
+                f"✗ Test {i+1}: {last_msg_type} → {tree_status} = {result or 'None'} (Expected: {expected or 'None'})"
+            )
+            failed += 1
+
+    # Print summary
+    print(f"\nResults: {passed} passed, {failed} failed, {passed + failed} total")
+    print("=" * 50)
+
+    return passed == len(test_cases)
+
+
 def main():
     """Main function for standalone testing of Action 8 messaging."""
     # Step 1: Setup Logging
@@ -1504,7 +1664,11 @@ def main():
         from config import config_instance  # Local import
 
         db_file_path = config_instance.DATABASE_FILE
-        log_filename_only = db_file_path.with_suffix(".log").name
+        log_filename_only = (
+            Path(db_file_path).with_suffix(".log").name
+            if db_file_path
+            else "ancestry.log"
+        )
         logger = setup_logging(
             log_file=log_filename_only, log_level="DEBUG"
         )  # Use DEBUG for testing
@@ -1517,6 +1681,9 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
         logger = logging.getLogger("Action8Fallback")
         logger.info(f"--- Starting Action 8 Standalone Test (Fallback Logging) ---")
+
+    # First run the test for determine_next_message_type
+    test_determine_next_message_type()
 
     # Step 2: Initialize Session Manager
     session_manager: Optional[SessionManager] = None
