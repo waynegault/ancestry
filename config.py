@@ -13,7 +13,6 @@ V4: Added Action 11 display limits (MAX_SUGGESTIONS_TO_SCORE, MAX_CANDIDATES_TO_
 """
 
 # --- Standard library imports ---
-import json
 import logging
 import os
 from pathlib import Path
@@ -24,8 +23,8 @@ from typing import (
     Optional,
     Tuple,
     Union,
-)  # Added Union for scoring dict
-from urllib.parse import urljoin, urlparse
+)
+from urllib.parse import urlparse
 
 # --- Third-party imports ---
 from dotenv import load_dotenv

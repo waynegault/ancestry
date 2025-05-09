@@ -13,11 +13,10 @@ Note: Relationship path formatting functions previously in test_relationship_pat
 
 # --- Standard library imports ---
 import logging
-import sys
 import re
 import json
 import requests  # Keep for exception types and Response object checking
-from typing import Optional, Dict, Any, List, Tuple, Callable, cast
+from typing import Optional, Dict, Any, List, Tuple, Callable
 from datetime import (
     datetime,
     timezone,
@@ -28,7 +27,6 @@ from urllib.parse import (
     quote,
 )  # Need quote for person picker params
 from pathlib import Path  # Needed for __main__ block
-import traceback  # For detailed exception logging in self_check
 import uuid  # For call_send_message_api
 
 # --- Third-party imports ---
@@ -50,10 +48,9 @@ logging.basicConfig(
 logger = logging.getLogger("api_utils")
 
 # --- Local application imports ---
-import utils
 from utils import SessionManager, _api_req, format_name
 from gedcom_utils import _parse_date, _clean_display_date
-from config import config_instance, selenium_config
+from config import config_instance
 from database import Person  # Required for call_send_message_api
 
 # Note: format_api_relationship_path has been moved to relationship_utils.py
@@ -1629,12 +1626,12 @@ def call_header_trees_api_for_tree_id(
         else:
             status = "N/A"
             if isinstance(response_data, requests.Response):
-                status = response_data.status_code
+                status = str(response_data.status_code)
             # End of if
             logger.warning(
                 f"Unexpected response format from {api_description} (Type: {type(response_data)}, Status: {status})."
             )
-            logger.debug(f"Full {api_description} response data: {response_data}")
+            logger.debug(f"Full {api_description} response data: {str(response_data)}")
             return None
         # End of if/elif/else
     except Exception as e:
@@ -1714,12 +1711,12 @@ def call_tree_owner_api(
         else:
             status = "N/A"
             if isinstance(response_data, requests.Response):
-                status = response_data.status_code
+                status = str(response_data.status_code)
             # End of if
             logger.warning(
                 f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None."
             )
-            logger.debug(f"Response received: {response_data}")
+            logger.debug(f"Response received: {str(response_data)}")
             return None
         # End of if/elif/else
     except Exception as e:
@@ -2352,7 +2349,7 @@ def self_check() -> bool:
             )
             test_name_parse = "Function Call: parse_ancestry_person_details()"
             if profile_response_details and isinstance(profile_response_details, dict):
-                person_card_empty = {}
+                person_card_empty: Dict[str, Any] = {}
                 try:
                     parse_lambda_facts = lambda: parse_ancestry_person_details(
                         person_card_empty, profile_response_details

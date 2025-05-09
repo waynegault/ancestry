@@ -21,48 +21,29 @@ from typing import (
     List,
     Tuple,
     Callable,
-    cast,
-    Set,
     Type,
-    TypeAlias,
     Generator,
 )  # Consolidated typing imports
 
 # --- Standard library imports ---
-import base64
-import binascii
-import contextlib
-import inspect
-import json
-
-# logging imported above
-import os
-import random
-
-# re imported above
-import shutil
-import sqlite3
-import sys
 import time
-import traceback
-import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from functools import lru_cache, wraps
+from functools import wraps
 from pathlib import Path
-
-# typing imports consolidated above
-from urllib.parse import urljoin, urlparse, unquote, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 
 # --- Type Aliases ---
-ApiResponseType: TypeAlias = Union[
-    Dict[str, Any], List[Any], str, bytes, None, "RequestsResponse"
-]
-# Forward references defined within SessionManager docstring or below if needed elsewhere
-DriverType: TypeAlias = Optional["WebDriver"]
-SessionManagerType: TypeAlias = Optional["SessionManager"]
-RequestsResponseTypeOptional: TypeAlias = Optional["RequestsResponse"]
+# Import types needed for type aliases
+from requests import Response as RequestsResponse
+from selenium.webdriver.remote.webdriver import WebDriver
+
+# Define type aliases
+RequestsResponseTypeOptional = Optional[RequestsResponse]
+ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
+DriverType = Optional[WebDriver]
+# Forward reference to class defined in this file
+SessionManagerType = Optional["SessionManager"]
 
 # --- Constants ---
 # Key constants remain here or moved to api_utils as appropriate
@@ -83,7 +64,7 @@ try:
     import cloudscraper
     import requests
     import undetected_chromedriver as uc
-    from requests import Request, Response as RequestsResponse
+    from requests import Response as RequestsResponse
     from requests.adapters import HTTPAdapter
     from requests.cookies import RequestsCookieJar
     from requests.exceptions import HTTPError, RequestException, JSONDecodeError
@@ -99,37 +80,27 @@ try:
         UnexpectedAlertPresentException,
         WebDriverException,
     )
-    from selenium.webdriver import ChromeOptions
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.wait import WebDriverWait
-    from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, text
+    from sqlalchemy import create_engine, event, pool as sqlalchemy_pool
     from sqlalchemy.exc import SQLAlchemyError
     from sqlalchemy.orm import Session, sessionmaker
     from urllib3.util.retry import Retry
 
     # --- Local application imports ---
     # Assume these are essential or handled elsewhere if missing
-    from cache import cache as global_cache, cache_result
     from chromedriver import init_webdvr
     from config import config_instance, selenium_config
-    from database import (
-        Base,
-        ConversationLog,
-        DnaMatch,
-        FamilyTree,
-        MessageType,
-        Person,
-    )
-    from logging_config import logger, setup_logging
+    from database import Base
+    from logging_config import logger
     from my_selectors import *
 
     from selenium_utils import (
         is_browser_open,
         is_elem_there,
-        close_tabs,
         export_cookies,
     )
 
@@ -486,7 +457,7 @@ def retry_api(
             _retry_codes_set = set(
                 retry_on_status_codes
                 if retry_on_status_codes is not None
-                else getattr(cfg, "RETRY_STATUS_CODES", {429, 500, 502, 503, 504})
+                else getattr(cfg, "RETRY_STATUS_CODES", [429, 500, 502, 503, 504])
             )
             _max_delay = getattr(cfg, "MAX_DELAY", 60.0)
             retries = _max_retries
@@ -1918,7 +1889,7 @@ class SessionManager:
             logger.error(
                 f"Unexpected response type or status ({status}) for CSRF token API: {type(response_data)}"
             )
-            logger.debug(f"Response data received: {response_data}")
+            logger.debug(f"Response data received: {str(response_data)}")
             return None
         # End of if/elif/else
 
@@ -2366,12 +2337,12 @@ class SessionManager:
             else:  # Handle unexpected response format
                 status = "N/A"
                 if isinstance(response_data, requests.Response):  # type: ignore
-                    status = response_data.status_code
+                    status = str(response_data.status_code)
                 # End of if
                 logger.error(
                     f"Unexpected response format (Type: {type(response_data)}, Status: {status}) for profile_id API."
                 )
-                logger.debug(f"Full profile_id response data: {response_data}")
+                logger.debug(f"Full profile_id response data: {str(response_data)}")
                 return None
             # End of if/else
         except Exception as e:
@@ -2409,7 +2380,7 @@ class SessionManager:
                 logger.error(
                     f"Could not retrieve UUID ('{KEY_TEST_ID}' missing in response)."
                 )
-                logger.debug(f"Full get_my_uuid response data: {response_data}")
+                logger.debug(f"Full get_my_uuid response data: {str(response_data)}")
                 return None
             # End of if/else
         elif response_data is None:
@@ -2420,12 +2391,12 @@ class SessionManager:
         else:  # Handle unexpected response type
             status = "N/A"
             if isinstance(response_data, requests.Response):  # type: ignore
-                status = response_data.status_code
+                status = str(response_data.status_code)
             # End of if
             logger.error(
                 f"Unexpected response format (Type: {type(response_data)}, Status: {status}) for UUID API."
             )
-            logger.debug(f"Full get_my_uuid response data: {response_data}")
+            logger.debug(f"Full get_my_uuid response data: {str(response_data)}")
             return None
         # End of if/elif/else
 
@@ -2849,12 +2820,12 @@ class SessionManager:
         else:
             status = "N/A"
             if isinstance(response_data, requests.Response):  # type: ignore
-                status = response_data.status_code
+                status = str(response_data.status_code)
             # End of if
             logger.error(
                 f"Failed to get header/dna data or unexpected structure (Type: {type(response_data)}, Status: {status})."
             )
-            logger.debug(f"Response: {response_data}")
+            logger.debug(f"Response: {str(response_data)}")
             return False
         # End of if/else
 
@@ -4562,7 +4533,7 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
             logger.error("Sign in button not found or not clickable within timeout.")
             logger.warning("Attempting fallback: Sending RETURN key to password field.")
             try:
-                password_input.send_keys(Keys.RETURN)  # type: ignore # Assume imported
+                password_input.send_keys(Keys.RETURN)
                 logger.info("Fallback RETURN key sent to password field.")
                 return True  # Assume submission worked
             except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
@@ -4612,7 +4583,7 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
                 )
                 try:
                     # Send to password field as it likely still has focus
-                    password_input.send_keys(Keys.RETURN)  # type: ignore
+                    password_input.send_keys(Keys.RETURN)
                     logger.info(
                         "Fallback RETURN key sent to password field after failed clicks."
                     )

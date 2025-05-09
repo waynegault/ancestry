@@ -22,13 +22,9 @@ https://googlechromelabs.github.io/chrome-for-testing/#stable
 """
 
 import os
-import json
 import time
 import subprocess
-from tkinter import N
-import urllib3
 import psutil
-from urllib3.util import Retry
 import logging
 import random
 import undetected_chromedriver as uc
@@ -36,7 +32,6 @@ from selenium import webdriver  # Standard Selenium WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.remote.remote_connection import RemoteConnection
 from selenium.common.exceptions import (
     WebDriverException,
     NoSuchElementException,

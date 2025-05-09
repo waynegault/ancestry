@@ -13,9 +13,7 @@ within helpers), error handling, and concurrent API fetches using ThreadPoolExec
 """
 
 # --- Standard library imports ---
-import json
 import logging
-import math
 import random
 import re
 import sys
@@ -31,35 +29,26 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    Union,
     TYPE_CHECKING,
-)  # Added TYPE_CHECKING
+)
 
+# For type hints only
 if TYPE_CHECKING:
-    from config import Config  # For type hints only
+    from config import Config
+import json
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # --- Third-party imports ---
 import cloudscraper  # For specific API calls if needed, though _api_req preferred
 import requests
-from bs4 import BeautifulSoup, Tag  # For HTML parsing if needed (e.g., ladder)
-from cachetools import Cache  # If additional in-memory caching needed
+from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-from requests.adapters import HTTPAdapter
 from requests.cookies import RequestsCookieJar
-from requests.exceptions import ConnectionError, HTTPError, RequestException
+from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
-    NoSuchElementException,
-    StaleElementReferenceException,
-    TimeoutException,
     WebDriverException,
 )
-from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.wait import WebDriverWait
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
 from tqdm.auto import tqdm  # Progress bar
@@ -67,7 +56,6 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging throu
 
 # --- Local application imports ---
 from cache import cache as global_cache  # Use the initialized global cache instance
-from cache import cache_result  # Decorator for caching function results
 from config import config_instance, selenium_config  # Corrected import
 from selenium_utils import get_driver_cookies
 from database import (  # Database models and utilities
@@ -75,26 +63,17 @@ from database import (  # Database models and utilities
     FamilyTree,
     Person,
     PersonStatusEnum,  # Enums
-    ConversationLog,  # Import even if not directly used here, for relationships
-    MessageType,  # Import even if not directly used here
     db_transn,  # Transaction context manager
 )
 from logging_config import logger  # Use configured logger
 from my_selectors import *  # Import CSS selectors
 from utils import (  # Core utilities
-    DynamicRateLimiter,
     SessionManager,
     _api_req,  # API request helper
     format_name,  # Name formatting utility
-    make_newrelic,  # Header generation utilities
-    make_traceparent,
-    make_tracestate,
-    make_ube,
     nav_to_page,  # Navigation utility
     ordinal_case,  # String formatting utility
-    retry,  # Decorators
     retry_api,
-    time_wait,
     urljoin,  # URL utility
 )
 
@@ -448,7 +427,7 @@ def coord(session_manager: SessionManager, config_instance, start: int = 1) -> b
 
                 # Step 7h: Adjust rate limiter delay
                 _adjust_delay(session_manager, current_page_num)
-                inter_page_delay = session_manager.dynamic_rate_limiter.wait()
+                session_manager.dynamic_rate_limiter.wait()  # Apply rate limiting
 
                 # CRITICAL: Clear matches_on_page for the next iteration
                 matches_on_page = []
@@ -566,8 +545,10 @@ def _lookup_existing_persons(
             .filter(Person.uuid.in_(uuids_upper), Person.deleted_at == None).all()
         )
         # Step 4: Populate the result map (key by UUID)
-        existing_persons_map = {
-            person.uuid: person for person in existing_persons if person.uuid
+        existing_persons_map: Dict[str, Person] = {
+            str(person.uuid): person
+            for person in existing_persons
+            if person.uuid is not None
         }
         logger.debug(
             f"Found {len(existing_persons_map)} existing Person records for this batch."
@@ -1052,7 +1033,7 @@ def _prepare_bulk_db_data(
                     status_for_this_match,
                     error_msg_for_this_match,
                 ) = _do_match(
-                    session=session,  # Pass session, even if not used directly by _do_match
+                    _=session,  # Pass session as unused parameter
                     match=match_list_data,
                     session_manager=session_manager,
                     existing_person_arg=existing_person,
@@ -1237,10 +1218,12 @@ def _execute_bulk_db_operations(
                     pid: count for pid, count in id_counts.items() if count > 1
                 }
                 logger.error(f"Duplicate Profile IDs in filtered list: {duplicates}")
+                # Create a proper exception to pass as orig
+                dup_exception = ValueError(f"Duplicate profile IDs: {duplicates}")
                 raise IntegrityError(
                     "Duplicate profile IDs found pre-bulk insert",
-                    params=duplicates,
-                    orig=None,
+                    params=str(duplicates),
+                    orig=dup_exception,
                 )
 
             # Perform bulk insert
@@ -1325,9 +1308,12 @@ def _execute_bulk_db_operations(
             if uuid_processed not in all_person_ids_map and existing_persons_map.get(
                 uuid_processed
             ):
-                all_person_ids_map[uuid_processed] = existing_persons_map[
-                    uuid_processed
-                ].id
+                person = existing_persons_map[uuid_processed]
+                # Get the id value directly from the SQLAlchemy object
+                person_id = (
+                    session.query(Person.id).filter(Person.id == person.id).scalar()
+                )
+                all_person_ids_map[uuid_processed] = person_id
 
         # --- Step 6: DnaMatch Bulk Upsert (REVISED: Separate Insert/Update) ---
         if dna_match_ops:
@@ -1992,7 +1978,7 @@ def _prepare_dna_match_operation_data(
             elif (
                 api_longest is not None
                 and db_longest is not None
-                and abs(float(api_longest) - float(db_longest)) > 0.01
+                and abs(float(str(api_longest)) - float(str(db_longest))) > 0.01
             ):
                 needs_dna_create_or_update = True
                 logger_instance.debug(f"  DNA change {log_ref_short}: Longest Segment")
@@ -2201,7 +2187,7 @@ def _prepare_family_tree_operation_data(
 
 
 def _do_match(
-    session: SqlAlchemySession,
+    _: SqlAlchemySession,  # Unused parameter
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
@@ -2410,7 +2396,7 @@ def _do_match(
 
 def get_matches(
     session_manager: SessionManager,
-    db_session: SqlAlchemySession,
+    _: SqlAlchemySession,  # Unused parameter
     current_page: int = 1,
 ) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
     """
@@ -2592,10 +2578,13 @@ def get_matches(
     cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
 
     try:
-        cached_in_tree = global_cache.get(cache_key_tree, default=ENOVAL, retry=True)
-        if cached_in_tree is not ENOVAL:
-            if isinstance(cached_in_tree, set):
-                in_tree_ids = cached_in_tree
+        if global_cache is not None:
+            cached_in_tree = global_cache.get(
+                cache_key_tree, default=ENOVAL, retry=True
+            )
+            if cached_in_tree is not ENOVAL:
+                if isinstance(cached_in_tree, set):
+                    in_tree_ids = cached_in_tree
                 logger.debug(
                     f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
                 )
@@ -2670,12 +2659,13 @@ def get_matches(
                     f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}."
                 )
                 try:
-                    global_cache.set(
-                        cache_key_tree,
-                        in_tree_ids,
-                        expire=config_instance.CACHE_TIMEOUT,
-                        retry=True,
-                    )
+                    if global_cache is not None:
+                        global_cache.set(
+                            cache_key_tree,
+                            in_tree_ids,
+                            expire=config_instance.CACHE_TIMEOUT,
+                            retry=True,
+                        )
                     logger.debug(
                         f"Cached in-tree status result for page {current_page}."
                     )
@@ -3605,8 +3595,13 @@ def nav_to_list(session_manager: SessionManager) -> bool:
     )
     logger.debug(f"Navigating to specific match list URL: {target_url}")
 
+    driver = session_manager.driver
+    if driver is None:
+        logger.error("nav_to_list: WebDriver is None")
+        return False
+
     success = nav_to_page(
-        driver=session_manager.driver,
+        driver=driver,
         url=target_url,
         selector=MATCH_ENTRY_SELECTOR,
         session_manager=session_manager,
@@ -3614,7 +3609,7 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 
     if success:
         try:
-            current_url = session_manager.driver.current_url
+            current_url = driver.current_url
             if not current_url.startswith(target_url):
                 logger.warning(
                     f"Navigation successful (element found), but final URL unexpected: {current_url}"

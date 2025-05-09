@@ -10,10 +10,8 @@ V.20240502.FinalCode.SyntaxFix
 
 # --- Standard library imports ---
 import logging
-import sys
 import re
 import time
-import os
 from pathlib import Path
 from typing import (
     List,
@@ -21,16 +19,14 @@ from typing import (
     Dict,
     Tuple,
     Set,
-    Deque,
     Union,
     Any,
     Callable,
     TypeAlias,
+    TYPE_CHECKING,
 )
 from collections import deque
-from datetime import datetime, timezone
-import difflib
-import traceback
+from datetime import timezone
 
 # --- Third-party imports ---
 try:
@@ -96,11 +92,19 @@ except ImportError:
 
 
 # --- Constants ---
-GedcomIndividualType: TypeAlias = Individual
-GedcomRecordType: TypeAlias = Record
-GedcomNameType: TypeAlias = Name
-GedcomNameRecType: TypeAlias = NameRec
-GedcomReaderType: TypeAlias = GedcomReader
+# Define type aliases for GEDCOM types
+if TYPE_CHECKING:
+    GedcomIndividualType = Individual
+    GedcomRecordType = Record
+    GedcomNameType = Name
+    GedcomNameRecType = NameRec
+    GedcomReaderType = GedcomReader
+else:
+    GedcomIndividualType = Any
+    GedcomRecordType = Any
+    GedcomNameType = Any
+    GedcomNameRecType = Any
+    GedcomReaderType = Any
 TAG_INDI = "INDI"
 TAG_BIRTH = "BIRT"
 TAG_DEATH = "DEAT"

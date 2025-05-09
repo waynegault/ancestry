@@ -5,15 +5,12 @@
 # --- Standard library imports ---
 import gc
 import inspect
-import json
 import logging
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import urljoin
 
 # --- Third-party imports ---
 import psutil
@@ -22,7 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 # --- Local application imports ---
 # Action modules
-from action6 import coord  # Import the main DNA match gathering function
+from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
@@ -118,7 +115,7 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
             # Step 3: Close the handler (releases resources)
             log_file_handler.close()  # type: ignore[union-attr]
             # Step 4: Clear the log file contents
-            with open(log_file_path, "w", encoding="utf-8") as f:
+            with open(log_file_path, "w", encoding="utf-8"):
                 pass
             cleared = True
     except PermissionError as permission_error:
@@ -334,7 +331,7 @@ def exec_actn(
 
 
 # Action 0 (all_but_first_actn)
-def all_but_first_actn(session_manager: SessionManager, *args):
+def all_but_first_actn(session_manager: SessionManager, *_):
     """
     V1.2: Modified to delete records from people, conversation_log,
           dna_match, and family_tree, except for the person with a
@@ -477,7 +474,7 @@ def all_but_first_actn(session_manager: SessionManager, *args):
 
 
 # Action 1
-def run_actions_6_7_8_action(session_manager, *args):
+def run_actions_6_7_8_action(session_manager, *_):
     """
     Action to run actions 6, 7, and 8 sequentially.
     Relies on exec_actn ensuring session is ready beforehand.
@@ -556,7 +553,7 @@ def run_actions_6_7_8_action(session_manager, *args):
 
 
 # Action 2 (reset_db_actn)
-def reset_db_actn(session_manager: SessionManager, *args):
+def reset_db_actn(session_manager: SessionManager, *_):
     """
     Action to COMPLETELY reset the database by deleting the file. Browserless.
     - Closes main pool.
@@ -615,7 +612,7 @@ def reset_db_actn(session_manager: SessionManager, *args):
                     "Failed to get session for truncating tables. Reset aborted."
                 )
                 return False
-        except Exception as del_err:
+        except Exception:
             logger.critical(
                 f"Failed to reset database tables. Reset aborted.",
                 exc_info=True,
@@ -720,9 +717,7 @@ def reset_db_actn(session_manager: SessionManager, *args):
 
 
 # Action 3 (backup_db_actn)
-def backup_db_actn(
-    session_manager: Optional[SessionManager], *args
-):  # Added session_manager back (Optional)
+def backup_db_actn():  # No parameters needed
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
@@ -743,9 +738,7 @@ def backup_db_actn(
 
 
 # Action 4 (restore_db_actn)
-def restore_db_actn(
-    session_manager: SessionManager, *args
-):  # Added session_manager back
+def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manager back
     """
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.
@@ -805,7 +798,7 @@ def restore_db_actn(
 
 
 # Action 5 (check_login_actn)
-def check_login_actn(session_manager: SessionManager, *args) -> bool:
+def check_login_actn(session_manager: SessionManager, *_) -> bool:
     """
     REVISED V6: Checks login status using login_status and provides clear user feedback.
     Relies on exec_actn to ensure driver is live (Phase 1) if needed.
@@ -845,7 +838,7 @@ def check_login_actn(session_manager: SessionManager, *args) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_instance, start=1, *args, **kwargs):
+def coord_action(session_manager, config_instance, start=1):
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -885,7 +878,7 @@ def coord_action(session_manager, config_instance, start=1, *args, **kwargs):
 
 
 # Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager, *args):
+def srch_inbox_actn(session_manager, *_):
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
@@ -911,7 +904,7 @@ def srch_inbox_actn(session_manager, *args):
 
 
 # Action 8 (send_messages_action)
-def send_messages_action(session_manager, *args):
+def send_messages_action(session_manager, *_):
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
@@ -1033,7 +1026,7 @@ def main():
                     session_manager.close_sess(keep_db=False)
                     session_manager = SessionManager()
                 elif choice == "3":
-                    exec_actn(backup_db_actn, session_manager, choice)
+                    backup_db_actn()  # Direct call since it doesn't need parameters
                 elif choice == "4":
                     # Confirmation handled above
                     exec_actn(restore_db_actn, session_manager, choice)

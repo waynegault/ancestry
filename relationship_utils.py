@@ -18,7 +18,7 @@ import re
 import json
 import time
 import html
-from typing import Optional, Dict, Any, Union, List, Tuple, Set, cast
+from typing import Optional, Dict, Any, Union, List, Tuple, Set
 from datetime import datetime
 from collections import deque
 
@@ -40,11 +40,10 @@ except ImportError:
 
 # --- Local imports ---
 # Import these functions directly to avoid circular imports
-from utils import format_name, ordinal_case
+from utils import format_name
 from gedcom_utils import (
     _parse_date,
     _clean_display_date,
-    GedcomReaderType,
     GedcomIndividualType,
 )
 
@@ -734,21 +733,51 @@ def format_api_relationship_path(
         relationship_data = []
         for item in list_items:
             # Skip icon items
-            if item.get("aria-hidden") == "true" or "icon" in item.get("class", []):
+            try:
+                is_hidden = item.get("aria-hidden") == "true"
+                item_classes = item.get("class", [])
+                has_icon_class = (
+                    isinstance(item_classes, list) and "icon" in item_classes
+                )
+                if is_hidden or has_icon_class:
+                    continue
+            except (AttributeError, TypeError):
+                logger.debug(f"Error checking item attributes: {type(item)}")
                 continue
 
             # Extract name, relationship, and lifespan
-            name_elem = item.find("b")
-            name = name_elem.get_text() if name_elem else item.get_text()
+            try:
+                name_elem = item.find("b") if hasattr(item, "find") else None
+                name = (
+                    name_elem.get_text()
+                    if name_elem and hasattr(name_elem, "get_text")
+                    else str(item.string) if hasattr(item, "string") else "Unknown"
+                )
+            except (AttributeError, TypeError):
+                name = "Unknown"
+                logger.debug(f"Error extracting name: {type(item)}")
 
             # Extract relationship description
-            rel_elem = item.find("i")
-            relationship = rel_elem.get_text() if rel_elem else ""
+            try:
+                rel_elem = item.find("i") if hasattr(item, "find") else None
+                relationship = (
+                    rel_elem.get_text()
+                    if rel_elem and hasattr(rel_elem, "get_text")
+                    else ""
+                )
+            except (AttributeError, TypeError):
+                relationship = ""
+                logger.debug(f"Error extracting relationship: {type(item)}")
 
             # Extract lifespan
-            text = item.get_text()
-            lifespan_match = re.search(r"(\d{4})-(\d{4}|\-)", text)
-            lifespan = lifespan_match.group(0) if lifespan_match else ""
+            try:
+                text = item.get_text() if hasattr(item, "get_text") else str(item)
+                lifespan_match = re.search(r"(\d{4})-(\d{4}|\-)", text)
+                lifespan = lifespan_match.group(0) if lifespan_match else ""
+            except (AttributeError, TypeError):
+                text = ""
+                lifespan = ""
+                logger.debug(f"Error extracting lifespan: {type(item)}")
 
             relationship_data.append(
                 {"name": name, "relationship": relationship, "lifespan": lifespan}

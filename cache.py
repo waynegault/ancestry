@@ -15,7 +15,6 @@ Cache directory and default settings are configurable via `config.py`.
 import atexit
 import logging
 import os
-import shutil  # For manual directory removal in clear_cache fallback
 from functools import wraps
 from typing import Any, Callable, Optional
 

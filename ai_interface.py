@@ -10,9 +10,7 @@ handling and rate limiting integration with SessionManager.
 """
 
 # --- Standard library imports ---
-import json  # For parsing JSON responses
 import logging
-import sys  # Potentially needed for exit on critical failures
 import time
 from typing import Any, Dict, List, Optional
 
