@@ -990,7 +990,7 @@ def _process_single_person(
             app_mode == "production"
             and testing_profile_id_config
             and current_profile_id == testing_profile_id_config
-        ): 
+        ):
             send_message_flag = False
             skip_log_reason = (
                 f"skipped (production_mode_filter: is {testing_profile_id_config})"
@@ -1227,16 +1227,15 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             # Setup progress bar
             tqdm_args = {
                 "total": total_candidates,
-                "desc": "",  # Add space after desc for alignment
+                "desc": "Processing",  # Add a description
                 "unit": " person",
                 "dynamic_ncols": True,
                 "leave": True,
-                "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
+                "bar_format": "{desc} |{bar}| {percentage:3.0f}% ({n_fmt}/{total_fmt})",
+                "file": sys.stderr,
             }
             logger.debug("Processing candidates...")
-            with logging_redirect_tqdm(), tqdm(
-                **tqdm_args, postfix={"Sent": 0, "ACK": 0, "Skip": 0, "Err": 0}
-            ) as progress_bar:
+            with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                 for person in candidate_persons:
                     processed_in_loop += 1
                     if critical_db_error_occurred:
@@ -1244,14 +1243,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         remaining_to_skip = total_candidates - processed_in_loop + 1
                         skipped_count += remaining_to_skip
                         if progress_bar:
-                            progress_bar.update(remaining_to_skip)
-                            progress_bar.set_postfix(
-                                Sent=sent_count,
-                                ACK=acked_count,
-                                Skip=skipped_count,
-                                Err=error_count,
-                                refresh=True,
+                            progress_bar.set_description(
+                                f"ERROR: DB commit failed - Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
                             )
+                            progress_bar.update(remaining_to_skip)
                         break  # Stop if previous batch commit failed
 
                     # --- Check Max Send Limit ---
@@ -1262,7 +1257,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     ):
                         # Only log the limit message once
                         if not hasattr(progress_bar, "limit_logged"):
-                            logger.info(
+                            logger.debug(
                                 f"Message sending limit ({max_messages_to_send_this_run}) reached. Skipping remaining."
                             )
                             setattr(
@@ -1270,14 +1265,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             )  # Mark as logged
                         # Increment skipped count for this specific skipped item
                         skipped_count += 1
-                        # Update postfix and bar, then continue to next person
+                        # Update description and bar, then continue to next person
                         if progress_bar:
-                            progress_bar.set_postfix(
-                                Sent=sent_count,
-                                ACK=acked_count,
-                                Skip=skipped_count,
-                                Err=error_count,
-                                refresh=False,
+                            progress_bar.set_description(
+                                f"Limit reached: Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
                             )
                             progress_bar.update(1)
                         continue  # Skip processing this person
@@ -1365,14 +1356,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         error_count += 1
                         overall_success = False
 
-                    # Update progress bar postfix data AND advance bar
+                    # Update progress bar description and advance bar
                     if progress_bar:
-                        progress_bar.set_postfix(
-                            Sent=sent_count,
-                            ACK=acked_count,
-                            Skip=skipped_count,
-                            Err=error_count,
-                            refresh=False,
+                        progress_bar.set_description(
+                            f"Processing: Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
                         )
                         progress_bar.update(1)
 

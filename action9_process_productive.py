@@ -8,6 +8,7 @@
 #####################################################
 
 # Standard library imports
+import sys
 from typing import Any, Dict, List, Optional, Union, Literal
 from datetime import datetime, timezone
 import json
@@ -1073,21 +1074,20 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         )
 
         # --- Step 5: Processing Loop ---
-        # Setup progress bar
+        # Setup progress bar with format consistent with other actions
         tqdm_args = {
             "total": total_candidates,
-            "desc": "Processing Productive ",  # Add space after desc for alignment
+            "desc": "Processing",
             "unit": " person",
-            "ncols": 100,
+            "dynamic_ncols": True,
             "leave": True,
-            # Use a format that includes postfix for dynamic stats
-            "bar_format": "{desc}|{bar}| {n_fmt}/{total_fmt} {postfix}",
+            "bar_format": "{desc} |{bar}| {percentage:3.0f}% ({n_fmt}/{total_fmt})",
+            "file": sys.stderr,
         }
-        logger.info("Processing candidates...")
-        with logging_redirect_tqdm(), tqdm(
-            **tqdm_args,
-            postfix={"t": 0, "a": 0, "s": 0, "e": 0},  # Tasks, Acks, Skip, Error
-        ) as progress_bar:
+        logger.info(
+            f"Processing {total_candidates} candidates with unprocessed productive messages..."
+        )
+        with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
             for person in candidates:
                 processed_count += 1
                 log_prefix = f"Productive: {person.username} #{person.id}"
@@ -1097,14 +1097,13 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     remaining_to_skip = total_candidates - processed_count + 1
                     skipped_count += remaining_to_skip
                     if progress_bar:
-                        progress_bar.update(remaining_to_skip)
-                        progress_bar.set_postfix(
-                            t=tasks_created_count,
-                            a=acks_sent_count,
-                            s=skipped_count,
-                            e=error_count,
-                            refresh=True,
+                        progress_bar.set_description(
+                            f"ERROR: DB commit failed - Tasks={tasks_created_count} Acks={acks_sent_count} Skip={skipped_count} Err={error_count}"
                         )
+                        progress_bar.update(remaining_to_skip)
+                    logger.warning(
+                        f"Database error occurred! Skipping remaining {remaining_to_skip} candidates."
+                    )
                     logger.warning(
                         f"Skipping remaining {remaining_to_skip} candidates due to previous DB commit error."
                     )
@@ -1125,21 +1124,22 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         )
                         skipped_count += 1
                         person_success = False
-                        # Update postfix here before continuing
+                        # Update progress bar description
                         if progress_bar:
-                            progress_bar.set_postfix(
-                                t=tasks_created_count,
-                                a=acks_sent_count,
-                                s=skipped_count,
-                                e=error_count,
-                                refresh=False,
-                            )  # No immediate refresh needed
+                            progress_bar.set_description(
+                                f"Skipping (no context): Tasks={tasks_created_count} Acks={acks_sent_count} Skip={skipped_count} Err={error_count}"
+                            )
                         continue  # Skip to next person
 
                     # --- Step 5c: Call AI for Extraction & Task Suggestion ---
                     formatted_context = _format_context_for_ai_extraction(
                         context_logs, my_pid_lower
                     )
+                    # Update progress bar to show current person being processed
+                    if progress_bar:
+                        progress_bar.set_description(
+                            f"Processing {person.username}: Analyzing message content"
+                        )
                     logger.debug(
                         f"{log_prefix}: Calling AI for extraction/task suggestion..."
                     )
@@ -1150,12 +1150,8 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         error_count += 1
                         person_success = False
                         if progress_bar:
-                            progress_bar.set_postfix(
-                                t=tasks_created_count,
-                                a=acks_sent_count,
-                                s=skipped_count,
-                                e=error_count,
-                                refresh=False,
+                            progress_bar.set_description(
+                                f"Session invalid: Tasks={tasks_created_count} Acks={acks_sent_count} Skip={skipped_count} Err={error_count}"
                             )
                         continue
                     ai_response = extract_and_suggest_tasks(
@@ -1194,8 +1190,17 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
                     # --- Step 5e: Optional Tree Search ---
                     # Search for names in the user's tree (GEDCOM or API)
+                    # Update progress bar to show tree search is happening
+                    if progress_bar:
+                        progress_bar.set_description(
+                            f"Processing {person.username}: Searching family tree"
+                        )
+
+                    # Get the names that were extracted
+                    names_to_search = extracted_data.get("mentioned_names", [])
+
                     tree_search_results = _search_ancestry_tree(
-                        session_manager, extracted_data.get("mentioned_names", [])
+                        session_manager, names_to_search
                     )
 
                     # Process tree search results if any were found
@@ -1262,6 +1267,17 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
                     # --- Step 5f: MS Graph Task Creation ---
                     if suggested_tasks:
+                        # Update progress bar to show task creation is happening
+                        if progress_bar:
+                            progress_bar.set_description(
+                                f"Processing {person.username}: Creating {len(suggested_tasks)} tasks"
+                            )
+
+                        # Log the tasks at debug level
+                        logger.debug(
+                            f"Creating {len(suggested_tasks)} tasks for {person.username}"
+                        )
+
                         # MS Graph Auth Check (only try once per run)
                         if not ms_graph_token and not ms_auth_attempted:
                             logger.info(
@@ -1434,6 +1450,12 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     # dry_run handled by call_send_message_api
 
                     # --- Step 5i: Send/Simulate Acknowledgement Message ---
+                    # Update progress bar to show message sending is happening
+                    if progress_bar:
+                        progress_bar.set_description(
+                            f"Processing {person.username}: Sending acknowledgement"
+                        )
+
                     # Get conversation ID from the last log entry, ensuring it's a string
                     conv_id_for_send = None
                     if context_logs:
@@ -1484,6 +1506,9 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         send_status = skip_log_reason_ack
                         effective_conv_id = (
                             conv_id_for_send  # Use existing conv ID for logging
+                        )
+                        logger.debug(
+                            f"Skipping acknowledgement to {person.username}: {skip_log_reason_ack}"
                         )
 
                     # --- Step 5j: Stage Database Updates ---
@@ -1577,6 +1602,12 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                         len(logs_to_add_dicts) + len(person_updates)
                     ) >= commit_threshold:
                         batch_num += 1
+                        # Update progress bar to show database commit is happening
+                        if progress_bar:
+                            progress_bar.set_description(
+                                f"Committing batch {batch_num}"
+                            )
+
                         logger.info(
                             f"Commit threshold reached ({len(logs_to_add_dicts)} logs). Committing Action 9 Batch {batch_num}..."
                         )
@@ -1594,9 +1625,13 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                             logs_to_add_dicts.clear()
                             person_updates.clear()
                             logger.debug(
+                                f"Batch {batch_num} committed successfully ({logs_committed_count} logs, {persons_updated_count} person updates)"
+                            )
+                            logger.debug(
                                 f"Action 9 Batch {batch_num} commit finished (Logs Processed: {logs_committed_count}, Persons Updated: {persons_updated_count})."
                             )
                         except Exception as commit_e:
+                            logger.error(f"Database commit failed: {commit_e}")
                             logger.critical(
                                 f"CRITICAL: Action 9 Batch commit {batch_num} FAILED: {commit_e}",
                                 exc_info=True,
@@ -1628,22 +1663,21 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                 finally:
                     if not person_success:
                         overall_success = False
-                    # Update postfix and bar
+                    # Update progress bar description and advance bar
                     if progress_bar:
-                        progress_bar.set_postfix(
-                            t=tasks_created_count,
-                            a=acks_sent_count,
-                            s=skipped_count,
-                            e=error_count,
-                            refresh=False,
+                        # Create a more descriptive status message
+                        progress_bar.set_description(
+                            f"Processing: Tasks={tasks_created_count} Acks={acks_sent_count} Skip={skipped_count} Err={error_count}"
                         )
-                        # Ensure update happens even if loop continues due to error
-                        # progress_bar.update(1) # Update call already moved earlier
+                        progress_bar.update(1)  # Update the progress bar
             # --- End Main Person Processing Loop ---
 
         # --- Step 8: Final Commit for any remaining data ---
         if not critical_db_error_occurred and (logs_to_add_dicts or person_updates):
             batch_num += 1
+            logger.info(
+                f"Committing final batch to database ({len(logs_to_add_dicts)} logs, {len(person_updates)} person updates)"
+            )
             logger.info(
                 f"Committing final Action 9 batch (Batch {batch_num}) with {len(logs_to_add_dicts)} logs, {len(person_updates)} updates..."
             )
@@ -1659,9 +1693,13 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                 logs_to_add_dicts.clear()
                 person_updates.clear()
                 logger.debug(
+                    f"Final batch committed successfully ({final_logs_saved} logs, {final_persons_updated} person updates)"
+                )
+                logger.debug(
                     f"Action 9 Final commit executed (Logs Processed: {final_logs_saved}, Persons Updated: {final_persons_updated})."
                 )
             except Exception as final_commit_e:
+                logger.error(f"Final database commit failed: {final_commit_e}")
                 logger.error(
                     f"Final Action 9 batch commit FAILED: {final_commit_e}",
                     exc_info=True,
@@ -1681,7 +1719,6 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             session_manager.return_session(db_session)  # Ensure session is returned
 
         print(" ")  # Spacer before summary
-        logger.info("------ Action 9: Process Productive Summary -------")
         final_processed = processed_count
         final_errors = error_count
         # Adjust counts if stopped early by critical DB error
@@ -1692,6 +1729,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             )
             final_errors += unprocessed
 
+        logger.info("------ Action 9: Process Productive Summary -------")
         logger.info(f"  Candidates Queried:         {total_candidates}")
         logger.info(f"  Candidates Processed:       {final_processed}")
         logger.info(f"  Skipped (Context/Filter):   {skipped_count}")

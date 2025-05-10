@@ -181,7 +181,7 @@ def exec_actn(
         "backup_db_actn",
         "restore_db_actn",
         "run_action10",  # GEDCOM Report (Local File)
-        "run_action11",  # API Report (Ancestry Online)
+        "run_action11_wrapper",  # API Report (Ancestry Online)
     ]
 
     # Set browser_needed flag based on action
@@ -328,7 +328,6 @@ def exec_actn(
 
 
 # End of exec_actn
-
 
 
 # --- Action Functions
@@ -506,50 +505,93 @@ def run_actions_6_7_8_action(session_manager, *_):
         logger.info("--- Running Action 7: Search Inbox ---")
         inbox_url = urljoin(config_instance.BASE_URL, "/messaging/")
         logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
-        # Wait for a specific element indicating inbox has loaded
-        if not nav_to_page(
-            session_manager.driver,
-            inbox_url,
-            "div[data-testid='conversation-list-item']",  # Selector for a conversation item
-            session_manager,
-        ):
-            logger.error("Action 7 nav FAILED.")
+
+        # Use a more reliable selector that exists on the messaging page
+        # First try to navigate to the inbox page
+        try:
+            if not nav_to_page(
+                session_manager.driver,
+                inbox_url,
+                "div.messaging-container",  # More general selector for the messaging container
+                session_manager,
+            ):
+                logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
+                print(
+                    "ERROR: Could not navigate to inbox page. Check network connection."
+                )
+                return False
+
+            logger.debug("Navigation to inbox page successful.")
+
+            # Add a short delay to ensure page is fully loaded
+            time.sleep(2)
+
+            # Now run the inbox processor
+            logger.debug("Running inbox search...")
+            inbox_processor = InboxProcessor(session_manager=session_manager)
+            search_result = inbox_processor.search_inbox()
+
+            if search_result is False:
+                logger.error("Action 7 FAILED - Inbox search returned failure.")
+                print("ERROR: Inbox search failed. Check logs for details.")
+                return False
+            else:
+                logger.info("Action 7 OK.")
+                print("✓ Inbox search completed successfully.")
+        except Exception as inbox_error:
+            logger.error(
+                f"Action 7 FAILED with exception: {inbox_error}", exc_info=True
+            )
+            print(f"ERROR during inbox search: {inbox_error}")
             return False
-        logger.debug("Nav OK. Running search...")
-        inbox_processor = InboxProcessor(session_manager=session_manager)
-        search_result = inbox_processor.search_inbox()
-        if search_result is False:
-            logger.error("Action 7 FAILED.")
-            return False
-        else:
-            logger.info("Action 7 OK.")
 
         # --- Action 8 ---
         logger.info("--- Running Action 8: Send Messages ---")
         logger.debug("Navigating to Base URL for Action 8...")
-        if not nav_to_page(
-            session_manager.driver,
-            config_instance.BASE_URL,
-            WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
-            session_manager,
-        ):
-            logger.error("Action 8 nav FAILED.")
+
+        try:
+            if not nav_to_page(
+                session_manager.driver,
+                config_instance.BASE_URL,
+                WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
+                session_manager,
+            ):
+                logger.error("Action 8 nav FAILED - Could not navigate to base URL.")
+                print(
+                    "ERROR: Could not navigate to base URL. Check network connection."
+                )
+                return False
+
+            logger.debug("Navigation to base URL successful. Sending messages...")
+
+            # Add a short delay to ensure page is fully loaded
+            time.sleep(2)
+
+            # send_messages_to_matches expects session_manager
+            send_result = send_messages_to_matches(session_manager)
+
+            if send_result is False:
+                logger.error("Action 8 FAILED - Message sending returned failure.")
+                print("ERROR: Message sending failed. Check logs for details.")
+                return False
+            else:
+                logger.info("Action 8 OK.")
+                print("✓ Message sending completed successfully.")
+        except Exception as message_error:
+            logger.error(
+                f"Action 8 FAILED with exception: {message_error}", exc_info=True
+            )
+            print(f"ERROR during message sending: {message_error}")
             return False
-        logger.debug("Nav OK. Sending messages...")
-        # send_messages_to_matches expects session_manager
-        send_result = send_messages_to_matches(session_manager)
-        if send_result is False:
-            logger.error("Action 8 FAILED.")
-            return False
-        else:
-            logger.info("Action 8 OK.")
 
         logger.info("Sequential Actions 6-7-8 finished successfully.")
+        print("\n✓ All sequential actions (6-7-8) completed successfully.")
         return True
     except Exception as e:
         logger.error(
             f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
         )
+        print(f"CRITICAL ERROR during sequential actions: {e}")
         return False
 
 
@@ -993,6 +1035,27 @@ def process_productive_messages_action(session_manager, *_):
 # End of process_productive_messages_action
 
 
+# Action 11 (run_action11_wrapper)
+def run_action11_wrapper(session_manager, *_):
+    """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
+    logger.debug("Starting API Report...")
+    try:
+        # Call the actual API Report function
+        result = run_action11()
+        if result is False:
+            logger.error("API Report reported failure.")
+            return False
+        else:
+            logger.info("API Report OK.")
+            return True
+    except Exception as e:
+        logger.error(f"Error during API Report: {e}", exc_info=True)
+        return False
+
+
+# End of run_action11_wrapper
+
+
 def main():
     global logger, session_manager  # Ensure global logger can be modified
     session_manager = None  # Initialize session_manager
@@ -1105,8 +1168,8 @@ def main():
             elif choice == "10":
                 exec_actn(run_action10, session_manager, choice)
             elif choice == "11":
-                # run_action11 doesn't take a session_manager parameter
-                run_action11()
+                # Use the wrapper function to run Action 11 through exec_actn
+                exec_actn(run_action11_wrapper, session_manager, choice)
             # --- Meta Options ---
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")

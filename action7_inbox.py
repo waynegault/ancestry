@@ -616,7 +616,7 @@ class InboxProcessor:
                     "last_logged_in_dt"
                 )
             else:
-                logger.warning(
+                logger.debug(
                     f"Could not fetch profile details for new person {log_ref}. Using defaults."
                 )
 
@@ -773,44 +773,23 @@ class InboxProcessor:
                 f"Starting inbox search (MaxInbox={max_inbox_str}, BatchSize={self.api_batch_size}, Comparator={comp_conv_id or 'None'})..."
             )
 
-            # Decide whether to use progress bar based on limit
-            use_progress_bar = self.max_inbox_limit > 0
-
-            # --- Conditional Execution with or without Progress Bar ---
-
-            if use_progress_bar:
-                # Run with tqdm context manager
-                tqdm_args = {
-                    "total": self.max_inbox_limit,
-                    "desc": "",  # Explicitly empty description
-                    "unit": " conv",
-                    # "ncols": 100,  # Keep fixed width
-                    "dynamic_ncols": True,
-                    "leave": True,  # Keep the bar after completion
-                    "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
-                    # "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt}",
-                    "file": sys.stderr,
-                    # "dynamic_ncols": False,
-                    # "ascii": True,
-                }
-                logger.info(f"Processing up to {self.max_inbox_limit} inbox items...\n")
-                with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-                    # Keep the set_postfix call in _process_inbox_loop if desired,
-                    # but it won't display with this bar_format.
-                    # If you want postfix, add it back to bar_format:
-                    # "bar_format": "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {postfix}",
-                    (
-                        stop_reason,
-                        total_processed_api_items,
-                        ai_classified_count,
-                        status_updated_count,
-                        items_processed_before_stop,
-                    ) = self._process_inbox_loop(
-                        session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
-                    )
-            else:
-                # Run without tqdm progress bar
-                # Call internal loop function, passing None for the progress bar
+            # Always use a progress bar
+            # Run with tqdm context manager
+            tqdm_args = {
+                "total": (
+                    self.max_inbox_limit if self.max_inbox_limit > 0 else 100
+                ),  # Default to 100 if no limit
+                "desc": "Processing",  # Add a description
+                "unit": " conv",
+                "dynamic_ncols": True,
+                "leave": True,  # Keep the bar after completion
+                "bar_format": "{desc} |{bar}| {percentage:3.0f}% ({n_fmt}/{total_fmt})",
+                "file": sys.stderr,
+            }
+            logger.info(
+                f"Processing inbox items (limit: {self.max_inbox_limit if self.max_inbox_limit > 0 else 'unlimited'})...\n"
+            )
+            with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                 (
                     stop_reason,
                     total_processed_api_items,
@@ -818,11 +797,7 @@ class InboxProcessor:
                     status_updated_count,
                     items_processed_before_stop,
                 ) = self._process_inbox_loop(
-                    session,
-                    comp_conv_id,
-                    comp_ts,
-                    my_pid_lower,
-                    None,
+                    session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
                 )
             # Check if loop stopped due to an error state
             if stop_reason and "error" in stop_reason.lower():
@@ -1038,10 +1013,7 @@ class InboxProcessor:
 
                     items_processed_before_stop += 1
 
-                    # Update progress bar immediately
-
-                    if progress_bar:
-                        progress_bar.update(1)
+                    # We'll update the progress bar only when we actually process a case, not just when we see it
 
                     # Extract key info
                     profile_id_upper = conversation_info.get(
@@ -1059,55 +1031,66 @@ class InboxProcessor:
                         continue
 
                     # --- Comparator Logic & Fetch Decision ---
-                    needs_fetch = False
-                    # Check 1: Is this the comparator conversation?
-                    if comp_conv_id and api_conv_id == comp_conv_id:
-                        stop_processing = (
-                            True  # Found comparator, plan to stop after this item
-                        )
-                        # Fetch only if API timestamp is newer than comparator timestamp
-                        if (
-                            comp_ts
-                            and api_latest_ts_aware
-                            and api_latest_ts_aware > comp_ts
-                        ):
-                            needs_fetch = True
-                        else:
-                            # Comparator found, timestamp not newer or invalid -> stop and don't fetch
-                            if not stop_reason:
-                                stop_reason = "Comparator Found (No Change)"
-                            break  # Stop processing immediately after comparator check passes
+                    # For live test, always fetch all conversations
+                    needs_fetch = True
 
-                    # Check 2: Not comparator, compare API timestamp with DB timestamps
+                    # Check if this is a live test (command line argument 'live')
+                    if len(sys.argv) > 1 and sys.argv[1].lower() == "live":
+                        # Skip the comparator logic for live test
+                        pass
                     else:
-                        db_log_in = existing_conv_logs.get(
-                            (api_conv_id, MessageDirectionEnum.IN.name)
-                        )
-                        db_log_out = existing_conv_logs.get(
-                            (api_conv_id, MessageDirectionEnum.OUT.name)
-                        )
-                        # Get latest *overall* timestamp from DB for this conversation (ensure aware)
-                        db_latest_ts_in = (
-                            db_log_in.latest_timestamp
-                            if db_log_in and db_log_in.latest_timestamp
-                            else min_aware_dt
-                        )
-                        db_latest_ts_out = (
-                            db_log_out.latest_timestamp
-                            if db_log_out and db_log_out.latest_timestamp
-                            else min_aware_dt
-                        )
-                        db_latest_overall_for_conv = max(
-                            db_latest_ts_in, db_latest_ts_out
-                        )
-                        # Fetch if API timestamp is newer OR if no DB logs exist at all
-                        if (
-                            api_latest_ts_aware
-                            and api_latest_ts_aware > db_latest_overall_for_conv
-                        ):
-                            needs_fetch = True
-                        elif not db_log_in and not db_log_out:  # No record in DB yet
-                            needs_fetch = True
+                        # Normal operation - use comparator logic
+                        needs_fetch = False
+                        # Check 1: Is this the comparator conversation?
+                        if comp_conv_id and api_conv_id == comp_conv_id:
+                            stop_processing = (
+                                True  # Found comparator, plan to stop after this item
+                            )
+                            # Fetch only if API timestamp is newer than comparator timestamp
+                            if (
+                                comp_ts
+                                and api_latest_ts_aware
+                                and api_latest_ts_aware > comp_ts
+                            ):
+                                needs_fetch = True
+                            else:
+                                # Comparator found, timestamp not newer or invalid -> stop and don't fetch
+                                if not stop_reason:
+                                    stop_reason = "Comparator Found (No Change)"
+                                break  # Stop processing immediately after comparator check passes
+
+                        # Check 2: Not comparator, compare API timestamp with DB timestamps
+                        else:
+                            db_log_in = existing_conv_logs.get(
+                                (api_conv_id, MessageDirectionEnum.IN.name)
+                            )
+                            db_log_out = existing_conv_logs.get(
+                                (api_conv_id, MessageDirectionEnum.OUT.name)
+                            )
+                            # Get latest *overall* timestamp from DB for this conversation (ensure aware)
+                            db_latest_ts_in = (
+                                db_log_in.latest_timestamp
+                                if db_log_in and db_log_in.latest_timestamp
+                                else min_aware_dt
+                            )
+                            db_latest_ts_out = (
+                                db_log_out.latest_timestamp
+                                if db_log_out and db_log_out.latest_timestamp
+                                else min_aware_dt
+                            )
+                            db_latest_overall_for_conv = max(
+                                db_latest_ts_in, db_latest_ts_out
+                            )
+                            # Fetch if API timestamp is newer OR if no DB logs exist at all
+                            if (
+                                api_latest_ts_aware
+                                and api_latest_ts_aware > db_latest_overall_for_conv
+                            ):
+                                needs_fetch = True
+                            elif (
+                                not db_log_in and not db_log_out
+                            ):  # No record in DB yet
+                                needs_fetch = True
                     # --- End Comparator Logic ---
 
                     # Skip if no fetch needed
@@ -1125,6 +1108,14 @@ class InboxProcessor:
                         raise WebDriverException(
                             f"Session invalid before fetching context for ConvID {api_conv_id}"
                         )
+
+                    # Update progress bar before processing this case
+                    if progress_bar:
+                        progress_bar.update(1)
+                        progress_bar.set_description(
+                            f"Processing conversation {api_conv_id}"
+                        )
+
                     context_messages = self._fetch_conversation_context(api_conv_id)
                     if context_messages is None:
                         error_count_this_loop += 1
@@ -1276,13 +1267,10 @@ class InboxProcessor:
                             )  # <-- Store dict
                     # --- End Context Processing ---
 
+                    # Update progress bar description with stats
                     if progress_bar:
-                        progress_bar.set_postfix(
-                            AI=ai_classified_count,  # AI classifications this run
-                            Archived=status_updated_count,  # Persons archived this run
-                            Skip=skipped_count_this_loop,  # Skipped in this loop
-                            Err=error_count_this_loop,  # Errors in this loop
-                            refresh=True,  # Use refresh=True for immediate update
+                        progress_bar.set_description(
+                            f"Processing: AI={ai_classified_count} Updates={status_updated_count} Skip={skipped_count_this_loop} Err={error_count_this_loop}"
                         )
 
                     # Check stop flag again after processing item (if comparator was hit)
@@ -1732,13 +1720,142 @@ def self_test():
 # End of self_test function
 
 
+# --- Live Test Function ---
+def live_test():
+    """
+    Live test for the InboxProcessor class.
+
+    This function tests the InboxProcessor with real API calls to Ancestry.
+    It ignores the comparator and fetches up to 5 conversations.
+
+    Returns:
+        bool: True if the test completes successfully, False otherwise.
+    """
+    from utils import SessionManager
+
+    print("\n=== Running Action 7 (Inbox Processor) Live Test ===\n")
+
+    # Initialize SessionManager
+    session_manager = SessionManager()
+    # Set browser_needed flag to True
+    session_manager.browser_needed = True
+
+    try:
+        # Start the browser session
+        print("Starting browser session...")
+        if not session_manager.start_sess():
+            print("❌ Failed to start browser session.")
+            return False
+
+        # Ensure session is ready (this will handle login if needed)
+        print("Ensuring session is ready (may trigger login)...")
+        if not session_manager.ensure_session_ready(action_name="Action 7 Live Test"):
+            print("❌ Failed to ensure session is ready.")
+            return False
+
+        # Double-check that driver is initialized
+        if not session_manager.driver:
+            print("❌ Browser driver still not initialized after ensure_session_ready.")
+            return False
+
+        # Force browser navigation to the inbox page to ensure cookies are set
+        print("Navigating to inbox page...")
+        inbox_url = urljoin(config_instance.BASE_URL, "/messaging/")
+        from utils import nav_to_page
+
+        # Check if driver is initialized
+        if not session_manager.driver:
+            print("❌ Browser driver not initialized.")
+            return False
+
+        try:
+            # Use a more reliable selector that should be present on the inbox page
+            # even if there are no conversations
+            if not nav_to_page(
+                session_manager.driver,
+                inbox_url,
+                "body",  # Just wait for the body element to be present
+                session_manager,
+            ):
+                print("❌ Failed to navigate to inbox page.")
+                return False
+            print("Successfully navigated to inbox page.")
+
+            # Wait a bit to ensure the page is fully loaded
+            import time
+
+            time.sleep(5)
+        except Exception as e:
+            print(f"❌ Error navigating to inbox page: {e}")
+            return False
+
+        # Check if my_profile_id is set
+        if not session_manager.my_profile_id:
+            print(
+                "⚠️ Profile ID not set after session initialization. Using default from config."
+            )
+            # Set profile ID manually from config
+            session_manager.my_profile_id = config_instance.TESTING_PROFILE_ID
+            if not session_manager.my_profile_id:
+                print("❌ No profile ID available in config. Cannot proceed.")
+                return False
+
+        print(f"Session ready. Profile ID: {session_manager.my_profile_id}")
+
+        # Create a subclass of InboxProcessor that overrides _create_comparator
+        class NoComparatorInboxProcessor(InboxProcessor):
+            def _create_comparator(self, _):  # Use underscore for unused parameter
+                """Override to always return None (no comparator)"""
+                logger.info("Live test: Ignoring comparator as requested.")
+                return None
+
+        # Initialize our custom InboxProcessor
+        print("Initializing InboxProcessor (with comparator disabled)...")
+        inbox_processor = NoComparatorInboxProcessor(session_manager=session_manager)
+
+        # Set max_inbox_limit to 5
+        inbox_processor.max_inbox_limit = 5
+        print(f"Setting conversation limit to {inbox_processor.max_inbox_limit}")
+
+        # Run search_inbox
+        print("Starting inbox search...\n")
+        result = inbox_processor.search_inbox()
+
+        if result:
+            print("\n✅ Live inbox search completed successfully.")
+        else:
+            print("\n❌ Live inbox search failed. Check the logs for details.")
+
+        return result
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user.")
+        return False
+    except Exception as e:
+        logger.error(f"Error during live test: {e}", exc_info=True)
+        print(f"\n❌ Error during execution: {e}")
+        return False
+    finally:
+        # Close the session
+        print("\nClosing session...")
+        if session_manager:
+            session_manager.close_sess(keep_db=True)
+        print("Session closed.")
+
+
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    # When run directly, automatically run the self-test
+    # When run directly, check for command line arguments
     import sys
 
-    print("Running Action 7 (Inbox Processor) self-test...")
-    success = self_test()
+    # Check if "live" argument is provided
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "live":
+        print("Running Action 7 (Inbox Processor) live test...")
+        success = live_test()
+    else:
+        print("Running Action 7 (Inbox Processor) self-test...")
+        print("(Use 'python action7_inbox.py live' to run the live test)")
+        success = self_test()
+
     sys.exit(0 if success else 1)
 
 # End of action7_inbox.py
