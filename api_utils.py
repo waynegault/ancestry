@@ -16,7 +16,7 @@ import logging
 import re
 import json
 import requests  # Keep for exception types and Response object checking
-from typing import Optional, Dict, Any, List, Tuple, Callable
+from typing import Optional, Dict, Any, List, Tuple, Callable, cast
 from datetime import (
     datetime,
     timezone,

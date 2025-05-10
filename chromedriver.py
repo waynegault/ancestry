@@ -22,6 +22,7 @@ https://googlechromelabs.github.io/chrome-for-testing/#stable
 """
 
 import os
+import sys
 import time
 import subprocess
 import psutil
@@ -449,25 +450,263 @@ def cleanup_webdrv():
 
 
 # ------------------------------------------------------------------------------------
-# main
+# Self-Test Functions
+# ------------------------------------------------------------------------------------
+
+
+def test_preferences_file():
+    """Test the reset_preferences_file function."""
+    print("\n=== Testing Preferences File Reset ===")
+    try:
+        reset_preferences_file()
+        if os.path.exists(PREFERENCES_FILE):
+            print(f"✓ Preferences file created successfully at: {PREFERENCES_FILE}")
+            # Verify the file contains valid JSON
+            with open(PREFERENCES_FILE, "r", encoding="utf-8") as f:
+                prefs = json.load(f)
+                if isinstance(prefs, dict) and "profile" in prefs:
+                    print(
+                        "✓ Preferences file contains valid JSON with expected structure"
+                    )
+                else:
+                    print("✗ Preferences file does not contain expected structure")
+        else:
+            print(f"✗ Failed to create preferences file at: {PREFERENCES_FILE}")
+        return True
+    except Exception as e:
+        print(f"✗ Error in test_preferences_file: {e}")
+        return False
+
+
+def test_cleanup():
+    """Test the cleanup_webdrv function."""
+    print("\n=== Testing Chrome Process Cleanup ===")
+    try:
+        # First check if any Chrome processes are running
+        chrome_running = False
+        if os.name == "nt":  # Windows
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                chrome_running = "chrome.exe" in result.stdout
+            except Exception as e:
+                print(f"  Warning: Could not check for Chrome processes: {e}")
+
+        print(
+            f"  Chrome processes {'detected' if chrome_running else 'not detected'} before cleanup"
+        )
+
+        # Run the cleanup function
+        cleanup_webdrv()
+        print("✓ Cleanup function executed without errors")
+
+        # Check again after cleanup
+        if os.name == "nt":  # Windows
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                chrome_running_after = "chrome.exe" in result.stdout
+                if chrome_running and not chrome_running_after:
+                    print("✓ Successfully terminated Chrome processes")
+                elif not chrome_running:
+                    print("  No Chrome processes were running before cleanup")
+                else:
+                    print(
+                        "  Note: Some Chrome processes may still be running (possibly user browser)"
+                    )
+            except Exception as e:
+                print(
+                    f"  Warning: Could not check for Chrome processes after cleanup: {e}"
+                )
+
+        return True
+    except Exception as e:
+        print(f"✗ Error in test_cleanup: {e}")
+        return False
+
+
+def test_driver_initialization(headless=True):
+    """Test the init_webdvr function."""
+    print("\n=== Testing WebDriver Initialization ===")
+    driver = None
+    try:
+        # Temporarily set headless mode for testing
+        original_headless = selenium_config.HEADLESS_MODE
+        selenium_config.HEADLESS_MODE = headless
+
+        print(f"  Initializing WebDriver (headless={headless})...")
+        start_time = time.time()
+        driver = init_webdvr()
+        init_time = time.time() - start_time
+
+        if driver:
+            print(f"✓ WebDriver initialized successfully in {init_time:.2f} seconds")
+
+            # Test navigation
+            try:
+                print("  Testing navigation to BASE_URL...")
+                driver.get(config_instance.BASE_URL)
+                print(f"✓ Successfully navigated to {config_instance.BASE_URL}")
+                print(f"  Page title: {driver.title}")
+            except Exception as nav_e:
+                print(f"✗ Navigation failed: {nav_e}")
+
+            # Test window management
+            try:
+                print("  Testing window management...")
+                set_win_size(driver)
+                window_rect = driver.get_window_rect()
+                print(
+                    f"✓ Window size set: {window_rect['width']}x{window_rect['height']} at position ({window_rect['x']},{window_rect['y']})"
+                )
+            except Exception as win_e:
+                print(f"✗ Window management failed: {win_e}")
+
+            # Test closing tabs
+            try:
+                print("  Testing tab management...")
+                # Open a new tab
+                driver.execute_script("window.open('about:blank', '_blank');")
+                tab_count_before = len(driver.window_handles)
+                print(f"  Created new tab. Total tabs: {tab_count_before}")
+
+                # Close extra tabs
+                close_tabs(driver)
+                tab_count_after = len(driver.window_handles)
+
+                if tab_count_after == 1:
+                    print("✓ Successfully closed extra tabs")
+                else:
+                    print(
+                        f"✗ Failed to close all extra tabs. Remaining: {tab_count_after}"
+                    )
+            except Exception as tab_e:
+                print(f"✗ Tab management failed: {tab_e}")
+
+            # Clean up
+            print("  Closing WebDriver...")
+            driver.quit()
+            print("✓ WebDriver closed successfully")
+
+            # Restore original headless setting
+            selenium_config.HEADLESS_MODE = original_headless
+            return True
+        else:
+            print("✗ WebDriver initialization failed")
+            # Restore original headless setting
+            selenium_config.HEADLESS_MODE = original_headless
+            return False
+    except Exception as e:
+        print(f"✗ Error in test_driver_initialization: {e}")
+        if driver:
+            try:
+                driver.quit()
+                print("  WebDriver closed after error")
+            except:
+                pass
+        # Restore original headless setting if needed
+        try:
+            selenium_config.HEADLESS_MODE = original_headless
+        except:
+            pass
+        return False
+
+
+def run_all_tests(interactive=False):
+    """Run all self-tests."""
+    print("\n===== ChromeDriver Self-Test Suite =====")
+    print(f"Date/Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Python Version: {sys.version.split()[0]}")
+    print(f"OS: {os.name.upper()}")
+
+    # Configuration info
+    print("\n=== Configuration ===")
+    print(f"CHROME_USER_DATA_DIR: {CHROME_USER_DATA_DIR}")
+    print(f"DEFAULT_PROFILE_PATH: {DEFAULT_PROFILE_PATH}")
+    print(f"HEADLESS_MODE: {selenium_config.HEADLESS_MODE}")
+    print(f"CHROME_MAX_RETRIES: {selenium_config.CHROME_MAX_RETRIES}")
+    print(f"CHROME_BROWSER_PATH: {selenium_config.CHROME_BROWSER_PATH}")
+    print(f"CHROME_DRIVER_PATH: {selenium_config.CHROME_DRIVER_PATH}")
+
+    # Run tests
+    test_results = {}
+
+    # Test 1: Preferences File
+    test_results["preferences_file"] = test_preferences_file()
+
+    # Test 2: Cleanup
+    test_results["cleanup"] = test_cleanup()
+
+    # Test 3: Driver Initialization (always headless for automated testing)
+    test_results["driver_init"] = test_driver_initialization(headless=True)
+
+    # Summary
+    print("\n=== Test Summary ===")
+    passed = sum(1 for result in test_results.values() if result)
+    total = len(test_results)
+    print(f"Passed: {passed}/{total} tests ({passed/total*100:.1f}%)")
+
+    for test_name, result in test_results.items():
+        status = "✓ PASS" if result else "✗ FAIL"
+        print(f"{status}: {test_name}")
+
+    # Interactive mode for manual testing
+    if interactive and test_results["driver_init"]:
+        print("\n=== Interactive Test ===")
+        response = (
+            input("Would you like to test with a visible browser? (y/n): ")
+            .strip()
+            .lower()
+        )
+        if response == "y":
+            print("Starting visible browser test...")
+            test_driver_initialization(headless=False)
+            print("Interactive test completed.")
+
+    return all(test_results.values())
+
+
+# ------------------------------------------------------------------------------------
+# Main Function
 # ------------------------------------------------------------------------------------
 
 
 def main():
-    """Main function for standalone use (debugging)."""
+    """Main function for standalone use (testing and debugging)."""
+    import sys  # Import here to avoid potential circular imports
+
+    # Configure logging
     setup_logging(log_level="DEBUG")
+
+    # Parse command line arguments
+    interactive = False
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ["-i", "--interactive"]:
+        interactive = True
+
+    # Run tests
     try:
-        driver = init_webdvr()
-        if driver:
-            logger.debug("WebDriver initialized successfully.")
-            driver.get(config_instance.BASE_URL)
-            input("Press Enter to close the browser...")
-            driver.quit()
+        success = run_all_tests(interactive=interactive)
+        if success:
+            print("\nAll tests passed successfully!")
+            return 0
+        else:
+            print("\nSome tests failed. See details above.")
+            return 1
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"\nCritical error during testing: {e}")
+        logger.error(f"Critical error during testing: {e}", exc_info=True)
+        return 2
 
 
-# end main
+# End of main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
