@@ -50,7 +50,7 @@ logger = logging.getLogger("api_utils")
 # --- Local application imports ---
 from utils import SessionManager, _api_req, format_name
 from gedcom_utils import _parse_date, _clean_display_date
-from config import config_instance
+from config import config_instance, selenium_config
 from database import Person  # Required for call_send_message_api
 
 # Note: format_api_relationship_path has been moved to relationship_utils.py

@@ -15,6 +15,7 @@ V4: Added Action 11 display limits (MAX_SUGGESTIONS_TO_SCORE, MAX_CANDIDATES_TO_
 # --- Standard library imports ---
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import (
     Any,
@@ -24,7 +25,8 @@ from typing import (
     Tuple,
     Union,
 )
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin  # <<<< MODIFIED LINE: Added urljoin
+import json  # Added for _get_json_env
 
 # --- Third-party imports ---
 from dotenv import load_dotenv
@@ -363,7 +365,7 @@ class Config_Class(BaseConfig):
         self.ALTERNATIVE_API_URL = self._get_env_var("ALTERNATIVE_API_URL")
         self.API_BASE_URL_PATH = self._get_string_env("API_BASE_URL_PATH", "/api/v2/")
         self.API_BASE_URL = (
-            urljoin(self.BASE_URL, self.API_BASE_URL_PATH)
+            urljoin(self.BASE_URL, self.API_BASE_URL_PATH)  # urljoin is now available
             if self.BASE_URL and self.API_BASE_URL_PATH
             else None
         )
@@ -541,7 +543,7 @@ class Config_Class(BaseConfig):
 
         # === Final Logging ===
         logger.info(
-            f"Config Loaded: BASE_URL='{self.BASE_URL}', DB='{self.DATABASE_FILE.name}', TREE='{self.TREE_NAME or 'N/A'}'"
+            f"Config Loaded: BASE_URL='{self.BASE_URL}', DB='{self.DATABASE_FILE.name if self.DATABASE_FILE else 'N/A'}', TREE='{self.TREE_NAME or 'N/A'}'"
         )
         max_pages_log = (
             f"MaxPages={self.MAX_PAGES if self.MAX_PAGES > 0 else 'Unlimited'}"
@@ -590,7 +592,9 @@ class Config_Class(BaseConfig):
         try:
             # DATABASE_FILE is initialized in _load_values before this method is called
             # and should never be None at this point
-            if self.DATABASE_FILE is None:
+            if (
+                self.DATABASE_FILE is None
+            ):  # Should ideally not happen if _load_values ran
                 errors_found.append("DATABASE_FILE is not initialized.")
             else:
                 db_parent_dir = self.DATABASE_FILE.parent
@@ -753,42 +757,51 @@ class SeleniumConfig(BaseConfig):
         )
 
     # End of default_wait
+
     def page_load_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
         return WebDriverWait(
             driver, timeout if timeout is not None else self.PAGE_TIMEOUT
         )
 
     # End of page_load_wait
+
     def short_wait(self, driver, timeout: int = 5) -> WebDriverWait:
         return WebDriverWait(driver, timeout)
 
     # End of short_wait
+
     def long_wait(self, driver, timeout: Optional[int] = None) -> WebDriverWait:
         return WebDriverWait(
             driver, timeout if timeout is not None else self.TWO_FA_CODE_ENTRY_TIMEOUT
         )
 
     # End of long_wait
+
     def logged_in_check_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.LOGGED_IN_CHECK_TIMEOUT)
 
     # End of logged_in_check_wait
+
     def element_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.ELEMENT_TIMEOUT)
 
     # End of element_wait
+
     def page_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.PAGE_TIMEOUT)
 
     # End of page_wait
+
     def modal_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.MODAL_TIMEOUT)
 
     # End of modal_wait
+
     def dna_list_page_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.DNA_LIST_PAGE_TIMEOUT)
 
     # End of dna_list_page_wait
+
     def new_tab_wait(self, driver) -> WebDriverWait:
         return WebDriverWait(driver, self.NEW_TAB_TIMEOUT)
 
@@ -804,15 +817,15 @@ try:
     _config_valid = True
 except ValueError as config_err:
     logger.critical(f"CONFIG VALIDATION FAILED during initial load: {config_err}")
-    config_instance = None
-    selenium_config = None
+    config_instance = None  # type: ignore
+    selenium_config = None  # type: ignore
     _config_valid = False
 except Exception as general_err:
     logger.critical(
         f"UNEXPECTED ERROR during config instantiation: {general_err}", exc_info=True
     )
-    config_instance = None
-    selenium_config = None
+    config_instance = None  # type: ignore
+    selenium_config = None  # type: ignore
     _config_valid = False
 
 # --- Log Module Load ---
@@ -890,4 +903,4 @@ if __name__ == "__main__":
         )
 # End of config.py standalone test block
 
-# --- End of config.py ---
+# End of config.py

@@ -31,6 +31,13 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
+import contextlib  # <<<< MODIFIED LINE: Added import for contextlib
+import json  # For make_ube, _api_req (potential json in csrf)
+import base64  # For make_ube
+import binascii  # For make_ube
+import random  # For make_newrelic, retry_api, DynamicRateLimiter
+import uuid  # For make_ube, make_traceparent, make_tracestate
+import sqlite3  # For SessionManager._initialize_db_engine_and_session (pragma exception)
 
 
 # --- Type Aliases ---
@@ -2546,6 +2553,7 @@ class SessionManager:
 
         # --- Check 1: Validate session and driver ---
         if not self.driver or not self.is_sess_valid():
+            logger.debug("Session or driver invalid, user cannot be logged in.")
             # If session is invalid, we can definitively say user is not logged in
             return False
         # End of if
@@ -2561,6 +2569,8 @@ class SessionManager:
 
         # --- Check 3: Make API request and analyze response ---
         try:
+            # Try direct fetch first with shorter timeout
+            logger.debug(f"Making API request to {api_url} for login verification...")
             response_data: ApiResponseType = _api_req(
                 url=api_url,
                 driver=self.driver,
@@ -2576,20 +2586,55 @@ class SessionManager:
                 logger.warning(f"{api_description}: _api_req returned None.")
                 # Check if we have essential cookies as a secondary indicator
                 essential_cookies = ["ANCSESSIONID", "SecureATT"]
-                if not self.get_cookies(essential_cookies, timeout=3):
+                cookie_check_result = self.get_cookies(essential_cookies, timeout=3)
+                if not cookie_check_result:
                     logger.debug(
                         f"Essential cookies {essential_cookies} not found. User is likely NOT logged in."
                     )
                     return False
                 # End of if
+
+                # Try a second API endpoint as a fallback
+                try:
+                    logger.debug(
+                        "Primary API check failed. Trying profile ID endpoint as fallback..."
+                    )
+                    profile_url = urljoin(config_instance.BASE_URL, API_PATH_PROFILE_ID)
+                    profile_response = _api_req(
+                        url=profile_url,
+                        driver=self.driver,
+                        session_manager=self,
+                        method="GET",
+                        use_csrf_token=False,
+                        api_description="Profile ID API (login check fallback)",
+                        timeout=10,
+                    )
+
+                    if (
+                        isinstance(profile_response, dict)
+                        and KEY_UCDMID in profile_response
+                    ):
+                        logger.debug(
+                            f"Fallback API check successful. User is logged in."
+                        )
+                        return True
+                    # End of if
+                except Exception as fallback_e:
+                    logger.warning(f"Fallback API check also failed: {fallback_e}")
+                    # Continue to ambiguous result
+                # End of try/except
+
                 logger.warning(
-                    f"{api_description}: API check failed but essential cookies present. Status ambiguous."
+                    f"{api_description}: All API checks failed but essential cookies present. Status ambiguous."
                 )
                 return None
 
             # --- Case 2: API returned a Response object (usually an error) ---
             elif isinstance(response_data, requests.Response):  # type: ignore
                 status_code = response_data.status_code
+                logger.debug(
+                    f"API returned Response object with status code {status_code}"
+                )
 
                 # Authentication failures are definitive indicators of not being logged in
                 if status_code in [401, 403]:
@@ -2602,6 +2647,7 @@ class SessionManager:
                 elif status_code in [301, 302, 307, 308]:
                     try:
                         redirect_url = response_data.headers.get("Location", "")
+                        logger.debug(f"API redirected to: {redirect_url}")
                         if (
                             "signin" in redirect_url.lower()
                             or "login" in redirect_url.lower()
@@ -2611,8 +2657,8 @@ class SessionManager:
                             )
                             return False
                         # End of if
-                    except Exception:
-                        pass
+                    except Exception as redirect_e:
+                        logger.warning(f"Error checking redirect URL: {redirect_e}")
                     # End of try/except
 
                 # Server errors are ambiguous - could be temporary issues
@@ -2625,34 +2671,47 @@ class SessionManager:
                 # For other status codes, check response content for clues
                 try:
                     content_type = response_data.headers.get("Content-Type", "")
+                    logger.debug(f"Response Content-Type: {content_type}")
+
                     if "json" in content_type.lower():
                         try:
                             json_data = response_data.json()
-                            # Check for error messages that indicate auth issues
-                            error_msg = (
-                                json_data.get("error", {}).get("message", "").lower()
+                            logger.debug(
+                                f"Response JSON keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'Not a dict'}"
                             )
-                            if any(
-                                term in error_msg
-                                for term in [
-                                    "auth",
-                                    "login",
-                                    "signin",
-                                    "session",
-                                    "token",
-                                ]
-                            ):
-                                logger.debug(
-                                    f"{api_description}: Auth-related error message found. User NOT logged in."
+
+                            # Check for error messages that indicate auth issues
+                            if isinstance(json_data, dict):
+                                error_msg = (
+                                    json_data.get("error", {})
+                                    .get("message", "")
+                                    .lower()
+                                    if isinstance(json_data.get("error"), dict)
+                                    else str(json_data.get("error", "")).lower()
                                 )
-                                return False
+
+                                if any(
+                                    term in error_msg
+                                    for term in [
+                                        "auth",
+                                        "login",
+                                        "signin",
+                                        "session",
+                                        "token",
+                                    ]
+                                ):
+                                    logger.debug(
+                                        f"{api_description}: Auth-related error message found. User NOT logged in."
+                                    )
+                                    return False
+                                # End of if
                             # End of if
-                        except Exception:
-                            pass
+                        except Exception as json_e:
+                            logger.warning(f"Error parsing JSON response: {json_e}")
                         # End of try/except
                     # End of if
-                except Exception:
-                    pass
+                except Exception as content_e:
+                    logger.warning(f"Error checking response content: {content_e}")
                 # End of try/except
 
                 # If we couldn't determine status from the error response
@@ -2663,11 +2722,21 @@ class SessionManager:
 
             # --- Case 3: API returned a dictionary (successful JSON response) ---
             elif isinstance(response_data, dict):
+                logger.debug(
+                    f"API returned dictionary with keys: {list(response_data.keys())}"
+                )
+
                 # Check for expected key as sign of successful (authenticated) response
                 if KEY_TEST_ID in response_data:
+                    test_id_value = response_data[KEY_TEST_ID]
                     logger.debug(
-                        f"{api_description}: API login check successful ('{KEY_TEST_ID}' found)."
+                        f"{api_description}: API login check successful ('{KEY_TEST_ID}' found with value: {test_id_value})."
                     )
+                    # Store the UUID if not already set
+                    if not self.my_uuid and test_id_value:
+                        self.my_uuid = str(test_id_value).upper()
+                        logger.debug(f"Updated session UUID to: {self.my_uuid}")
+                    # End of if
                     return True
 
                 # Check for other keys that might indicate a successful response
@@ -2684,6 +2753,7 @@ class SessionManager:
                 # Check for error messages that indicate auth issues
                 elif "error" in response_data:
                     error_msg = str(response_data.get("error", {})).lower()
+                    logger.debug(f"Error message in response: {error_msg}")
                     if any(
                         term in error_msg
                         for term in ["auth", "login", "signin", "session", "token"]
@@ -2703,6 +2773,9 @@ class SessionManager:
 
             # --- Case 4: API returned a string ---
             elif isinstance(response_data, str):
+                logger.debug(
+                    f"API returned string response (length: {len(response_data)})"
+                )
                 # Some APIs return plain text responses
                 if len(response_data.strip()) > 0:
                     # If it looks like JSON, try to parse it
@@ -2711,15 +2784,26 @@ class SessionManager:
                     ) or response_data.strip().startswith("["):
                         try:
                             json_data = json.loads(response_data)
-                            # Recursively call with the parsed JSON
+                            logger.debug(
+                                f"Parsed string response as JSON: {type(json_data)}"
+                            )
+                            # Recursively check the parsed JSON
                             if isinstance(json_data, dict) and KEY_TEST_ID in json_data:
+                                test_id_value = json_data[KEY_TEST_ID]
                                 logger.debug(
-                                    f"{api_description}: API login check successful ('{KEY_TEST_ID}' found in parsed JSON string)."
+                                    f"{api_description}: API login check successful ('{KEY_TEST_ID}' found in parsed JSON string with value: {test_id_value})."
                                 )
+                                # Store the UUID if not already set
+                                if not self.my_uuid and test_id_value:
+                                    self.my_uuid = str(test_id_value).upper()
+                                    logger.debug(
+                                        f"Updated session UUID to: {self.my_uuid}"
+                                    )
+                                # End of if
                                 return True
                             # End of if
-                        except json.JSONDecodeError:
-                            pass
+                        except json.JSONDecodeError as json_e:
+                            logger.warning(f"Failed to parse string as JSON: {json_e}")
                         # End of try/except
                     # End of if
 
@@ -5062,6 +5146,7 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
     # End of if
 
     if not session_manager.is_sess_valid():
+        logger.debug("Session is invalid, user cannot be logged in.")
         return False  # Cannot be logged in if session is invalid
     # End of if
 
@@ -5072,17 +5157,31 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
     # End of if
 
     # --- Primary Check: API Verification ---
-    api_check_result = session_manager._verify_api_login_status()
+    logger.debug("Performing primary API-based login status check...")
+    try:
+        # Sync cookies before API check to ensure latest state
+        session_manager._sync_cookies()
 
-    # If API check is definitive, return its result
-    if api_check_result is True:
-        return True
-    elif api_check_result is False:
-        return False
-    # End of if/elif
+        # Perform API check
+        api_check_result = session_manager._verify_api_login_status()
+
+        # If API check is definitive, return its result
+        if api_check_result is True:
+            logger.debug("API login check confirmed user is logged in.")
+            return True
+        elif api_check_result is False:
+            logger.debug("API login check confirmed user is NOT logged in.")
+            return False
+        # End of if/elif
+
+        logger.warning("API login check returned ambiguous result (None).")
+    except Exception as e:
+        logger.error(f"Exception during API login check: {e}", exc_info=True)
+        api_check_result = None  # Ensure we continue to UI fallback
+    # End of try/except
 
     # If API check is ambiguous (None) and UI fallback is disabled, return None
-    if disable_ui_fallback:
+    if api_check_result is None and disable_ui_fallback:
         logger.warning(
             "API login check was ambiguous and UI fallback is disabled. Status unknown."
         )
@@ -5090,39 +5189,88 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
     # End of if
 
     # --- Secondary Check: UI Verification (Fallback) ---
-    logger.debug("API check was ambiguous. Performing fallback UI login check...")
+    logger.debug("Performing fallback UI-based login status check...")
     try:
         # Check 1: Presence of a known logged-in element (most reliable indicator)
         logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR  # type: ignore # Assumes defined in my_selectors
+        logger.debug(f"Checking for logged-in indicator: '{logged_in_selector}'")
 
         # Use helper function is_elem_there for robust check
-        ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=2)  # type: ignore
+        ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)  # type: ignore
 
         if ui_element_present:
+            logger.debug("UI check: Logged-in indicator found. User is logged in.")
             return True
         # End of if
 
         # Check 2: Presence of login button (if present, definitely not logged in)
         login_button_selector = LOG_IN_BUTTON_SELECTOR  # type: ignore # Assumes defined in my_selectors
+        logger.debug(f"Checking for login button: '{login_button_selector}'")
 
         # Use helper function is_elem_there for robust check
-        login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=2)  # type: ignore
+        login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=3)  # type: ignore
 
         if login_button_present:
+            logger.debug("UI check: Login button found. User is NOT logged in.")
             return False
         # End of if
 
+        # Check 3: Navigate to base URL and check again if both checks were inconclusive
+        if not ui_element_present and not login_button_present:
+            logger.debug(
+                "UI check inconclusive. Navigating to base URL for clearer check..."
+            )
+            try:
+                current_url = driver.current_url
+                base_url = config_instance.BASE_URL
+
+                # Only navigate if not already on base URL
+                if not current_url.startswith(base_url):
+                    driver.get(base_url)
+                    time.sleep(2)  # Allow page to load
+
+                    # Check again after navigation
+                    ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)  # type: ignore
+                    if ui_element_present:
+                        logger.debug(
+                            "UI check after navigation: Logged-in indicator found. User is logged in."
+                        )
+                        return True
+                    # End of if
+
+                    login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=3)  # type: ignore
+                    if login_button_present:
+                        logger.debug(
+                            "UI check after navigation: Login button found. User is NOT logged in."
+                        )
+                        return False
+                    # End of if
+                # End of if
+            except Exception as nav_e:
+                logger.warning(
+                    f"Error during navigation for secondary UI check: {nav_e}"
+                )
+                # Continue to default return
+            # End of try/except
+        # End of if
+
         # Default to False in ambiguous cases for security reasons
+        logger.debug(
+            "UI check still inconclusive after all checks. Defaulting to NOT logged in for security."
+        )
         return False
 
     except WebDriverException as e:  # type: ignore
         logger.error(f"WebDriverException during UI login_status check: {e}")
         if not is_browser_open(driver):
+            logger.warning("Browser appears to be closed. Closing session.")
             session_manager.close_sess()  # Close the dead session
         # End of if
         return None  # Return None on critical WebDriver error during check
     except Exception as e:  # Catch other unexpected errors
-        logger.error(f"Unexpected error during UI login_status check: {e}")
+        logger.error(
+            f"Unexpected error during UI login_status check: {e}", exc_info=True
+        )
         return None
     # End of try/except UI check
 

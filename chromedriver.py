@@ -27,6 +27,7 @@ import subprocess
 import psutil
 import logging
 import random
+import json
 import undetected_chromedriver as uc
 from selenium import webdriver  # Standard Selenium WebDriver
 from selenium.webdriver.common.by import By
@@ -52,8 +53,16 @@ logger = logging.getLogger("logger")
 
 # Define constants dependent on the CHROME_CONFIG values
 CHROME_USER_DATA_DIR = selenium_config.CHROME_USER_DATA_DIR  # Use selenium_config
-DEFAULT_PROFILE_PATH = os.path.join(CHROME_USER_DATA_DIR, "Default")
-PREFERENCES_FILE = os.path.join(DEFAULT_PROFILE_PATH, "Preferences")
+# Handle the case where CHROME_USER_DATA_DIR might be None
+if CHROME_USER_DATA_DIR is not None:
+    DEFAULT_PROFILE_PATH = os.path.join(str(CHROME_USER_DATA_DIR), "Default")
+    PREFERENCES_FILE = os.path.join(DEFAULT_PROFILE_PATH, "Preferences")
+else:
+    # Use a default temporary directory if CHROME_USER_DATA_DIR is None
+    DEFAULT_PROFILE_PATH = os.path.join(
+        os.path.expanduser("~"), ".ancestry_temp", "Default"
+    )
+    PREFERENCES_FILE = os.path.join(DEFAULT_PROFILE_PATH, "Preferences")
 
 # --------------------------
 # Chrome Configuration

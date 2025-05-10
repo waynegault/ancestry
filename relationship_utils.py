@@ -45,6 +45,7 @@ from gedcom_utils import (
     _parse_date,
     _clean_display_date,
     GedcomIndividualType,
+    GedcomReaderType,
 )
 
 # --- Constants ---

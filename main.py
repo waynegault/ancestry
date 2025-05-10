@@ -5,12 +5,15 @@
 # --- Standard library imports ---
 import gc
 import inspect
+import json
 import logging
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib.parse import urljoin
 
 # --- Third-party imports ---
 import psutil
@@ -325,6 +328,7 @@ def exec_actn(
 
 
 # End of exec_actn
+
 
 
 # --- Action Functions
@@ -717,11 +721,13 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
 
 # Action 3 (backup_db_actn)
-def backup_db_actn():  # No parameters needed
+def backup_db_actn(
+    session_manager: Optional[SessionManager] = None, *_
+):  # Added session_manager parameter for exec_actn compatibility
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
-        # session_manager isn't strictly needed but kept for signature consistency
+        # session_manager isn't used but needed for exec_actn compatibility
         result = backup_database()
         if result:
             logger.info("DB backup OK.")
@@ -800,9 +806,10 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
 # Action 5 (check_login_actn)
 def check_login_actn(session_manager: SessionManager, *_) -> bool:
     """
-    REVISED V6: Checks login status using login_status and provides clear user feedback.
+    REVISED V7: Checks login status using login_status and provides clear user feedback.
     Relies on exec_actn to ensure driver is live (Phase 1) if needed.
     Does NOT attempt login itself. Does NOT trigger ensure_session_ready. Keeps session open.
+    Improved error handling and user feedback.
     """
     if not session_manager:
         logger.error("SessionManager required for check_login_actn.")
@@ -814,22 +821,41 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
     if not session_manager.driver_live:
         logger.error("Driver not live. Cannot check login status.")
         print("ERROR: Browser not started. Cannot check login status.")
+        print(
+            "       Select any browser-required action (1, 6-9) to start the browser."
+        )
         return False
+
+    print("\nChecking login status...")
 
     # Call login_status directly to check
-    status = login_status(
-        session_manager, disable_ui_fallback=False
-    )  # Use UI fallback for reliability
+    try:
+        status = login_status(
+            session_manager, disable_ui_fallback=False
+        )  # Use UI fallback for reliability
 
-    if status is True:
-        print("\n✓ You are currently logged in to Ancestry.")
-        return True
-    elif status is False:
-        print("\n✗ You are NOT currently logged in to Ancestry.")
-        print("  Select option 1, 6, 7, 8, 9, or 11 to trigger automatic login.")
-        return False
-    else:  # Status is None
-        print("\n? Unable to determine login status due to a technical error.")
+        if status is True:
+            print("\n✓ You are currently logged in to Ancestry.")
+            # Display additional session info if available
+            if session_manager.my_profile_id:
+                print(f"  Profile ID: {session_manager.my_profile_id}")
+            if session_manager.tree_owner_name:
+                print(f"  Account: {session_manager.tree_owner_name}")
+            return True
+        elif status is False:
+            print("\n✗ You are NOT currently logged in to Ancestry.")
+            print("  Select option 1, 6, 7, 8, 9, or 11 to trigger automatic login.")
+            return False
+        else:  # Status is None
+            print("\n? Unable to determine login status due to a technical error.")
+            print(
+                "  Try selecting option 1, 6, 7, 8, 9, or 11 to trigger automatic login."
+            )
+            logger.warning("Login status check returned None (ambiguous result).")
+            return False
+    except Exception as e:
+        logger.error(f"Exception during login status check: {e}", exc_info=True)
+        print(f"\n! Error checking login status: {e}")
         print("  Try selecting option 1, 6, 7, 8, 9, or 11 to trigger automatic login.")
         return False
 
@@ -1026,7 +1052,9 @@ def main():
                     session_manager.close_sess(keep_db=False)
                     session_manager = SessionManager()
                 elif choice == "3":
-                    backup_db_actn()  # Direct call since it doesn't need parameters
+                    exec_actn(
+                        backup_db_actn, session_manager, choice
+                    )  # Run through exec_actn for consistent logging
                 elif choice == "4":
                     # Confirmation handled above
                     exec_actn(restore_db_actn, session_manager, choice)
