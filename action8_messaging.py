@@ -1785,6 +1785,60 @@ def test_determine_next_message_type():
     return passed == len(test_cases)
 
 
+def debug_wrapper(original_func, func_name=None):
+    """
+    Creates a debug wrapper around a function that logs detailed information
+    about inputs, outputs, and any exceptions.
+
+    Args:
+        original_func: The original function to wrap
+        func_name: Optional name for the function (defaults to original_func.__name__)
+
+    Returns:
+        A wrapped function with detailed logging
+    """
+    func_name = func_name or original_func.__name__
+
+    def wrapped_func(*args, **kwargs):
+        logger.debug(f"DEBUG: Entering {func_name}...")
+        try:
+            # Log the arguments (safely)
+            if args:
+                safe_args = []
+                for i, arg in enumerate(args):
+                    if hasattr(arg, "__dict__"):
+                        safe_args.append(f"arg{i}=<{type(arg).__name__}>")
+                    else:
+                        safe_args.append(f"arg{i}={arg}")
+                logger.debug(f"DEBUG: {func_name} args: {', '.join(safe_args)}")
+
+            if kwargs:
+                safe_kwargs = {}
+                for k, v in kwargs.items():
+                    if hasattr(v, "__dict__"):
+                        safe_kwargs[k] = f"<{type(v).__name__}>"
+                    else:
+                        safe_kwargs[k] = v
+                logger.debug(f"DEBUG: {func_name} kwargs: {safe_kwargs}")
+
+            # Call the original function
+            result = original_func(*args, **kwargs)
+
+            # Log the result (safely)
+            if hasattr(result, "__dict__"):
+                logger.debug(f"DEBUG: {func_name} returned: <{type(result).__name__}>")
+            else:
+                logger.debug(f"DEBUG: {func_name} returned: {result}")
+
+            return result
+        except Exception as e:
+            logger.error(f"DEBUG: Error in {func_name}: {e}")
+            logger.error(traceback.format_exc())
+            raise
+
+    return wrapped_func
+
+
 def main():
     """
     Main function for standalone testing of Action 8 messaging.
@@ -1792,6 +1846,7 @@ def main():
     Command line arguments:
         --test: Run the self-test instead of the actual messaging function
         --mock: Run with a mocked SessionManager (no real browser)
+        --debug: Enable detailed debug logging for key functions
     """
     # Step 1: Setup Logging
     from logging_config import setup_logging  # Local import
@@ -1822,6 +1877,45 @@ def main():
     # Check for command line arguments
     run_test = "--test" in sys.argv
     use_mock = "--mock" in sys.argv
+    debug_mode = "--debug" in sys.argv
+
+    # Enable debug mode if requested
+    if debug_mode:
+        logger.info("Debug mode enabled - adding detailed logging to key functions...")
+        # Import api_utils here to avoid circular imports
+        from api_utils import call_send_message_api
+
+        # Store original functions
+        original_functions = {
+            "send_messages_to_matches": send_messages_to_matches,
+            "_prefetch_messaging_data": _prefetch_messaging_data,
+            "_process_single_person": _process_single_person,
+            "safe_column_value": safe_column_value,
+            "determine_next_message_type": determine_next_message_type,
+            "_commit_messaging_batch": _commit_messaging_batch,
+            "call_send_message_api": call_send_message_api,
+        }
+
+        # Apply debug wrappers
+        globals()["send_messages_to_matches"] = debug_wrapper(send_messages_to_matches)
+        globals()["_prefetch_messaging_data"] = debug_wrapper(_prefetch_messaging_data)
+        globals()["_process_single_person"] = debug_wrapper(_process_single_person)
+        globals()["safe_column_value"] = debug_wrapper(safe_column_value)
+        globals()["determine_next_message_type"] = debug_wrapper(
+            determine_next_message_type
+        )
+        globals()["_commit_messaging_batch"] = debug_wrapper(_commit_messaging_batch)
+
+        # Wrap the API function
+        from api_utils import call_send_message_api as original_call_send_message_api
+        import api_utils
+
+        api_utils.call_send_message_api = debug_wrapper(
+            original_call_send_message_api, "call_send_message_api"
+        )
+
+        # Store original functions for restoration
+        globals()["_original_functions"] = original_functions
 
     # Run self-test if requested
     if run_test:
@@ -1969,6 +2063,25 @@ def main():
         logger.info("Closing session manager in finally block...")
         if session_manager:
             session_manager.close_sess()
+
+        # Restore original functions if in debug mode
+        if debug_mode and "_original_functions" in globals():
+            logger.info("Restoring original functions after debug mode...")
+            for func_name, func in globals()["_original_functions"].items():
+                if func_name.startswith("_") or func_name in globals():
+                    globals()[func_name] = func
+
+            # Restore API function
+            if "call_send_message_api" in globals()["_original_functions"]:
+                import api_utils
+
+                api_utils.call_send_message_api = globals()["_original_functions"][
+                    "call_send_message_api"
+                ]
+
+            # Remove the stored originals
+            del globals()["_original_functions"]
+
         logger.info(
             f"--- Action 8 Standalone Run Finished (Overall Success: {action_success}) ---"
         )
@@ -2364,12 +2477,14 @@ def run_self_test(use_real_data=False):
 
 
 if __name__ == "__main__":
-    # Run the self-test if called with --test argument
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+    # Parse command line arguments
+    # Note: We check for presence of flags rather than position
+    # to allow combining flags like --test --debug
+    if "--test" in sys.argv:
         success = run_self_test(use_real_data=False)
         sys.exit(0 if success else 1)
     # Run the real data test if called with --real-test argument
-    elif len(sys.argv) > 1 and sys.argv[1] == "--real-test":
+    elif "--real-test" in sys.argv:
         success = run_self_test(use_real_data=True)
         sys.exit(0 if success else 1)
     else:
