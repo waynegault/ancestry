@@ -28,6 +28,7 @@ from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
 from action10 import run_action10
 from action11 import run_action11
+from auto_responder import process_and_respond_to_messages
 
 # Core modules
 from config import config_instance
@@ -89,6 +90,7 @@ def menu():
     print("9. Process Productive Messages")
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
+    print("12. Auto-Respond to Messages")
     print("")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
@@ -1056,6 +1058,27 @@ def run_action11_wrapper(session_manager, *_):
 # End of run_action11_wrapper
 
 
+# Action 12 (auto_responder_action)
+def auto_responder_action(session_manager, *_):
+    """Action to run Auto-Responder. Relies on exec_actn for consistent logging and error handling."""
+    logger.debug("Starting Auto-Responder...")
+    try:
+        # Call the actual Auto-Responder function
+        result = process_and_respond_to_messages(session_manager)
+        if result is False:
+            logger.error("Auto-Responder reported failure.")
+            return False
+        else:
+            logger.info("Auto-Responder OK.")
+            return True
+    except Exception as e:
+        logger.error(f"Error during Auto-Responder: {e}", exc_info=True)
+        return False
+
+
+# End of auto_responder_action
+
+
 def main():
     global logger, session_manager  # Ensure global logger can be modified
     session_manager = None  # Initialize session_manager
@@ -1170,6 +1193,9 @@ def main():
             elif choice == "11":
                 # Use the wrapper function to run Action 11 through exec_actn
                 exec_actn(run_action11_wrapper, session_manager, choice)
+            elif choice == "12":
+                # Run the Auto-Responder action
+                exec_actn(auto_responder_action, session_manager, choice)
             # --- Meta Options ---
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")

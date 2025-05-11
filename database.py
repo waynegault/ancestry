@@ -178,6 +178,14 @@ class ConversationLog(Base):
     # Defines the link to the MessageType object for outgoing messages.
     message_type = relationship("MessageType")
 
+    # New column for tracking custom genealogical replies
+    custom_reply_sent_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp (UTC) when an automated genealogical custom reply was sent for this IN message.",
+    )
+
     # --- Table Arguments (Indexes) ---
     __table_args__ = (
         # Composite index for efficient lookup by person, direction, and timestamp.
@@ -189,6 +197,8 @@ class ConversationLog(Base):
         ),
         # Index for querying based on timestamp alone.
         Index("ix_conversation_log_timestamp", "latest_timestamp"),
+        # Index for custom reply timestamp
+        Index("ix_conversation_log_custom_reply_sent_at", "custom_reply_sent_at"),
         # Note: PrimaryKeyConstraint is implicitly created by primary_key=True on two columns.
     )
 

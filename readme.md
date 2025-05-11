@@ -257,13 +257,7 @@ Markdown
 ├── my_selectors.py # CSS selectors for Selenium UI interaction (login, popups)
 ├── relationship_utils.py # Utilities for finding and formatting relationship paths (GEDCOM & API)
 ├── requirements.txt # Python package dependencies
-├── run_action7.py # Standalone script for running/testing Action 7
-├── run_action7_direct.py # Alternative standalone script for Action 7
-├── run_action7_from_main.py # (Potentially redundant) script for Action 7
-├── run_action8_direct.py # Standalone script for running/testing Action 8
-├── run_action9_direct.py # Standalone script for running/testing Action 9
 ├── selenium_utils.py # Selenium-specific helper functions (element interaction, cookie export)
-├── test_selenium_utils.py # Unit tests for selenium_utils.py (runs its internal self-test)
 ├── .env # Environment variables (user-created, DO NOT COMMIT SENSITIVE DATA)
 └── README.md # This file
 ## 7. Usage Guide
@@ -488,9 +482,8 @@ Ancestry.com's internal APIs are not officially documented for third-party use a
 *   **Python Debugger (`pdb` or IDE Debugger):**
     *   Set breakpoints in the code to inspect variables and step through execution.
     *   Particularly useful for understanding data transformations and control flow within complex functions like `_api_req` or action modules.
-*   **Standalone Action Runners (`run_action*.py`):**
-    *   Use these scripts (e.g., `python run_action7.py`) to test individual actions in isolation, simplifying debugging.
 *   **Module Self-Tests:**
+    *   Many modules have self-test functionality that can be run directly (e.g., `python action7_inbox.py`) to test individual actions in isolation, simplifying debugging.
     *   Run `python <module_name>.py` for modules that have `if __name__ == "__main__":` self-test blocks (e.g., `utils.py`, `ai_interface.py`, `ms_graph_utils.py`, `selenium_utils.py`, `api_utils.py`, `gedcom_utils.py`).
 
 ## 10. Future Development Ideas
