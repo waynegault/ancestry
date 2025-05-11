@@ -13,7 +13,7 @@ The primary objectives of this project are to:
 *   **Automate Data Collection:** Systematically gather comprehensive information on DNA matches, including shared DNA amounts, predicted relationships, family tree linkages, and profile details.
 *   **Efficient Inbox Management:** Automate the retrieval and processing of messages from the Ancestry inbox, identify new communications, and classify their intent using AI to prioritize follow-ups.
 *   **Streamlined Communication:** Send personalized, templated messages to DNA matches to initiate contact, follow up on previous communications, or acknowledge productive replies, adhering to defined rules and sequences to avoid over-messaging.
-*   **AI-Powered Research Assistance:** Utilize AI to extract key genealogical entities (names, dates, locations, relationships, key facts) from productive user messages and suggest actionable research tasks to further the investigation.
+*   **AI-Powered Research Assistance:** Utilize AI to extract key genealogical entities (names, dates, locations, relationships, key facts) from productive user messages, suggest actionable research tasks, and generate personalized genealogical responses with information about mentioned individuals and their relationship to the tree owner.
 *   **Local Data Persistence:** Store all collected data (person profiles, DNA match details, tree links, conversation logs, AI analysis) in a local SQLite database for offline analysis, custom querying, historical tracking, and to inform future automated actions.
 *   **Genealogical Reporting:** Provide tools to generate reports by finding matches within local GEDCOM files (Action 10) and searching for individuals using Ancestry's various internal APIs (Action 11).
 *   **Task Management Integration:** Create tasks in Microsoft To-Do based on AI-suggested follow-ups from productive messages, integrating research directly into a task management workflow.
@@ -29,6 +29,7 @@ The primary objectives of this project are to:
     *   Classifies incoming message intent (PRODUCTIVE, UNINTERESTED, DESIST, OTHER).
     *   Extracts key genealogical entities (names, dates, locations, relationships, facts) from messages.
     *   Suggests actionable follow-up research tasks based on message content.
+    *   Generates personalized genealogical responses to messages mentioning specific individuals.
     *   Supports multiple AI providers (DeepSeek, Google Gemini) configurable via `.env`.
 *   **Database Storage (`database.py`):** Employs SQLAlchemy ORM with an SQLite backend. Defines models for Person, DnaMatch, FamilyTree, ConversationLog, and MessageType. Includes transaction management and schema creation.
 *   **Templated Messaging (`action8_messaging.py`, `messages.json`):** Sends personalized messages using predefined templates stored in `messages.json`, with placeholders for dynamic content. Follows a rule-based sequencing logic.
@@ -347,8 +348,10 @@ Markdown
 *   **Action 9 (Process Productive Messages):** (`action9_process_productive.process_productive_messages`)
     *   Processes conversations where the latest user message was classified as "PRODUCTIVE" by Action 7.
     *   Uses AI (`ai_interface.py`) to extract genealogical entities (names, dates, locations, etc.) and suggest follow-up research tasks from the conversation.
+    *   Identifies persons mentioned in messages by searching both local GEDCOM files and Ancestry's online database.
+    *   Generates personalized genealogical responses with information about mentioned individuals, their family details, and relationship paths to the tree owner.
+    *   Falls back to standard acknowledgement messages when no specific person is identified or when exclusion keywords are detected.
     *   Optionally creates tasks in a specified Microsoft To-Do list via MS Graph API (`ms_graph_utils.py`).
-    *   Sends an acknowledgement message to the match.
     *   Updates the Person's status to ARCHIVE in the database.
 *   **Action 10 (GEDCOM Report):** (`action10.run_action10`)
     *   Prompts the user for search criteria (name, birth year, etc.).
@@ -500,6 +503,8 @@ Ancestry.com's internal APIs are not officially documented for third-party use a
     *   Add features for visualizing relationship networks.
 *   **AI Capabilities Expansion:**
     *   Use AI to summarize long conversation threads.
+    *   Enhance the automated genealogical response system to handle more complex queries and provide more detailed information.
+    *   Implement AI-driven conversation continuity to maintain context across multiple message exchanges.
     *   Train a custom model (if feasible) for more accurate genealogical entity extraction or relationship inference.
     *   Implement AI-powered validation of tree data consistency.
     *   Explore natural language querying of the local database.
@@ -559,7 +564,8 @@ This section details key configuration variables set in the `.env` file.
 *   `MAX_PRODUCTIVE_TO_PROCESS`: Max "PRODUCTIVE" messages to process in Action 9 (0 = all).
 *   `BATCH_SIZE`: Number of items (matches, messages) to process per API call batch or DB transaction.
 *   `CACHE_TIMEOUT`: Default expiry for cached items in seconds (e.g., 3600 for 1 hour).
-*   `TREE_SEARCH_METHOD`: Method for Action 9 tree search: `GEDCOM` (local file), `API` (Ancestry search - experimental), or `NONE`.
+*   `TREE_SEARCH_METHOD`: Method for Action 9 tree search: `GEDCOM` (local file), `API` (Ancestry search), or `NONE`.
+*   `CUSTOM_RESPONSE_ENABLED`: Set to `True` to enable automated genealogical responses in Action 9, `False` to use only standard acknowledgements.
 *   `MAX_SUGGESTIONS_TO_SCORE`: (Action 11) Max API search suggestions to score.
 *   `MAX_CANDIDATES_TO_DISPLAY`: (Action 11) Max scored candidates to display in results.
 
