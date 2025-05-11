@@ -10,7 +10,9 @@ handling and rate limiting integration with SessionManager.
 """
 
 # --- Standard library imports ---
+import json
 import logging
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -61,6 +63,27 @@ from utils import SessionManager  # For rate limiting access
 from logging_config import logger  # Use configured logger
 
 # --- Constants and Prompts ---
+
+# System prompt for generating genealogical replies
+GENERATE_GENEALOGICAL_REPLY_PROMPT = """You are a helpful genealogical assistant responding to messages on behalf of a family history researcher.
+
+You will receive:
+1. A conversation history between the researcher (SCRIPT) and a user (USER)
+2. The user's last message
+3. Genealogical data about a person mentioned in the user's message, including:
+   - Name, birth/death information
+   - Family relationships
+   - Relationship to the tree owner (the researcher)
+
+Your task is to generate a natural, polite, and informative reply that:
+- Directly addresses the user's query or comment
+- Incorporates the provided genealogical data in a helpful way
+- Acknowledges the user's point and integrates the found information smoothly
+- May suggest connections or ask a clarifying follow-up question if appropriate
+- Maintains a warm, helpful tone
+
+Your response should be ONLY the message text, with no additional formatting or explanation.
+"""
 
 # System prompt for Action 7 (Intent Classification)
 # Focuses on the intent of the *last USER message* within the conversation context.
@@ -619,6 +642,187 @@ def extract_and_suggest_tasks(
 
 
 # End of extract_and_suggest_tasks
+
+
+def generate_genealogical_reply(
+    conversation_context: str,
+    user_last_message: str,
+    genealogical_data_str: str,
+    session_manager: SessionManager,
+) -> Optional[str]:
+    """
+    Calls the configured AI model to generate a personalized genealogical reply
+    based on the conversation context, user's last message, and genealogical data.
+
+    Args:
+        conversation_context: The formatted conversation history string.
+        user_last_message: The user's last message (for emphasis).
+        genealogical_data_str: Structured string containing genealogical data about mentioned person(s).
+        session_manager: The active SessionManager instance (for rate limiting).
+
+    Returns:
+        A string containing the generated reply, or None if generation failed.
+    """
+    # Step 1: Validate Inputs
+    if not conversation_context or not user_last_message or not genealogical_data_str:
+        logger.error("generate_genealogical_reply: Missing required input parameters.")
+        return None
+
+    if not session_manager or not session_manager.is_sess_valid():
+        logger.error("generate_genealogical_reply: Invalid session manager.")
+        return None
+
+    # Get AI provider from config
+    ai_provider = config_instance.AI_PROVIDER.lower()
+    if not ai_provider:
+        logger.error("generate_genealogical_reply: AI_PROVIDER not configured.")
+        return None
+
+    # Step 2: Apply Rate Limiting
+    wait_time = session_manager.dynamic_rate_limiter.wait()
+    # Optional: Log if wait time was significant
+    # if wait_time > 0.1: logger.debug(f"AI Reply Generation API rate limit wait: {wait_time:.2f}s")
+
+    # Step 3: Prepare Prompt
+    # Combine all inputs into a single prompt
+    combined_prompt = f"""
+{GENERATE_GENEALOGICAL_REPLY_PROMPT}
+
+CONVERSATION HISTORY:
+{conversation_context}
+
+USER'S LAST MESSAGE:
+{user_last_message}
+
+GENEALOGICAL DATA:
+{genealogical_data_str}
+"""
+
+    # Step 4: Call the appropriate AI provider
+    try:
+        if ai_provider == "deepseek":
+            # --- DeepSeek/OpenAI Compatible API Call ---
+            if not openai_available or OpenAI is None:
+                logger.error(
+                    "generate_genealogical_reply: OpenAI library not available."
+                )
+                return None
+
+            # Load config
+            api_key = config_instance.DEEPSEEK_API_KEY
+            model = config_instance.DEEPSEEK_AI_MODEL
+            base_url = config_instance.DEEPSEEK_AI_BASE_URL
+
+            if not all([api_key, model, base_url]):
+                logger.error(
+                    "generate_genealogical_reply: DeepSeek configuration incomplete."
+                )
+                return None
+
+            # Initialize client
+            try:
+                client = OpenAI(api_key=api_key, base_url=base_url)
+            except Exception as client_err:
+                logger.error(f"Failed to initialize DeepSeek client: {client_err}")
+                return None
+
+            # Make API call
+            openai_response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": GENERATE_GENEALOGICAL_REPLY_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"CONVERSATION HISTORY:\n{conversation_context}\n\nUSER'S LAST MESSAGE:\n{user_last_message}\n\nGENEALOGICAL DATA:\n{genealogical_data_str}",
+                    },
+                ],
+                temperature=0.7,  # Slightly creative but still focused
+                max_tokens=1000,  # Reasonable length for a reply
+            )
+
+            # Process response
+            if openai_response.choices and openai_response.choices[0].message:
+                reply_text = openai_response.choices[0].message.content.strip()
+                # Success - return the generated reply
+                return reply_text
+            else:
+                logger.error(
+                    "DeepSeek API returned empty response for genealogical reply."
+                )
+                return None
+
+        elif ai_provider == "gemini":
+            # --- Google Gemini API Call ---
+            if not genai_available or genai is None:
+                logger.error(
+                    "generate_genealogical_reply: Google Generative AI library not available."
+                )
+                return None
+
+            # Load config
+            api_key = config_instance.GOOGLE_API_KEY
+            model_name = config_instance.GOOGLE_AI_MODEL
+
+            if not all([api_key, model_name]):
+                logger.error(
+                    "generate_genealogical_reply: Gemini configuration incomplete."
+                )
+                return None
+
+            # Configure API and model
+            try:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel(model_name)
+            except Exception as gemini_setup_err:
+                logger.error(
+                    f"Failed to configure/initialize Gemini model: {gemini_setup_err}"
+                )
+                return None
+
+            # Set generation config
+            generation_config = {
+                "temperature": 0.7,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 1000,
+            }
+
+            # Prepare prompt content
+            prompt_content = combined_prompt
+
+            # Make API call
+            response = model.generate_content(
+                prompt_content, generation_config=generation_config
+            )
+
+            # Process response
+            if not response.candidates:
+                logger.error(
+                    "Gemini API returned empty response for genealogical reply."
+                )
+                return None
+
+            raw_response_content = response.text
+
+            if raw_response_content:
+                # Success - return the generated reply
+                return raw_response_content.strip()
+            else:
+                logger.error("Gemini API returned empty text for genealogical reply.")
+                return None
+        else:
+            logger.error(
+                f"Unsupported AI provider '{ai_provider}' for genealogical reply generation."
+            )
+            return None
+
+    # Step 5: Handle Specific API/Library Errors
+    except Exception as e:
+        logger.error(f"Error generating genealogical reply: {e}", exc_info=True)
+        return None
+
+    # If we get here, something went wrong
+    return None
 
 
 def self_check() -> bool:

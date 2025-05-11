@@ -22,6 +22,7 @@ ID               | Name                           | Sex    | Birth Date        |
 
 # --- Standard library imports ---
 import logging
+import os
 import sys
 import time
 import argparse
@@ -904,6 +905,240 @@ def main() -> None:
         logger.info("\n--- No matches found to analyze. ---")
 
     logger.info("\n--- Action 10 Finished ---")
+
+
+def search_gedcom_for_criteria(
+    search_criteria: Dict[str, Any],
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+    max_results: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    Search GEDCOM data for individuals matching the provided criteria.
+    This function is designed to be called from other modules.
+
+    Args:
+        search_criteria: Dictionary containing search criteria (first_name, surname, gender, birth_year, etc.)
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+        max_results: Maximum number of results to return
+
+    Returns:
+        List of dictionaries containing match information, sorted by score (highest first)
+    """
+    # Step 1: Ensure we have GEDCOM data
+    if not gedcom_data:
+        if not gedcom_path:
+            # Try to get path from config
+            gedcom_path = get_config_value(
+                "GEDCOM_FILE_PATH",
+                os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
+            )
+
+        if not os.path.exists(gedcom_path):
+            logger.error(f"GEDCOM file not found at {gedcom_path}")
+            return []
+
+        # Load GEDCOM data
+        gedcom_data = load_gedcom_data(gedcom_path)
+
+    if not gedcom_data or not gedcom_data.processed_data_cache:
+        logger.error("Failed to load GEDCOM data or processed cache is empty")
+        return []
+
+    # Step 2: Prepare scoring and filter criteria
+    scoring_criteria = {}
+    filter_criteria = {}
+
+    # Copy provided criteria to scoring criteria
+    for key in [
+        "first_name",
+        "surname",
+        "gender",
+        "birth_year",
+        "birth_place",
+        "birth_date_obj",
+        "death_year",
+        "death_place",
+        "death_date_obj",
+    ]:
+        if key in search_criteria and search_criteria[key] is not None:
+            scoring_criteria[key] = search_criteria[key]
+
+    # Create filter criteria (subset of scoring criteria)
+    for key in ["first_name", "surname", "gender", "birth_year", "birth_place"]:
+        if key in scoring_criteria:
+            filter_criteria[key] = scoring_criteria[key]
+
+    # Step 3: Get configuration values
+    scoring_weights = get_config_value(
+        "COMMON_SCORING_WEIGHTS", DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+    )
+    date_flex = get_config_value("DATE_FLEXIBILITY", DEFAULT_CONFIG["DATE_FLEXIBILITY"])
+
+    # Step 4: Filter and score individuals
+    scored_matches = filter_and_score_individuals(
+        gedcom_data, filter_criteria, scoring_criteria, scoring_weights, date_flex
+    )
+
+    # Step 5: Return top matches (limited by max_results)
+    return scored_matches[:max_results] if scored_matches else []
+
+
+def get_gedcom_family_details(
+    individual_id: str,
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get family details for a specific individual from GEDCOM data.
+
+    Args:
+        individual_id: GEDCOM ID of the individual
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+
+    Returns:
+        Dictionary containing family details (parents, spouses, children, siblings)
+    """
+    # Step 1: Ensure we have GEDCOM data
+    if not gedcom_data:
+        if not gedcom_path:
+            # Try to get path from config
+            gedcom_path = get_config_value(
+                "GEDCOM_FILE_PATH",
+                os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
+            )
+
+        if not os.path.exists(gedcom_path):
+            logger.error(f"GEDCOM file not found at {gedcom_path}")
+            return {}
+
+        # Load GEDCOM data
+        gedcom_data = load_gedcom_data(gedcom_path)
+
+    if not gedcom_data:
+        logger.error("Failed to load GEDCOM data")
+        return {}
+
+    # Step 2: Normalize individual ID
+    individual_id_norm = _normalize_id(individual_id)
+
+    # Step 3: Get individual from GEDCOM data
+    individual = gedcom_data.get_individual(individual_id_norm)
+    if not individual:
+        logger.error(f"Individual {individual_id_norm} not found in GEDCOM data")
+        return {}
+
+    # Step 4: Get family details
+    result = {
+        "individual": gedcom_data.get_processed_individual(individual_id_norm),
+        "parents": [],
+        "spouses": [],
+        "children": [],
+        "siblings": [],
+    }
+
+    # Get parents
+    parents = gedcom_data.get_related_individuals(individual, "parents")
+    for parent in parents:
+        parent_id = _normalize_id(parent.id)
+        parent_data = gedcom_data.get_processed_individual(parent_id)
+        if parent_data:
+            result["parents"].append(parent_data)
+
+    # Get spouses
+    spouses = gedcom_data.get_related_individuals(individual, "spouses")
+    for spouse in spouses:
+        spouse_id = _normalize_id(spouse.id)
+        spouse_data = gedcom_data.get_processed_individual(spouse_id)
+        if spouse_data:
+            result["spouses"].append(spouse_data)
+
+    # Get children
+    children = gedcom_data.get_related_individuals(individual, "children")
+    for child in children:
+        child_id = _normalize_id(child.id)
+        child_data = gedcom_data.get_processed_individual(child_id)
+        if child_data:
+            result["children"].append(child_data)
+
+    # Get siblings
+    siblings = gedcom_data.get_related_individuals(individual, "siblings")
+    for sibling in siblings:
+        sibling_id = _normalize_id(sibling.id)
+        sibling_data = gedcom_data.get_processed_individual(sibling_id)
+        if sibling_data:
+            result["siblings"].append(sibling_data)
+
+    return result
+
+
+def get_gedcom_relationship_path(
+    individual_id: str,
+    reference_id: Optional[str] = None,
+    reference_name: Optional[str] = "Reference Person",
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+) -> str:
+    """
+    Get the relationship path between an individual and the reference person.
+
+    Args:
+        individual_id: GEDCOM ID of the individual
+        reference_id: GEDCOM ID of the reference person (default: from config)
+        reference_name: Name of the reference person (default: "Reference Person")
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+
+    Returns:
+        Formatted relationship path string
+    """
+    # Step 1: Ensure we have GEDCOM data
+    if not gedcom_data:
+        if not gedcom_path:
+            # Try to get path from config
+            gedcom_path = get_config_value(
+                "GEDCOM_FILE_PATH",
+                os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
+            )
+
+        if not os.path.exists(gedcom_path):
+            logger.error(f"GEDCOM file not found at {gedcom_path}")
+            return "(GEDCOM file not found)"
+
+        # Load GEDCOM data
+        gedcom_data = load_gedcom_data(gedcom_path)
+
+    if not gedcom_data:
+        logger.error("Failed to load GEDCOM data")
+        return "(Failed to load GEDCOM data)"
+
+    # Step 2: Normalize individual ID
+    individual_id_norm = _normalize_id(individual_id)
+
+    # Step 3: Get reference ID if not provided
+    if not reference_id:
+        reference_id = get_config_value("REFERENCE_PERSON_ID", None)
+
+    if not reference_id:
+        logger.error("Reference person ID not provided and not found in config")
+        return "(Reference person ID not available)"
+
+    reference_id_norm = _normalize_id(reference_id)
+
+    # Step 4: Get relationship path
+    path_ids = gedcom_data.get_relationship_path(individual_id_norm, reference_id_norm)
+
+    if not path_ids:
+        return f"(No relationship path found between {individual_id_norm} and {reference_id_norm})"
+
+    # Step 5: Format relationship path
+    relationship_path = gedcom_data.explain_relationship_path(
+        path_ids, owner_name=reference_name
+    )
+
+    return relationship_path
 
 
 def run_action10(*args):

@@ -3211,6 +3211,279 @@ def main():
 # End of main
 
 
+def search_ancestry_api_for_person(
+    session_manager: SessionManager,
+    search_criteria: Dict[str, Any],
+    max_results: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    Search Ancestry API for individuals matching the provided criteria.
+    This function is designed to be called from other modules.
+
+    Args:
+        session_manager: Active SessionManager instance with valid authentication
+        search_criteria: Dictionary containing search criteria (first_name, surname, gender, birth_year, etc.)
+        max_results: Maximum number of results to return
+
+    Returns:
+        List of dictionaries containing match information, sorted by score (highest first)
+    """
+    # Step 1: Ensure we have a valid session
+    if not session_manager or not session_manager.is_sess_valid():
+        logger.error("Invalid session manager for Ancestry API search")
+        return []
+
+    # Step 2: Prepare search criteria
+    # Make a copy to avoid modifying the original
+    search_criteria_copy = search_criteria.copy()
+
+    # Ensure we have the raw name fields
+    if (
+        "first_name" in search_criteria_copy
+        and "first_name_raw" not in search_criteria_copy
+    ):
+        search_criteria_copy["first_name_raw"] = search_criteria_copy["first_name"]
+
+    if "surname" in search_criteria_copy and "surname_raw" not in search_criteria_copy:
+        search_criteria_copy["surname_raw"] = search_criteria_copy["surname"]
+
+    # Step 3: Call the search API
+    suggestions_to_score = _handle_search_phase(
+        session_manager, search_criteria_copy, config_instance
+    )
+
+    if suggestions_to_score is None or not suggestions_to_score:
+        logger.debug("No results found in Ancestry API search")
+        return []
+
+    # Step 4: Score the suggestions
+    scored_candidates = _process_and_score_suggestions(
+        suggestions_to_score, search_criteria_copy, config_instance
+    )
+
+    if not scored_candidates:
+        logger.debug("No candidates after scoring Ancestry API results")
+        return []
+
+    # Step 5: Return top matches (limited by max_results)
+    return scored_candidates[:max_results] if scored_candidates else []
+
+
+def get_ancestry_person_details(
+    session_manager: SessionManager,
+    person_id: str,
+    tree_id: str,
+) -> Dict[str, Any]:
+    """
+    Get detailed information about a person from Ancestry API.
+
+    Args:
+        session_manager: Active SessionManager instance with valid authentication
+        person_id: Ancestry Person ID
+        tree_id: Ancestry Tree ID
+
+    Returns:
+        Dictionary containing person details
+    """
+    # Step 1: Ensure we have a valid session
+    if not session_manager or not session_manager.is_sess_valid():
+        logger.error("Invalid session manager for Ancestry person details")
+        return {}
+
+    # Step 2: Create a minimal candidate dictionary for the details phase
+    candidate_raw = {
+        "PersonId": person_id,
+        "TreeId": tree_id,
+    }
+
+    # Step 3: Call the details API
+    person_research_data = _handle_details_phase(
+        candidate_raw, session_manager, config_instance
+    )
+
+    if person_research_data is None:
+        logger.warning(f"Failed to retrieve detailed info for person {person_id}")
+        return {}
+
+    # Step 4: Extract and format the details
+    details = {}
+
+    # Extract basic information
+    person_info = person_research_data.get("person", {})
+    details["id"] = person_id
+    details["tree_id"] = tree_id
+    details["name"] = person_info.get("name", "Unknown")
+    details["gender"] = person_info.get("gender", "Unknown")
+
+    # Extract birth information
+    birth_facts = person_info.get("birth", {})
+    details["birth_date"] = birth_facts.get("date", {}).get("normalized", "Unknown")
+    details["birth_place"] = birth_facts.get("place", {}).get("normalized", "Unknown")
+    details["birth_year"] = _extract_year_from_date(details["birth_date"])
+
+    # Extract death information
+    death_facts = person_info.get("death", {})
+    details["death_date"] = death_facts.get("date", {}).get("normalized", "Unknown")
+    details["death_place"] = death_facts.get("place", {}).get("normalized", "Unknown")
+    details["death_year"] = _extract_year_from_date(details["death_date"])
+
+    # Extract family information
+    family = person_research_data.get("family", {})
+
+    # Extract parents
+    details["parents"] = []
+    for parent in family.get("parents", []):
+        parent_info = {
+            "id": parent.get("id", "Unknown"),
+            "name": parent.get("name", "Unknown"),
+            "gender": parent.get("gender", "Unknown"),
+            "birth_year": _extract_year_from_date(
+                parent.get("birth", {}).get("date", {}).get("normalized", "")
+            ),
+            "death_year": _extract_year_from_date(
+                parent.get("death", {}).get("date", {}).get("normalized", "")
+            ),
+        }
+        details["parents"].append(parent_info)
+
+    # Extract spouses
+    details["spouses"] = []
+    for spouse in family.get("spouses", []):
+        spouse_info = {
+            "id": spouse.get("id", "Unknown"),
+            "name": spouse.get("name", "Unknown"),
+            "gender": spouse.get("gender", "Unknown"),
+            "birth_year": _extract_year_from_date(
+                spouse.get("birth", {}).get("date", {}).get("normalized", "")
+            ),
+            "death_year": _extract_year_from_date(
+                spouse.get("death", {}).get("date", {}).get("normalized", "")
+            ),
+        }
+        details["spouses"].append(spouse_info)
+
+    # Extract children
+    details["children"] = []
+    for child in family.get("children", []):
+        child_info = {
+            "id": child.get("id", "Unknown"),
+            "name": child.get("name", "Unknown"),
+            "gender": child.get("gender", "Unknown"),
+            "birth_year": _extract_year_from_date(
+                child.get("birth", {}).get("date", {}).get("normalized", "")
+            ),
+            "death_year": _extract_year_from_date(
+                child.get("death", {}).get("date", {}).get("normalized", "")
+            ),
+        }
+        details["children"].append(child_info)
+
+    # Extract siblings
+    details["siblings"] = []
+    for sibling in family.get("siblings", []):
+        sibling_info = {
+            "id": sibling.get("id", "Unknown"),
+            "name": sibling.get("name", "Unknown"),
+            "gender": sibling.get("gender", "Unknown"),
+            "birth_year": _extract_year_from_date(
+                sibling.get("birth", {}).get("date", {}).get("normalized", "")
+            ),
+            "death_year": _extract_year_from_date(
+                sibling.get("death", {}).get("date", {}).get("normalized", "")
+            ),
+        }
+        details["siblings"].append(sibling_info)
+
+    return details
+
+
+def get_ancestry_relationship_path(
+    session_manager: SessionManager,
+    target_person_id: str,
+    target_tree_id: str,
+    reference_name: str = "Reference Person",
+) -> str:
+    """
+    Get the relationship path between a person and the reference person (tree owner).
+
+    Args:
+        session_manager: Active SessionManager instance with valid authentication
+        target_person_id: Ancestry Person ID of the target person
+        target_tree_id: Ancestry Tree ID of the target person
+        reference_name: Name of the reference person (default: "Reference Person")
+
+    Returns:
+        Formatted relationship path string
+    """
+    # Step 1: Ensure we have a valid session
+    if not session_manager or not session_manager.is_sess_valid():
+        logger.error("Invalid session manager for Ancestry relationship path")
+        return "(Invalid session for relationship path lookup)"
+
+    # Step 2: Get base information
+    base_url = getattr(config_instance, "BASE_URL", "").rstrip("/")
+    owner_tree_id = getattr(session_manager, "my_tree_id", None)
+    owner_profile_id = getattr(session_manager, "my_profile_id", None)
+    owner_name = getattr(session_manager, "tree_owner_name", reference_name)
+
+    if not all([base_url, owner_tree_id, owner_profile_id]):
+        logger.error("Missing required information for relationship path lookup")
+        return "(Missing required information for relationship path lookup)"
+
+    # Step 3: Try getladder API first
+    logger.debug("Attempting to get relationship path using getladder API...")
+    relationship_data = call_getladder_api(
+        session_manager, target_person_id, target_tree_id, owner_tree_id, base_url
+    )
+
+    if relationship_data:
+        # Convert to unified format and format
+        unified_path = convert_api_path_to_unified_format(
+            relationship_data, "Target Person"
+        )
+        if unified_path:
+            return format_relationship_path_unified(
+                unified_path, "Target Person", owner_name
+            )
+
+    # Step 4: Try discovery API as fallback
+    logger.debug(
+        "Attempting to get relationship path using discovery API (fallback)..."
+    )
+    discovery_data = call_discovery_relationship_api(
+        session_manager, target_person_id, target_tree_id, owner_profile_id, base_url
+    )
+
+    if discovery_data:
+        # Convert to unified format and format
+        unified_path = convert_discovery_api_path_to_unified_format(
+            discovery_data, "Target Person"
+        )
+        if unified_path:
+            return format_relationship_path_unified(
+                unified_path, "Target Person", owner_name
+            )
+
+    # Step 5: Return error message if both methods failed
+    return f"(No relationship path found between {target_person_id} and tree owner)"
+
+
+def _extract_year_from_date(date_str: str) -> Optional[int]:
+    """Extract year from a date string."""
+    if not date_str or date_str == "Unknown":
+        return None
+
+    # Try to extract a 4-digit year
+    year_match = re.search(r"\b(\d{4})\b", date_str)
+    if year_match:
+        try:
+            return int(year_match.group(1))
+        except ValueError:
+            pass
+
+    return None
+
+
 def run_action11(*_):
     """Wrapper function for main.py to call."""
     return handle_api_report()
