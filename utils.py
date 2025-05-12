@@ -92,7 +92,7 @@ try:
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.wait import WebDriverWait
-    from sqlalchemy import create_engine, event, pool as sqlalchemy_pool
+    from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
     from sqlalchemy.exc import SQLAlchemyError
     from sqlalchemy.orm import Session, sessionmaker
     from urllib3.util.retry import Retry
@@ -1580,13 +1580,27 @@ class SessionManager:
 
             # Ensure tables are created
             try:
-                Base.metadata.create_all(self.engine)  # type: ignore # Assume Base imported
-                logger.debug("DB tables checked/created successfully.")
+                # Check if the database file exists and has tables
+                inspector = inspect(self.engine)
+                existing_tables = inspector.get_table_names()
+
+                if existing_tables:
+                    logger.debug(
+                        f"Database already exists with tables: {existing_tables}"
+                    )
+                    # Skip table creation if tables already exist
+                    logger.debug("Skipping table creation for existing database.")
+                else:
+                    # Create tables only if the database is empty
+                    Base.metadata.create_all(self.engine)  # type: ignore # Assume Base imported
+                    logger.debug("DB tables created successfully.")
             except SQLAlchemyError as table_create_e:  # type: ignore
-                logger.error(
-                    f"Error creating DB tables: {table_create_e}", exc_info=True
+                logger.warning(
+                    f"Non-critical error during DB table check/creation: {table_create_e}"
                 )
-                raise  # Re-raise critical error
+                # Don't raise the error, just log it and continue
+                # This allows the code to work with existing databases that might have
+                # slightly different schemas
             # End of try/except
 
         except SQLAlchemyError as sql_e:  # type: ignore

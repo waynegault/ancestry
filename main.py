@@ -78,7 +78,7 @@ def menu():
 
     print(f"(Log Level: {level_name})\n")
     print("0. Delete all rows except the first")
-    print("1. Run Actions 6, 7, and 8 Sequentially")
+    print("1. Run Full Workflow (7, 9, 8)")
     print("2. Reset Database")
     print("3. Backup Database")
     print("4. Restore Database")
@@ -477,29 +477,33 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 
 
 # Action 1
-def run_actions_6_7_8_action(session_manager, *_):
+def run_core_workflow_action(session_manager, *_):
     """
-    Action to run actions 6, 7, and 8 sequentially.
+    Action to run the core workflow sequence: Action 7 (Inbox) → Action 9 (Process Productive) → Action 8 (Send Messages).
+    Optionally runs Action 6 (Gather) first if configured.
     Relies on exec_actn ensuring session is ready beforehand.
     """
     # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
-        logger.error("Cannot run sequential actions: Session not ready.")
+        logger.error("Cannot run core workflow: Session not ready.")
         return False
 
     try:
-        # --- Action 6 ---
-        logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-        print("Starting DNA match gathering from page 1...")
-        # Call the coord_action function which wraps the coord function
-        gather_result = coord_action(session_manager, config_instance, start=1)
-        if gather_result is False:
-            logger.error("Action 6 FAILED.")
-            print("ERROR: Match gathering failed. Check logs for details.")
-            return False
-        else:
-            logger.info("Action 6 OK.")
-            print("✓ Match gathering completed successfully.")
+        # --- Action 6 (Optional) ---
+        # Check if Action 6 should be included in the workflow
+        run_action6 = config_instance.INCLUDE_ACTION6_IN_WORKFLOW
+        if run_action6:
+            logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
+            print("Starting DNA match gathering from page 1...")
+            # Call the coord_action function which wraps the coord function
+            gather_result = coord_action(session_manager, config_instance, start=1)
+            if gather_result is False:
+                logger.error("Action 6 FAILED.")
+                print("ERROR: Match gathering failed. Check logs for details.")
+                return False
+            else:
+                logger.info("Action 6 OK.")
+                print("✓ Match gathering completed successfully.")
 
         # --- Action 7 ---
         logger.info("--- Running Action 7: Search Inbox ---")
@@ -545,6 +549,51 @@ def run_actions_6_7_8_action(session_manager, *_):
             print(f"ERROR during inbox search: {inbox_error}")
             return False
 
+        # --- Action 9 ---
+        logger.info("--- Running Action 9: Process Productive Messages ---")
+        logger.debug("Navigating to Base URL for Action 9...")
+
+        try:
+            if not nav_to_page(
+                session_manager.driver,
+                config_instance.BASE_URL,
+                WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
+                session_manager,
+            ):
+                logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
+                print(
+                    "ERROR: Could not navigate to base URL. Check network connection."
+                )
+                return False
+
+            logger.debug(
+                "Navigation to base URL successful. Processing productive messages..."
+            )
+
+            # Add a short delay to ensure page is fully loaded
+            time.sleep(2)
+
+            # Process productive messages
+            process_result = process_productive_messages(session_manager)
+
+            if process_result is False:
+                logger.error(
+                    "Action 9 FAILED - Productive message processing returned failure."
+                )
+                print(
+                    "ERROR: Productive message processing failed. Check logs for details."
+                )
+                return False
+            else:
+                logger.info("Action 9 OK.")
+                print("✓ Productive message processing completed successfully.")
+        except Exception as process_error:
+            logger.error(
+                f"Action 9 FAILED with exception: {process_error}", exc_info=True
+            )
+            print(f"ERROR during productive message processing: {process_error}")
+            return False
+
         # --- Action 8 ---
         logger.info("--- Running Action 8: Send Messages ---")
         logger.debug("Navigating to Base URL for Action 8...")
@@ -584,14 +633,23 @@ def run_actions_6_7_8_action(session_manager, *_):
             print(f"ERROR during message sending: {message_error}")
             return False
 
-        logger.info("Sequential Actions 6-7-8 finished successfully.")
-        print("\n✓ All sequential actions (6-7-8) completed successfully.")
+        # Determine which actions were run for the success message
+        action_sequence = []
+        if run_action6:
+            action_sequence.append("6")
+        action_sequence.extend(["7", "9", "8"])
+        action_sequence_str = "-".join(action_sequence)
+
+        logger.info(
+            f"Core Workflow (Actions {action_sequence_str}) finished successfully."
+        )
+        print(
+            f"\n✓ Core Workflow (Actions {action_sequence_str}) completed successfully."
+        )
         return True
     except Exception as e:
-        logger.error(
-            f"Critical error during sequential actions 6-7-8: {e}", exc_info=True
-        )
-        print(f"CRITICAL ERROR during sequential actions: {e}")
+        logger.error(f"Critical error during core workflow: {e}", exc_info=True)
+        print(f"CRITICAL ERROR during core workflow: {e}")
         return False
 
 
@@ -1193,7 +1251,7 @@ def main():
             elif choice == "1":
                 # exec_actn will set browser_needed=True based on the action
                 exec_actn(
-                    run_actions_6_7_8_action,
+                    run_core_workflow_action,
                     session_manager,
                     choice,
                     close_sess_after=True,

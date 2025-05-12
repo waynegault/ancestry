@@ -253,9 +253,9 @@ def _main_page_processing_loop(
     session_manager: SessionManager,
     start_page: int,
     last_page_to_process: int,
-    total_pages_in_run: int, # Added this argument
+    total_pages_in_run: int,  # Added this argument
     initial_matches_on_page: Optional[List[Dict[str, Any]]],
-    state: Dict[str, Any], # Pass the whole state dict
+    state: Dict[str, Any],  # Pass the whole state dict
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
     current_page_num = start_page
@@ -3587,7 +3587,10 @@ def _fetch_batch_relationship_prob(
             best_pred = max(
                 valid_preds, key=lambda x: x.get("distributionProbability", 0.0)
             )
-            top_prob = best_pred.get("distributionProbability", 0.0) * 100.0
+            # Store the original decimal value (not multiplied by 100)
+            top_prob = best_pred.get("distributionProbability", 0.0)
+            # For display purposes only, calculate percentage
+            top_prob_display = top_prob * 100.0
             paths = best_pred.get("pathsToMatch", [])
             labels = [
                 p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
@@ -3595,14 +3598,15 @@ def _fetch_batch_relationship_prob(
 
             if not labels:
                 logger.warning(
-                    f"Prediction found for {sample_id_upper}, but no labels in paths. Top prob: {top_prob:.1f}%"
+                    f"Prediction found for {sample_id_upper}, but no labels in paths. Top prob: {top_prob_display:.1f}%"
                 )
                 # Return None if no labels, instead of a string that implies partial success
                 return None
 
             final_labels = labels[:max_labels_param]
             relationship_str = " or ".join(map(str, final_labels))
-            return f"{relationship_str} [{top_prob:.1f}%]"
+            # Format the string with the percentage for display, but store the original decimal value
+            return f"{relationship_str} [{top_prob_display:.1f}%]"
 
         except json.JSONDecodeError as json_err:
             logger.error(

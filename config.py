@@ -191,6 +191,12 @@ class Config_Class(BaseConfig):
     # Action 11 specific limits (can be overridden by .env)
     MAX_SUGGESTIONS_TO_SCORE: int = 50
     MAX_CANDIDATES_TO_DISPLAY: int = 10
+    # Action 9 specific settings
+    CUSTOM_RESPONSE_ENABLED: bool = True
+    # Workflow settings
+    INCLUDE_ACTION6_IN_WORKFLOW: bool = (
+        False  # Whether to include Action 6 (Gather) in the core workflow
+    )
 
     # --- Scoring Configuration (Class Attributes) ---
     # Dictionary mapping score category names to their integer point values
@@ -354,9 +360,18 @@ class Config_Class(BaseConfig):
         self.LOG_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.DATABASE_FILE = self.DATA_DIR / self._get_string_env(
-            "DATABASE_FILE", "ancestry_data.db"
-        )
+
+        # Get the database file name from .env
+        db_file_name = self._get_string_env("DATABASE_FILE", "ancestry_data.db")
+
+        # Check if the database file path is absolute or relative
+        db_path = Path(db_file_name)
+        if db_path.is_absolute():
+            # Use the absolute path as is
+            self.DATABASE_FILE = db_path
+        else:
+            # Use the path relative to the DATA_DIR
+            self.DATABASE_FILE = self.DATA_DIR / db_file_name
         self.GEDCOM_FILE_PATH = self._get_path_env("GEDCOM_FILE_PATH", None)
         self.CACHE_DIR_PATH = self.CACHE_DIR
 
@@ -392,6 +407,16 @@ class Config_Class(BaseConfig):
         )
         self.MAX_CANDIDATES_TO_DISPLAY = self._get_int_env(
             "MAX_CANDIDATES_TO_DISPLAY", Config_Class.MAX_CANDIDATES_TO_DISPLAY
+        )
+
+        # Action 9 Specific Settings
+        self.CUSTOM_RESPONSE_ENABLED = self._get_bool_env(
+            "CUSTOM_RESPONSE_ENABLED", Config_Class.CUSTOM_RESPONSE_ENABLED
+        )
+
+        # Workflow Settings
+        self.INCLUDE_ACTION6_IN_WORKFLOW = self._get_bool_env(
+            "INCLUDE_ACTION6_IN_WORKFLOW", Config_Class.INCLUDE_ACTION6_IN_WORKFLOW
         )
 
         # === Database ===
@@ -623,6 +648,11 @@ class Config_Class(BaseConfig):
             logger.warning(
                 "TESTING_PERSON_TREE_ID is missing. Some tests will be skipped/fail."
             )
+
+        # === Log Action 9 Settings ===
+        logger.info(
+            f"Action 9 Settings: CUSTOM_RESPONSE_ENABLED={self.CUSTOM_RESPONSE_ENABLED}"
+        )
 
         # === Report Errors or Success ===
         if errors_found:

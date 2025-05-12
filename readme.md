@@ -117,7 +117,21 @@ The primary objectives of this project are to:
         *   `gedcom_utils.GedcomData` loads and processes the local GEDCOM file.
         *   Functions from `gedcom_utils` and `relationship_utils` are used for searching and pathfinding.
 
-5.  **Session Teardown/Continuation (`main.exec_actn`):**
+5.  **Core Workflow Sequence (Action 1 - `run_core_workflow_action`):**
+    *   **Optional: Action 6 (Gather)** - If `INCLUDE_ACTION6_IN_WORKFLOW` is enabled, DNA matches are gathered first.
+    *   **Action 7 (Inbox)** - Processes the inbox and classifies messages using AI.
+    *   **Action 9 (Process Productive)** - Handles messages classified as "PRODUCTIVE" or "OTHER" with mentioned names:
+        *   Extracts genealogical entities and suggested tasks using AI.
+        *   Searches for mentioned individuals in GEDCOM and/or Ancestry's online database.
+        *   Generates personalized genealogical responses or standard acknowledgements.
+        *   Creates Microsoft To-Do tasks for follow-up research.
+        *   Sets person status to ARCHIVE after processing.
+    *   **Action 8 (Send Messages)** - Sends templated messages to eligible matches:
+        *   Skips persons already processed by Action 9 (status ARCHIVE).
+        *   Skips conversations where Action 9 has already sent a custom reply.
+        *   Applies message sequencing rules and time intervals.
+
+6.  **Session Teardown/Continuation (`main.exec_actn`):**
     *   If an action fails or is configured to close the session, `SessionManager.close_sess()` is called, which may quit the browser and/or dispose of the database engine.
     *   Otherwise, the session (browser and/or database connection pool) can be kept alive for subsequent actions.
 
@@ -299,6 +313,7 @@ Markdown
         *   `CHROME_DRIVER_PATH`: Path to your `chromedriver.exe` (if you want to force a specific version, otherwise `undetected-chromedriver` will attempt to manage it).
         *   `BASE_URL`: (e.g., `https://www.ancestry.co.uk/`).
         *   `AI_PROVIDER`, `DEEPSEEK_API_KEY`/`GOOGLE_API_KEY`, and AI model names if using AI features.
+        *   `CUSTOM_RESPONSE_ENABLED`: Set to `True` or `False` to enable/disable custom genealogical responses in Action 9.
         *   `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_TENANT_ID`, `MS_TODO_LIST_NAME` if using Microsoft To-Do integration.
         *   Optional: `TREE_NAME`, `MY_PROFILE_ID`, `MY_TREE_ID`, `TESTING_PROFILE_ID`, `REFERENCE_PERSON_ID`, processing limits (`MAX_PAGES`, `MAX_INBOX`, etc.). See section 11 for more.
     *   Ensure the directories specified for `DATABASE_FILE`, `LOG_DIR`, `CACHE_DIR`, and `CHROME_USER_DATA_DIR` exist or can be created by the script. It's good practice to create `Data`, `Logs`, and `Cache` directories manually in the project root.
@@ -322,7 +337,7 @@ Markdown
 ### 7.3 Key Actions Explained
 
 *   **Action 0 (Delete all but first):** A utility action for development/testing. Deletes most data from the database, keeping only a specific "sentinel" person record (identified by `08FA6E79-0006-0000-0000-000000000000`). *Use with extreme caution.*
-*   **Action 1 (Run Actions 6, 7, 8 Sequentially):** Executes a common workflow: Gather DNA matches, process the inbox, and then send out initial/follow-up messages.
+*   **Action 1 (Run Full Workflow):** Executes the core workflow sequence: Process the inbox (Action 7), handle productive messages with AI (Action 9), and then send templated messages to eligible matches (Action 8). Optionally includes gathering DNA matches (Action 6) at the beginning if configured via `INCLUDE_ACTION6_IN_WORKFLOW`.
 *   **Action 2 (Reset Database):** **Deletes all data** from the application's tables (except `message_types`) and re-initializes the schema. *Use with extreme caution.*
 *   **Action 3 (Backup Database):** Creates a backup copy of the SQLite database file (`ancestry_backup.db`) in the `Data` directory.
 *   **Action 4 (Restore Database):** Restores the database from `ancestry_backup.db`, overwriting the current database. *Use with caution.*
@@ -351,6 +366,8 @@ Markdown
     *   Identifies persons mentioned in messages by searching both local GEDCOM files and Ancestry's online database.
     *   Generates personalized genealogical responses with information about mentioned individuals, their family details, and relationship paths to the tree owner.
     *   Falls back to standard acknowledgement messages when no specific person is identified or when exclusion keywords are detected.
+    *   Skips "OTHER" messages with no mentioned names, marking them as processed without sending a reply.
+    *   Can be configured to disable custom genealogical responses entirely via the `CUSTOM_RESPONSE_ENABLED` setting in `.env`.
     *   Optionally creates tasks in a specified Microsoft To-Do list via MS Graph API (`ms_graph_utils.py`).
     *   Updates the Person's status to ARCHIVE in the database.
 *   **Action 10 (GEDCOM Report):** (`action10.run_action10`)
@@ -564,8 +581,9 @@ This section details key configuration variables set in the `.env` file.
 *   `MAX_PRODUCTIVE_TO_PROCESS`: Max "PRODUCTIVE" messages to process in Action 9 (0 = all).
 *   `BATCH_SIZE`: Number of items (matches, messages) to process per API call batch or DB transaction.
 *   `CACHE_TIMEOUT`: Default expiry for cached items in seconds (e.g., 3600 for 1 hour).
-*   `TREE_SEARCH_METHOD`: Method for Action 9 tree search: `GEDCOM` (local file), `API` (Ancestry search), or `NONE`.
+*   `TREE_SEARCH_METHOD`: Method for Action 9 tree search: `GEDCOM` (local file), `API` (Ancestry search), `BOTH` (try GEDCOM first, then API), or `NONE`.
 *   `CUSTOM_RESPONSE_ENABLED`: Set to `True` to enable automated genealogical responses in Action 9, `False` to use only standard acknowledgements.
+*   `INCLUDE_ACTION6_IN_WORKFLOW`: Set to `True` to include Action 6 (Gather) at the beginning of the core workflow sequence (Action 1), `False` to skip it.
 *   `MAX_SUGGESTIONS_TO_SCORE`: (Action 11) Max API search suggestions to score.
 *   `MAX_CANDIDATES_TO_DISPLAY`: (Action 11) Max scored candidates to display in results.
 

@@ -31,6 +31,11 @@ from sqlalchemy import (
     tuple_,
 )  # Minimal imports
 
+# --- Local application imports (minimal for helper function) ---
+# Import PersonStatusEnum early for use in safe_column_value
+from database import PersonStatusEnum
+from logging_config import logger  # Import logger early for use in safe_column_value
+
 
 # --- Helper function for SQLAlchemy Column conversion ---
 def safe_column_value(obj, attr_name, default=None):
@@ -54,6 +59,25 @@ def safe_column_value(obj, attr_name, default=None):
 
     # Try to convert to Python primitive
     try:
+        # Special handling for status enum
+        if attr_name == "status":
+            # If it's already an enum instance, return it
+            if isinstance(value, PersonStatusEnum):
+                return value
+            # If it's a string, try to convert to enum
+            elif isinstance(value, str):
+                try:
+                    return PersonStatusEnum(value)
+                except ValueError:
+                    logger.warning(
+                        f"Invalid status string '{value}', cannot convert to enum"
+                    )
+                    return default
+            # If it's something else, log and return default
+            else:
+                logger.warning(f"Unexpected status type: {type(value)}")
+                return default
+
         # For different types of attributes
         if isinstance(value, bool) or value is True or value is False:
             return bool(value)
@@ -94,7 +118,6 @@ from database import (  # Database models and utilities
     db_transn,
     commit_bulk_data,
 )
-from logging_config import logger  # Use configured logger
 from utils import (  # Core utilities
     DynamicRateLimiter,  # Rate limiter (accessed via SessionManager)
     SessionManager,
@@ -1045,13 +1068,42 @@ def _process_single_person(
         except Exception as count_e:
             logger.warning(f"Could not get FamilyTree count for formatting: {count_e}")
 
+        # Helper function to format predicted relationship with correct percentage
+        def format_predicted_relationship(rel_str):
+            if not rel_str or rel_str == "N/A":
+                return "N/A"
+
+            # Check if the string contains a percentage in brackets
+            import re
+
+            match = re.search(r"\[([\d.]+)%\]", rel_str)
+            if match:
+                try:
+                    # Extract the percentage value
+                    percentage = float(match.group(1))
+                    # If the percentage is very small (less than 1%), it's likely using the new decimal format
+                    if percentage < 1.0:
+                        # Multiply by 100 to convert back to percentage format
+                        corrected_percentage = percentage * 100
+                        # Replace the old percentage with the corrected one
+                        return re.sub(
+                            r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str
+                        )
+                except (ValueError, IndexError):
+                    pass
+
+            # Return the original string if no percentage found or couldn't be processed
+            return rel_str
+
+        # Get the predicted relationship and format it correctly
+        predicted_rel = "N/A"
+        if dna_match:
+            raw_predicted_rel = getattr(dna_match, "predicted_relationship", "N/A")
+            predicted_rel = format_predicted_relationship(raw_predicted_rel)
+
         format_data = {
             "name": formatted_name,
-            "predicted_relationship": (
-                getattr(dna_match, "predicted_relationship", "N/A")
-                if dna_match
-                else "N/A"
-            ),
+            "predicted_relationship": predicted_rel,
             "actual_relationship": (
                 getattr(family_tree, "actual_relationship", "N/A")
                 if family_tree

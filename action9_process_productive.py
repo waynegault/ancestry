@@ -41,6 +41,8 @@ from api_utils import call_send_message_api  # Real API function for sending mes
 # Flag to control GEDCOM utilities availability
 GEDCOM_UTILS_AVAILABLE = False
 API_UTILS_AVAILABLE = False
+# Global variable to cache the GEDCOM data
+_CACHED_GEDCOM_DATA = None
 
 # Import required modules and functions
 try:
@@ -71,6 +73,59 @@ try:
     API_UTILS_AVAILABLE = True
 except ImportError:
     pass
+
+
+def get_gedcom_data() -> Optional[Any]:
+    """
+    Returns the cached GEDCOM data instance, loading it if necessary.
+
+    This function ensures the GEDCOM file is loaded only once and reused
+    throughout the module, improving performance.
+
+    Returns:
+        GedcomData instance or None if loading fails
+    """
+    global _CACHED_GEDCOM_DATA
+
+    # Return cached data if already loaded
+    if _CACHED_GEDCOM_DATA is not None:
+        return _CACHED_GEDCOM_DATA
+
+    # Check if GEDCOM utilities are available
+    if not GEDCOM_UTILS_AVAILABLE:
+        logger.warning("GEDCOM utilities not available. Cannot load GEDCOM file.")
+        return None
+
+    # Check if GEDCOM path is configured
+    gedcom_path = config_instance.GEDCOM_FILE_PATH
+    if not gedcom_path:
+        logger.warning("GEDCOM_FILE_PATH not configured. Cannot load GEDCOM file.")
+        return None
+
+    # Check if GEDCOM file exists
+    if not gedcom_path.exists():
+        logger.warning(
+            f"GEDCOM file not found at {gedcom_path}. Cannot load GEDCOM file."
+        )
+        return None
+
+    # Load GEDCOM data
+    try:
+        logger.info(f"Loading GEDCOM file {gedcom_path.name} (first time)...")
+        _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
+        if _CACHED_GEDCOM_DATA:
+            logger.info(f"GEDCOM file loaded successfully and cached for reuse.")
+            # Log some stats about the loaded data
+            logger.info(
+                f"  Index size: {len(getattr(_CACHED_GEDCOM_DATA, 'indi_index', {}))}"
+            )
+            logger.info(
+                f"  Pre-processed cache size: {len(getattr(_CACHED_GEDCOM_DATA, 'processed_data_cache', {}))}"
+            )
+        return _CACHED_GEDCOM_DATA
+    except Exception as e:
+        logger.error(f"Error loading GEDCOM file: {e}", exc_info=True)
+        return None
 
 
 # --- Pydantic Models for AI Response Validation ---
@@ -389,6 +444,7 @@ def _format_context_for_ai_extraction(
 def _search_gedcom_for_names(names: List[str]) -> List[Dict[str, Any]]:
     """
     Searches the configured GEDCOM file for names and returns matching individuals.
+    Uses the cached GEDCOM data to avoid loading the file multiple times.
 
     Args:
         names: List of names to search for in the GEDCOM file
@@ -405,31 +461,16 @@ def _search_gedcom_for_names(names: List[str]) -> List[Dict[str, Any]]:
         logger.error(error_msg)
         raise RuntimeError(error_msg)
 
-    # Check if GEDCOM path is configured
-    gedcom_path = config_instance.GEDCOM_FILE_PATH
-    if not gedcom_path:
-        error_msg = "GEDCOM_FILE_PATH not configured. Cannot search GEDCOM file."
+    # Get the cached GEDCOM data
+    gedcom_data = get_gedcom_data()
+    if not gedcom_data:
+        error_msg = "Failed to load GEDCOM data from cache or file"
         logger.error(error_msg)
         raise RuntimeError(error_msg)
 
-    # Check if GEDCOM file exists
-    if not gedcom_path.exists():
-        error_msg = (
-            f"GEDCOM file not found at {gedcom_path}. Cannot search GEDCOM file."
-        )
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    logger.info(f"Searching GEDCOM {gedcom_path.name} for: {names}")
+    logger.info(f"Searching cached GEDCOM data for: {names}")
 
     try:
-        # Load GEDCOM data
-        gedcom_data = load_gedcom_data(gedcom_path)
-        if not gedcom_data:
-            error_msg = f"Failed to load GEDCOM data from {gedcom_path}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-
         # Prepare search criteria
         search_results = []
 
@@ -688,6 +729,7 @@ def _search_ancestry_tree(
 
     This function dispatches to the appropriate search method based on configuration
     and returns a dictionary containing the search results and relationship paths.
+    Uses cached GEDCOM data to avoid loading the file multiple times.
 
     Args:
         session_manager: The SessionManager instance.
@@ -744,64 +786,61 @@ def _search_ancestry_tree(
     # Only try to find relationship paths if we have a reference person ID
     if reference_person_id and search_method == "GEDCOM" and GEDCOM_UTILS_AVAILABLE:
         try:
-            # Load GEDCOM data
-            gedcom_path = config_instance.GEDCOM_FILE_PATH
-            if gedcom_path and gedcom_path.exists():
-                gedcom_data = load_gedcom_data(gedcom_path)
+            # Get cached GEDCOM data
+            gedcom_data = get_gedcom_data()
+            if gedcom_data:
+                # Normalize reference ID
+                reference_person_id_norm = _normalize_id(reference_person_id)
 
-                if gedcom_data:
-                    # Normalize reference ID
-                    reference_person_id_norm = _normalize_id(reference_person_id)
+                # Find relationship paths for top matches
+                for match in search_results:
+                    match_id = match.get("id")
+                    if not match_id:
+                        continue
 
-                    # Find relationship paths for top matches
-                    for match in search_results:
-                        match_id = match.get("id")
-                        if not match_id:
-                            continue
+                    # Normalize match ID
+                    match_id_norm = _normalize_id(match_id)
 
-                        # Normalize match ID
-                        match_id_norm = _normalize_id(match_id)
+                    # Find relationship path - ensure IDs are not None
+                    if match_id_norm and reference_person_id_norm:
+                        path_ids = fast_bidirectional_bfs(
+                            match_id_norm,
+                            reference_person_id_norm,
+                            gedcom_data.id_to_parents,
+                            gedcom_data.id_to_children,
+                            max_depth=25,
+                            node_limit=150000,
+                            timeout_sec=45,
+                        )
+                    else:
+                        # Skip if either ID is None
+                        logger.warning(
+                            f"Cannot find relationship path: match_id_norm={match_id_norm}, reference_person_id_norm={reference_person_id_norm}"
+                        )
+                        path_ids = []
 
-                        # Find relationship path - ensure IDs are not None
-                        if match_id_norm and reference_person_id_norm:
-                            path_ids = fast_bidirectional_bfs(
-                                match_id_norm,
-                                reference_person_id_norm,
-                                gedcom_data.id_to_parents,
-                                gedcom_data.id_to_children,
-                                max_depth=25,
-                                node_limit=150000,
-                                timeout_sec=45,
+                    if path_ids and len(path_ids) > 1:
+                        # Convert the GEDCOM path to the unified format
+                        unified_path = convert_gedcom_path_to_unified_format(
+                            path_ids,
+                            gedcom_data.reader,
+                            gedcom_data.id_to_parents,
+                            gedcom_data.id_to_children,
+                            gedcom_data.indi_index,
+                        )
+
+                        if unified_path:
+                            # Format the relationship path
+                            match_name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
+                            relationship_path = format_relationship_path_unified(
+                                unified_path,
+                                match_name,
+                                reference_person_name,
+                                "relative",
                             )
-                        else:
-                            # Skip if either ID is None
-                            logger.warning(
-                                f"Cannot find relationship path: match_id_norm={match_id_norm}, reference_person_id_norm={reference_person_id_norm}"
-                            )
-                            path_ids = []
 
-                        if path_ids and len(path_ids) > 1:
-                            # Convert the GEDCOM path to the unified format
-                            unified_path = convert_gedcom_path_to_unified_format(
-                                path_ids,
-                                gedcom_data.reader,
-                                gedcom_data.id_to_parents,
-                                gedcom_data.id_to_children,
-                                gedcom_data.indi_index,
-                            )
-
-                            if unified_path:
-                                # Format the relationship path
-                                match_name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
-                                relationship_path = format_relationship_path_unified(
-                                    unified_path,
-                                    match_name,
-                                    reference_person_name,
-                                    "relative",
-                                )
-
-                                # Store the relationship path
-                                relationship_paths[match_id] = relationship_path
+                            # Store the relationship path
+                            relationship_paths[match_id] = relationship_path
         except Exception as e:
             logger.error(f"Error finding relationship paths: {e}", exc_info=True)
 
@@ -980,77 +1019,8 @@ Additional Information:
 # End of _format_genealogical_data_for_ai
 
 
-def generate_genealogical_reply(
-    conversation_context: str,
-    user_message: str,
-    genealogical_data: str,
-    session_manager: SessionManager,
-) -> Optional[str]:
-    """
-    Generates a personalized reply based on genealogical data using AI.
-
-    Args:
-        conversation_context: String with conversation context
-        user_message: String with user's last message
-        genealogical_data: String with formatted genealogical data
-        session_manager: The active SessionManager instance
-
-    Returns:
-        Generated reply string or None if generation failed
-    """
-    try:
-        # Format the prompt
-        prompt = GENERATE_GENEALOGICAL_REPLY_PROMPT.format(
-            conversation_context=conversation_context,
-            user_message=user_message,
-            genealogical_data=genealogical_data,
-        )
-
-        # Call the AI to generate a reply
-        from ai_interface import get_ai_response
-
-        # Check if session is valid
-        if not session_manager.is_sess_valid():
-            logger.error(
-                "Session invalid before AI reply generation call. Cannot generate reply."
-            )
-            return None
-
-        # Get AI response
-        ai_response = get_ai_response(prompt, session_manager)
-        if not ai_response:
-            logger.error("Failed to get AI response for genealogical reply.")
-            return None
-
-        # Extract the generated reply
-        if isinstance(ai_response, str):
-            # Clean up the response
-            reply = ai_response.strip()
-
-            # Add signature if not present
-            if "wayne" not in reply.lower():
-                reply += "\n\nBest regards,\nWayne"
-
-            return reply
-        elif isinstance(ai_response, dict) and "response" in ai_response:
-            # Extract response from dictionary
-            reply = ai_response["response"].strip()
-
-            # Add signature if not present
-            if "wayne" not in reply.lower():
-                reply += "\n\nBest regards,\nWayne"
-
-            return reply
-        else:
-            logger.error(f"Unexpected AI response format: {type(ai_response)}")
-            return None
-
-    except Exception as e:
-        logger.error(f"Error generating genealogical reply: {e}", exc_info=True)
-        return None
-
-
-# End of generate_genealogical_reply
+# Import the generate_genealogical_reply function from ai_interface
+from ai_interface import generate_genealogical_reply
 
 
 def _identify_and_get_person_details(
@@ -1122,6 +1092,21 @@ def _identify_and_get_person_details(
         if gedcom_results:
             # Sort by score (highest first)
             gedcom_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
+
+            # Log the number of matches found
+            if len(gedcom_results) > 1:
+                logger.info(
+                    f"{log_prefix}: Found {len(gedcom_results)} matches in GEDCOM. Using highest scoring match."
+                )
+                # Log top 3 matches for reference
+                for i, match in enumerate(gedcom_results[:3]):
+                    score = match.get("total_score", 0)
+                    name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
+                    birth_year = match.get("birth_year", "?")
+                    logger.info(
+                        f"{log_prefix}: Match #{i+1}: {name} (b. {birth_year}) - Score: {score}"
+                    )
+
             best_match = gedcom_results[0]
 
             # Get person ID
@@ -1141,6 +1126,10 @@ def _identify_and_get_person_details(
             # Get relationship path
             relationship_path = get_gedcom_relationship_path(person_id)
 
+            # Add match score to the details
+            family_details["match_score"] = best_match.get("total_score", 0)
+            family_details["match_count"] = len(gedcom_results)
+
             # Combine all information
             result = {
                 "source": "GEDCOM",
@@ -1148,7 +1137,7 @@ def _identify_and_get_person_details(
                 "relationship_path": relationship_path,
             }
 
-            logger.info(f"{log_prefix}: Found person in GEDCOM: {person_id}")
+            logger.info(f"{log_prefix}: Using best GEDCOM match: {person_id}")
             return result
     except ImportError:
         logger.warning(f"{log_prefix}: GEDCOM search functions not available.")
@@ -1203,6 +1192,21 @@ def _identify_and_get_person_details(
         if api_results:
             # Sort by score (highest first)
             api_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
+
+            # Log the number of matches found
+            if len(api_results) > 1:
+                logger.info(
+                    f"{log_prefix}: Found {len(api_results)} matches in Ancestry API. Using highest scoring match."
+                )
+                # Log top 3 matches for reference
+                for i, match in enumerate(api_results[:3]):
+                    score = match.get("total_score", 0)
+                    name = f"{match.get('first_name', '')} {match.get('surname', '')}".strip()
+                    birth_year = match.get("birth_year", "?")
+                    logger.info(
+                        f"{log_prefix}: Match #{i+1}: {name} (b. {birth_year}) - Score: {score}"
+                    )
+
             best_match = api_results[0]
 
             # Get person ID and tree ID
@@ -1227,6 +1231,10 @@ def _identify_and_get_person_details(
                 session_manager, person_id, tree_id
             )
 
+            # Add match score to the details
+            person_details["match_score"] = best_match.get("total_score", 0)
+            person_details["match_count"] = len(api_results)
+
             # Combine all information
             result = {
                 "source": "API",
@@ -1234,7 +1242,7 @@ def _identify_and_get_person_details(
                 "relationship_path": relationship_path,
             }
 
-            logger.info(f"{log_prefix}: Found person in Ancestry API: {person_id}")
+            logger.info(f"{log_prefix}: Using best Ancestry API match: {person_id}")
             return result
     except ImportError:
         logger.warning(f"{log_prefix}: Ancestry API search functions not available.")
@@ -1330,6 +1338,14 @@ def _format_genealogical_data_for_ai(
     # Initialize result string
     result = []
 
+    # Add data source information
+    source = person_details.get("source", "Unknown")
+    result.append(
+        f"DATA SOURCE: {source} (local family tree file)"
+        if source == "GEDCOM"
+        else f"DATA SOURCE: {source} (Ancestry online database)"
+    )
+
     # Add person name and basic info
     person_name = person_details.get("name", "Unknown")
     if person_details.get("source") == "GEDCOM":
@@ -1343,6 +1359,14 @@ def _format_genealogical_data_for_ai(
     # Add gender
     gender = person_details.get("gender", "Unknown")
     result.append(f"GENDER: {gender}")
+
+    # Add match score information if available
+    match_score = person_details.get("match_score")
+    match_count = person_details.get("match_count")
+    if match_score is not None and match_count is not None:
+        result.append(
+            f"MATCH SCORE: {match_score} (out of {match_count} total matches)"
+        )
 
     # Add birth information
     birth_year = person_details.get("birth_year")
@@ -1877,6 +1901,40 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                 latest_message = log
                                 break
 
+                    # --- Step 5e-1: Check if this is an "OTHER" message with no mentioned names ---
+                    if (
+                        latest_message
+                        and latest_message.ai_sentiment == OTHER_SENTIMENT
+                    ):
+                        mentioned_names = extracted_data.get("mentioned_names", [])
+                        if not mentioned_names:
+                            logger.info(
+                                f"{log_prefix}: Message is classified as '{OTHER_SENTIMENT}' and contains no mentioned names. Skipping."
+                            )
+                            # Mark the message as processed by setting custom_reply_sent_at
+                            try:
+                                latest_message.custom_reply_sent_at = datetime.now(
+                                    timezone.utc
+                                )
+                                db_session.add(latest_message)
+                                db_session.flush()  # Flush but don't commit yet
+                                logger.info(
+                                    f"{log_prefix}: Marked 'OTHER' message with no names as processed."
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"{log_prefix}: Failed to mark 'OTHER' message as processed: {e}"
+                                )
+
+                            skipped_count += 1
+                            person_success = False
+                            # Update progress bar description
+                            if progress_bar:
+                                progress_bar.set_description(
+                                    f"Skipping (OTHER message, no names): Tasks={tasks_created_count} Acks={acks_sent_count} Skip={skipped_count} Err={error_count}"
+                                )
+                            continue  # Skip to next person
+
                     # Check if the message should be excluded
                     if latest_message and should_exclude_message(
                         latest_message.latest_message_content
@@ -1974,24 +2032,35 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                 f"Processing {person.username}: Generating custom reply"
                             )
 
-                        # Format the genealogical data for the AI
-                        genealogical_data_str = _format_genealogical_data_for_ai(
-                            person_details["details"],
-                            person_details["relationship_path"],
-                        )
+                        # Check if custom responses are enabled in config
+                        if not config_instance.CUSTOM_RESPONSE_ENABLED:
+                            logger.info(
+                                f"{log_prefix}: Custom genealogical replies are disabled via config. Falling back..."
+                            )
+                            custom_reply = (
+                                None  # Force fallback to standard acknowledgement
+                            )
+                        else:
+                            # Format the genealogical data for the AI
+                            genealogical_data_str = _format_genealogical_data_for_ai(
+                                person_details["details"],
+                                person_details["relationship_path"],
+                            )
 
-                        # Get the user's last message
-                        user_last_message = ""
-                        if latest_message:
-                            user_last_message = latest_message.latest_message_content
+                            # Get the user's last message
+                            user_last_message = ""
+                            if latest_message:
+                                user_last_message = (
+                                    latest_message.latest_message_content
+                                )
 
-                        # Generate custom reply using AI
-                        custom_reply = generate_genealogical_reply(
-                            formatted_context,
-                            user_last_message,
-                            genealogical_data_str,
-                            session_manager,
-                        )
+                            # Generate custom reply using AI
+                            custom_reply = generate_genealogical_reply(
+                                conversation_context=formatted_context,
+                                user_last_message=user_last_message,
+                                genealogical_data_str=genealogical_data_str,
+                                session_manager=session_manager,
+                            )
 
                         if custom_reply:
                             logger.info(
@@ -2195,14 +2264,43 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
                         # Determine which message to use (custom reply or standard acknowledgement)
                         if custom_reply:
-                            # Use the custom reply generated by AI
-                            message_text = custom_reply
+                            # Add signature to the custom reply
+                            signature = "\n\nBest regards,\nWayne\nAberdeen, Scotland"
+                            message_text = custom_reply + signature
                             message_type_id = custom_reply_message_type_id
                             logger.info(
-                                f"{log_prefix}: Using custom genealogical reply."
+                                f"{log_prefix}: Using custom genealogical reply with signature."
                             )
                         else:
-                            # Use the standard acknowledgement template
+                            # Check if this is an "OTHER" message - only send standard acknowledgement for PRODUCTIVE messages
+                            if (
+                                latest_message
+                                and latest_message.ai_sentiment == OTHER_SENTIMENT
+                            ):
+                                logger.info(
+                                    f"{log_prefix}: Message is classified as '{OTHER_SENTIMENT}' and no custom reply was generated. Skipping standard acknowledgement."
+                                )
+                                # Mark the message as processed by setting custom_reply_sent_at
+                                try:
+                                    latest_message.custom_reply_sent_at = datetime.now(
+                                        timezone.utc
+                                    )
+                                    db_session.add(latest_message)
+                                    db_session.flush()  # Flush but don't commit yet
+                                    logger.info(
+                                        f"{log_prefix}: Marked 'OTHER' message as processed without sending reply."
+                                    )
+                                except Exception as e:
+                                    logger.error(
+                                        f"{log_prefix}: Failed to mark 'OTHER' message as processed: {e}"
+                                    )
+
+                                # Raise StopIteration to skip to the next person
+                                raise StopIteration(
+                                    "skipped (OTHER message, no custom reply)"
+                                )
+
+                            # Use the standard acknowledgement template for PRODUCTIVE messages
                             message_text = ack_template.format(
                                 name=name_to_use, summary=summary_for_ack
                             )
