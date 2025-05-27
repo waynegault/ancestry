@@ -275,114 +275,343 @@ Markdown
 ├── selenium_utils.py # Selenium-specific helper functions (element interaction, cookie export)
 ├── .env # Environment variables (user-created, DO NOT COMMIT SENSITIVE DATA)
 └── README.md # This file
-## 7. Usage Guide
+## 7. User Guide
 
-### 7.1 Setup
+### 7.1 Getting Started
 
-1.  **Prerequisites:**
-    *   Python 3.9+ (recommended, see `requirements.txt` for specific library compatibility).
-    *   Google Chrome Browser installed.
-    *   An active Ancestry.com account.
+#### 7.1.1 Installation
 
-2.  **Installation:**
-    ```bash
-    # Clone the repository (if applicable)
-    # git clone <repository_url>
-    # cd <project_directory>
+1. **Prerequisites:**
+   * Python 3.9 or higher
+   * Google Chrome browser
+   * An active Ancestry.com account
+   * (Optional) Microsoft account for To-Do integration
 
-    # Create and activate a virtual environment (recommended)
-    python -m venv venv
-    # On Windows:
-    venv\Scripts\activate
-    # On Linux/macOS:
-    source venv/bin/activate
+2. **Setup:**
+   ```bash
+   # Create and activate a virtual environment
+   python -m venv venv
 
-    # Install dependencies
-    pip install -r requirements.txt
-    ```
+   # On Windows:
+   venv\Scripts\activate
 
-3.  **Configuration (`.env` file):**
-    *   Create a file named `.env` in the project's root directory.
-    *   Copy the contents from a provided `.env.example` (if available) or populate it manually.
-    *   **Crucial settings include:**
-        *   `ANCESTRY_USERNAME` and `ANCESTRY_PASSWORD`.
-        *   `DATABASE_FILE` (e.g., `Data/ancestry.db`).
-        *   `LOG_DIR` (e.g., `Logs`).
-        *   `CACHE_DIR` (e.g., `Cache`).
-        *   `CHROME_USER_DATA_DIR`: Path to a Chrome user data directory. This is important for `undetected-chromedriver` to potentially reuse profiles or operate with a dedicated profile. Example: `Data/ChromeProfile`.
-        *   `CHROME_DRIVER_PATH`: Path to your `chromedriver.exe` (if you want to force a specific version, otherwise `undetected-chromedriver` will attempt to manage it).
-        *   `BASE_URL`: (e.g., `https://www.ancestry.co.uk/`).
-        *   `AI_PROVIDER`, `DEEPSEEK_API_KEY`/`GOOGLE_API_KEY`, and AI model names if using AI features.
-        *   `CUSTOM_RESPONSE_ENABLED`: Set to `True` or `False` to enable/disable custom genealogical responses in Action 9.
-        *   `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_TENANT_ID`, `MS_TODO_LIST_NAME` if using Microsoft To-Do integration.
-        *   Optional: `TREE_NAME`, `MY_PROFILE_ID`, `MY_TREE_ID`, `TESTING_PROFILE_ID`, `REFERENCE_PERSON_ID`, processing limits (`MAX_PAGES`, `MAX_INBOX`, etc.). See section 11 for more.
-    *   Ensure the directories specified for `DATABASE_FILE`, `LOG_DIR`, `CACHE_DIR`, and `CHROME_USER_DATA_DIR` exist or can be created by the script. It's good practice to create `Data`, `Logs`, and `Cache` directories manually in the project root.
+   # On Linux/macOS:
+   source venv/bin/activate
 
-4.  **ChromeDriver:**
-    *   `undetected-chromedriver` attempts to download and manage a compatible ChromeDriver automatically.
-    *   If you encounter issues, you can manually download a ChromeDriver compatible with your Chrome browser version and specify its path in `CHROME_DRIVER_PATH` in the `.env` file.
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
 
-### 7.2 Running the Application
+3. **Configuration:**
+   * Create a `.env` file in the project root directory
+   * Add the following essential settings:
+     ```
+     ANCESTRY_USERNAME=your_ancestry_email@example.com
+     ANCESTRY_PASSWORD=your_ancestry_password
+     BASE_URL=https://www.ancestry.co.uk/
+     DATABASE_FILE=Data/ancestry.db
+     LOG_DIR=Logs
+     CACHE_DIR=Cache
+     CHROME_USER_DATA_DIR=Data/ChromeProfile
+     APP_MODE=dry_run
+     ```
+   * Create the required directories:
+     ```bash
+     mkdir -p Data Logs Cache Data/ChromeProfile
+     ```
 
-1.  **Activate the virtual environment** (if you created one).
-2.  **Run the main script:**
-    ```bash
-    python main.py
-    ```
-3.  **Menu System:**
-    *   The script will display a command-line menu with various options.
-    *   Enter the number corresponding to the desired action.
-    *   Follow any on-screen prompts (e.g., for Microsoft Graph device code authentication if using To-Do integration for the first time).
+#### 7.1.2 First Run
 
-### 7.3 Key Actions Explained
+1. **Start the application:**
+   ```bash
+   python main.py
+   ```
 
-*   **Action 0 (Delete all but first):** A utility action for development/testing. Deletes most data from the database, keeping only a specific "sentinel" person record (identified by `08FA6E79-0006-0000-0000-000000000000`). *Use with extreme caution.*
-*   **Action 1 (Run Full Workflow):** Executes the core workflow sequence: Process the inbox (Action 7), handle productive messages with AI (Action 9), and then send templated messages to eligible matches (Action 8). Optionally includes gathering DNA matches (Action 6) at the beginning if configured via `INCLUDE_ACTION6_IN_WORKFLOW`.
+2. **Initial setup:**
+   * The first time you run the application, it will:
+     * Initialize the database
+     * Launch Chrome and log in to Ancestry
+     * You may need to complete 2FA if required by your Ancestry account
+     * The application will retrieve your profile ID and tree ID
+
+3. **Verify login:**
+   * Select option `5` from the menu to check login status
+   * If successful, you'll see your profile ID and account information
+
+### 7.2 Core Workflow
+
+The most common workflow is to run the full sequence (option `1`), which performs these steps in order:
+
+1. **Process inbox messages** (Action 7)
+2. **Handle productive messages with AI** (Action 9)
+3. **Send templated messages to matches** (Action 8)
+
+This workflow is ideal for regular use once you've set up and tested the individual components.
+
+### 7.3 Working with DNA Matches
+
+#### 7.3.1 Gathering DNA Matches (Action 6)
+
+Action 6 collects information about your DNA matches from Ancestry and stores it in the local database.
+
+1. **Run Action 6:**
+   * Select option `6` from the main menu
+   * Enter a starting page number (or press Enter to start from page 1)
+
+2. **What it does:**
+   * Fetches your DNA match list page by page
+   * Extracts details like shared cM, segments, and profile information
+   * Stores this information in the database for later use
+   * Shows progress as it processes each page
+
+3. **Tips:**
+   * Set `MAX_PAGES=10` in your `.env` file for initial testing
+   * For a full run, set `MAX_PAGES=0` to process all pages
+   * This action can take several hours for a complete run with thousands of matches
+
+#### 7.3.2 Sending Messages to Matches (Action 8)
+
+Action 8 sends templated messages to your DNA matches based on their status and tree linkage.
+
+1. **Customize message templates:**
+   * Edit the `messages.json` file to personalize your message templates
+   * Templates support placeholders like `{first_name}`, `{shared_cm}`, and `{relationship_path}`
+
+2. **Run Action 8:**
+   * Select option `8` from the main menu
+   * The system will identify eligible matches and send appropriate messages
+
+3. **Message sequence:**
+   * Initial messages are sent to new matches
+   * Follow-up messages are sent after a configured interval if no response
+   * Final reminder messages are sent as a last attempt
+   * Different templates are used for matches in your tree vs. not in your tree
+
+4. **Tips:**
+   * Start with `APP_MODE=dry_run` to simulate sending without actually sending
+   * Review the logs to see which messages would be sent
+   * Switch to `APP_MODE=production` when ready to send real messages
+
+### 7.4 Managing Inbox Messages
+
+#### 7.4.1 Processing Inbox Messages (Action 7)
+
+Action 7 checks your Ancestry inbox for new messages and classifies them using AI.
+
+1. **Run Action 7:**
+   * Select option `7` from the main menu
+   * The system will fetch conversations from your inbox
+   * New messages will be classified as PRODUCTIVE, UNINTERESTED, DESIST, or OTHER
+
+2. **What it does:**
+   * Identifies new incoming messages since the last run
+   * Uses AI to analyze the content and intent of each message
+   * Updates the database with message details and classification
+   * Updates person status (e.g., to DESIST if they asked to stop messaging)
+
+3. **Tips:**
+   * Set `MAX_INBOX=10` in your `.env` file for initial testing
+   * For a full run, set `MAX_INBOX=0` to process all conversations
+   * AI classification requires setting up an AI provider (see section 7.7)
+
+#### 7.4.2 Handling Productive Messages (Action 9)
+
+Action 9 processes messages classified as "PRODUCTIVE" by Action 7, extracting genealogical information and generating responses.
+
+1. **Run Action 9:**
+   * Select option `9` from the main menu
+   * The system will find messages classified as PRODUCTIVE
+   * It will extract genealogical information and suggest research tasks
+
+2. **What it does:**
+   * Uses AI to extract names, dates, locations, and relationships from messages
+   * Searches for mentioned individuals in your family tree (GEDCOM or API)
+   * Creates research tasks in Microsoft To-Do (if configured)
+   * Sends acknowledgement messages or custom genealogical responses
+   * Updates person status to ARCHIVE after processing
+
+3. **Custom responses:**
+   * Set `CUSTOM_RESPONSE_ENABLED=True` in your `.env` file to enable
+   * These responses include information about mentioned individuals and their relationship to you
+   * Configure `TREE_SEARCH_METHOD` to determine how the system searches for individuals:
+     * `GEDCOM`: Uses local GEDCOM file (faster, requires `GEDCOM_FILE_PATH`)
+     * `API`: Searches Ancestry's online database (slower, more current)
+     * `BOTH`: Tries GEDCOM first, then API if no match found
+
+4. **Tips:**
+   * Start with `MAX_PRODUCTIVE_TO_PROCESS=2` for initial testing
+   * Review the generated responses in your Ancestry sent messages
+   * Microsoft To-Do integration requires additional setup (see section 7.7.2)
+
+### 7.5 Genealogical Research Tools
+
+#### 7.5.1 GEDCOM Report (Action 10)
+
+Action 10 allows you to search your local GEDCOM file for individuals and view their relationships.
+
+1. **Setup:**
+   * Add `GEDCOM_FILE_PATH=path/to/your/family_tree.ged` to your `.env` file
+   * Add `REFERENCE_PERSON_ID=I12345` with your ID in the GEDCOM file
+
+2. **Run Action 10:**
+   * Select option `10` from the main menu
+   * Enter search criteria (name, birth year, birth place, etc.)
+   * The system will search your GEDCOM file and display matches
+
+3. **What it shows:**
+   * Ranked list of potential matches with scores
+   * Details about the best match
+   * Immediate family members of the best match
+   * Relationship path from the reference person to the match
+
+#### 7.5.2 API Report (Action 11)
+
+Action 11 searches Ancestry's online database for individuals and displays detailed information.
+
+1. **Run Action 11:**
+   * Select option `11` from the main menu
+   * Enter search criteria (name, birth year, birth place, etc.)
+   * The system will search Ancestry's database and display matches
+
+2. **What it shows:**
+   * Ranked list of potential matches with scores
+   * Detailed information about the selected match
+   * Family members of the selected match
+   * Relationship path to the tree owner (if available)
+
+3. **Tips:**
+   * More specific search criteria yield better results
+   * This action requires an active Ancestry session
+   * Results include both people in your tree and public trees
+
+### 7.6 Database Management
+
+#### 7.6.1 Backup and Restore
+
+The application provides options to backup and restore your database:
+
+1. **Backup Database (Action 3):**
+   * Select option `3` from the main menu
+   * Creates a backup copy of your database in the Data directory
+
+2. **Restore Database (Action 4):**
+   * Select option `4` from the main menu
+   * Restores from the backup, overwriting the current database
+   * Use with caution as this will replace all current data
+
+#### 7.6.2 Reset Database (Action 2)
+
+If you need to start fresh:
+
+1. **Reset Database (Action 2):**
+   * Select option `2` from the main menu
+   * Deletes all data from the database (except message templates)
+   * Reinitializes the database schema
+   * Use with extreme caution as this permanently deletes all data
+
+### 7.7 Advanced Configuration
+
+#### 7.7.1 AI Provider Setup
+
+To use AI features (message classification, data extraction), configure an AI provider:
+
+1. **DeepSeek:**
+   ```
+   AI_PROVIDER=deepseek
+   DEEPSEEK_API_KEY=your_api_key
+   DEEPSEEK_AI_MODEL=deepseek-chat
+   DEEPSEEK_AI_BASE_URL=https://api.deepseek.com
+   ```
+
+2. **Google Gemini:**
+   ```
+   AI_PROVIDER=gemini
+   GOOGLE_API_KEY=your_api_key
+   GOOGLE_AI_MODEL=gemini-1.5-flash-latest
+   ```
+
+#### 7.7.2 Microsoft To-Do Integration
+
+To create tasks from AI-suggested research items:
+
+1. **Register an application in Azure Portal:**
+   * Go to Azure Portal > App registrations > New registration
+   * Name your app and select "Accounts in any organizational directory and personal Microsoft accounts"
+   * Note the Application (client) ID and Directory (tenant) ID
+
+2. **Configure your `.env` file:**
+   ```
+   MS_GRAPH_CLIENT_ID=your_application_client_id
+   MS_GRAPH_TENANT_ID=consumers
+   MS_TODO_LIST_NAME=Ancestry Research
+   ```
+
+3. **First-time authentication:**
+   * When you run Action 9, you'll be prompted to authenticate
+   * Follow the device code flow instructions (visit the URL and enter the code)
+   * The token will be cached for future use
+
+#### 7.7.3 Processing Limits
+
+Control how much data the application processes in a single run:
+
+```
+MAX_PAGES=10           # Max DNA match pages to process (Action 6)
+MAX_INBOX=20           # Max inbox conversations to process (Action 7)
+MAX_PRODUCTIVE_TO_PROCESS=5  # Max productive messages to process (Action 9)
+BATCH_SIZE=50          # Items per batch for database operations
+```
+
+Set any of these values to 0 for unlimited processing.
+
+### 7.8 Troubleshooting
+
+#### 7.8.1 Login Issues
+
+If you encounter login problems:
+
+1. **Check credentials** in your `.env` file
+2. **Disable headless mode** by setting `HEADLESS_MODE=False` to see the browser
+3. **Increase timeout** for 2FA by setting `TWO_FA_CODE_ENTRY_TIMEOUT=300` (5 minutes)
+4. **Clear Chrome profile** by deleting the contents of your `CHROME_USER_DATA_DIR` directory
+
+#### 7.8.2 API Errors
+
+If API calls are failing:
+
+1. **Check login status** using option `5` from the main menu
+2. **Restart the application** to establish a fresh session
+3. **Increase rate limiting** by adjusting `INITIAL_DELAY` and `MAX_DELAY` in your `.env` file
+4. **Check logs** in the Logs directory for specific error messages
+
+#### 7.8.3 AI-Related Issues
+
+If AI features aren't working:
+
+1. **Verify API keys** in your `.env` file
+2. **Check AI provider status** (DeepSeek or Google Gemini)
+3. **Review logs** for specific error messages from AI calls
+4. **Try a different AI provider** if one is consistently failing
+
+### 7.9 Key Actions Explained
+
+*   **Action 0 (Delete all but first):** A utility action for development/testing. Deletes most data from the database, keeping only a specific "sentinel" person record. *Use with extreme caution.*
+*   **Action 1 (Run Full Workflow):** Executes the core workflow sequence: Process the inbox (Action 7), handle productive messages with AI (Action 9), and then send templated messages to eligible matches (Action 8). Optionally includes gathering DNA matches (Action 6) at the beginning if configured.
 *   **Action 2 (Reset Database):** **Deletes all data** from the application's tables (except `message_types`) and re-initializes the schema. *Use with extreme caution.*
-*   **Action 3 (Backup Database):** Creates a backup copy of the SQLite database file (`ancestry_backup.db`) in the `Data` directory.
-*   **Action 4 (Restore Database):** Restores the database from `ancestry_backup.db`, overwriting the current database. *Use with caution.*
+*   **Action 3 (Backup Database):** Creates a backup copy of the SQLite database file in the `Data` directory.
+*   **Action 4 (Restore Database):** Restores the database from the backup, overwriting the current database. *Use with caution.*
 *   **Action 5 (Check Login Status):** Verifies if the current session is authenticated with Ancestry.com.
-*   **Action 6 (Gather Matches):** (`action6_gather.coord`)
-    *   Fetches your DNA match list page by page from Ancestry using APIs.
-    *   Extracts relevant details for each match (shared cM, segments, tree status, profile info).
-    *   Compares with existing database records.
-    *   For new or significantly changed matches, fetches additional details via other APIs (e.g., relationship probability, tree linkage specifics).
-    *   Performs bulk updates/inserts into the local database.
-    *   Can be started from a specific page number (e.g., `6 10` to start from page 10).
-*   **Action 7 (Search Inbox):** (`action7_inbox.InboxProcessor.search_inbox`)
-    *   Fetches conversations from your Ancestry inbox via API.
-    *   Identifies new incoming messages.
-    *   Uses AI (`ai_interface.py`) to classify the intent of new messages (PRODUCTIVE, DESIST, UNINTERESTED, OTHER).
-    *   Updates the `ConversationLog` and `Person` status (e.g., to DESIST) in the database.
-*   **Action 8 (Send Messages):** (`action8_messaging.send_messages_to_matches`)
-    *   Identifies DNA matches eligible for messaging based on their status, communication history, and tree linkage.
-    *   Uses templates from `messages.json` to format personalized messages.
-    *   Respects configured time intervals between follow-ups.
-    *   Sends messages via Ancestry's messaging API.
-    *   Logs sent messages in `ConversationLog`.
-*   **Action 9 (Process Productive Messages):** (`action9_process_productive.process_productive_messages`)
-    *   Processes conversations where the latest user message was classified as "PRODUCTIVE" by Action 7.
-    *   Uses AI (`ai_interface.py`) to extract genealogical entities (names, dates, locations, etc.) and suggest follow-up research tasks from the conversation.
-    *   Identifies persons mentioned in messages by searching both local GEDCOM files and Ancestry's online database.
-    *   Generates personalized genealogical responses with information about mentioned individuals, their family details, and relationship paths to the tree owner.
-    *   Falls back to standard acknowledgement messages when no specific person is identified or when exclusion keywords are detected.
-    *   Skips "OTHER" messages with no mentioned names, marking them as processed without sending a reply.
-    *   Can be configured to disable custom genealogical responses entirely via the `CUSTOM_RESPONSE_ENABLED` setting in `.env`.
-    *   Optionally creates tasks in a specified Microsoft To-Do list via MS Graph API (`ms_graph_utils.py`).
-    *   Updates the Person's status to ARCHIVE in the database.
-*   **Action 10 (GEDCOM Report):** (`action10.run_action10`)
-    *   Prompts the user for search criteria (name, birth year, etc.).
-    *   Searches a local GEDCOM file (specified by `GEDCOM_FILE_PATH` in `.env`).
-    *   Scores potential matches based on the criteria.
-    *   Displays the top matches and, for the best match, their immediate relatives and relationship path to a configured reference person.
-*   **Action 11 (API Report):** (`action11.run_action11`)
-    *   Prompts the user for search criteria.
-    *   Searches Ancestry's online database using various internal APIs to find matching individuals in the user's tree or public trees.
-    *   Scores and ranks the suggestions.
-    *   For the top candidate, fetches and displays detailed information, family members, and (if possible) the relationship path to the tree owner.
+*   **Action 6 (Gather Matches):** Fetches your DNA match list page by page, extracts details, and stores them in the database.
+*   **Action 7 (Search Inbox):** Fetches conversations from your Ancestry inbox, identifies new messages, and classifies them using AI.
+*   **Action 8 (Send Messages):** Sends templated messages to eligible DNA matches based on their status and tree linkage.
+*   **Action 9 (Process Productive Messages):** Processes messages classified as "PRODUCTIVE", extracts genealogical information, and generates responses.
+*   **Action 10 (GEDCOM Report):** Searches your local GEDCOM file for individuals based on search criteria and displays relationship paths.
+*   **Action 11 (API Report):** Searches Ancestry's online database for individuals and displays detailed information and relationships.
 *   **t (Toggle Log Level):** Switches the console logging verbosity between INFO and DEBUG.
 *   **c (Clear Screen):** Clears the console.
 *   **q (Exit):** Terminates the application.
+
+See the detailed User Guide sections above for complete instructions on using each action.
 
 ## 8. Maintenance Guide
 

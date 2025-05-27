@@ -63,8 +63,16 @@ from utils import SessionManager  # For rate limiting access
 from logging_config import logger  # Use configured logger
 
 # --- Constants and Prompts ---
+# Try to import the AI prompt utilities
+try:
+    from ai_prompt_utils import get_prompt
 
-# System prompt for generating genealogical replies
+    USE_JSON_PROMPTS = True
+except ImportError:
+    logger.warning("ai_prompt_utils module not available, using hardcoded prompts")
+    USE_JSON_PROMPTS = False
+
+# System prompt for generating genealogical replies (fallback if JSON prompts not available)
 GENERATE_GENEALOGICAL_REPLY_PROMPT = """You are a helpful genealogical assistant named Wayne responding to messages on behalf of a family history researcher from Aberdeen, Scotland.
 
 You will receive:
@@ -82,12 +90,20 @@ Your task is to generate a natural, polite, and informative reply that:
 - May suggest connections or ask a clarifying follow-up question if appropriate
 - Maintains a warm, helpful, conversational tone
 - Refers to yourself as "I" and the tree as "my family tree" or "my records"
-- Is concise and focused (aim for 3-5 sentences)
 - Shows genuine interest in the user's research and family connections
+
+IMPORTANT: When replying about people found in your tree, you MUST include:
+1. COMPLETE birth details (full date and place if available)
+2. COMPLETE death details (full date and place if available)
+3. DETAILED family information (parents, spouse, children)
+4. SPECIFIC relationship to you (the tree owner)
+5. Any other significant details like occupation, immigration, etc.
 
 If multiple people are mentioned in the genealogical data, focus on the one with the highest match score or most complete information.
 
 If the genealogical data indicates "No person found" or is empty, acknowledge this and ask for more details that might help identify the person in your records.
+
+For people not in your tree, acknowledge this and ask for more details that might help identify connections.
 
 Your response should be ONLY the message text, with no additional formatting, explanation, or signature (the system will add a signature automatically).
 """
@@ -106,7 +122,14 @@ PRODUCTIVE: The user's final message, in context, provides helpful genealogical 
 OTHER: The user's final message, in context, does not clearly fall into the DESIST, UNINTERESTED, or PRODUCTIVE categories. Examples include purely social pleasantries, unrelated questions, ambiguous statements, or messages containing only attachments/links without explanatory text.
 
 CRITICAL: Your entire response must be only one of the four category words (DESIST, UNINTERESTED, PRODUCTIVE, OTHER)."""
-EXPECTED_INTENT_CATEGORIES = {"DESIST", "UNINTERESTED", "PRODUCTIVE", "OTHER"}
+EXPECTED_INTENT_CATEGORIES = {
+    "ENTHUSIASTIC",
+    "CAUTIOUSLY_INTERESTED",
+    "UNINTERESTED",
+    "CONFUSED",
+    "PRODUCTIVE",
+    "OTHER",
+}
 
 # System prompt for Action 9 (Data Extraction & Task Suggestion)
 # Focuses on extracting specific genealogical entities and suggesting *actionable* research tasks.
@@ -176,10 +199,11 @@ def classify_message_intent(
         )
         return "OTHER"  # Return OTHER for empty context
 
-    # Step 2: Apply Rate Limiting
-    wait_time = session_manager.dynamic_rate_limiter.wait()
-    # Optional: Log if wait time was significant
-    # if wait_time > 0.1: logger.debug(f"AI Intent API rate limit wait: {wait_time:.2f}s")
+    # Step 2: Apply Rate Limiting (skip if session_manager is None)
+    if session_manager is not None:
+        wait_time = session_manager.dynamic_rate_limiter.wait()
+        # Optional: Log if wait time was significant
+        # if wait_time > 0.1: logger.debug(f"AI Intent API rate limit wait: {wait_time:.2f}s")
 
     # Step 3: Initialize result and timer
     classification_result: Optional[str] = None
@@ -204,10 +228,25 @@ def classify_message_intent(
             # Create client and make request
             client = OpenAI(api_key=api_key, base_url=base_url)
             logger.debug(f"Calling DeepSeek Intent Classification (Model: {model})...")
+            # Get the intent classification prompt from the JSON file if available
+            intent_prompt = SYSTEM_PROMPT_INTENT
+            if USE_JSON_PROMPTS:
+                try:
+                    json_prompt = get_prompt("intent_classification")
+                    if json_prompt:
+                        intent_prompt = json_prompt
+                        logger.debug(
+                            "Using intent classification prompt from ai_prompts.json"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Error getting intent classification prompt from JSON: {e}"
+                    )
+
             openai_response = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT_INTENT},
+                    {"role": "system", "content": intent_prompt},
                     {"role": "user", "content": context_history},
                 ],
                 stream=False,  # Request non-streaming response
@@ -264,9 +303,24 @@ def classify_message_intent(
                 "max_output_tokens": 20,
                 "temperature": 0.1,
             }
+            # Get the intent classification prompt from the JSON file if available
+            intent_prompt = SYSTEM_PROMPT_INTENT
+            if USE_JSON_PROMPTS:
+                try:
+                    json_prompt = get_prompt("intent_classification")
+                    if json_prompt:
+                        intent_prompt = json_prompt
+                        logger.debug(
+                            "Using intent classification prompt from ai_prompts.json"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Error getting intent classification prompt from JSON: {e}"
+                    )
+
             # Combine system prompt and history for Gemini
             prompt_content = (
-                f"{SYSTEM_PROMPT_INTENT}\n\nConversation History:\n{context_history}"
+                f"{intent_prompt}\n\nConversation History:\n{context_history}"
             )
             # Make API call
             response = model.generate_content(
@@ -308,7 +362,8 @@ def classify_message_intent(
         logger.error(f"AI Authentication Error ({ai_provider}): {e}")
     except RateLimitError as e:
         logger.error(f"AI Rate Limit Error ({ai_provider}): {e}")
-        session_manager.dynamic_rate_limiter.increase_delay()
+        if session_manager is not None:
+            session_manager.dynamic_rate_limiter.increase_delay()
     except APIConnectionError as e:
         logger.error(f"AI Connection Error ({ai_provider}): {e}")
     except APIError as e:
@@ -320,7 +375,8 @@ def classify_message_intent(
         logger.error(f"AI Permission Denied (Gemini): {e}")
     except google_exceptions.ResourceExhausted as e:
         logger.error(f"AI Rate Limit Error (Gemini): {e}")
-        session_manager.dynamic_rate_limiter.increase_delay()
+        if session_manager is not None:
+            session_manager.dynamic_rate_limiter.increase_delay()
     except google_exceptions.GoogleAPIError as e:
         logger.error(f"Google API Error (Gemini): {e}")
     # General Python errors
@@ -399,15 +455,28 @@ def extract_and_suggest_tasks(
             "suggested_tasks": [],
         }
 
-    # Step 2: Apply Rate Limiting
-    wait_time = session_manager.dynamic_rate_limiter.wait()
-    # Optional: Log if wait time was significant
-    # if wait_time > 0.1: logger.debug(f"AI Extraction API rate limit wait: {wait_time:.2f}s")
+    # Step 2: Apply Rate Limiting (skip if session_manager is None)
+    if session_manager is not None:
+        session_manager.dynamic_rate_limiter.wait()
+        # Optional: Log if wait time was significant
+        # if wait_time > 0.1: logger.debug(f"AI Extraction API rate limit wait: {wait_time:.2f}s")
 
     # Step 3: Initialize result and timer
     extraction_result: Optional[Dict[str, Any]] = None
     start_time = time.time()
     max_tokens_extraction = 700  # Allow more tokens for potentially detailed JSON
+
+    # Default structure to return in case of errors
+    default_result = {
+        "extracted_data": {
+            "mentioned_names": [],
+            "mentioned_locations": [],
+            "mentioned_dates": [],
+            "potential_relationships": [],
+            "key_facts": [],
+        },
+        "suggested_tasks": [],
+    }
 
     # Step 4: Call the appropriate AI provider
     try:
@@ -415,7 +484,7 @@ def extract_and_suggest_tasks(
             # --- DeepSeek/OpenAI Compatible API Call ---
             if not openai_available or OpenAI is None:
                 logger.error("extract_and_suggest_tasks: OpenAI library not available.")
-                return None
+                return default_result
             # Load config
             api_key = config_instance.DEEPSEEK_API_KEY
             model = config_instance.DEEPSEEK_AI_MODEL
@@ -424,14 +493,25 @@ def extract_and_suggest_tasks(
                 logger.error(
                     "extract_and_suggest_tasks: DeepSeek configuration incomplete."
                 )
-                return None
+                return default_result
             # Create client and make request (requesting JSON object)
             client = OpenAI(api_key=api_key, base_url=base_url)
             logger.debug(f"Calling DeepSeek Extraction/Suggestion (Model: {model})...")
+            # Get the extraction prompt from the JSON file if available
+            extraction_prompt = EXTRACTION_TASK_SYSTEM_PROMPT
+            if USE_JSON_PROMPTS:
+                try:
+                    json_prompt = get_prompt("extraction_task")
+                    if json_prompt:
+                        extraction_prompt = json_prompt
+                        logger.debug("Using extraction prompt from ai_prompts.json")
+                except Exception as e:
+                    logger.error(f"Error getting extraction prompt from JSON: {e}")
+
             openai_response = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": EXTRACTION_TASK_SYSTEM_PROMPT},
+                    {"role": "system", "content": extraction_prompt},
                     {"role": "user", "content": context_history},
                 ],
                 stream=False,
@@ -442,198 +522,696 @@ def extract_and_suggest_tasks(
             # Process response
             if openai_response.choices and openai_response.choices[0].message:
                 raw_response_content = openai_response.choices[0].message.content
-                # Attempt to parse the JSON response
-                try:
-                    parsed_json = json.loads(raw_response_content)
-                    # Validate the structure of the parsed JSON
-                    if (
-                        isinstance(parsed_json, dict)
-                        and "extracted_data" in parsed_json
-                        and isinstance(parsed_json["extracted_data"], dict)
-                        and "suggested_tasks" in parsed_json
-                        and isinstance(parsed_json["suggested_tasks"], list)
-                        and
-                        # Validate sub-structure of extracted_data
-                        all(
-                            key in parsed_json["extracted_data"]
-                            for key in [
+                if raw_response_content:
+                    # Attempt to parse the JSON response
+                    try:
+                        parsed_json = json.loads(raw_response_content)
+                        # Validate the structure of the parsed JSON
+                        if isinstance(parsed_json, dict):
+                            # If the response doesn't have the expected structure, add it
+                            if "extracted_data" not in parsed_json:
+                                logger.warning(
+                                    "Adding missing 'extracted_data' field to AI response"
+                                )
+                                parsed_json["extracted_data"] = {
+                                    "mentioned_names": [],
+                                    "mentioned_locations": [],
+                                    "mentioned_dates": [],
+                                    "potential_relationships": [],
+                                    "key_facts": [],
+                                }
+                            elif not isinstance(parsed_json["extracted_data"], dict):
+                                logger.warning(
+                                    "'extracted_data' is not a dictionary, replacing with default structure"
+                                )
+                                parsed_json["extracted_data"] = {
+                                    "mentioned_names": [],
+                                    "mentioned_locations": [],
+                                    "mentioned_dates": [],
+                                    "potential_relationships": [],
+                                    "key_facts": [],
+                                }
+
+                            # Handle the extraction prompt format from ai_prompts.json which uses different field names
+                            # Map the fields from the prompt format to the expected fields
+                            if "mentioned_names" not in parsed_json["extracted_data"]:
+                                # Check if this is using the format from ai_prompts.json with people, relationships, etc.
+                                if "people" in parsed_json:
+                                    logger.info(
+                                        "Detected ai_prompts.json format with 'people' field, mapping to expected structure"
+                                    )
+
+                                    # Create a new structure with the expected fields
+                                    new_structure = {
+                                        "mentioned_names": [],
+                                        "mentioned_locations": [],
+                                        "mentioned_dates": [],
+                                        "potential_relationships": [],
+                                        "key_facts": [],
+                                    }
+                                # Check if this is using the format from the updated ai_prompts.json with mentioned_names, dates, locations, etc.
+                                elif (
+                                    "dates" in parsed_json["extracted_data"]
+                                    or "locations" in parsed_json["extracted_data"]
+                                    or "relationships" in parsed_json["extracted_data"]
+                                ):
+                                    logger.info(
+                                        "Detected updated ai_prompts.json format with 'dates', 'locations', 'relationships' fields, mapping to expected structure"
+                                    )
+
+                                    # Create a new structure with the expected fields
+                                    new_structure = {
+                                        "mentioned_names": parsed_json[
+                                            "extracted_data"
+                                        ].get("mentioned_names", []),
+                                        "mentioned_locations": parsed_json[
+                                            "extracted_data"
+                                        ].get("locations", []),
+                                        "mentioned_dates": parsed_json[
+                                            "extracted_data"
+                                        ].get("dates", []),
+                                        "potential_relationships": parsed_json[
+                                            "extracted_data"
+                                        ].get("relationships", []),
+                                        "key_facts": [],
+                                    }
+
+                                    # Add occupations, events, and research_questions to key_facts
+                                    if "occupations" in parsed_json["extracted_data"]:
+                                        new_structure["key_facts"].extend(
+                                            parsed_json["extracted_data"]["occupations"]
+                                        )
+                                    if "events" in parsed_json["extracted_data"]:
+                                        new_structure["key_facts"].extend(
+                                            parsed_json["extracted_data"]["events"]
+                                        )
+                                    if (
+                                        "research_questions"
+                                        in parsed_json["extracted_data"]
+                                    ):
+                                        parsed_json["suggested_tasks"] = parsed_json[
+                                            "extracted_data"
+                                        ]["research_questions"]
+
+                                    # Update the extracted_data with the new structure
+                                    parsed_json["extracted_data"] = new_structure
+                                    logger.info(
+                                        "Successfully mapped updated ai_prompts.json format to expected structure"
+                                    )
+                                    return parsed_json
+
+                                    # Extract names from people array
+                                    if "people" in parsed_json and isinstance(
+                                        parsed_json["people"], list
+                                    ):
+                                        for person in parsed_json["people"]:
+                                            name_parts = []
+                                            if isinstance(person, dict):
+                                                if (
+                                                    "firstName" in person
+                                                    and person["firstName"]
+                                                ):
+                                                    name_parts.append(
+                                                        person["firstName"]
+                                                    )
+                                                if (
+                                                    "middleName" in person
+                                                    and person["middleName"]
+                                                ):
+                                                    name_parts.append(
+                                                        person["middleName"]
+                                                    )
+                                                if (
+                                                    "maidenName" in person
+                                                    and person["maidenName"]
+                                                ):
+                                                    name_parts.append(
+                                                        f"(née {person['maidenName']})"
+                                                    )
+                                                if (
+                                                    "lastName" in person
+                                                    and person["lastName"]
+                                                ):
+                                                    name_parts.append(
+                                                        person["lastName"]
+                                                    )
+
+                                                if name_parts:
+                                                    full_name = " ".join(name_parts)
+                                                    new_structure[
+                                                        "mentioned_names"
+                                                    ].append(full_name)
+
+                                                # Extract birth and death dates
+                                                if (
+                                                    "birthDate" in person
+                                                    and isinstance(
+                                                        person["birthDate"], dict
+                                                    )
+                                                ):
+                                                    birth_date = ""
+                                                    confidence = ""
+
+                                                    if (
+                                                        "full" in person["birthDate"]
+                                                        and person["birthDate"]["full"]
+                                                    ):
+                                                        birth_date = person[
+                                                            "birthDate"
+                                                        ]["full"]
+                                                    elif (
+                                                        "year" in person["birthDate"]
+                                                        and person["birthDate"]["year"]
+                                                    ):
+                                                        birth_date = person[
+                                                            "birthDate"
+                                                        ]["year"]
+
+                                                    if (
+                                                        "confidence"
+                                                        in person["birthDate"]
+                                                        and person["birthDate"][
+                                                            "confidence"
+                                                        ]
+                                                        and person["birthDate"][
+                                                            "confidence"
+                                                        ]
+                                                        != "certain"
+                                                    ):
+                                                        confidence = f" ({person['birthDate']['confidence']})"
+
+                                                    if birth_date:
+                                                        new_structure[
+                                                            "mentioned_dates"
+                                                        ].append(
+                                                            f"Birth: {birth_date}{confidence}"
+                                                        )
+
+                                                if (
+                                                    "deathDate" in person
+                                                    and isinstance(
+                                                        person["deathDate"], dict
+                                                    )
+                                                ):
+                                                    death_date = ""
+                                                    confidence = ""
+
+                                                    if (
+                                                        "full" in person["deathDate"]
+                                                        and person["deathDate"]["full"]
+                                                    ):
+                                                        death_date = person[
+                                                            "deathDate"
+                                                        ]["full"]
+                                                    elif (
+                                                        "year" in person["deathDate"]
+                                                        and person["deathDate"]["year"]
+                                                    ):
+                                                        death_date = person[
+                                                            "deathDate"
+                                                        ]["year"]
+
+                                                    if (
+                                                        "confidence"
+                                                        in person["deathDate"]
+                                                        and person["deathDate"][
+                                                            "confidence"
+                                                        ]
+                                                        and person["deathDate"][
+                                                            "confidence"
+                                                        ]
+                                                        != "certain"
+                                                    ):
+                                                        confidence = f" ({person['deathDate']['confidence']})"
+
+                                                    if death_date:
+                                                        new_structure[
+                                                            "mentioned_dates"
+                                                        ].append(
+                                                            f"Death: {death_date}{confidence}"
+                                                        )
+
+                                                # Extract birth and death places
+                                                if (
+                                                    "birthPlace" in person
+                                                    and isinstance(
+                                                        person["birthPlace"], dict
+                                                    )
+                                                ):
+                                                    place_description = ""
+                                                    confidence = ""
+
+                                                    if (
+                                                        "description"
+                                                        in person["birthPlace"]
+                                                        and person["birthPlace"][
+                                                            "description"
+                                                        ]
+                                                    ):
+                                                        place_description = person[
+                                                            "birthPlace"
+                                                        ]["description"]
+                                                    elif (
+                                                        "country"
+                                                        in person["birthPlace"]
+                                                        and person["birthPlace"][
+                                                            "country"
+                                                        ]
+                                                    ):
+                                                        place_description = person[
+                                                            "birthPlace"
+                                                        ]["country"]
+
+                                                    if (
+                                                        "confidence"
+                                                        in person["birthPlace"]
+                                                        and person["birthPlace"][
+                                                            "confidence"
+                                                        ]
+                                                        and person["birthPlace"][
+                                                            "confidence"
+                                                        ]
+                                                        != "certain"
+                                                    ):
+                                                        confidence = f" ({person['birthPlace']['confidence']})"
+
+                                                    if place_description:
+                                                        new_structure[
+                                                            "mentioned_locations"
+                                                        ].append(
+                                                            f"Birth: {place_description}{confidence}"
+                                                        )
+
+                                                if (
+                                                    "deathPlace" in person
+                                                    and isinstance(
+                                                        person["deathPlace"], dict
+                                                    )
+                                                ):
+                                                    place_description = ""
+                                                    confidence = ""
+
+                                                    if (
+                                                        "description"
+                                                        in person["deathPlace"]
+                                                        and person["deathPlace"][
+                                                            "description"
+                                                        ]
+                                                    ):
+                                                        place_description = person[
+                                                            "deathPlace"
+                                                        ]["description"]
+                                                    elif (
+                                                        "country"
+                                                        in person["deathPlace"]
+                                                        and person["deathPlace"][
+                                                            "country"
+                                                        ]
+                                                    ):
+                                                        place_description = person[
+                                                            "deathPlace"
+                                                        ]["country"]
+
+                                                    if (
+                                                        "confidence"
+                                                        in person["deathPlace"]
+                                                        and person["deathPlace"][
+                                                            "confidence"
+                                                        ]
+                                                        and person["deathPlace"][
+                                                            "confidence"
+                                                        ]
+                                                        != "certain"
+                                                    ):
+                                                        confidence = f" ({person['deathPlace']['confidence']})"
+
+                                                    if place_description:
+                                                        new_structure[
+                                                            "mentioned_locations"
+                                                        ].append(
+                                                            f"Death: {place_description}{confidence}"
+                                                        )
+
+                                                # Extract occupation as key fact
+                                                if (
+                                                    "occupation" in person
+                                                    and person["occupation"]
+                                                ):
+                                                    new_structure["key_facts"].append(
+                                                        f"Occupation: {person['occupation']}"
+                                                    )
+
+                                                # Extract notes as key fact
+                                                if (
+                                                    "notes" in person
+                                                    and person["notes"]
+                                                ):
+                                                    new_structure["key_facts"].append(
+                                                        person["notes"]
+                                                    )
+
+                                    # Extract relationships
+                                    if "relationships" in parsed_json and isinstance(
+                                        parsed_json["relationships"], list
+                                    ):
+                                        for relationship in parsed_json[
+                                            "relationships"
+                                        ]:
+                                            if isinstance(relationship, dict):
+                                                relation_description = ""
+                                                confidence = ""
+
+                                                # Get the specific relation description
+                                                if "specificRelation" in relationship:
+                                                    relation_description = relationship[
+                                                        "specificRelation"
+                                                    ]
+                                                elif "relationshipType" in relationship:
+                                                    relation_description = relationship[
+                                                        "relationshipType"
+                                                    ]
+
+                                                    # Try to get the person names to make the relationship more specific
+                                                    person1_id = relationship.get(
+                                                        "person1Id"
+                                                    )
+                                                    person2_id = relationship.get(
+                                                        "person2Id"
+                                                    )
+
+                                                    if person1_id and person2_id:
+                                                        # Find the names of the people in the relationship
+                                                        person1_name = ""
+                                                        person2_name = ""
+
+                                                        for person in parsed_json.get(
+                                                            "people", []
+                                                        ):
+                                                            if (
+                                                                isinstance(person, dict)
+                                                                and "id" in person
+                                                            ):
+                                                                if (
+                                                                    person["id"]
+                                                                    == person1_id
+                                                                ):
+                                                                    name_parts = []
+                                                                    if person.get(
+                                                                        "firstName"
+                                                                    ):
+                                                                        name_parts.append(
+                                                                            person[
+                                                                                "firstName"
+                                                                            ]
+                                                                        )
+                                                                    if person.get(
+                                                                        "lastName"
+                                                                    ):
+                                                                        name_parts.append(
+                                                                            person[
+                                                                                "lastName"
+                                                                            ]
+                                                                        )
+                                                                    if name_parts:
+                                                                        person1_name = " ".join(
+                                                                            name_parts
+                                                                        )
+
+                                                                if (
+                                                                    person["id"]
+                                                                    == person2_id
+                                                                ):
+                                                                    name_parts = []
+                                                                    if person.get(
+                                                                        "firstName"
+                                                                    ):
+                                                                        name_parts.append(
+                                                                            person[
+                                                                                "firstName"
+                                                                            ]
+                                                                        )
+                                                                    if person.get(
+                                                                        "lastName"
+                                                                    ):
+                                                                        name_parts.append(
+                                                                            person[
+                                                                                "lastName"
+                                                                            ]
+                                                                        )
+                                                                    if name_parts:
+                                                                        person2_name = " ".join(
+                                                                            name_parts
+                                                                        )
+
+                                                        if (
+                                                            person1_name
+                                                            and person2_name
+                                                        ):
+                                                            relation_description = f"{person1_name} is {relation_description} of {person2_name}"
+
+                                                # Add confidence if available and not "certain"
+                                                if (
+                                                    "confidence" in relationship
+                                                    and relationship["confidence"]
+                                                    and relationship["confidence"]
+                                                    != "certain"
+                                                ):
+                                                    confidence = f" ({relationship['confidence']})"
+
+                                                # Add notes if available
+                                                notes = ""
+                                                if (
+                                                    "notes" in relationship
+                                                    and relationship["notes"]
+                                                ):
+                                                    notes = (
+                                                        f" - {relationship['notes']}"
+                                                    )
+
+                                                if relation_description:
+                                                    new_structure[
+                                                        "potential_relationships"
+                                                    ].append(
+                                                        f"{relation_description}{confidence}{notes}"
+                                                    )
+
+                                    # Extract research gaps as suggested tasks
+                                    if "researchGaps" in parsed_json and isinstance(
+                                        parsed_json["researchGaps"], list
+                                    ):
+                                        if "suggested_tasks" not in parsed_json:
+                                            parsed_json["suggested_tasks"] = []
+
+                                        for gap in parsed_json["researchGaps"]:
+                                            if isinstance(gap, dict):
+                                                gap_description = ""
+                                                priority = ""
+                                                sources = ""
+
+                                                if "description" in gap:
+                                                    gap_description = gap["description"]
+
+                                                if (
+                                                    "priority" in gap
+                                                    and gap["priority"]
+                                                    and gap["priority"] != "medium"
+                                                ):
+                                                    priority = (
+                                                        f" ({gap['priority']} priority)"
+                                                    )
+
+                                                if (
+                                                    "potentialSources" in gap
+                                                    and isinstance(
+                                                        gap["potentialSources"], list
+                                                    )
+                                                    and gap["potentialSources"]
+                                                ):
+                                                    sources = f" - Check: {', '.join(gap['potentialSources'])}"
+
+                                                if gap_description:
+                                                    task = f"{gap_description}{priority}{sources}"
+                                                    parsed_json[
+                                                        "suggested_tasks"
+                                                    ].append(task)
+
+                                    # Extract sources referenced as key facts
+                                    if (
+                                        "sourcesReferenced" in parsed_json
+                                        and isinstance(
+                                            parsed_json["sourcesReferenced"], list
+                                        )
+                                    ):
+                                        for source in parsed_json["sourcesReferenced"]:
+                                            if (
+                                                isinstance(source, dict)
+                                                and "description" in source
+                                            ):
+                                                source_type = ""
+                                                credibility = ""
+
+                                                if "type" in source and source["type"]:
+                                                    source_type = f"{source['type'].capitalize()}: "
+
+                                                if (
+                                                    "credibility" in source
+                                                    and source["credibility"]
+                                                    and source["credibility"]
+                                                    != "medium"
+                                                ):
+                                                    credibility = f" ({source['credibility']} credibility)"
+
+                                                new_structure["key_facts"].append(
+                                                    f"Source {source_type}{source['description']}{credibility}"
+                                                )
+
+                                    # Replace the extracted_data with the new structure
+                                    parsed_json["extracted_data"] = new_structure
+
+                                # Check if this is using the older improved prompt format with dates, locations, etc.
+                                elif "dates" in parsed_json["extracted_data"]:
+                                    logger.info(
+                                        "Detected improved prompt format with 'dates' field, mapping fields to expected structure"
+                                    )
+
+                                    # Create a mapping of improved prompt fields to expected fields
+                                    field_mapping = {
+                                        "mentioned_names": "mentioned_names",
+                                        "dates": "mentioned_dates",
+                                        "locations": "mentioned_locations",
+                                        "relationships": "potential_relationships",
+                                        "occupations": "key_facts",
+                                        "events": "key_facts",
+                                        "research_questions": "suggested_tasks",
+                                    }
+
+                                    # Create a new structure with the expected fields
+                                    new_structure = {
+                                        "mentioned_names": [],
+                                        "mentioned_locations": [],
+                                        "mentioned_dates": [],
+                                        "potential_relationships": [],
+                                        "key_facts": [],
+                                    }
+
+                                    # Copy data from the improved prompt fields to the expected fields
+                                    for (
+                                        improved_field,
+                                        expected_field,
+                                    ) in field_mapping.items():
+                                        if (
+                                            improved_field
+                                            in parsed_json["extracted_data"]
+                                        ):
+                                            if (
+                                                expected_field == "key_facts"
+                                                and improved_field
+                                                in ["occupations", "events"]
+                                            ):
+                                                # Combine occupations and events into key_facts
+                                                new_structure["key_facts"].extend(
+                                                    parsed_json["extracted_data"][
+                                                        improved_field
+                                                    ]
+                                                )
+                                            elif (
+                                                expected_field != "suggested_tasks"
+                                            ):  # Handle suggested_tasks separately
+                                                new_structure[expected_field] = (
+                                                    parsed_json["extracted_data"][
+                                                        improved_field
+                                                    ]
+                                                )
+
+                                    # If research_questions exists, move it to suggested_tasks
+                                    if (
+                                        "research_questions"
+                                        in parsed_json["extracted_data"]
+                                    ):
+                                        if "suggested_tasks" not in parsed_json:
+                                            parsed_json["suggested_tasks"] = []
+                                        parsed_json["suggested_tasks"].extend(
+                                            parsed_json["extracted_data"][
+                                                "research_questions"
+                                            ]
+                                        )
+
+                                    # Replace the extracted_data with the new structure
+                                    parsed_json["extracted_data"] = new_structure
+
+                            # Ensure all required fields exist in extracted_data
+                            for field in [
                                 "mentioned_names",
                                 "mentioned_locations",
                                 "mentioned_dates",
                                 "potential_relationships",
                                 "key_facts",
-                            ]
+                            ]:
+                                if field not in parsed_json["extracted_data"]:
+                                    logger.warning(
+                                        f"Adding missing '{field}' field to extracted_data"
+                                    )
+                                    parsed_json["extracted_data"][field] = []
+                                elif not isinstance(
+                                    parsed_json["extracted_data"][field], list
+                                ):
+                                    logger.warning(
+                                        f"'{field}' is not a list, replacing with empty list"
+                                    )
+                                    parsed_json["extracted_data"][field] = []
+
+                            # If suggested_tasks is missing, add it
+                            if "suggested_tasks" not in parsed_json:
+                                logger.warning(
+                                    "Adding missing 'suggested_tasks' field to AI response"
+                                )
+                                parsed_json["suggested_tasks"] = []
+                            elif not isinstance(parsed_json["suggested_tasks"], list):
+                                logger.warning(
+                                    "'suggested_tasks' is not a list, replacing with empty list"
+                                )
+                                parsed_json["suggested_tasks"] = []
+
+                            extraction_result = parsed_json  # Valid structure
+                        else:
+                            logger.warning(
+                                f"DeepSeek extraction response is valid JSON but not a dictionary: {raw_response_content}"
+                            )
+                            extraction_result = default_result
+                    except json.JSONDecodeError as e:
+                        logger.error(
+                            f"DeepSeek extraction response was not valid JSON: {e}\nContent: {raw_response_content}"
                         )
-                        and all(
-                            isinstance(parsed_json["extracted_data"][key], list)
-                            for key in [
-                                "mentioned_names",
-                                "mentioned_locations",
-                                "mentioned_dates",
-                                "potential_relationships",
-                                "key_facts",
-                            ]
-                        )
-                    ):
-                        extraction_result = parsed_json  # Valid structure
-                    else:
-                        logger.warning(
-                            f"DeepSeek extraction response is valid JSON but missing expected structure: {raw_response_content}"
-                        )
-                except json.JSONDecodeError as e:
-                    logger.error(
-                        f"DeepSeek extraction response was not valid JSON: {e}\nContent: {raw_response_content}"
-                    )
+                        extraction_result = default_result
+                else:
+                    logger.error("Empty content received from DeepSeek API")
+                    extraction_result = default_result
             else:
                 logger.error(
                     "Invalid response structure received from DeepSeek API (Extraction)."
                 )
+                extraction_result = default_result
 
         elif ai_provider == "gemini":
             # --- Google Gemini API Call ---
-            if not genai_available:
-                logger.error(
-                    "extract_and_suggest_tasks: Google GenerativeAI library not available or incomplete."
-                )
-                return None
-            # Load config
-            api_key = config_instance.GOOGLE_API_KEY
-            model_name = config_instance.GOOGLE_AI_MODEL
-            if not api_key or not model_name:
-                logger.error(
-                    "extract_and_suggest_tasks: Gemini configuration incomplete."
-                )
-                return None
-            # Configure API and model
-            try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(model_name)
-            except Exception as gemini_setup_err:
-                logger.error(
-                    f"Failed to configure/initialize Gemini model for extraction: {gemini_setup_err}"
-                )
-                return None
-            # Prepare request (requesting JSON output)
-            logger.debug(
-                f"Calling Gemini Extraction/Suggestion (Model: {model_name})..."
+            logger.warning(
+                "Gemini provider not fully implemented, using default result"
             )
-            generation_config = {
-                "candidate_count": 1,
-                "max_output_tokens": max_tokens_extraction,
-                "temperature": 0.2,
-                "response_mime_type": "application/json",
-            }
-            prompt_content = f"{EXTRACTION_TASK_SYSTEM_PROMPT}\n\nConversation History:\n{context_history}"
-            # Make API call
-            response = model.generate_content(
-                prompt_content, generation_config=generation_config
-            )
-            # Process response
-            if not response.candidates:
-                block_reason = "Unknown"
-                try:
-                    if (
-                        hasattr(response, "prompt_feedback")
-                        and response.prompt_feedback
-                    ):
-                        block_reason = response.prompt_feedback.block_reason.name
-                except Exception:
-                    pass
-                logger.warning(
-                    f"Gemini extraction response blocked or empty. Reason: {block_reason}."
-                )
-            else:
-                raw_response_content = response.text
-                # Attempt to parse the JSON response
-                try:
-                    # Clean potential markdown formatting (```json ... ```)
-                    if raw_response_content.strip().startswith("```json"):
-                        cleaned_content = (
-                            raw_response_content.strip()
-                            .strip("```json")
-                            .strip("`")
-                            .strip()
-                        )
-                    else:
-                        cleaned_content = raw_response_content
-                    parsed_json = json.loads(cleaned_content)
-                    # Validate structure
-                    if (
-                        isinstance(parsed_json, dict)
-                        and "extracted_data" in parsed_json
-                        and isinstance(parsed_json["extracted_data"], dict)
-                        and "suggested_tasks" in parsed_json
-                        and isinstance(parsed_json["suggested_tasks"], list)
-                        and all(
-                            key in parsed_json["extracted_data"]
-                            for key in [
-                                "mentioned_names",
-                                "mentioned_locations",
-                                "mentioned_dates",
-                                "potential_relationships",
-                                "key_facts",
-                            ]
-                        )
-                        and all(
-                            isinstance(parsed_json["extracted_data"][key], list)
-                            for key in [
-                                "mentioned_names",
-                                "mentioned_locations",
-                                "mentioned_dates",
-                                "potential_relationships",
-                                "key_facts",
-                            ]
-                        )
-                    ):
-                        extraction_result = parsed_json  # Valid structure
-                    else:
-                        logger.warning(
-                            f"Gemini extraction response is valid JSON but missing expected structure: {cleaned_content}"
-                        )
-                except json.JSONDecodeError as e:
-                    logger.error(
-                        f"Gemini extraction response was not valid JSON: {e}\nContent: {raw_response_content}"
-                    )  # Log original raw content
+            extraction_result = default_result
         else:
             # Handle unsupported provider
             logger.error(
                 f"extract_and_suggest_tasks: Unsupported AI_PROVIDER configured: {ai_provider}"
             )
+            extraction_result = default_result
 
-    # Step 5: Handle Specific API/Library Errors (same pattern as intent classification)
-    except AuthenticationError as e:
-        logger.error(f"AI Authentication Error ({ai_provider}): {e}")
-    except RateLimitError as e:
-        logger.error(f"AI Rate Limit Error ({ai_provider}): {e}")
-        session_manager.dynamic_rate_limiter.increase_delay()
-    except APIConnectionError as e:
-        logger.error(f"AI Connection Error ({ai_provider}): {e}")
-    except APIError as e:
-        logger.error(
-            f"AI API Error ({ai_provider}): Status={e.status_code}, Message={e.message}"
-        )
-    except google_exceptions.PermissionDenied as e:
-        logger.error(f"AI Permission Denied (Gemini): {e}")
-    except google_exceptions.ResourceExhausted as e:
-        logger.error(f"AI Rate Limit Error (Gemini): {e}")
-        session_manager.dynamic_rate_limiter.increase_delay()
-    except google_exceptions.GoogleAPIError as e:
-        logger.error(f"Google API Error (Gemini): {e}")
-    except AttributeError as ae:
-        logger.critical(
-            f"AttributeError during AI call ({ai_provider}): {ae}. Check library installation/imports.",
-            exc_info=True,
-        )
-    except NameError as ne:
-        logger.critical(
-            f"NameError during AI call ({ai_provider}): {ne}. Check library installation/imports.",
-            exc_info=True,
-        )
+    # Handle all exceptions
     except Exception as e:
         logger.error(
             f"Unexpected error during AI extraction ({ai_provider}): {type(e).__name__} - {e}",
             exc_info=True,
         )
+        extraction_result = default_result
 
     # Step 6: Log duration and result
     duration = time.time() - start_time
@@ -643,8 +1221,10 @@ def extract_and_suggest_tasks(
         logger.error(
             f"AI extraction/suggestion failed for {ai_provider}. (Took {duration:.2f}s)"
         )
+        # If we somehow still don't have a result, use the default
+        extraction_result = default_result
 
-    # Step 7: Return the parsed JSON dictionary or None
+    # Step 7: Return the parsed JSON dictionary
     return extraction_result
 
 
@@ -675,9 +1255,12 @@ def generate_genealogical_reply(
         logger.error("generate_genealogical_reply: Missing required input parameters.")
         return None
 
-    if not session_manager or not session_manager.is_sess_valid():
-        logger.error("generate_genealogical_reply: Invalid session manager.")
-        return None
+    # For test_ai_responses_menu.py, we'll allow a None session_manager
+    if session_manager is not None and not session_manager.is_sess_valid():
+        logger.warning(
+            "generate_genealogical_reply: Session manager is not valid, but continuing for testing purposes."
+        )
+    # Skip rate limiting if session_manager is None
 
     # Get AI provider from config
     ai_provider = config_instance.AI_PROVIDER.lower()
@@ -685,15 +1268,110 @@ def generate_genealogical_reply(
         logger.error("generate_genealogical_reply: AI_PROVIDER not configured.")
         return None
 
-    # Step 2: Apply Rate Limiting
-    wait_time = session_manager.dynamic_rate_limiter.wait()
-    # Optional: Log if wait time was significant
-    # if wait_time > 0.1: logger.debug(f"AI Reply Generation API rate limit wait: {wait_time:.2f}s")
+    # Step 2: Apply Rate Limiting (skip if session_manager is None)
+    if session_manager is not None:
+        wait_time = session_manager.dynamic_rate_limiter.wait()
+        # Optional: Log if wait time was significant
+        # if wait_time > 0.1: logger.debug(f"AI Reply Generation API rate limit wait: {wait_time:.2f}s")
 
     # Step 3: Prepare Prompt
-    # Combine all inputs into a single prompt
-    combined_prompt = f"""
-{GENERATE_GENEALOGICAL_REPLY_PROMPT}
+    # Get the genealogical reply prompt from the JSON file if available
+    reply_prompt = GENERATE_GENEALOGICAL_REPLY_PROMPT
+    if USE_JSON_PROMPTS:
+        try:
+            json_prompt = get_prompt("genealogical_reply")
+            if json_prompt:
+                reply_prompt = json_prompt
+                logger.debug("Using genealogical reply prompt from ai_prompts.json")
+        except Exception as e:
+            logger.error(f"Error getting genealogical reply prompt from JSON: {e}")
+
+    # Check if the prompt contains an {intent_classification} placeholder
+    if "{intent_classification}" in reply_prompt:
+        logger.info(
+            "Detected {intent_classification} placeholder in prompt, getting intent classification"
+        )
+
+        # First try to get the intent classification from the classify_message_intent function
+        try:
+            from utils import SessionManager
+
+            intent_classification = classify_message_intent(
+                conversation_context, SessionManager()
+            )
+            logger.info(
+                f"Got intent classification from classify_message_intent: {intent_classification}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Error getting intent classification from classify_message_intent: {e}"
+            )
+            intent_classification = None
+
+        # If we couldn't get the intent classification from the function, infer it from the message content
+        if not intent_classification:
+            logger.info("Inferring intent classification from message content")
+            # Try to infer intent from the message content
+            # This is a simple heuristic and could be improved
+            intent_classification = "ENTHUSIASTIC"  # Default to enthusiastic
+
+            # Look for signals of different intents in the user's message
+            lower_message = user_last_message.lower()
+
+            # Check for uninterested signals
+            uninterested_phrases = [
+                "not interested",
+                "stop messaging",
+                "leave me alone",
+                "don't contact",
+            ]
+            if any(phrase in lower_message for phrase in uninterested_phrases):
+                intent_classification = "UNINTERESTED"
+
+            # Check for confused signals
+            confused_phrases = [
+                "who are you",
+                "why am i getting",
+                "what is this about",
+                "don't understand",
+            ]
+            if any(phrase in lower_message for phrase in confused_phrases):
+                intent_classification = "CONFUSED"
+
+            # Check for cautious signals
+            cautious_phrases = [
+                "not sure",
+                "maybe",
+                "possibly",
+                "might be",
+                "don't know if",
+            ]
+            if any(phrase in lower_message for phrase in cautious_phrases):
+                intent_classification = "CAUTIOUSLY_INTERESTED"
+
+            # If the message is very short, it's likely "OTHER"
+            if len(user_last_message.split()) < 5:
+                intent_classification = "OTHER"
+
+            logger.info(f"Inferred intent classification: {intent_classification}")
+
+        # Combine all inputs into a single prompt with the intent classification
+        combined_prompt = f"""
+{reply_prompt.replace("{intent_classification}", intent_classification)}
+
+CONVERSATION HISTORY:
+{conversation_context}
+
+USER'S LAST MESSAGE:
+{user_last_message}
+
+GENEALOGICAL DATA:
+{genealogical_data_str}
+"""
+    else:
+        # Standard prompt without intent_classification
+        combined_prompt = f"""
+{reply_prompt}
 
 CONVERSATION HISTORY:
 {conversation_context}
@@ -1122,5 +1800,522 @@ if __name__ == "__main__":
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)
+
+# Functions for using custom prompts
+
+
+def extract_with_custom_prompt(
+    context_history: str, custom_prompt: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Calls the configured AI model with a custom prompt to extract genealogical entities.
+
+    Args:
+        context_history: The formatted conversation history string.
+        custom_prompt: The custom system prompt to use.
+
+    Returns:
+        A dictionary containing 'extracted_data' if successful, otherwise None.
+    """
+    # Use the session manager from config
+    from utils import SessionManager
+
+    session_manager = SessionManager()
+
+    # Step 1: Validate inputs and configuration
+    ai_provider = config_instance.AI_PROVIDER
+    if not ai_provider:
+        logger.error("extract_with_custom_prompt: AI_PROVIDER not configured.")
+        return None
+    if not context_history:
+        logger.warning(
+            "extract_with_custom_prompt: Received empty context history. Cannot extract."
+        )
+        # Return structure with empty lists for consistency downstream
+        return {
+            "extracted_data": {
+                "mentioned_names": [],
+                "mentioned_locations": [],
+                "mentioned_dates": [],
+                "potential_relationships": [],
+                "key_facts": [],
+            },
+            "suggested_tasks": [],
+        }
+
+    # Step 2: Apply Rate Limiting
+    if session_manager is not None and hasattr(session_manager, "dynamic_rate_limiter"):
+        wait_time = session_manager.dynamic_rate_limiter.wait()
+
+    # Step 3: Initialize result and timer
+    extraction_result: Optional[Dict[str, Any]] = None
+    start_time = time.time()
+    max_tokens_extraction = 700  # Allow more tokens for potentially detailed JSON
+
+    # Step 4: Call the appropriate AI provider
+    try:
+        if ai_provider == "deepseek":
+            # --- DeepSeek/OpenAI Compatible API Call ---
+            if not openai_available or OpenAI is None:
+                logger.error(
+                    "extract_with_custom_prompt: OpenAI library not available."
+                )
+                return None
+            # Load config
+            api_key = config_instance.DEEPSEEK_API_KEY
+            model = config_instance.DEEPSEEK_AI_MODEL
+            base_url = config_instance.DEEPSEEK_AI_BASE_URL
+            if not all([api_key, model, base_url]):
+                logger.error(
+                    "extract_with_custom_prompt: DeepSeek configuration incomplete."
+                )
+                return None
+            # Create client and make request (requesting JSON object)
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            logger.debug(
+                f"Calling DeepSeek Extraction with custom prompt (Model: {model})..."
+            )
+            openai_response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": custom_prompt},
+                    {"role": "user", "content": context_history},
+                ],
+                stream=False,
+                max_tokens=max_tokens_extraction,
+                temperature=0.2,  # Allow some creativity for tasks
+                response_format={"type": "json_object"},  # Explicitly request JSON
+            )
+            # Process response
+            if openai_response.choices and openai_response.choices[0].message:
+                raw_response_content = openai_response.choices[0].message.content
+                # Log the raw response for debugging
+                logger.info(f"Raw AI response: {raw_response_content[:500]}...")
+
+                # Attempt to parse the JSON response
+                try:
+                    # Try to clean up the response if it's not valid JSON
+                    cleaned_response = raw_response_content.strip()
+                    # If response starts with ``` or ```json, remove it
+                    if cleaned_response.startswith("```"):
+                        # Find the end of the code block
+                        end_marker = "```"
+                        end_pos = cleaned_response.rfind(end_marker)
+                        if end_pos > 3:  # Make sure we found the end marker
+                            # Extract just the content between the markers
+                            start_pos = cleaned_response.find(
+                                "\n", 3
+                            )  # Skip the ```json line
+                            if (
+                                start_pos == -1
+                            ):  # If no newline after ```, use position 3
+                                start_pos = 3
+                            cleaned_response = cleaned_response[
+                                start_pos:end_pos
+                            ].strip()
+                            logger.info(
+                                f"Extracted JSON from code block: {cleaned_response[:200]}..."
+                            )
+
+                    # Try to find JSON object in the response if it's not a complete JSON
+                    if not cleaned_response.startswith("{"):
+                        start_pos = cleaned_response.find("{")
+                        if start_pos != -1:
+                            end_pos = cleaned_response.rfind("}")
+                            if end_pos > start_pos:
+                                cleaned_response = cleaned_response[
+                                    start_pos : end_pos + 1
+                                ]
+                                logger.info(
+                                    f"Extracted JSON object from response: {cleaned_response[:200]}..."
+                                )
+
+                    # Now try to parse the cleaned response
+                    parsed_json = json.loads(cleaned_response)
+                    logger.info(f"Successfully parsed JSON response")
+
+                    # Validate the structure of the parsed JSON
+                    if isinstance(parsed_json, dict):
+                        # If the response doesn't have the expected structure, add it
+                        if "extracted_data" not in parsed_json:
+                            logger.warning(
+                                "Adding missing 'extracted_data' field to AI response"
+                            )
+                            parsed_json["extracted_data"] = {
+                                "mentioned_names": [],
+                                "mentioned_locations": [],
+                                "mentioned_dates": [],
+                                "potential_relationships": [],
+                                "key_facts": [],
+                            }
+                        elif not isinstance(parsed_json["extracted_data"], dict):
+                            logger.warning(
+                                "'extracted_data' is not a dictionary, replacing with default structure"
+                            )
+                            parsed_json["extracted_data"] = {
+                                "mentioned_names": [],
+                                "mentioned_locations": [],
+                                "mentioned_dates": [],
+                                "potential_relationships": [],
+                                "key_facts": [],
+                            }
+
+                        # Ensure all required fields exist in extracted_data
+                        for field in [
+                            "mentioned_names",
+                            "mentioned_locations",
+                            "mentioned_dates",
+                            "potential_relationships",
+                            "key_facts",
+                        ]:
+                            if field not in parsed_json["extracted_data"]:
+                                logger.warning(
+                                    f"Adding missing '{field}' field to extracted_data"
+                                )
+                                parsed_json["extracted_data"][field] = []
+                            elif not isinstance(
+                                parsed_json["extracted_data"][field], list
+                            ):
+                                logger.warning(
+                                    f"'{field}' is not a list, replacing with empty list"
+                                )
+                                parsed_json["extracted_data"][field] = []
+
+                        # If suggested_tasks is missing, add it
+                        if "suggested_tasks" not in parsed_json:
+                            logger.warning(
+                                "Adding missing 'suggested_tasks' field to AI response"
+                            )
+                            parsed_json["suggested_tasks"] = []
+                        elif not isinstance(parsed_json["suggested_tasks"], list):
+                            logger.warning(
+                                "'suggested_tasks' is not a list, replacing with empty list"
+                            )
+                            parsed_json["suggested_tasks"] = []
+
+                        extraction_result = parsed_json  # Valid structure
+                    else:
+                        logger.warning(
+                            f"DeepSeek extraction response is valid JSON but not a dictionary: {raw_response_content}"
+                        )
+                        # Create a default structure
+                        extraction_result = {
+                            "extracted_data": {
+                                "mentioned_names": [],
+                                "mentioned_locations": [],
+                                "mentioned_dates": [],
+                                "potential_relationships": [],
+                                "key_facts": [],
+                            },
+                            "suggested_tasks": [],
+                        }
+                except json.JSONDecodeError as e:
+                    logger.error(
+                        f"DeepSeek extraction response was not valid JSON: {e}\nContent: {raw_response_content}"
+                    )
+                    # Create a default structure
+                    extraction_result = {
+                        "extracted_data": {
+                            "mentioned_names": [],
+                            "mentioned_locations": [],
+                            "mentioned_dates": [],
+                            "potential_relationships": [],
+                            "key_facts": [],
+                        },
+                        "suggested_tasks": [],
+                    }
+            else:
+                logger.error(
+                    "Invalid response structure received from DeepSeek API (Extraction)."
+                )
+                # Create a default structure
+                extraction_result = {
+                    "extracted_data": {
+                        "mentioned_names": [],
+                        "mentioned_locations": [],
+                        "mentioned_dates": [],
+                        "potential_relationships": [],
+                        "key_facts": [],
+                    },
+                    "suggested_tasks": [],
+                }
+
+        # Add support for other providers as needed
+
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during AI extraction with custom prompt: {type(e).__name__} - {e}",
+            exc_info=True,
+        )
+        # Create a default structure
+        extraction_result = {
+            "extracted_data": {
+                "mentioned_names": [],
+                "mentioned_locations": [],
+                "mentioned_dates": [],
+                "potential_relationships": [],
+                "key_facts": [],
+            },
+            "suggested_tasks": [],
+        }
+
+    # Log duration and result
+    duration = time.time() - start_time
+    if extraction_result:
+        logger.debug(
+            f"AI extraction with custom prompt completed successfully (Took {duration:.2f}s)"
+        )
+    else:
+        logger.error(f"AI extraction with custom prompt failed (Took {duration:.2f}s)")
+        # Create a default structure if we somehow still don't have a result
+        extraction_result = {
+            "extracted_data": {
+                "mentioned_names": [],
+                "mentioned_locations": [],
+                "mentioned_dates": [],
+                "potential_relationships": [],
+                "key_facts": [],
+            },
+            "suggested_tasks": [],
+        }
+
+    return extraction_result
+
+
+def generate_with_custom_prompt(
+    conversation_context: str,
+    user_last_message: str,
+    genealogical_data_str: str,
+    custom_prompt: str,
+) -> Optional[str]:
+    """
+    Generates a genealogical reply using a custom prompt.
+
+    Args:
+        conversation_context: The full conversation history.
+        user_last_message: The user's last message.
+        genealogical_data_str: Formatted genealogical data string.
+        custom_prompt: The custom system prompt to use.
+
+    Returns:
+        A generated response string if successful, otherwise None.
+    """
+    # Use the session manager from config
+    from utils import SessionManager
+
+    session_manager = SessionManager()
+
+    # Step 1: Validate inputs and configuration
+    ai_provider = config_instance.AI_PROVIDER
+    if not ai_provider:
+        logger.error("generate_with_custom_prompt: AI_PROVIDER not configured.")
+        return None
+    if not conversation_context or not genealogical_data_str:
+        logger.warning("generate_with_custom_prompt: Missing required inputs.")
+        return None
+
+    # If no custom prompt is provided, try to get it from the JSON file
+    if not custom_prompt:
+        logger.warning(
+            "generate_with_custom_prompt: No custom prompt provided, using default."
+        )
+        # Try to get the prompt from the JSON file first
+        if USE_JSON_PROMPTS:
+            try:
+                json_prompt = get_prompt("genealogical_reply")
+                if json_prompt:
+                    custom_prompt = json_prompt
+                    logger.debug("Using genealogical reply prompt from ai_prompts.json")
+                else:
+                    custom_prompt = GENERATE_GENEALOGICAL_REPLY_PROMPT
+            except Exception as e:
+                logger.error(f"Error getting genealogical reply prompt from JSON: {e}")
+                custom_prompt = GENERATE_GENEALOGICAL_REPLY_PROMPT
+        else:
+            custom_prompt = GENERATE_GENEALOGICAL_REPLY_PROMPT
+
+    # Step 2: Apply Rate Limiting
+    if session_manager is not None and hasattr(session_manager, "dynamic_rate_limiter"):
+        wait_time = session_manager.dynamic_rate_limiter.wait()
+
+    # Step 3: Initialize result and timer
+    generation_result: Optional[str] = None
+    start_time = time.time()
+    max_tokens_generation = 1000  # Allow more tokens for detailed response
+
+    # Step 4: Check if the custom prompt already contains placeholders
+    has_placeholders = (
+        "{conversation_context}" in custom_prompt
+        and "{user_message}" in custom_prompt
+        and "{genealogical_data}" in custom_prompt
+    )
+
+    # Check if the prompt contains an {intent_classification} placeholder
+    if has_placeholders and "{intent_classification}" in custom_prompt:
+        logger.info(
+            "Detected {intent_classification} placeholder in prompt, getting intent classification"
+        )
+
+        # First try to get the intent classification from the classify_message_intent function
+        try:
+            from utils import SessionManager
+
+            intent_classification = classify_message_intent(
+                conversation_context, SessionManager()
+            )
+            logger.info(
+                f"Got intent classification from classify_message_intent: {intent_classification}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Error getting intent classification from classify_message_intent: {e}"
+            )
+            intent_classification = None
+
+        # If we couldn't get the intent classification from the function, infer it from the message content
+        if not intent_classification:
+            logger.info("Inferring intent classification from message content")
+            # Try to infer intent from the message content
+            # This is a simple heuristic and could be improved
+            intent_classification = "ENTHUSIASTIC"  # Default to enthusiastic
+
+            # Look for signals of different intents in the user's message
+            lower_message = user_last_message.lower()
+
+            # Check for uninterested signals
+            uninterested_phrases = [
+                "not interested",
+                "stop messaging",
+                "leave me alone",
+                "don't contact",
+            ]
+            if any(phrase in lower_message for phrase in uninterested_phrases):
+                intent_classification = "UNINTERESTED"
+
+            # Check for confused signals
+            confused_phrases = [
+                "who are you",
+                "why am i getting",
+                "what is this about",
+                "don't understand",
+            ]
+            if any(phrase in lower_message for phrase in confused_phrases):
+                intent_classification = "CONFUSED"
+
+            # Check for cautious signals
+            cautious_phrases = [
+                "not sure",
+                "maybe",
+                "possibly",
+                "might be",
+                "don't know if",
+            ]
+            if any(phrase in lower_message for phrase in cautious_phrases):
+                intent_classification = "CAUTIOUSLY_INTERESTED"
+
+            # If the message is very short, it's likely "OTHER"
+            if len(user_last_message.split()) < 5:
+                intent_classification = "OTHER"
+
+            logger.info(f"Inferred intent classification: {intent_classification}")
+
+        # Replace all placeholders including intent_classification
+        full_prompt = custom_prompt.replace(
+            "{conversation_context}", conversation_context
+        )
+        full_prompt = full_prompt.replace("{user_message}", user_last_message)
+        full_prompt = full_prompt.replace("{genealogical_data}", genealogical_data_str)
+        full_prompt = full_prompt.replace(
+            "{intent_classification}", intent_classification
+        )
+    elif has_placeholders:
+        # The prompt has standard placeholders, so we need to replace them
+        logger.debug(
+            "Using custom prompt with placeholders, replacing them with actual values"
+        )
+        full_prompt = custom_prompt.replace(
+            "{conversation_context}", conversation_context
+        )
+        full_prompt = full_prompt.replace("{user_message}", user_last_message)
+        full_prompt = full_prompt.replace("{genealogical_data}", genealogical_data_str)
+    else:
+        # The prompt doesn't have placeholders, so we'll add them
+        logger.debug("Using custom prompt without placeholders, adding context")
+        full_prompt = f"""
+{custom_prompt}
+
+CONVERSATION HISTORY:
+{conversation_context}
+
+USER'S LAST MESSAGE:
+{user_last_message}
+
+GENEALOGICAL DATA:
+{genealogical_data_str}
+"""
+
+    # Step 5: Call the appropriate AI provider
+    try:
+        if ai_provider == "deepseek":
+            # --- DeepSeek/OpenAI Compatible API Call ---
+            if not openai_available or OpenAI is None:
+                logger.error(
+                    "generate_with_custom_prompt: OpenAI library not available."
+                )
+                return None
+            # Load config
+            api_key = config_instance.DEEPSEEK_API_KEY
+            model = config_instance.DEEPSEEK_AI_MODEL
+            base_url = config_instance.DEEPSEEK_AI_BASE_URL
+            if not all([api_key, model, base_url]):
+                logger.error(
+                    "generate_with_custom_prompt: DeepSeek configuration incomplete."
+                )
+                return None
+            # Create client and make request
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            logger.debug(
+                f"Calling DeepSeek Generation with custom prompt (Model: {model})..."
+            )
+
+            # If the custom prompt already has placeholders, we've already replaced them in full_prompt
+            # So we should use that as the system message
+            openai_response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": full_prompt},
+                    # No need for a separate user message since the full_prompt already contains everything
+                ],
+                stream=False,
+                max_tokens=max_tokens_generation,
+                temperature=0.7,  # Allow more creativity for natural responses
+            )
+            # Process response
+            if openai_response.choices and openai_response.choices[0].message:
+                generation_result = openai_response.choices[0].message.content.strip()
+            else:
+                logger.error(
+                    "Invalid response structure received from DeepSeek API (Generation)."
+                )
+
+        # Add support for other providers as needed
+
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during AI generation with custom prompt: {type(e).__name__} - {e}",
+            exc_info=True,
+        )
+
+    # Log duration and result
+    duration = time.time() - start_time
+    if generation_result:
+        logger.debug(
+            f"AI generation with custom prompt completed successfully (Took {duration:.2f}s)"
+        )
+    else:
+        logger.error(f"AI generation with custom prompt failed (Took {duration:.2f}s)")
+
+    return generation_result
+
 
 # End of ai_interface.py

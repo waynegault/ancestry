@@ -29,7 +29,6 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    TYPE_CHECKING,
 )
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 import json  # Added for self_test JSON loading
@@ -467,7 +466,7 @@ def _main_page_processing_loop(
 
 
 def coord(
-    session_manager: SessionManager, config_instance_arg, start: int = 1
+    session_manager: SessionManager, _config_instance_arg, start: int = 1
 ) -> bool:  # Renamed config_instance
     """
     Orchestrates the gathering of DNA matches from Ancestry.
@@ -1311,7 +1310,7 @@ def _execute_bulk_db_operations(
 
             # Perform bulk insert
             logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
-            session.bulk_insert_mappings(Person, insert_data)
+            session.bulk_insert_mappings(Person, insert_data)  # type: ignore
             logger.debug("Bulk insert Persons called.")
 
             # --- Get newly created IDs ---
@@ -1368,7 +1367,7 @@ def _execute_bulk_db_operations(
 
             if update_mappings:
                 logger.debug(f"Bulk updating {len(update_mappings)} Person records...")
-                session.bulk_update_mappings(Person, update_mappings)
+                session.bulk_update_mappings(Person, update_mappings)  # type: ignore
                 logger.debug("Bulk update Persons called.")
             else:
                 logger.debug("No valid Person updates to perform.")
@@ -1469,7 +1468,7 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Bulk inserting {len(dna_insert_data)} DnaMatch records..."
                 )
-                session.bulk_insert_mappings(DnaMatch, dna_insert_data)
+                session.bulk_insert_mappings(DnaMatch, dna_insert_data)  # type: ignore
                 logger.debug("Bulk insert DnaMatches called.")
             else:
                 logger.debug("No new DnaMatch records to insert.")
@@ -1479,7 +1478,7 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Bulk updating {len(dna_update_mappings)} DnaMatch records..."
                 )
-                session.bulk_update_mappings(DnaMatch, dna_update_mappings)
+                session.bulk_update_mappings(DnaMatch, dna_update_mappings)  # type: ignore
                 logger.debug("Bulk update DnaMatches called.")
             else:
                 logger.debug("No existing DnaMatch records to update.")
@@ -1514,7 +1513,7 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Bulk inserting {len(tree_insert_data)} FamilyTree records..."
                 )
-                session.bulk_insert_mappings(FamilyTree, tree_insert_data)
+                session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
                 logger.debug("Bulk insert FamilyTrees called.")
             else:
                 logger.debug("No valid FamilyTree records to insert.")
@@ -1543,7 +1542,7 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Bulk updating {len(tree_update_mappings)} FamilyTree records..."
                 )
-                session.bulk_update_mappings(FamilyTree, tree_update_mappings)
+                session.bulk_update_mappings(FamilyTree, tree_update_mappings)  # type: ignore
                 logger.debug("Bulk update FamilyTrees called.")
             else:
                 logger.debug("No valid FamilyTree updates.")
@@ -2320,7 +2319,7 @@ def _prepare_family_tree_operation_data(
 
 
 def _do_match(
-    session: SqlAlchemySession,  # Changed from _ to session
+    _session: SqlAlchemySession,  # Changed from _ to session
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
@@ -2528,7 +2527,7 @@ def _do_match(
 
 def get_matches(
     session_manager: SessionManager,
-    db_session: SqlAlchemySession,  # Parameter name changed for clarity
+    _db_session: SqlAlchemySession,  # Parameter name changed for clarity
     current_page: int = 1,
 ) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
     """
@@ -3417,8 +3416,7 @@ def _fetch_batch_relationship_prob(
     Args:
         session_manager: The active SessionManager instance.
         match_uuid: The UUID (Sample ID) of the target match.
-        max_labels_param: The maximum number of relationship labels to include
-                          in the result string (e.g., 2 for "1st or 2nd Cousin").
+        max_labels_param: The maximum number of relationship labels to include in the result string (e.g., 2 for "1st or 2nd Cousin").
 
     Returns:
         A formatted string like "1st cousin [95.5%]" or "Distant relationship?",
@@ -3781,7 +3779,7 @@ def self_test() -> bool:
     Tests key components of the script using mock objects and data.
     Focuses on testing the internal logic of helper functions.
     """
-    from unittest.mock import MagicMock, patch, PropertyMock
+    from unittest.mock import MagicMock, patch
     import unittest  # For assertions
 
     print("\n=== Running Action 6 (Gather DNA Matches) Self-Test (REVISED) ===\n")
@@ -3953,6 +3951,58 @@ def self_test() -> bool:
     except Exception as e:
         print(f"  ✗ _adjust_delay test failed: {e}")
     # End of Test 4
+
+    # --- Test 5: _fetch_combined_details (clean validation test) ---
+    print("\nTest 5: Testing _fetch_combined_details function validation...")
+    tests_run += 1
+    try:
+        # Test input validation - missing UUID (should return None immediately)
+        mock_session_manager_test5 = MagicMock()
+        mock_session_manager_test5.my_uuid = "MY_UUID_TEST"
+        result_no_uuid = _fetch_combined_details(mock_session_manager_test5, "")
+        unittest.TestCase().assertIsNone(result_no_uuid)
+
+        # Test input validation - missing my_uuid (should return None immediately)
+        mock_session_manager_test5.my_uuid = None
+        result_no_my_uuid = _fetch_combined_details(
+            mock_session_manager_test5, "MATCH_UUID"
+        )
+        unittest.TestCase().assertIsNone(result_no_my_uuid)
+
+        # Test basic function structure exists and is callable
+        unittest.TestCase().assertTrue(callable(_fetch_combined_details))
+
+        print("  ✓ _fetch_combined_details: Input validation and structure correct.")
+        tests_passed += 1
+    except Exception as e:
+        print(f"  ✗ _fetch_combined_details test failed: {e}")
+    # End of Test 5
+
+    # --- Test 6: _fetch_batch_badge_details (clean validation test) ---
+    print("\nTest 6: Testing _fetch_batch_badge_details function validation...")
+    tests_run += 1
+    try:
+        # Test input validation - missing UUID (should return None immediately)
+        mock_session_manager_test6 = MagicMock()
+        mock_session_manager_test6.my_uuid = "MY_UUID_BADGE"
+        result_no_uuid = _fetch_batch_badge_details(mock_session_manager_test6, "")
+        unittest.TestCase().assertIsNone(result_no_uuid)
+
+        # Test input validation - missing my_uuid (should return None immediately)
+        mock_session_manager_test6.my_uuid = None
+        result_no_my_uuid = _fetch_batch_badge_details(
+            mock_session_manager_test6, "MATCH_UUID"
+        )
+        unittest.TestCase().assertIsNone(result_no_my_uuid)
+
+        # Test basic function structure exists and is callable
+        unittest.TestCase().assertTrue(callable(_fetch_batch_badge_details))
+
+        print("  ✓ _fetch_batch_badge_details: Input validation and structure correct.")
+        tests_passed += 1
+    except Exception as e:
+        print(f"  ✗ _fetch_batch_badge_details test failed: {e}")
+    # End of Test 6
 
     # --- Print test summary ---
     print(f"\n=== Test Summary: {tests_passed}/{tests_run} tests passed ===")

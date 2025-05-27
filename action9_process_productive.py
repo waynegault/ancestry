@@ -38,44 +38,15 @@ from ai_interface import extract_and_suggest_tasks  # AI interaction functions
 from cache import cache_result  # Caching utility (used for templates)
 from api_utils import call_send_message_api  # Real API function for sending messages
 
-# Flag to control GEDCOM utilities availability
+# Flags to control utilities availability
 GEDCOM_UTILS_AVAILABLE = False
 API_UTILS_AVAILABLE = False
+RELATIONSHIP_UTILS_AVAILABLE = False
 # Global variable to cache the GEDCOM data
 _CACHED_GEDCOM_DATA = None
 
-# Import required modules and functions
-try:
-    # Import from gedcom_utils
-    from gedcom_utils import (
-        calculate_match_score,
-        _normalize_id,
-        load_gedcom_data,
-        GedcomData,
-    )
 
-    # Import from relationship_utils
-    from relationship_utils import (
-        fast_bidirectional_bfs,
-        convert_gedcom_path_to_unified_format,
-        format_relationship_path_unified,
-    )
-
-    GEDCOM_UTILS_AVAILABLE = True
-except ImportError:
-    pass
-
-# Try to import API utilities separately
-try:
-    # Import from action11
-    from action11 import _search_ancestry_api, _process_and_score_suggestions
-
-    API_UTILS_AVAILABLE = True
-except ImportError:
-    pass
-
-
-def get_gedcom_data() -> Optional[Any]:
+def get_gedcom_data():
     """
     Returns the cached GEDCOM data instance, loading it if necessary.
 
@@ -112,6 +83,8 @@ def get_gedcom_data() -> Optional[Any]:
     # Load GEDCOM data
     try:
         logger.info(f"Loading GEDCOM file {gedcom_path.name} (first time)...")
+        from gedcom_utils import load_gedcom_data
+
         _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
         if _CACHED_GEDCOM_DATA:
             logger.info(f"GEDCOM file loaded successfully and cached for reuse.")
@@ -128,17 +101,131 @@ def get_gedcom_data() -> Optional[Any]:
         return None
 
 
-# --- Pydantic Models for AI Response Validation ---
-class ExtractedData(BaseModel):
-    """Pydantic model for validating the extracted_data structure in AI responses."""
+# Import required modules and functions
+try:
+    # Import from gedcom_utils
+    from gedcom_utils import (
+        calculate_match_score,
+        _normalize_id,
+        load_gedcom_data,
+        GedcomData,
+    )
 
+    # Import from relationship_utils
+    from relationship_utils import (
+        fast_bidirectional_bfs,
+        convert_gedcom_path_to_unified_format,
+        format_relationship_path_unified,
+    )
+
+    GEDCOM_UTILS_AVAILABLE = True
+except ImportError:
+    pass
+
+# Try to import relationship utilities
+try:
+    from relationship_utils import (
+        get_gedcom_relationship_path,
+        get_ancestry_relationship_path,
+    )
+
+    RELATIONSHIP_UTILS_AVAILABLE = True
+    logger.info("Relationship utilities successfully imported.")
+except ImportError:
+    logger.warning(
+        "Relationship utilities not available. Cannot get relationship paths."
+    )
+    pass
+
+# Try to import API utilities separately
+try:
+    # Import from action11
+    from action11 import _search_ancestry_api, _process_and_score_suggestions
+
+    API_UTILS_AVAILABLE = True
+except ImportError:
+    pass
+
+
+# --- Pydantic Models for AI Response Validation ---
+class NameData(BaseModel):
+    """Model for structured name information."""
+
+    full_name: str
+    nicknames: List[str] = Field(default_factory=list)
+    maiden_name: Optional[str] = None
+    generational_suffix: Optional[str] = None
+
+
+class VitalRecord(BaseModel):
+    """Model for vital record information."""
+
+    person: str
+    event_type: str
+    date: str
+    place: str
+    certainty: str = "unknown"
+
+
+class Relationship(BaseModel):
+    """Model for relationship information."""
+
+    person1: str
+    relationship: str
+    person2: str
+    context: str = ""
+
+
+class Location(BaseModel):
+    """Model for location information."""
+
+    place: str
+    context: str = ""
+    time_period: str = ""
+
+
+class Occupation(BaseModel):
+    """Model for occupation information."""
+
+    person: str
+    occupation: str
+    location: str = ""
+    time_period: str = ""
+
+
+class ExtractedData(BaseModel):
+    """Enhanced Pydantic model for validating the extracted_data structure in AI responses."""
+
+    # Legacy fields for backward compatibility
     mentioned_names: List[str] = Field(default_factory=list)
     mentioned_locations: List[str] = Field(default_factory=list)
     mentioned_dates: List[str] = Field(default_factory=list)
     potential_relationships: List[str] = Field(default_factory=list)
     key_facts: List[str] = Field(default_factory=list)
 
-    @field_validator("*", mode="before")
+    # Enhanced structured fields
+    structured_names: List[NameData] = Field(default_factory=list)
+    vital_records: List[VitalRecord] = Field(default_factory=list)
+    relationships: List[Relationship] = Field(default_factory=list)
+    locations: List[Location] = Field(default_factory=list)
+    occupations: List[Occupation] = Field(default_factory=list)
+    research_questions: List[str] = Field(default_factory=list)
+    documents_mentioned: List[str] = Field(default_factory=list)
+    dna_information: List[str] = Field(default_factory=list)
+    suggested_tasks: List[str] = Field(default_factory=list)
+
+    @field_validator(
+        "mentioned_names",
+        "mentioned_locations",
+        "mentioned_dates",
+        "potential_relationships",
+        "key_facts",
+        "research_questions",
+        "documents_mentioned",
+        "dna_information",
+        "suggested_tasks",
+        mode="before",
+    )
     @classmethod
     def ensure_list_of_strings(cls, v):
         """Ensures all fields are lists of strings."""
@@ -148,6 +235,21 @@ class ExtractedData(BaseModel):
             return []
         # Convert all items to strings and filter out None values
         return [str(item) for item in v if item is not None]
+
+    def get_all_names(self) -> List[str]:
+        """Get all names from both legacy and structured fields."""
+        names = list(self.mentioned_names)
+        for name_data in self.structured_names:
+            names.append(name_data.full_name)
+            names.extend(name_data.nicknames)
+        return list(set(names))  # Remove duplicates
+
+    def get_all_locations(self) -> List[str]:
+        """Get all locations from both legacy and structured fields."""
+        locations = list(self.mentioned_locations)
+        for location in self.locations:
+            locations.append(location.place)
+        return list(set(locations))  # Remove duplicates
 
 
 class AIResponse(BaseModel):
@@ -441,13 +543,16 @@ def _format_context_for_ai_extraction(
 # End of _format_context_for_ai_extraction
 
 
-def _search_gedcom_for_names(names: List[str]) -> List[Dict[str, Any]]:
+def _search_gedcom_for_names(
+    names: List[str], gedcom_data: Optional[Any] = None
+) -> List[Dict[str, Any]]:
     """
     Searches the configured GEDCOM file for names and returns matching individuals.
     Uses the cached GEDCOM data to avoid loading the file multiple times.
 
     Args:
         names: List of names to search for in the GEDCOM file
+        gedcom_data: Optional pre-loaded GEDCOM data instance
 
     Returns:
         List of dictionaries containing information about matching individuals
@@ -461,14 +566,15 @@ def _search_gedcom_for_names(names: List[str]) -> List[Dict[str, Any]]:
         logger.error(error_msg)
         raise RuntimeError(error_msg)
 
-    # Get the cached GEDCOM data
-    gedcom_data = get_gedcom_data()
-    if not gedcom_data:
-        error_msg = "Failed to load GEDCOM data from cache or file"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
+    # Get the GEDCOM data (either from parameter or from cache)
+    if gedcom_data is None:
+        gedcom_data = get_gedcom_data()
+        if not gedcom_data:
+            error_msg = "Failed to load GEDCOM data from cache or file"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
-    logger.info(f"Searching cached GEDCOM data for: {names}")
+    logger.info(f"Searching GEDCOM data for: {names}")
 
     try:
         # Prepare search criteria
@@ -722,7 +828,7 @@ def _search_api_for_names(
 
 
 def _search_ancestry_tree(
-    session_manager: SessionManager, names: List[str]
+    session_manager: SessionManager, extracted_data: Union[ExtractedData, List[str]]
 ) -> Dict[str, Any]:
     """
     Searches the user's tree (GEDCOM or API) for names extracted by the AI.
@@ -733,26 +839,48 @@ def _search_ancestry_tree(
 
     Args:
         session_manager: The SessionManager instance.
-        names: A list of names extracted from the conversation.
+        extracted_data: ExtractedData object or list of names to search for.
 
     Returns:
         Dictionary containing search results and relationship paths
     """
-    # Step 1: Check if there are names to search for
+    # Step 1: Get all names from the extracted data
+    if isinstance(extracted_data, ExtractedData):
+        names = extracted_data.get_all_names()
+    elif isinstance(extracted_data, list):
+        # Legacy support for list of names
+        names = extracted_data
+    else:
+        logger.warning(
+            "Action 9 Tree Search: Invalid extracted_data type. Expected ExtractedData or list."
+        )
+        return {"results": [], "relationship_paths": {}}
+
     if not names:
         logger.debug("Action 9 Tree Search: No names extracted to search.")
         return {"results": [], "relationship_paths": {}}
 
     # Step 2: Get search method from config
     search_method = config_instance.TREE_SEARCH_METHOD
-    logger.info(f"Action 9 Tree Search: Method configured as '{search_method}'.")
+    logger.info(
+        f"Action 9 Tree Search: Method configured as '{search_method}'. Found {len(names)} names to search."
+    )
 
     # Step 3: Dispatch based on configured method
     search_results = []
 
     try:
         if search_method == "GEDCOM":
-            search_results = _search_gedcom_for_names(names)
+            # Get the cached GEDCOM data
+            gedcom_data = get_gedcom_data()
+            if not gedcom_data:
+                logger.warning(
+                    "Action 9 Tree Search: Failed to get cached GEDCOM data."
+                )
+                return {"results": [], "relationship_paths": {}}
+
+            # Pass the cached GEDCOM data to the search function
+            search_results = _search_gedcom_for_names(names, gedcom_data)
         elif search_method == "API":
             search_results = _search_api_for_names(session_manager, names)
         elif search_method == "NONE":
@@ -882,35 +1010,45 @@ def _identify_and_get_person_details(
             "BOTH",
         ]:
             try:
-                results = _search_gedcom_for_names(mentioned_names)
-                if results:
-                    # Get the top match
-                    top_match = results[0]
+                # Get the cached GEDCOM data
+                gedcom_data = get_gedcom_data()
+                if not gedcom_data:
+                    logger.warning(f"{log_prefix}: Failed to get cached GEDCOM data.")
+                else:
+                    # Pass the cached GEDCOM data to the search function
+                    results = _search_gedcom_for_names(mentioned_names, gedcom_data)
+                    if results:
+                        # Get the top match
+                        top_match = results[0]
 
-                    # Get person details
-                    person_id = top_match.get("id")
-                    if not person_id:
-                        logger.warning(f"{log_prefix}: No ID found for top match.")
-                        return None
+                        # Get person details
+                        person_id = top_match.get("id")
+                        if not person_id:
+                            logger.warning(f"{log_prefix}: No ID found for top match.")
+                        else:
+                            # Get relationship path
+                            relationship_path = ""
+                            if RELATIONSHIP_UTILS_AVAILABLE:
+                                try:
+                                    # Use the cached GEDCOM data for relationship path
+                                    relationship_path = get_gedcom_relationship_path(
+                                        person_id, gedcom_data=gedcom_data
+                                    )
+                                except Exception as e:
+                                    logger.error(
+                                        f"{log_prefix}: Error getting relationship path: {e}"
+                                    )
 
-                    # Get relationship path
-                    relationship_path = ""
-                    if RELATIONSHIP_UTILS_AVAILABLE:
-                        try:
-                            relationship_path = get_gedcom_relationship_path(person_id)
-                        except Exception as e:
-                            logger.error(
-                                f"{log_prefix}: Error getting relationship path: {e}"
-                            )
-
-                    # Return person details and relationship path
-                    return {
-                        "details": top_match,
-                        "relationship_path": relationship_path,
-                        "source": "GEDCOM",
-                    }
+                            # Return person details and relationship path
+                            return {
+                                "details": top_match,
+                                "relationship_path": relationship_path,
+                                "source": "GEDCOM",
+                            }
             except Exception as e:
-                logger.error(f"{log_prefix}: Error searching GEDCOM: {e}")
+                logger.error(
+                    f"{log_prefix}: Error searching GEDCOM: {e}", exc_info=True
+                )
 
         # Then try API search
         if API_UTILS_AVAILABLE and config_instance.TREE_SEARCH_METHOD in [
@@ -927,30 +1065,30 @@ def _identify_and_get_person_details(
                     person_id = top_match.get("id")
                     if not person_id:
                         logger.warning(f"{log_prefix}: No ID found for top API match.")
-                        return None
+                    else:
+                        # Get relationship path
+                        relationship_path = ""
+                        if RELATIONSHIP_UTILS_AVAILABLE:
+                            try:
+                                relationship_path = get_ancestry_relationship_path(
+                                    session_manager, person_id
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"{log_prefix}: Error getting API relationship path: {e}"
+                                )
 
-                    # Get relationship path
-                    relationship_path = ""
-                    try:
-                        relationship_path = get_ancestry_relationship_path(
-                            session_manager, person_id
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"{log_prefix}: Error getting API relationship path: {e}"
-                        )
-
-                    # Return person details and relationship path
-                    return {
-                        "details": top_match,
-                        "relationship_path": relationship_path,
-                        "source": "API",
-                    }
+                        # Return person details and relationship path
+                        return {
+                            "details": top_match,
+                            "relationship_path": relationship_path,
+                            "source": "API",
+                        }
             except Exception as e:
-                logger.error(f"{log_prefix}: Error searching API: {e}")
+                logger.error(f"{log_prefix}: Error searching API: {e}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"{log_prefix}: Error identifying person: {e}")
+        logger.error(f"{log_prefix}: Error identifying person: {e}", exc_info=True)
 
     return None
 
@@ -1078,9 +1216,18 @@ def _identify_and_get_person_details(
                 "surname": surname,
             }
 
-            # Search GEDCOM
+            # Search GEDCOM with pre-loaded GEDCOM data
             try:
-                matches = search_gedcom_for_criteria(search_criteria)
+                # Get the cached GEDCOM data - reuse the same instance throughout
+                gedcom_data = get_gedcom_data()
+                if not gedcom_data:
+                    logger.warning(f"{log_prefix}: Failed to get cached GEDCOM data.")
+                    continue
+
+                # Pass the pre-loaded GEDCOM data to the search function
+                matches = search_gedcom_for_criteria(
+                    search_criteria, gedcom_data=gedcom_data
+                )
                 if matches:
                     gedcom_results.extend(matches)
             except Exception as e:
@@ -1115,16 +1262,22 @@ def _identify_and_get_person_details(
                 logger.warning(f"{log_prefix}: Best GEDCOM match has no ID.")
                 return None
 
-            # Get family details
-            family_details = get_gedcom_family_details(person_id)
+            # Get family details with pre-loaded GEDCOM data
+            # Use the already loaded GEDCOM data from above
+            # No need to call get_gedcom_data() again
+            family_details = get_gedcom_family_details(
+                person_id, gedcom_data=gedcom_data
+            )
             if not family_details:
                 logger.warning(
                     f"{log_prefix}: Failed to get family details for GEDCOM person {person_id}."
                 )
                 return None
 
-            # Get relationship path
-            relationship_path = get_gedcom_relationship_path(person_id)
+            # Get relationship path with the same pre-loaded GEDCOM data instance
+            relationship_path = get_gedcom_relationship_path(
+                person_id, gedcom_data=gedcom_data
+            )
 
             # Add match score to the details
             family_details["match_score"] = best_match.get("total_score", 0)
@@ -1368,23 +1521,33 @@ def _format_genealogical_data_for_ai(
             f"MATCH SCORE: {match_score} (out of {match_count} total matches)"
         )
 
-    # Add birth information
+    # Add birth information with complete details
     birth_year = person_details.get("birth_year")
     birth_place = person_details.get("birth_place", "Unknown")
+    birth_date = person_details.get("birth_date", "Unknown")
     if birth_year:
-        result.append(f"BIRTH: {birth_year} in {birth_place}")
+        result.append(
+            f"BIRTH: {birth_date if birth_date != 'Unknown' else birth_year} in {birth_place}"
+        )
+        result.append(f"BIRTH DETAILS: Full date: {birth_date}, Place: {birth_place}")
     else:
         result.append(f"BIRTH: Unknown year in {birth_place}")
+        result.append(f"BIRTH DETAILS: No specific birth date recorded")
 
-    # Add death information
+    # Add death information with complete details
     death_year = person_details.get("death_year")
     death_place = person_details.get("death_place", "Unknown")
+    death_date = person_details.get("death_date", "Unknown")
     if death_year:
-        result.append(f"DEATH: {death_year} in {death_place}")
+        result.append(
+            f"DEATH: {death_date if death_date != 'Unknown' else death_year} in {death_place}"
+        )
+        result.append(f"DEATH DETAILS: Full date: {death_date}, Place: {death_place}")
     else:
         result.append(f"DEATH: Unknown")
+        result.append(f"DEATH DETAILS: No death information recorded")
 
-    # Add family information
+    # Add family information with complete details
     # Parents
     parents = person_details.get("parents", [])
     if parents:
@@ -1393,14 +1556,19 @@ def _format_genealogical_data_for_ai(
             parent_name = parent.get("name", "Unknown")
             parent_birth = parent.get("birth_year", "?")
             parent_death = parent.get("death_year", "?")
+            parent_birth_place = parent.get("birth_place", "Unknown location")
+            parent_death_place = parent.get("death_place", "Unknown location")
             life_years = (
                 f"({parent_birth}-{parent_death})" if parent_birth != "?" else ""
             )
             result.append(f"- {parent_name} {life_years}")
+            result.append(f"  Birth: {parent_birth} in {parent_birth_place}")
+            if parent_death != "?":
+                result.append(f"  Death: {parent_death} in {parent_death_place}")
     else:
         result.append("\nPARENTS: None recorded")
 
-    # Spouses
+    # Spouses with complete details
     spouses = person_details.get("spouses", [])
     if spouses:
         result.append("\nSPOUSES:")
@@ -1408,14 +1576,23 @@ def _format_genealogical_data_for_ai(
             spouse_name = spouse.get("name", "Unknown")
             spouse_birth = spouse.get("birth_year", "?")
             spouse_death = spouse.get("death_year", "?")
+            spouse_birth_place = spouse.get("birth_place", "Unknown location")
+            spouse_death_place = spouse.get("death_place", "Unknown location")
+            marriage_date = spouse.get("marriage_date", "Unknown date")
+            marriage_place = spouse.get("marriage_place", "Unknown location")
+
             life_years = (
                 f"({spouse_birth}-{spouse_death})" if spouse_birth != "?" else ""
             )
             result.append(f"- {spouse_name} {life_years}")
+            result.append(f"  Birth: {spouse_birth} in {spouse_birth_place}")
+            if spouse_death != "?":
+                result.append(f"  Death: {spouse_death} in {spouse_death_place}")
+            result.append(f"  Marriage: {marriage_date} in {marriage_place}")
     else:
         result.append("\nSPOUSES: None recorded")
 
-    # Children
+    # Children with complete details
     children = person_details.get("children", [])
     if children:
         result.append("\nCHILDREN:")
@@ -1423,12 +1600,18 @@ def _format_genealogical_data_for_ai(
             child_name = child.get("name", "Unknown")
             child_birth = child.get("birth_year", "?")
             child_death = child.get("death_year", "?")
+            child_birth_place = child.get("birth_place", "Unknown location")
+            child_death_place = child.get("death_place", "Unknown location")
+
             life_years = f"({child_birth}-{child_death})" if child_birth != "?" else ""
             result.append(f"- {child_name} {life_years}")
+            result.append(f"  Birth: {child_birth} in {child_birth_place}")
+            if child_death != "?":
+                result.append(f"  Death: {child_death} in {child_death_place}")
     else:
         result.append("\nCHILDREN: None recorded")
 
-    # Siblings
+    # Siblings with complete details
     siblings = person_details.get("siblings", [])
     if siblings:
         result.append("\nSIBLINGS:")
@@ -1436,17 +1619,28 @@ def _format_genealogical_data_for_ai(
             sibling_name = sibling.get("name", "Unknown")
             sibling_birth = sibling.get("birth_year", "?")
             sibling_death = sibling.get("death_year", "?")
+            sibling_birth_place = sibling.get("birth_place", "Unknown location")
+            sibling_death_place = sibling.get("death_place", "Unknown location")
+
             life_years = (
                 f"({sibling_birth}-{sibling_death})" if sibling_birth != "?" else ""
             )
             result.append(f"- {sibling_name} {life_years}")
+            result.append(f"  Birth: {sibling_birth} in {sibling_birth_place}")
+            if sibling_death != "?":
+                result.append(f"  Death: {sibling_death} in {sibling_death_place}")
     else:
         result.append("\nSIBLINGS: None recorded")
 
-    # Add relationship path if provided
+    # Add relationship path if provided with emphasis
     if relationship_path:
         result.append("\nRELATIONSHIP TO TREE OWNER:")
+        result.append("=" * 40)  # Add a separator for emphasis
         result.append(relationship_path)
+        result.append("=" * 40)  # Add a separator for emphasis
+        result.append(
+            "\nThis person is directly related to you as shown in the relationship path above."
+        )
 
     # Join all parts with newlines
     return "\n".join(result)
@@ -1870,6 +2064,28 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                     extracted_data = processed_response["extracted_data"]
                     suggested_tasks = processed_response["suggested_tasks"]
 
+                    # Create ExtractedData object for enhanced tree search
+                    try:
+                        extracted_data_obj = ExtractedData.model_validate(
+                            extracted_data
+                        )
+                    except ValidationError as ve:
+                        logger.warning(
+                            f"{log_prefix}: Failed to create ExtractedData object: {ve}"
+                        )
+                        # Create a minimal ExtractedData object with legacy fields
+                        extracted_data_obj = ExtractedData(
+                            mentioned_names=extracted_data.get("mentioned_names", []),
+                            mentioned_locations=extracted_data.get(
+                                "mentioned_locations", []
+                            ),
+                            mentioned_dates=extracted_data.get("mentioned_dates", []),
+                            potential_relationships=extracted_data.get(
+                                "potential_relationships", []
+                            ),
+                            key_facts=extracted_data.get("key_facts", []),
+                        )
+
                     # Set default summary
                     summary_for_ack = "your message"  # Default summary
 
@@ -2085,11 +2301,9 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                 f"Processing {person.username}: Searching family tree"
                             )
 
-                        # Get the names that were extracted
-                        names_to_search = extracted_data.get("mentioned_names", [])
-
+                        # Search ancestry tree using the enhanced ExtractedData object
                         tree_search_results = _search_ancestry_tree(
-                            session_manager, names_to_search
+                            session_manager, extracted_data_obj
                         )
 
                         # Process tree search results if any were found

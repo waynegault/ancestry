@@ -1218,15 +1218,19 @@ class InboxProcessor:
                                 upsert_dict_in
                             )  # <-- Store dict
 
-                            # Stage Person status update if AI classified as DESIST/UNINTERESTED
-                            if ai_sentiment_result in ("DESIST", "UNINTERESTED"):
+                            # Stage Person status update based on AI classification
+                            if ai_sentiment_result == "UNINTERESTED":
                                 logger.debug(
-                                    f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as '{ai_sentiment_result}'. Staging status update to DESIST."
+                                    f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as 'UNINTERESTED'. Staging status update to DESIST."
                                 )
-                                # --- CORRECTED LOGIC ---
                                 # Directly assign the Enum value to the person ID key
                                 person_updates[people_id] = PersonStatusEnum.DESIST
-                                # --- END CORRECTION ---
+                            elif ai_sentiment_result == "PRODUCTIVE":
+                                logger.debug(
+                                    f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as 'PRODUCTIVE'. Keeping status as ACTIVE for Action 9 processing."
+                                )
+                                # Keep person as ACTIVE so Action 9 can process them
+                                # No status change needed
 
                     # --- Process OUT Row ---
                     if latest_ctx_out:

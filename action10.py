@@ -1025,14 +1025,14 @@ def get_gedcom_family_details(
     individual_id_norm = _normalize_id(individual_id)
 
     # Step 3: Get individual from GEDCOM data
-    individual = gedcom_data.get_individual(individual_id_norm)
+    individual = gedcom_data.find_individual_by_id(individual_id_norm)
     if not individual:
         logger.error(f"Individual {individual_id_norm} not found in GEDCOM data")
         return {}
 
     # Step 4: Get family details
     result = {
-        "individual": gedcom_data.get_processed_individual(individual_id_norm),
+        "individual": gedcom_data.get_processed_indi_data(individual_id_norm),
         "parents": [],
         "spouses": [],
         "children": [],
@@ -1042,32 +1042,38 @@ def get_gedcom_family_details(
     # Get parents
     parents = gedcom_data.get_related_individuals(individual, "parents")
     for parent in parents:
-        parent_id = _normalize_id(parent.id)
-        parent_data = gedcom_data.get_processed_individual(parent_id)
+        parent_id = _normalize_id(getattr(parent, "xref_id", None))
+        parent_data = (
+            gedcom_data.get_processed_indi_data(parent_id) if parent_id else None
+        )
         if parent_data:
             result["parents"].append(parent_data)
 
     # Get spouses
     spouses = gedcom_data.get_related_individuals(individual, "spouses")
     for spouse in spouses:
-        spouse_id = _normalize_id(spouse.id)
-        spouse_data = gedcom_data.get_processed_individual(spouse_id)
+        spouse_id = _normalize_id(getattr(spouse, "xref_id", None))
+        spouse_data = (
+            gedcom_data.get_processed_indi_data(spouse_id) if spouse_id else None
+        )
         if spouse_data:
             result["spouses"].append(spouse_data)
 
     # Get children
     children = gedcom_data.get_related_individuals(individual, "children")
     for child in children:
-        child_id = _normalize_id(child.id)
-        child_data = gedcom_data.get_processed_individual(child_id)
+        child_id = _normalize_id(getattr(child, "xref_id", None))
+        child_data = gedcom_data.get_processed_indi_data(child_id) if child_id else None
         if child_data:
             result["children"].append(child_data)
 
     # Get siblings
     siblings = gedcom_data.get_related_individuals(individual, "siblings")
     for sibling in siblings:
-        sibling_id = _normalize_id(sibling.id)
-        sibling_data = gedcom_data.get_processed_individual(sibling_id)
+        sibling_id = _normalize_id(getattr(sibling, "xref_id", None))
+        sibling_data = (
+            gedcom_data.get_processed_indi_data(sibling_id) if sibling_id else None
+        )
         if sibling_data:
             result["siblings"].append(sibling_data)
 
@@ -1103,12 +1109,12 @@ def get_gedcom_relationship_path(
                 os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
             )
 
-        if not os.path.exists(gedcom_path):
+        if gedcom_path and not os.path.exists(gedcom_path):
             logger.error(f"GEDCOM file not found at {gedcom_path}")
             return "(GEDCOM file not found)"
 
         # Load GEDCOM data
-        gedcom_data = load_gedcom_data(gedcom_path)
+        gedcom_data = load_gedcom_data(Path(gedcom_path)) if gedcom_path else None
 
     if not gedcom_data:
         logger.error("Failed to load GEDCOM data")
@@ -1127,21 +1133,48 @@ def get_gedcom_relationship_path(
 
     reference_id_norm = _normalize_id(reference_id)
 
-    # Step 4: Get relationship path
-    path_ids = gedcom_data.get_relationship_path(individual_id_norm, reference_id_norm)
+    # Step 4: Get relationship path using fast_bidirectional_bfs
+    from relationship_utils import (
+        fast_bidirectional_bfs,
+        convert_gedcom_path_to_unified_format,
+        format_relationship_path_unified,
+    )
+
+    if individual_id_norm and reference_id_norm:
+        # Find the relationship path using the consolidated function
+        path_ids = fast_bidirectional_bfs(
+            individual_id_norm,
+            reference_id_norm,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            max_depth=25,
+            node_limit=150000,
+            timeout_sec=45,
+        )
+    else:
+        path_ids = []
 
     if not path_ids:
-        return f"(No relationship path found between {individual_id_norm} and {reference_id_norm})"
+        return f"(No relationship path found between {individual_id_norm or 'Unknown'} and {reference_id_norm or 'Unknown'})"
 
-    # Step 5: Format relationship path
-    relationship_path = gedcom_data.explain_relationship_path(
-        path_ids, owner_name=reference_name
+    # Convert the GEDCOM path to the unified format
+    unified_path = convert_gedcom_path_to_unified_format(
+        path_ids,
+        gedcom_data.reader,
+        gedcom_data.id_to_parents,
+        gedcom_data.id_to_children,
+        gedcom_data.indi_index,
+    )
+
+    # Format the relationship path
+    relationship_path = format_relationship_path_unified(
+        unified_path, "Individual", reference_name or "Reference Person", None
     )
 
     return relationship_path
 
 
-def run_action10(*args):
+def run_action10(*_):
     """Wrapper function for main.py to call."""
     main()
     return True
