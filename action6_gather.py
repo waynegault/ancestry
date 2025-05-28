@@ -27,6 +27,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Protocol,
     Set,
     Tuple,
 )
@@ -667,7 +668,7 @@ def _lookup_existing_persons(
 
 
 def _identify_fetch_candidates(
-    matches_on_page: List[Dict[str, Any]], existing_persons_map: Dict[str, Person]
+    matches_on_page: List[Dict[str, Any]], existing_persons_map: Dict[str, Any]
 ) -> Tuple[Set[str], List[Dict[str, Any]], int]:
     """
     Analyzes matches from a page against existing database records to determine:
@@ -2117,7 +2118,9 @@ def _prepare_dna_match_operation_data(
                 logger_instance.debug(
                     f"  DNA change {log_ref_short}: Longest Segment (API lost data)"
                 )
-            elif str(db_predicted_rel_for_comp) != str(api_predicted_rel_for_comp):
+            elif str(db_predicted_rel_for_comp) != str(
+                api_predicted_rel_for_comp
+            ):  # Convert to strings for safe comparison
                 needs_dna_create_or_update = True
                 logger_instance.debug(
                     f"  DNA change {log_ref_short}: Predicted Rel ({db_predicted_rel_for_comp} -> {api_predicted_rel_for_comp})"
@@ -2518,7 +2521,6 @@ def _do_match(
 
 
 # End of _do_match
-
 
 # ------------------------------------------------------------------------------
 # API Data Acquisition Helpers (_fetch_*)
@@ -2977,15 +2979,14 @@ def _fetch_combined_details(
             )
             logger.debug(f"Successfully fetched /details for UUID {match_uuid}.")
         elif isinstance(details_response, requests.Response):
-            logger.warning(
-                f"Failed /details fetch for UUID {match_uuid}. Status: {details_response.status_code}. Skipping profile fetch."
+            logger.error(
+                f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
             )
-            return None
         else:
-            logger.warning(
-                f"Failed /details fetch for UUID {match_uuid} (Invalid response: {type(details_response)}). Skipping profile fetch."
+            logger.error(
+                f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}"
             )
-            return None
+        return None
 
     except ConnectionError as conn_err:
         logger.error(
@@ -3831,8 +3832,12 @@ def self_test() -> bool:
     print("Test 1: Testing _lookup_existing_persons function...")
     tests_run += 1
     mock_db_session_test1 = MagicMock(spec=SqlAlchemySession)
-    mock_person_obj1_db = MockPerson("UUID1", 100, 5, False)
-    mock_person_obj2_db = MockPerson("UUID2", 50, 3, True)
+    mock_person_obj1_db = MockPerson(
+        "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", 100, 5, True
+    )  # Wayne Gault - in tree
+    mock_person_obj2_db = MockPerson(
+        "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA", 50, 3, True
+    )  # Frances McHardy - in tree
     # Configure the mock session's query chain
     mock_query_result_db = [mock_person_obj1_db, mock_person_obj2_db]
     # Simulate the SQLAlchemy query structure
@@ -3844,14 +3849,22 @@ def self_test() -> bool:
     mock_query_obj_db.options.return_value = mock_options_obj_db
     mock_db_session_test1.query.return_value = mock_query_obj_db
 
-    uuids_to_lookup = ["uuid1", "uuid2", "uuid3"]  # Note: case will be handled by func
+    uuids_to_lookup = [
+        "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
+        "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca",
+        "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
+    ]  # Wayne Gault, Frances McHardy, Brent Husson
     try:
         result = _lookup_existing_persons(mock_db_session_test1, uuids_to_lookup)
         unittest.TestCase().assertIsInstance(result, dict)
         unittest.TestCase().assertEqual(len(result), 2)
-        unittest.TestCase().assertIn("UUID1", result)
-        unittest.TestCase().assertIn("UUID2", result)
-        unittest.TestCase().assertIs(result["UUID1"], mock_person_obj1_db)  # type: ignore
+        unittest.TestCase().assertIn(
+            "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", result
+        )  # Wayne Gault
+        unittest.TestCase().assertIn(
+            "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA", result
+        )  # Frances McHardy
+        unittest.TestCase().assertIs(result["FB609BA5-5A0D-46EE-BF18-C300D8DE5AB"], mock_person_obj1_db)  # type: ignore
         print("  ✓ _lookup_existing_persons: Correctly mapped existing persons.")
         tests_passed += 1
     except Exception as e:
@@ -3862,9 +3875,24 @@ def self_test() -> bool:
     print("\nTest 2: Testing _identify_fetch_candidates function...")
     tests_run += 1
     matches_on_page_test2 = [
-        {"uuid": "uuid1", "cM_DNA": 110, "numSharedSegments": 5, "in_my_tree": False},
-        {"uuid": "uuid2", "cM_DNA": 50, "numSharedSegments": 3, "in_my_tree": True},
-        {"uuid": "uuid3", "cM_DNA": 25, "numSharedSegments": 2, "in_my_tree": False},
+        {
+            "uuid": "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
+            "cM_DNA": 110,
+            "numSharedSegments": 5,
+            "in_my_tree": True,
+        },  # Wayne Gault - in tree
+        {
+            "uuid": "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca",
+            "cM_DNA": 50,
+            "numSharedSegments": 3,
+            "in_my_tree": True,
+        },  # Frances McHardy - in tree
+        {
+            "uuid": "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
+            "cM_DNA": 25,
+            "numSharedSegments": 2,
+            "in_my_tree": True,
+        },  # Brent Husson - in tree
         {"uuid": "uuid4", "cM_DNA": 70, "numSharedSegments": 6, "in_my_tree": False},
         {"uuid": "uuid5", "cM_DNA": 60, "numSharedSegments": 4, "in_my_tree": True},
         {"uuid": "uuid6", "cM_DNA": 80, "numSharedSegments": 4, "in_my_tree": True},
@@ -3872,8 +3900,12 @@ def self_test() -> bool:
     ]
     existing_persons_map_test2: Dict[str, MockPerson] = (
         {  # Explicitly type hint for the test
-            "UUID1": MockPerson("uuid1", 100, 5, False),
-            "UUID2": MockPerson("uuid2", 50, 3, True),
+            "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB": MockPerson(
+                "fb609ba5-5a0d-46ee-bf18-c300d8de5ab", 100, 5, True
+            ),  # Wayne Gault - in tree
+            "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA": MockPerson(
+                "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca", 50, 3, True
+            ),  # Frances McHardy - in tree
             "UUID4": MockPerson("uuid4", 70, 4, False),
             "UUID5": MockPerson("uuid5", 60, 4, False),
             "UUID6": MockPerson("uuid6", 80, 4, True, has_family_tree=False),
@@ -3881,9 +3913,15 @@ def self_test() -> bool:
     )
     try:
         fetch_uuids, process_later, skipped_count = _identify_fetch_candidates(
-            matches_on_page_test2, existing_persons_map_test2  # type: ignore[arg-type]
+            matches_on_page_test2, existing_persons_map_test2
         )
-        expected_fetch_uuids = {"uuid1", "uuid3", "uuid4", "uuid5", "uuid6"}
+        expected_fetch_uuids = {
+            "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
+            "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
+            "uuid4",
+            "uuid5",
+            "uuid6",
+        }
         unittest.TestCase().assertSetEqual(fetch_uuids, expected_fetch_uuids)
         unittest.TestCase().assertEqual(skipped_count, 1)
         unittest.TestCase().assertEqual(len(process_later), 5)

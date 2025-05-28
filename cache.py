@@ -13,10 +13,13 @@ Cache directory and default settings are configurable via `config.py`.
 
 # --- Standard library imports ---
 import atexit
+import hashlib
 import logging
 import os
+import shutil
+import time
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Dict, Union
 
 # --- Third-party imports ---
 from diskcache import Cache
@@ -48,17 +51,26 @@ except Exception as e:
         f"Unexpected error setting up cache directory {CACHE_DIR}: {e}", exc_info=True
     )
 
-# Step 3: Initialize the DiskCache instance
+# Step 3: Initialize the DiskCache instance with aggressive settings
 # This instance is shared across modules that import 'cache from cache'.
 cache: Optional[Cache] = None  # Initialize as None
 try:
-    # Global cache settings can be added here (e.g., size_limit, eviction_policy)
-    # Example: cache = Cache(CACHE_DIR, size_limit=int(1e9)) # 1 GB size limit
-    # Example: Use default expiry from config: expire=config_instance.CACHE_TIMEOUT
-    cache = Cache(CACHE_DIR)
-    logger.debug(
-        f"DiskCache instance initialized successfully at {CACHE_DIR.resolve()}."
+    # Aggressive cache settings for better performance
+    # 2GB size limit for large GEDCOM files and API responses
+    # LRU eviction policy to keep frequently accessed data
+    # Larger disk timeout for better reliability
+    cache = Cache(
+        CACHE_DIR,
+        size_limit=int(2e9),  # 2 GB size limit
+        eviction_policy="least-recently-used",  # LRU eviction
+        disk_min_file_size=0,  # Store all data on disk
+        timeout=60,  # Longer timeout for disk operations
+        statistics=True,  # Enable cache statistics
     )
+    logger.debug(
+        f"DiskCache instance initialized with aggressive settings at {CACHE_DIR.resolve()}."
+    )
+    logger.debug(f"Cache settings: size_limit=2GB, eviction=LRU, statistics=enabled")
 except Exception as e:
     logger.critical(
         f"CRITICAL: Failed to initialize DiskCache at {CACHE_DIR}: {e}", exc_info=True
@@ -269,6 +281,165 @@ def close_cache():
 # End of close_cache
 
 
+# --- Enhanced Cache Management Functions ---
+
+
+def get_cache_stats() -> Dict[str, Any]:
+    """
+    Returns cache statistics including hits, misses, size, and evictions.
+
+    Returns:
+        Dictionary containing cache statistics or empty dict if cache unavailable.
+    """
+    if cache is None:
+        logger.warning("Cache not available for statistics.")
+        return {}
+
+    try:
+        stats = {
+            "hits": cache.stats(enable=True, reset=False)[0],
+            "misses": cache.stats(enable=True, reset=False)[1],
+            "size": len(cache),
+            "volume": cache.volume(),
+            "evictions": getattr(cache, "evictions", 0),
+        }
+        return stats
+    except Exception as e:
+        logger.error(f"Error retrieving cache statistics: {e}")
+        return {}
+
+
+# End of get_cache_stats
+
+
+def cache_file_based_on_mtime(
+    cache_key_prefix: str,
+    file_path: str,
+    expire: Optional[int] = None,
+) -> Callable:
+    """
+    Enhanced decorator that caches based on file modification time.
+    Automatically invalidates cache when the source file changes.
+    Perfect for GEDCOM files and other data files.
+
+    Args:
+        cache_key_prefix: Prefix for the cache key
+        file_path: Path to the file to monitor for changes
+        expire: Optional expiration time in seconds
+
+    Returns:
+        Decorator function
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            if cache is None:
+                logger.error("Cache not available. Calling function directly.")
+                return func(*args, **kwargs)
+
+            try:
+                # Get file modification time
+                file_mtime = os.path.getmtime(file_path)
+
+                # Create cache key that includes file mtime
+                mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
+                final_cache_key = (
+                    f"{cache_key_prefix}_{func.__name__}_mtime_{mtime_hash}"
+                )
+
+                # Try to get from cache
+                cached_value = cache.get(final_cache_key, default=ENOVAL, retry=True)
+
+                if cached_value is not ENOVAL:
+                    logger.debug(f"Cache HIT for file-based key: '{final_cache_key}'")
+                    return cached_value
+                else:
+                    logger.debug(f"Cache MISS for file-based key: '{final_cache_key}'")
+
+                # Execute function and cache result
+                result = func(*args, **kwargs)
+                cache.set(final_cache_key, result, expire=expire, retry=True)
+                logger.debug(f"Cached file-based result for key: '{final_cache_key}'")
+
+                return result
+
+            except Exception as e:
+                logger.error(f"Error in file-based caching for {func.__name__}: {e}")
+                return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+# End of cache_file_based_on_mtime
+
+
+def warm_cache_with_data(
+    cache_key: str, data: Any, expire: Optional[int] = None
+) -> bool:
+    """
+    Preloads cache with data (cache warming).
+
+    Args:
+        cache_key: Key to store the data under
+        data: Data to cache
+        expire: Optional expiration time in seconds
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if cache is None:
+        logger.warning("Cache not available for warming.")
+        return False
+
+    try:
+        cache.set(cache_key, data, expire=expire, retry=True)
+        logger.debug(f"Cache warmed with key: '{cache_key}'")
+        return True
+    except Exception as e:
+        logger.error(f"Error warming cache with key '{cache_key}': {e}")
+        return False
+
+
+# End of warm_cache_with_data
+
+
+def invalidate_cache_pattern(pattern: str) -> int:
+    """
+    Invalidates all cache entries matching a pattern.
+
+    Args:
+        pattern: Pattern to match cache keys (simple string contains)
+
+    Returns:
+        Number of entries invalidated
+    """
+    if cache is None:
+        logger.warning("Cache not available for pattern invalidation.")
+        return 0
+
+    try:
+        invalidated = 0
+        # Get all keys and filter by pattern
+        for key in list(cache):
+            if pattern in str(key):
+                cache.delete(key)
+                invalidated += 1
+
+        logger.debug(
+            f"Invalidated {invalidated} cache entries matching pattern: '{pattern}'"
+        )
+        return invalidated
+    except Exception as e:
+        logger.error(f"Error invalidating cache pattern '{pattern}': {e}")
+        return 0
+
+
+# End of invalidate_cache_pattern
+
+
 # --- Cleanup Registration ---
 # Step 1: Register the close_cache function to be called automatically on script exit
 # This ensures cache files are properly closed and resources released.
@@ -276,7 +447,11 @@ atexit.register(close_cache)
 logger.debug("Registered close_cache function with atexit for automatic cleanup.")
 
 
-# Log loading confirmation
-logger.debug("cache.py loaded and cache initialized (if possible).")
+# Log loading confirmation with stats
+if cache is not None:
+    logger.debug("cache.py loaded and cache initialized successfully.")
+    logger.debug(f"Cache statistics enabled: {getattr(cache, 'statistics', False)}")
+else:
+    logger.debug("cache.py loaded but cache initialization failed.")
 
 # --- End of cache.py ---

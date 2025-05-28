@@ -47,16 +47,17 @@ DEFAULT_CONFIG = {
     },
 }
 
-# Global cache for GEDCOM data
+# Global cache for GEDCOM data with enhanced caching
 _CACHED_GEDCOM_DATA = None
 
 
 def set_cached_gedcom_data(gedcom_data):
     """
-    Set the cached GEDCOM data directly.
+    Set the cached GEDCOM data directly with enhanced caching support.
 
     This function allows other modules to set the cached GEDCOM data directly,
     which is useful for avoiding redundant loading of the GEDCOM file.
+    Also triggers aggressive caching of processed data.
 
     Args:
         gedcom_data: GedcomData instance to cache
@@ -67,6 +68,17 @@ def set_cached_gedcom_data(gedcom_data):
     global _CACHED_GEDCOM_DATA
     _CACHED_GEDCOM_DATA = gedcom_data
     logger.info(f"Set cached GEDCOM data directly: {gedcom_data is not None}")
+
+    # If we have a valid gedcom_data instance, cache its processed data
+    if gedcom_data and hasattr(gedcom_data, "path"):
+        try:
+            from gedcom_cache import cache_gedcom_processed_data
+
+            cache_gedcom_processed_data(gedcom_data, str(gedcom_data.path))
+        except ImportError:
+            logger.debug("gedcom_cache module not available for enhanced caching")
+        except Exception as e:
+            logger.debug(f"Error caching processed GEDCOM data: {e}")
 
 
 def get_config_value(key: str, default_value: Any = None) -> Any:
@@ -125,10 +137,10 @@ def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
 
 def get_gedcom_data() -> Optional[GedcomData]:
     """
-    Returns the cached GEDCOM data instance, loading it if necessary.
+    Returns the cached GEDCOM data instance with aggressive caching, loading it if necessary.
 
     This function ensures the GEDCOM file is loaded only once and reused
-    throughout the script, improving performance.
+    throughout the script, with enhanced multi-level caching for optimal performance.
 
     Returns:
         GedcomData instance or None if loading fails
@@ -137,7 +149,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
 
     # Return cached data if already loaded
     if _CACHED_GEDCOM_DATA is not None:
-        logger.info("Using cached GEDCOM data")
+        logger.info("Using cached GEDCOM data from memory")
         return _CACHED_GEDCOM_DATA
 
     # Check if GEDCOM path is configured
@@ -165,13 +177,32 @@ def get_gedcom_data() -> Optional[GedcomData]:
         logger.warning(f"GEDCOM file not found at {gedcom_path}")
         return None
 
-    # Load GEDCOM data
-    _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
+    # Try to load with aggressive caching first
+    try:
+        from gedcom_cache import load_gedcom_with_aggressive_caching
+
+        logger.info("Using aggressive GEDCOM caching system")
+        _CACHED_GEDCOM_DATA = load_gedcom_with_aggressive_caching(str(gedcom_path))
+    except ImportError:
+        logger.debug("Aggressive caching not available, using standard loading")
+        _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
+    except Exception as e:
+        logger.warning(f"Error with aggressive caching, falling back to standard: {e}")
+        _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
 
     if _CACHED_GEDCOM_DATA:
         logger.info(f"GEDCOM file loaded successfully and cached for reuse.")
+
+        # Log cache statistics if available
+        try:
+            from gedcom_cache import get_gedcom_cache_info
+
+            cache_info = get_gedcom_cache_info()
+            logger.debug(f"GEDCOM cache info: {cache_info}")
+        except ImportError:
+            pass
     else:
-        logger.warning("load_gedcom_data returned None")
+        logger.warning("GEDCOM data loading returned None")
 
     return _CACHED_GEDCOM_DATA
 

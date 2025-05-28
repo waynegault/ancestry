@@ -49,6 +49,9 @@ from utils import (
     nav_to_page,
 )
 
+# Cache management
+from cache_manager import initialize_aggressive_caching, log_cache_status
+
 
 def menu():
     """Display the main menu and return the user's choice."""
@@ -90,6 +93,7 @@ def menu():
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
     print("")
+    print("s. Show Cache Statistics")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
     print("q. Exit")
@@ -1187,6 +1191,16 @@ def main():
         # --- Logging Setup ---
         logger = setup_logging()
 
+        # --- Initialize Aggressive Caching ---
+        logger.info("Initializing aggressive caching systems...")
+        cache_init_success = initialize_aggressive_caching()
+        if cache_init_success:
+            logger.info("Aggressive caching systems initialized successfully")
+        else:
+            logger.warning(
+                "Some caching systems failed to initialize, continuing with reduced performance"
+            )
+
         # --- Instantiate SessionManager ---
         session_manager = SessionManager()  # No browser started by default
 
@@ -1293,6 +1307,14 @@ def main():
                 # Use the wrapper function to run Action 11 through exec_actn
                 exec_actn(run_action11_wrapper, session_manager, choice)
             # --- Meta Options ---
+            elif choice == "s":
+                # Show cache statistics
+                try:
+                    log_cache_status()
+                    print("Cache statistics logged. Check the log file for details.")
+                except Exception as e:
+                    logger.error(f"Error displaying cache statistics: {e}")
+                    print("Error displaying cache statistics. Check logs for details.")
             elif choice == "t":
                 os.system("cls" if os.name == "nt" else "clear")
                 if logger and logger.handlers:
