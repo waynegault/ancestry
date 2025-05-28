@@ -24,6 +24,10 @@ from cache import (
     cache_file_based_on_mtime,
     warm_cache_with_data,
     get_cache_stats,
+    CacheInterface,
+    BaseCacheModule,
+    get_unified_cache_key,
+    invalidate_related_caches,
 )
 from config import config_instance
 from logging_config import logger
@@ -34,15 +38,177 @@ _CACHE_MAX_AGE = 3600  # 1 hour default for memory cache
 _GEDCOM_CACHE_PREFIX = "gedcom_data"
 
 
+# --- GEDCOM Cache Module Implementation ---
+
+class GedcomCacheModule(BaseCacheModule):
+    """
+    GEDCOM-specific cache module implementing the standardized cache interface.
+    Provides multi-level caching (memory + disk) for genealogical data.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.module_name = "gedcom_cache"
+        self.cache_prefix = _GEDCOM_CACHE_PREFIX
+
+    def get_module_name(self) -> str:
+        return self.module_name
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive GEDCOM cache statistics."""
+        base_stats = super().get_stats()
+
+        # Add GEDCOM-specific statistics
+        memory_cache_size = len(_MEMORY_CACHE)
+        memory_cache_valid_entries = sum(
+            1 for key in _MEMORY_CACHE if _is_memory_cache_valid(key)
+        )
+
+        gedcom_stats = {
+            "memory_cache_entries": memory_cache_size,
+            "memory_cache_valid_entries": memory_cache_valid_entries,
+            "memory_cache_hit_rate": (
+                memory_cache_valid_entries / memory_cache_size * 100
+                if memory_cache_size > 0
+                else 0
+            ),
+            "cache_max_age_seconds": _CACHE_MAX_AGE,
+        }
+
+        # Add GEDCOM file information if available
+        if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
+            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            if gedcom_path and Path(gedcom_path).exists():
+                gedcom_stats["gedcom_file_path"] = str(gedcom_path)
+                gedcom_stats["gedcom_file_size_mb"] = (
+                    Path(gedcom_path).stat().st_size / (1024 * 1024)
+                )
+                gedcom_stats["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
+
+        # Merge with base statistics
+        return {**base_stats, **gedcom_stats}
+
+    def clear(self) -> bool:
+        """Clear all GEDCOM caches (memory and disk)."""
+        try:
+            # Clear memory cache
+            global _MEMORY_CACHE
+            cleared_memory = len(_MEMORY_CACHE)
+            _MEMORY_CACHE.clear()
+
+            # Clear disk-based caches with GEDCOM prefix
+            cleared_disk = invalidate_related_caches(
+                pattern=f"{self.cache_prefix}*",
+                exclude_modules=[],
+            )
+
+            logger.info(
+                f"GEDCOM cache cleared: {cleared_memory} memory entries, {sum(cleared_disk.values())} disk entries"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error clearing GEDCOM cache: {e}")
+            return False
+
+    def warm(self) -> bool:
+        """Warm up GEDCOM cache with frequently accessed data."""
+        try:
+            # Check if GEDCOM file is available
+            if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
+                logger.warning("No GEDCOM file path configured for cache warming")
+                return False
+
+            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            if not gedcom_path or not Path(gedcom_path).exists():
+                logger.warning(f"GEDCOM file not found: {gedcom_path}")
+                return False
+
+            # Warm cache with basic file metadata
+            cache_key = get_unified_cache_key("gedcom", "file_metadata", gedcom_path)
+            file_stats = Path(gedcom_path).stat()
+            metadata = {
+                "size": file_stats.st_size,
+                "mtime": file_stats.st_mtime,
+                "warmed_at": time.time(),
+            }
+
+            warm_cache_with_data(cache_key, metadata)
+            logger.info(f"GEDCOM cache warmed with metadata for {gedcom_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error warming GEDCOM cache: {e}")
+            return False
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get detailed health status of GEDCOM cache system."""
+        base_health = super().get_health_status()
+
+        try:
+            # Check memory cache health
+            memory_health = "healthy"
+            memory_issues = []
+
+            if len(_MEMORY_CACHE) == 0:
+                memory_issues.append("No memory cache entries")
+
+            # Check for stale entries
+            stale_entries = sum(
+                1 for key in _MEMORY_CACHE if not _is_memory_cache_valid(key)
+            )
+            if stale_entries > len(_MEMORY_CACHE) * 0.5:
+                memory_health = "degraded"
+                memory_issues.append(f"High number of stale entries: {stale_entries}")
+
+            # Check GEDCOM file accessibility
+            gedcom_health = "healthy"
+            gedcom_issues = []
+
+            if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
+                gedcom_path = config_instance.GEDCOM_FILE_PATH
+                if not gedcom_path:
+                    gedcom_health = "warning"
+                    gedcom_issues.append("No GEDCOM file path configured")
+                elif not Path(gedcom_path).exists():
+                    gedcom_health = "error"
+                    gedcom_issues.append(f"GEDCOM file not found: {gedcom_path}")
+            else:
+                gedcom_health = "warning"
+                gedcom_issues.append("GEDCOM configuration not available")
+
+            # Overall health assessment
+            overall_health = "healthy"
+            if gedcom_health == "error" or memory_health == "degraded":
+                overall_health = "degraded"
+            elif gedcom_health == "warning":
+                overall_health = "warning"
+
+            gedcom_health_info = {
+                "memory_cache_health": memory_health,
+                "memory_cache_issues": memory_issues,
+                "gedcom_file_health": gedcom_health,
+                "gedcom_file_issues": gedcom_issues,
+                "overall_health": overall_health,
+                "memory_cache_entries": len(_MEMORY_CACHE),
+                "stale_entries": stale_entries,
+            }
+
+            return {**base_health, **gedcom_health_info}
+        except Exception as e:
+            logger.error(f"Error getting GEDCOM cache health status: {e}")
+            return {**base_health, "health_check_error": str(e), "overall_health": "error"}
+
+
+# Initialize GEDCOM cache module instance
+_gedcom_cache_module = GedcomCacheModule()
+
+
 # --- Memory Cache Management ---
 
 
 def _get_memory_cache_key(file_path: str, operation: str) -> str:
-    """Generate a consistent cache key for memory cache."""
-    file_mtime = os.path.getmtime(file_path)
-    path_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
-    mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
-    return f"{operation}_{path_hash}_{mtime_hash}"
+    """Generate a consistent cache key for memory cache using unified system."""
+    # Use the unified cache key generation for consistency
+    return get_unified_cache_key("gedcom_memory", operation, file_path, os.path.getmtime(file_path))
 
 
 def _is_memory_cache_valid(cache_key: str) -> bool:

@@ -20,7 +20,7 @@ import shutil
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, Dict, Union
+from typing import Any, Callable, Optional, Dict, Union, List
 
 # --- Third-party imports ---
 from diskcache import Cache
@@ -80,6 +80,108 @@ except Exception as e:
         f"CRITICAL: Failed to initialize DiskCache at {CACHE_DIR}: {e}", exc_info=True
     )
     cache = None  # Ensure cache remains None if initialization fails
+
+# --- Standard Cache Interface ---
+
+class CacheInterface:
+    """
+    Standard interface for all cache modules to ensure consistency.
+    Provides common methods and expected behavior across cache types.
+    """
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get statistics for this cache module."""
+        raise NotImplementedError("Subclasses must implement get_stats()")
+    
+    def clear(self) -> bool:
+        """Clear this cache module."""
+        raise NotImplementedError("Subclasses must implement clear()")
+    
+    def warm(self) -> bool:
+        """Warm this cache module with frequently accessed data."""
+        raise NotImplementedError("Subclasses must implement warm()")
+    
+    def get_module_name(self) -> str:
+        """Get the name of this cache module."""
+        raise NotImplementedError("Subclasses must implement get_module_name()")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get health status of this cache module."""
+        raise NotImplementedError("Subclasses must implement get_health_status()")
+
+
+class BaseCacheModule(CacheInterface):
+    """
+    Implementation of the standard cache interface for the base cache module.
+    """
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get base cache statistics."""
+        return get_cache_stats()
+    
+    def clear(self) -> bool:
+        """Clear base cache."""
+        return clear_cache()
+    
+    def warm(self) -> bool:
+        """Warm base cache with system data."""
+        try:
+            # Warm cache with commonly accessed configuration
+            warm_cache_with_data("system_status", {"status": "operational", "timestamp": time.time()})
+            warm_cache_with_data("cache_metadata", {"version": "2.0", "type": "enhanced_base"})
+            return True
+        except Exception as e:
+            logger.error(f"Error warming base cache: {e}")
+            return False
+    
+    def get_module_name(self) -> str:
+        """Get module name."""
+        return "base_cache"
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get health status of base cache."""
+        try:
+            stats = self.get_stats()
+            total_requests = stats.get("hits", 0) + stats.get("misses", 0)
+            hit_rate = (stats.get("hits", 0) / total_requests * 100) if total_requests > 0 else 0
+            
+            # Determine health based on hit rate and cache availability
+            if cache is None:
+                health = "critical"
+                message = "Cache instance not available"
+            elif hit_rate >= 70:
+                health = "excellent"
+                message = f"High performance: {hit_rate:.1f}% hit rate"
+            elif hit_rate >= 50:
+                health = "good"
+                message = f"Good performance: {hit_rate:.1f}% hit rate"
+            elif hit_rate >= 30:
+                health = "fair"
+                message = f"Fair performance: {hit_rate:.1f}% hit rate"
+            else:
+                health = "poor"
+                message = f"Low performance: {hit_rate:.1f}% hit rate"
+            
+            return {
+                "health": health,
+                "message": message,
+                "hit_rate": hit_rate,
+                "total_requests": total_requests,
+                "cache_available": cache is not None
+            }
+        except Exception as e:
+            return {
+                "health": "error",
+                "message": f"Health check failed: {e}",
+                "hit_rate": 0,
+                "total_requests": 0,
+                "cache_available": False
+            }
+
+
+# Global instance of base cache module
+base_cache_module = BaseCacheModule()
+
 
 # --- Cache Decorator ---
 
@@ -285,6 +387,184 @@ def close_cache():
 # End of close_cache
 
 
+# --- Enhanced Cross-Module Cache Coordination ---
+
+def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
+    """
+    Generate unified cache keys across modules for better coordination.
+    
+    Args:
+        module: Cache module name (e.g., 'gedcom', 'api', 'base')
+        operation: Operation type (e.g., 'load', 'query', 'process')
+        *args: Additional arguments for key generation
+        **kwargs: Additional keyword arguments for key generation
+    
+    Returns:
+        Standardized cache key string
+    """
+    # Create base key components
+    key_parts = [module, operation]
+    
+    # Add positional arguments
+    for arg in args:
+        if isinstance(arg, (str, int, float)):
+            key_parts.append(str(arg))
+        elif hasattr(arg, '__str__'):
+            key_parts.append(str(arg))
+    
+    # Add keyword arguments in sorted order for consistency
+    for key in sorted(kwargs.keys()):
+        value = kwargs[key]
+        if isinstance(value, (str, int, float, bool)):
+            key_parts.append(f"{key}={value}")
+    
+    # Generate hash for long keys to keep them manageable
+    key_string = "_".join(key_parts)
+    if len(key_string) > 100:
+        import hashlib
+        key_hash = hashlib.md5(key_string.encode()).hexdigest()[:16]
+        key_string = f"{module}_{operation}_{key_hash}"
+    
+    return key_string
+
+
+def invalidate_related_caches(pattern: str, exclude_modules: Optional[List[str]] = None) -> Dict[str, int]:
+    """
+    Invalidate caches across multiple modules based on pattern.
+    
+    Args:
+        pattern: Pattern to match for cache invalidation
+        exclude_modules: List of module names to exclude from invalidation
+    
+    Returns:
+        Dictionary with count of invalidated entries per module
+    """
+    exclude_modules = exclude_modules or []
+    results = {}
+    
+    # Invalidate base cache
+    if "base" not in exclude_modules:
+        try:
+            count = invalidate_cache_pattern(pattern)
+            results["base_cache"] = count
+            logger.info(f"Invalidated {count} base cache entries matching pattern: {pattern}")
+        except Exception as e:
+            logger.error(f"Error invalidating base cache pattern {pattern}: {e}")
+            results["base_cache"] = 0
+    
+    # Invalidate GEDCOM cache
+    if "gedcom" not in exclude_modules:
+        try:
+            from gedcom_cache import clear_memory_cache
+            count = clear_memory_cache()
+            results["gedcom_cache"] = count
+            logger.info(f"Cleared {count} GEDCOM memory cache entries")
+        except ImportError:
+            logger.debug("GEDCOM cache module not available for invalidation")
+            results["gedcom_cache"] = 0
+        except Exception as e:
+            logger.error(f"Error invalidating GEDCOM cache: {e}")
+            results["gedcom_cache"] = 0
+    
+    # Note: API cache invalidation would be handled by api_cache module
+    # This creates a standardized approach for cross-module coordination
+    
+    total_invalidated = sum(results.values())
+    logger.info(f"Total cache entries invalidated across modules: {total_invalidated}")
+    
+    return results
+
+
+def get_cache_coordination_stats() -> Dict[str, Any]:
+    """
+    Get comprehensive statistics for cache coordination across modules.
+    
+    Returns:
+        Dictionary with coordination statistics and health metrics
+    """
+    coordination_stats = {
+        "timestamp": time.time(),
+        "modules": {},
+        "cross_module_health": "unknown",
+        "total_entries": 0,
+        "total_volume": 0,
+        "overall_hit_rate": 0.0
+    }
+    
+    # Collect stats from available modules
+    total_hits = 0
+    total_requests = 0
+    
+    # Base cache stats
+    try:
+        base_stats = get_cache_stats()
+        coordination_stats["modules"]["base"] = base_stats
+        
+        hits = base_stats.get("hits", 0)
+        misses = base_stats.get("misses", 0)
+        total_hits += hits
+        total_requests += hits + misses
+        coordination_stats["total_entries"] += base_stats.get("size", 0)
+        coordination_stats["total_volume"] += base_stats.get("volume", 0)
+        
+    except Exception as e:
+        logger.debug(f"Error getting base cache stats for coordination: {e}")
+        coordination_stats["modules"]["base"] = {"error": str(e)}
+    
+    # GEDCOM cache stats
+    try:
+        from gedcom_cache import get_gedcom_cache_info
+        gedcom_stats = get_gedcom_cache_info()
+        coordination_stats["modules"]["gedcom"] = gedcom_stats
+        
+        # Add to totals if available
+        memory_entries = gedcom_stats.get("memory_cache_entries", 0)
+        coordination_stats["total_entries"] += memory_entries
+        
+    except ImportError:
+        coordination_stats["modules"]["gedcom"] = {"status": "not_available"}
+    except Exception as e:
+        logger.debug(f"Error getting GEDCOM cache stats for coordination: {e}")
+        coordination_stats["modules"]["gedcom"] = {"error": str(e)}
+    
+    # API cache stats
+    try:
+        from api_cache import get_api_cache_stats
+        api_stats = get_api_cache_stats()
+        coordination_stats["modules"]["api"] = api_stats
+        
+        # Add to totals if available
+        api_entries = api_stats.get("api_entries", 0)
+        ai_entries = api_stats.get("ai_entries", 0)
+        db_entries = api_stats.get("db_entries", 0)
+        coordination_stats["total_entries"] += api_entries + ai_entries + db_entries
+        
+    except ImportError:
+        coordination_stats["modules"]["api"] = {"status": "not_available"}
+    except Exception as e:
+        logger.debug(f"Error getting API cache stats for coordination: {e}")
+        coordination_stats["modules"]["api"] = {"error": str(e)}
+    
+    # Calculate overall metrics
+    if total_requests > 0:
+        coordination_stats["overall_hit_rate"] = (total_hits / total_requests) * 100
+    
+    # Determine cross-module health
+    available_modules = len([m for m in coordination_stats["modules"].values() 
+                           if "error" not in m and m.get("status") != "not_available"])
+    
+    if available_modules >= 3:
+        coordination_stats["cross_module_health"] = "excellent"
+    elif available_modules >= 2:
+        coordination_stats["cross_module_health"] = "good"
+    elif available_modules >= 1:
+        coordination_stats["cross_module_health"] = "limited"
+    else:
+        coordination_stats["cross_module_health"] = "critical"
+    
+    return coordination_stats
+
+
 # --- Enhanced Cache Management Functions ---
 
 
@@ -304,7 +584,7 @@ def get_cache_stats() -> Dict[str, Any]:
         stats = {
             "hits": stats_tuple[0],
             "misses": stats_tuple[1],
-            "size": cache.count,  # Use count instead of len for Cache objects
+            "size": getattr(cache, "size", 0),  # Get cache size safely
             "volume": cache.volume(),
             "evictions": getattr(cache, "evictions", 0),
         }
@@ -458,5 +738,398 @@ if cache is not None:
     logger.debug(f"Cache statistics enabled: {getattr(cache, 'statistics', False)}")
 else:
     logger.debug("cache.py loaded but cache initialization failed.")
+
+# --- Test/Demo Functions ---
+
+
+def run_cache_tests():
+    """
+    Comprehensive test suite for cache.py functionality.
+    Demonstrates all cache features and validates proper operation.
+    """
+    print("=" * 60)
+    print("CACHE.PY - COMPREHENSIVE TEST SUITE")
+    print("=" * 60)
+
+    tests_passed = 0
+    tests_failed = 0
+
+    def test_result(test_name: str, passed: bool, details: str = ""):
+        nonlocal tests_passed, tests_failed
+        status = "PASS" if passed else "FAIL"
+        print(f"[{status:>4}] {test_name}")
+        if details:
+            print(f"       {details}")
+        if passed:
+            tests_passed += 1
+        else:
+            tests_failed += 1
+        return passed
+
+    # Test 1: Cache Initialization
+    print("\n--- Test Section 1: Cache Initialization ---")
+
+    test_result(
+        "Cache Object Available",
+        cache is not None,
+        f"Cache instance: {type(cache) if cache else 'None'}",
+    )
+
+    if cache and CACHE_DIR:
+        test_result(
+            "Cache Directory Exists",
+            CACHE_DIR.exists(),
+            f"Directory: {CACHE_DIR.resolve()}",
+        )
+
+        test_result(
+            "Cache Statistics Enabled",
+            getattr(cache, "statistics", False),
+            "Statistics tracking for performance monitoring",
+        )
+
+    # Test 2: Basic Cache Operations
+    print("\n--- Test Section 2: Basic Cache Operations ---")
+
+    if cache:
+        try:
+            # Test basic set/get
+            test_key = "test_basic_operation"
+            test_value = {"test": "data", "timestamp": time.time()}
+
+            cache.set(test_key, test_value)
+            retrieved_value = cache.get(test_key)
+
+            test_result(
+                "Basic Set/Get Operation",
+                retrieved_value == test_value,
+                f"Stored and retrieved: {type(test_value)}",
+            )
+
+            # Test cache miss
+            missing_value = cache.get("nonexistent_key", default="NOT_FOUND")
+            test_result(
+                "Cache Miss Handling",
+                missing_value == "NOT_FOUND",
+                "Proper default value returned",
+            )
+
+            # Test deletion
+            cache.delete(test_key)
+            deleted_check = cache.get(test_key, default="DELETED")
+            test_result(
+                "Cache Deletion",
+                deleted_check == "DELETED",
+                "Key properly removed from cache",
+            )
+
+        except Exception as e:
+            test_result("Basic Cache Operations", False, f"Error: {str(e)}")
+
+    # Test 3: Cache Decorator Functionality
+    print("\n--- Test Section 3: Cache Decorator Functionality ---")
+
+    try:
+        # Create test function with cache decorator
+        @cache_result("test_decorator", expire=300)
+        def expensive_calculation(x: int, y: int) -> int:
+            """Simulates an expensive calculation."""
+            time.sleep(0.1)  # Simulate processing time
+            return x * y + x**2
+
+        # Test first call (should cache)
+        start_time = time.time()
+        result1 = expensive_calculation(5, 10)
+        first_call_time = time.time() - start_time
+
+        # Test second call (should be cached)
+        start_time = time.time()
+        result2 = expensive_calculation(5, 10)
+        second_call_time = time.time() - start_time
+
+        test_result(
+            "Decorator Caching Works",
+            result1 == result2,
+            f"Both calls returned: {result1}",
+        )
+
+        test_result(
+            "Cache Performance Improvement",
+            second_call_time < first_call_time / 2,
+            f"First: {first_call_time:.3f}s, Second: {second_call_time:.3f}s",
+        )
+
+    except Exception as e:
+        test_result("Cache Decorator Functionality", False, f"Error: {str(e)}")
+
+    # Test 4: File-Based Caching
+    print("\n--- Test Section 4: File-Based Caching ---")
+
+    try:
+        # Create a temporary test file
+        if CACHE_DIR:
+            test_file_path = CACHE_DIR / "test_file.txt"
+            with open(test_file_path, "w") as f:
+                f.write("test content")
+
+        @cache_file_based_on_mtime("test_file_cache", str(test_file_path))
+        def read_file_content(file_path: str) -> str:
+            """Reads file content (expensive operation simulation)."""
+            with open(file_path, "r") as f:
+                return f.read()
+
+        # First call
+        content1 = read_file_content(str(test_file_path))
+
+        # Second call (should be cached)
+        content2 = read_file_content(str(test_file_path))
+
+        test_result(
+            "File-Based Caching",
+            content1 == content2 == "test content",
+            f"File content cached properly",
+        )
+
+        # Clean up test file
+        test_file_path.unlink()
+
+    except Exception as e:
+        test_result("File-Based Caching", False, f"Error: {str(e)}")
+
+    # Test 5: Cache Management Functions
+    print("\n--- Test Section 5: Cache Management Functions ---")
+
+    try:
+        # Test cache statistics
+        stats = get_cache_stats()
+        test_result(
+            "Cache Statistics Retrieval",
+            isinstance(stats, dict),
+            f"Stats keys: {list(stats.keys())}",
+        )
+
+        # Test cache warming
+        warm_success = warm_cache_with_data("warm_test_key", {"warmed": True})
+        test_result(
+            "Cache Warming", warm_success, "Successfully preloaded cache with data"
+        )
+
+        # Verify warmed data
+        if warm_success and cache:
+            warmed_data = cache.get("warm_test_key")
+            test_result(
+                "Warmed Data Retrieval",
+                warmed_data == {"warmed": True},
+                "Warmed data retrieved correctly",
+            )
+
+        # Test pattern invalidation
+        if cache:
+            cache.set("pattern_test_1", "data1")
+            cache.set("pattern_test_2", "data2")
+            cache.set("other_key", "data3")
+
+            invalidated_count = invalidate_cache_pattern("pattern_test")
+            test_result(
+                "Pattern Invalidation",
+                invalidated_count == 2,
+                f"Invalidated {invalidated_count} entries matching pattern",
+            )
+        else:
+            test_result("Pattern Invalidation", False, "Cache not available")
+
+    except Exception as e:
+        test_result("Cache Management Functions", False, f"Error: {str(e)}")
+
+    # Test 6: Performance and Stress Testing
+    print("\n--- Test Section 6: Performance and Stress Testing ---")
+
+    try:
+        # Test multiple rapid operations
+        start_time = time.time()
+        if cache:
+            for i in range(100):
+                cache.set(f"perf_test_{i}", {"iteration": i, "data": "x" * 100})
+
+            for i in range(100):
+                retrieved = cache.get(f"perf_test_{i}")
+                if retrieved is None:
+                    raise ValueError(f"Failed to retrieve perf_test_{i}")
+
+            performance_time = time.time() - start_time
+            test_result(
+                "Performance Stress Test",
+                performance_time < 5.0,
+                f"100 set/get operations in {performance_time:.2f} seconds",
+            )
+
+            # Clean up performance test data
+            for i in range(100):
+                cache.delete(f"perf_test_{i}")
+        else:
+            test_result("Performance Stress Test", False, "Cache not available")
+
+    except Exception as e:
+        test_result("Performance and Stress Testing", False, f"Error: {str(e)}")
+
+    # Test Summary
+    print("\n" + "=" * 60)
+    print("TEST SUMMARY")
+    print("=" * 60)
+    total_tests = tests_passed + tests_failed
+    success_rate = (tests_passed / total_tests * 100) if total_tests > 0 else 0
+
+    print(f"Total Tests Run: {total_tests}")
+    print(f"Tests Passed: {tests_passed}")
+    print(f"Tests Failed: {tests_failed}")
+    print(f"Success Rate: {success_rate:.1f}%")
+
+    # Cache statistics
+    if cache:
+        final_stats = get_cache_stats()
+        print(f"\nFinal Cache Statistics:")
+        for key, value in final_stats.items():
+            print(f"  {key}: {value}")
+
+    if tests_failed == 0:
+        print("\n🎉 All cache tests PASSED! cache.py is working correctly.")
+    else:
+        print(f"\n⚠️  {tests_failed} test(s) FAILED. Please review the issues above.")
+
+    return tests_failed == 0
+
+
+def demonstrate_cache_usage():
+    """
+    Demonstrates practical usage patterns for the cache system.
+    Shows real-world examples of how to use cache decorators and functions.
+    """
+    print("=" * 60)
+    print("CACHE.PY - USAGE DEMONSTRATION")
+    print("=" * 60)
+
+    print("\n--- Example 1: Caching Expensive Calculations ---")
+
+    @cache_result("fibonacci", expire=3600)  # Cache for 1 hour
+    def fibonacci(n: int) -> int:
+        """Calculate fibonacci number with caching."""
+        if n <= 1:
+            return n
+        return fibonacci(n - 1) + fibonacci(n - 2)
+
+    print("Computing fibonacci(30) with caching...")
+    start_time = time.time()
+    result = fibonacci(30)
+    calc_time = time.time() - start_time
+    print(f"Result: {result} (computed in {calc_time:.3f} seconds)")
+
+    print("Computing fibonacci(30) again (should be much faster)...")
+    start_time = time.time()
+    result2 = fibonacci(30)
+    cached_time = time.time() - start_time
+    print(f"Result: {result2} (retrieved in {cached_time:.3f} seconds)")
+
+    if cached_time > 0:
+        speed_improvement = calc_time / cached_time
+        print(f"Speed improvement: {speed_improvement:.1f}x faster!")
+    else:
+        print("Speed improvement: Cache retrieval was instantaneous!")
+
+    print("\n--- Example 2: API Response Caching ---")
+
+    @cache_result("api_response", expire=300)  # Cache for 5 minutes
+    def simulate_api_call(endpoint: str) -> dict:
+        """Simulate an API call with caching."""
+        print(f"  Making API call to: {endpoint}")
+        time.sleep(0.5)  # Simulate network delay
+        return {
+            "endpoint": endpoint,
+            "timestamp": time.time(),
+            "data": f"Response from {endpoint}",
+            "status": "success",
+        }
+
+    print("First API call (will make actual request):")
+    api_result1 = simulate_api_call("/users/123")
+    print(f"  Response: {api_result1['data']}")
+
+    print("Second API call (will use cache):")
+    api_result2 = simulate_api_call("/users/123")
+    print(f"  Response: {api_result2['data']}")
+    print(f"  Same response cached: {api_result1 == api_result2}")
+
+    print("\n--- Example 3: Configuration Data Caching ---")
+
+    @cache_result("config_data", ignore_args=True, expire=1800)  # 30 minutes
+    def load_configuration() -> dict:
+        """Load configuration with caching (ignores arguments)."""
+        print("  Loading configuration from disk...")
+        time.sleep(0.2)  # Simulate file I/O
+        return {
+            "database_url": "sqlite:///ancestry.db",
+            "cache_size": "2GB",
+            "log_level": "INFO",
+            "loaded_at": time.time(),
+        }
+
+    print("Loading configuration (first time):")
+    config1 = load_configuration()
+    print(f"  Database URL: {config1['database_url']}")
+
+    print("Loading configuration (cached):")
+    config2 = load_configuration()
+    print(f"  Cache size: {config2['cache_size']}")
+    print(f"  Same config object: {config1 is config2}")
+
+    print("\n--- Example 4: Cache Management ---")
+
+    # Show current cache statistics
+    stats = get_cache_stats()
+    print(f"Current cache statistics:")
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
+
+    # Demonstrate cache warming
+    print("\nWarming cache with frequently needed data...")
+    warm_cache_with_data("user_preferences", {"theme": "dark", "language": "en"})
+    warm_cache_with_data("system_config", {"version": "1.0", "debug": False})
+
+    # Show updated statistics
+    updated_stats = get_cache_stats()
+    print(f"Updated cache statistics:")
+    for key, value in updated_stats.items():
+        print(f"  {key}: {value}")
+
+    print("\n--- Cache Usage Demo Complete ---")
+
+
+# Main execution block for testing
+if __name__ == "__main__":
+    print("Starting Cache.py Test and Demonstration Suite...")
+    if CACHE_DIR:
+        print(f"Cache Directory: {CACHE_DIR.resolve()}")
+    print(f"Cache Initialized: {cache is not None}")
+
+    if cache is None:
+        print("\n❌ ERROR: Cache not initialized. Cannot run tests.")
+        print("Please check the error messages above for cache initialization issues.")
+        exit(1)
+
+    # Run comprehensive tests
+    print("\n" + "🧪 " + "RUNNING COMPREHENSIVE TESTS" + " 🧪")
+    success = run_cache_tests()
+
+    print("\n" + "💡 " + "RUNNING USAGE DEMONSTRATIONS" + " 💡")
+    demonstrate_cache_usage()
+
+    print("\n" + "=" * 60)
+    print("CACHE.PY TEST AND DEMO COMPLETE!")
+    print("=" * 60)
+
+    if success:
+        print("✅ All tests passed! Cache system is fully operational.")
+    else:
+        print("⚠️  Some tests failed. Please review the output above.")
+        exit(1)
 
 # --- End of cache.py ---
