@@ -107,7 +107,6 @@ try:
     from gedcom_utils import (
         calculate_match_score,
         _normalize_id,
-        load_gedcom_data,
         GedcomData,
     )
 
@@ -119,8 +118,10 @@ try:
     )
 
     GEDCOM_UTILS_AVAILABLE = True
-except ImportError:
-    pass
+    logger.info("GEDCOM utilities successfully imported.")
+except ImportError as e:
+    logger.warning(f"GEDCOM utilities not available: {e}")
+    GEDCOM_UTILS_AVAILABLE = False
 
 # Try to import relationship utilities
 try:
@@ -129,11 +130,9 @@ try:
 
     RELATIONSHIP_UTILS_AVAILABLE = True
     logger.info("Relationship utilities successfully imported.")
-except ImportError:
-    logger.warning(
-        "Relationship utilities not available. Cannot get relationship paths."
-    )
-    pass
+except ImportError as e:
+    logger.warning(f"Relationship utilities not available: {e}")
+    RELATIONSHIP_UTILS_AVAILABLE = False
 
 # Try to import API utilities separately
 try:
@@ -141,8 +140,10 @@ try:
     from action11 import _process_and_score_suggestions
 
     API_UTILS_AVAILABLE = True
-except ImportError:
-    pass
+    logger.info("API utilities successfully imported.")
+except ImportError as e:
+    logger.warning(f"API utilities not available: {e}")
+    API_UTILS_AVAILABLE = False
 
 
 # --- Pydantic Models for AI Response Validation ---

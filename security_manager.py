@@ -373,18 +373,31 @@ def self_test() -> bool:
         username = security_manager.get_credential("TEST_USERNAME")
         if username != "test_user":
             logger.error("Failed to retrieve individual credential")
-            return False
+            return False  # Test validation - temporarily reduce log level for expected failures
+        import logging
 
-        # Test validation
-        if not security_manager.validate_credentials(
-            {"ANCESTRY_USERNAME": "test", "ANCESTRY_PASSWORD": "test"}
-        ):
-            logger.error("Valid credentials failed validation")
-            return False
+        original_level = logger.level
+        logger.setLevel(
+            logging.CRITICAL
+        )  # Suppress expected error messages during testing
 
-        if security_manager.validate_credentials({"ANCESTRY_USERNAME": "test"}):
-            logger.error("Invalid credentials passed validation")
-            return False
+        try:
+            # Test valid credentials
+            if not security_manager.validate_credentials(
+                {"ANCESTRY_USERNAME": "test", "ANCESTRY_PASSWORD": "test"}
+            ):
+                logger.setLevel(original_level)
+                logger.error("Valid credentials failed validation")
+                return False
+
+            # Test invalid credentials (missing password) - this should return False
+            if security_manager.validate_credentials({"ANCESTRY_USERNAME": "test"}):
+                logger.setLevel(original_level)
+                logger.error("Invalid credentials passed validation")
+                return False
+        finally:
+            # Restore original log level
+            logger.setLevel(original_level)
 
         # Cleanup test files
         security_manager.delete_credentials()

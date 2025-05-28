@@ -203,19 +203,79 @@ def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
             "family_maps": f"gedcom_family_maps_{path_hash}_{mtime_hash}",
         }
 
-        # Cache processed data
+        # Cache processed data - ensure it's serializable
         if hasattr(gedcom_data, "processed_data_cache"):
+            # Create a serializable version of processed_data_cache
+            serializable_processed_data = {}
+            for key, value in gedcom_data.processed_data_cache.items():
+                if isinstance(value, dict):
+                    serializable_item = {}
+                    for item_key, item_value in value.items():
+                        # Convert datetime objects to ISO strings for serialization
+                        if hasattr(item_value, "isoformat"):  # datetime objects
+                            serializable_item[item_key] = item_value.isoformat()
+                        elif isinstance(
+                            item_value, (str, int, float, bool, list, tuple, type(None))
+                        ):
+                            serializable_item[item_key] = item_value
+                        else:
+                            # Skip non-serializable objects
+                            logger.debug(
+                                f"Skipping non-serializable object in processed_data_cache: {item_key} = {type(item_value)}"
+                            )
+                    serializable_processed_data[key] = serializable_item
+                elif isinstance(
+                    value, (str, int, float, bool, list, tuple, type(None))
+                ):
+                    serializable_processed_data[key] = value
+
             warm_cache_with_data(
                 cache_keys["processed_data"],
-                gedcom_data.processed_data_cache,
+                serializable_processed_data,
                 expire=86400,
             )
 
-        # Cache individual index
+        # Cache individual index - filter out non-serializable objects
         if hasattr(gedcom_data, "indi_index"):
-            warm_cache_with_data(
-                cache_keys["indi_index"], gedcom_data.indi_index, expire=86400
-            )
+            # Create a serializable version of indi_index
+            serializable_indi_index = {}
+            for key, value in gedcom_data.indi_index.items():
+                # Only cache primitive data types and avoid GedcomReader references
+                if isinstance(
+                    value, (str, int, float, bool, list, dict, tuple, type(None))
+                ):
+                    serializable_indi_index[key] = value
+                else:
+                    # For complex objects, try to extract serializable data
+                    try:
+                        # Check if it's a simple object with serializable attributes
+                        if hasattr(value, "__dict__"):
+                            obj_dict = {}
+                            for attr, attr_value in value.__dict__.items():
+                                if isinstance(
+                                    attr_value,
+                                    (
+                                        str,
+                                        int,
+                                        float,
+                                        bool,
+                                        list,
+                                        dict,
+                                        tuple,
+                                        type(None),
+                                    ),
+                                ):
+                                    obj_dict[attr] = attr_value
+                            if obj_dict:  # Only store if we have serializable data
+                                serializable_indi_index[key] = obj_dict
+                    except:
+                        # Skip non-serializable objects
+                        pass
+
+            if serializable_indi_index:
+                warm_cache_with_data(
+                    cache_keys["indi_index"], serializable_indi_index, expire=86400
+                )
 
         # Cache family relationship maps
         family_data = {}
