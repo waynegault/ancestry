@@ -102,52 +102,73 @@ def format_name(name: Optional[str]) -> str:
 
 
 # Import GEDCOM specific helpers and types from gedcom_utils - avoid config dependency
-# Use minimal imports and fallbacks for testing
-def _normalize_id(id_str: str) -> str:
-    """Normalize GEDCOM ID by removing @ symbols."""
-    if not id_str:
-        return ""
-    return id_str.strip("@")
+# Try to import actual functions from gedcom_utils, fall back to minimal versions for testing
+try:
+    from gedcom_utils import (
+        _normalize_id,
+        _is_record,
+        _are_siblings,
+        _is_grandparent,
+        _is_grandchild,
+        _get_event_info,
+        _get_full_name,
+        _parse_date,
+        _clean_display_date,
+        TAG_BIRTH,
+        TAG_DEATH,
+        TAG_SEX,
+        TAG_HUSBAND,
+        TAG_WIFE,
+    )
+
+    GEDCOM_UTILS_AVAILABLE = True
+except ImportError:
+    GEDCOM_UTILS_AVAILABLE = False
+
+    # Fallback functions for testing when gedcom_utils is not available
+    def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
+        """Normalize GEDCOM ID by removing @ symbols."""
+        if not xref_id:
+            return None
+        return xref_id.strip("@")
+
+    def _is_record(obj: Any) -> bool:
+        """Check if object is a GEDCOM record."""
+        return obj is not None and hasattr(obj, "tag")
+
+    def _are_siblings(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
+        """Check if two individuals are siblings."""
+        if not id1 or not id2 or id1 == id2:
+            return False
+        parents1 = id_to_parents.get(id1, set())
+        parents2 = id_to_parents.get(id2, set())
+        return bool(parents1 and parents2 and parents1.intersection(parents2))
 
 
-def _is_record(obj: Any) -> bool:
-    """Check if object is a GEDCOM record."""
-    return obj is not None and hasattr(obj, "tag")
-
-
-def _are_siblings(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
-    """Check if two individuals are siblings."""
-    if not id1 or not id2 or id1 == id2:
+def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
+    """Check if id2 is a grandparent of id1."""
+    if not id1 or not id2:
         return False
-    parents1 = id_to_parents.get(id1, set())
-    parents2 = id_to_parents.get(id2, set())
-    return bool(parents1 and parents2 and parents1.intersection(parents2))
-
-
-def _is_grandparent(
-    grandchild_id: str, grandparent_id: str, id_to_parents: Dict[str, Set[str]]
-) -> bool:
-    """Check if one individual is the grandparent of another."""
-    if not grandchild_id or not grandparent_id:
-        return False
-    parents = id_to_parents.get(grandchild_id, set())
+    # Get parents of id1
+    parents = id_to_parents.get(id1, set())
+    # For each parent, check if id2 is their parent
     for parent_id in parents:
         grandparents = id_to_parents.get(parent_id, set())
-        if grandparent_id in grandparents:
+        if id2 in grandparents:
             return True
     return False
 
 
-def _is_grandchild(
-    grandparent_id: str, grandchild_id: str, id_to_children: Dict[str, Set[str]]
-) -> bool:
-    """Check if one individual is the grandchild of another."""
-    if not grandparent_id or not grandchild_id:
+def _is_grandchild(id1: str, id2: str, id_to_children: Dict[str, Set[str]]) -> bool:
+    """Check if id2 is a grandchild of id1."""
+    if not id1 or not id2:
         return False
-    children = id_to_children.get(grandparent_id, set())
+    # Get children of id1
+    children = id_to_children.get(id1, set())
+    # For each child, check if id2 is their child
     for child_id in children:
         grandchildren = id_to_children.get(child_id, set())
-        if grandchild_id in grandchildren:
+        if id2 in grandchildren:
             return True
     return False
 
@@ -170,17 +191,19 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     return None
 
 
-def _clean_display_date(date_str: str) -> str:
+def _clean_display_date(raw_date_str: Optional[str]) -> str:
     """Clean display date string."""
-    return date_str or ""
+    return raw_date_str or ""
 
 
-def _get_event_info(record: Any, tag: str) -> Tuple[str, str]:
+def _get_event_info(
+    individual: Any, event_tag: str
+) -> Tuple[Optional[datetime], str, str]:
     """Get event info from record."""
-    return ("", "")
+    return (None, "", "")
 
 
-def _get_full_name(record: Any) -> str:
+def _get_full_name(indi: Any) -> str:
     """Get full name from record."""
     return "Unknown"
 
@@ -1949,7 +1972,7 @@ if __name__ == "__main__":
     # Test error conditions (suppress logging to reduce noise)
     original_level = logger.level
     logger.setLevel(logging.CRITICAL)
-    
+
     _run_test(
         "fast_bidirectional_bfs (empty id)",
         lambda: fast_bidirectional_bfs(
@@ -1963,7 +1986,7 @@ if __name__ == "__main__":
         lambda: fast_bidirectional_bfs("child1", "parent1", None, id_to_children_test)
         == [],
     )
-    
+
     # Restore original logging level
     logger.setLevel(original_level)
 
@@ -2085,7 +2108,7 @@ if __name__ == "__main__":
     # Test with empty data (suppress logging to reduce noise)
     original_level = logger.level
     logger.setLevel(logging.CRITICAL)
-    
+
     _run_test(
         "convert_discovery_api_path_to_unified_format (empty data)",
         lambda: convert_discovery_api_path_to_unified_format({}, "Fraser Gault") == [],
@@ -2099,7 +2122,7 @@ if __name__ == "__main__":
         )
         == [],
     )
-    
+
     # Restore original logging level
     logger.setLevel(original_level)
 
@@ -2141,13 +2164,13 @@ if __name__ == "__main__":
     # Test with invalid input (suppress logging to reduce noise)
     original_level = logger.level
     logger.setLevel(logging.CRITICAL)
-    
+
     _run_test(
         "format_api_relationship_path (None)",
         lambda: "(No relationship data received from API)"
         in format_api_relationship_path(None, "Reference Person", "Nobody"),
     )
-    
+
     # Restore original logging level
     logger.setLevel(original_level)
 

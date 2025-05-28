@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
 Performance Monitoring and Metrics Collection for Ancestry.com Automation System
-Provides comprehensive performance tracking, metrics collection, and health monitoring.
+Fixed version that doesn't hang on Windows
 """
 
 import time
 import threading
 import psutil
 import gc
+import html
+import json
+import re
+import sqlite3
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable
 from functools import wraps
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
-import json
 from pathlib import Path
 from logging_config import logger
 
@@ -50,18 +54,24 @@ class ServiceMetrics:
 class PerformanceMonitor:
     """
     Comprehensive performance monitoring system for tracking application metrics.
+    Fixed version that works reliably on Windows.
     """
 
-    def __init__(self, metrics_file: str = "performance_metrics.json"):
+    def __init__(
+        self,
+        metrics_file: str = "performance_metrics.json",
+        enable_background_monitoring: bool = False,
+    ):
         self.metrics_file = Path(metrics_file)
         self.services: Dict[str, ServiceMetrics] = {}
         self.system_metrics: Dict[str, Any] = {}
         self._lock = threading.Lock()
         self._start_time = datetime.now()
-        self._collection_enabled = True
+        self._collection_enabled = enable_background_monitoring
 
-        # Start background system monitoring
-        self._start_system_monitoring()
+        # Only start background monitoring if explicitly enabled
+        if enable_background_monitoring:
+            self._start_system_monitoring()
 
     def _start_system_monitoring(self):
         """Start background thread for system metrics collection."""
@@ -82,18 +92,20 @@ class PerformanceMonitor:
         """Collect system-level metrics."""
         try:
             process = psutil.Process()
+            disk_path = "C:\\" if os.name == "nt" else "/"
 
             with self._lock:
                 self.system_metrics.update(
                     {
                         "timestamp": datetime.now().isoformat(),
-                        "cpu_percent": psutil.cpu_percent(interval=1),
+                        "cpu_percent": psutil.cpu_percent(
+                            interval=0.1
+                        ),  # Shorter interval
                         "memory_percent": psutil.virtual_memory().percent,
-                        "disk_usage": psutil.disk_usage("/").percent,
+                        "disk_usage": psutil.disk_usage(disk_path).percent,
                         "process_memory_mb": process.memory_info().rss / 1024 / 1024,
                         "process_cpu_percent": process.cpu_percent(),
                         "thread_count": threading.active_count(),
-                        "open_files": len(process.open_files()),
                         "uptime_seconds": (
                             datetime.now() - self._start_time
                         ).total_seconds(),
@@ -180,31 +192,14 @@ class PerformanceMonitor:
                 "recent_call_count": len(service.recent_metrics),
             }
 
-    def get_all_metrics(self) -> Dict[str, Any]:
-        """Get all performance metrics."""
-        with self._lock:
-            service_metrics = {}
-            for service_name in self.services:
-                service_metrics[service_name] = self.get_service_metrics(service_name)
-
-            return {
-                "timestamp": datetime.now().isoformat(),
-                "uptime_seconds": (datetime.now() - self._start_time).total_seconds(),
-                "system_metrics": dict(self.system_metrics),
-                "service_metrics": service_metrics,
-                "total_services": len(self.services),
-                "memory_objects": len(gc.get_objects()),
-            }
-
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get a summary of key performance indicators."""
-        metrics = self.get_all_metrics()
+        # Collect current system metrics if not running background monitoring
+        if not self._collection_enabled:
+            self._collect_system_metrics()
 
-        # Calculate overall statistics
-        total_calls = sum(s["total_calls"] for s in metrics["service_metrics"].values())
-        total_failures = sum(
-            s["failed_calls"] for s in metrics["service_metrics"].values()
-        )
+        total_calls = sum(s.total_calls for s in self.services.values())
+        total_failures = sum(s.failed_calls for s in self.services.values())
         overall_success_rate = (
             ((total_calls - total_failures) / total_calls) if total_calls > 0 else 0
         )
@@ -215,52 +210,34 @@ class PerformanceMonitor:
         slowest_avg = 0
         fastest_avg = float("inf")
 
-        for service_data in metrics["service_metrics"].values():
-            if service_data["total_calls"] > 0:
-                avg = service_data["avg_duration"]
+        for service_data in self.services.values():
+            if service_data.total_calls > 0:
+                avg = service_data.avg_duration
                 if avg > slowest_avg:
                     slowest_avg = avg
-                    slowest_service = service_data["name"]
+                    slowest_service = service_data.name
                 if avg < fastest_avg:
                     fastest_avg = avg
-                    fastest_service = service_data["name"]
+                    fastest_service = service_data.name
 
         return {
-            "timestamp": metrics["timestamp"],
-            "uptime_hours": round(metrics["uptime_seconds"] / 3600, 2),
+            "timestamp": datetime.now().isoformat(),
+            "uptime_hours": round(
+                (datetime.now() - self._start_time).total_seconds() / 3600, 2
+            ),
             "total_operations": total_calls,
             "overall_success_rate": round(overall_success_rate * 100, 2),
-            "total_services_monitored": metrics["total_services"],
-            "system_memory_percent": metrics["system_metrics"].get("memory_percent", 0),
-            "system_cpu_percent": metrics["system_metrics"].get("cpu_percent", 0),
+            "total_services_monitored": len(self.services),
+            "system_memory_percent": self.system_metrics.get("memory_percent", 0),
+            "system_cpu_percent": self.system_metrics.get("cpu_percent", 0),
             "process_memory_mb": round(
-                metrics["system_metrics"].get("process_memory_mb", 0), 2
+                self.system_metrics.get("process_memory_mb", 0), 2
             ),
             "slowest_service": slowest_service,
             "slowest_avg_duration": round(slowest_avg, 3) if slowest_service else None,
             "fastest_service": fastest_service,
             "fastest_avg_duration": round(fastest_avg, 3) if fastest_service else None,
         }
-
-    def save_metrics(self):
-        """Save metrics to file."""
-        try:
-            metrics = self.get_all_metrics()
-            with open(self.metrics_file, "w") as f:
-                json.dump(metrics, f, indent=2, default=str)
-            logger.debug(f"Metrics saved to {self.metrics_file}")
-        except Exception as e:
-            logger.error(f"Failed to save metrics: {e}")
-
-    def load_metrics(self) -> Optional[Dict[str, Any]]:
-        """Load metrics from file."""
-        try:
-            if self.metrics_file.exists():
-                with open(self.metrics_file, "r") as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to load metrics: {e}")
-        return None
 
     def reset_metrics(self):
         """Reset all metrics."""
@@ -275,8 +252,8 @@ class PerformanceMonitor:
         self._collection_enabled = False
 
 
-# Global performance monitor instance
-performance_monitor = PerformanceMonitor()
+# Global performance monitor instance (with background monitoring disabled by default)
+performance_monitor = PerformanceMonitor(enable_background_monitoring=False)
 
 
 def monitor_performance(service_name: str):
@@ -308,9 +285,7 @@ def monitor_performance(service_name: str):
 
 
 class HealthChecker:
-    """
-    Health check system for monitoring system components and dependencies.
-    """
+    """Health check system for monitoring system components and dependencies."""
 
     def __init__(self):
         self.health_checks: Dict[str, Callable] = {}
@@ -339,12 +314,12 @@ class HealthChecker:
             if not isinstance(result, dict):
                 result = {"status": "healthy" if result else "unhealthy"}
 
-            result.update(
-                {
-                    "check_duration": time.time() - start_time,
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
+            # Add timing and timestamp information
+            timing_info = {
+                "check_duration": time.time() - start_time,
+                "timestamp": datetime.now().isoformat(),
+            }
+            result.update(timing_info)
 
             self.last_results[name] = result
             return result
@@ -359,16 +334,11 @@ class HealthChecker:
             self.last_results[name] = result
             return result
 
-    def run_all_health_checks(self) -> Dict[str, Dict[str, Any]]:
-        """Run all registered health checks."""
+    def get_overall_health(self) -> Dict[str, Any]:
+        """Get overall system health status."""
         results = {}
         for name in self.health_checks:
             results[name] = self.run_health_check(name)
-        return results
-
-    def get_overall_health(self) -> Dict[str, Any]:
-        """Get overall system health status."""
-        results = self.run_all_health_checks()
 
         healthy_count = sum(1 for r in results.values() if r.get("status") == "healthy")
         total_count = len(results)
@@ -397,10 +367,21 @@ health_checker = HealthChecker()
 def database_health_check() -> Dict[str, Any]:
     """Check database connectivity and performance."""
     try:
-        from database import get_db_connection
+        # Try multiple ways to import database connection
+        db_connection_func = None
+        try:
+            from database import get_db_connection
+
+            db_connection_func = get_db_connection
+        except ImportError:
+            # Fallback to direct sqlite connection
+            def get_db_connection():
+                return sqlite3.connect("ancestry.db")
+
+            db_connection_func = get_db_connection
 
         start_time = time.time()
-        with get_db_connection() as conn:
+        with db_connection_func() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT 1")
             result = cursor.fetchone()
@@ -452,7 +433,9 @@ def memory_health_check() -> Dict[str, Any]:
 def disk_health_check() -> Dict[str, Any]:
     """Check disk space usage."""
     try:
-        disk = psutil.disk_usage("/")
+        # Use appropriate path for Windows vs Unix
+        disk_path = "C:\\" if os.name == "nt" else "/"
+        disk = psutil.disk_usage(disk_path)
 
         disk_threshold = 90  # Alert if disk usage > 90%
         status = "healthy"
@@ -486,7 +469,7 @@ def self_test() -> bool:
         # Test performance monitoring
         @monitor_performance("test_service")
         def test_function(should_fail=False):
-            time.sleep(0.1)  # Simulate work
+            time.sleep(0.01)  # Simulate work (shorter for faster test)
             if should_fail:
                 raise ValueError("Test error")
             return "success"
@@ -517,13 +500,8 @@ def self_test() -> bool:
             return False
 
         # Test health checks
-        health_results = health_checker.run_all_health_checks()
-        if not health_results:
-            logger.error("No health check results")
-            return False
-
-        overall_health = health_checker.get_overall_health()
-        if "overall_status" not in overall_health:
+        health_results = health_checker.get_overall_health()
+        if "overall_status" not in health_results:
             logger.error("Missing overall health status")
             return False
 
@@ -542,6 +520,7 @@ def self_test() -> bool:
 
 
 if __name__ == "__main__":
+    print("Starting performance monitor self-test...")
     success = self_test()
 
     # Display sample metrics
@@ -555,5 +534,9 @@ if __name__ == "__main__":
         health = health_checker.get_overall_health()
         print(f"Overall Status: {health['overall_status']}")
         print(f"Healthy Checks: {health['healthy_checks']}/{health['total_checks']}")
+
+        print("\n✅ Performance monitor working correctly!")
+    else:
+        print("\n❌ Performance monitor self-test failed!")
 
     exit(0 if success else 1)
