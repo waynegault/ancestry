@@ -539,12 +539,8 @@ def get_gedcom_family_details(
 
         # Get spouses and children
         # This requires looking at family records in the GEDCOM data
-        if (
-            hasattr(gedcom_data, "reader")
-            and gedcom_data.reader
-            and hasattr(gedcom_data, "indi_index")
-            and gedcom_data.indi_index
-        ):
+        if (hasattr(gedcom_data, "reader") and gedcom_data.reader and 
+            hasattr(gedcom_data, "indi_index") and gedcom_data.indi_index):
             # Get the individual record
             indi_record = gedcom_data.indi_index.get(individual_id_norm)
             if indi_record:
@@ -552,14 +548,14 @@ def get_gedcom_family_details(
                 for fam_link in indi_record.sub_tags("FAMS"):
                     fam_id = fam_link.value
                     fam_record = None
-
+                    
                     # Try to get family record using various methods (with error handling)
                     try:
                         if hasattr(gedcom_data.reader, "fam_dict"):
                             fam_dict = getattr(gedcom_data.reader, "fam_dict", None)
                             if fam_dict:
                                 fam_record = fam_dict.get(fam_id)
-
+                        
                         if not fam_record and hasattr(gedcom_data.reader, "get_family"):
                             get_family = getattr(gedcom_data.reader, "get_family", None)
                             if get_family:
@@ -749,17 +745,17 @@ def get_gedcom_relationship_path(
 def run_self_tests() -> bool:
     """
     Run comprehensive self-tests for gedcom_search_utils module.
-
+    
     Returns:
         bool: True if all tests pass, False otherwise
     """
     print("=" * 60)
     print("GEDCOM Search Utils - Self Test Suite")
     print("=" * 60)
-
+    
     tests_passed = 0
     tests_failed = 0
-
+    
     def test_result(test_name: str, passed: bool, details: str = ""):
         nonlocal tests_passed, tests_failed
         status = "PASS" if passed else "FAIL"
@@ -771,226 +767,187 @@ def run_self_tests() -> bool:
         else:
             tests_failed += 1
         return passed
-
+    
     # Test 1: Configuration and Setup
     print("\n--- Test Section 1: Configuration and Setup ---")
-
+    
     try:
         # Test config loading
         gedcom_path = get_config_value("GEDCOM_FILE_PATH", None)
-        test_result(
-            "Config Value Retrieval",
-            gedcom_path is not None,
-            f"GEDCOM_FILE_PATH: {gedcom_path}",
-        )
-
+        test_result("Config Value Retrieval", gedcom_path is not None, 
+                   f"GEDCOM_FILE_PATH: {gedcom_path}")
+        
         # Test GEDCOM data loading
         gedcom_data = get_gedcom_data()
-        test_result(
-            "GEDCOM Data Loading",
-            gedcom_data is not None,
-            f"GedcomData instance created: {type(gedcom_data)}",
-        )
-
+        test_result("GEDCOM Data Loading", gedcom_data is not None, 
+                   f"GedcomData instance created: {type(gedcom_data)}")
+        
         if gedcom_data:
-            cache_size = (
-                len(gedcom_data.processed_data_cache)
-                if hasattr(gedcom_data, "processed_data_cache")
-                else 0
-            )
-            test_result(
-                "GEDCOM Data Cache", cache_size > 0, f"Cached individuals: {cache_size}"
-            )
-
+            cache_size = len(gedcom_data.processed_data_cache) if hasattr(gedcom_data, 'processed_data_cache') else 0
+            test_result("GEDCOM Data Cache", cache_size > 0, 
+                       f"Cached individuals: {cache_size}")
+        
     except Exception as e:
         test_result("Configuration and Setup", False, f"Error: {str(e)}")
-
+    
     # Test 2: Basic Search Functionality
     print("\n--- Test Section 2: Basic Search Functionality ---")
-
+    
     try:
         # Test basic search with minimal criteria
         search_criteria = {"first_name": "John"}
         results = search_gedcom_for_criteria(search_criteria, max_results=5)
-        test_result(
-            "Basic Name Search",
-            len(results) > 0,
-            f"Found {len(results)} matches for 'John'",
-        )
-
+        test_result("Basic Name Search", len(results) > 0, 
+                   f"Found {len(results)} matches for 'John'")
+        
         # Test search with surname
         search_criteria = {"surname": "Smith"}
         results = search_gedcom_for_criteria(search_criteria, max_results=5)
-        test_result(
-            "Surname Search", True, f"Found {len(results)} matches for surname 'Smith'"
-        )
-
+        test_result("Surname Search", True, 
+                   f"Found {len(results)} matches for surname 'Smith'")
+        
         # Test search with birth year
         search_criteria = {"birth_year": 1900}
         results = search_gedcom_for_criteria(search_criteria, max_results=5)
-        test_result(
-            "Birth Year Search",
-            True,
-            f"Found {len(results)} matches for birth year 1900",
-        )
-
+        test_result("Birth Year Search", True, 
+                   f"Found {len(results)} matches for birth year 1900")
+        
     except Exception as e:
         test_result("Basic Search Functionality", False, f"Error: {str(e)}")
-
+    
     # Test 3: Frances Milne Search (Specific Test Request)
     print("\n--- Test Section 3: Frances Milne b. 1947 Search ---")
-
+    
     try:
         # Search for Frances Milne born 1947
         search_criteria = {
             "first_name": "Frances",
-            "surname": "Milne",
-            "birth_year": 1947,
+            "surname": "Milne", 
+            "birth_year": 1947
         }
         results = search_gedcom_for_criteria(search_criteria, max_results=10)
-
-        test_result(
-            "Frances Milne Search",
-            True,
-            f"Found {len(results)} matches for Frances Milne b. 1947",
-        )
-
+        
+        test_result("Frances Milne Search", True, 
+                   f"Found {len(results)} matches for Frances Milne b. 1947")
+        
         # Display detailed results for Frances Milne
         if results:
             print(f"       Top matches for Frances Milne:")
             for i, match in enumerate(results[:3], 1):
-                score = match.get("total_score", 0)
-                birth_year = match.get("birth_year", "Unknown")
+                score = match.get('total_score', 0)
+                birth_year = match.get('birth_year', 'Unknown')
                 full_name = f"{match.get('first_name', '')} {match.get('surname', '')}"
                 print(f"       {i}. {full_name} (b. {birth_year}) - Score: {score}")
-
+                
                 # Test family details for top match
                 if i == 1:
-                    family_details = get_gedcom_family_details(match["id"])
-                    test_result(
-                        "Family Details Retrieval",
-                        bool(family_details),
-                        f"Retrieved family data for {full_name}",
-                    )
+                    family_details = get_gedcom_family_details(match['id'])
+                    test_result("Family Details Retrieval", bool(family_details), 
+                               f"Retrieved family data for {full_name}")
         else:
             print("       No matches found for Frances Milne b. 1947")
-
+            
     except Exception as e:
         test_result("Frances Milne Search", False, f"Error: {str(e)}")
-
+    
     # Test 4: Advanced Search Features
     print("\n--- Test Section 4: Advanced Search Features ---")
-
+    
     try:
         # Test multiple criteria search
-        search_criteria = {"first_name": "Mary", "birth_year": 1920, "gender": "F"}
+        search_criteria = {
+            "first_name": "Mary",
+            "birth_year": 1920,
+            "gender": "F"
+        }
         results = search_gedcom_for_criteria(search_criteria, max_results=5)
-        test_result(
-            "Multi-Criteria Search",
-            True,
-            f"Found {len(results)} matches for Mary, F, b. 1920",
-        )
-
+        test_result("Multi-Criteria Search", True, 
+                   f"Found {len(results)} matches for Mary, F, b. 1920")
+        
         # Test with birth place
-        search_criteria = {"surname": "Brown", "birth_place": "England"}
+        search_criteria = {
+            "surname": "Brown",
+            "birth_place": "England"
+        }
         results = search_gedcom_for_criteria(search_criteria, max_results=5)
-        test_result(
-            "Place-Based Search",
-            True,
-            f"Found {len(results)} matches for Brown from England",
-        )
-
+        test_result("Place-Based Search", True, 
+                   f"Found {len(results)} matches for Brown from England")
+        
     except Exception as e:
         test_result("Advanced Search Features", False, f"Error: {str(e)}")
-
+    
     # Test 5: Family Relationship Functions
     print("\n--- Test Section 5: Family Relationship Functions ---")
-
+    
     try:
         # Get any individual for testing family functions
         gedcom_data = get_gedcom_data()
-        if gedcom_data and hasattr(gedcom_data, "processed_data_cache"):
+        if gedcom_data and hasattr(gedcom_data, 'processed_data_cache'):
             # Get first available individual
             test_id = next(iter(gedcom_data.processed_data_cache.keys()), None)
-
+            
             if test_id:
                 # Test family details
                 family_details = get_gedcom_family_details(test_id)
-                test_result(
-                    "Family Details Function",
-                    bool(family_details),
-                    f"Retrieved family details for ID: {test_id}",
-                )
-
+                test_result("Family Details Function", bool(family_details), 
+                           f"Retrieved family details for ID: {test_id}")
+                
                 # Test relationship path
                 relationship_path = get_gedcom_relationship_path(test_id)
-                test_result(
-                    "Relationship Path Function",
-                    "Failed to load" not in relationship_path,
-                    f"Path: {relationship_path[:50]}...",
-                )
+                test_result("Relationship Path Function", 
+                           "Failed to load" not in relationship_path, 
+                           f"Path: {relationship_path[:50]}...")
             else:
-                test_result(
-                    "Family Relationship Functions", False, "No test individual found"
-                )
-
+                test_result("Family Relationship Functions", False, "No test individual found")
+        
     except Exception as e:
         test_result("Family Relationship Functions", False, f"Error: {str(e)}")
-
+    
     # Test 6: Performance and Edge Cases
     print("\n--- Test Section 6: Performance and Edge Cases ---")
-
+    
     try:
         import time
-
+        
         # Test performance with large result set
         start_time = time.time()
         search_criteria = {"first_name": "John"}  # Common name
         results = search_gedcom_for_criteria(search_criteria, max_results=50)
         search_time = time.time() - start_time
-
-        test_result(
-            "Search Performance",
-            search_time < 5.0,
-            f"Search completed in {search_time:.2f} seconds",
-        )
-
+        
+        test_result("Search Performance", search_time < 5.0, 
+                   f"Search completed in {search_time:.2f} seconds")
+        
         # Test empty search criteria
         results = search_gedcom_for_criteria({}, max_results=5)
-        test_result(
-            "Empty Criteria Handling",
-            True,
-            f"Empty search returned {len(results)} results",
-        )
-
+        test_result("Empty Criteria Handling", True, 
+                   f"Empty search returned {len(results)} results")
+        
         # Test invalid individual ID
         family_details = get_gedcom_family_details("INVALID_ID")
-        test_result(
-            "Invalid ID Handling",
-            len(family_details) == 0,
-            "Invalid ID properly handled",
-        )
-
+        test_result("Invalid ID Handling", len(family_details) == 0, 
+                   "Invalid ID properly handled")
+        
     except Exception as e:
         test_result("Performance and Edge Cases", False, f"Error: {str(e)}")
-
+    
     # Test Summary
     print("\n" + "=" * 60)
     print("TEST SUMMARY")
     print("=" * 60)
     total_tests = tests_passed + tests_failed
     success_rate = (tests_passed / total_tests * 100) if total_tests > 0 else 0
-
+    
     print(f"Total Tests Run: {total_tests}")
     print(f"Tests Passed: {tests_passed}")
     print(f"Tests Failed: {tests_failed}")
     print(f"Success Rate: {success_rate:.1f}%")
-
+    
     if tests_failed == 0:
         print("\n🎉 All tests PASSED! gedcom_search_utils.py is working correctly.")
     else:
         print(f"\n⚠️  {tests_failed} test(s) FAILED. Please review the issues above.")
-
+    
     return tests_failed == 0
 
 
@@ -1001,75 +958,72 @@ def search_frances_milne_demo():
     print("=" * 60)
     print("FRANCES MILNE SEARCH DEMONSTRATION")
     print("=" * 60)
-
+    
     try:
         # Search for Frances Milne born 1947
         search_criteria = {
             "first_name": "Frances",
-            "surname": "Milne",
-            "birth_year": 1947,
+            "surname": "Milne", 
+            "birth_year": 1947
         }
-
+        
         print(f"Searching for: {search_criteria}")
         print("-" * 40)
-
+        
         results = search_gedcom_for_criteria(search_criteria, max_results=10)
-
+        
         if results:
             print(f"Found {len(results)} potential matches:\n")
-
+            
             for i, match in enumerate(results, 1):
                 print(f"{i}. ID: {match.get('id', 'Unknown')}")
-                print(
-                    f"   Name: {match.get('first_name', '')} {match.get('surname', '')}"
-                )
+                print(f"   Name: {match.get('first_name', '')} {match.get('surname', '')}")
                 print(f"   Birth Year: {match.get('birth_year', 'Unknown')}")
                 print(f"   Birth Place: {match.get('birth_place', 'Unknown')}")
                 print(f"   Gender: {match.get('gender', 'Unknown')}")
                 print(f"   Death Year: {match.get('death_year', 'Unknown')}")
                 print(f"   Match Score: {match.get('total_score', 0)}")
-
+                
                 # Show detailed scoring for top match
-                if i == 1 and match.get("field_scores"):
+                if i == 1 and match.get('field_scores'):
                     print(f"   Field Scores: {match.get('field_scores', {})}")
                     print(f"   Reasons: {match.get('reasons', [])}")
-
+                
                 print()
-
+                
                 # Get family details for top matches
                 if i <= 2:
-                    family_details = get_gedcom_family_details(match["id"])
+                    family_details = get_gedcom_family_details(match['id'])
                     if family_details:
                         print(f"   Family Details:")
-                        if family_details.get("parents"):
+                        if family_details.get('parents'):
                             print(f"   - Parents: {len(family_details['parents'])}")
-                        if family_details.get("spouses"):
+                        if family_details.get('spouses'):
                             print(f"   - Spouses: {len(family_details['spouses'])}")
-                        if family_details.get("children"):
+                        if family_details.get('children'):
                             print(f"   - Children: {len(family_details['children'])}")
-                        if family_details.get("siblings"):
+                        if family_details.get('siblings'):
                             print(f"   - Siblings: {len(family_details['siblings'])}")
                         print()
         else:
             print("No matches found for Frances Milne born 1947.")
             print("\nTrying broader search...")
-
+            
             # Try just name without birth year
-            broader_criteria = {"first_name": "Frances", "surname": "Milne"}
-            broader_results = search_gedcom_for_criteria(
-                broader_criteria, max_results=5
-            )
-
+            broader_criteria = {
+                "first_name": "Frances",
+                "surname": "Milne"
+            }
+            broader_results = search_gedcom_for_criteria(broader_criteria, max_results=5)
+            
             if broader_results:
                 print(f"Found {len(broader_results)} matches for just 'Frances Milne':")
                 for i, match in enumerate(broader_results, 1):
-                    birth_year = match.get("birth_year", "Unknown")
-                    print(
-                        f"{i}. Frances Milne (b. {birth_year}) - Score: {match.get('total_score', 0)}"
-                    )
+                    birth_year = match.get('birth_year', 'Unknown')
+                    print(f"{i}. Frances Milne (b. {birth_year}) - Score: {match.get('total_score', 0)}")
             else:
                 print("No matches found even for broader 'Frances Milne' search.")
-
+    
     except Exception as e:
         print(f"Error during Frances Milne search: {str(e)}")
         logger.error(f"Frances Milne search error: {e}", exc_info=True)
@@ -1078,17 +1032,17 @@ def search_frances_milne_demo():
 # Self-test execution when run as main module
 if __name__ == "__main__":
     print("Starting GEDCOM Search Utils Self-Test Suite...")
-
+    
     # Run comprehensive self tests
     success = run_self_tests()
-
+    
     print("\n" + "=" * 60)
-
+    
     # Run Frances Milne demonstration
     search_frances_milne_demo()
-
+    
     print("\n" + "=" * 60)
     print("Self-test complete!")
-
+    
     if not success:
         exit(1)
