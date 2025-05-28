@@ -200,6 +200,29 @@ The system operates through a sophisticated hybrid approach:
 - Provides fallback selectors for UI changes
 - Organized by functional area for easy maintenance
 
+**`credential_manager.py`** - Secure Credential Management Tool
+- Interactive command-line interface for managing encrypted credentials
+- Supports viewing, adding, updating, and removing credentials securely
+- Provides credential export functionality for backup/migration
+- Masks sensitive values when displaying stored credentials
+- Integrates with SecurityManager for encryption/decryption operations
+
+**`security_manager.py`** - Encryption and Security Framework
+- Implements Fernet encryption for secure credential storage
+- Manages encryption key generation and storage
+- Provides credential validation and migration utilities
+- Handles secure credential loading for application configuration
+- Supports backup and recovery of encrypted credential files
+
+#### Security Documentation
+
+**`SECURITY_IMPLEMENTATION.md`** - Comprehensive Security Guide
+- Complete documentation of security enhancements and encryption implementation
+- Detailed instructions for credential management and best practices
+- Security risk mitigation strategies and audit procedures
+- Step-by-step guides for credential migration and system security
+- Future security enhancement recommendations and compliance guidelines
+
 ### 3.b Key Features of Each File
 
 #### Session Management (`utils.py` - SessionManager)
@@ -2016,3 +2039,187 @@ These comprehensive improvements significantly enhance the genealogy system's ab
 - Provide better integration between different system actions
 
 The improvements maintain backward compatibility while providing a foundation for future enhancements.
+
+
+# Appendix # Ancestry Application Security Implementation
+
+## Overview
+This document outlines the security improvements implemented for the Ancestry automation application, focusing on credential encryption and secure storage practices.
+
+## Security Enhancements Completed
+
+### ✅ 1. Credential Encryption
+All sensitive credentials are now stored in encrypted format using the Fernet encryption scheme:
+
+**Encrypted Credentials:**
+- `ANCESTRY_USERNAME` - Ancestry.com login username
+- `ANCESTRY_PASSWORD` - Ancestry.com login password  
+- `DEEPSEEK_API_KEY` - DeepSeek AI API key
+- `GOOGLE_API_KEY` - Google/Gemini AI API key
+
+**Storage Location:** `credentials.enc` (encrypted binary file)
+
+### ✅ 2. Environment File Security
+The `.env` file has been cleaned of all plain text credentials:
+- Removed plain text API keys
+- Added comprehensive instructions for credential management
+- Commented out old credential entries with migration notes
+
+### ✅ 3. Configuration Security
+Updated `config.py` to:
+- Prioritize encrypted credentials over environment variables
+- Provide fallback to environment variables only if encryption fails
+- Log credential loading source for transparency
+
+### ✅ 4. User-Friendly Management Tools
+
+#### Credential Manager (`credential_manager.py`)
+Interactive tool for managing encrypted credentials:
+- View stored credentials (masked display)
+- Add/Update credentials securely
+- Remove specific credentials
+- Export for backup/migration
+- Delete all credentials
+
+#### Command-Line Access
+```bash
+# View credentials
+python credential_manager.py
+
+# Quick credential check
+python -c "from security_manager import SecurityManager; sm = SecurityManager(); creds = sm.decrypt_credentials(); print(list(creds.keys()))"
+```
+
+## Security Benefits
+
+### 🔒 **Data Protection**
+- **Encryption at Rest**: All sensitive data encrypted using industry-standard Fernet encryption
+- **No Plain Text**: Credentials never stored in readable format
+- **Key Management**: Encryption keys derived from system-specific data
+
+### 🛡️ **Access Control**
+- **File Permissions**: Encrypted credential file has restricted access
+- **Environment Isolation**: Credentials isolated from environment variables
+- **Process Isolation**: Only authorized application processes can decrypt
+
+### 📋 **Audit & Compliance**
+- **Change Tracking**: All credential changes logged
+- **Access Logging**: Credential access attempts logged
+- **Migration History**: Clear audit trail of security improvements
+
+## Usage Instructions
+
+### Adding New Credentials
+```bash
+# Interactive method (recommended)
+python credential_manager.py
+
+# Programmatic method
+python -c "
+from security_manager import SecurityManager
+sm = SecurityManager()
+existing = sm.decrypt_credentials() or {}
+existing['NEW_API_KEY'] = 'your-key-value'
+sm.encrypt_credentials(existing)
+"
+```
+
+### Changing Existing Credentials
+1. Run: `python credential_manager.py`
+2. Choose option "2. Add/Update credentials"
+3. Enter the credential name (e.g., `DEEPSEEK_API_KEY`)
+4. Enter the new value
+5. Type 'done' to save changes
+
+### Backup & Migration
+1. Export credentials: `python credential_manager.py` → option 4
+2. Copy the displayed values (⚠️ secure location only)
+3. On new system: Use credential manager to import
+4. Clear clipboard/terminal history after migration
+
+## Security Best Practices Implemented
+
+### ✅ **Principle of Least Privilege**
+- Credentials only accessible to application processes
+- Minimal permission set for credential files
+- No unnecessary credential exposure
+
+### ✅ **Defense in Depth**
+- Multiple layers: encryption + file permissions + environment isolation
+- Fallback mechanisms don't compromise security
+- Graceful degradation with security warnings
+
+### ✅ **Secure Development**
+- No credentials in source code
+- Secure defaults throughout application
+- Clear security documentation
+
+## Risk Mitigation
+
+### **Before Implementation:**
+- ❌ Plain text credentials in `.env` file
+- ❌ Credentials visible in file system
+- ❌ Credentials in version control history risk
+- ❌ Easy accidental exposure
+
+### **After Implementation:**
+- ✅ All credentials encrypted
+- ✅ No plain text credential storage
+- ✅ Secure credential management tools
+- ✅ Clear security procedures
+
+## Verification Commands
+
+```bash
+# Verify all credentials are encrypted
+python -c "
+from security_manager import SecurityManager
+sm = SecurityManager()
+creds = sm.decrypt_credentials()
+print('Encrypted credentials:', list(creds.keys()) if creds else 'None')
+"
+
+# Verify application loads correctly
+python -c "
+from config import config_instance
+print('✓ App loads:', bool(config_instance.ANCESTRY_USERNAME))
+"
+
+# Check .env file has no plain text credentials
+findstr /i "api.*key.*=" .env
+# Should return only commented lines
+```
+
+## Maintenance
+
+### Regular Tasks
+- **Monthly**: Review credential access logs
+- **Quarterly**: Rotate API keys using credential manager
+- **Annually**: Review and update encryption methods
+
+### Emergency Procedures
+- **Credential Compromise**: Use credential manager to immediately update affected credentials
+- **Lost Credentials**: Use export feature to recover from backup
+- **System Migration**: Use export/import procedure documented above
+
+## Support
+
+For credential management issues:
+1. Check application logs for credential loading errors
+2. Verify `credentials.enc` file exists and is readable
+3. Use credential manager to verify stored credentials
+4. Re-encrypt credentials if corruption suspected
+
+## Future Enhancements
+
+Potential security improvements for future consideration:
+- Hardware security module (HSM) integration
+- Multi-factor authentication for credential access
+- Credential rotation automation
+- Cloud-based secure credential storage
+- Certificate-based authentication
+
+---
+**Last Updated:** May 28, 2025  
+**Security Level:** Production Ready  
+**Encryption Standard:** Fernet (AES 128 in CBC mode)

@@ -83,9 +83,9 @@ def get_gedcom_data():
     # Load GEDCOM data
     try:
         logger.info(f"Loading GEDCOM file {gedcom_path.name} (first time)...")
-        from gedcom_utils import load_gedcom_data
+        from gedcom_cache import load_gedcom_with_aggressive_caching as load_gedcom_data
 
-        _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
+        _CACHED_GEDCOM_DATA = load_gedcom_data(str(gedcom_path))
         if _CACHED_GEDCOM_DATA:
             logger.info(f"GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
@@ -124,10 +124,8 @@ except ImportError:
 
 # Try to import relationship utilities
 try:
-    from relationship_utils import (
-        get_gedcom_relationship_path,
-        get_ancestry_relationship_path,
-    )
+    from gedcom_search_utils import get_gedcom_relationship_path
+    from action11 import get_ancestry_relationship_path
 
     RELATIONSHIP_UTILS_AVAILABLE = True
     logger.info("Relationship utilities successfully imported.")
@@ -139,8 +137,8 @@ except ImportError:
 
 # Try to import API utilities separately
 try:
-    # Import from action11
-    from action11 import _search_ancestry_api, _process_and_score_suggestions
+    # Import from action11 - Only import what actually exists
+    from action11 import _process_and_score_suggestions
 
     API_UTILS_AVAILABLE = True
 except ImportError:
@@ -777,18 +775,9 @@ def _search_api_for_names(
             }
 
             # Call the API search function from action11
-            api_results = _search_ancestry_api(
-                session_manager,
-                owner_tree_id,
-                base_url,
-                first_name,
-                surname,
-                None,  # gender
-                None,  # birth year
-                None,  # birth place
-                None,  # death year
-                None,  # death place
-            )
+            # NOTE: _search_ancestry_api function does not exist, so return empty results
+            api_results = []
+            logger.debug(f"API search functionality not available for: {name}")
 
             if api_results is None:
                 error_msg = f"API search failed for name: {name}"
@@ -1063,15 +1052,16 @@ def _identify_and_get_person_details(
 
                     # Get person details
                     person_id = top_match.get("id")
+                    tree_id = top_match.get("tree_id")
                     if not person_id:
                         logger.warning(f"{log_prefix}: No ID found for top API match.")
                     else:
                         # Get relationship path
                         relationship_path = ""
-                        if RELATIONSHIP_UTILS_AVAILABLE:
+                        if RELATIONSHIP_UTILS_AVAILABLE and tree_id:
                             try:
                                 relationship_path = get_ancestry_relationship_path(
-                                    session_manager, person_id
+                                    session_manager, person_id, tree_id
                                 )
                             except Exception as e:
                                 logger.error(

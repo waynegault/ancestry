@@ -5749,17 +5749,24 @@ def main():
     global logger
     # Setup logging for the test run
     try:
-        db_file_path = config_instance.DATABASE_FILE
-        if db_file_path:
-            # Use Path object methods for robustness
-            log_filename_only = db_file_path.with_suffix(".log").name
-            log_dir = (
-                db_file_path.parent / "Logs"
-            )  # Assuming Logs dir is sibling to Data
-            log_dir.mkdir(exist_ok=True)
-            full_log_path = log_dir / log_filename_only
+        if config_instance:
+            db_file_path = config_instance.DATABASE_FILE
+            if db_file_path:
+                # Use Path object methods for robustness
+                log_filename_only = db_file_path.with_suffix(".log").name
+                log_dir = (
+                    db_file_path.parent / "Logs"
+                )  # Assuming Logs dir is sibling to Data
+                log_dir.mkdir(exist_ok=True)
+                full_log_path = log_dir / log_filename_only
+            else:
+                # Fallback if DATABASE_FILE is None
+                log_filename_only = "ancestry.log"
+                log_dir = Path("Logs")
+                log_dir.mkdir(exist_ok=True)
+                full_log_path = log_dir / log_filename_only
         else:
-            # Fallback if DATABASE_FILE is None
+            # Fallback if config_instance is None
             log_filename_only = "ancestry.log"
             log_dir = Path("Logs")
             log_dir.mkdir(exist_ok=True)

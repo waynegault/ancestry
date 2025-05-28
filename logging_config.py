@@ -40,12 +40,8 @@ logger_for_setup = logging.getLogger("logger_setup")
 logger_for_setup.setLevel(logging.DEBUG)  # Log setup details at DEBUG level
 
 # --- Determine Log Directory ---
-try:
-    from config import config_instance
-
-    LOG_DIRECTORY = Path(getattr(config_instance, "LOG_DIR", "Logs"))
-except ImportError:
-    LOG_DIRECTORY = Path("Logs")
+# Use environment variable or fallback to avoid circular import with config
+LOG_DIRECTORY = Path(os.getenv("LOG_DIR", "Logs"))
 
 # Ensure LOG_DIRECTORY is absolute
 if not LOG_DIRECTORY.is_absolute():

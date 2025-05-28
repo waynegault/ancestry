@@ -53,7 +53,8 @@ from logging_config import setup_logging, logger
 logger = logging.getLogger("logger")
 
 # Define constants dependent on the CHROME_CONFIG values
-CHROME_USER_DATA_DIR = selenium_config.CHROME_USER_DATA_DIR  # Use selenium_config
+# Handle the case where selenium_config might be None
+CHROME_USER_DATA_DIR = selenium_config.CHROME_USER_DATA_DIR if selenium_config else None
 # Handle the case where CHROME_USER_DATA_DIR might be None
 if CHROME_USER_DATA_DIR is not None:
     DEFAULT_PROFILE_PATH = os.path.join(str(CHROME_USER_DATA_DIR), "Default")

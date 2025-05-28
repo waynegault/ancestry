@@ -275,9 +275,10 @@ class Config_Class(BaseConfig):
         """Loads configuration values from environment variables or defaults."""
         logger.debug("Loading application configuration settings...")
 
-        # === Credentials & Identifiers ===
-        self.ANCESTRY_USERNAME = self._get_string_env("ANCESTRY_USERNAME", "")
-        self.ANCESTRY_PASSWORD = self._get_string_env("ANCESTRY_PASSWORD", "")
+        # === Secure Credential Loading ===
+        self._load_secure_credentials()
+
+        # === Other Identifiers ===
         self.TREE_NAME = self._get_string_env("TREE_NAME", "")
         self.TREE_OWNER_NAME = self._get_string_env("TREE_OWNER_NAME", "")
         self.MY_PROFILE_ID = self._get_string_env("MY_PROFILE_ID", "")
@@ -469,14 +470,19 @@ class Config_Class(BaseConfig):
 
         # === AI Configuration ===
         self.AI_PROVIDER = self._get_string_env("AI_PROVIDER", "").lower()
-        self.DEEPSEEK_API_KEY = self._get_string_env("DEEPSEEK_API_KEY", "")
+
+        # Only load API keys from environment if not already loaded from encrypted storage
+        if not hasattr(self, "DEEPSEEK_API_KEY") or not self.DEEPSEEK_API_KEY:
+            self.DEEPSEEK_API_KEY = self._get_string_env("DEEPSEEK_API_KEY", "")
+        if not hasattr(self, "GOOGLE_API_KEY") or not self.GOOGLE_API_KEY:
+            self.GOOGLE_API_KEY = self._get_string_env("GOOGLE_API_KEY", "")
+
         self.DEEPSEEK_AI_MODEL = self._get_string_env(
             "DEEPSEEK_AI_MODEL", "deepseek-chat"
         )
         self.DEEPSEEK_AI_BASE_URL = self._get_string_env(
             "DEEPSEEK_AI_BASE_URL", "https://api.deepseek.com"
         )
-        self.GOOGLE_API_KEY = self._get_string_env("GOOGLE_API_KEY", "")
         self.GOOGLE_AI_MODEL = self._get_string_env(
             "GOOGLE_AI_MODEL", "gemini-1.5-flash-latest"
         )
@@ -665,6 +671,59 @@ class Config_Class(BaseConfig):
             logger.info("Critical configuration settings validated successfully.")
 
     # End of _validate_critical_configs
+
+    def _load_secure_credentials(self):
+        """Load credentials securely using SecurityManager."""
+        try:
+            # Import here to avoid circular imports
+            from security_manager import SecurityManager
+
+            security_manager = SecurityManager()
+
+            # Try to load encrypted credentials first
+            credentials = security_manager.decrypt_credentials()
+
+            if credentials:
+                # Load from encrypted storage
+                self.ANCESTRY_USERNAME = credentials.get("ANCESTRY_USERNAME", "")
+                self.ANCESTRY_PASSWORD = credentials.get("ANCESTRY_PASSWORD", "")
+
+                # Load AI API keys
+                self.DEEPSEEK_API_KEY = credentials.get("DEEPSEEK_API_KEY", "")
+                self.GOOGLE_API_KEY = credentials.get("GOOGLE_API_KEY", "")
+
+                logger.info("Loaded credentials from encrypted storage")
+            else:
+                # Fallback to environment variables
+                logger.warning(
+                    "No encrypted credentials found, using environment variables"
+                )
+                self.ANCESTRY_USERNAME = self._get_string_env("ANCESTRY_USERNAME", "")
+                self.ANCESTRY_PASSWORD = self._get_string_env("ANCESTRY_PASSWORD", "")
+                self.DEEPSEEK_API_KEY = self._get_string_env("DEEPSEEK_API_KEY", "")
+                self.GOOGLE_API_KEY = self._get_string_env("GOOGLE_API_KEY", "")
+
+                # If credentials found in env, suggest migration
+                if self.ANCESTRY_USERNAME and self.ANCESTRY_PASSWORD:
+                    logger.info(
+                        "Consider migrating to encrypted storage: python security_manager.py"
+                    )
+
+        except ImportError:
+            logger.warning("SecurityManager not available, using environment variables")
+            self.ANCESTRY_USERNAME = self._get_string_env("ANCESTRY_USERNAME", "")
+            self.ANCESTRY_PASSWORD = self._get_string_env("ANCESTRY_PASSWORD", "")
+            self.DEEPSEEK_API_KEY = self._get_string_env("DEEPSEEK_API_KEY", "")
+            self.GOOGLE_API_KEY = self._get_string_env("GOOGLE_API_KEY", "")
+        except Exception as e:
+            logger.error(f"Error loading secure credentials: {e}")
+            # Fallback to environment variables
+            self.ANCESTRY_USERNAME = self._get_string_env("ANCESTRY_USERNAME", "")
+            self.ANCESTRY_PASSWORD = self._get_string_env("ANCESTRY_PASSWORD", "")
+            self.DEEPSEEK_API_KEY = self._get_string_env("DEEPSEEK_API_KEY", "")
+            self.GOOGLE_API_KEY = self._get_string_env("GOOGLE_API_KEY", "")
+
+    # End of _load_secure_credentials
 
 
 # End of Config_Class class

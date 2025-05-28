@@ -19,6 +19,7 @@ import os
 import shutil
 import time
 from functools import wraps
+from pathlib import Path
 from typing import Any, Callable, Optional, Dict, Union
 
 # --- Third-party imports ---
@@ -34,7 +35,10 @@ from logging_config import logger  # Use configured logger
 # --- Global Cache Initialization ---
 
 # Step 1: Define cache directory from configuration
-CACHE_DIR = config_instance.CACHE_DIR
+if config_instance:
+    CACHE_DIR = config_instance.CACHE_DIR
+else:
+    CACHE_DIR = Path("Cache")
 logger.debug(f"Cache directory configured: {CACHE_DIR}")
 
 # Step 2: Ensure the cache directory exists
@@ -68,7 +72,7 @@ try:
         statistics=True,  # Enable cache statistics
     )
     logger.debug(
-        f"DiskCache instance initialized with aggressive settings at {CACHE_DIR.resolve()}."
+        f"DiskCache instance initialized with aggressive settings at {CACHE_DIR}."
     )
     logger.debug(f"Cache settings: size_limit=2GB, eviction=LRU, statistics=enabled")
 except Exception as e:
@@ -232,7 +236,7 @@ def clear_cache():
     logger.warning(
         "Cache object not available or API clear failed. Attempting manual directory removal..."
     )
-    if CACHE_DIR.exists():
+    if CACHE_DIR and CACHE_DIR.exists():
         try:
             shutil.rmtree(CACHE_DIR)
             logger.debug(f"Manually removed cache directory: {CACHE_DIR}")
@@ -296,10 +300,11 @@ def get_cache_stats() -> Dict[str, Any]:
         return {}
 
     try:
+        stats_tuple = cache.stats(enable=True, reset=False)
         stats = {
-            "hits": cache.stats(enable=True, reset=False)[0],
-            "misses": cache.stats(enable=True, reset=False)[1],
-            "size": len(cache),
+            "hits": stats_tuple[0],
+            "misses": stats_tuple[1],
+            "size": cache.count,  # Use count instead of len for Cache objects
             "volume": cache.volume(),
             "evictions": getattr(cache, "evictions", 0),
         }

@@ -82,11 +82,15 @@ CRITICAL_API_FAILURE_THRESHOLD: int = (
 )
 
 # Configurable settings from config_instance
-DB_ERROR_PAGE_THRESHOLD: int = config_instance._get_int_env(
-    "DB_ERROR_PAGE_THRESHOLD", 10
+DB_ERROR_PAGE_THRESHOLD: int = (
+    config_instance._get_int_env("DB_ERROR_PAGE_THRESHOLD", 10)
+    if config_instance
+    else 10
 )  # Max consecutive DB errors allowed
-THREAD_POOL_WORKERS: int = config_instance._get_int_env(
-    "GATHER_THREAD_POOL_WORKERS", 5
+THREAD_POOL_WORKERS: int = (
+    config_instance._get_int_env("GATHER_THREAD_POOL_WORKERS", 5)
+    if config_instance
+    else 5
 )  # Concurrent API workers
 
 

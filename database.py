@@ -2768,14 +2768,20 @@ if __name__ == "__main__":
 
     try:
         # Step 2: Get database path and create engine
-        db_path_obj = config_instance.DATABASE_FILE
-        if db_path_obj is None:
+        if config_instance:
+            db_path_obj = config_instance.DATABASE_FILE
+            if db_path_obj is None:
+                standalone_logger.error(
+                    "DATABASE_FILE is not configured. Using in-memory database."
+                )
+                db_path_str = ":memory:"
+            else:
+                db_path_str = str(db_path_obj.resolve())
+        else:
             standalone_logger.error(
-                "DATABASE_FILE is not configured. Using in-memory database."
+                "Config instance not available. Using in-memory database."
             )
             db_path_str = ":memory:"
-        else:
-            db_path_str = str(db_path_obj.resolve())
 
         standalone_logger.info(f"Target database file: {db_path_str}")
         engine = create_engine(

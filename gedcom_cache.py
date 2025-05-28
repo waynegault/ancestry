@@ -140,11 +140,23 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
             # Store in memory cache for fastest access
             _store_in_memory_cache(memory_key, gedcom_data)
 
-            # Store in disk cache for persistence
+            # Store in disk cache for persistence - but don't cache the reader object
+            # The GedcomReader contains BinaryFileCR objects that cannot be pickled
             try:
                 if cache is not None:
-                    cache.set(disk_cache_key, gedcom_data, expire=86400, retry=True)
-                    logger.debug(f"GEDCOM data stored in disk cache")
+                    # Create a serializable version without the reader
+                    cache_data = {
+                        "path": str(gedcom_data.path),
+                        "indi_index": gedcom_data.indi_index,
+                        "processed_data_cache": gedcom_data.processed_data_cache,
+                        "id_to_parents": gedcom_data.id_to_parents,
+                        "id_to_children": gedcom_data.id_to_children,
+                        "indi_index_build_time": gedcom_data.indi_index_build_time,
+                        "family_maps_build_time": gedcom_data.family_maps_build_time,
+                        "data_processing_time": gedcom_data.data_processing_time,
+                    }
+                    cache.set(disk_cache_key, cache_data, expire=86400, retry=True)
+                    logger.debug(f"GEDCOM data cached (without reader) in disk cache")
             except Exception as e:
                 logger.debug(f"Error storing in disk cache: {e}")
 

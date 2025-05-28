@@ -93,6 +93,7 @@ def menu():
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
     print("")
+    print("sec. Setup Security (Encrypt Credentials)")
     print("s. Show Cache Statistics")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
@@ -1191,6 +1192,28 @@ def main():
         # --- Logging Setup ---
         logger = setup_logging()
 
+        # --- Configuration Validation ---
+        from config import _config_valid
+
+        if not _config_valid or config_instance is None:
+            logger.critical("Configuration validation failed - unable to proceed")
+            print("\n❌ CONFIGURATION ERROR:")
+            print("   Critical configuration validation failed.")
+            print("   This usually means missing credentials or configuration files.")
+            print("")
+            print("💡 SOLUTIONS:")
+            print(
+                "   1. Run 'sec. Setup Security (Encrypt Credentials)' from main menu"
+            )
+            print("   2. Check your .env file for missing required variables")
+            print("   3. Ensure encrypted credentials are properly set up")
+            print("")
+            print("🔧 To set up credentials programmatically:")
+            print("   python setup_credentials_helper.py")
+            print("")
+            print("Exiting application...")
+            sys.exit(1)
+
         # --- Initialize Aggressive Caching ---
         logger.info("Initializing aggressive caching systems...")
         cache_init_success = initialize_aggressive_caching()
@@ -1307,6 +1330,23 @@ def main():
                 # Use the wrapper function to run Action 11 through exec_actn
                 exec_actn(run_action11_wrapper, session_manager, choice)
             # --- Meta Options ---
+            elif choice == "sec":
+                # Setup Security (Encrypt Credentials)
+                try:
+                    from setup_security import main as setup_security_main
+
+                    print("\n" + "=" * 50)
+                    print("SETUP SECURITY - ENCRYPT CREDENTIALS")
+                    print("=" * 50)
+                    setup_security_main()
+                except ImportError as e:
+                    logger.error(f"Error importing setup_security: {e}")
+                    print("Error: setup_security.py not found or has import issues.")
+                except Exception as e:
+                    logger.error(f"Error running security setup: {e}")
+                    print(f"Error running security setup: {e}")
+                print("\nReturning to main menu...")
+                input("Press Enter to continue...")
             elif choice == "s":
                 # Show cache statistics
                 try:
