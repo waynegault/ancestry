@@ -253,16 +253,17 @@ def _call_ai_model(
                 f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
             )
 
-            generation_config_params: Dict[str, Any] = {
-                "candidate_count": 1,
-                "max_output_tokens": max_tokens,
-                "temperature": temperature,
-            }
+            # Create a proper GenerationConfig object instead of a dictionary
+            generation_config = genai.GenerationConfig(
+                candidate_count=1,
+                max_output_tokens=max_tokens,
+                temperature=temperature,
+            )
             # Gemini's way of requesting JSON is less direct, often relies on prompt engineering.
             # If `response_format_type` is 'json_object', ensure the prompt strongly requests JSON.
 
             response = model.generate_content(
-                full_prompt, generation_config=generation_config_params
+                full_prompt, generation_config=generation_config
             )
             if response.candidates and response.text:
                 ai_response_text = response.text.strip()
@@ -458,12 +459,13 @@ def extract_genealogical_entities(
                 logger.info(f"AI extraction successful. (Took {duration:.2f}s)")
                 return parsed_json
             else:
-                logger.error(
-                    f"AI extraction response is valid JSON but lacks expected structure ('extracted_data' object or 'suggested_tasks' list). Response: {cleaned_response_str[:500]}"
+                logger.warning(
+                    f"AI extraction response is valid JSON but uses flat structure instead of nested. Attempting to transform. Response: {cleaned_response_str[:500]}"
                 )
-                # Attempt to salvage if possible, or return default
+                # Attempt to salvage by transforming flat structure to expected nested structure
                 salvaged = default_empty_result.copy()
                 if isinstance(parsed_json, dict):
+                    # Handle expected nested structure
                     if "extracted_data" in parsed_json and isinstance(
                         parsed_json["extracted_data"], dict
                     ):
@@ -472,6 +474,46 @@ def extract_genealogical_entities(
                         parsed_json["suggested_tasks"], list
                     ):
                         salvaged["suggested_tasks"] = parsed_json["suggested_tasks"]
+
+                    # Handle flat structure and transform to nested
+                    else:
+                        extracted_data = {}
+                        # Map flat structure keys to expected nested structure
+                        key_mapping = {
+                            "mentioned_names": "mentioned_names",
+                            "dates": "mentioned_dates",
+                            "locations": "mentioned_locations",
+                            "relationships": "potential_relationships",
+                            "occupations": "key_facts",
+                            "events": "key_facts",
+                            "research_questions": "key_facts",
+                        }
+
+                        for flat_key, nested_key in key_mapping.items():
+                            if flat_key in parsed_json and isinstance(
+                                parsed_json[flat_key], list
+                            ):
+                                if nested_key not in extracted_data:
+                                    extracted_data[nested_key] = []
+                                extracted_data[nested_key].extend(parsed_json[flat_key])
+
+                        # Ensure all expected keys exist
+                        for key in [
+                            "mentioned_names",
+                            "mentioned_locations",
+                            "mentioned_dates",
+                            "potential_relationships",
+                            "key_facts",
+                        ]:
+                            if key not in extracted_data:
+                                extracted_data[key] = []
+
+                        salvaged["extracted_data"] = extracted_data
+                        # Note: flat structure doesn't include suggested_tasks, so it remains empty
+                        logger.info(
+                            f"Successfully transformed flat structure to nested. Extracted {len(extracted_data.get('mentioned_names', []))} names, {len(extracted_data.get('mentioned_locations', []))} locations, {len(extracted_data.get('mentioned_dates', []))} dates"
+                        )
+
                 return salvaged
         except json.JSONDecodeError as e:
             logger.error(
@@ -792,16 +834,27 @@ def test_prompt_loading() -> bool:
 
                     # Test for key indicators in specific prompts
                     if prompt_name == "extraction_task":
-                        if (
+                        # Check for either the nested structure keywords OR the flat structure keywords
+                        has_nested_structure = (
                             "suggested_tasks" in prompt_content
                             and "extracted_data" in prompt_content
-                        ):
+                        )
+                        has_flat_structure = (
+                            "mentioned_names" in prompt_content
+                            and "dates" in prompt_content
+                            and "locations" in prompt_content
+                        )
+
+                        if has_nested_structure or has_flat_structure:
+                            structure_type = (
+                                "nested" if has_nested_structure else "flat"
+                            )
                             logger.info(
-                                f"✅ {prompt_name}: contains required structure keywords"
+                                f"✅ {prompt_name}: contains valid {structure_type} structure keywords"
                             )
                         else:
                             logger.warning(
-                                f"⚠️ {prompt_name}: missing 'suggested_tasks' or 'extracted_data' keywords"
+                                f"⚠️ {prompt_name}: missing required structure keywords for either nested or flat format"
                             )
                             prompts_valid = False
                 else:
