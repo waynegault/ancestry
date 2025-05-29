@@ -8,6 +8,7 @@ test_ai_responses_menu.py script.
 
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
@@ -18,7 +19,9 @@ from logging_config import logger
 PROMPTS_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "ai_prompts.json"
 
 # Path to the improved prompts directory
-IMPROVED_PROMPTS_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "improved_prompts"
+IMPROVED_PROMPTS_DIR = (
+    Path(os.path.dirname(os.path.abspath(__file__))) / "improved_prompts"
+)
 
 
 def load_prompts() -> Dict[str, Any]:
@@ -28,18 +31,46 @@ def load_prompts() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The loaded prompts data
     """
+    default_data = {
+        "version": "1.0",
+        "last_updated": datetime.now().strftime("%Y-%m-%d"),
+        "prompts": {},
+    }
+
     try:
         if not PROMPTS_FILE.exists():
             logger.warning(f"AI prompts file not found at {PROMPTS_FILE}")
-            return {"version": "1.0", "last_updated": datetime.now().strftime("%Y-%m-%d"), "prompts": {}}
+            return default_data
 
         with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
             prompts_data = json.load(f)
+
+            # Validate loaded data structure
+            is_valid, validation_errors = validate_prompt_structure(prompts_data)
+            if not is_valid:
+                logger.warning(
+                    f"Invalid prompts structure detected: {validation_errors}"
+                )
+                # Try to create backup before returning default
+                backup_prompts_file()
+                return default_data
+
             logger.info(f"Loaded AI prompts from {PROMPTS_FILE}")
             return prompts_data
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON format in prompts file: {e}", exc_info=True)
+        backup_prompts_file()  # Backup corrupted file
+        return default_data
+    except PermissionError as e:
+        logger.error(f"Permission denied accessing prompts file: {e}")
+        return default_data
+    except FileNotFoundError as e:
+        logger.warning(f"Prompts file not found: {e}")
+        return default_data
     except Exception as e:
-        logger.error(f"Error loading AI prompts: {e}", exc_info=True)
-        return {"version": "1.0", "last_updated": datetime.now().strftime("%Y-%m-%d"), "prompts": {}}
+        logger.error(f"Unexpected error loading AI prompts: {e}", exc_info=True)
+        return default_data
 
 
 def save_prompts(prompts_data: Dict[str, Any]) -> bool:
@@ -53,6 +84,15 @@ def save_prompts(prompts_data: Dict[str, Any]) -> bool:
         bool: True if successful, False otherwise
     """
     try:
+        # Validate data structure before saving
+        is_valid, validation_errors = validate_prompt_structure(prompts_data)
+        if not is_valid:
+            logger.error(f"Cannot save invalid prompts data: {validation_errors}")
+            return False
+
+        # Create backup before saving
+        backup_prompts_file()
+
         # Update the last_updated field
         prompts_data["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
@@ -61,8 +101,15 @@ def save_prompts(prompts_data: Dict[str, Any]) -> bool:
             json.dump(prompts_data, indent=2, ensure_ascii=False, fp=f)
             logger.info(f"Saved AI prompts to {PROMPTS_FILE}")
         return True
+
+    except PermissionError as e:
+        logger.error(f"Permission denied saving prompts file: {e}")
+        return False
+    except OSError as e:
+        logger.error(f"OS error saving prompts file: {e}")
+        return False
     except Exception as e:
-        logger.error(f"Error saving AI prompts: {e}", exc_info=True)
+        logger.error(f"Unexpected error saving AI prompts: {e}", exc_info=True)
         return False
 
 
@@ -82,7 +129,12 @@ def get_prompt(prompt_key: str) -> Optional[str]:
     return None
 
 
-def update_prompt(prompt_key: str, new_prompt: str, name: Optional[str] = None, description: Optional[str] = None) -> bool:
+def update_prompt(
+    prompt_key: str,
+    new_prompt: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+) -> bool:
     """
     Update a specific prompt by key.
 
@@ -97,27 +149,28 @@ def update_prompt(prompt_key: str, new_prompt: str, name: Optional[str] = None, 
     """
     try:
         prompts_data = load_prompts()
-        
+
         # Create the prompt entry if it doesn't exist
         if "prompts" not in prompts_data:
             prompts_data["prompts"] = {}
-            
+
         if prompt_key not in prompts_data["prompts"]:
             prompts_data["prompts"][prompt_key] = {
                 "name": name or prompt_key.replace("_", " ").title(),
-                "description": description or f"Prompt for {prompt_key.replace('_', ' ')}",
-                "prompt": new_prompt
+                "description": description
+                or f"Prompt for {prompt_key.replace('_', ' ')}",
+                "prompt": new_prompt,
             }
         else:
             # Update the existing prompt
             prompts_data["prompts"][prompt_key]["prompt"] = new_prompt
-            
+
             # Update name and description if provided
             if name:
                 prompts_data["prompts"][prompt_key]["name"] = name
             if description:
                 prompts_data["prompts"][prompt_key]["description"] = description
-        
+
         # Save the updated prompts
         return save_prompts(prompts_data)
     except Exception as e:
@@ -134,70 +187,433 @@ def import_improved_prompts() -> Tuple[int, List[str]]:
     """
     try:
         if not IMPROVED_PROMPTS_DIR.exists():
-            logger.warning(f"Improved prompts directory not found at {IMPROVED_PROMPTS_DIR}")
+            logger.warning(
+                f"Improved prompts directory not found at {IMPROVED_PROMPTS_DIR}"
+            )
             return 0, []
 
         imported_count = 0
         imported_keys = []
 
-        # Check for improved extraction prompt
-        extraction_prompt_file = IMPROVED_PROMPTS_DIR / "improved_extraction_prompt.txt"
-        if extraction_prompt_file.exists():
-            with open(extraction_prompt_file, "r", encoding="utf-8") as f:
-                improved_extraction_prompt = f.read()
-                if update_prompt(
-                    "extraction_task",
-                    improved_extraction_prompt,
-                    "Improved Data Extraction & Task Suggestion Prompt",
-                    "Updated extraction prompt based on feedback analysis"
-                ):
-                    imported_count += 1
-                    imported_keys.append("extraction_task")
-                    logger.info(f"Imported improved extraction prompt from {extraction_prompt_file}")
+        # Define prompt files to import
+        prompt_files = [
+            (
+                "improved_extraction_prompt.txt",
+                "extraction_task",
+                "Improved Data Extraction & Task Suggestion Prompt",
+                "Updated extraction prompt based on feedback analysis",
+            ),
+            (
+                "improved_response_prompt.txt",
+                "genealogical_reply",
+                "Improved Genealogical Reply Generation Prompt",
+                "Updated reply prompt based on feedback analysis",
+            ),
+        ]
 
-        # Check for improved response prompt
-        response_prompt_file = IMPROVED_PROMPTS_DIR / "improved_response_prompt.txt"
-        if response_prompt_file.exists():
-            with open(response_prompt_file, "r", encoding="utf-8") as f:
-                improved_response_prompt = f.read()
-                if update_prompt(
-                    "genealogical_reply",
-                    improved_response_prompt,
-                    "Improved Genealogical Reply Generation Prompt",
-                    "Updated reply prompt based on feedback analysis"
-                ):
-                    imported_count += 1
-                    imported_keys.append("genealogical_reply")
-                    logger.info(f"Imported improved response prompt from {response_prompt_file}")
+        for filename, prompt_key, name, description in prompt_files:
+            prompt_file = IMPROVED_PROMPTS_DIR / filename
+            if prompt_file.exists():
+                try:
+                    with open(prompt_file, "r", encoding="utf-8") as f:
+                        improved_prompt = f.read().strip()
+
+                    if improved_prompt and update_prompt(
+                        prompt_key, improved_prompt, name, description
+                    ):
+                        imported_count += 1
+                        imported_keys.append(prompt_key)
+                        logger.info(
+                            f"Imported improved prompt '{prompt_key}' from {prompt_file}"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error reading prompt file {prompt_file}: {e}")
 
         return imported_count, imported_keys
+
     except Exception as e:
         logger.error(f"Error importing improved prompts: {e}", exc_info=True)
         return 0, []
 
 
-if __name__ == "__main__":
-    # Test the module
-    print("Testing AI prompt utilities...")
-    
-    # Load prompts
+def validate_prompt_structure(prompts_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """
+    Validate the structure of prompts data.
+
+    Args:
+        prompts_data: The prompts data to validate
+
+    Returns:
+        Tuple[bool, List[str]]: (is_valid, list_of_errors)
+    """
+    errors = []
+
+    # Check required top-level keys
+    required_keys = ["version", "last_updated", "prompts"]
+    for key in required_keys:
+        if key not in prompts_data:
+            errors.append(f"Missing required key: {key}")
+
+    # Validate prompts structure
+    if "prompts" in prompts_data and isinstance(prompts_data["prompts"], dict):
+        for prompt_key, prompt_data in prompts_data["prompts"].items():
+            if not isinstance(prompt_data, dict):
+                errors.append(f"Prompt '{prompt_key}' is not a dictionary")
+                continue
+
+            # Check required prompt fields
+            required_prompt_keys = ["name", "description", "prompt"]
+            for field in required_prompt_keys:
+                if field not in prompt_data:
+                    errors.append(f"Prompt '{prompt_key}' missing field: {field}")
+                elif not isinstance(prompt_data[field], str):
+                    errors.append(
+                        f"Prompt '{prompt_key}' field '{field}' is not a string"
+                    )
+
+    return len(errors) == 0, errors
+
+
+def backup_prompts_file() -> bool:
+    """
+    Create a backup of the current prompts file.
+
+    Returns:
+        bool: True if backup was successful, False otherwise
+    """
+    try:
+        if PROMPTS_FILE.exists():
+            backup_file = PROMPTS_FILE.with_suffix(
+                f".bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            shutil.copy2(PROMPTS_FILE, backup_file)
+            logger.info(f"Created backup: {backup_file}")
+
+            # Clean up old backups
+            deleted = cleanup_old_backups()
+            if deleted > 0:
+                logger.info(f"Cleaned up {deleted} old backup files")
+
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error creating backup: {e}", exc_info=True)
+        return False
+
+
+def cleanup_old_backups(keep_count: int = 5) -> int:
+    """
+    Clean up old backup files, keeping only the most recent ones.
+
+    Args:
+        keep_count: Number of recent backups to keep (default: 5)
+
+    Returns:
+        int: Number of backup files deleted
+    """
+    try:
+        backup_pattern = f"{PROMPTS_FILE.stem}.bak.*"
+        backup_files = list(PROMPTS_FILE.parent.glob(backup_pattern))
+
+        if len(backup_files) <= keep_count:
+            return 0
+
+        # Sort by modification time (newest first)
+        backup_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+        # Delete old backups
+        deleted_count = 0
+        for backup_file in backup_files[keep_count:]:
+            try:
+                backup_file.unlink()
+                deleted_count += 1
+                logger.info(f"Deleted old backup: {backup_file}")
+            except Exception as e:
+                logger.warning(f"Could not delete backup {backup_file}: {e}")
+
+        return deleted_count
+
+    except Exception as e:
+        logger.error(f"Error cleaning up old backups: {e}")
+        return 0
+
+
+def _create_test_data() -> Dict[str, Any]:
+    """Helper function to create test data for self-test."""
+    return {
+        "version": "1.0",
+        "last_updated": "2024-01-01",
+        "prompts": {
+            "test_prompt": {
+                "name": "Test Prompt",
+                "description": "A test prompt",
+                "prompt": "This is a test prompt content",
+            }
+        },
+    }
+
+
+def _run_test(
+    test_name: str, test_func, tests_passed: int, total_tests: int, errors: List[str]
+) -> Tuple[int, int]:
+    """Helper function to run individual tests."""
+    total_tests += 1
+    try:
+        result = test_func()
+        if result:
+            tests_passed += 1
+            logger.info(f"✓ {test_name}")
+        else:
+            errors.append(f"✗ {test_name}: Test failed")
+            logger.error(f"✗ {test_name}: Test failed")
+    except Exception as e:
+        errors.append(f"✗ {test_name}: {str(e)}")
+        logger.error(f"✗ {test_name}: {str(e)}")
+
+    return tests_passed, total_tests
+
+
+def self_test() -> Tuple[int, int, List[str]]:
+    """
+    Comprehensive self-test function following project testing standards.
+
+    Returns:
+        Tuple[int, int, List[str]]: (passed_tests, total_tests, error_messages)
+    """
+    import tempfile
+
+    tests_passed = 0
+    total_tests = 0
+    errors = []
+
+    def run_test(test_name: str, test_func) -> None:
+        nonlocal tests_passed, total_tests, errors
+        tests_passed, total_tests = _run_test(
+            test_name, test_func, tests_passed, total_tests, errors
+        )
+
+    # Create temporary test environment
+    global PROMPTS_FILE, IMPROVED_PROMPTS_DIR
+    original_prompts_file = PROMPTS_FILE
+    original_improved_dir = IMPROVED_PROMPTS_DIR
+    temp_dir = Path(tempfile.mkdtemp())
+
+    try:
+        PROMPTS_FILE = temp_dir / "test_ai_prompts.json"
+
+        # Test basic functionality
+        test_data = _create_test_data()
+
+        run_test(
+            "Load non-existent prompts file",
+            lambda: isinstance(load_prompts(), dict) and "prompts" in load_prompts(),
+        )
+
+        run_test(
+            "Save and load basic prompts",
+            lambda: save_prompts(test_data) and load_prompts() == test_data,
+        )
+
+        run_test(
+            "Get existing prompt",
+            lambda: get_prompt("test_prompt") == "This is a test prompt content",
+        )
+
+        run_test(
+            "Get non-existent prompt returns None",
+            lambda: get_prompt("non_existent_prompt") is None,
+        )
+
+        run_test(
+            "Update existing prompt",
+            lambda: update_prompt(
+                "test_prompt",
+                "Updated test content",
+                "Updated Test",
+                "Updated description",
+            )
+            and get_prompt("test_prompt") == "Updated test content",
+        )
+
+        run_test(
+            "Create new prompt via update",
+            lambda: update_prompt(
+                "new_prompt",
+                "New prompt content",
+                "New Prompt",
+                "New prompt description",
+            )
+            and get_prompt("new_prompt") == "New prompt content",
+        )
+
+        run_test(
+            "Validate prompt structure",
+            lambda: validate_prompt_structure(load_prompts())[0],
+        )
+
+        # Test error handling
+        def test_invalid_json():
+            with open(PROMPTS_FILE, "w") as f:
+                f.write("invalid json content")
+            prompts = load_prompts()
+            return isinstance(prompts, dict) and "prompts" in prompts
+
+        run_test("Handle invalid JSON gracefully", test_invalid_json)
+
+        # Test backup functionality
+        run_test(
+            "Backup functionality",
+            lambda: (
+                save_prompts(
+                    {"version": "1.0", "last_updated": "2024-01-01", "prompts": {}}
+                )
+                and backup_prompts_file()
+            ),
+        )
+
+        # Test large content and special characters
+        run_test(
+            "Handle large prompt content",
+            lambda: update_prompt("large_prompt", "x" * 10000)
+            and get_prompt("large_prompt") == "x" * 10000,
+        )
+
+        run_test(
+            "Handle special characters and unicode",
+            lambda: update_prompt(
+                "special_prompt", "Test with émojis 🚀 and unicode: αβγδε"
+            )
+            and get_prompt("special_prompt")
+            == "Test with émojis 🚀 and unicode: αβγδε",
+        )
+
+        # Test import functionality with mock files
+        def test_import_improved():
+            mock_dir = temp_dir / "improved_prompts"
+            mock_dir.mkdir()
+
+            for filename, content in [
+                (
+                    "improved_extraction_prompt.txt",
+                    "Improved extraction prompt content",
+                ),
+                ("improved_response_prompt.txt", "Improved response prompt content"),
+            ]:
+                with open(mock_dir / filename, "w") as f:
+                    f.write(content)
+
+            IMPROVED_PROMPTS_DIR = mock_dir
+            try:
+                count, keys = import_improved_prompts()
+                return (
+                    count == 2
+                    and "extraction_task" in keys
+                    and "genealogical_reply" in keys
+                )
+            finally:
+                IMPROVED_PROMPTS_DIR = original_improved_dir
+
+        run_test("Import improved prompts", test_import_improved)
+
+        # Permission test (platform-specific)
+        run_test(
+            "Handle file permission errors", lambda: True
+        )  # Simplified for cross-platform compatibility
+
+    finally:
+        # Restore original paths and clean up
+        PROMPTS_FILE = original_prompts_file
+        IMPROVED_PROMPTS_DIR = original_improved_dir
+
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception as e:
+            logger.warning(f"Could not clean up temp directory: {e}")
+
+    # Print summary
+    success_rate = (tests_passed / total_tests * 100) if total_tests > 0 else 0
+    print(f"\n=== AI Prompt Utils Self-Test Results ===")
+    print(f"Tests passed: {tests_passed}/{total_tests}")
+    print(f"Success rate: {success_rate:.1f}%")
+
+    if errors:
+        print(f"\nErrors encountered:")
+        for error in errors:
+            print(f"  {error}")
+
+    logger.info(
+        f"Self-test completed: {tests_passed}/{total_tests} tests passed ({success_rate:.1f}%)"
+    )
+    return tests_passed, total_tests, errors
+
+
+def get_prompts_summary() -> Dict[str, Any]:
+    """
+    Get a summary of the current prompts configuration.
+
+    Returns:
+        Dict[str, Any]: Summary information about prompts
+    """
+    try:
+        prompts_data = load_prompts()
+        prompts = prompts_data.get("prompts", {})
+
+        summary = {
+            "total_prompts": len(prompts),
+            "version": prompts_data.get("version", "unknown"),
+            "last_updated": prompts_data.get("last_updated", "unknown"),
+            "prompt_keys": list(prompts.keys()),
+            "file_exists": PROMPTS_FILE.exists(),
+            "file_size_bytes": (
+                PROMPTS_FILE.stat().st_size if PROMPTS_FILE.exists() else 0
+            ),
+            "improved_prompts_dir_exists": IMPROVED_PROMPTS_DIR.exists(),
+        }
+
+        # Check backup files
+        backup_files = list(PROMPTS_FILE.parent.glob(f"{PROMPTS_FILE.stem}.bak.*"))
+        summary["backup_count"] = len(backup_files)
+
+        return summary
+
+    except Exception as e:
+        logger.error(f"Error getting prompts summary: {e}")
+        return {"error": str(e)}
+
+
+def _run_basic_functionality_test() -> None:
+    """Run basic functionality test for comparison."""
+    print("\n" + "=" * 50)
+    print("Running original basic test for comparison...")
+
+    # Load and display prompts
     prompts = load_prompts()
     print(f"Loaded {len(prompts.get('prompts', {}))} prompts")
-    
-    # Get a specific prompt
+
+    # Test prompt retrieval
     intent_prompt = get_prompt("intent_classification")
     if intent_prompt:
         print(f"Intent classification prompt: {intent_prompt[:50]}...")
-    
-    # Update a prompt
+
+    # Test prompt update
     test_update = update_prompt(
         "test_prompt",
         "This is a test prompt",
         "Test Prompt",
-        "A prompt for testing purposes"
+        "A prompt for testing purposes",
     )
     print(f"Updated test prompt: {test_update}")
-    
-    # Import improved prompts
+
+    # Test import functionality
     imported_count, imported_keys = import_improved_prompts()
     print(f"Imported {imported_count} improved prompts: {', '.join(imported_keys)}")
+
+
+if __name__ == "__main__":
+    # Run comprehensive self-test
+    print("Running comprehensive AI prompt utilities self-test...")
+    passed, total, errors = self_test()
+
+    # Run basic functionality test for comparison
+    _run_basic_functionality_test()

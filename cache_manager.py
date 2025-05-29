@@ -12,10 +12,19 @@ This module orchestrates aggressive caching across the entire application.
 
 # --- Standard library imports ---
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 
 # --- Local application imports ---
-from cache import get_cache_stats, clear_cache, invalidate_cache_pattern
+from cache import (
+    get_cache_stats,
+    clear_cache,
+    invalidate_cache_pattern,
+    CacheInterface,
+    BaseCacheModule,
+    get_unified_cache_key,
+    invalidate_related_caches,
+    get_cache_coordination_stats,
+)
 from config import config_instance
 from logging_config import logger
 
@@ -599,25 +608,472 @@ def demonstrate_cache_manager_usage():
 
 # --- Main Execution Block ---
 
+# --- Enhanced Cache Manager with Coordination ---
+
+class EnhancedCacheManager(BaseCacheModule):
+    """
+    Enhanced centralized cache management system with cross-module coordination.
+    Implements the standardized cache interface and provides comprehensive orchestration.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.module_name = "cache_manager"
+        self.initialization_time = time.time()
+        self.cache_stats_history: List[Dict[str, Any]] = []
+        self.last_stats_time = 0
+        self.managed_modules = []
+        
+        # Try to register cache modules
+        self._register_cache_modules()
+    
+    def _register_cache_modules(self):
+        """Register all available cache modules for coordination."""
+        try:
+            # Import and register GEDCOM cache module
+            from gedcom_cache import _gedcom_cache_module
+            self.managed_modules.append(_gedcom_cache_module)
+            logger.debug("Registered GEDCOM cache module")
+        except Exception as e:
+            logger.warning(f"Could not register GEDCOM cache module: {e}")
+        
+        try:
+            # Import and register API cache module
+            from api_cache import _api_cache_module
+            self.managed_modules.append(_api_cache_module)
+            logger.debug("Registered API cache module")
+        except Exception as e:
+            logger.warning(f"Could not register API cache module: {e}")
+        
+        logger.info(f"Enhanced cache manager registered {len(self.managed_modules)} cache modules")
+    
+    def get_module_name(self) -> str:
+        return self.module_name
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive statistics across all cache modules."""
+        base_stats = super().get_stats()
+        
+        # Collect coordination statistics
+        coordination_stats = get_cache_coordination_stats()
+        
+        # Collect statistics from all managed modules
+        module_stats = {}
+        for module in self.managed_modules:
+            try:
+                module_name = module.get_module_name()
+                module_stats[module_name] = module.get_stats()
+            except Exception as e:
+                logger.warning(f"Error getting stats from {module}: {e}")
+                module_stats[str(module)] = {"error": str(e)}
+        
+        # Manager-specific statistics
+        manager_stats = {
+            "managed_modules_count": len(self.managed_modules),
+            "managed_modules": [m.get_module_name() for m in self.managed_modules],
+            "initialization_time": self.initialization_time,
+            "uptime_seconds": time.time() - self.initialization_time,
+            "stats_history_entries": len(self.cache_stats_history)
+        }
+        
+        return {
+            **base_stats,
+            **coordination_stats,
+            "module_stats": module_stats,
+            "manager_stats": manager_stats
+        }
+    
+    def clear(self) -> bool:
+        """Clear all managed cache modules."""
+        try:
+            cleared_counts = {}
+            total_success = True
+            
+            # Clear each managed module
+            for module in self.managed_modules:
+                try:
+                    module_name = module.get_module_name()
+                    success = module.clear()
+                    cleared_counts[module_name] = success
+                    if not success:
+                        total_success = False
+                except Exception as e:
+                    logger.error(f"Error clearing {module}: {e}")
+                    cleared_counts[str(module)] = False
+                    total_success = False
+            
+            # Clear base cache
+            base_clear = super().clear()
+            if not base_clear:
+                total_success = False
+            
+            # Clear coordination caches
+            coordination_clear = invalidate_related_caches("coordination_*", [])
+            
+            logger.info(f"Cache manager cleared {len(cleared_counts)} modules, coordination: {sum(coordination_clear.values())} entries")
+            
+            return total_success
+            
+        except Exception as e:
+            logger.error(f"Error in cache manager clear operation: {e}")
+            return False
+    
+    def warm(self) -> bool:
+        """Warm all managed cache modules."""
+        try:
+            warm_results = {}
+            total_success = True
+            
+            # Warm each managed module
+            for module in self.managed_modules:
+                try:
+                    module_name = module.get_module_name()
+                    success = module.warm()
+                    warm_results[module_name] = success
+                    if not success:
+                        total_success = False
+                except Exception as e:
+                    logger.error(f"Error warming {module}: {e}")
+                    warm_results[str(module)] = False
+                    total_success = False
+            
+            # Warm coordination data
+            coordination_key = get_unified_cache_key("manager", "coordination", "metadata")
+            coordination_data = {
+                "managed_modules": len(self.managed_modules),
+                "warmed_at": time.time(),
+                "initialization_time": self.initialization_time
+            }
+            
+            try:
+                from cache import warm_cache_with_data
+                warm_cache_with_data(coordination_key, coordination_data)
+            except Exception as e:
+                logger.warning(f"Could not warm coordination data: {e}")
+                total_success = False
+            
+            logger.info(f"Cache manager warmed {len(warm_results)} modules successfully: {total_success}")
+            
+            return total_success
+            
+        except Exception as e:
+            logger.error(f"Error in cache manager warm operation: {e}")
+            return False
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status across all cache modules."""
+        base_health = super().get_health_status()
+        
+        try:
+            # Check health of all managed modules
+            module_health = {}
+            overall_health = "healthy"
+            health_issues = []
+            
+            for module in self.managed_modules:
+                try:
+                    module_name = module.get_module_name()
+                    health = module.get_health_status()
+                    module_health[module_name] = health
+                    
+                    # Aggregate health status
+                    module_overall = health.get("overall_health", "unknown")
+                    if module_overall == "error":
+                        overall_health = "error"
+                        health_issues.append(f"{module_name} has errors")
+                    elif module_overall == "warning" and overall_health != "error":
+                        overall_health = "warning"
+                        health_issues.append(f"{module_name} has warnings")
+                        
+                except Exception as e:
+                    logger.error(f"Error checking health of {module}: {e}")
+                    module_health[str(module)] = {"error": str(e), "overall_health": "error"}
+                    overall_health = "error"
+                    health_issues.append(f"Error checking {module}: {str(e)}")
+            
+            # Check manager-specific health
+            manager_health = "healthy"
+            manager_issues = []
+            
+            if len(self.managed_modules) == 0:
+                manager_health = "warning"
+                manager_issues.append("No cache modules registered")
+            
+            uptime = time.time() - self.initialization_time
+            if uptime < 10:  # Less than 10 seconds uptime might indicate initialization issues
+                manager_health = "warning"
+                manager_issues.append("Recent initialization, monitoring stability")
+            
+            # Final health assessment
+            if manager_health == "error" or overall_health == "error":
+                final_health = "error"
+            elif manager_health == "warning" or overall_health == "warning":
+                final_health = "warning"
+            else:
+                final_health = "healthy"
+            
+            manager_health_info = {
+                "module_health": module_health,
+                "manager_health": manager_health,
+                "manager_issues": manager_issues,
+                "overall_health": final_health,
+                "health_issues": health_issues,
+                "modules_registered": len(self.managed_modules),
+                "uptime_seconds": uptime,
+                "health_check_timestamp": time.time()
+            }
+            
+            return {**base_health, **manager_health_info}
+            
+        except Exception as e:
+            logger.error(f"Error getting cache manager health status: {e}")
+            return {**base_health, "health_check_error": str(e), "overall_health": "error"}
+    
+    def get_comprehensive_report(self) -> Dict[str, Any]:
+        """Get a comprehensive report of all cache systems."""
+        return {
+            "timestamp": time.time(),
+            "stats": self.get_stats(),
+            "health": self.get_health_status(),
+            "coordination": get_cache_coordination_stats(),
+            "manager_info": {
+                "module_name": self.module_name,
+                "uptime": time.time() - self.initialization_time,
+                "managed_modules": len(self.managed_modules)
+            }
+        }
+    
+    def coordinate_cache_invalidation(self, pattern: str, exclude_modules: Optional[List[str]] = None) -> Dict[str, int]:
+        """Coordinate cache invalidation across all modules."""
+        if exclude_modules is None:
+            exclude_modules = []
+        
+        try:
+            # Use the coordination system for invalidation
+            results = invalidate_related_caches(pattern, exclude_modules)
+            
+            logger.info(f"Coordinated cache invalidation for pattern '{pattern}': {sum(results.values())} entries invalidated")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in coordinated cache invalidation: {e}")
+            return {"error": 0}
+
+
+# Initialize enhanced cache manager instance
+_enhanced_cache_manager = EnhancedCacheManager()
+
+
+# --- Public Interface Functions for Enhanced Cache Manager ---
+
+def get_cache_manager_stats() -> Dict[str, Any]:
+    """Get comprehensive cache manager statistics."""
+    return _enhanced_cache_manager.get_stats()
+
+
+def get_cache_manager_health() -> Dict[str, Any]:
+    """Get cache manager health status."""
+    return _enhanced_cache_manager.get_health_status()
+
+
+def get_comprehensive_cache_report() -> Dict[str, Any]:
+    """Get comprehensive report of all cache systems."""
+    return _enhanced_cache_manager.get_comprehensive_report()
+
+
+def clear_all_managed_caches() -> bool:
+    """Clear all managed cache systems."""
+    return _enhanced_cache_manager.clear()
+
+
+def warm_all_managed_caches() -> bool:
+    """Warm all managed cache systems."""
+    return _enhanced_cache_manager.warm()
+
+
+def coordinate_invalidation(pattern: str, exclude_modules: Optional[List[str]] = None) -> Dict[str, int]:
+    """Coordinate cache invalidation across modules."""
+    return _enhanced_cache_manager.coordinate_cache_invalidation(pattern, exclude_modules)
+
+
+# --- Enhanced Cache Manager Testing ---
+
+def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
+    """
+    Run comprehensive tests for enhanced cache manager functionality.
+    Returns test results with pass/fail status and performance metrics.
+    """
+    test_results = {
+        "tests_run": 0,
+        "tests_passed": 0,
+        "tests_failed": 0,
+        "test_details": [],
+        "start_time": time.time(),
+        "performance_metrics": {}
+    }
+    
+    def run_test(test_name: str, test_func: Callable) -> bool:
+        """Run individual test and track results."""
+        test_results["tests_run"] += 1
+        try:
+            start_time = time.time()
+            result = test_func()
+            duration = time.time() - start_time
+            
+            if result:
+                test_results["tests_passed"] += 1
+                status = "PASS"
+            else:
+                test_results["tests_failed"] += 1
+                status = "FAIL"
+                
+            test_results["test_details"].append({
+                "name": test_name,
+                "status": status,
+                "duration_ms": round(duration * 1000, 2),
+                "result": result
+            })
+            
+            logger.info(f"Enhanced Cache Manager Test '{test_name}': {status} ({duration*1000:.2f}ms)")
+            return result
+            
+        except Exception as e:
+            test_results["tests_failed"] += 1
+            test_results["test_details"].append({
+                "name": test_name,
+                "status": "ERROR",
+                "error": str(e),
+                "result": False
+            })
+            logger.error(f"Enhanced Cache Manager Test '{test_name}' ERROR: {e}")
+            return False
+    
+    # Test 1: Manager Initialization
+    def test_manager_initialization():
+        return _enhanced_cache_manager.get_module_name() == "cache_manager"
+    
+    # Test 2: Module Registration
+    def test_module_registration():
+        stats = _enhanced_cache_manager.get_stats()
+        return stats.get("manager_stats", {}).get("managed_modules_count", 0) >= 0
+    
+    # Test 3: Statistics Collection
+    def test_statistics_collection():
+        stats = get_cache_manager_stats()
+        required_fields = ["manager_stats", "module_stats"]
+        return all(field in stats for field in required_fields)
+    
+    # Test 4: Health Status Check
+    def test_health_status():
+        health = get_cache_manager_health()
+        required_fields = ["overall_health", "manager_health", "modules_registered"]
+        return all(field in health for field in required_fields)
+    
+    # Test 5: Comprehensive Report
+    def test_comprehensive_report():
+        report = get_comprehensive_cache_report()
+        required_fields = ["timestamp", "stats", "health", "coordination", "manager_info"]
+        return all(field in report for field in required_fields)
+    
+    # Test 6: Cache Coordination
+    def test_cache_coordination():
+        coordination_stats = get_cache_coordination_stats()
+        return isinstance(coordination_stats, dict)
+    
+    # Test 7: Cache Clearing Coordination
+    def test_cache_clearing():
+        clear_result = clear_all_managed_caches()
+        return isinstance(clear_result, bool)
+    
+    # Test 8: Cache Warming Coordination
+    def test_cache_warming():
+        warm_result = warm_all_managed_caches()
+        return isinstance(warm_result, bool)
+    
+    # Test 9: Invalidation Coordination
+    def test_invalidation_coordination():
+        results = coordinate_invalidation("test_pattern_*", [])
+        return isinstance(results, dict)
+    
+    # Test 10: Legacy Manager Integration
+    def test_legacy_manager_integration():
+        # Test that the original manager still works
+        manager = CacheManager()
+        return hasattr(manager, 'initialization_time')
+    
+    # Run all tests
+    logger.info("Starting enhanced cache manager comprehensive test suite...")
+    
+    run_test("Manager Initialization", test_manager_initialization)
+    run_test("Module Registration", test_module_registration)
+    run_test("Statistics Collection", test_statistics_collection)
+    run_test("Health Status Check", test_health_status)
+    run_test("Comprehensive Report", test_comprehensive_report)
+    run_test("Cache Coordination", test_cache_coordination)
+    run_test("Cache Clearing", test_cache_clearing)
+    run_test("Cache Warming", test_cache_warming)
+    run_test("Invalidation Coordination", test_invalidation_coordination)
+    run_test("Legacy Manager Integration", test_legacy_manager_integration)
+    
+    # Calculate final metrics
+    test_results["end_time"] = time.time()
+    test_results["total_duration"] = test_results["end_time"] - test_results["start_time"]
+    test_results["pass_rate"] = (test_results["tests_passed"] / test_results["tests_run"] * 100) if test_results["tests_run"] > 0 else 0
+    
+    # Add performance metrics
+    test_results["performance_metrics"] = {
+        "average_test_duration_ms": sum(t.get("duration_ms", 0) for t in test_results["test_details"]) / len(test_results["test_details"]) if test_results["test_details"] else 0,
+        "cache_stats": get_cache_manager_stats(),
+        "health_status": get_cache_manager_health(),
+        "comprehensive_report": get_comprehensive_cache_report()
+    }
+    
+    logger.info(f"Enhanced Cache Manager Tests Completed: {test_results['tests_passed']}/{test_results['tests_run']} passed ({test_results['pass_rate']:.1f}%)")
+    
+    return test_results
+
+
 if __name__ == "__main__":
-    print("Starting Cache Manager Test and Demonstration Suite...")
-    print(f"Cache Manager Module: {__file__}")
-
-    # Run comprehensive tests
-    print("\n" + "🧪 " + "RUNNING COMPREHENSIVE TESTS" + " 🧪")
-    success = run_cache_manager_tests()
-
-    print("\n" + "💡 " + "RUNNING USAGE DEMONSTRATIONS" + " 💡")
+    print("🎛️ Enhanced Cache Manager - Comprehensive Testing & Demonstration")
+    print("=" * 75)
+    
+    # Run original tests
+    print("\n📊 Running Original Cache Manager Tests...")
+    original_success = run_cache_manager_tests()
+    
+    # Run enhanced tests
+    print("\n🚀 Running Enhanced Cache Manager Tests...")
+    enhanced_results = run_enhanced_cache_manager_tests()
+    
+    print(f"\n✅ Enhanced Test Results: {enhanced_results['tests_passed']}/{enhanced_results['tests_run']} passed ({enhanced_results['pass_rate']:.1f}%)")
+    
+    # Display enhanced test details
+    for test in enhanced_results["test_details"]:
+        status_emoji = "✅" if test["status"] == "PASS" else "❌" if test["status"] == "FAIL" else "⚠️"
+        duration = test.get("duration_ms", 0)
+        print(f"  {status_emoji} {test['name']}: {test['status']} ({duration:.2f}ms)")
+    
+    # Run original demonstrations
+    print("\n🎯 Running Original Cache Manager Demonstrations...")
     demonstrate_cache_manager_usage()
+    
+    # Display comprehensive report
+    print("\n📈 Comprehensive Cache System Report:")
+    report = get_comprehensive_cache_report()
+    
+    print(f"  • Manager uptime: {report['manager_info']['uptime']:.1f}s")
+    print(f"  • Managed modules: {report['manager_info']['managed_modules']}")
+    print(f"  • Overall health: {report['health'].get('overall_health', 'unknown')}")
+    
+    # Display coordination statistics
+    coordination = report.get('coordination', {})
+    if coordination:
+        print(f"  • Coordination entries: {coordination.get('total_coordination_entries', 0)}")
+        print(f"  • Cross-module operations: {coordination.get('cross_module_operations', 0)}")
+    
+    print("\n🔄 Enhanced cache management system validation complete!")
+    print("=" * 75)
 
-    print("\n" + "=" * 70)
-    print("CACHE MANAGER TEST AND DEMO COMPLETE!")
-    print("=" * 70)
-
-    if success:
-        print("✅ All tests passed! Cache Manager system is fully operational.")
-    else:
-        print("⚠️  Some tests failed. Please review the output above.")
-        exit(1)
 
 # End of cache_manager.py

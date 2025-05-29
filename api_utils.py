@@ -15,8 +15,9 @@ Note: Relationship path formatting functions previously in test_relationship_pat
 import logging
 import re
 import json
+import time  # For rate limiting and delays
 import requests  # Keep for exception types and Response object checking
-from typing import Optional, Dict, Any, List, Tuple, Callable, cast
+from typing import Optional, Dict, Any, List, Tuple, Callable, cast, TYPE_CHECKING
 from datetime import (
     datetime,
     timezone,
@@ -37,6 +38,15 @@ try:
 except ImportError:
     BeautifulSoup = None  # type: ignore
     BS4_AVAILABLE = False
+
+# Pydantic is now optional - we use simple data classes instead
+try:
+    from pydantic import BaseModel, Field, field_validator
+    from typing import Union
+
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
 
 
 # Initialize logger - Ensure logger is always available
@@ -113,10 +123,285 @@ KEY_OWNER = "owner"
 # Note: Relationship path formatting test constants have been moved to relationship_utils.py
 
 
+# --- Response Models ---
+# Simple data classes for API response validation (Pydantic-style but without dependency)
+
+
+class PersonSuggestResponse:
+    """Model for validating Ancestry Suggest API responses."""
+
+    def __init__(self, **kwargs):
+        self.PersonId: Optional[str] = kwargs.get("PersonId")
+        self.TreeId: Optional[str] = kwargs.get("TreeId")
+        self.UserId: Optional[str] = kwargs.get("UserId")
+        self.FullName: Optional[str] = kwargs.get("FullName")
+        self.GivenName: Optional[str] = kwargs.get("GivenName")
+        self.Surname: Optional[str] = kwargs.get("Surname")
+        self.BirthYear: Optional[int] = kwargs.get("BirthYear")
+        self.BirthPlace: Optional[str] = kwargs.get("BirthPlace")
+        self.DeathYear: Optional[int] = kwargs.get("DeathYear")
+        self.DeathPlace: Optional[str] = kwargs.get("DeathPlace")
+        self.Gender: Optional[str] = kwargs.get("Gender")
+        self.IsLiving: Optional[bool] = kwargs.get("IsLiving")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "PersonId": self.PersonId,
+            "TreeId": self.TreeId,
+            "UserId": self.UserId,
+            "FullName": self.FullName,
+            "GivenName": self.GivenName,
+            "Surname": self.Surname,
+            "BirthYear": self.BirthYear,
+            "BirthPlace": self.BirthPlace,
+            "DeathYear": self.DeathYear,
+            "DeathPlace": self.DeathPlace,
+            "Gender": self.Gender,
+            "IsLiving": self.IsLiving,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class ProfileDetailsResponse:
+    """Model for validating Profile Details API responses."""
+
+    def __init__(self, **kwargs):
+        self.FirstName: Optional[str] = kwargs.get("FirstName")
+        self.displayName: Optional[str] = kwargs.get("displayName")
+        self.LastLoginDate: Optional[str] = kwargs.get("LastLoginDate")
+        self.IsContactable: Optional[bool] = kwargs.get("IsContactable")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "FirstName": self.FirstName,
+            "displayName": self.displayName,
+            "LastLoginDate": self.LastLoginDate,
+            "IsContactable": self.IsContactable,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class TreeOwnerResponse:
+    """Model for validating Tree Owner API responses."""
+
+    def __init__(self, **kwargs):
+        self.owner: Optional[Dict[str, Any]] = kwargs.get("owner")
+        self.displayName: Optional[str] = kwargs.get("displayName")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "owner": self.owner,
+            "displayName": self.displayName,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class PersonFactsResponse:
+    """Model for validating Person Facts API responses."""
+
+    def __init__(self, **kwargs):
+        self.data: Optional[Dict[str, Any]] = kwargs.get("data")
+        self.personResearch: Optional[Dict[str, Any]] = kwargs.get("personResearch")
+        self.PersonFacts: Optional[List[Dict[str, Any]]] = kwargs.get("PersonFacts")
+        self.PersonFullName: Optional[str] = kwargs.get("PersonFullName")
+        self.FirstName: Optional[str] = kwargs.get("FirstName")
+        self.LastName: Optional[str] = kwargs.get("LastName")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "data": self.data,
+            "personResearch": self.personResearch,
+            "PersonFacts": self.PersonFacts,
+            "PersonFullName": self.PersonFullName,
+            "FirstName": self.FirstName,
+            "LastName": self.LastName,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class GetLadderResponse:
+    """Model for validating GetLadder API responses."""
+
+    def __init__(self, **kwargs):
+        self.data: Optional[Dict[str, Any]] = kwargs.get("data")
+        self.relationship: Optional[Dict[str, Any]] = kwargs.get("relationship")
+        self.paths: Optional[List[Dict[str, Any]]] = kwargs.get("paths")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "data": self.data,
+            "relationship": self.relationship,
+            "paths": self.paths,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class DiscoveryRelationshipResponse:
+    """Model for validating Discovery Relationship API responses."""
+
+    def __init__(self, **kwargs):
+        self.relationship: Optional[str] = kwargs.get("relationship")
+        self.paths: Optional[List[Dict[str, Any]]] = kwargs.get("paths")
+        self.confidence: Optional[str] = kwargs.get("confidence")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "relationship": self.relationship,
+            "paths": self.paths,
+            "confidence": self.confidence,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class HeaderTreesResponse:
+    """Model for validating Header Trees API responses."""
+
+    def __init__(self, **kwargs):
+        self.menuitems: Optional[List[Dict[str, Any]]] = kwargs.get("menuitems")
+        self.url: Optional[str] = kwargs.get("url")
+        self.text: Optional[str] = kwargs.get("text")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "menuitems": self.menuitems,
+            "url": self.url,
+            "text": self.text,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+class SendMessageResponse:
+    """Model for validating Send Message API responses."""
+
+    def __init__(self, **kwargs):
+        self.conversation_id: Optional[str] = kwargs.get("conversation_id")
+        self.message: Optional[str] = kwargs.get("message")
+        self.author: Optional[str] = kwargs.get("author")
+        self.status: Optional[str] = kwargs.get("status")
+
+    def dict(self, exclude_none=False):
+        """Convert to dictionary format."""
+        result = {
+            "conversation_id": self.conversation_id,
+            "message": self.message,
+            "author": self.author,
+            "status": self.status,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
+
+
+# --- API Rate Limiter ---
+class ApiRateLimiter:
+    """Simple rate limiter for API calls to prevent overwhelming Ancestry servers."""
+
+    def __init__(self, max_calls_per_minute: int = 60, max_calls_per_hour: int = 1000):
+        self.max_calls_per_minute = max_calls_per_minute
+        self.max_calls_per_hour = max_calls_per_hour
+        self.minute_calls = []
+        self.hour_calls = []
+
+    def can_make_request(self) -> bool:
+        """Check if we can make a request without exceeding rate limits."""
+        current_time = datetime.now()
+
+        # Clean old entries
+        self.minute_calls = [
+            t for t in self.minute_calls if (current_time - t).seconds < 60
+        ]
+        self.hour_calls = [
+            t for t in self.hour_calls if (current_time - t).seconds < 3600
+        ]
+
+        # Check limits
+        if len(self.minute_calls) >= self.max_calls_per_minute:
+            return False
+        if len(self.hour_calls) >= self.max_calls_per_hour:
+            return False
+
+        return True
+
+    def record_request(self):
+        """Record that a request was made."""
+        current_time = datetime.now()
+        self.minute_calls.append(current_time)
+        self.hour_calls.append(current_time)
+
+    def wait_time_until_available(self) -> float:
+        """Get the time in seconds to wait until next request is allowed."""
+        if self.can_make_request():
+            return 0.0
+
+        current_time = datetime.now()
+
+        # Check minute limit
+        if len(self.minute_calls) >= self.max_calls_per_minute:
+            oldest_minute_call = min(self.minute_calls)
+            return max(0, 60 - (current_time - oldest_minute_call).seconds)
+
+        # Check hour limit
+        if len(self.hour_calls) >= self.max_calls_per_hour:
+            oldest_hour_call = min(self.hour_calls)
+            return max(0, 3600 - (current_time - oldest_hour_call).seconds)
+
+        return 0.0
+
+
+# Global rate limiter instance
+api_rate_limiter = ApiRateLimiter()
+
+
 # --- Helper Functions for parse_ancestry_person_details ---
 def _extract_name_from_api_details(
     person_card: Dict, facts_data: Optional[Dict]
 ) -> str:
+    """
+    Extract and format a person's name from Ancestry API response data.
+
+    This function attempts to extract a person's name from multiple possible sources
+    in the API response data, using a priority-based approach to ensure the most
+    accurate name is retrieved.
+
+    Args:
+        person_card (Dict): Data from Suggest API or similar person card responses
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+
+    Returns:
+        str: The formatted person's name, or "Unknown" if no name could be extracted
+
+    Note:
+        The function tries multiple extraction strategies in order of preference:
+        1. PersonFacts Name fact from facts_data
+        2. Direct name fields from facts_data (personName, DisplayName, etc.)
+        3. Constructed name from FirstName/LastName in facts_data
+        4. FullName from person_card
+        5. Constructed name from GivenName/Surname in person_card
+        6. Generic 'name' field from person_card
+
+        Names are filtered to avoid returning "Valued Relative" placeholder names.
+    """
     name = "Unknown"
     formatter = format_name
     if facts_data and isinstance(facts_data, dict):
@@ -182,6 +467,27 @@ def _extract_name_from_api_details(
 def _extract_gender_from_api_details(
     person_card: Dict, facts_data: Optional[Dict]
 ) -> Optional[str]:
+    """
+    Extract and normalize gender information from Ancestry API response data.
+
+    Attempts to extract gender from multiple possible sources and normalizes
+    the value to standard single-character format ("M" or "F").
+
+    Args:
+        person_card (Dict): Data from Suggest API or similar person card responses
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+
+    Returns:
+        Optional[str]: "M" for male, "F" for female, or None if gender cannot be determined
+
+    Note:
+        The function checks the following sources in order:
+        1. PersonFacts Gender fact from facts_data
+        2. Direct gender fields from facts_data
+        3. Gender field from person_card
+
+        Input values like "Male"/"Female" are normalized to "M"/"F".
+    """
     gender = None
     gender_str = None
     if facts_data and isinstance(facts_data, dict):
@@ -237,6 +543,24 @@ def _extract_gender_from_api_details(
 def _extract_living_status_from_api_details(
     person_card: Dict, facts_data: Optional[Dict]
 ) -> Optional[bool]:
+    """
+    Extract living status information from Ancestry API response data.
+
+    Determines whether a person is marked as living or deceased based on
+    various fields in the API response data.
+
+    Args:
+        person_card (Dict): Data from Suggest API or similar person card responses
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+
+    Returns:
+        Optional[bool]: True if person is living, False if deceased, None if unknown
+
+    Note:
+        The function checks multiple possible field names for living status:
+        - isLiving, IsPersonLiving (from facts_data)
+        - IsLiving, isLiving (from person_card)
+    """
     is_living = None
     if facts_data and isinstance(facts_data, dict):
         person_info = facts_data.get("person", {})
@@ -265,6 +589,34 @@ def _extract_living_status_from_api_details(
 def _extract_event_from_api_details(
     event_type: str, person_card: Dict, facts_data: Optional[Dict]
 ) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
+    """
+    Extract event information (date, place, parsed date object) from Ancestry API data.
+
+    This comprehensive function extracts vital event information (birth, death, etc.)
+    from multiple possible sources in Ancestry API responses, handling various
+    data formats and structures.
+
+    Args:
+        event_type (str): Type of event to extract ("Birth", "Death", etc.)
+        person_card (Dict): Data from Suggest API or similar person card responses
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+
+    Returns:
+        Tuple[Optional[str], Optional[str], Optional[datetime]]: A tuple containing:
+            - date_str: Raw date string from API
+            - place_str: Place name string from API
+            - date_obj: Parsed datetime object (if date parsing successful)
+
+    Note:
+        The function tries multiple extraction strategies:
+        1. PersonFacts primary event facts from facts_data
+        2. Structured facts data with date/place objects
+        3. Alternative event fact formats
+        4. Suggest API year/place fields from person_card
+        5. Concatenated event info strings from person_card
+
+        Date parsing is attempted using the gedcom_utils._parse_date function.
+    """
     date_str: Optional[str] = None
     place_str: Optional[str] = None
     date_obj: Optional[datetime] = None
@@ -397,6 +749,29 @@ def _extract_event_from_api_details(
 def _generate_person_link(
     person_id: Optional[str], tree_id: Optional[str], base_url: str
 ) -> str:
+    """
+    Generate an appropriate Ancestry.com URL for viewing a person's details.
+
+    Creates different types of links based on available identifiers:
+    - Tree-based links for persons with both person_id and tree_id
+    - Discovery match links for persons with only person_id
+
+    Args:
+        person_id (Optional[str]): The person's unique identifier
+        tree_id (Optional[str]): The tree's unique identifier (if available)
+        base_url (str): Base Ancestry URL (e.g., "https://www.ancestry.com")
+
+    Returns:
+        str: A complete URL to view the person's details, or "(Link unavailable)"
+             if insufficient information is provided
+
+    Examples:
+        >>> _generate_person_link("123", "456", "https://ancestry.com")
+        "https://ancestry.com/family-tree/person/tree/456/person/123/facts"
+
+        >>> _generate_person_link("123", None, "https://ancestry.com")
+        "https://ancestry.com/discoveryui-matches/list/summary/123"
+    """
     if tree_id and person_id:
         return f"{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts"
     elif person_id:
@@ -508,6 +883,22 @@ def print_group(label: str, items: List[Dict]):
 
 
 def _get_api_timeout(default: int = 60) -> int:
+    """
+    Get the configured API timeout value with fallback to default.
+
+    Retrieves the API timeout value from selenium_config if available,
+    with validation to ensure a reasonable timeout value.
+
+    Args:
+        default (int): Default timeout value in seconds if config is unavailable
+
+    Returns:
+        int: Timeout value in seconds to use for API calls
+
+    Note:
+        If the configured timeout is invalid (non-positive or wrong type),
+        the default value is used and a warning is logged.
+    """
     timeout_value = default
     if selenium_config and hasattr(selenium_config, "API_TIMEOUT"):
         config_timeout = getattr(selenium_config, "API_TIMEOUT")
@@ -526,6 +917,24 @@ def _get_api_timeout(default: int = 60) -> int:
 
 
 def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
+    """
+    Generate an appropriate referer URL for API calls using the tree owner's facts page.
+
+    Creates a proper referer URL that mimics natural browsing behavior by using
+    the tree owner's facts page as the referer for API calls.
+
+    Args:
+        session_manager (SessionManager): Session manager with owner profile/tree info
+        base_url (str): Base Ancestry URL
+
+    Returns:
+        str: Complete referer URL pointing to owner's facts page, or base URL if
+             owner information is not available
+
+    Note:
+        Using proper referers helps maintain session validity and mimics normal
+        user browsing patterns for better API reliability.
+    """
     owner_profile_id = getattr(session_manager, "my_profile_id", None)
     owner_tree_id = getattr(session_manager, "my_tree_id", None)
     if owner_profile_id and owner_tree_id:
@@ -570,6 +979,19 @@ def call_suggest_api(
     # End of if
 
     api_description = "Suggest API"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     first_name_raw = search_criteria.get("first_name_raw", "")
     surname_raw = search_criteria.get("surname_raw", "")
     birth_year = search_criteria.get("birth_year")
@@ -619,6 +1041,32 @@ def call_suggest_api(
                 use_csrf_token=False,
             )
             if isinstance(suggest_response, list):
+                # Validate response with Pydantic if available
+                if PYDANTIC_AVAILABLE and suggest_response:
+                    validated_results = []
+                    validation_errors = 0
+
+                    for item in suggest_response:
+                        try:
+                            validated_item = PersonSuggestResponse(**item)
+                            validated_results.append(
+                                validated_item.dict(exclude_none=True)
+                            )
+                        except Exception as validation_err:
+                            validation_errors += 1
+                            logger.debug(
+                                f"Response validation warning for item: {validation_err}"
+                            )
+                            # Keep original item if validation fails
+                            validated_results.append(item)
+
+                    if validation_errors > 0:
+                        logger.warning(
+                            f"Response validation: {validation_errors}/{len(suggest_response)} items had validation issues"
+                        )
+
+                    suggest_response = validated_results
+
                 logger.info(
                     f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}), found {len(suggest_response)} results."
                 )
@@ -754,6 +1202,19 @@ def call_facts_user_api(
     # End of if
 
     api_description = "Person Facts User API"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     formatted_path = API_PATH_PERSON_FACTS_USER.format(
         owner_profile_id=owner_profile_id.lower(),
         tree_id=api_tree_id.lower(),
@@ -904,6 +1365,15 @@ def call_facts_user_api(
         return None
     # End of if
 
+    # Validate response with Pydantic if available
+    if PYDANTIC_AVAILABLE:
+        try:
+            validated_response = PersonFactsResponse(**facts_data_raw)
+            logger.debug("Facts API response validation successful")
+        except Exception as validation_err:
+            logger.warning(f"Facts API response validation warning: {validation_err}")
+            # Continue with original data if validation fails
+
     logger.info(
         f"Successfully fetched and extracted 'personResearch' data for PersonID {api_person_id}."
     )
@@ -938,6 +1408,19 @@ def call_getladder_api(
     # End of if
 
     api_description = "Get Tree Ladder API"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     formatted_path = API_PATH_PERSON_GETLADDER.format(
         tree_id=owner_tree_id, person_id=target_person_id
     )
@@ -966,6 +1449,22 @@ def call_getladder_api(
             timeout=api_timeout_val,
         )
         if isinstance(relationship_data, str) and len(relationship_data) > 10:
+            # Validate response with Pydantic if available and try to parse as JSON
+            if PYDANTIC_AVAILABLE:
+                try:
+                    # Try to parse the string response as JSON for validation
+                    import json
+
+                    parsed_data = json.loads(relationship_data)
+                    validated_response = GetLadderResponse(**parsed_data)
+                    logger.debug("GetLadder API response validation successful")
+                except json.JSONDecodeError:
+                    logger.debug("GetLadder API returned non-JSON string response")
+                except Exception as validation_err:
+                    logger.warning(
+                        f"GetLadder API response validation warning: {validation_err}"
+                    )
+
             logger.info(f"{api_description} call successful, received string response.")
             return relationship_data
         elif isinstance(relationship_data, str):
@@ -1034,6 +1533,19 @@ def call_discovery_relationship_api(
     # End of if
 
     api_description = "Discovery Relationship API"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     formatted_path = API_PATH_DISCOVERY_RELATIONSHIP
     discovery_api_url = (
         urljoin(base_url.rstrip("/") + "/", formatted_path)
@@ -1066,11 +1578,39 @@ def call_discovery_relationship_api(
         )
 
         if isinstance(relationship_data, dict) and "path" in relationship_data:
+            # Validate response with Pydantic if available
+            if PYDANTIC_AVAILABLE:
+                try:
+                    validated_response = DiscoveryRelationshipResponse(
+                        **relationship_data
+                    )
+                    logger.debug(
+                        "Discovery Relationship API response validation successful"
+                    )
+                except Exception as validation_err:
+                    logger.warning(
+                        f"Discovery Relationship API response validation warning: {validation_err}"
+                    )
+
             logger.info(
                 f"{api_description} call successful, received valid JSON response with path data."
             )
             return relationship_data
         elif isinstance(relationship_data, dict):
+            # Validate response with Pydantic if available
+            if PYDANTIC_AVAILABLE:
+                try:
+                    validated_response = DiscoveryRelationshipResponse(
+                        **relationship_data
+                    )
+                    logger.debug(
+                        "Discovery Relationship API response validation successful"
+                    )
+                except Exception as validation_err:
+                    logger.warning(
+                        f"Discovery Relationship API response validation warning: {validation_err}"
+                    )
+
             logger.warning(
                 f"{api_description} call returned JSON without 'path' key: {list(relationship_data.keys())}"
             )
@@ -1117,6 +1657,19 @@ def call_treesui_list_api(
     # End of if
 
     api_description = "TreesUI List API (Alternative Search)"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     first_name_raw = search_criteria.get("first_name_raw", "")
     surname_raw = search_criteria.get("surname_raw", "")
     birth_year = search_criteria.get("birth_year")
@@ -1428,6 +1981,19 @@ def call_profile_details_api(
     # End of if
 
     api_description = "Profile Details API (Single)"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     base_url_cfg = getattr(config_instance, "BASE_URL", "https://www.ancestry.com")
     profile_url = urljoin(
         base_url_cfg,
@@ -1452,6 +2018,16 @@ def call_profile_details_api(
         )
 
         if profile_response and isinstance(profile_response, dict):
+            # Validate response with Pydantic if available
+            if PYDANTIC_AVAILABLE:
+                try:
+                    validated_response = ProfileDetailsResponse(**profile_response)
+                    logger.debug("Profile Details API response validation successful")
+                except Exception as validation_err:
+                    logger.warning(
+                        f"Profile Details API response validation warning: {validation_err}"
+                    )
+
             logger.debug(f"Successfully fetched profile details for {profile_id}.")
             result_data: Dict[str, Any] = {
                 "first_name": None,
@@ -1562,6 +2138,19 @@ def call_header_trees_api_for_tree_id(
     base_url_cfg = getattr(config_instance, "BASE_URL", "https://www.ancestry.com")
     url = urljoin(base_url_cfg.rstrip("/") + "/", API_PATH_HEADER_TREES)
     api_description = "Header Trees API (Nav Data)"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     referer_url = urljoin(base_url_cfg.rstrip("/") + "/", "family-tree/trees")
 
     logger.debug(
@@ -1592,6 +2181,16 @@ def call_header_trees_api_for_tree_id(
             and KEY_MENUITEMS in response_data
             and isinstance(response_data[KEY_MENUITEMS], list)
         ):
+            # Validate response with Pydantic if available
+            if PYDANTIC_AVAILABLE:
+                try:
+                    validated_response = HeaderTreesResponse(**response_data)
+                    logger.debug("Header Trees API response validation successful")
+                except Exception as validation_err:
+                    logger.warning(
+                        f"Header Trees API response validation warning: {validation_err}"
+                    )
+
             for item in response_data[KEY_MENUITEMS]:
                 if isinstance(item, dict) and item.get(KEY_TEXT) == tree_name_config:
                     tree_url = item.get(KEY_URL)
@@ -1670,6 +2269,19 @@ def call_tree_owner_api(
         base_url_cfg.rstrip("/") + "/", f"{API_PATH_TREE_OWNER_INFO}?tree_id={tree_id}"
     )
     api_description = "Tree Owner Name API"
+
+    # Apply rate limiting if available
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(
+                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
+            )
+            import time
+
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
     logger.debug(
         f"Attempting to fetch tree owner name for tree ID: {tree_id} via {api_description}..."
     )
@@ -1685,6 +2297,16 @@ def call_tree_owner_api(
         )
 
         if response_data and isinstance(response_data, dict):
+            # Validate response with Pydantic if available
+            if PYDANTIC_AVAILABLE:
+                try:
+                    validated_response = TreeOwnerResponse(**response_data)
+                    logger.debug("Tree Owner API response validation successful")
+                except Exception as validation_err:
+                    logger.warning(
+                        f"Tree Owner API response validation warning: {validation_err}"
+                    )
+
             owner_data = response_data.get(KEY_OWNER)
             if owner_data and isinstance(owner_data, dict):
                 display_name = owner_data.get(KEY_DISPLAY_NAME)

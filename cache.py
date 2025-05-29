@@ -83,28 +83,29 @@ except Exception as e:
 
 # --- Standard Cache Interface ---
 
+
 class CacheInterface:
     """
     Standard interface for all cache modules to ensure consistency.
     Provides common methods and expected behavior across cache types.
     """
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get statistics for this cache module."""
         raise NotImplementedError("Subclasses must implement get_stats()")
-    
+
     def clear(self) -> bool:
         """Clear this cache module."""
         raise NotImplementedError("Subclasses must implement clear()")
-    
+
     def warm(self) -> bool:
         """Warm this cache module with frequently accessed data."""
         raise NotImplementedError("Subclasses must implement warm()")
-    
+
     def get_module_name(self) -> str:
         """Get the name of this cache module."""
         raise NotImplementedError("Subclasses must implement get_module_name()")
-    
+
     def get_health_status(self) -> Dict[str, Any]:
         """Get health status of this cache module."""
         raise NotImplementedError("Subclasses must implement get_health_status()")
@@ -114,37 +115,45 @@ class BaseCacheModule(CacheInterface):
     """
     Implementation of the standard cache interface for the base cache module.
     """
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get base cache statistics."""
         return get_cache_stats()
-    
+
     def clear(self) -> bool:
         """Clear base cache."""
         return clear_cache()
-    
+
     def warm(self) -> bool:
         """Warm base cache with system data."""
         try:
             # Warm cache with commonly accessed configuration
-            warm_cache_with_data("system_status", {"status": "operational", "timestamp": time.time()})
-            warm_cache_with_data("cache_metadata", {"version": "2.0", "type": "enhanced_base"})
+            warm_cache_with_data(
+                "system_status", {"status": "operational", "timestamp": time.time()}
+            )
+            warm_cache_with_data(
+                "cache_metadata", {"version": "2.0", "type": "enhanced_base"}
+            )
             return True
         except Exception as e:
             logger.error(f"Error warming base cache: {e}")
             return False
-    
+
     def get_module_name(self) -> str:
         """Get module name."""
         return "base_cache"
-    
+
     def get_health_status(self) -> Dict[str, Any]:
         """Get health status of base cache."""
         try:
             stats = self.get_stats()
             total_requests = stats.get("hits", 0) + stats.get("misses", 0)
-            hit_rate = (stats.get("hits", 0) / total_requests * 100) if total_requests > 0 else 0
-            
+            hit_rate = (
+                (stats.get("hits", 0) / total_requests * 100)
+                if total_requests > 0
+                else 0
+            )
+
             # Determine health based on hit rate and cache availability
             if cache is None:
                 health = "critical"
@@ -161,13 +170,13 @@ class BaseCacheModule(CacheInterface):
             else:
                 health = "poor"
                 message = f"Low performance: {hit_rate:.1f}% hit rate"
-            
+
             return {
                 "health": health,
                 "message": message,
                 "hit_rate": hit_rate,
                 "total_requests": total_requests,
-                "cache_available": cache is not None
+                "cache_available": cache is not None,
             }
         except Exception as e:
             return {
@@ -175,7 +184,7 @@ class BaseCacheModule(CacheInterface):
                 "message": f"Health check failed: {e}",
                 "hit_rate": 0,
                 "total_requests": 0,
-                "cache_available": False
+                "cache_available": False,
             }
 
 
@@ -265,17 +274,22 @@ def cache_result(
             try:
                 result = func(*args, **kwargs)
 
-                # Step 5: Store the result in the cache
+                # Step 5: Store the result in the cache, enforcing size limit
                 try:
-                    cache.set(final_cache_key, result, expire=expire, retry=True)
-                    expire_msg = (
-                        f"with expiry {expire}s"
-                        if expire is not None
-                        else "with default expiry"
-                    )
-                    logger.debug(
-                        f"Cached result for key: '{final_cache_key}' {expire_msg}."
-                    )
+                    if check_cache_size_before_add():
+                        cache.set(final_cache_key, result, expire=expire, retry=True)
+                        expire_msg = (
+                            f"with expiry {expire}s"
+                            if expire is not None
+                            else "with default expiry"
+                        )
+                        logger.debug(
+                            f"Cached result for key: '{final_cache_key}' {expire_msg}."
+                        )
+                    else:
+                        logger.warning(
+                            f"Cache size limit reached. Skipping cache set for key: '{final_cache_key}'"
+                        )
                 except Exception as cache_set_e:
                     # Log error during cache set, but return the result anyway
                     logger.error(
@@ -389,73 +403,80 @@ def close_cache():
 
 # --- Enhanced Cross-Module Cache Coordination ---
 
+
 def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
     """
     Generate unified cache keys across modules for better coordination.
-    
+
     Args:
         module: Cache module name (e.g., 'gedcom', 'api', 'base')
         operation: Operation type (e.g., 'load', 'query', 'process')
         *args: Additional arguments for key generation
         **kwargs: Additional keyword arguments for key generation
-    
+
     Returns:
         Standardized cache key string
     """
     # Create base key components
     key_parts = [module, operation]
-    
+
     # Add positional arguments
     for arg in args:
         if isinstance(arg, (str, int, float)):
             key_parts.append(str(arg))
-        elif hasattr(arg, '__str__'):
+        elif hasattr(arg, "__str__"):
             key_parts.append(str(arg))
-    
+
     # Add keyword arguments in sorted order for consistency
     for key in sorted(kwargs.keys()):
         value = kwargs[key]
         if isinstance(value, (str, int, float, bool)):
             key_parts.append(f"{key}={value}")
-    
+
     # Generate hash for long keys to keep them manageable
     key_string = "_".join(key_parts)
     if len(key_string) > 100:
         import hashlib
+
         key_hash = hashlib.md5(key_string.encode()).hexdigest()[:16]
         key_string = f"{module}_{operation}_{key_hash}"
-    
+
     return key_string
 
 
-def invalidate_related_caches(pattern: str, exclude_modules: Optional[List[str]] = None) -> Dict[str, int]:
+def invalidate_related_caches(
+    pattern: str, exclude_modules: Optional[List[str]] = None
+) -> Dict[str, int]:
     """
     Invalidate caches across multiple modules based on pattern.
-    
+
     Args:
         pattern: Pattern to match for cache invalidation
         exclude_modules: List of module names to exclude from invalidation
-    
+
     Returns:
         Dictionary with count of invalidated entries per module
     """
     exclude_modules = exclude_modules or []
     results = {}
-    
+
     # Invalidate base cache
     if "base" not in exclude_modules:
         try:
             count = invalidate_cache_pattern(pattern)
             results["base_cache"] = count
-            logger.info(f"Invalidated {count} base cache entries matching pattern: {pattern}")
+            logger.info(
+                f"Invalidated {count} base cache entries matching pattern: {pattern}"
+            )
         except Exception as e:
             logger.error(f"Error invalidating base cache pattern {pattern}: {e}")
             results["base_cache"] = 0
-    
+
     # Invalidate GEDCOM cache
     if "gedcom" not in exclude_modules:
         try:
             from gedcom_cache import clear_memory_cache
+
             count = clear_memory_cache()
             results["gedcom_cache"] = count
             logger.info(f"Cleared {count} GEDCOM memory cache entries")
@@ -465,20 +486,20 @@ def invalidate_related_caches(pattern: str, exclude_modules: Optional[List[str]]
         except Exception as e:
             logger.error(f"Error invalidating GEDCOM cache: {e}")
             results["gedcom_cache"] = 0
-    
+
     # Note: API cache invalidation would be handled by api_cache module
     # This creates a standardized approach for cross-module coordination
-    
+
     total_invalidated = sum(results.values())
     logger.info(f"Total cache entries invalidated across modules: {total_invalidated}")
-    
+
     return results
 
 
 def get_cache_coordination_stats() -> Dict[str, Any]:
     """
     Get comprehensive statistics for cache coordination across modules.
-    
+
     Returns:
         Dictionary with coordination statistics and health metrics
     """
@@ -488,71 +509,78 @@ def get_cache_coordination_stats() -> Dict[str, Any]:
         "cross_module_health": "unknown",
         "total_entries": 0,
         "total_volume": 0,
-        "overall_hit_rate": 0.0
+        "overall_hit_rate": 0.0,
     }
-    
+
     # Collect stats from available modules
     total_hits = 0
     total_requests = 0
-    
+
     # Base cache stats
     try:
         base_stats = get_cache_stats()
         coordination_stats["modules"]["base"] = base_stats
-        
+
         hits = base_stats.get("hits", 0)
         misses = base_stats.get("misses", 0)
         total_hits += hits
         total_requests += hits + misses
         coordination_stats["total_entries"] += base_stats.get("size", 0)
         coordination_stats["total_volume"] += base_stats.get("volume", 0)
-        
+
     except Exception as e:
         logger.debug(f"Error getting base cache stats for coordination: {e}")
         coordination_stats["modules"]["base"] = {"error": str(e)}
-    
+
     # GEDCOM cache stats
     try:
         from gedcom_cache import get_gedcom_cache_info
+
         gedcom_stats = get_gedcom_cache_info()
         coordination_stats["modules"]["gedcom"] = gedcom_stats
-        
+
         # Add to totals if available
         memory_entries = gedcom_stats.get("memory_cache_entries", 0)
         coordination_stats["total_entries"] += memory_entries
-        
+
     except ImportError:
         coordination_stats["modules"]["gedcom"] = {"status": "not_available"}
     except Exception as e:
         logger.debug(f"Error getting GEDCOM cache stats for coordination: {e}")
         coordination_stats["modules"]["gedcom"] = {"error": str(e)}
-    
+
     # API cache stats
     try:
         from api_cache import get_api_cache_stats
+
         api_stats = get_api_cache_stats()
         coordination_stats["modules"]["api"] = api_stats
-        
+
         # Add to totals if available
         api_entries = api_stats.get("api_entries", 0)
         ai_entries = api_stats.get("ai_entries", 0)
         db_entries = api_stats.get("db_entries", 0)
         coordination_stats["total_entries"] += api_entries + ai_entries + db_entries
-        
+
     except ImportError:
         coordination_stats["modules"]["api"] = {"status": "not_available"}
     except Exception as e:
         logger.debug(f"Error getting API cache stats for coordination: {e}")
         coordination_stats["modules"]["api"] = {"error": str(e)}
-    
+
     # Calculate overall metrics
     if total_requests > 0:
         coordination_stats["overall_hit_rate"] = (total_hits / total_requests) * 100
-    
+
     # Determine cross-module health
-    available_modules = len([m for m in coordination_stats["modules"].values() 
-                           if "error" not in m and m.get("status") != "not_available"])
-    
+    available_modules = len(
+        [
+            m
+            for m in coordination_stats["modules"].values()
+            if "error" not in m and m.get("status") != "not_available"
+        ]
+    )
+
     if available_modules >= 3:
         coordination_stats["cross_module_health"] = "excellent"
     elif available_modules >= 2:
@@ -561,11 +589,148 @@ def get_cache_coordination_stats() -> Dict[str, Any]:
         coordination_stats["cross_module_health"] = "limited"
     else:
         coordination_stats["cross_module_health"] = "critical"
-    
+
     return coordination_stats
 
 
 # --- Enhanced Cache Management Functions ---
+
+
+def enforce_cache_size_limit() -> Dict[str, Any]:
+    """
+    Enforce cache size limits based on configuration.
+
+    Returns:
+        Dictionary with enforcement results
+    """
+    if not cache or not config_instance:
+        return {
+            "status": "skipped",
+            "reason": "Cache or config not available",
+            "entries_removed": 0,
+        }
+
+    try:
+        current_size = get_cache_entry_count()
+        max_size = config_instance.CACHE_MAX_SIZE
+
+        if current_size <= max_size:
+            return {
+                "status": "compliant",
+                "current_size": current_size,
+                "max_size": max_size,
+                "entries_removed": 0,
+                "utilization": (current_size / max_size * 100) if max_size > 0 else 0,
+            }  # Need to remove entries
+        excess_entries = current_size - max_size
+        entries_to_remove = excess_entries + 1  # Remove excess + 1 for buffer
+
+        removed_count = 0
+        try:
+            # Manual LRU eviction by iterating through cache and removing oldest entries
+            # diskcache stores entries in LRU order when iterating
+            keys_to_remove = []
+            key_count = 0
+
+            # Collect keys to remove (oldest first)
+            for key in cache:
+                keys_to_remove.append(key)
+                key_count += 1
+                if key_count >= entries_to_remove:
+                    break
+
+            # Remove the collected keys
+            for key in keys_to_remove:
+                try:
+                    cache.delete(key)
+                    removed_count += 1
+                    logger.debug(f"Evicted cache key: {key}")
+                except Exception as del_error:
+                    logger.warning(f"Failed to delete cache key {key}: {del_error}")
+
+            logger.info(f"Manually evicted {removed_count} entries using LRU order")
+
+        except Exception as evict_error:
+            logger.error(f"Error during manual cache eviction: {evict_error}")
+            # Last resort: try using diskcache's built-in cull (size-based)
+            try:
+                # This won't help with entry count, but might free up some space
+                culled = cache.cull()
+                logger.info(f"Fallback: diskcache culled {culled} entries by size")
+            except Exception as cull_error:
+                logger.error(f"Even fallback cull failed: {cull_error}")
+
+        final_size = get_cache_entry_count()
+
+        logger.info(f"Cache size enforcement: removed {removed_count} entries")
+        logger.info(f"Cache size: {current_size} → {final_size} (limit: {max_size})")
+
+        return {
+            "status": "enforced",
+            "current_size": final_size,
+            "max_size": max_size,
+            "entries_removed": removed_count,
+            "utilization": (final_size / max_size * 100) if max_size > 0 else 0,
+            "initial_size": current_size,
+        }
+
+    except Exception as e:
+        logger.error(f"Error enforcing cache size limit: {e}")
+        return {"status": "error", "error": str(e), "entries_removed": 0}
+
+
+def check_cache_size_before_add(estimated_size: int = 1) -> bool:
+    """
+    Check if adding an entry would exceed cache size limits.
+
+    Args:
+        estimated_size: Estimated number of entries to add
+
+    Returns:
+        True if addition is allowed, False if it would exceed limits
+    """
+    if not cache or not config_instance:
+        return True  # Allow if we can't check
+
+    try:
+        current_size = get_cache_entry_count()
+        max_size = config_instance.CACHE_MAX_SIZE
+
+        if current_size + estimated_size <= max_size:
+            return True
+
+        # Would exceed limit - trigger enforcement
+        enforcement_result = enforce_cache_size_limit()
+
+        # Check again after enforcement
+        new_size = get_cache_entry_count()
+        return new_size + estimated_size <= max_size
+
+    except Exception as e:
+        logger.error(f"Error checking cache size limits: {e}")
+        return True  # Allow on error
+
+
+def get_cache_entry_count() -> int:
+    """Safely get the number of entries in the cache."""
+    try:
+        if cache is not None:
+            # Use len() which works correctly with diskcache
+            # Type ignore for diskcache compatibility
+            return len(cache)  # type: ignore
+        else:
+            return 0
+    except Exception as e:
+        logger.warning(f"Error getting cache entry count: {e}")
+        # Fallback: try to count by iterating (slower but reliable)
+        try:
+            count = 0
+            for _ in cache:  # type: ignore
+                count += 1
+            return count
+        except Exception as e2:
+            logger.error(f"Fallback count also failed: {e2}")
+            return 0
 
 
 def get_cache_stats() -> Dict[str, Any]:
@@ -581,13 +746,44 @@ def get_cache_stats() -> Dict[str, Any]:
 
     try:
         stats_tuple = cache.stats(enable=True, reset=False)
+        current_entry_count = get_cache_entry_count()
+
         stats = {
             "hits": stats_tuple[0],
             "misses": stats_tuple[1],
-            "size": getattr(cache, "size", 0),  # Get cache size safely
+            "entries": current_entry_count,  # Use "entries" field name for consistency
+            "size": current_entry_count,  # Keep "size" for backward compatibility
             "volume": cache.volume(),
             "evictions": getattr(cache, "evictions", 0),
         }
+
+        # Calculate hit rate
+        total_requests = stats["hits"] + stats["misses"]
+        if total_requests > 0:
+            stats["hit_rate"] = (stats["hits"] / total_requests) * 100
+        else:
+            stats["hit_rate"] = 0.0
+
+        # Add cache configuration info
+        stats["cache_dir"] = str(CACHE_DIR)
+        stats["eviction_policy"] = "least-recently-used"
+        stats["size_limit_gb"] = 2.0
+
+        # Add size limit information from config
+        if config_instance:
+            max_entries = config_instance.CACHE_MAX_SIZE
+            current_entries = stats["entries"]  # Use the entries field
+
+            stats["max_entries"] = max_entries
+            stats["entries_utilization"] = (
+                (current_entries / max_entries * 100) if max_entries > 0 else 0.0
+            )
+            stats["size_compliant"] = current_entries <= max_entries
+        else:
+            stats["max_entries"] = "Unknown"
+            stats["entries_utilization"] = 0.0
+            stats["size_compliant"] = "Unknown"
+
         return stats
     except Exception as e:
         logger.error(f"Error retrieving cache statistics: {e}")
@@ -789,7 +985,7 @@ def run_cache_tests():
         )
 
     # Test 2: Basic Cache Operations
-    print("\n--- Test Section 2: Basic Cache Operations ---")
+    print("\n--- Test Section 2: Cache Operations ---")
 
     if cache:
         try:

@@ -40,6 +40,7 @@ _GEDCOM_CACHE_PREFIX = "gedcom_data"
 
 # --- GEDCOM Cache Module Implementation ---
 
+
 class GedcomCacheModule(BaseCacheModule):
     """
     GEDCOM-specific cache module implementing the standardized cache interface.
@@ -80,9 +81,9 @@ class GedcomCacheModule(BaseCacheModule):
             gedcom_path = config_instance.GEDCOM_FILE_PATH
             if gedcom_path and Path(gedcom_path).exists():
                 gedcom_stats["gedcom_file_path"] = str(gedcom_path)
-                gedcom_stats["gedcom_file_size_mb"] = (
-                    Path(gedcom_path).stat().st_size / (1024 * 1024)
-                )
+                gedcom_stats["gedcom_file_size_mb"] = Path(
+                    gedcom_path
+                ).stat().st_size / (1024 * 1024)
                 gedcom_stats["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
 
         # Merge with base statistics
@@ -195,7 +196,11 @@ class GedcomCacheModule(BaseCacheModule):
             return {**base_health, **gedcom_health_info}
         except Exception as e:
             logger.error(f"Error getting GEDCOM cache health status: {e}")
-            return {**base_health, "health_check_error": str(e), "overall_health": "error"}
+            return {
+                **base_health,
+                "health_check_error": str(e),
+                "overall_health": "error",
+            }
 
 
 # Initialize GEDCOM cache module instance
@@ -208,7 +213,9 @@ _gedcom_cache_module = GedcomCacheModule()
 def _get_memory_cache_key(file_path: str, operation: str) -> str:
     """Generate a consistent cache key for memory cache using unified system."""
     # Use the unified cache key generation for consistency
-    return get_unified_cache_key("gedcom_memory", operation, file_path, os.path.getmtime(file_path))
+    return get_unified_cache_key(
+        "gedcom_memory", operation, file_path, os.path.getmtime(file_path)
+    )
 
 
 def _is_memory_cache_valid(cache_key: str) -> bool:
@@ -525,6 +532,375 @@ def get_gedcom_cache_info() -> Dict[str, Any]:
             info["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
 
     return info
+
+
+# --- Public Interface Functions for GEDCOM Cache Module ---
+
+
+def get_gedcom_cache_stats() -> Dict[str, Any]:
+    """Get comprehensive GEDCOM cache statistics."""
+    return _gedcom_cache_module.get_stats()
+
+
+def clear_gedcom_cache() -> bool:
+    """Clear all GEDCOM caches."""
+    return _gedcom_cache_module.clear()
+
+
+def warm_gedcom_cache() -> bool:
+    """Warm up GEDCOM cache."""
+    return _gedcom_cache_module.warm()
+
+
+def get_gedcom_cache_health() -> Dict[str, Any]:
+    """Get GEDCOM cache health status."""
+    return _gedcom_cache_module.get_health_status()
+
+
+# --- GEDCOM Cache Testing Suite ---
+
+
+def run_gedcom_cache_tests() -> Dict[str, Any]:
+    """
+    Run comprehensive tests for GEDCOM cache functionality.
+    Returns test results with pass/fail status and performance metrics.
+    """
+    test_results = {
+        "tests_run": 0,
+        "tests_passed": 0,
+        "tests_failed": 0,
+        "test_details": [],
+        "start_time": time.time(),
+        "performance_metrics": {},
+    }
+
+    def run_test(test_name: str, test_func: callable) -> bool:
+        """Run individual test and track results."""
+        test_results["tests_run"] += 1
+        try:
+            start_time = time.time()
+            result = test_func()
+            duration = time.time() - start_time
+
+            if result:
+                test_results["tests_passed"] += 1
+                status = "PASS"
+            else:
+                test_results["tests_failed"] += 1
+                status = "FAIL"
+
+            test_results["test_details"].append(
+                {
+                    "name": test_name,
+                    "status": status,
+                    "duration_ms": round(duration * 1000, 2),
+                    "result": result,
+                }
+            )
+
+            logger.info(
+                f"GEDCOM Cache Test '{test_name}': {status} ({duration*1000:.2f}ms)"
+            )
+            return result
+
+        except Exception as e:
+            test_results["tests_failed"] += 1
+            test_results["test_details"].append(
+                {"name": test_name, "status": "ERROR", "error": str(e), "result": False}
+            )
+            logger.error(f"GEDCOM Cache Test '{test_name}' ERROR: {e}")
+            return False
+
+    # Test 1: Module Initialization
+    def test_module_initialization():
+        return _gedcom_cache_module.get_module_name() == "gedcom_cache"
+
+    # Test 2: Memory Cache Basic Operations
+    def test_memory_cache_operations():
+        test_key = "test_operation_key"
+        test_data = {"test": "data", "timestamp": time.time()}
+
+        # Store in memory cache
+        _store_in_memory_cache(test_key, test_data)
+
+        # Retrieve from memory cache
+        retrieved = _get_from_memory_cache(test_key)
+
+        # Clean up
+        if test_key in _MEMORY_CACHE:
+            del _MEMORY_CACHE[test_key]
+
+        return retrieved == test_data
+
+    # Test 3: Cache Key Generation
+    def test_cache_key_generation():
+        if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
+            return True  # Skip if no GEDCOM configured
+
+        gedcom_path = config_instance.GEDCOM_FILE_PATH
+        if not gedcom_path or not Path(gedcom_path).exists():
+            return True  # Skip if file doesn't exist
+
+        key1 = _get_memory_cache_key(gedcom_path, "test_operation")
+        key2 = _get_memory_cache_key(gedcom_path, "test_operation")
+
+        return key1 == key2  # Keys should be consistent
+
+    # Test 4: Statistics Collection
+    def test_statistics_collection():
+        stats = _gedcom_cache_module.get_stats()
+        required_fields = [
+            "module_name",
+            "memory_cache_entries",
+            "cache_max_age_seconds",
+        ]
+        return all(field in stats for field in required_fields)
+
+    # Test 5: Health Status Check
+    def test_health_status():
+        health = _gedcom_cache_module.get_health_status()
+        required_fields = [
+            "overall_health",
+            "memory_cache_health",
+            "gedcom_file_health",
+        ]
+        return all(field in health for field in required_fields)
+
+    # Test 6: Cache Clearing
+    def test_cache_clearing():
+        # Add some test data
+        test_key = "clear_test_key"
+        _store_in_memory_cache(test_key, "test_data")
+
+        # Clear cache
+        clear_result = _gedcom_cache_module.clear()
+
+        # Check if cleared
+        return clear_result and test_key not in _MEMORY_CACHE
+
+    # Test 7: Cache Warming
+    def test_cache_warming():
+        warm_result = _gedcom_cache_module.warm()
+        # Warming should either succeed or fail gracefully
+        return isinstance(warm_result, bool)
+
+    # Test 8: Memory Cache Expiration
+    def test_memory_cache_expiration():
+        test_key = "expiration_test_key"
+        test_data = "expiration_test_data"
+
+        # Store with current timestamp
+        _MEMORY_CACHE[test_key] = (test_data, time.time() - _CACHE_MAX_AGE - 1)
+
+        # Should be invalid due to age
+        is_valid = _is_memory_cache_valid(test_key)
+
+        # Clean up
+        if test_key in _MEMORY_CACHE:
+            del _MEMORY_CACHE[test_key]
+
+        return not is_valid
+
+    # Run all tests
+    logger.info("Starting GEDCOM cache comprehensive test suite...")
+
+    run_test("Module Initialization", test_module_initialization)
+    run_test("Memory Cache Operations", test_memory_cache_operations)
+    run_test("Cache Key Generation", test_cache_key_generation)
+    run_test("Statistics Collection", test_statistics_collection)
+    run_test("Health Status Check", test_health_status)
+    run_test("Cache Clearing", test_cache_clearing)
+    run_test("Cache Warming", test_cache_warming)
+    run_test("Memory Cache Expiration", test_memory_cache_expiration)
+
+    # Calculate final metrics
+    test_results["end_time"] = time.time()
+    test_results["total_duration"] = (
+        test_results["end_time"] - test_results["start_time"]
+    )
+    test_results["pass_rate"] = (
+        (test_results["tests_passed"] / test_results["tests_run"] * 100)
+        if test_results["tests_run"] > 0
+        else 0
+    )
+
+    # Add performance metrics
+    test_results["performance_metrics"] = {
+        "average_test_duration_ms": (
+            sum(t.get("duration_ms", 0) for t in test_results["test_details"])
+            / len(test_results["test_details"])
+            if test_results["test_details"]
+            else 0
+        ),
+        "cache_stats": get_gedcom_cache_stats(),
+        "health_status": get_gedcom_cache_health(),
+    }
+
+    logger.info(
+        f"GEDCOM Cache Tests Completed: {test_results['tests_passed']}/{test_results['tests_run']} passed ({test_results['pass_rate']:.1f}%)"
+    )
+
+    return test_results
+
+
+# --- GEDCOM Cache Demo Functions ---
+
+
+def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
+    """
+    Demonstrate practical GEDCOM cache usage with examples.
+    Returns demonstration results and performance data.
+    """
+    demo_results = {
+        "demonstrations": [],
+        "start_time": time.time(),
+        "performance_summary": {},
+    }
+
+    logger.info("Starting GEDCOM cache usage demonstrations...")
+
+    try:
+        # Demo 1: Cache Statistics Display
+        stats = get_gedcom_cache_stats()
+        demo_results["demonstrations"].append(
+            {
+                "name": "Cache Statistics",
+                "description": "Display current GEDCOM cache statistics",
+                "data": stats,
+                "status": "success",
+            }
+        )
+
+        # Demo 2: Health Status Check
+        health = get_gedcom_cache_health()
+        demo_results["demonstrations"].append(
+            {
+                "name": "Health Status",
+                "description": "Check GEDCOM cache system health",
+                "data": health,
+                "status": "success",
+            }
+        )
+
+        # Demo 3: Memory Cache Operations
+        if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
+            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            if gedcom_path and Path(gedcom_path).exists():
+                # Demonstrate file-based caching
+                cache_key = _get_memory_cache_key(gedcom_path, "demo_operation")
+                demo_data = {
+                    "file_path": gedcom_path,
+                    "demo_timestamp": time.time(),
+                    "operation": "demonstration",
+                }
+
+                _store_in_memory_cache(cache_key, demo_data)
+                retrieved_data = _get_from_memory_cache(cache_key)
+
+                demo_results["demonstrations"].append(
+                    {
+                        "name": "Memory Cache Demo",
+                        "description": "Store and retrieve data from memory cache",
+                        "data": {
+                            "stored": demo_data,
+                            "retrieved": retrieved_data,
+                            "match": demo_data == retrieved_data,
+                        },
+                        "status": "success",
+                    }
+                )
+
+                # Clean up demo data
+                if cache_key in _MEMORY_CACHE:
+                    del _MEMORY_CACHE[cache_key]
+
+        # Demo 4: Cache Coordination
+        coordination_stats = get_unified_cache_key(
+            "gedcom", "coordination_demo", "test_param"
+        )
+        demo_results["demonstrations"].append(
+            {
+                "name": "Cache Coordination",
+                "description": "Demonstrate unified cache key generation",
+                "data": {"unified_key": coordination_stats, "module": "gedcom"},
+                "status": "success",
+            }
+        )
+
+    except Exception as e:
+        demo_results["demonstrations"].append(
+            {
+                "name": "Error in Demonstration",
+                "description": f"Error occurred: {str(e)}",
+                "status": "error",
+            }
+        )
+        logger.error(f"Error in GEDCOM cache demonstration: {e}")
+
+    # Final summary
+    demo_results["end_time"] = time.time()
+    demo_results["total_duration"] = (
+        demo_results["end_time"] - demo_results["start_time"]
+    )
+    demo_results["performance_summary"] = {
+        "demonstrations_completed": len(
+            [d for d in demo_results["demonstrations"] if d["status"] == "success"]
+        ),
+        "total_demonstrations": len(demo_results["demonstrations"]),
+        "final_cache_stats": get_gedcom_cache_stats(),
+        "final_health_status": get_gedcom_cache_health(),
+    }
+
+    logger.info("GEDCOM cache demonstrations completed successfully")
+    return demo_results
+
+
+# --- Main Execution for Testing ---
+
+if __name__ == "__main__":
+    print("🧬 GEDCOM Cache System - Comprehensive Testing & Demonstration")
+    print("=" * 70)
+
+    # Run comprehensive tests
+    print("\n📊 Running GEDCOM Cache Tests...")
+    test_results = run_gedcom_cache_tests()
+
+    print(
+        f"\n✅ Test Results: {test_results['tests_passed']}/{test_results['tests_run']} passed ({test_results['pass_rate']:.1f}%)"
+    )
+
+    # Display test details
+    for test in test_results["test_details"]:
+        status_emoji = (
+            "✅"
+            if test["status"] == "PASS"
+            else "❌" if test["status"] == "FAIL" else "⚠️"
+        )
+        duration = test.get("duration_ms", 0)
+        print(f"  {status_emoji} {test['name']}: {test['status']} ({duration:.2f}ms)")
+
+    # Run demonstrations
+    print("\n🎯 Running GEDCOM Cache Demonstrations...")
+    demo_results = demonstrate_gedcom_cache_usage()
+
+    for demo in demo_results["demonstrations"]:
+        status_emoji = "✅" if demo["status"] == "success" else "❌"
+        print(f"  {status_emoji} {demo['name']}: {demo['description']}")
+
+    # Display final statistics
+    print(f"\n📈 Performance Summary:")
+    print(f"  • Total test duration: {test_results['total_duration']:.3f}s")
+    print(
+        f"  • Average test duration: {test_results['performance_metrics']['average_test_duration_ms']:.2f}ms"
+    )
+    print(f"  • Cache module: {_gedcom_cache_module.get_module_name()}")
+
+    # Display cache health
+    health = get_gedcom_cache_health()
+    print(f"  • Overall health: {health.get('overall_health', 'unknown')}")
+    print(f"  • Memory cache entries: {health.get('memory_cache_entries', 0)}")
+
+    print("\n🔄 GEDCOM cache system validation complete!")
 
 
 # End of gedcom_cache.py

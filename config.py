@@ -263,6 +263,9 @@ class Config_Class(BaseConfig):
         self.GATHER_THREAD_POOL_WORKERS: int = 5  # Default if not set
         # Rate limiting/Retry values will use class defaults if not overridden by env
         self.CACHE_TIMEOUT: int = 3600  # Default
+        self.CACHE_MAX_SIZE: int = (
+            5_000_000  # Default cache size limit (5 million entries)
+        )
 
         # Load values from env, potentially overriding class defaults
         self._load_values()
@@ -427,6 +430,9 @@ class Config_Class(BaseConfig):
         self.CACHE_TIMEOUT = self._get_int_env(
             "CACHE_TIMEOUT", 3600
         )  # Use literal default
+        self.CACHE_MAX_SIZE = self._get_int_env(
+            "CACHE_MAX_SIZE", 5_000_000
+        )  # Cache size limit in entries
 
         # === Rate Limiting ===
         # Use class defaults unless overridden by env
@@ -964,6 +970,7 @@ if __name__ == "__main__":
         print(f"  MAX_PRODUCTIVE: {config_instance.MAX_PRODUCTIVE_TO_PROCESS}")
         print(f"  BATCH_SIZE: {config_instance.BATCH_SIZE}")
         print(f"  CACHE_TIMEOUT: {config_instance.CACHE_TIMEOUT}s")
+        print(f"  CACHE_MAX_SIZE: {config_instance.CACHE_MAX_SIZE:,} entries")
         print(f"  RETRY_CODES: {config_instance.RETRY_STATUS_CODES}")
         print(f"  TREE_SEARCH_METHOD: {config_instance.TREE_SEARCH_METHOD}")
         # Print Action 11 limits
