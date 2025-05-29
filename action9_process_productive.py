@@ -34,7 +34,7 @@ from database import (
 from logging_config import logger  # Use configured logger
 import ms_graph_utils  # Utility functions for MS Graph API interaction
 from utils import SessionManager, format_name  # Core utilities
-from ai_interface import extract_and_suggest_tasks  # AI interaction functions
+from ai_interface import extract_genealogical_entities  # AI interaction functions
 from cache import cache_result  # Caching utility (used for templates)
 from api_utils import call_send_message_api  # Real API function for sending messages
 
@@ -1646,7 +1646,7 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
     and always returns a valid structure even if the input is malformed.
 
     Args:
-        ai_response: The raw AI response from extract_and_suggest_tasks
+        ai_response: The raw AI response from extract_genealogical_entities
         log_prefix: A string prefix for log messages (usually includes person info)
 
     Returns:
@@ -2043,7 +2043,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                                 f"Session invalid: Tasks={tasks_created_count} Acks={acks_sent_count} Skip={skipped_count} Err={error_count}"
                             )
                         continue
-                    ai_response = extract_and_suggest_tasks(
+                    ai_response = extract_genealogical_entities(
                         formatted_context, session_manager
                     )
 

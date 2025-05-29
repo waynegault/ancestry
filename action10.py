@@ -13,8 +13,7 @@ V.20240503.Refactored
 Example output:
 --------------
 --- Top 3 Highest Scoring Matches ---
-ID               | Name                           | Sex    | Birth Date        | Birth Place                     | Death Date        | Death Place                     | Total Score
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ID     ---------------------------------------------
 @I123@           | John Smith                     | M      | 1 JAN 1850        | New York, NY, USA               | 12 DEC 1910       | Boston, MA, USA                 | 95
 @I456@           | Jonathan Smith                 | M      | 15 MAR 1848       | Albany, NY, USA                 | 23 NOV 1915       | Chicago, IL, USA               | 82
 @I789@           | John Smithson                  | M      | 22 FEB 1855       | Brooklyn, NY, USA               | 30 JUL 1922       | Philadelphia, PA, USA          | 73

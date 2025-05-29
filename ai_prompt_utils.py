@@ -382,6 +382,11 @@ def self_test() -> Tuple[int, int, List[str]]:
         Tuple[int, int, List[str]]: (passed_tests, total_tests, error_messages)
     """
     import tempfile
+    import logging
+
+    # Temporarily reduce logging level for cleaner test output
+    original_level = logger.level
+    logger.setLevel(logging.ERROR)
 
     tests_passed = 0
     total_tests = 0
@@ -397,10 +402,11 @@ def self_test() -> Tuple[int, int, List[str]]:
     global PROMPTS_FILE, IMPROVED_PROMPTS_DIR
     original_prompts_file = PROMPTS_FILE
     original_improved_dir = IMPROVED_PROMPTS_DIR
-    temp_dir = Path(tempfile.mkdtemp())
 
     try:
+        temp_dir = Path(tempfile.mkdtemp())
         PROMPTS_FILE = temp_dir / "test_ai_prompts.json"
+        # Keep original improved dir for most tests
 
         # Test basic functionality
         test_data = _create_test_data()
@@ -454,23 +460,33 @@ def self_test() -> Tuple[int, int, List[str]]:
 
         # Test error handling
         def test_invalid_json():
-            with open(PROMPTS_FILE, "w") as f:
-                f.write("invalid json content")
-            prompts = load_prompts()
-            return isinstance(prompts, dict) and "prompts" in prompts
+            try:
+                with open(PROMPTS_FILE, "w") as f:
+                    f.write("invalid json content")
+                prompts = load_prompts()
+                return isinstance(prompts, dict) and "prompts" in prompts
+            except Exception:
+                return False
 
         run_test("Handle invalid JSON gracefully", test_invalid_json)
 
         # Test backup functionality
-        run_test(
-            "Backup functionality",
-            lambda: (
-                save_prompts(
-                    {"version": "1.0", "last_updated": "2024-01-01", "prompts": {}}
-                )
-                and backup_prompts_file()
-            ),
-        )
+        def test_backup_functionality():
+            try:
+                # First save some test data
+                test_data = {
+                    "version": "1.0",
+                    "last_updated": "2024-01-01",
+                    "prompts": {},
+                }
+                save_prompts(test_data)
+
+                # Test backup creation
+                return backup_prompts_file()
+            except Exception:
+                return False
+
+        run_test("Backup functionality", test_backup_functionality)
 
         # Test large content and special characters
         run_test(
@@ -490,31 +506,98 @@ def self_test() -> Tuple[int, int, List[str]]:
 
         # Test import functionality with mock files
         def test_import_improved():
-            mock_dir = temp_dir / "improved_prompts"
-            mock_dir.mkdir()
-
-            for filename, content in [
-                (
-                    "improved_extraction_prompt.txt",
-                    "Improved extraction prompt content",
-                ),
-                ("improved_response_prompt.txt", "Improved response prompt content"),
-            ]:
-                with open(mock_dir / filename, "w") as f:
-                    f.write(content)
-
-            IMPROVED_PROMPTS_DIR = mock_dir
             try:
-                count, keys = import_improved_prompts()
-                return (
-                    count == 2
-                    and "extraction_task" in keys
-                    and "genealogical_reply" in keys
-                )
-            finally:
-                IMPROVED_PROMPTS_DIR = original_improved_dir
+                mock_dir = temp_dir / "improved_prompts"
+                mock_dir.mkdir()
+
+                for filename, content in [
+                    (
+                        "improved_extraction_prompt.txt",
+                        "Improved extraction prompt content",
+                    ),
+                    (
+                        "improved_response_prompt.txt",
+                        "Improved response prompt content",
+                    ),
+                ]:
+                    with open(mock_dir / filename, "w", encoding="utf-8") as f:
+                        f.write(content)
+
+                # Temporarily change the improved prompts directory
+                global IMPROVED_PROMPTS_DIR
+                original_dir = IMPROVED_PROMPTS_DIR
+                IMPROVED_PROMPTS_DIR = mock_dir
+                try:
+                    count, keys = import_improved_prompts()
+                    return (
+                        count == 2
+                        and "extraction_task" in keys
+                        and "genealogical_reply" in keys
+                    )
+                finally:
+                    IMPROVED_PROMPTS_DIR = original_dir
+            except Exception:
+                return False
 
         run_test("Import improved prompts", test_import_improved)
+
+        # Test real prompts from the actual file
+        def test_real_prompts():
+            try:
+                # Restore original file temporarily to test real prompts
+                global PROMPTS_FILE
+                original_test_file = PROMPTS_FILE
+                PROMPTS_FILE = original_prompts_file
+
+                try:
+                    # Test all expected prompts including task creation/validation
+                    expected_prompts = [
+                        "intent_classification",
+                        "extraction_task",
+                        "genealogical_reply",
+                        "data_validation",  # Task creation/validation prompt
+                    ]
+
+                    prompts_data = load_prompts()
+                    available_prompts = prompts_data.get("prompts", {})
+
+                    for prompt_key in expected_prompts:
+                        if prompt_key not in available_prompts:
+                            return False
+
+                        prompt_content = get_prompt(prompt_key)
+                        if not prompt_content or len(prompt_content) < 50:
+                            return False
+
+                    # Special check for data_validation prompt (task creation)
+                    data_validation_prompt = get_prompt("data_validation")
+                    if not data_validation_prompt:
+                        return False
+
+                    # Check if it contains task creation keywords
+                    task_keywords = [
+                        "validation",
+                        "recommendations",
+                        "issues_found",
+                        "confidence_score",
+                        "actions",
+                    ]
+                    found_keywords = sum(
+                        1
+                        for keyword in task_keywords
+                        if keyword.lower() in data_validation_prompt.lower()
+                    )
+
+                    return (
+                        found_keywords >= 3
+                    )  # Should have at least 3 task-related keywords
+
+                finally:
+                    PROMPTS_FILE = original_test_file
+            except Exception:
+                return False
+
+        run_test("Test real prompts including task creation", test_real_prompts)
 
         # Permission test (platform-specific)
         run_test(
@@ -522,9 +605,10 @@ def self_test() -> Tuple[int, int, List[str]]:
         )  # Simplified for cross-platform compatibility
 
     finally:
-        # Restore original paths and clean up
+        # Restore original paths and logging level
         PROMPTS_FILE = original_prompts_file
         IMPROVED_PROMPTS_DIR = original_improved_dir
+        logger.setLevel(original_level)
 
         try:
             shutil.rmtree(temp_dir)
@@ -541,6 +625,8 @@ def self_test() -> Tuple[int, int, List[str]]:
         print(f"\nErrors encountered:")
         for error in errors:
             print(f"  {error}")
+    else:
+        print("✅ All tests passed successfully!")
 
     logger.info(
         f"Self-test completed: {tests_passed}/{total_tests} tests passed ({success_rate:.1f}%)"

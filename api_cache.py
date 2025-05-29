@@ -209,10 +209,10 @@ def cache_ai_extract_tasks(
         Extracted tasks data or None if call fails
     """
     try:
-        from ai_interface import extract_and_suggest_tasks
+        from ai_interface import extract_genealogical_entities
 
         logger.debug("Extracting tasks with AI (cache miss)")
-        return extract_and_suggest_tasks(
+        return extract_genealogical_entities(
             context_history, session_manager, *args, **kwargs
         )
     except Exception as e:

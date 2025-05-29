@@ -119,6 +119,8 @@ try:
         TAG_SEX,
         TAG_HUSBAND,
         TAG_WIFE,
+        GedcomReaderType,
+        GedcomIndividualType,
     )
 
     GEDCOM_UTILS_AVAILABLE = True
@@ -143,6 +145,57 @@ except ImportError:
         parents1 = id_to_parents.get(id1, set())
         parents2 = id_to_parents.get(id2, set())
         return bool(parents1 and parents2 and parents1.intersection(parents2))
+
+    # Define constants for fallback
+    TAG_BIRTH = "BIRT"
+    TAG_DEATH = "DEAT"
+    TAG_SEX = "SEX"
+    TAG_HUSBAND = "HUSB"
+    TAG_WIFE = "WIFE"
+
+    # Define type aliases for fallback
+    GedcomIndividualType = Any
+    GedcomReaderType = Any
+
+    # Define fallback functions for other gedcom_utils functions
+    def _parse_date(date_str: str) -> Optional[datetime]:
+        """Parse date string to datetime object."""
+        return None
+
+    def _clean_display_date(raw_date_str: Optional[str]) -> str:
+        """Clean display date string."""
+        return raw_date_str or ""
+
+    def _get_event_info(
+        individual: Any, event_tag: str
+    ) -> Tuple[Optional[datetime], str, str]:
+        """Get event info from record."""
+        return (None, "", "")
+
+    def _get_full_name(indi: Any) -> str:
+        """Get full name from record."""
+        return "Unknown"
+
+    def _is_great_grandparent(*args):
+        return False
+
+    def _is_great_grandchild(*args):
+        return False
+
+    def _is_aunt_or_uncle(*args):
+        return False
+
+    def _is_niece_or_nephew(*args):
+        return False
+
+    def _are_cousins(*args):
+        return False
+
+    def _are_spouses(*args):
+        return False
+
+
+# --- Helper Functions for BFS ---
 
 
 def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
@@ -173,69 +226,7 @@ def _is_grandchild(id1: str, id2: str, id_to_children: Dict[str, Set[str]]) -> b
     return False
 
 
-# Define constants
-TAG_BIRTH = "BIRT"
-TAG_DEATH = "DEAT"
-TAG_SEX = "SEX"
-TAG_HUSBAND = "HUSB"
-TAG_WIFE = "WIFE"
-
-# Define type aliases
-GedcomIndividualType = Any
-GedcomReaderType = Any
-
-
-# Define fallback functions for other gedcom_utils functions
-def _parse_date(date_str: str) -> Optional[datetime]:
-    """Parse date string to datetime object."""
-    return None
-
-
-def _clean_display_date(raw_date_str: Optional[str]) -> str:
-    """Clean display date string."""
-    return raw_date_str or ""
-
-
-def _get_event_info(
-    individual: Any, event_tag: str
-) -> Tuple[Optional[datetime], str, str]:
-    """Get event info from record."""
-    return (None, "", "")
-
-
-def _get_full_name(indi: Any) -> str:
-    """Get full name from record."""
-    return "Unknown"
-
-
-def _is_great_grandparent(*args):
-    return False
-
-
-def _is_great_grandchild(*args):
-    return False
-
-
-def _is_aunt_or_uncle(*args):
-    return False
-
-
-def _is_niece_or_nephew(*args):
-    return False
-
-
-def _are_cousins(*args):
-    return False
-
-
-def _are_spouses(*args):
-    return False
-
-
-# --- Constants ---
-# Constants are now imported from gedcom_utils
-
-# --- Helper Functions ---
+# --- Relationship Path Finding Functions ---
 
 
 def _find_direct_relationship(
