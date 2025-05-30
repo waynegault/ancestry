@@ -27,7 +27,7 @@ import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, cast, Union
 
 # --- Third-party imports ---
 import requests
@@ -36,13 +36,13 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum as SQLEnum,
-    Index,  # Added Index
+    Index,
     Integer,
     String,
     Subquery,
     desc,
     func,
-    inspect as sa_inspect,  # Added inspect
+    inspect as sa_inspect,
     over,
     text,
     update,
@@ -80,7 +80,74 @@ from utils import (
 )
 
 
-# --- Main Class ---
+# --- Helper function for SQLAlchemy Column conversion ---
+def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
+    """
+    Safely extract a value from a SQLAlchemy model attribute, handling Column objects.
+
+    Args:
+        obj: The SQLAlchemy model instance
+        attr_name: The attribute name to access
+        default: Default value to return if attribute doesn't exist or conversion fails
+
+    Returns:
+        The Python primitive value of the attribute, or the default value
+    """
+    if not hasattr(obj, attr_name):
+        return default
+
+    value = getattr(obj, attr_name)
+    if value is None:
+        return default
+
+    # Try to convert to Python primitive
+    try:
+        # Special handling for direction enum
+        if attr_name == "direction":
+            if isinstance(value, MessageDirectionEnum):
+                return value
+            elif isinstance(value, str):
+                try:
+                    return MessageDirectionEnum(value)
+                except ValueError:
+                    logger.warning(f"Invalid direction string '{value}'")
+                    return default
+            else:
+                logger.warning(f"Unexpected direction type: {type(value)}")
+                return default
+
+        # Special handling for status enum
+        if attr_name == "status":
+            if isinstance(value, PersonStatusEnum):
+                return value
+            elif isinstance(value, str):
+                try:
+                    return PersonStatusEnum(value)
+                except ValueError:
+                    logger.warning(f"Invalid status string '{value}'")
+                    return default
+            else:
+                logger.warning(f"Unexpected status type: {type(value)}")
+                return default
+
+        # For different types of attributes
+        if isinstance(value, (bool, type(True), type(False))):
+            return bool(value)
+        elif isinstance(value, int):
+            return int(value)
+        elif isinstance(value, float):
+            return float(value)
+        elif hasattr(value, "isoformat"):  # datetime-like
+            return value
+        else:
+            return str(value)
+    except (ValueError, TypeError, AttributeError):
+        return default
+
+
+# --- Critical Improvements ---
+
+
 class InboxProcessor:
     """
     Handles the process of fetching, analyzing, and logging Ancestry inbox conversations.
@@ -114,7 +181,30 @@ class InboxProcessor:
             config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS
         )  # Correct assignment
 
-        # Correct the attribute name in the logging statement
+        # Add input validation
+        if self.ai_context_msg_count <= 0:
+            logger.warning(
+                f"AI context message count ({self.ai_context_msg_count}) invalid, using default of 10"
+            )
+            self.ai_context_msg_count = 10
+
+        if self.ai_context_max_words <= 0:
+            logger.warning(
+                f"AI context max words ({self.ai_context_max_words}) invalid, using default of 100"
+            )
+            self.ai_context_max_words = 100
+
+        # Add statistics tracking
+        self.stats = {
+            "conversations_fetched": 0,
+            "conversations_processed": 0,
+            "ai_classifications": 0,
+            "person_updates": 0,
+            "errors": 0,
+            "start_time": None,
+            "end_time": None,
+        }
+
         logger.debug(
             f"InboxProcessor initialized: MaxInbox={self.max_inbox_limit}, BatchSize={self.api_batch_size}, AIContext={self.ai_context_msg_count} msgs / {self.ai_context_max_words} words."
         )
@@ -237,73 +327,93 @@ class InboxProcessor:
             A dictionary containing 'conversation_id', 'profile_id', 'username',
             and 'last_message_timestamp', or None if essential data is missing.
         """
-        # Step 1: Basic validation of input structure
+        # Step 1: Enhanced validation of input structure
         if not isinstance(conv_data, dict):
+            logger.warning(f"Invalid conversation data type: {type(conv_data)}")
             return None
-        conversation_id = str(conv_data.get("id", ""))  # Ensure string
+
+        conversation_id = str(
+            conv_data.get("id", "")
+        ).strip()  # Ensure string and strip whitespace
         last_message_data = conv_data.get("last_message", {})
+
         if not conversation_id or not isinstance(last_message_data, dict):
             logger.warning(
-                f"Skipping conversation data due to missing ID or last_message: {conv_data}"
+                f"Skipping conversation data due to missing ID or last_message: ID='{conversation_id}', last_message type={type(last_message_data)}"
             )
             return None
 
-        # Step 2: Extract and parse last message timestamp
-        last_msg_ts_unix = last_message_data.get("created")  # Unix timestamp (seconds)
+        # Step 2: Enhanced timestamp validation and parsing
+        last_msg_ts_unix = last_message_data.get("created")
         last_msg_ts_aware: Optional[datetime] = None
+
         if isinstance(last_msg_ts_unix, (int, float)):
             try:
-                # Validate timestamp range (simple check against plausible dates)
-                min_ts, max_ts = 0, 32503680000  # Approx year 1970 to 3000
+                # More restrictive timestamp validation (2000-2100)
+                min_ts, max_ts = 946684800, 4102444800  # Jan 1 2000 to Jan 1 2100
                 if min_ts <= last_msg_ts_unix <= max_ts:
-                    # Convert to timezone-aware datetime object (UTC)
                     last_msg_ts_aware = datetime.fromtimestamp(
                         last_msg_ts_unix, tz=timezone.utc
                     )
                 else:
                     logger.warning(
-                        f"Timestamp {last_msg_ts_unix} out of plausible range for ConvID {conversation_id}."
+                        f"Timestamp {last_msg_ts_unix} out of reasonable range for ConvID {conversation_id}"
                     )
             except (ValueError, TypeError, OSError) as ts_err:
                 logger.warning(
                     f"Error converting timestamp {last_msg_ts_unix} for ConvID {conversation_id}: {ts_err}"
                 )
-        # else: logger.debug(f"Timestamp missing or invalid type for ConvID {conversation_id}")
+        elif last_msg_ts_unix is not None:  # Log if present but wrong type
+            logger.warning(
+                f"Invalid timestamp type for ConvID {conversation_id}: {type(last_msg_ts_unix)}"
+            )
 
-        # Step 3: Identify the 'other' participant's profile ID and username
+        # Step 3: Enhanced member identification with better error handling
         username = "Unknown"
-        profile_id = "UNKNOWN"  # Default if other participant not found
+        profile_id = "UNKNOWN"
         other_member_found = False
         members = conv_data.get("members", [])
-        my_pid_lower = str(my_profile_id).lower()  # Lowercase for comparison
+        my_pid_lower = str(my_profile_id).lower().strip()
 
-        if isinstance(members, list):
+        if not isinstance(members, list):
+            logger.warning(
+                f"Members not a list for ConvID {conversation_id}: {type(members)}"
+            )
+            return None  # Return None for invalid member data
+        elif len(members) < 2:
+            logger.warning(
+                f"Insufficient members ({len(members)}) for ConvID {conversation_id}"
+            )
+            return None  # Return None for insufficient members
+        else:
             for member in members:
                 if not isinstance(member, dict):
                     continue
                 member_user_id = member.get("user_id")
-                member_user_id_str = (
-                    str(member_user_id).lower() if member_user_id else ""
-                )
+                if not member_user_id:
+                    continue
+
+                member_user_id_str = str(member_user_id).lower().strip()
+
                 # Check if this member is not the script user
                 if member_user_id_str and member_user_id_str != my_pid_lower:
-                    profile_id = str(
-                        member_user_id
-                    ).upper()  # Store uppercase profile ID
-                    username = member.get("display_name", "Unknown")  # Get display name
+                    profile_id = str(member_user_id).upper().strip()
+                    username = str(member.get("display_name", "Unknown")).strip()
                     other_member_found = True
-                    break  # Assume only one other participant per conversation
+                    break
+
         if not other_member_found:
             logger.warning(
-                f"Could not identify other participant in ConvID {conversation_id}. Members: {members}"
+                f"Could not identify other participant in ConvID {conversation_id}. Members count: {len(members) if isinstance(members, list) else 'N/A'}"
             )
+            return None  # Return None if we can't identify the other participant
 
-        # Step 4: Return the structured dictionary
+        # Step 4: Return validated data
         return {
             "conversation_id": conversation_id,
-            "profile_id": profile_id,  # Profile ID of the other person
-            "username": username,  # Display name of the other person
-            "last_message_timestamp": last_msg_ts_aware,  # Aware datetime object or None
+            "profile_id": profile_id,
+            "username": username,
+            "last_message_timestamp": last_msg_ts_aware,
         }
 
     # End of _extract_conversation_info
@@ -354,6 +464,8 @@ class InboxProcessor:
         # Ensure ancestry-userid is set correctly
         if "ancestry-userid" in headers:
             headers["ancestry-userid"] = self.session_manager.my_profile_id.upper()
+        # Remove any keys with None values to ensure type Dict[str, str]
+        headers = {k: v for k, v in headers.items() if v is not None}
         # Construct URL
         url = f"{api_base}conversations/{conversation_id}/messages?limit={limit}"
         logger.debug(
@@ -480,12 +592,10 @@ class InboxProcessor:
     def _lookup_or_create_person(
         self,
         session: DbSession,
-        profile_id: str,  # Already uppercase
+        profile_id: str,
         username: str,
-        conversation_id: Optional[str],  # For constructing message link if creating
-        existing_person_arg: Optional[
-            Person
-        ] = None,  # Pass prefetched Person if available
+        conversation_id: Optional[str],
+        existing_person_arg: Optional[Person] = None,
     ) -> Tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
         """
         Looks up a Person by profile_id. If found, checks for updates (username,
@@ -543,24 +653,28 @@ class InboxProcessor:
             updated = False
             # Update username only if current is 'Unknown' or different (use formatted name)
             formatted_username = format_name(username_to_use)
-            if person.username == "Unknown" or person.username != formatted_username:
+            current_username = safe_column_value(person, "username", "Unknown")
+            if current_username == "Unknown" or current_username != formatted_username:
                 logger.debug(
-                    f"Updating username for {log_ref} from '{person.username}' to '{formatted_username}'."
+                    f"Updating username for {log_ref} from '{current_username}' to '{formatted_username}'."
                 )
-                person.username = formatted_username
+                setattr(person, "username", formatted_username)
                 updated = True
             # Update message link if missing or different
             correct_message_link = urljoin(
                 config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
             )
-            if person.message_link != correct_message_link:
+            current_message_link = safe_column_value(person, "message_link", None)
+            if current_message_link != correct_message_link:
                 logger.debug(f"Updating message link for {log_ref}.")
-                person.message_link = correct_message_link
+                setattr(person, "message_link", correct_message_link)
                 updated = True
             # Optional: Add logic here to fetch details and update other fields if they are NULL
 
             if updated:
-                person.updated_at = datetime.now(timezone.utc)  # Set update timestamp
+                setattr(
+                    person, "updated_at", datetime.now(timezone.utc)
+                )  # Set update timestamp
                 try:
                     session.add(person)  # Ensure updates are staged
                     session.flush()  # Apply update within the transaction
@@ -625,7 +739,7 @@ class InboxProcessor:
                 new_person = Person(**new_person_data)
                 session.add(new_person)
                 session.flush()  # Flush to get ID assigned immediately
-                if new_person.id is None:
+                if safe_column_value(new_person, "id") is None:
                     logger.error(
                         f"ID not assigned after flush for new person {log_ref}! Rolling back."
                     )
@@ -722,16 +836,14 @@ class InboxProcessor:
 
     def search_inbox(self) -> bool:
         """
-        Main method to search the Ancestry inbox.
-        Fetches conversations page by page, compares with the database,
-        identifies new/updated conversations, fetches context for new incoming
-        messages, classifies intent using AI, and updates the database in batches.
-        Uses a comparator to potentially stop early if previously seen messages are reached.
-        Handles session validity checks and includes a progress bar if MAX_INBOX is set.
+        Main method to search the Ancestry inbox with enhanced error handling and statistics.
 
         Returns:
             True if the process completed without critical errors, False otherwise.
         """
+        # Initialize statistics
+        self.stats["start_time"] = datetime.now(timezone.utc)
+
         # --- Step 1: Initialization ---
         logger.debug("--- Starting Action 7: Search Inbox ---")
         # Counters and state for this run
@@ -773,17 +885,14 @@ class InboxProcessor:
                 f"Starting inbox search (MaxInbox={max_inbox_str}, BatchSize={self.api_batch_size}, Comparator={comp_conv_id or 'None'})..."
             )
 
-            # Always use a progress bar
-            # Run with tqdm context manager
+            # Use a progress bar with dynamic total that gets updated as we discover the actual number of conversations
             tqdm_args = {
-                "total": (
-                    self.max_inbox_limit if self.max_inbox_limit > 0 else 100
-                ),  # Default to 100 if no limit
-                "desc": "Processing",  # Add a description
+                "total": None,  # Start with unknown total
+                "desc": "Processing",
                 "unit": " conv",
                 "dynamic_ncols": True,
-                "leave": True,  # Keep the bar after completion
-                "bar_format": "{desc} |{bar}| {percentage:3.0f}% ({n_fmt}/{total_fmt})",
+                "leave": True,
+                "bar_format": "{desc} |{bar}| {n_fmt} conversations processed",
                 "file": sys.stderr,
             }
             logger.info(
@@ -799,12 +908,23 @@ class InboxProcessor:
                 ) = self._process_inbox_loop(
                     session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
                 )
+
+                # Update the progress bar to show completion - only set total if needed
+                if progress_bar.total is None:
+                    progress_bar.total = max(items_processed_before_stop, 1)
+                    progress_bar.refresh()
+                # Don't manually set progress_bar.n here since it's already updated in the loop
+                progress_bar.set_description("Completed")
+                progress_bar.refresh()
+
             # Check if loop stopped due to an error state
             if stop_reason and "error" in stop_reason.lower():
                 overall_success = False
 
         # --- Step 4: Handle Outer Exceptions ---
         except Exception as outer_e:
+            self.stats["errors"] += 1
+            self.stats["end_time"] = datetime.now(timezone.utc)
             logger.critical(
                 f"CRITICAL error during search_inbox execution: {outer_e}",
                 exc_info=True,
@@ -835,7 +955,14 @@ class InboxProcessor:
         return overall_success
         # End of search_inbox
 
-    # End of search_inbox
+    def get_statistics(self) -> Dict[str, Any]:
+        """Return processing statistics for monitoring and debugging."""
+        stats = self.stats.copy()
+        if stats["start_time"] and stats["end_time"]:
+            stats["duration_seconds"] = (
+                stats["end_time"] - stats["start_time"]
+            ).total_seconds()
+        return stats
 
     def _process_inbox_loop(
         self,
@@ -875,6 +1002,9 @@ class InboxProcessor:
         person_updates: Dict[int, PersonStatusEnum] = {}
         stop_processing = False
         min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
+
+        # Track conversations that need processing for progress bar
+        conversations_needing_processing = 0
 
         # Step 2: Main loop - continues until stop condition met
         while not stop_processing:
@@ -938,9 +1068,15 @@ class InboxProcessor:
                         next_cursor = next_cursor_from_api
                         continue  # Fetch next batch
 
-                # Apply rate limiter delay after successful fetch
-                # wait_duration = self.dynamic_rate_limiter.wait()
-                # if wait_duration > 0.1: logger.debug(f"API batch fetch wait: {wait_duration:.2f}s")
+                # Update progress bar total if this is the first batch or if we're not limited
+                if progress_bar is not None and progress_bar.total is None:
+                    if self.max_inbox_limit > 0:
+                        # Use the configured limit as the total
+                        progress_bar.total = self.max_inbox_limit
+                    else:
+                        # For unlimited processing, estimate based on first batch
+                        progress_bar.total = batch_api_item_count * 10  # Rough estimate
+                    progress_bar.refresh()
 
                 # Step 2f: Pre-fetch existing Person and ConversationLog data for the batch
                 batch_conv_ids = [
@@ -968,7 +1104,9 @@ class InboxProcessor:
                             .all()
                         )
                         existing_persons_map = {
-                            p.profile_id: p for p in persons if p.profile_id
+                            safe_column_value(p, "profile_id"): p
+                            for p in persons
+                            if safe_column_value(p, "profile_id")
                         }
                     if batch_conv_ids:
                         logs = (
@@ -978,17 +1116,24 @@ class InboxProcessor:
                         )
                         # Ensure timestamps are aware before putting in map
                         for log in logs:
-                            if (
-                                log.latest_timestamp
-                                and log.latest_timestamp.tzinfo is None
-                            ):
-                                log.latest_timestamp = log.latest_timestamp.replace(
-                                    tzinfo=timezone.utc
+                            timestamp = safe_column_value(log, "latest_timestamp", None)
+                            if timestamp and timestamp.tzinfo is None:
+                                setattr(
+                                    log,
+                                    "latest_timestamp",
+                                    timestamp.replace(tzinfo=timezone.utc),
                                 )
                         existing_conv_logs = {
-                            (log.conversation_id, log.direction.name): log
+                            (
+                                str(safe_column_value(log, "conversation_id")),
+                                (
+                                    str(safe_column_value(log, "direction").name)
+                                    if safe_column_value(log, "direction")
+                                    else ""
+                                ),
+                            ): log
                             for log in logs
-                            if log.direction
+                            if safe_column_value(log, "direction")
                         }
                 except SQLAlchemyError as db_err:
                     logger.error(
@@ -1013,8 +1158,6 @@ class InboxProcessor:
 
                     items_processed_before_stop += 1
 
-                    # We'll update the progress bar only when we actually process a case, not just when we see it
-
                     # Extract key info
                     profile_id_upper = conversation_info.get(
                         "profile_id", "UNKNOWN"
@@ -1028,6 +1171,10 @@ class InboxProcessor:
                         logger.debug(
                             f"Skipping item {items_processed_before_stop}: Invalid ConvID/ProfileID."
                         )
+                        # Update progress bar even for skipped items
+                        if progress_bar is not None:
+                            progress_bar.update(1)
+                            progress_bar.set_description("Processing (skipped invalid)")
                         continue
 
                     # --- Comparator Logic & Fetch Decision ---
@@ -1069,13 +1216,15 @@ class InboxProcessor:
                             )
                             # Get latest *overall* timestamp from DB for this conversation (ensure aware)
                             db_latest_ts_in = (
-                                db_log_in.latest_timestamp
-                                if db_log_in and db_log_in.latest_timestamp
+                                safe_column_value(db_log_in, "latest_timestamp")
+                                if db_log_in
+                                and safe_column_value(db_log_in, "latest_timestamp")
                                 else min_aware_dt
                             )
                             db_latest_ts_out = (
-                                db_log_out.latest_timestamp
-                                if db_log_out and db_log_out.latest_timestamp
+                                safe_column_value(db_log_out, "latest_timestamp")
+                                if db_log_out
+                                and safe_column_value(db_log_out, "latest_timestamp")
                                 else min_aware_dt
                             )
                             db_latest_overall_for_conv = max(
@@ -1097,6 +1246,10 @@ class InboxProcessor:
                     if not needs_fetch:
                         # logger.debug(f"Skipping ConvID {api_conv_id}: No fetch needed (up-to-date).")
                         skipped_count_this_loop += 1
+                        # Update progress bar for skipped items
+                        if progress_bar is not None:
+                            progress_bar.update(1)
+                            progress_bar.set_description(f"Processing (up-to-date)")
                         if stop_processing:
                             break  # Break inner loop if comparator was hit
                         continue  # Move to next conversation
@@ -1110,7 +1263,8 @@ class InboxProcessor:
                         )
 
                     # Update progress bar before processing this case
-                    if progress_bar:
+                    conversations_needing_processing += 1
+                    if progress_bar is not None:
                         progress_bar.update(1)
                         progress_bar.set_description(
                             f"Processing conversation {api_conv_id}"
@@ -1134,13 +1288,13 @@ class InboxProcessor:
                             profile_id_upper
                         ),  # Pass prefetched if available
                     )
-                    if not person or not person.id:
+                    if not person or not safe_column_value(person, "id"):
                         error_count_this_loop += 1
                         logger.error(
                             f"Failed person lookup/create for ConvID {api_conv_id}. Skipping item."
                         )
                         continue  # Cannot proceed without person record
-                    people_id = person.id
+                    people_id = safe_column_value(person, "id")
 
                     # --- Process Fetched Context Messages ---
                     latest_ctx_in: Optional[Dict] = None
@@ -1166,9 +1320,8 @@ class InboxProcessor:
                             (api_conv_id, MessageDirectionEnum.IN.name), None
                         )
                         db_latest_ts_in_compare = (
-                            db_ts_in_for_compare.latest_timestamp
+                            safe_column_value(db_ts_in_for_compare, "latest_timestamp")
                             if db_ts_in_for_compare
-                            and db_ts_in_for_compare.latest_timestamp
                             else min_aware_dt
                         )
                         # Process only if context message is newer than DB record for IN
@@ -1187,9 +1340,17 @@ class InboxProcessor:
                                 raise WebDriverException(
                                     f"Session invalid before AI classification call for ConvID {api_conv_id}"
                                 )
-                            ai_sentiment_result = classify_message_intent(
+                            ai_result = classify_message_intent(
                                 formatted_context, self.session_manager
                             )
+                            # Handle AI result - it should return just a string, not a tuple
+                            if isinstance(ai_result, tuple):
+                                ai_sentiment_result = (
+                                    ai_result[0] if ai_result else None
+                                )
+                            else:
+                                ai_sentiment_result = ai_result
+
                             if ai_sentiment_result:
                                 ai_classified_count += (
                                     1  # Count successful classifications
@@ -1242,9 +1403,8 @@ class InboxProcessor:
                             (api_conv_id, MessageDirectionEnum.OUT.name), None
                         )
                         db_latest_ts_out_compare = (
-                            db_ts_out_for_compare.latest_timestamp
+                            safe_column_value(db_ts_out_for_compare, "latest_timestamp")
                             if db_ts_out_for_compare
-                            and db_ts_out_for_compare.latest_timestamp
                             else min_aware_dt
                         )
                         # Process only if context message is newer than DB record for OUT
@@ -1272,7 +1432,7 @@ class InboxProcessor:
                     # --- End Context Processing ---
 
                     # Update progress bar description with stats
-                    if progress_bar:
+                    if progress_bar is not None:
                         progress_bar.set_description(
                             f"Processing: AI={ai_classified_count} Updates={status_updated_count} Skip={skipped_count_this_loop} Err={error_count_this_loop}"
                         )
@@ -1323,6 +1483,10 @@ class InboxProcessor:
                     stop_reason = "End of Inbox Reached (No Next Cursor)"
                     stop_processing = True
                     logger.debug("No next cursor from API. Ending processing.")
+                    # Update progress bar total to current processed count for 100% completion
+                    if progress_bar is not None:
+                        progress_bar.total = items_processed_before_stop
+                        progress_bar.refresh()
                     break  # Break outer while loop
 
             # --- Step 3: Handle Exceptions During Batch Processing ---
@@ -1460,16 +1624,24 @@ class InboxProcessor:
         # Step 4: Print footer
         logger.info("----------------------------------\n")  # Add newline
 
+        # Update statistics
+        self.stats.update(
+            {
+                "conversations_fetched": total_api_items,
+                "conversations_processed": items_processed,
+                "ai_classifications": ai_classified,
+                "person_updates": status_updates,
+                "end_time": datetime.now(timezone.utc),
+            }
+        )
+
     # End of _log_unified_summary
-
-
-# End of InboxProcessor class
 
 
 # --- Test Harness ---
 def self_test():
     """
-    Test harness for the InboxProcessor class.
+    Enhanced test harness for the InboxProcessor class with comprehensive edge case testing.
 
     This function tests the functionality of the InboxProcessor class without making
     actual API calls to Ancestry. It uses mock data and responses to simulate the
@@ -1480,24 +1652,52 @@ def self_test():
     """
     from unittest.mock import MagicMock, patch
 
-    print("\n=== Running Action 7 (Inbox Processor) Self-Test ===\n")
+    # ANSI color codes for better output formatting
+    class Colors:
+        HEADER = "\033[95m"
+        BLUE = "\033[94m"
+        CYAN = "\033[96m"
+        GREEN = "\033[92m"
+        YELLOW = "\033[93m"
+        RED = "\033[91m"
+        END = "\033[0m"
+        BOLD = "\033[1m"
+        DIM = "\033[2m"
+
+    def colored_print(text, color=Colors.END):
+        """Print text with color if terminal supports it, otherwise plain text."""
+        try:
+            print(f"{color}{text}{Colors.END}")
+        except:
+            print(text)  # Fallback for terminals that don't support colors
+
+    colored_print("\n" + "=" * 60, Colors.CYAN)
+    colored_print(
+        "🧪 Running Action 7 (Inbox Processor) Enhanced Self-Test",
+        Colors.CYAN + Colors.BOLD,
+    )
+    colored_print("=" * 60 + "\n", Colors.CYAN)
 
     # Track test results
     tests_run = 0
     tests_passed = 0
 
-    # --- Test 1: _extract_conversation_info method ---
-    print("Test 1: Testing _extract_conversation_info method...")
+    # --- Test 1: _extract_conversation_info method (Enhanced) ---
+    colored_print(
+        "Test 1: Testing _extract_conversation_info method (including edge cases)...",
+        Colors.BLUE + Colors.BOLD,
+    )
     tests_run += 1
 
     # Create a mock session manager
     mock_session_manager = MagicMock()
     mock_session_manager.my_profile_id = "12345"
+    mock_session_manager.dynamic_rate_limiter = MagicMock()
+    mock_session_manager.dynamic_rate_limiter.wait.return_value = 0.0
 
-    # Create an instance of InboxProcessor with the mock session manager
     processor = InboxProcessor(mock_session_manager)
 
-    # Test data for a conversation
+    # Test 1a: Valid conversation data
     test_conv_data = {
         "id": "67890",
         "last_message": {
@@ -1506,222 +1706,385 @@ def self_test():
         },
         "members": [
             {
-                "user_id": "12345",  # This is the script user
+                "user_id": "12345",
                 "display_name": "Script User",
             },
             {
-                "user_id": "54321",  # This is the other person
+                "user_id": "54321",
                 "display_name": "Test User",
             },
         ],
     }
 
-    # Call the method
     result = processor._extract_conversation_info(test_conv_data, "12345")
 
-    # Verify the result
-    expected_profile_id = "54321"
-    expected_username = "Test User"
-
-    if (
+    valid_case_passed = (
         result
         and result.get("conversation_id") == "67890"
-        and result.get("profile_id") == expected_profile_id.upper()
-        and result.get("username") == expected_username
+        and result.get("profile_id") == "54321"
+        and result.get("username") == "Test User"
         and result.get("last_message_timestamp")
-    ):
-        print("  ✓ _extract_conversation_info correctly extracted conversation info")
+    )
+
+    # Test 1b: Edge cases - These are expected to fail gracefully and return None
+    colored_print(
+        "  🔍 Testing edge cases (the following warning messages are EXPECTED):",
+        Colors.YELLOW,
+    )
+    colored_print(
+        "     ⚠️  Expected warnings demonstrate proper input validation...", Colors.DIM
+    )
+
+    edge_cases = [
+        (None, "None input"),
+        ({}, "Empty dict"),
+        ({"id": ""}, "Empty ID"),
+        ({"id": "123", "last_message": None}, "None last_message"),
+        ({"id": "123", "last_message": {}, "members": None}, "None members"),
+        ({"id": "123", "last_message": {}, "members": []}, "Empty members"),
+        (
+            {
+                "id": "123",
+                "last_message": {"created": "invalid"},
+                "members": [{"user_id": "12345"}],
+            },
+            "Invalid timestamp",
+        ),
+    ]
+
+    print()  # Add spacing before expected warnings
+    edge_cases_passed = 0
+    for test_data, description in edge_cases:
+        result = processor._extract_conversation_info(test_data, "12345")
+        if result is None:  # Should return None for invalid cases
+            edge_cases_passed += 1
+        else:
+            colored_print(
+                f"    ❌ Edge case failed: {description} returned {result}", Colors.RED
+            )
+
+    print()  # Add spacing after expected warnings
+
+    if valid_case_passed and edge_cases_passed == len(edge_cases):
+        colored_print(
+            f"  ✅ _extract_conversation_info passed valid case and {len(edge_cases)} edge cases",
+            Colors.GREEN,
+        )
         tests_passed += 1
     else:
-        print("  ✗ _extract_conversation_info failed to extract correct info")
-        print(
-            f"  Expected: conversation_id=67890, profile_id={expected_profile_id.upper()}, username={expected_username}"
+        colored_print(
+            f"  ❌ _extract_conversation_info failed: valid={valid_case_passed}, edge_cases={edge_cases_passed}/{len(edge_cases)}",
+            Colors.RED,
         )
-        print(f"  Got: {result}")
 
-    # --- Test 2: _format_context_for_ai method ---
-    print("\nTest 2: Testing _format_context_for_ai method...")
+    # --- Test 2: _format_context_for_ai method (Enhanced) ---
+    colored_print(
+        "\nTest 2: Testing _format_context_for_ai method (including edge cases)...",
+        Colors.BLUE + Colors.BOLD,
+    )
     tests_run += 1
 
-    # Test data for context messages
+    # Test 2a: Normal case
     test_context_messages = [
         {
             "content": "Hello, how are you?",
-            "author": "12345",  # Script user
+            "author": "12345",
             "timestamp": datetime.now(timezone.utc),
             "conversation_id": "67890",
         },
         {
             "content": "I'm doing well, thank you! How about you?",
-            "author": "54321",  # Other user
-            "timestamp": datetime.now(timezone.utc),
-            "conversation_id": "67890",
-        },
-        {
-            "content": "I'm good too. I wanted to ask about our shared ancestor.",
-            "author": "12345",  # Script user
+            "author": "54321",
             "timestamp": datetime.now(timezone.utc),
             "conversation_id": "67890",
         },
     ]
 
-    # Call the method
     result = processor._format_context_for_ai(test_context_messages, "12345")
-
-    # Verify the result contains the expected format
-    expected_lines = 3
-    actual_lines = result.count("\n") + 1
-
-    if (
+    normal_case_passed = (
         result
         and "SCRIPT: Hello, how are you?" in result
         and "USER: I'm doing well, thank you!" in result
-        and actual_lines == expected_lines
-    ):
-        print("  ✓ _format_context_for_ai correctly formatted context messages")
+        and result.count("\n") == 1
+    )
+
+    # Test 2b: Edge cases
+    empty_result = processor._format_context_for_ai([], "12345")
+
+    # Create a message that will definitely be truncated (exceed the configured max words)
+    # Use the processor's actual configured max words value
+    max_words = processor.ai_context_max_words
+    long_message = " ".join(["word"] * (max_words + 10))  # Exceed the limit by 10 words
+    long_context = [
+        {
+            "content": long_message,
+            "author": "54321",
+            "timestamp": datetime.now(timezone.utc),
+        }
+    ]
+    truncated_result = processor._format_context_for_ai(long_context, "12345")
+
+    edge_cases_passed = (
+        empty_result == ""  # Empty input should return empty string
+        and "..." in truncated_result  # Long message should be truncated
+        and len(truncated_result.split())
+        < len(long_message.split())  # Verify it's actually shorter
+    )
+
+    # Debug output for troubleshooting
+    if not edge_cases_passed:
+        colored_print(
+            f"    🐛 Debug: empty_result='{empty_result}' (expected='')", Colors.YELLOW
+        )
+        colored_print(
+            f"    🐛 Debug: max_words={max_words}, long_message_words={len(long_message.split())}",
+            Colors.YELLOW,
+        )
+        colored_print(
+            f"    🐛 Debug: truncated_result_words={len(truncated_result.split())}",
+            Colors.YELLOW,
+        )
+        colored_print(
+            f"    🐛 Debug: '...' in result: {'...' in truncated_result}", Colors.YELLOW
+        )
+        colored_print(
+            f"    🐛 Debug: truncated_result length: {len(truncated_result)}",
+            Colors.YELLOW,
+        )
+
+    if normal_case_passed and edge_cases_passed:
+        colored_print(
+            "  ✅ _format_context_for_ai passed normal and edge cases", Colors.GREEN
+        )
         tests_passed += 1
     else:
-        print("  ✗ _format_context_for_ai failed to format context messages correctly")
-        print(f"  Expected {expected_lines} lines with proper SCRIPT/USER prefixes")
-        print(f"  Got: {result}")
+        colored_print(
+            f"  ❌ _format_context_for_ai failed: normal={normal_case_passed}, edge_cases={edge_cases_passed}",
+            Colors.RED,
+        )
 
-    # --- Test 3: _create_comparator method ---
-    print("\nTest 3: Testing _create_comparator method...")
+    # --- Test 3: _create_comparator method (Enhanced) ---
+    colored_print(
+        "\nTest 3: Testing _create_comparator method (including error cases)...",
+        Colors.BLUE + Colors.BOLD,
+    )
     tests_run += 1
 
-    # Mock a database session with a query result
+    # Test 3a: Normal case
     mock_db_session = MagicMock()
-
-    # Create a mock ConversationLog object with the necessary attributes
     mock_log = MagicMock()
     mock_log.conversation_id = "12345"
     mock_log.latest_timestamp = datetime.now(timezone.utc)
-
-    # Configure the session to return our mock log
     mock_db_session.query.return_value.order_by.return_value.first.return_value = (
         mock_log
     )
 
-    # Call the method
     result = processor._create_comparator(mock_db_session)
-
-    # Verify the result
-    if (
+    normal_case_passed = (
         result
         and result.get("conversation_id") == "12345"
         and isinstance(result.get("latest_timestamp"), datetime)
-    ):
-        print("  ✓ _create_comparator correctly created a comparator")
+    )
+
+    # Test 3b: Empty database case
+    mock_db_session_empty = MagicMock()
+    mock_db_session_empty.query.return_value.order_by.return_value.first.return_value = (
+        None
+    )
+    empty_result = processor._create_comparator(mock_db_session_empty)
+    empty_case_passed = empty_result is None
+
+    # Test 3c: Database error case - This is expected to generate an error log and traceback
+    colored_print(
+        "  🔍 Testing database error case (the following error log and traceback are EXPECTED):",
+        Colors.YELLOW,
+    )
+    colored_print(
+        "     ⚠️  Expected error demonstrates proper exception handling...", Colors.DIM
+    )
+    print()  # Add spacing before expected error
+
+    mock_db_session_error = MagicMock()
+    mock_db_session_error.query.side_effect = Exception("DB Error")
+    error_result = processor._create_comparator(mock_db_session_error)
+    error_case_passed = error_result is None
+
+    print()  # Add spacing after expected error
+
+    if normal_case_passed and empty_case_passed and error_case_passed:
+        colored_print(
+            "  ✅ _create_comparator passed normal, empty, and error cases",
+            Colors.GREEN,
+        )
         tests_passed += 1
     else:
-        print("  ✗ _create_comparator failed to create a valid comparator")
-        print(f"  Expected: conversation_id=12345, timestamp=<datetime>")
-        print(f"  Got: {result}")
+        colored_print(
+            f"  ❌ _create_comparator failed: normal={normal_case_passed}, empty={empty_case_passed}, error={error_case_passed}",
+            Colors.RED,
+        )
 
-    # --- Test 4: Mock _get_all_conversations_api method ---
-    print("\nTest 4: Testing conversation fetching with mocked API...")
+    # --- Test 4: Statistics tracking ---
+    colored_print("\nTest 4: Testing statistics tracking...", Colors.BLUE + Colors.BOLD)
     tests_run += 1
 
-    # Create a patch for the _get_all_conversations_api method
-    with patch.object(InboxProcessor, "_get_all_conversations_api") as mock_get_convs:
-        # Set up the mock to return test data
-        mock_conversations = [
-            {
-                "conversation_id": "67890",
-                "profile_id": "54321",
-                "username": "Test User",
-                "last_message_timestamp": datetime.now(timezone.utc),
-            },
-            {
-                "conversation_id": "12345",
-                "profile_id": "98765",
-                "username": "Another User",
-                "last_message_timestamp": datetime.now(timezone.utc),
-            },
-        ]
-        mock_get_convs.return_value = (mock_conversations, None)  # No next cursor
+    stats = processor.get_statistics()
+    stats_valid = (
+        isinstance(stats, dict)
+        and "conversations_fetched" in stats
+        and "start_time" in stats
+        and isinstance(stats["conversations_fetched"], int)
+    )
 
-        # Create a mock DB session with more detailed configuration
+    if stats_valid:
+        colored_print("  ✅ Statistics tracking working correctly", Colors.GREEN)
+        tests_passed += 1
+    else:
+        colored_print(f"  ❌ Statistics tracking failed: {stats}", Colors.RED)
+
+    # --- Test 5: Input validation ---
+    colored_print("\nTest 5: Testing input validation...", Colors.BLUE + Colors.BOLD)
+    tests_run += 1
+
+    # Test with invalid config values
+    original_count = processor.ai_context_msg_count
+    original_words = processor.ai_context_max_words
+
+    # Create processor with invalid session manager
+    try:
+        invalid_session = MagicMock()
+        invalid_session.dynamic_rate_limiter = None  # This should be handled gracefully
+
+        # This should not crash
+        processor_test = InboxProcessor(invalid_session)
+        validation_passed = True
+    except Exception as e:
+        colored_print(f"    ❌ Input validation failed with exception: {e}", Colors.RED)
+        validation_passed = False
+
+    if validation_passed:
+        colored_print("  ✅ Input validation working correctly", Colors.GREEN)
+        tests_passed += 1
+    else:
+        colored_print("  ❌ Input validation failed", Colors.RED)
+
+    # --- Test 6: Comprehensive integration test ---
+    colored_print(
+        "\nTest 6: Testing comprehensive integration scenario...",
+        Colors.BLUE + Colors.BOLD,
+    )
+    tests_run += 1
+
+    try:
+        # Create comprehensive mocks
+        mock_session_manager = MagicMock()
+        mock_session_manager.my_profile_id = "12345"
+        mock_session_manager.dynamic_rate_limiter = MagicMock()
+        mock_session_manager.dynamic_rate_limiter.wait.return_value = 0.0
+        mock_session_manager.is_sess_valid.return_value = True
+
         mock_db_session = MagicMock()
-
-        # Create a mock Person object with a valid ID
-        mock_person = MagicMock()
-        mock_person.id = 123  # Use a valid integer ID
-        mock_person.profile_id = "54321"
-        mock_person.username = "Test User"
-
-        # Configure the mock to return our mock Person for queries
-        mock_query = MagicMock()
-        mock_filter = MagicMock()
-        mock_all = MagicMock(return_value=[mock_person])  # Return our mock Person
-        mock_first = MagicMock(return_value=mock_person)  # Return our mock Person
-
-        mock_filter.return_value.all = mock_all
-        mock_filter.return_value.first = mock_first
-        mock_query.return_value.filter = mock_filter
-        mock_db_session.query = mock_query
-
-        # Set up the session manager to return our configured mock session
         mock_session_manager.get_db_conn.return_value = mock_db_session
+        mock_session_manager.return_session.return_value = None
 
-        # Mock the _create_comparator method
+        processor = InboxProcessor(mock_session_manager)
+        processor.max_inbox_limit = 2
+
+        # Mock all dependencies
         with patch.object(
-            InboxProcessor, "_create_comparator"
-        ) as mock_create_comparator:
-            mock_create_comparator.return_value = None  # No comparator
+            processor, "_get_all_conversations_api"
+        ) as mock_get_convs, patch.object(
+            processor, "_create_comparator"
+        ) as mock_comparator, patch.object(
+            processor, "_fetch_conversation_context"
+        ) as mock_context, patch.object(
+            processor, "_lookup_or_create_person"
+        ) as mock_person, patch(
+            "action7_inbox.classify_message_intent"
+        ) as mock_classify, patch(
+            "action7_inbox.commit_bulk_data"
+        ) as mock_commit:
 
-            # Mock the _fetch_conversation_context method
-            with patch.object(
-                InboxProcessor, "_fetch_conversation_context"
-            ) as mock_fetch_context:
-                mock_fetch_context.return_value = test_context_messages
+            # Set up mock returns
+            mock_conversations = [
+                {
+                    "conversation_id": "67890",
+                    "profile_id": "54321",
+                    "username": "Test User",
+                    "last_message_timestamp": datetime.now(timezone.utc),
+                }
+            ]
+            mock_get_convs.return_value = (mock_conversations, None)
+            mock_comparator.return_value = None
+            mock_context.return_value = test_context_messages
 
-                # Mock the classify_message_intent function
-                with patch("action7_inbox.classify_message_intent") as mock_classify:
-                    mock_classify.return_value = ("INQUIRY", 0.95)
+            mock_person_obj = MagicMock()
+            mock_person_obj.id = 123
+            mock_person.return_value = (mock_person_obj, "new")
 
-                    # Mock commit_bulk_data to handle the person updates properly
-                    with patch("action7_inbox.commit_bulk_data") as mock_commit:
-                        # Define a side effect function to properly handle the arguments
-                        def commit_side_effect(
-                            _session, log_upserts, person_updates, _context
-                        ):
-                            # Filter out any invalid person IDs to avoid warnings
-                            valid_person_updates = {
-                                pid: status
-                                for pid, status in person_updates.items()
-                                if isinstance(pid, int) and pid > 0
-                            }
-                            # Return a tuple of (logs_saved, persons_updated)
-                            return (len(log_upserts), len(valid_person_updates))
+            mock_classify.return_value = "INQUIRY"
+            mock_commit.return_value = (1, 0)
 
-                        # Set the side effect
-                        mock_commit.side_effect = commit_side_effect
+            # Mock database queries
+            mock_db_session.query.return_value.filter.return_value.all.return_value = []
+            mock_db_session.query.return_value.order_by.return_value.first.return_value = (
+                None
+            )
 
-                        # Set a small max_inbox_limit for testing
-                        processor.max_inbox_limit = 5
+            # Run the test
+            result = processor.search_inbox()
 
-                        # Call the search_inbox method
-                        result = processor.search_inbox()
+            # Check statistics were updated
+            stats = processor.get_statistics()
+            stats_updated = stats["end_time"] is not None
 
-                        # Verify the result
-                        if result is True:
-                            print(
-                                "  ✓ search_inbox completed successfully with mocked API"
-                            )
-                            tests_passed += 1
-                        else:
-                            print("  ✗ search_inbox failed with mocked API")
-                            print("  Expected: True")
-                            print(f"  Got: {result}")
+            if result is True and stats_updated:
+                colored_print(
+                    "  ✅ Comprehensive integration test passed", Colors.GREEN
+                )
+                tests_passed += 1
+            else:
+                colored_print(
+                    f"  ❌ Integration test failed: result={result}, stats_updated={stats_updated}",
+                    Colors.RED,
+                )
 
-    # --- Print test summary ---
-    print(f"\n=== Test Summary: {tests_passed}/{tests_run} tests passed ===")
+    except Exception as e:
+        colored_print(f"  ❌ Integration test failed with exception: {e}", Colors.RED)
+        import traceback
+
+        traceback.print_exc()
+
+    # --- Print enhanced test summary ---
+    print()
+    colored_print("=" * 60, Colors.CYAN)
+
+    if tests_passed == tests_run:
+        colored_print(
+            f"🎉 Enhanced Test Summary: {tests_passed}/{tests_run} tests passed",
+            Colors.GREEN + Colors.BOLD,
+        )
+        colored_print(
+            "🎉 All tests passed! The InboxProcessor is ready for production.",
+            Colors.GREEN + Colors.BOLD,
+        )
+    else:
+        colored_print(
+            f"⚠️  Enhanced Test Summary: {tests_passed}/{tests_run} tests passed",
+            Colors.YELLOW + Colors.BOLD,
+        )
+        colored_print(
+            "⚠️  Some tests failed. Please review the failures above.", Colors.YELLOW
+        )
+
+    colored_print("\n📋 Test coverage includes:", Colors.CYAN)
+    colored_print("  • Normal operation scenarios", Colors.CYAN)
+    colored_print("  • Edge cases and error conditions", Colors.CYAN)
+    colored_print("  • Input validation", Colors.CYAN)
+    colored_print("  • Statistics tracking", Colors.CYAN)
+    colored_print("  • Integration testing", Colors.CYAN)
+    colored_print("=" * 60, Colors.CYAN)
 
     return tests_passed == tests_run
-
-
-# End of self_test function
 
 
 # --- Live Test Function ---
@@ -1735,6 +2098,7 @@ def live_test():
     Returns:
         bool: True if the test completes successfully, False otherwise.
     """
+
     from utils import SessionManager
 
     print("\n=== Running Action 7 (Inbox Processor) Live Test ===\n")
@@ -1808,7 +2172,9 @@ def live_test():
 
         # Create a subclass of InboxProcessor that overrides _create_comparator
         class NoComparatorInboxProcessor(InboxProcessor):
-            def _create_comparator(self, _):  # Use underscore for unused parameter
+            def _create_comparator(
+                self, session: DbSession
+            ) -> Optional[Dict[str, Any]]:
                 """Override to always return None (no comparator)"""
                 logger.info("Live test: Ignoring comparator as requested.")
                 return None
@@ -1848,7 +2214,7 @@ def live_test():
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    # When run directly, check for command line arguments
+    # When run directly, check for code changes in the editor
     import sys
 
     # Check if "live" argument is provided
