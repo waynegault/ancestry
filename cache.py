@@ -35,8 +35,8 @@ from logging_config import logger  # Use configured logger
 # --- Global Cache Initialization ---
 
 # Step 1: Define cache directory from configuration
-if config_instance:
-    CACHE_DIR = config_instance.CACHE_DIR
+if config_instance and getattr(config_instance, "CACHE_DIR", None) is not None:
+    CACHE_DIR = Path(config_instance.CACHE_DIR)
 else:
     CACHE_DIR = Path("Cache")
 logger.debug(f"Cache directory configured: {CACHE_DIR}")

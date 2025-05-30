@@ -505,7 +505,7 @@ def _commit_messaging_batch(
                         f" Attempting bulk insert for {len(log_inserts_data)} ConversationLog entries..."
                     )
                     try:
-                        sess.bulk_insert_mappings(ConversationLog, log_inserts_data)
+                        sess.bulk_insert_mappings(ConversationLog, log_inserts_data)  # type: ignore
                         logger.debug(
                             f" Bulk insert mappings called for {len(log_inserts_data)} logs."
                         )
@@ -605,7 +605,7 @@ def _commit_messaging_batch(
                     logger.debug(
                         f" Updating {len(update_mappings)} Person statuses via bulk..."
                     )
-                    sess.bulk_update_mappings(Person, update_mappings)
+                    sess.bulk_update_mappings(Person, update_mappings)  # type: ignore
 
             logger.debug(
                 f" Exiting transaction block (Msg Batch {batch_num}, commit follows)."
@@ -900,16 +900,23 @@ def _process_single_person(
         # --- Step 2: Determine Action based on Status (DESIST vs ACTIVE) ---
         # Get the status as a Python enum using our safe helper
         person_status = safe_column_value(person, "status", None)
+
+        # Handle DESIST status
         if person_status == PersonStatusEnum.DESIST:
-            # Handle DESIST status: Send ACK if not already sent
+            # When status is DESIST, we only send an acknowledgment if needed
             logger.debug(
                 f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed."
             )
+
+            # Get the message type ID for the Desist acknowledgment
             desist_ack_type_id = message_type_map.get("User_Requested_Desist")
             if not desist_ack_type_id:  # Should have been checked during prefetch
-                logger.critical("CRITICAL: User_Requested_Desist ID missing map.")
+                logger.critical(
+                    "CRITICAL: User_Requested_Desist ID missing from message type map."
+                )
                 raise StopIteration("error (config)")
-            # Check if the latest OUT message *was* the Desist ACK
+
+            # Check if the latest OUT message was already the Desist ACK
             ack_already_sent = bool(
                 latest_out_log and latest_out_log.message_type_id == desist_ack_type_id
             )
@@ -1814,6 +1821,17 @@ def test_determine_next_message_type():
     passed = 0
     failed = 0
 
+    # ANSI color codes for terminal output
+    GREEN = "\033[92m"  # Green for success
+    RED = "\033[91m"  # Red for failure
+    YELLOW = "\033[93m"  # Yellow for warnings/info
+    BLUE = "\033[94m"  # Blue for headings
+    BOLD = "\033[1m"  # Bold text
+    RESET = "\033[0m"  # Reset formatting
+
+    print(f"\n{BLUE}{BOLD}RUNNING TEST CASES{RESET}")
+    print("=" * 60)
+
     for i, (last_message_details, is_in_family_tree, expected) in enumerate(test_cases):
         result = determine_next_message_type(last_message_details, is_in_family_tree)
 
@@ -1822,16 +1840,30 @@ def test_determine_next_message_type():
         tree_status = "In_Tree" if is_in_family_tree else "Out_Tree"
 
         if result == expected:
-            print(f"✓ Test {i+1}: {last_msg_type} → {tree_status} = {result or 'None'}")
+            print(
+                f"{GREEN}✅ PASS{RESET} Test {i+1}: {BOLD}{last_msg_type}{RESET} → {BOLD}{tree_status}{RESET} = {BOLD}{result or 'None'}{RESET}"
+            )
             passed += 1
         else:
             print(
-                f"✗ Test {i+1}: {last_msg_type} → {tree_status} = {result or 'None'} (Expected: {expected or 'None'})"
+                f"{RED}❌ FAIL{RESET} Test {i+1}: {BOLD}{last_msg_type}{RESET} → {BOLD}{tree_status}{RESET} = {RED}{result or 'None'}{RESET} (Expected: {GREEN}{expected or 'None'}{RESET})"
             )
             failed += 1
 
-    # Print summary
-    print(f"\nResults: {passed} passed, {failed} failed, {passed + failed} total")
+    # Print summary with clear visual indicators
+    print("=" * 60)
+    if failed == 0:
+        print(
+            f"{GREEN}{BOLD}✅ ALL TESTS PASSED: {passed}/{passed + failed} tests successful{RESET}"
+        )
+    else:
+        print(
+            f"{YELLOW}{BOLD}⚠️ TEST SUMMARY: {GREEN}{passed} passed{RESET}{YELLOW}, {RED}{failed} failed{RESET}{YELLOW}, {passed + failed} total{RESET}"
+        )
+
+    # Calculate success percentage
+    success_rate = (passed / (passed + failed)) * 100 if (passed + failed) > 0 else 0
+    print(f"{BLUE}Success Rate: {BOLD}{success_rate:.1f}%{RESET}")
     print("=" * 50)
 
     return passed == len(test_cases)
@@ -2159,18 +2191,31 @@ def run_self_test(use_real_data=False):
     import unittest.mock as mock
     from datetime import datetime, timezone
 
+    # ANSI color codes for terminal output
+    GREEN = "\033[92m"  # Green for success
+    RED = "\033[91m"  # Red for failure
+    YELLOW = "\033[93m"  # Yellow for warnings/info
+    BLUE = "\033[94m"  # Blue for headings
+    BOLD = "\033[1m"  # Bold text
+    RESET = "\033[0m"  # Reset formatting
+
     if use_real_data:
         logger.info("=== Starting Action 8 Self-Test with Real Data ===")
+        print(f"\n{BLUE}{BOLD}RUNNING ACTION 8 SELF-TEST WITH REAL DATA{RESET}")
         # Import required modules for real data testing
         from database import Person, MessageType, ConversationLog
     else:
         logger.info("=== Starting Action 8 Self-Test with Mock Data ===")
+        print(f"\n{BLUE}{BOLD}RUNNING ACTION 8 SELF-TEST WITH MOCK DATA{RESET}")
 
     all_tests_passed = True
     test_results = []
 
+    print(f"{BLUE}{'='*60}{RESET}")
+
     # Test 1: Test safe_column_value function
     logger.info("Test 1: Testing safe_column_value function...")
+    print(f"{YELLOW}{BOLD}TEST 1: Testing safe_column_value function...{RESET}")
     try:
         # Create a mock object with attributes
         mock_obj = mock.MagicMock()
@@ -2212,13 +2257,20 @@ def run_self_test(use_real_data=False):
             )
 
         logger.info("Test 1: safe_column_value tests completed")
+        print(f"{GREEN}✅ Test 1: safe_column_value tests completed{RESET}")
+        print(f"{BLUE}{'-'*60}{RESET}")
     except Exception as e:
         logger.error(f"Test 1 failed with exception: {e}")
         test_results.append(("Test 1: safe_column_value", False))
         all_tests_passed = False
+        print(f"{RED}❌ Test 1 failed with exception: {e}{RESET}")
+        print(f"{BLUE}{'-'*60}{RESET}")
 
     # Test 2: Test determine_next_message_type function
     logger.info("Test 2: Testing determine_next_message_type function...")
+    print(
+        f"{YELLOW}{BOLD}TEST 2: Testing determine_next_message_type function...{RESET}"
+    )
     try:
         # Test initial message for in-tree match
         result1 = determine_next_message_type(None, True)
@@ -2513,16 +2565,63 @@ def run_self_test(use_real_data=False):
             globals()["MESSAGE_TEMPLATES"] = original_templates
 
             logger.info("Test 3: send_messages_to_matches tests completed")
+            print(f"{GREEN}✅ Test 3: send_messages_to_matches tests completed{RESET}")
+            print(f"{BLUE}{'-'*60}{RESET}")
         except Exception as e:
             logger.error(f"Test 3 failed with exception: {e}")
             test_results.append(("Test 3: send_messages_to_matches", False))
             all_tests_passed = False
+            print(f"{RED}❌ Test 3 failed with exception: {e}{RESET}")
+            print(f"{BLUE}{'-'*60}{RESET}")
 
     # Print test results
     logger.info("=== Action 8 Self-Test Results ===")
+
+    # ANSI color codes for terminal output
+    GREEN = "\033[92m"  # Green for success
+    RED = "\033[91m"  # Red for failure
+    YELLOW = "\033[93m"  # Yellow for warnings/info
+    BLUE = "\033[94m"  # Blue for headings
+    BOLD = "\033[1m"  # Bold text
+    RESET = "\033[0m"  # Reset formatting
+
+    # Print a visually clear header
+    print(f"\n{BLUE}{BOLD}=======================================")
+    print(f"        ACTION 8 SELF-TEST RESULTS        ")
+    print(f"======================================={RESET}")
+
+    # Track passed/failed tests
+    passed_tests = 0
+    failed_tests = 0
+
+    # Print each test result with visual indicators
     for test_name, result in test_results:
-        status = "PASSED" if result else "FAILED"
-        logger.info(f"{test_name}: {status}")
+        if result:
+            status = f"{GREEN}✅ PASSED{RESET}"
+            passed_tests += 1
+        else:
+            status = f"{RED}❌ FAILED{RESET}"
+            failed_tests += 1
+        print(f"{BOLD}{test_name}{RESET}: {status}")
+        logger.info(f"{test_name}: {'PASSED' if result else 'FAILED'}")
+
+    # Print summary with clear visual indicators
+    total_tests = passed_tests + failed_tests
+    success_rate = (passed_tests / total_tests) * 100 if total_tests > 0 else 0
+
+    print(f"\n{BLUE}{BOLD}TEST SUMMARY:{RESET}")
+    print(f"  • Total Tests: {BOLD}{total_tests}{RESET}")
+    print(f"  • {GREEN}Passed: {BOLD}{passed_tests}{RESET}")
+    print(f"  • {RED}Failed: {BOLD}{failed_tests}{RESET}")
+    print(f"  • {YELLOW}Success Rate: {BOLD}{success_rate:.1f}%{RESET}")
+
+    # Display overall result
+    if all_tests_passed:
+        print(f"\n{GREEN}{BOLD}✅ ALL TESTS PASSED{RESET}")
+    else:
+        print(f"\n{RED}{BOLD}❌ SOME TESTS FAILED{RESET}")
+
+    print(f"{BLUE}{BOLD}======================================={RESET}")
 
     logger.info(f"Overall test result: {'PASSED' if all_tests_passed else 'FAILED'}")
     return all_tests_passed
