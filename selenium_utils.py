@@ -20,6 +20,7 @@ from selenium.common.exceptions import (
     InvalidSessionIdException,  # Added
     NoSuchWindowException,  # Added
 )
+import undetected_chromedriver as uc  # Added import for uc.Chrome
 
 # --- Local application imports ---
 from config import config_instance, selenium_config
@@ -30,7 +31,7 @@ from logging_config import logger
 # --- Selenium Specific Helpers ---
 
 
-def force_user_agent(driver: Optional[WebDriver], user_agent: str):
+def force_user_agent(driver: Optional[uc.Chrome], user_agent: str):
     """
     Attempts to force the browser's User-Agent string using Chrome DevTools Protocol.
     """
@@ -40,11 +41,15 @@ def force_user_agent(driver: Optional[WebDriver], user_agent: str):
     logger.debug(f"Attempting to set User-Agent via CDP to: {user_agent}")
     start_time = time.time()
     try:
-        driver.execute_cdp_cmd(
-            "Network.setUserAgentOverride", {"userAgent": user_agent}
-        )
+        # driver.execute_cdp_cmd(
+        #     "Network.setUserAgentOverride", {"userAgent": user_agent}
+        # )
+        # Replace with execute_script if execute_cdp_cmd is not available or causing issues
+        driver.execute_script("navigator.userAgent = arguments[0]", user_agent)
         duration = time.time() - start_time
-        logger.info(f"Successfully set User-Agent via CDP in {duration:.3f} seconds.")
+        logger.info(
+            f"Successfully set User-Agent via execute_script in {duration:.3f} seconds."
+        )
     except Exception as e:
         # Only show traceback if not running in test mode
         show_traceback = __name__ != "__main__"
@@ -368,20 +373,20 @@ class TestSeleniumUtils(unittest.TestCase):
         # Test with valid driver and user agent
         user_agent = "Mozilla/5.0 Test User Agent"
         force_user_agent(self.mock_driver, user_agent)
-        self.mock_driver.execute_cdp_cmd.assert_called_once_with(
-            "Network.setUserAgentOverride", {"userAgent": user_agent}
+        self.mock_driver.execute_script.assert_called_once_with(
+            "navigator.userAgent = arguments[0]", user_agent
         )
 
         # Test with None driver
         self.mock_driver.reset_mock()
         force_user_agent(None, user_agent)
-        self.mock_driver.execute_cdp_cmd.assert_not_called()
+        self.mock_driver.execute_script.assert_not_called()
 
         # Test with exception during CDP command
         self.mock_driver.reset_mock()
-        self.mock_driver.execute_cdp_cmd.side_effect = Exception("Test exception")
+        self.mock_driver.execute_script.side_effect = Exception("Test exception")
         force_user_agent(self.mock_driver, user_agent)
-        self.mock_driver.execute_cdp_cmd.assert_called_once()
+        self.mock_driver.execute_script.assert_called_once()
 
     def test_extract_text(self):
         """Test extract_text function."""
@@ -617,72 +622,265 @@ class TestSeleniumUtils(unittest.TestCase):
 # End of TestSeleniumUtils class
 
 
-# Function to run tests when module is executed directly
-def run_tests():
-    """Run all tests and display results."""
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestSeleniumUtils)
-    runner = unittest.TextTestRunner(verbosity=2)
-
-    start_time = time.time()
-    result = runner.run(suite)
-    end_time = time.time()
-
-    # Display test summary
-    print("\n=== Test Summary ===")
-    print(f"Total tests run: {result.testsRun}")
-    print(
-        f"Tests passed: {result.testsRun - len(result.failures) - len(result.errors)}"
-    )
-    print(f"Tests failed: {len(result.failures)}")
-    print(f"Tests with errors: {len(result.errors)}")
-    print(f"Time taken: {end_time - start_time:.2f} seconds")
-
-    # Display test coverage information
-    print("\n=== Test Coverage ===")
-    print("Functions tested:")
-    print(
-        "- force_user_agent: Tests for valid driver, None driver, and exception cases"
-    )
-    print(
-        "- extract_text: Tests for successful extraction, None element, NoSuchElementException, empty text, and general exception"
-    )
-    print(
-        "- extract_attribute: Tests for successful extraction, None element, href resolution, NoSuchElementException, and general exception"
-    )
-    print(
-        "- is_elem_there: Tests for None driver case (limited due to WebDriverWait mocking complexity)"
-    )
-    print(
-        "- is_browser_open: Tests for open browser, None driver, InvalidSessionIdException, NoSuchWindowException, WebDriverException, and general exception"
-    )
-    print(
-        "- close_tabs: Tests for multiple tabs, None driver, single tab, NoSuchWindowException, WebDriverException, and general exception"
-    )
-    print(
-        "- get_driver_cookies: Tests for valid cookies, None driver, WebDriverException, and general exception"
-    )
-
-    return result.wasSuccessful()
-
-
+# ==============================================
+# Standalone Test Block
+# ==============================================
 if __name__ == "__main__":
-    """
-    Self-test for selenium_utils.py module.
+    import sys
+    from unittest.mock import MagicMock, PropertyMock, patch
 
-    When run directly, this module will execute a series of unit tests
-    to verify the functionality of its utility functions.
-    """
-    print("\n=== Selenium Utils Self-Test ===")
-    logger.info("Running selenium_utils self-tests...")
+    try:
+        from test_framework import TestSuite, suppress_logging, assert_valid_function
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
+        )
+        sys.exit(1)
 
-    # Execute the tests
-    success = run_tests()
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for selenium_utils.py.
+        Tests Selenium WebDriver utilities and browser automation functions.
+        """
+        suite = TestSuite("Selenium WebDriver Utilities", "selenium_utils.py")
+        suite.start_suite()
 
-    if success:
-        print("\nAll selenium_utils tests passed successfully!")
-    else:
-        print("\nSome selenium_utils tests failed. See details above.")
+        # Test 1: force_user_agent function
+        def test_force_user_agent():
+            mock_driver = MagicMock()
+            user_agent = "Mozilla/5.0 Test User Agent"
 
-    logger.info("selenium_utils self-tests completed.")
+            # Test with valid driver and user agent
+            force_user_agent(mock_driver, user_agent)
+            mock_driver.execute_script.assert_called_once_with(
+                "navigator.userAgent = arguments[0]", user_agent
+            )
+
+            # Test with None driver
+            mock_driver.reset_mock()
+            force_user_agent(None, user_agent)
+            mock_driver.execute_script.assert_not_called()
+
+            # Test with exception during CDP command
+            mock_driver.reset_mock()
+            mock_driver.execute_script.side_effect = Exception("Test exception")
+            force_user_agent(mock_driver, user_agent)
+            mock_driver.execute_script.assert_called_once()
+
+        # Test 2: extract_text function
+        def test_extract_text():
+            mock_element = MagicMock()
+            child_element = MagicMock()
+            child_element.text = "Test Text"
+            mock_element.find_element.return_value = child_element
+
+            # Test successful text extraction
+            result = extract_text(mock_element, "div.test")
+            assert result == "Test Text"
+
+            # Test with None parent element
+            result = extract_text(None, "div.test")
+            assert result == ""
+
+            # Test with NoSuchElementException
+            mock_element.find_element.side_effect = NoSuchElementException(
+                "Test exception"
+            )
+            result = extract_text(mock_element, "div.nonexistent")
+            assert result == ""
+
+        # Test 3: extract_attribute function
+        def test_extract_attribute():
+            mock_element = MagicMock()
+            child_element = MagicMock()
+            child_element.get_attribute.return_value = "attribute_value"
+            mock_element.find_element.return_value = child_element
+
+            # Test successful attribute extraction
+            result = extract_attribute(mock_element, "div.test", "data-test")
+            assert result == "attribute_value"
+
+            # Test with None parent element
+            result = extract_attribute(None, "div.test", "data-test")
+            assert result == ""
+
+            # Test with href attribute - relative URL with leading slash
+            child_element.get_attribute.return_value = "/relative/path"
+            # Mock config_instance.BASE_URL
+            with patch("selenium_utils.config_instance") as mock_config:
+                mock_config.BASE_URL = "https://www.example.com"
+                result = extract_attribute(mock_element, "a.link", "href")
+                assert result == "https://www.example.com/relative/path"
+
+        # Test 4: is_browser_open function
+        def test_is_browser_open():
+            mock_driver = MagicMock()
+
+            # Test with open browser
+            type(mock_driver).window_handles = PropertyMock(return_value=["handle1"])
+            result = is_browser_open(mock_driver)
+            assert result is True
+
+            # Test with None driver
+            result = is_browser_open(None)
+            assert result is False
+
+            # Test with InvalidSessionIdException
+            type(mock_driver).window_handles = PropertyMock(
+                side_effect=InvalidSessionIdException("invalid session id")
+            )
+            result = is_browser_open(mock_driver)
+            assert result is False
+
+        # Test 5: close_tabs function
+        def test_close_tabs():
+            mock_driver = MagicMock()
+
+            # Test with None driver
+            close_tabs(None)  # Should not raise exception
+
+            # Test with single tab
+            mock_driver.window_handles = ["handle1"]
+            close_tabs(mock_driver)
+            mock_driver.switch_to.window.assert_not_called()
+
+            # Test with multiple tabs
+            mock_driver.reset_mock()
+            mock_driver.window_handles = ["handle1", "handle2", "handle3"]
+            mock_driver.current_window_handle = "handle1"
+            mock_driver.close.side_effect = None
+
+            close_tabs(mock_driver)
+            assert mock_driver.switch_to.window.call_count == 2
+            assert mock_driver.close.call_count == 2
+
+        # Test 6: get_driver_cookies function
+        def test_get_driver_cookies():
+            mock_driver = MagicMock()
+
+            # Test with valid cookies
+            mock_driver.get_cookies.return_value = [
+                {"name": "cookie1", "value": "value1"},
+                {"name": "cookie2", "value": "value2"},
+            ]
+
+            result = get_driver_cookies(mock_driver)
+            assert result == {"cookie1": "value1", "cookie2": "value2"}
+
+            # Test with None driver
+            result = get_driver_cookies(None)
+            assert result == {}
+
+            # Test with WebDriverException
+            mock_driver.get_cookies.side_effect = WebDriverException("Test exception")
+            result = get_driver_cookies(mock_driver)
+            assert result == {}
+
+        # Test 7: Browser state management functions
+        def test_browser_state_functions():
+            # Test that critical browser state functions exist
+            state_functions = ["is_browser_open", "close_tabs", "force_user_agent"]
+
+            for func_name in state_functions:
+                if func_name in globals():
+                    assert_valid_function(globals()[func_name], func_name)
+
+        # Test 8: Element interaction functions
+        def test_element_interaction_functions():
+            # Test element interaction utility functions
+            interaction_functions = [
+                "extract_text",
+                "extract_attribute",
+                "is_elem_there",
+            ]
+
+            for func_name in interaction_functions:
+                if func_name in globals():
+                    assert_valid_function(globals()[func_name], func_name)
+
+        # Test 9: Error handling in utility functions
+        def test_error_handling():
+            # Test error handling across selenium utilities
+            mock_driver = MagicMock()
+
+            # Test WebDriverException handling in get_driver_cookies
+            mock_driver.get_cookies.side_effect = WebDriverException("Connection lost")
+            result = get_driver_cookies(mock_driver)
+            assert result == {}
+
+            # Test general exception handling in extract_text
+            mock_element = MagicMock()
+            mock_element.find_element.side_effect = Exception("General error")
+            result = extract_text(mock_element, "div.test")
+            assert result == ""
+
+        # Test 10: Integration with Selenium WebDriver
+        def test_selenium_integration():
+            # Test integration patterns with Selenium WebDriver
+            mock_driver = MagicMock()
+
+            # Test cookie retrieval and processing
+            mock_driver.get_cookies.return_value = [
+                {"name": "session", "value": "abc123", "domain": ".example.com"}
+            ]
+
+            cookies = get_driver_cookies(mock_driver)
+            assert isinstance(cookies, dict)
+            assert "session" in cookies
+            assert cookies["session"] == "abc123"
+
+        # Run all tests
+        test_functions = {
+            "Force user agent functionality": (
+                test_force_user_agent,
+                "Should set user agent via CDP commands",
+            ),
+            "Text extraction from elements": (
+                test_extract_text,
+                "Should extract text content from DOM elements",
+            ),
+            "Attribute extraction from elements": (
+                test_extract_attribute,
+                "Should extract attributes from DOM elements with URL resolution",
+            ),
+            "Browser state detection": (
+                test_is_browser_open,
+                "Should detect if browser session is active",
+            ),
+            "Tab management utilities": (
+                test_close_tabs,
+                "Should close additional browser tabs safely",
+            ),
+            "Cookie management": (
+                test_get_driver_cookies,
+                "Should retrieve and format browser cookies",
+            ),
+            "Browser state management functions": (
+                test_browser_state_functions,
+                "Should provide browser state management utilities",
+            ),
+            "Element interaction functions": (
+                test_element_interaction_functions,
+                "Should provide DOM element interaction utilities",
+            ),
+            "Error handling in utility functions": (
+                test_error_handling,
+                "Should handle WebDriver errors gracefully",
+            ),
+            "Integration with Selenium WebDriver": (
+                test_selenium_integration,
+                "Should integrate seamlessly with Selenium WebDriver",
+            ),
+        }
+
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
+
+        return suite.finish_suite()
+
+    print("🔧 Running Selenium WebDriver Utilities comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 
 # End of selenium_utils.py

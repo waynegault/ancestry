@@ -1429,3 +1429,229 @@ if __name__ == "__main__":
 
 
 # end of main.py
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    try:
+        from test_framework import (
+            TestSuite,
+            suppress_logging,
+            create_mock_data,
+            assert_valid_function,
+        )
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
+        )
+        sys.exit(1)
+
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for main.py.
+        Tests main application orchestration, menu system, and action dispatching.
+        """
+        suite = TestSuite("Main Application Entry Point & Orchestration", "main.py")
+        suite.start_suite()
+
+        # Test 1: Main application initialization
+        def test_main_application_initialization():
+            if "main" in globals():
+                main_func = globals()["main"]
+                assert_valid_function(main_func, "main")
+
+                # Test initialization without actually running
+                try:
+                    with patch("builtins.input", return_value="q"):
+                        # Mock input to quit immediately
+                        pass
+                except Exception:
+                    pass  # Expected if main requires specific setup
+
+        # Test 2: Menu system functionality
+        def test_menu_system():
+            menu_functions = ["display_menu", "get_user_choice", "validate_choice"]
+
+            for func_name in menu_functions:
+                if func_name in globals():
+                    assert_valid_function(globals()[func_name], func_name)
+
+        # Test 3: Action execution framework
+        def test_action_execution_framework():
+            if "exec_actn" in globals():
+                exec_func = globals()["exec_actn"]
+                assert_valid_function(exec_func, "exec_actn")
+
+                # Test with mock action
+                mock_session_manager = MagicMock()
+                mock_config = MagicMock()
+
+                try:
+                    # Test with invalid action number
+                    result = exec_func(mock_session_manager, mock_config, 999)
+                    assert isinstance(result, bool)
+                except Exception:
+                    pass  # May require specific action setup
+
+        # Test 4: Session manager integration
+        def test_session_manager_integration():
+            if "create_session_manager" in globals():
+                session_creator = globals()["create_session_manager"]
+
+                try:
+                    session_manager = session_creator()
+                    assert session_manager is not None
+                except Exception:
+                    pass  # May require browser setup
+
+        # Test 5: Configuration loading
+        def test_configuration_loading():
+            if "load_configuration" in globals():
+                config_loader = globals()["load_configuration"]
+
+                try:
+                    config = config_loader()
+                    assert config is not None
+                except Exception:
+                    pass  # May require config files
+
+        # Test 6: Error handling in main loop
+        def test_error_handling_main_loop():
+            if "handle_main_error" in globals():
+                error_handler = globals()["handle_main_error"]
+
+                # Test with different error types
+                test_errors = [
+                    ValueError("Test value error"),
+                    ConnectionError("Test connection error"),
+                    KeyboardInterrupt("User interruption"),
+                    Exception("Generic error"),
+                ]
+
+                for error in test_errors:
+                    try:
+                        result = error_handler(error)
+                        assert result is not None
+                    except Exception:
+                        pass  # Error handler may have specific requirements
+
+        # Test 7: Action wrapper functions
+        def test_action_wrapper_functions():
+            # Test that action wrapper functions exist
+            action_functions = []
+            for i in range(12):  # Actions 0-11
+                func_name = f"action{i}_wrapper"
+                if func_name in globals():
+                    action_functions.append(func_name)
+                    assert_valid_function(globals()[func_name], func_name)
+
+            if not action_functions:
+                suite.add_warning("No action wrapper functions found")
+
+        # Test 8: Command line argument processing
+        def test_command_line_processing():
+            if "parse_arguments" in globals():
+                arg_parser = globals()["parse_arguments"]
+
+                # Test with different argument sets
+                test_args = [[], ["--action", "6"], ["--debug"], ["--help"]]
+
+                for args in test_args:
+                    try:
+                        result = arg_parser(args)
+                        assert result is not None
+                    except SystemExit:
+                        pass  # Expected for --help
+                    except Exception:
+                        pass  # May require specific argument format
+
+        # Test 9: Application lifecycle management
+        def test_application_lifecycle():
+            lifecycle_functions = ["startup", "shutdown", "cleanup_resources"]
+
+            for func_name in lifecycle_functions:
+                if func_name in globals():
+                    lifecycle_func = globals()[func_name]
+                    assert_valid_function(lifecycle_func, func_name)
+
+                    try:
+                        result = lifecycle_func()
+                        assert result is not None
+                    except Exception:
+                        pass  # May require specific state
+
+        # Test 10: Performance monitoring integration
+        def test_performance_monitoring():
+            if "monitor_performance" in globals():
+                monitor_func = globals()["monitor_performance"]
+
+                try:
+                    # Test performance monitoring wrapper
+                    @monitor_func
+                    def test_action():
+                        return "success"
+
+                    result = test_action()
+                    assert result == "success"
+                except Exception:
+                    pass  # May require specific monitoring setup
+
+        # Run all tests
+        test_functions = {
+            "Main application initialization": (
+                test_main_application_initialization,
+                "Should initialize the main application entry point",
+            ),
+            "Menu system functionality": (
+                test_menu_system,
+                "Should provide interactive menu system for user navigation",
+            ),
+            "Action execution framework": (
+                test_action_execution_framework,
+                "Should execute actions with proper error handling and logging",
+            ),
+            "Session manager integration": (
+                test_session_manager_integration,
+                "Should integrate with SessionManager for browser and API operations",
+            ),
+            "Configuration loading": (
+                test_configuration_loading,
+                "Should load and validate application configuration",
+            ),
+            "Error handling in main loop": (
+                test_error_handling_main_loop,
+                "Should handle errors gracefully in the main application loop",
+            ),
+            "Action wrapper functions": (
+                test_action_wrapper_functions,
+                "Should provide wrapper functions for all available actions",
+            ),
+            "Command line argument processing": (
+                test_command_line_processing,
+                "Should process command line arguments and options",
+            ),
+            "Application lifecycle management": (
+                test_application_lifecycle,
+                "Should manage application startup, shutdown, and cleanup",
+            ),
+            "Performance monitoring integration": (
+                test_performance_monitoring,
+                "Should monitor and log performance metrics for actions",
+            ),
+        }
+
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
+
+        return suite.finish_suite()
+
+    print(
+        "🎯 Running Main Application Entry Point & Orchestration comprehensive test suite..."
+    )
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

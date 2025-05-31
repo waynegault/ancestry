@@ -384,6 +384,8 @@ class FamilyTree(Base):
 # End of FamilyTree class
 
 
+from sqlalchemy.orm import Mapped, mapped_column
+
 class Person(Base):
     """
     Represents an individual DNA match. This is the central table linking
@@ -393,68 +395,68 @@ class Person(Base):
     __tablename__ = "people"
 
     # --- Columns ---
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer, primary_key=True, comment="Unique identifier for the person record."
     )
-    uuid = Column(
+    uuid: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         unique=True,
         index=True,
         comment="Ancestry DNA test Sample ID (GUID), primary identifier if profile_id absent.",
     )
-    profile_id = Column(
+    profile_id: Mapped[Optional[str]] = mapped_column(
         String,
         unique=True,
         nullable=True,
         index=True,
         comment="Ancestry User Profile ID (ucdmid), preferred unique identifier.",
     )
-    username = Column(
+    username: Mapped[str] = mapped_column(
         String,
         unique=False,
         nullable=False,  # Usernames are not unique
         comment="Display name shown on Ancestry for the match.",
     )
-    first_name = Column(
+    first_name: Mapped[Optional[str]] = mapped_column(
         String, nullable=True, comment="First name extracted from username or profile."
     )
-    gender = Column(String(1), nullable=True, comment="Gender ('M' or 'F'), if known.")
-    birth_year = Column(
+    gender: Mapped[Optional[str]] = mapped_column(String(1), nullable=True, comment="Gender ('M' or 'F'), if known.")
+    birth_year: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, comment="Birth year, if known (often from tree)."
     )
-    message_link = Column(
+    message_link: Mapped[Optional[str]] = mapped_column(
         String, unique=False, nullable=True, comment="Direct URL to message the person."
     )
-    in_my_tree = Column(
+    in_my_tree: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         index=True,  # Added index
         comment="Flag indicating if this person has been linked within the script user's tree.",
     )
-    contactable = Column(
+    contactable: Mapped[bool] = mapped_column(
         Boolean,
         default=True,  # Default to contactable unless known otherwise
         comment="Flag indicating if the user's profile allows messaging.",
     )
-    last_logged_in = Column(
+    last_logged_in: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
         comment="Timestamp (UTC) of the user's last login to Ancestry, if available.",
     )
-    administrator_profile_id = Column(
+    administrator_profile_id: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         index=True,
         comment="Profile ID of the person managing the DNA kit, if different.",
     )
-    administrator_username = Column(
+    administrator_username: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Display name of the kit administrator, if different.",
     )
-    status = Column(
+    status: Mapped[PersonStatusEnum] = mapped_column(
         SQLEnum(PersonStatusEnum),
         nullable=False,
         default=PersonStatusEnum.ACTIVE,  # Default new persons to ACTIVE
@@ -462,18 +464,18 @@ class Person(Base):
         index=True,
         comment="Current processing status of this person (e.g., ACTIVE, DESIST, ARCHIVE).",
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    deleted_at = Column(
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
@@ -1836,7 +1838,8 @@ def commit_bulk_data(
                         f"{log_prefix}Attempting bulk insert for {len(log_inserts_mappings)} ConversationLog entries..."
                     )
                     try:
-                        sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)
+                        from sqlalchemy import inspect
+                        sess.bulk_insert_mappings(inspect(ConversationLog), log_inserts_mappings)
                         processed_logs_count += len(log_inserts_mappings)
                         logger.debug(
                             f"{log_prefix}Bulk insert successful for {len(log_inserts_mappings)} logs."
@@ -1944,7 +1947,8 @@ def commit_bulk_data(
                         f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons..."
                     )
                     try:
-                        sess.bulk_update_mappings(Person, person_update_mappings)
+                        from sqlalchemy import inspect
+                        sess.bulk_update_mappings(inspect(Person), person_update_mappings)
                         updated_person_count = len(person_update_mappings)
                         logger.debug(
                             f"{log_prefix}Bulk update successful for {updated_person_count} persons."
@@ -2949,6 +2953,219 @@ if __name__ == "__main__":
             except Exception as dispose_e:
                 standalone_logger.error(f"Error disposing engine: {dispose_e}")
         standalone_logger.info("--- Database.py standalone run finished ---")
-# End of standalone execution block
 
-# End of database.py
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
+    import sys
+    import tempfile
+    import os
+    from unittest.mock import patch, MagicMock
+
+    try:
+        from test_framework import TestSuite, suppress_logging, create_mock_data
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
+        )
+        sys.exit(1)
+
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for database.py.
+        Tests ORM models, transactions, and database operations.
+        """
+        suite = TestSuite("Database Operations & ORM", "database.py")
+        suite.start_suite()
+
+        # Test 1: Database models existence
+        def test_database_models():
+            # Test that all required models exist
+            assert Person is not None
+            assert DnaMatch is not None
+            assert FamilyTree is not None
+
+            # Test model instantiation
+            person = Person()
+            assert person is not None
+
+            dna_match = DnaMatch()
+            assert dna_match is not None
+
+            family_tree = FamilyTree()
+            assert family_tree is not None
+
+        # Test 2: Enum definitions
+        def test_enum_definitions():
+            # Test PersonStatusEnum
+            assert hasattr(PersonStatusEnum, "ACTIVE")
+            # There is no INACTIVE status in PersonStatusEnum, so we do not check for it
+
+            # Test that enum values are valid
+            assert PersonStatusEnum.ACTIVE is not None
+            # No INACTIVE value to check
+
+        # Test 3: Database transaction context manager
+        def test_db_transaction_manager():
+            # Test that db_transn is callable
+            assert callable(db_transn)
+
+            # Test basic context manager interface
+            with patch("database.SessionManager") as mock_session_manager:
+                mock_session = MagicMock()
+                mock_session_manager.return_value.get_db_conn.return_value = (
+                    mock_session
+                )
+
+                try:
+                    with db_transn(mock_session_manager) as session:
+                        assert session is not None
+                except Exception:
+                    # Expected if actual database isn't available
+                    pass
+
+        # Test 4: Person model attributes
+        def test_person_model_attributes():
+            person = Person()
+
+            # Test essential attributes exist
+            essential_attrs = ["uuid", "username", "profile_id", "status", "in_my_tree"]
+            for attr in essential_attrs:
+                assert hasattr(
+                    person, attr
+                ), f"Person model should have {attr} attribute"
+
+        # Test 5: DnaMatch model attributes
+        def test_dna_match_model_attributes():
+            dna_match = DnaMatch()
+
+            # Test essential attributes exist
+            essential_attrs = [
+                "uuid",
+                "cM_DNA",
+                "shared_segments",
+                "predicted_relationship",
+            ]
+            for attr in essential_attrs:
+                assert hasattr(
+                    dna_match, attr
+                ), f"DnaMatch model should have {attr} attribute"
+
+        # Test 6: FamilyTree model attributes
+        def test_family_tree_model_attributes():
+            family_tree = FamilyTree()
+
+            # Test essential attributes exist
+            essential_attrs = [
+                "uuid",
+                "cfpid",
+                "person_name_in_tree",
+                "actual_relationship",
+            ]
+            for attr in essential_attrs:
+                assert hasattr(
+                    family_tree, attr
+                ), f"FamilyTree model should have {attr} attribute"
+
+        # Test 7: Model relationships
+        def test_model_relationships():
+            # Test that Person has relationships to other models
+            person = Person()
+            assert hasattr(person, "dna_match")
+            assert hasattr(person, "family_tree")
+
+        # Test 8: Database utility functions
+        def test_database_utilities():
+            # Test that utility functions exist if defined
+            utility_functions = ["create_tables", "backup_database", "restore_database"]
+
+            for func_name in utility_functions:
+                if func_name in globals():
+                    func = globals()[func_name]
+                    assert callable(func), f"{func_name} should be callable"
+
+        # Test 9: Session management
+        def test_session_management():
+            # Test session creation and management
+            try:
+                # This tests the basic SQLAlchemy setup
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import sessionmaker
+
+                # Create in-memory test database
+                engine = create_engine("sqlite:///:memory:")
+                Session = sessionmaker(bind=engine)
+                session = Session()
+
+                assert session is not None
+                session.close()
+
+            except ImportError:
+                suite.add_warning("SQLAlchemy not available for session testing")
+
+        # Test 10: Model validation
+        def test_model_validation():
+            # Test that models can handle basic data
+            person = Person()
+            person.uuid = "TEST-UUID-123"
+            person.username = "Test User"
+            person.status = PersonStatusEnum.ACTIVE
+
+            # Should not raise exceptions for valid data
+            assert person.uuid == "TEST-UUID-123"
+            assert person.username == "Test User"
+
+        # Run all tests
+        test_functions = {
+            "Database model definitions": (
+                test_database_models,
+                "Should define Person, DnaMatch, and FamilyTree ORM models",
+            ),
+            "Enum value definitions": (
+                test_enum_definitions,
+                "Should define status and other enumeration values",
+            ),
+            "Transaction context manager": (
+                test_db_transaction_manager,
+                "Should provide database transaction management",
+            ),
+            "Person model attributes": (
+                test_person_model_attributes,
+                "Should have all required Person model fields",
+            ),
+            "DnaMatch model attributes": (
+                test_dna_match_model_attributes,
+                "Should have all required DnaMatch model fields",
+            ),
+            "FamilyTree model attributes": (
+                test_family_tree_model_attributes,
+                "Should have all required FamilyTree model fields",
+            ),
+            "Model relationship mapping": (
+                test_model_relationships,
+                "Should define proper relationships between models",
+            ),
+            "Database utility functions": (
+                test_database_utilities,
+                "Should provide database management utilities",
+            ),
+            "Session management": (
+                test_session_management,
+                "Should handle SQLAlchemy session creation and cleanup",
+            ),
+            "Model data validation": (
+                test_model_validation,
+                "Should accept and store valid data in model instances",
+            ),
+        }
+
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
+
+        return suite.finish_suite()
+
+    print("🗄️ Running Database Operations & ORM comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

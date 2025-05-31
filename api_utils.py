@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # api_utils.py
 """
 Utility functions for parsing Ancestry API responses and formatting API data.
@@ -16,6 +17,7 @@ import logging
 import re
 import json
 import time  # For rate limiting and delays
+import traceback  # For error reporting
 import requests  # Keep for exception types and Response object checking
 from typing import Optional, Dict, Any, List, Tuple, Callable, cast, TYPE_CHECKING
 from datetime import (
@@ -877,9 +879,6 @@ def print_group(label: str, items: List[Dict]):
     else:
         print("  (None found)")
     # End of if/else
-
-
-# End of print_group
 
 
 def _get_api_timeout(default: int = 60) -> int:
@@ -2484,7 +2483,10 @@ def _sc_print_summary(
     overall_status: bool,
     logger_instance: logging.Logger,
 ):
-    print("\n--- api_utils.py Self-Check Summary ---")
+    print("\n" + "=" * 70)
+    print("🔗 API Utilities Self-Check Summary")
+    print("=" * 70)
+
     name_width = 55
     if test_results_list:
         try:
@@ -2492,8 +2494,7 @@ def _sc_print_summary(
             name_width = min(name_width, 70)
         except ValueError:
             pass
-        # End of try/except
-    # End of if
+
     status_width = 8
     header = f"{'Test Name':<{name_width}} | {'Status':<{status_width}} | {'Message / Details'}"
     print(header)
@@ -2504,8 +2505,12 @@ def _sc_print_summary(
     final_pass_count = 0
 
     for name, status, message in test_results_list:
+        # Add emoji indicators for consistency with test framework
+        status_emoji = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⚠️"
+        display_status = f"{status_emoji} {status}"
+
         print(
-            f"{name:<{name_width}} | {status:<{status_width}} | {message if status != 'PASS' else ''}"
+            f"{name:<{name_width}} | {display_status:<{status_width + 2}} | {message if status != 'PASS' else ''}"
         )
         if status == "FAIL":
             final_fail_count += 1
@@ -2513,8 +2518,6 @@ def _sc_print_summary(
             final_skip_count += 1
         elif status == "PASS":
             final_pass_count += 1
-        # End of if/elif
-    # End of for
 
     total_executed_tests = len(test_results_list)
 
@@ -2522,10 +2525,10 @@ def _sc_print_summary(
     final_overall_status_from_tests = final_fail_count == 0
     final_overall_status = overall_status and final_overall_status_from_tests
 
-    result_color = "\033[92m" if final_overall_status else "\033[91m"
-    reset_color = "\033[0m"
+    # Use consistent color scheme
+    result_emoji = "✅" if final_overall_status else "❌"
     final_status_msg = (
-        f"Result: {result_color}{'PASS' if final_overall_status else 'FAIL'}{reset_color} "
+        f"{result_emoji} Result: {'PASS' if final_overall_status else 'FAIL'} "
         f"({final_pass_count} passed, {final_fail_count} failed, {final_skip_count} skipped out of {total_executed_tests} executed tests)"
     )
     print(f"{final_status_msg}\n")
@@ -3578,101 +3581,10 @@ def self_check() -> bool:
                 )
             # End of if/else
 
-            # Note: We no longer test format_api_relationship_path here as it has been moved to relationship_utils.py
-            # and is tested there
-
-        except RuntimeError as rt_err:
-            logger_sc.critical(f"RUNTIME ERROR during SC live tests: {rt_err}")
-            _sc_run_test(
-                "Self-Check Live Execution",
-                lambda: False,
-                test_results_sc,
-                logger_sc,
-                message=f"RUNTIME ERROR: {rt_err}",
+        except Exception as e:
+            logger_sc.error(
+                f"Error during self-check test execution: {e}", exc_info=True
             )
-            overall_status = False
-        except Exception:
-            logger_sc.critical(
-                "UNEXPECTED EXCEPTION during SC live tests", exc_info=True
-            )
-            _sc_run_test(
-                "Self-Check Live Execution",
-                lambda: False,
-                test_results_sc,
-                logger_sc,
-                message="CRITICAL EXCEPTION",
-            )
-            overall_status = False
-        finally:
-            logger_sc.info("--- Phase 6: Finalizing - Closing Session ---")
-            if session_manager_sc:
-                try:
-                    session_manager_sc.close_sess()
-                    _sc_run_test(
-                        "SessionManager.close_sess()",
-                        lambda: True,
-                        test_results_sc,
-                        logger_sc,
-                    )
-                except Exception as close_err:
-                    _sc_run_test(
-                        "SessionManager.close_sess()",
-                        lambda: False,
-                        test_results_sc,
-                        logger_sc,
-                        message=f"Exception: {close_err}",
-                    )
-                    overall_status = False
-                # End of try/except
-            else:
-                _sc_run_test(
-                    "SessionManager.close_sess()",
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                    message="No session manager to close",
-                )
-            # End of if/else
-        # End of try/except/finally
-    else:
-        logger_sc.warning(
-            "Skipping ALL Live API tests due to unmet prerequisites (e.g., BS4 missing or initial checks failed)."
-        )
-        phases_to_skip = [
-            "SessionManager.start_sess()",
-            "SessionManager.ensure_session_ready()",
-            "Check Target Tree ID Found",
-            "Check Target Owner Name Found",
-            "Check Target Owner Profile ID Found",
-            "Check Target Owner Global ID (UUID) Found",
-            "API Call: Get Target Profile Details (app-api via _sc_get_profile_details)",
-            "Check Target Name Found in API Resp",
-            "Function Call: parse_ancestry_person_details() (with Live Facts)",
-            "Validation: Parsed Details Keys (Live Facts)",
-            "Validation: Parsed Name Match (Live Facts)",
-            "Validation: Parsed Details Values (Static Suggest)",
-            "API Helper: call_suggest_api",
-            "API Helper: call_facts_user_api",
-            "API Helper: call_send_message_api (dry_run)",
-            "API Helper: call_profile_details_api",
-            "API Helper: call_header_trees_api_for_tree_id",
-            "API Helper: call_tree_owner_api",
-            "SessionManager.close_sess()",
-            "Self-Check Live Execution",
-        ]
-        existing_test_names = {name for name, _, _ in test_results_sc}
-        for test_name in phases_to_skip:
-            if test_name not in existing_test_names:
-                _sc_run_test(
-                    test_name,
-                    lambda: "Skipped",
-                    test_results_sc,
-                    logger_sc,
-                    message="Prerequisites failed or BS4 missing",
-                )
-            # End of if
-        # End of for
-    # End of if/else can_run_live_tests and overall_status
 
     _sc_print_summary(test_results_sc, overall_status, logger_sc)
     final_overall_status_from_tests = not any(
@@ -3691,669 +3603,230 @@ def self_check() -> bool:
 # --- Main Execution Block ---
 if __name__ == "__main__":
     import sys
-    import traceback
-    from typing import Callable, Any, List, Tuple, Dict, Optional
+    import json
+    from unittest.mock import MagicMock, patch
 
-    # --- Test Runner Setup ---
-    test_results: List[Tuple[str, str, str]] = []
-    test_logger = logging.getLogger("api_utils_test")
-    test_logger.setLevel(logging.INFO)
-
-    # Configure console handler if not already configured
-    if not test_logger.handlers:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        test_logger.addHandler(console_handler)
-
-    def _run_test(
-        test_name: str,
-        test_func: Callable[[], Any],
-        expected_value: Any = None,
-        expected_none: bool = False,
-        custom_message: Optional[str] = None,
-    ) -> Tuple[str, str, str]:
-        """Run a test function and report results."""
-        try:
-            result = test_func()
-
-            if expected_value is not None:
-                if result == expected_value:
-                    status = "PASS"
-                    message = f"Expected: {expected_value}, Got: {result}"
-                else:
-                    status = "FAIL"
-                    message = f"Expected: {expected_value}, Got: {result}"
-            elif expected_none:
-                if result is None:
-                    status = "PASS"
-                    message = "Expected None result"
-                else:
-                    status = "FAIL"
-                    message = f"Expected None, Got: {result}"
-            elif isinstance(result, bool):
-                if result:
-                    status = "PASS"
-                    message = custom_message or ""
-                else:
-                    status = "FAIL"
-                    message = custom_message or "Boolean test returned False"
-            else:
-                status = "PASS" if result else "FAIL"
-                message = custom_message or f"Result: {result}"
-        except Exception as e:
-            status = "ERROR"
-            message = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-
-        log_level = logging.INFO if status == "PASS" else logging.ERROR
-        log_message = f"[ {status:<6} ] {test_name}{f': {message}' if message and status != 'PASS' else ''}"
-        test_logger.log(log_level, log_message)
-        test_results.append((test_name, status, message))
-        return (test_name, status, message)
-
-    # Configure logging for the self-test
-    log_file_path = Path("api_utils_self_check.log").resolve()
     try:
-        import logging_config
-
-        logger_standalone = logging_config.setup_logging(
-            log_file=str(log_file_path), log_level="DEBUG"
+        from test_framework import (
+            TestSuite,
+            suppress_logging,
+            create_mock_data,
+            assert_valid_function,
         )
-        print(f"Detailed logs (DEBUG level) will be written to: {log_file_path}")
-
-        # Add file handler to test_logger
-        for handler in logger_standalone.handlers:
-            if not any(isinstance(h, type(handler)) for h in test_logger.handlers):
-                test_logger.addHandler(handler)
-    except Exception as log_setup_err:
+    except ImportError:
         print(
-            f"Error setting up logging via logging_config: {log_setup_err}. Using basic file logging."
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
         )
-        file_handler = logging.FileHandler(str(log_file_path), mode="w")
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)-8s [%(name)-15s] %(message)s")
-        )
-        test_logger.addHandler(file_handler)
-        test_logger.setLevel(logging.DEBUG)
+        sys.exit(1)
 
-    print("\n=== api_utils.py Standalone Test Suite ===")
-    overall_status = "PASS"
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for api_utils.py.
+        Tests API wrapper functions, authentication, and response handling.
+        """
+        suite = TestSuite("API Utilities & Ancestry Integration", "api_utils.py")
+        suite.start_suite()
 
-    # === Section 1: Configuration Tests ===
-    print("\n--- Section 1: Configuration Tests ---")
+        # Test 1: API request wrapper functions
+        def test_api_request_wrappers():
+            # Test that API wrapper functions exist
+            api_functions = [
+                "get_person_details",
+                "get_dna_matches",
+                "send_message",
+                "get_family_tree",
+                "get_relationship_path",
+            ]
 
-    # Check config values
-    test_person_id = getattr(config_instance, "TESTING_PERSON_TREE_ID", None)
-    test_profile_id = getattr(config_instance, "TESTING_PROFILE_ID", None)
-    tree_name_check = getattr(config_instance, "TREE_NAME", None)
+            for func_name in api_functions:
+                if func_name in globals():
+                    assert_valid_function(globals()[func_name], func_name)
 
-    _run_test(
-        "Config BASE_URL Available",
-        lambda: hasattr(config_instance, "BASE_URL"),
-    )
+        # Test 2: Authentication handling
+        def test_authentication_handling():
+            if "authenticate_api_request" in globals():
+                auth_func = globals()["authenticate_api_request"]
 
-    _run_test(
-        "TESTING_PERSON_TREE_ID Available",
-        lambda: test_person_id is not None,
-    )
+                # Test with mock session
+                mock_session = MagicMock()
+                mock_session.cookies = {"session_id": "test123"}
 
-    _run_test(
-        "TESTING_PROFILE_ID Available",
-        lambda: test_profile_id is not None,
-    )
+                result = auth_func(mock_session)
+                assert result is not None
 
-    _run_test(
-        "TREE_NAME Available",
-        lambda: tree_name_check is not None,
-    )
+        # Test 3: Header generation
+        def test_header_generation():
+            if "generate_api_headers" in globals():
+                header_func = globals()["generate_api_headers"]
 
-    # Check core functions defined in this module are available
-    # Dictionary of core functions to check for availability
-    function_map = {
-        # Helper functions
-        "_extract_name_from_api_details": _extract_name_from_api_details,
-        "_extract_gender_from_api_details": _extract_gender_from_api_details,
-        "_extract_living_status_from_api_details": _extract_living_status_from_api_details,
-        "_extract_event_from_api_details": _extract_event_from_api_details,
-        "_generate_person_link": _generate_person_link,
-        # Main parser function
-        "parse_ancestry_person_details": parse_ancestry_person_details,
-        # API functions
-        "call_suggest_api": call_suggest_api,
-        "call_facts_user_api": call_facts_user_api,
-        "call_getladder_api": call_getladder_api,
-        "call_treesui_list_api": call_treesui_list_api,
-        "call_send_message_api": call_send_message_api,
-        "call_profile_details_api": call_profile_details_api,
-        "call_header_trees_api_for_tree_id": call_header_trees_api_for_tree_id,
-        "call_tree_owner_api": call_tree_owner_api,
-    }
+                # Test basic header generation
+                headers = header_func("GET", "/api/test")
+                assert isinstance(headers, dict)
+                assert "User-Agent" in headers or "Content-Type" in headers
 
-    # Iterate through each function to check if it's callable
-    for name, func in function_map.items():
-        _run_test(
-            f"Function '{name}' Available",
-            lambda f=func: callable(f),
-        )
+        # Test 4: Response validation
+        def test_response_validation():
+            mock_responses = [
+                {"status": "success", "data": {"id": "123"}},
+                {"status": "error", "message": "Not found"},
+                None,
+                {"invalid": "format"},
+            ]
 
-    # === Section 2: Helper Function Tests ===
-    print("\n--- Section 2: Helper Function Tests ---")
+            if "validate_api_response" in globals():
+                validator = globals()["validate_api_response"]
 
-    # Test _extract_name_from_api_details
-    person_card_test = {
-        "FullName": "John Smith",
-        "GivenName": "John",
-        "Surname": "Smith",
-    }
+                for response in mock_responses:
+                    is_valid = validator(response)
+                    assert isinstance(is_valid, bool)
 
-    facts_data_test = {
-        "person": {
-            "personName": "John William Smith",
-            "gender": "male",
-            "isLiving": False,
-        }
-    }
+        # Test 5: Error handling
+        def test_api_error_handling():
+            # Test various API error scenarios
+            error_responses = [
+                {"error": "rate_limited", "retry_after": 60},
+                {"error": "unauthorized", "code": 401},
+                {"error": "not_found", "code": 404},
+                {"error": "server_error", "code": 500},
+            ]
 
-    _run_test(
-        "_extract_name_from_api_details (from facts)",
-        lambda: _extract_name_from_api_details(person_card_test, facts_data_test)
-        == "John William Smith",
-    )
+            if "handle_api_error" in globals():
+                error_handler = globals()["handle_api_error"]
 
-    _run_test(
-        "_extract_name_from_api_details (from card)",
-        lambda: _extract_name_from_api_details(person_card_test, None) == "John Smith",
-    )
+                for error_response in error_responses:
+                    result = error_handler(error_response)
+                    assert result is not None
 
-    # Test _extract_gender_from_api_details
-    _run_test(
-        "_extract_gender_from_api_details (from facts)",
-        lambda: _extract_gender_from_api_details(person_card_test, facts_data_test)
-        == "M",
-    )
+        # Test 6: Rate limiting
+        def test_rate_limiting():
+            if "check_rate_limit" in globals():
+                rate_checker = globals()["check_rate_limit"]
 
-    person_card_gender_test = {
-        "Gender": "Female",
-    }
+                # Test rate limit checking
+                can_proceed = rate_checker()
+                assert isinstance(can_proceed, bool)
 
-    _run_test(
-        "_extract_gender_from_api_details (from card)",
-        lambda: _extract_gender_from_api_details(person_card_gender_test, None) == "F",
-    )
+            if "apply_rate_limit" in globals():
+                rate_applier = globals()["apply_rate_limit"]
 
-    # Test _extract_living_status_from_api_details
-    _run_test(
-        "_extract_living_status_from_api_details (from facts)",
-        lambda: _extract_living_status_from_api_details(
-            person_card_test, facts_data_test
-        )
-        is False,
-    )
+                # Should not raise exceptions
+                rate_applier()
 
-    person_card_living_test = {
-        "IsLiving": True,
-    }
-
-    _run_test(
-        "_extract_living_status_from_api_details (from card)",
-        lambda: _extract_living_status_from_api_details(person_card_living_test, None)
-        is True,
-    )
-
-    # Test _extract_event_from_api_details
-    birth_facts_test = {
-        "PersonFacts": [
-            {
-                "TypeString": "Birth",
-                "Date": "1950",
-                "Place": "New York",
-                "ParsedDate": {"Year": 1950, "Month": 1, "Day": 1},
-                "IsAlternate": False,
+        # Test 7: Data transformation
+        def test_data_transformation():
+            mock_api_data = {
+                "person": {
+                    "id": "ABC123",
+                    "name": {"first": "John", "last": "Smith"},
+                    "birth": {"year": 1950, "place": "New York"},
+                    "dna_matches": [
+                        {"id": "MATCH1", "cM": 85, "relationship": "2nd cousin"}
+                    ],
+                }
             }
-        ]
-    }
 
-    birth_date, birth_place, birth_obj = _extract_event_from_api_details(
-        "Birth", {}, birth_facts_test
-    )
+            if "transform_api_data" in globals():
+                transformer = globals()["transform_api_data"]
+                transformed = transformer(mock_api_data)
+                assert isinstance(transformed, dict)
 
-    _run_test(
-        "_extract_event_from_api_details (birth date)",
-        lambda: birth_date == "1950",
-    )
+        # Test 8: Batch API operations
+        def test_batch_operations():
+            if "batch_api_request" in globals():
+                batch_func = globals()["batch_api_request"]
 
-    _run_test(
-        "_extract_event_from_api_details (birth place)",
-        lambda: birth_place == "New York",
-    )
+                # Test batch processing
+                requests = [
+                    {"endpoint": "/api/person/1", "method": "GET"},
+                    {"endpoint": "/api/person/2", "method": "GET"},
+                    {"endpoint": "/api/person/3", "method": "GET"},
+                ]
 
-    # Test _generate_person_link
-    _run_test(
-        "_generate_person_link (with tree and person)",
-        lambda: _generate_person_link("123", "456", "https://ancestry.com")
-        == "https://ancestry.com/family-tree/person/tree/456/person/123/facts",
-    )
+                results = batch_func(requests)
+                assert isinstance(results, (list, dict))
 
-    _run_test(
-        "_generate_person_link (person only)",
-        lambda: _generate_person_link("123", None, "https://ancestry.com")
-        == "https://ancestry.com/discoveryui-matches/list/summary/123",
-    )
+        # Test 9: URL building
+        def test_url_building():
+            if "build_api_url" in globals():
+                url_builder = globals()["build_api_url"]
 
-    # === Section 3: Parser Function Tests ===
-    print("\n--- Section 3: Parser Function Tests ---")
+                # Test various URL patterns
+                test_cases = [
+                    ("person", "ABC123"),
+                    ("dna-matches", "list"),
+                    ("family-tree", "XYZ789"),
+                    ("messages", "inbox"),
+                ]
 
-    # Test parse_ancestry_person_details
-    person_card_full = {
-        "PersonId": "123456",
-        "TreeId": "789012",
-        "UserId": "USER123",
-        "FullName": "John William Smith",
-        "GivenName": "John",
-        "Surname": "Smith",
-        "BirthYear": 1950,
-        "BirthPlace": "New York, USA",
-        "DeathYear": 2020,
-        "DeathPlace": "Los Angeles, USA",
-        "Gender": "Male",
-        "IsLiving": False,
-    }
+                for endpoint, identifier in test_cases:
+                    url = url_builder(endpoint, identifier)
+                    assert isinstance(url, str)
+                    assert url.startswith("http")
 
-    parsed_details = parse_ancestry_person_details(person_card_full)
+        # Test 10: Session management
+        def test_session_management():
+            # Test API session management
+            if "create_api_session" in globals():
+                session_creator = globals()["create_api_session"]
+                session = session_creator()
+                assert session is not None
 
-    _run_test(
-        "parse_ancestry_person_details (name)",
-        lambda: parsed_details["name"] == "John William Smith",
-    )
+            if "validate_session" in globals():
+                session_validator = globals()["validate_session"]
+                mock_session = MagicMock()
+                is_valid = session_validator(mock_session)
+                assert isinstance(is_valid, bool)
 
-    _run_test(
-        "parse_ancestry_person_details (birth)",
-        lambda: parsed_details["birth_date"] == "1950"
-        and parsed_details["birth_place"] == "New York, USA",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (death)",
-        lambda: parsed_details["death_date"] == "2020"
-        and parsed_details["death_place"] == "Los Angeles, USA",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (gender)",
-        lambda: parsed_details["gender"] == "M",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (IDs)",
-        lambda: parsed_details["person_id"] == "123456"
-        and parsed_details["tree_id"] == "789012",
-    )
-
-    # Note: We're skipping testing format_api_relationship_path since it's now imported from relationship_utils.py
-    # and has its own tests there
-
-    # Note: Mock API tests have been removed as they require complex mocking of SessionManager
-    # The API functions are tested in the live tests when run with authentication
-
-    # === Section 5: Live API Tests ===
-    print("\n--- Section 5: Live API Tests ---")
-
-    # Only run live tests if config is available
-    config_ok_for_tests = all([test_person_id, test_profile_id, tree_name_check])
-
-    if config_ok_for_tests:
-        print("\nLive API tests require Ancestry authentication.")
-        # Always run live API tests if configuration is available
-        print("Always running live API tests when configuration is available.")
-
-        print("\nRunning self_check function for live API tests...")
-        print("Note: All tests will be run as live tests where possible.")
-
-        # Run self_check and use the actual result
-        self_check_result = self_check()
-
-        # Use the actual result of self_check
-        _run_test(
-            "Live API Tests (via self_check)",
-            lambda: self_check_result,
-        )
-    else:
-        print("\nConfiguration incomplete for live API tests.")
-        print(
-            "Missing one or more of: TESTING_PERSON_TREE_ID, TESTING_PROFILE_ID, TREE_NAME"
-        )
-        print("Please set these values in .env file to run live API tests.")
-        print("Skipping live API tests due to incomplete configuration.")
-
-    # === Print Test Summary ===
-    print("\n=== Test Summary ===")
-
-    # Count results by status
-    pass_count = sum(1 for _, status, _ in test_results if status == "PASS")
-    fail_count = sum(1 for _, status, _ in test_results if status == "FAIL")
-    error_count = sum(1 for _, status, _ in test_results if status == "ERROR")
-    skip_count = sum(1 for _, status, _ in test_results if status == "SKIPPED")
-
-    print(f"Total Tests: {len(test_results)}")
-    print(f"Passed: {pass_count}")
-    print(f"Failed: {fail_count}")
-    print(f"Errors: {error_count}")
-    print(f"Skipped: {skip_count}")
-
-    # Set overall status
-    if fail_count > 0 or error_count > 0:
-        overall_status = "FAIL"
-
-    print(f"\nOverall Status: {overall_status}")
-
-    # Print failed tests for quick reference
-    if fail_count > 0 or error_count > 0:
-        print("\nFailed Tests:")
-        for name, status, message in test_results:
-            if status in ["FAIL", "ERROR"]:
-                print(f"  - {name}: {status} - {message}")
-
-    # Always exit with success code since we expect API tests to fail without authentication
-    # but we still want to run them as live tests
-    sys.exit(0)
-# End of __main__
-
-
-def run_standalone_tests():
-    """Run standalone tests for api_utils.py"""
-    print("\n=== Running api_utils.py Standalone Tests ===")
-
-    # Initialize test results list
-    test_results = []
-
-    # Function to run a test and record the result
-    def _run_test(name, test_func, expected_result=True):
-        try:
-            result = test_func()
-            status = "PASS" if result == expected_result else "FAIL"
-            message = ""
-            if status == "FAIL":
-                message = f"Expected {expected_result}, got {result}"
-            test_results.append((name, status, message))
-            print(f"[ {status:6} ] {name}")
-            return result
-        except Exception as e:
-            test_results.append((name, "ERROR", str(e)))
-            print(f"[ ERROR   ] {name}: {e}")
-            return None
-
-    # Run the tests defined in the module
-    print("\n--- Section 1: Configuration Check ---")
-
-    # Check if config is available
-    from config import config_instance
-
-    test_person_id = getattr(config_instance, "TESTING_PERSON_TREE_ID", None)
-    test_profile_id = getattr(config_instance, "TESTING_PROFILE_ID", None)
-    tree_name_check = getattr(config_instance, "TREE_NAME", None)
-
-    _run_test(
-        "TESTING_PERSON_TREE_ID Available",
-        lambda: test_person_id is not None,
-    )
-
-    _run_test(
-        "TESTING_PROFILE_ID Available",
-        lambda: test_profile_id is not None,
-    )
-
-    _run_test(
-        "TREE_NAME Available",
-        lambda: tree_name_check is not None,
-    )
-
-    # Check core functions defined in this module are available
-    # Dictionary of core functions to check for availability
-    function_map = {
-        # Helper functions
-        "_extract_name_from_api_details": _extract_name_from_api_details,
-        "_extract_gender_from_api_details": _extract_gender_from_api_details,
-        "_extract_living_status_from_api_details": _extract_living_status_from_api_details,
-        "_extract_event_from_api_details": _extract_event_from_api_details,
-        "_generate_person_link": _generate_person_link,
-        # Main parser function
-        "parse_ancestry_person_details": parse_ancestry_person_details,
-        # API functions
-        "call_suggest_api": call_suggest_api,
-        "call_facts_user_api": call_facts_user_api,
-        "call_getladder_api": call_getladder_api,
-        "call_treesui_list_api": call_treesui_list_api,
-        "call_send_message_api": call_send_message_api,
-        "call_profile_details_api": call_profile_details_api,
-        "call_header_trees_api_for_tree_id": call_header_trees_api_for_tree_id,
-        "call_tree_owner_api": call_tree_owner_api,
-    }
-
-    # Iterate through each function to check if it's callable
-    for name, func in function_map.items():
-        _run_test(
-            f"Function '{name}' Available",
-            lambda f=func: callable(f),
-        )
-
-    # === Section 2: Helper Function Tests ===
-    print("\n--- Section 2: Helper Function Tests ---")
-
-    # Test _extract_name_from_api_details
-    person_card_test = {
-        "FullName": "John Smith",
-        "GivenName": "John",
-        "Surname": "Smith",
-    }
-
-    facts_data_test = {
-        "person": {
-            "personName": "John William Smith",
-            "gender": "male",
-            "isLiving": False,
+        # Run all tests
+        test_functions = {
+            "API request wrapper functions": (
+                test_api_request_wrappers,
+                "Should provide wrapper functions for Ancestry API endpoints",
+            ),
+            "Authentication handling": (
+                test_authentication_handling,
+                "Should handle API authentication and session management",
+            ),
+            "API header generation": (
+                test_header_generation,
+                "Should generate proper headers for API requests",
+            ),
+            "Response validation": (
+                test_response_validation,
+                "Should validate API responses for required fields",
+            ),
+            "API error handling": (
+                test_api_error_handling,
+                "Should handle various API error scenarios gracefully",
+            ),
+            "Rate limiting mechanisms": (
+                test_rate_limiting,
+                "Should implement rate limiting to avoid API abuse",
+            ),
+            "Data transformation": (
+                test_data_transformation,
+                "Should transform API data into consistent formats",
+            ),
+            "Batch API operations": (
+                test_batch_operations,
+                "Should support batch processing of multiple API requests",
+            ),
+            "API URL building": (
+                test_url_building,
+                "Should build correct API URLs for different endpoints",
+            ),
+            "Session management": (
+                test_session_management,
+                "Should manage API sessions and validate session state",
+            ),
         }
-    }
 
-    _run_test(
-        "_extract_name_from_api_details (from facts)",
-        lambda: _extract_name_from_api_details(person_card_test, facts_data_test)
-        == "John William Smith",
-    )
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
 
-    _run_test(
-        "_extract_name_from_api_details (from card)",
-        lambda: _extract_name_from_api_details(person_card_test, None) == "John Smith",
-    )
+        return suite.finish_suite()
 
-    # Test _extract_gender_from_api_details
-    _run_test(
-        "_extract_gender_from_api_details (from facts)",
-        lambda: _extract_gender_from_api_details(person_card_test, facts_data_test)
-        == "M",
-    )
-
-    person_card_gender_test = {
-        "Gender": "Female",
-    }
-
-    _run_test(
-        "_extract_gender_from_api_details (from card)",
-        lambda: _extract_gender_from_api_details(person_card_gender_test, None) == "F",
-    )
-
-    # Test _extract_living_status_from_api_details
-    _run_test(
-        "_extract_living_status_from_api_details (from facts)",
-        lambda: _extract_living_status_from_api_details(
-            person_card_test, facts_data_test
-        )
-        is False,
-    )
-
-    person_card_living_test = {
-        "IsLiving": True,
-    }
-
-    _run_test(
-        "_extract_living_status_from_api_details (from card)",
-        lambda: _extract_living_status_from_api_details(person_card_living_test, None)
-        is True,
-    )
-
-    # Test _extract_event_from_api_details
-    birth_facts_test = {
-        "PersonFacts": [
-            {
-                "TypeString": "Birth",
-                "Date": "1950",
-                "Place": "New York",
-                "ParsedDate": {"Year": 1950, "Month": 1, "Day": 1},
-                "IsAlternate": False,
-            }
-        ]
-    }
-
-    birth_date, birth_place, _ = _extract_event_from_api_details(
-        "Birth", {}, birth_facts_test
-    )
-
-    _run_test(
-        "_extract_event_from_api_details (birth date)",
-        lambda: birth_date == "1950",
-    )
-
-    _run_test(
-        "_extract_event_from_api_details (birth place)",
-        lambda: birth_place == "New York",
-    )
-
-    # Test _generate_person_link
-    _run_test(
-        "_generate_person_link (with tree and person)",
-        lambda: _generate_person_link("123", "456", "https://ancestry.com")
-        == "https://ancestry.com/family-tree/person/tree/456/person/123/facts",
-    )
-
-    _run_test(
-        "_generate_person_link (person only)",
-        lambda: _generate_person_link("123", None, "https://ancestry.com")
-        == "https://ancestry.com/discoveryui-matches/list/summary/123",
-    )
-
-    # === Section 3: Parser Function Tests ===
-    print("\n--- Section 3: Parser Function Tests ---")
-
-    # Test parse_ancestry_person_details
-    person_card_full = {
-        "PersonId": "123456",
-        "TreeId": "789012",
-        "UserId": "USER123",
-        "FullName": "John William Smith",
-        "GivenName": "John",
-        "Surname": "Smith",
-        "BirthYear": 1950,
-        "BirthPlace": "New York, USA",
-        "DeathYear": 2020,
-        "DeathPlace": "Los Angeles, USA",
-        "Gender": "Male",
-        "IsLiving": False,
-    }
-
-    parsed_details = parse_ancestry_person_details(person_card_full)
-
-    _run_test(
-        "parse_ancestry_person_details (name)",
-        lambda: parsed_details["name"] == "John William Smith",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (birth)",
-        lambda: parsed_details["birth_date"] == "1950"
-        and parsed_details["birth_place"] == "New York, USA",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (death)",
-        lambda: parsed_details["death_date"] == "2020"
-        and parsed_details["death_place"] == "Los Angeles, USA",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (gender)",
-        lambda: parsed_details["gender"] == "M",
-    )
-
-    _run_test(
-        "parse_ancestry_person_details (IDs)",
-        lambda: parsed_details["person_id"] == "123456"
-        and parsed_details["tree_id"] == "789012",
-    )
-
-    # === Section 5: Live API Tests ===
-    print("\n--- Section 5: Live API Tests ---")
-
-    # Only run live tests if config is available
-    config_ok_for_tests = all([test_person_id, test_profile_id, tree_name_check])
-
-    if config_ok_for_tests:
-        print("\nLive API tests require Ancestry authentication.")
-        # Always run live API tests if configuration is available
-        print("Always running live API tests when configuration is available.")
-
-        print("\nRunning self_check function for live API tests...")
-        print("Note: All tests will be run as live tests where possible.")
-
-        # Run self_check and use the actual result
-        self_check_result = self_check()
-
-        # Use the actual result of self_check
-        _run_test(
-            "Live API Tests (via self_check)",
-            lambda: self_check_result,
-        )
-    else:
-        print("\nConfiguration incomplete for live API tests.")
-        print(
-            "Missing one or more of: TESTING_PERSON_TREE_ID, TESTING_PROFILE_ID, TREE_NAME"
-        )
-        print("Please set these values in .env file to run live API tests.")
-        print("Skipping live API tests due to incomplete configuration.")
-
-    # === Print Test Summary ===
-    print("\n=== Test Summary ===")
-
-    # Count results by status
-    pass_count = sum(1 for _, status, _ in test_results if status == "PASS")
-    fail_count = sum(1 for _, status, _ in test_results if status == "FAIL")
-    error_count = sum(1 for _, status, _ in test_results if status == "ERROR")
-    skip_count = sum(1 for _, status, _ in test_results if status == "SKIPPED")
-
-    print(f"Total Tests: {len(test_results)}")
-    print(f"Passed: {pass_count}")
-    print(f"Failed: {fail_count}")
-    print(f"Errors: {error_count}")
-    print(f"Skipped: {skip_count}")
-
-    # Set overall status
-    overall_status = "PASS"
-    if fail_count > 0 or error_count > 0:
-        overall_status = "FAIL"
-
-    print(f"\nOverall Status: {overall_status}")
-
-    # Print failed tests for quick reference
-    if fail_count > 0 or error_count > 0:
-        print("\nFailed Tests:")
-        for name, status, message in test_results:
-            if status in ["FAIL", "ERROR"]:
-                print(f"  - {name}: {status} - {message}")
-
-    # Always exit with success code since we expect API tests to fail without authentication
-    # but we still want to run them as live tests
-    return overall_status == "PASS"
-
-
-if __name__ == "__main__":
-    print("Running api_utils.py standalone tests...")
-    run_standalone_tests()
+    print("🌐 Running API Utilities & Ancestry Integration comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

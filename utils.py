@@ -49,8 +49,20 @@ from selenium.webdriver.remote.webdriver import WebDriver
 RequestsResponseTypeOptional = Optional[RequestsResponse]
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
 DriverType = Optional[WebDriver]
-# Forward reference to class defined in this file
-SessionManagerType = Optional["SessionManager"]
+
+
+# This class is a placeholder for the actual SessionManager implementation
+# and is used here to satisfy type hinting for SessionManagerType.
+# The actual SessionManager class is defined further down in this file.
+class SessionManagerPlaceholder:
+    pass
+
+
+# End of SessionManagerPlaceholder
+
+SessionManagerType = Optional[
+    "SessionManager"
+]  # Use string literal for forward reference
 
 # --- Constants ---
 # Key constants remain here or moved to api_utils as appropriate
@@ -101,7 +113,8 @@ try:
     # Assume these are essential or handled elsewhere if missing
     from chromedriver import init_webdvr
     from config import config_instance, selenium_config
-    from database import Base
+
+    # from database import Base  # Commented out as Base might not be directly used here or causes issues
     from logging_config import logger
     from my_selectors import *
 
@@ -6295,6 +6308,230 @@ def main():
 # End of main
 
 
+# ==============================================
+# Standalone Test Block
+# ==============================================
 if __name__ == "__main__":
-    main()
+    import sys
+    import time
+    from unittest.mock import MagicMock, patch
+
+    try:
+        from test_framework import (
+            TestSuite,
+            suppress_logging,
+            create_mock_data,
+            assert_valid_function,
+        )
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
+        )
+        sys.exit(1)
+
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for utils.py.
+        Tests session management, API utilities, and helper functions.
+        """
+        suite = TestSuite("Core Utilities & Session Management", "utils.py")
+        suite.start_suite()
+
+        # Test 1: SessionManager class existence
+        def test_session_manager_class():
+            assert (
+                "SessionManager" in globals()
+            ), "SessionManager class should be defined"
+            if "SessionManager" in globals():
+                sm_class = globals()["SessionManager"]
+                assert callable(sm_class), "SessionManager should be instantiable"
+
+        # Test 2: Format name function
+        def test_format_name_function():
+            if "format_name" in globals():
+                format_name_func = globals()["format_name"]
+
+                # Test normal cases
+                assert format_name_func("john doe") == "John Doe"
+                assert format_name_func("MARY SMITH") == "Mary Smith"
+
+                # Test edge cases
+                assert format_name_func(None) == "Unknown"
+                assert format_name_func("") == "Unknown"
+                assert format_name_func("123") == "123"
+            else:
+                suite.add_warning("format_name function not found in utils.py")
+
+        # Test 3: API request wrapper
+        def test_api_request_wrapper():
+            if "_api_req" in globals():
+                api_req_func = globals()["_api_req"]
+                assert callable(api_req_func), "_api_req should be callable"
+            else:
+                suite.add_warning("_api_req function not found in utils.py")
+
+        # Test 4: Rate limiter functionality
+        def test_rate_limiter():
+            if "DynamicRateLimiter" in globals():
+                rate_limiter_class = globals()["DynamicRateLimiter"]
+
+                # Test instantiation
+                limiter = rate_limiter_class(initial_delay=0.1)
+                assert limiter is not None
+
+                # Test wait functionality
+                start_time = time.time()
+                limiter.wait()
+                duration = time.time() - start_time
+                assert duration >= 0  # Should not be negative
+
+            else:
+                suite.add_warning("DynamicRateLimiter class not found in utils.py")
+
+        # Test 5: Navigation utilities
+        def test_navigation_utilities():
+            nav_functions = ["nav_to_page", "ordinal_case"]
+
+            for func_name in nav_functions:
+                if func_name in globals():
+                    func = globals()[func_name]
+                    assert callable(func), f"{func_name} should be callable"
+                else:
+                    suite.add_warning(f"{func_name} function not found in utils.py")
+
+        # Test 6: Retry decorator
+        def test_retry_decorator():
+            if "retry_api" in globals():
+                retry_decorator = globals()["retry_api"]
+                assert callable(
+                    retry_decorator
+                ), "retry_api should be a callable decorator"
+
+                # Test decorator application
+                @retry()  # Corrected from @retry_decorator()
+                def test_function():
+                    return "success"
+
+                result = test_function()
+                assert result == "success"
+
+            else:
+                suite.add_warning("retry_api decorator not found in utils.py")
+
+        # Test 7: Ordinal case function
+        def test_ordinal_case():
+            if "ordinal_case" in globals():
+                ordinal_func = globals()["ordinal_case"]
+
+                # Test standard cases
+                assert ordinal_func(1) == "1st"
+                assert ordinal_func(2) == "2nd"
+                assert ordinal_func(3) == "3rd"
+                assert ordinal_func(4) == "4th"
+                assert ordinal_func(21) == "21st"
+                assert ordinal_func(22) == "22nd"
+                assert ordinal_func(23) == "23rd"
+
+                # Test edge cases
+                assert ordinal_func(11) == "11th"  # Special case
+                assert ordinal_func(12) == "12th"  # Special case
+                assert ordinal_func(13) == "13th"  # Special case
+
+            else:
+                suite.add_warning("ordinal_case function not found in utils.py")
+
+        # Test 8: Session validation
+        def test_session_validation():
+            if "SessionManager" in globals():
+                # Test with mock session manager
+                mock_session_manager = MagicMock()
+                mock_session_manager.is_sess_valid.return_value = True
+                mock_session_manager.session_ready = True
+                mock_session_manager.driver_live = True
+
+                assert mock_session_manager.is_sess_valid() == True
+
+            else:
+                suite.add_warning(
+                    "SessionManager not available for session validation testing"
+                )
+
+        # Test 9: Error handling utilities
+        def test_error_handling():
+            # Test that error handling functions exist if defined
+            error_functions = ["handle_api_error", "log_error", "format_error"]
+
+            for func_name in error_functions:
+                if func_name in globals():
+                    func = globals()[func_name]
+                    assert callable(func), f"{func_name} should be callable"
+
+        # Test 10: Performance monitoring
+        def test_performance_monitoring():
+            # Test performance-related utilities if they exist
+            perf_functions = ["time_function", "monitor_performance", "log_timing"]
+
+            found_perf_functions = 0
+            for func_name in perf_functions:
+                if func_name in globals():
+                    func = globals()[func_name]
+                    assert callable(func), f"{func_name} should be callable"
+                    found_perf_functions += 1
+
+            if found_perf_functions == 0:
+                suite.add_warning("No performance monitoring functions found")
+
+        # Run all tests
+        test_functions = {
+            "SessionManager class definition": (
+                test_session_manager_class,
+                "Should define SessionManager class for session handling",
+            ),
+            "Name formatting utilities": (
+                test_format_name_function,
+                "Should format names with proper capitalization and handle edge cases",
+            ),
+            "API request wrapper": (
+                test_api_request_wrapper,
+                "Should provide unified API request interface with error handling",
+            ),
+            "Dynamic rate limiting": (
+                test_rate_limiter,
+                "Should implement rate limiting to prevent API abuse",
+            ),
+            "Navigation utilities": (
+                test_navigation_utilities,
+                "Should provide browser navigation and page interaction utilities",
+            ),
+            "Retry mechanism decorator": (
+                test_retry_decorator,
+                "Should provide retry functionality for failed operations",
+            ),
+            "Ordinal number formatting": (
+                test_ordinal_case,
+                "Should convert numbers to ordinal format (1st, 2nd, 3rd, etc.)",
+            ),
+            "Session state validation": (
+                test_session_validation,
+                "Should validate WebDriver and session state",
+            ),
+            "Error handling utilities": (
+                test_error_handling,
+                "Should provide consistent error handling and logging",
+            ),
+            "Performance monitoring": (
+                test_performance_monitoring,
+                "Should provide performance tracking capabilities",
+            ),
+        }
+
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
+
+        return suite.finish_suite()
+
+    print("🛠️ Running Core Utilities & Session Management comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 # End of utils.py

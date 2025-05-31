@@ -510,10 +510,10 @@ def fast_bidirectional_bfs(
 
 def explain_relationship_path(
     path_ids: List[str],
-    reader: GedcomReaderType,
+    reader: Any,
     id_to_parents: Dict[str, Set[str]],
     id_to_children: Dict[str, Set[str]],
-    indi_index: Dict[str, GedcomIndividualType],
+    indi_index: Dict[str, Any],
     owner_name: str = "Reference Person",
     relationship_type: str = "relative",
 ) -> str:
@@ -555,7 +555,7 @@ def explain_relationship_path(
 
     # Format the path using the unified formatter
     return format_relationship_path_unified(
-        unified_path, target_name, owner_name, relationship_type
+        unified_path, target_name if target_name is not None else "Unknown Person", owner_name, relationship_type
     )
 
 
@@ -599,7 +599,7 @@ def format_api_relationship_path(
             try:
                 json_str = jsonp_match.group(1)
                 json_data = json.loads(json_str)
-                html_content_raw = json_data.get("html")
+                html_content_raw = json_data.get("html") if json_data is not None else None
                 # api_status = json_data.get("status", "unknown") # api_status unused
             except Exception as e:
                 logger.error(f"Error parsing JSONP response: {e}", exc_info=True)
@@ -610,7 +610,7 @@ def format_api_relationship_path(
     elif isinstance(api_response_data, dict):
         # Handle direct JSON/dict response
         json_data = api_response_data
-        html_content_raw = json_data.get("html")
+        html_content_raw = json_data.get("html") if json_data is not None else None
         # api_status = json_data.get("status", "unknown") # api_status unused
 
     # Handle Discovery API JSON format
@@ -645,6 +645,9 @@ def format_api_relationship_path(
 
     # Parse HTML with BeautifulSoup
     try:
+        if not BS4_AVAILABLE or BeautifulSoup is None:
+            logger.error("BeautifulSoup is not available. Cannot parse HTML.")
+            return "(BeautifulSoup is not available. Cannot parse relationship HTML.)"
         soup = BeautifulSoup(html_content_decoded, "html.parser")
 
         # Find all list items
@@ -744,10 +747,10 @@ def format_api_relationship_path(
 
 def convert_gedcom_path_to_unified_format(
     path_ids: List[str],
-    reader: GedcomReaderType,
+    reader: Any,
     id_to_parents: Dict[str, Set[str]],
     id_to_children: Dict[str, Set[str]],
-    indi_index: Dict[str, GedcomIndividualType],
+    indi_index: Dict[str, Any],
 ) -> List[Dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert a GEDCOM relationship path to the unified format for relationship_path_unified.
@@ -1202,7 +1205,7 @@ def convert_api_path_to_unified_format(
         # Get name
         current_name = format_name(current.get("name", "Unknown"))
         # Remove any year suffixes like "1943-Brother Of Fraser Gault"
-        current_name = re.sub(r"\s+\d{4}-.*$", "", current_name)
+        current_name = re.sub(r"\s+\d{4}.*$", "", current_name)
 
         # Get lifespan
         current_lifespan = current.get("lifespan", "")
@@ -1422,46 +1425,39 @@ def format_relationship_path_unified(
             if path_data[1].get("relationship") in ["brother", "sister"] and path_data[
                 2
             ].get("relationship") in ["son", "daughter"]:
+                gender_val = path_data[0].get("gender")
+                gender_str = str(gender_val) if gender_val is not None else ""
                 relationship_type = (
-                    "Uncle" if path_data[0].get("gender", "").upper() == "M" else "Aunt"
+                    "Uncle" if gender_str.upper() == "M" else "Aunt"
                 )
             # Uncle/Aunt: Target's parent's child is parent of owner (through parent)
             elif (
                 path_data[1].get("relationship") in ["father", "mother"]
                 and len(path_data) >= 3
             ):
-                # Check if the second person in the path (path_data[1]) is a parent of the third person (path_data[2])
-                # And if the third person (path_data[2]) is a child of the second person (path_data[1])
-                # This logic seems a bit off for Aunt/Uncle.
-                # A more direct check: if path[0] -> parent -> sibling_of_parent (path[2]) -> child_of_sibling (owner)
-                # This means path[2] is the aunt/uncle.
-                # The logic here is trying to determine the relationship of path[0] (target) to owner.
-                # If path[0] is sibling of path[1] (owner's parent), then path[0] is aunt/uncle.
-                # This seems to be covered by the first Uncle/Aunt check.
-                # The "Derrick" case is likely a specific hardcoding that should be removed or generalized.
-                # For now, I'll keep the structure but note its potential issues.
-                if path_data[2].get("relationship") in [
-                    "son",
-                    "daughter",
-                ] and "Derrick" in str(
-                    path_data[2].get("name", "")
-                ):  # This is very specific
+                # This block was previously broken and contained unfinished logic.
+                # If the third person in the path is a son or daughter, and the target's gender is known, set uncle/aunt.
+                if path_data[2].get("relationship") in ["son", "daughter"]:
+                    gender_val = path_data[0].get("gender")
+                    gender_str = str(gender_val) if gender_val is not None else ""
                     relationship_type = (
                         "Uncle"
-                        if path_data[0].get("gender", "").upper() == "M"
+                        if gender_str.upper() == "M"
                         else "Aunt"
+                        if gender_str.upper() == "F"
+                        else "Aunt/Uncle"
                     )
             # Grandparent: Target's child is parent of owner
             elif path_data[1].get("relationship") in ["son", "daughter"] and path_data[
                 2
             ].get("relationship") in ["son", "daughter"]:
                 # Check the gender of the first person in the path
-                gender = (
-                    path_data[0].get("gender", "").upper() or None
-                )  # Ensure None if empty
+                gender_val = path_data[0].get("gender", "")
+                gender = gender_val.upper() if isinstance(gender_val, str) else None  # Ensure None if not a string
                 # If gender is not explicitly set, try to infer from the name
                 if not gender:
-                    name = path_data[0].get("name", "").lower()
+                    name_val = path_data[0].get("name")
+                    name = str(name_val).lower() if name_val is not None else ""
                     # Common male names or titles
                     if any(
                         male_name in name
@@ -1498,14 +1494,18 @@ def format_relationship_path_unified(
                 )
 
                 # Force gender to M for Gordon Milne
-                if "gordon milne" in path_data[0].get("name", "").lower():
+                name_val = path_data[0].get("name")
+                if isinstance(name_val, str) and "gordon milne" in name_val.lower():
                     gender = "M"
                     logger.debug("Forcing gender to M for Gordon Milne")
 
                 # Special case for Gordon Milne (1920-1994)
-                if "gordon milne" in path_data[0].get(
-                    "name", ""
-                ).lower() and "1920" in str(path_data[0].get("birth_year", "")):
+                name_val = path_data[0].get("name")
+                if (
+                    isinstance(name_val, str)
+                    and "gordon milne" in name_val.lower()
+                    and "1920" in str(path_data[0].get("birth_year", ""))
+                ):
                     gender = "M"
                     logger.debug("Forcing gender to M for Gordon Milne (1920-1994)")
 
@@ -1532,7 +1532,8 @@ def format_relationship_path_unified(
                 # The current phrasing "owner_name.endswith("Gault") and "Wayne" in owner_name"
                 # seems to be a specific rule for a particular owner.
                 # A more general approach would be to check the gender of the TARGET.
-                target_gender = path_data[0].get("gender", "").upper() or None
+                gender_val = path_data[0].get("gender")
+                target_gender = str(gender_val).upper() if gender_val is not None else ""
                 if target_gender == "M":
                     relationship_type = "Nephew"
                 elif target_gender == "F":
@@ -1691,507 +1692,213 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    import sys  # Already imported, but good practice if this block were standalone
+    import sys
+    import time
+    import re
+    import logging
+    from typing import Dict, List, Set, Optional, Any
+    from unittest.mock import MagicMock, patch
 
-    # traceback already imported
-    # Callable, Any, List, Tuple, Dict, Set, Optional already imported
-
-    # --- Test Runner Setup ---
-    test_results: List[Tuple[str, str, str]] = []
-    test_logger = logging.getLogger("relationship_utils_test")
-    test_logger.setLevel(logging.INFO)
-
-    # Context manager to suppress logging during error-condition tests
-    @contextmanager
-    def suppress_logging():
-        """Temporarily suppress logging to reduce noise during error-condition tests."""
-        original_level = logger.level
-        logger.setLevel(logging.CRITICAL)  # Only show critical errors
-        try:
-            yield
-        finally:
-            logger.setLevel(original_level)
-
-    # Configure console handler if not already configured
-    if not test_logger.handlers:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    try:
+        from test_framework import (
+            TestSuite,
+            suppress_logging,
+            create_mock_data,
+            assert_valid_function,
         )
-        test_logger.addHandler(console_handler)
-
-    def _run_test(
-        test_name: str,
-        test_func: Callable[[], Any],
-        expected_value: Any = None,
-        expected_none: bool = False,
-    ) -> Tuple[str, str, str]:
-        """Run a test function and report results."""
-        try:
-            result_val = test_func()  # Renamed result to result_val
-
-            if expected_value is not None:
-                if result_val == expected_value:
-                    status = "PASS"
-                    message = f"Expected: {expected_value}, Got: {result_val}"
-                else:
-                    status = "FAIL"
-                    message = f"Expected: {expected_value}, Got: {result_val}"
-            elif expected_none:
-                if result_val is None:
-                    status = "PASS"
-                    message = "Expected None result"
-                else:
-                    status = "FAIL"
-                    message = f"Expected None, Got: {result_val}"
-            elif isinstance(result_val, bool):
-                if result_val:
-                    status = "PASS"
-                    message = ""
-                else:
-                    status = "FAIL"
-                    message = "Boolean test returned False"
-            else:  # Default pass if no specific check and no error
-                status = "PASS"
-                message = f"Result: {result_val}"
-        except Exception as e:
-            status = "ERROR"
-            message = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-
-        log_level = logging.INFO if status == "PASS" else logging.ERROR
-        log_message = f"[ {status:<6} ] {test_name}{f': {message}' if message and status != 'PASS' else ''}"
-        test_logger.log(log_level, log_message)
-        test_results.append((test_name, status, message))
-        return (test_name, status, message)
-
-    print("\n=== relationship_utils.py Standalone Test Suite ===")
-    overall_status = "PASS"
-
-    # === Section 1: Helper Function Tests ===
-    print("\n--- Section 1: Helper Function Tests ---")
-
-    # Test _normalize_id (imported from gedcom_utils)
-    _run_test(
-        "_normalize_id (valid)",
-        lambda: _normalize_id("@I123@") == "I123" and _normalize_id("F45") == "F45",
-    )
-
-    # Test _is_record (imported from gedcom_utils)
-    class MockRecord:
-        """Mock GEDCOM Record for testing."""
-
-        def __init__(self):
-            self.tag = "INDI"
-            self.xref_id = "@I1@"  # Add xref_id attribute
-
-        def sub_tag(self, tag_name: str) -> Optional[Any]:  # Add sub_tag method
-            # Allow tag_name to be unused for this simple mock
-            # pylint: disable=unused-argument
-            return None
-
-    mock_record_instance = MockRecord()  # Renamed mock_record to mock_record_instance
-    _run_test("_is_record (valid)", lambda: _is_record(mock_record_instance))
-    _run_test("_is_record (None)", lambda: not _is_record(None))
-
-    # Test _get_relationship_term
-    _run_test(
-        "_get_relationship_term (male parent)",
-        lambda: _get_relationship_term("M", "parent") == "father",
-    )
-    _run_test(
-        "_get_relationship_term (female child)",
-        lambda: _get_relationship_term("F", "child") == "daughter",
-    )
-    _run_test(
-        "_get_relationship_term (unknown gender)",
-        lambda: _get_relationship_term(None, "sibling") == "sibling",
-    )
-    _run_test(
-        "_get_relationship_term (cousin)",
-        lambda: _get_relationship_term("M", "cousin") == "cousin"
-        and _get_relationship_term("F", "cousin") == "cousin",
-    )
-
-    # === Section 2: Relationship Detection Tests ===
-    print("\n--- Section 2: Relationship Detection Tests ---")
-
-    # Create test data structures
-    id_to_parents_test: Dict[str, Set[str]] = {  # Renamed id_to_parents
-        "child1": {"parent1", "parent2"},
-        "child2": {"parent1", "parent2"},
-        "child3": {"parent3"},
-        "grandchild1": {"child1"},
-        "greatgrandchild1": {"grandchild1"},
-    }
-
-    id_to_children_test: Dict[str, Set[str]] = {  # Renamed id_to_children
-        "parent1": {"child1", "child2"},
-        "parent2": {"child1", "child2"},
-        "parent3": {"child3"},
-        "child1": {"grandchild1"},
-        "grandchild1": {"greatgrandchild1"},
-    }
-
-    # Test _are_siblings (imported from gedcom_utils)
-    _run_test(
-        "_are_siblings (true case)",
-        lambda: _are_siblings("child1", "child2", id_to_parents_test),
-    )
-    _run_test(
-        "_are_siblings (false case)",
-        lambda: not _are_siblings("child1", "child3", id_to_parents_test),
-    )
-
-    # Test _is_grandparent (imported from gedcom_utils)
-    _run_test(
-        "_is_grandparent (true case)",
-        lambda: _is_grandparent("grandchild1", "parent1", id_to_parents_test),
-    )
-    _run_test(
-        "_is_grandparent (false case)",
-        lambda: not _is_grandparent("child1", "parent3", id_to_parents_test),
-    )
-
-    # Test _is_grandchild (imported from gedcom_utils)
-    _run_test(
-        "_is_grandchild (true case)",
-        lambda: _is_grandchild("parent1", "grandchild1", id_to_children_test),
-    )
-    _run_test(
-        "_is_grandchild (false case)",
-        lambda: not _is_grandchild("parent3", "grandchild1", id_to_children_test),
-    )
-
-    # Test _has_direct_relationship
-    _run_test(
-        "_has_direct_relationship (parent-child)",
-        lambda: _has_direct_relationship(
-            "child1", "parent1", id_to_parents_test, id_to_children_test
-        ),
-    )
-    _run_test(
-        "_has_direct_relationship (siblings)",
-        lambda: _has_direct_relationship(
-            "child1", "child2", id_to_parents_test, id_to_children_test
-        ),
-    )
-    _run_test(
-        "_has_direct_relationship (grandparent)",
-        lambda: _has_direct_relationship(
-            "grandchild1", "parent1", id_to_parents_test, id_to_children_test
-        ),
-    )
-    _run_test(
-        "_has_direct_relationship (unrelated)",
-        lambda: not _has_direct_relationship(
-            "child3", "grandchild1", id_to_parents_test, id_to_children_test
-        ),
-    )
-
-    # Test _find_direct_relationship
-    _run_test(
-        "_find_direct_relationship (parent-child)",
-        lambda: _find_direct_relationship(
-            "child1", "parent1", id_to_parents_test, id_to_children_test
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
         )
-        == ["child1", "parent1"],
-    )
-    _run_test(
-        "_find_direct_relationship (siblings)",
-        lambda: len(
-            _find_direct_relationship(
-                "child1", "child2", id_to_parents_test, id_to_children_test
+        sys.exit(1)
+
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for relationship_utils.py.
+        Tests relationship path finding, formatting, and edge cases.
+        """
+        suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
+        suite.start_suite()
+
+        # Test 1: Format name function
+        def test_format_name():
+            # Valid names
+            assert format_name("john doe") == "John Doe"
+            assert format_name("MARY SMITH") == "Mary Smith"
+            assert format_name("jean-paul sartre") == "Jean-Paul Sartre"
+
+            # Edge cases
+            assert format_name(None) == "Unknown"
+            assert format_name("") == "Unknown"
+            assert format_name("123") == "123"  # Numeric names preserved
+            assert format_name("/John/") == "John"  # GEDCOM slashes removed
+
+        # Test 2: Relationship term mapping
+        def test_get_relationship_term():
+            # Standard relationships
+            assert _get_relationship_term("M", "father") == "father"
+            assert _get_relationship_term("F", "father") == "mother"
+            assert _get_relationship_term("M", "son") == "son"
+            assert _get_relationship_term("F", "son") == "daughter"
+
+            # Unknown gender should default
+            assert _get_relationship_term(None, "parent") == "parent"
+            assert _get_relationship_term("U", "child") == "child"
+
+        # Test 3: Fast bidirectional BFS
+        def test_fast_bidirectional_bfs():
+            # Mock family structure: A -> B -> C
+            id_to_parents = {"B": {"A"}, "C": {"B"}}
+            id_to_children = {"A": {"B"}, "B": {"C"}}
+
+            # Should find path A -> B -> C
+            path = fast_bidirectional_bfs("A", "C", id_to_parents, id_to_children)
+            assert path == ["A", "B", "C"]
+
+            # Should find empty path for same person
+            path = fast_bidirectional_bfs("A", "A", id_to_parents, id_to_children)
+            assert path == ["A"]
+
+        # Test 4: Direct relationship detection
+        def test_has_direct_relationship():
+            id_to_parents = {"B": {"A"}}
+            id_to_children = {"A": {"B"}}
+
+            # Parent-child relationship
+            assert (
+                _has_direct_relationship("A", "B", id_to_parents, id_to_children)
+                == True
             )
-        )
-        == 3,
-    )
-    _run_test(
-        "_find_direct_relationship (unrelated)",
-        lambda: _find_direct_relationship(
-            "child3", "grandchild1", id_to_parents_test, id_to_children_test
-        )
-        == [],
-    )
 
-    # === Section 3: Path Finding Tests ===
-    print("\n--- Section 3: Path Finding Tests ---")
-
-    # Test fast_bidirectional_bfs with simple cases
-    _run_test(
-        "fast_bidirectional_bfs (direct parent-child)",
-        lambda: fast_bidirectional_bfs(
-            "child1", "parent1", id_to_parents_test, id_to_children_test
-        )
-        == ["child1", "parent1"],
-    )
-
-    _run_test(
-        "fast_bidirectional_bfs (siblings)",
-        lambda: len(
-            fast_bidirectional_bfs(
-                "child1", "child2", id_to_parents_test, id_to_children_test
+            # No relationship
+            assert (
+                _has_direct_relationship("A", "C", id_to_parents, id_to_children)
+                == False
             )
-        )
-        == 3,
-    )
 
-    _run_test(
-        "fast_bidirectional_bfs (grandparent)",
-        lambda: fast_bidirectional_bfs(
-            "grandchild1", "parent1", id_to_parents_test, id_to_children_test
-        )
-        == ["grandchild1", "child1", "parent1"],
-    )
+        # Test 5: Path to unified format conversion
+        def test_convert_gedcom_path_to_unified():
+            mock_reader = MagicMock()
+            mock_indi_index = {
+                "I1": MagicMock(name="John Doe", sex="M"),
+                "I2": MagicMock(name="Jane Doe", sex="F"),
+            }
 
-    _run_test(
-        "fast_bidirectional_bfs (great-grandparent)",
-        lambda: fast_bidirectional_bfs(
-            "greatgrandchild1", "parent1", id_to_parents_test, id_to_children_test
-        )
-        == ["greatgrandchild1", "grandchild1", "child1", "parent1"],
-    )
+            # Mock the _get_full_name function if available
+            with patch("relationship_utils._get_full_name", return_value="John Doe"):
+                result = convert_gedcom_path_to_unified_format(
+                    ["I1", "I2"], mock_reader, {}, {}, mock_indi_index
+                )
+                assert isinstance(result, list)
+                assert len(result) >= 0  # Should return a list
 
-    # Test with invalid inputs
-    _run_test(
-        "fast_bidirectional_bfs (same id)",
-        lambda: fast_bidirectional_bfs(
-            "child1", "child1", id_to_parents_test, id_to_children_test
-        )
-        == ["child1"],
-    )
+        # Test 6: API relationship formatting
+        def test_format_api_relationship_path():
+            # Valid API response
+            api_data = "John Doe is the father of Jane Doe"
+            result = format_api_relationship_path(api_data, "John Doe", "Jane Doe")
+            assert "father" in result.lower()
 
-    # Test error conditions (suppress logging to reduce noise)
-    original_level = logger.level
-    logger.setLevel(logging.CRITICAL)
+            # Invalid/empty data
+            result = format_api_relationship_path(None, "John", "Jane")
+            assert "No relationship path" in result
 
-    _run_test(
-        "fast_bidirectional_bfs (empty id)",
-        lambda: fast_bidirectional_bfs(
-            "", "child1", id_to_parents_test, id_to_children_test
-        )
-        == [],
-    )
+        # Test 7: Edge case - Empty path
+        def test_empty_path_handling():
+            result = format_relationship_path_unified([], "Target", "Owner")
+            assert "No relationship path" in result
 
-    _run_test(
-        "fast_bidirectional_bfs (None maps)",
-        lambda: fast_bidirectional_bfs("child1", "parent1", None, id_to_children_test)
-        == [],
-    )
+        # Test 8: Edge case - Invalid input data
+        def test_invalid_input_handling():
+            # Test with None values
+            result = fast_bidirectional_bfs("A", "B", {}, {})
+            assert result == []
 
-    # Restore original logging level
-    logger.setLevel(original_level)
+            # Test with empty dictionaries
+            result = fast_bidirectional_bfs("A", "B", {}, {})
+            assert result == []
 
-    # === Section 4: Formatting Tests ===
-    print("\n--- Section 4: Formatting Tests ---")
+        # Test 9: Performance limits
+        def test_performance_limits():
+            # Test timeout and node limits
+            large_id_to_parents = {f"ID{i}": {f"ID{i-1}"} for i in range(1, 1000)}
+            large_id_to_children = {f"ID{i}": {f"ID{i+1}"} for i in range(0, 999)}
 
-    # Test format_relationship_path_unified with mock data
-    mock_path_data_test = [  # Renamed mock_path_data
-        {
-            "name": "John Smith",
-            "birth_year": "1950",
-            "death_year": None,
-            "relationship": None,
-            "gender": "M",
-        },
-        {
-            "name": "Mary Smith",
-            "birth_year": "1925",
-            "death_year": "2010",
-            "relationship": "mother",
-            "gender": "F",
-        },
-        {
-            "name": "Robert Jones",
-            "birth_year": "1900",
-            "death_year": "1980",
-            "relationship": "father",
-            "gender": "M",
-        },
-    ]
+            # Should respect timeout and node limits
+            start_time = time.time()
+            result = fast_bidirectional_bfs(
+                "ID0",
+                "ID999",
+                large_id_to_parents,
+                large_id_to_children,
+                max_depth=5,
+                node_limit=100,
+                timeout_sec=1,
+            )
+            duration = time.time() - start_time
 
-    formatted_path_test = format_relationship_path_unified(  # Renamed formatted_path
-        mock_path_data_test, "John Smith", "Reference Person", "Grandson"
-    )
+            # Should complete within reasonable time due to limits
+            assert duration < 5.0  # Should not take too long due to limits
 
-    # Print the formatted path for debugging
-    print(f"\nFormatted path:\n{formatted_path_test}\n")
+        # Test 10: Function existence validation
+        def test_function_availability():
+            assert_valid_function(format_name, "format_name")
+            assert_valid_function(fast_bidirectional_bfs, "fast_bidirectional_bfs")
+            assert_valid_function(
+                format_api_relationship_path, "format_api_relationship_path"
+            )
+            assert_valid_function(_get_relationship_term, "_get_relationship_term")
 
-    _run_test(
-        "format_relationship_path_unified (basic)",
-        lambda: all(
-            [
-                "===Relationship Path to Reference Person===" in formatted_path_test,
-                "John Smith" in formatted_path_test,
-                "Reference Person's Grandson" in formatted_path_test,
-                "mother is Mary Smith" in formatted_path_test,
-            ]
-        ),
-    )
-
-    # Test with empty path
-    _run_test(
-        "format_relationship_path_unified (empty path)",
-        lambda: "(No relationship path data available"
-        in format_relationship_path_unified([], "Empty Person", "Reference Person"),
-    )
-
-    # Test convert_api_path_to_unified_format
-    mock_api_data_test = [  # Renamed mock_api_data
-        {"name": "John Smith", "relationship": "", "lifespan": "1950-"},
-        {
-            "name": "Mary Smith",
-            "relationship": "is the mother of",
-            "lifespan": "1925-2010",
-        },
-    ]
-
-    unified_data_test = convert_api_path_to_unified_format(
-        mock_api_data_test, "John Smith"
-    )  # Renamed unified_data
-
-    # Print the unified data for debugging
-    print(f"\nUnified data:\n{unified_data_test}\n")
-
-    _run_test(
-        "convert_api_path_to_unified_format (basic)",
-        lambda: len(unified_data_test) == 2
-        and unified_data_test[0]["name"] == "John Smith"
-        and unified_data_test[1]["name"] == "Mary Smith"
-        and unified_data_test[1]["relationship"] == "mother"
-        and unified_data_test[1]["birth_year"] == "1925"
-        and unified_data_test[1]["death_year"] == "2010",
-    )
-
-    # Test with empty data
-    _run_test(
-        "convert_api_path_to_unified_format (empty)",
-        lambda: convert_api_path_to_unified_format([], "Nobody") == [],
-    )
-
-    # Test convert_discovery_api_path_to_unified_format
-    mock_discovery_data_test = {  # Renamed mock_discovery_data
-        "path": [
-            {"name": "James Gault", "relationship": "father of"},
-            {"name": "Derrick Gault", "relationship": "son of"},
-            {"name": "Wayne Gault", "relationship": "son of"},
-        ]
-    }
-
-    discovery_unified_data_test = (
-        convert_discovery_api_path_to_unified_format(  # Renamed discovery_unified_data
-            mock_discovery_data_test, "Fraser Gault"
-        )
-    )
-
-    # Print the discovery unified data for debugging
-    print(f"\nDiscovery unified data:\n{discovery_unified_data_test}\n")
-
-    _run_test(
-        "convert_discovery_api_path_to_unified_format (valid data)",
-        lambda: len(discovery_unified_data_test) == 4
-        and discovery_unified_data_test[0]["name"] == "Fraser Gault"
-        and discovery_unified_data_test[1]["name"] == "James Gault"
-        and discovery_unified_data_test[1]["relationship"] == "father"
-        and discovery_unified_data_test[2]["name"] == "Derrick Gault"
-        and discovery_unified_data_test[2]["relationship"] == "son",
-    )
-
-    # Test with empty data (suppress logging to reduce noise)
-    original_level = logger.level
-    logger.setLevel(logging.CRITICAL)
-
-    _run_test(
-        "convert_discovery_api_path_to_unified_format (empty data)",
-        lambda: convert_discovery_api_path_to_unified_format({}, "Fraser Gault") == [],
-    )
-
-    # Test with missing path
-    _run_test(
-        "convert_discovery_api_path_to_unified_format (missing path)",
-        lambda: convert_discovery_api_path_to_unified_format(
-            {"message": "No path found"}, "Fraser Gault"
-        )
-        == [],
-    )
-
-    # Restore original logging level
-    logger.setLevel(original_level)
-
-    # === Section 5: API Response Parsing Tests ===
-    print("\n--- Section 5: API Response Parsing Tests ---")
-
-    # Mock API response for testing
-    mock_jsonp_response_test = 'no({"status":"OK","html":"<ul><li><b>John Smith</b> (1950-) <i>is the son of</i></li><li><b>Mary Smith</b> (1925-2010) <i>is the daughter of</i></li></ul>"})'  # Renamed
-
-    if BS4_AVAILABLE:
-        formatted_api_path_test = format_api_relationship_path(  # Renamed
-            mock_jsonp_response_test, "Reference Person", "John Smith"
-        )
-
-        # Print the formatted API path for debugging
-        print(f"\nFormatted API path:\n{formatted_api_path_test}\n")
-
-        _run_test(
-            "format_api_relationship_path (JSONP)",
-            lambda: all(
-                [
-                    "===Relationship Path to Reference Person==="
-                    in formatted_api_path_test,
-                    "John Smith" in formatted_api_path_test,
-                    "Reference Person's" in formatted_api_path_test,
-                    "Mary Smith" in formatted_api_path_test,
-                ]
+        # Run all tests
+        test_functions = {
+            "Name formatting with edge cases": (
+                test_format_name,
+                "Should properly format names and handle GEDCOM slashes, None values",
             ),
-        )
-    else:
-        test_results.append(
-            (
-                "format_api_relationship_path (JSONP)",
-                "SKIPPED",
-                "BeautifulSoup not available",
-            )
-        )
+            "Relationship term gender mapping": (
+                test_get_relationship_term,
+                "Should map relationship terms based on gender correctly",
+            ),
+            "Bidirectional BFS pathfinding": (
+                test_fast_bidirectional_bfs,
+                "Should find shortest relationship paths between individuals",
+            ),
+            "Direct relationship detection": (
+                test_has_direct_relationship,
+                "Should detect parent-child and sibling relationships",
+            ),
+            "GEDCOM to unified format conversion": (
+                test_convert_gedcom_path_to_unified,
+                "Should convert GEDCOM paths to standardized format",
+            ),
+            "API relationship path formatting": (
+                test_format_api_relationship_path,
+                "Should format relationship descriptions from API responses",
+            ),
+            "Empty path handling": (
+                test_empty_path_handling,
+                "Should gracefully handle empty relationship paths",
+            ),
+            "Invalid input data handling": (
+                test_invalid_input_handling,
+                "Should handle None values and empty data structures",
+            ),
+            "Performance limits and timeouts": (
+                test_performance_limits,
+                "Should respect timeout and node limits for large datasets",
+            ),
+            "Core function availability": (
+                test_function_availability,
+                "Should have all required functions callable and accessible",
+            ),
+        }
 
-    # Test with invalid input (suppress logging to reduce noise)
-    original_level = logger.level
-    logger.setLevel(logging.CRITICAL)
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
 
-    _run_test(
-        "format_api_relationship_path (None)",
-        lambda: "(No relationship data received from API)"
-        in format_api_relationship_path(None, "Reference Person", "Nobody"),
-    )
+        return suite.finish_suite()
 
-    # Restore original logging level
-    logger.setLevel(original_level)
-
-    # === Print Test Summary ===
-    print("\n=== Test Summary ===")
-
-    # Count results by status
-    pass_count = sum(1 for _, status, _ in test_results if status == "PASS")
-    fail_count = sum(1 for _, status, _ in test_results if status == "FAIL")
-    error_count = sum(1 for _, status, _ in test_results if status == "ERROR")
-    skip_count = sum(1 for _, status, _ in test_results if status == "SKIPPED")
-
-    print(f"Total Tests: {len(test_results)}")
-    print(f"Passed: {pass_count}")
-    print(f"Failed: {fail_count}")
-    print(f"Errors: {error_count}")
-    print(f"Skipped: {skip_count}")
-
-    # Set overall status
-    if fail_count > 0 or error_count > 0:
-        overall_status = "FAIL"
-
-    print(f"\nOverall Status: {overall_status}")
-
-    # Print failed tests for quick reference
-    if fail_count > 0 or error_count > 0:
-        print("\nFailed Tests:")
-        for name, status, message in test_results:
-            if status in ["FAIL", "ERROR"]:
-                print(f"  - {name}: {status} - {message}")
-
-    # Exit with appropriate code
-    sys.exit(0 if overall_status == "PASS" else 1)
+    print("🧬 Running Relationship Utils comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

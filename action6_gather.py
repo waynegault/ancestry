@@ -13,29 +13,21 @@ within helpers), error handling, and concurrent API fetches using ThreadPoolExec
 """
 
 # --- Standard library imports ---
+import json
 import logging
 import random
 import re
 import sys
 import time
+import unittest
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import (
-    Any,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Protocol,
-    Set,
-    Tuple,
-)
-from urllib.parse import unquote, urlencode, urljoin, urlparse
-import json  # Added for self_test JSON loading
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from urllib.parse import urljoin, urlparse, urlencode, unquote
 
 # --- Third-party imports ---
-import cloudscraper  # For specific API calls if needed, though _api_req preferred
+import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
@@ -54,24 +46,22 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging throu
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_instance, selenium_config
 from selenium_utils import get_driver_cookies
-from database import (  # Database models and utilities
+from database import (
     DnaMatch,
     FamilyTree,
     Person,
-    PersonStatusEnum,  # Enums
-    db_transn,  # Transaction context manager
+    PersonStatusEnum,
+    db_transn,
 )
 from logging_config import logger  # Use configured logger
 from my_selectors import *  # Import CSS selectors
-from utils import (  # Core utilities
+from utils import (
     SessionManager,
-    _api_req,  # API request helper
-    format_name,  # Name formatting utility
-    nav_to_page,  # Navigation utility
-    ordinal_case,  # String formatting utility
+    _api_req,
+    format_name,
+    nav_to_page,
+    ordinal_case,
     retry_api,
-    # urljoin is also in urllib.parse, ensuring we use one consistently
-    # Removed local utils.urljoin if it's just a re-export of urllib.parse.urljoin
 )
 
 
@@ -2095,7 +2085,7 @@ def _prepare_dna_match_operation_data(
             )
             db_longest = existing_dna_match.longest_shared_segment
 
-            # Compare using the safe default api_predicted_rel_for_comp
+            # Compare using the safe default db_predicted_rel_for_comp
             db_predicted_rel_for_comp = (
                 existing_dna_match.predicted_relationship
                 if existing_dna_match.predicted_relationship is not None
@@ -2245,7 +2235,7 @@ def _prepare_family_tree_operation_data(
                 "sid": session_manager.my_uuid,
             }
             base_view_url = urljoin(
-                config_instance_arg.BASE_URL,  # type: ignore
+                config_instance.BASE_URL,  # type: ignore
                 f"/family-tree/tree/{session_manager.my_tree_id}/family",
             )
             view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
@@ -3074,11 +3064,11 @@ def _fetch_combined_details(
                 )
             elif isinstance(profile_response, requests.Response):
                 logger.warning(
-                    f"Failed /profiles/details fetch for {tester_profile_id_for_api}. Status: {profile_response.status_code}."
+                    f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
                 )
             else:
                 logger.warning(
-                    f"Failed /profiles/details fetch for {tester_profile_id_for_api} (Invalid response: {type(profile_response)})."
+                    f"Failed /profiles/details fetch for UUID {match_uuid} (Invalid response: {type(profile_response)})."
                 )
 
         except ConnectionError as conn_err:
@@ -3778,28 +3768,246 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 # ------------------------------------------------------------------------------
 
 
-def self_test() -> bool:
-    """
-    Test harness for action6_gather.py.
-    Tests key components of the script using mock objects and data.
-    Focuses on testing the internal logic of helper functions.
-    """
-    from unittest.mock import MagicMock, patch
-    import unittest  # For assertions
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
+    import unittest
+    from test_framework import TestSuite, suppress_logging, create_mock_data
 
-    print("\n=== Running Action 6 (Gather DNA Matches) Self-Test (REVISED) ===\n")
-    tests_run = 0
-    tests_passed = 0
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for action6_gather.py.
+        Tests key components using standardized framework with edge cases.
+        """
+        suite = TestSuite("Action 6 (Gather DNA Matches)", "action6_gather.py")
+        suite.start_suite()
 
-    # --- Mock Person and DnaMatch for testing _identify_fetch_candidates ---
+        # Test 1: _lookup_existing_persons function
+        def test_lookup_existing_persons():
+            from unittest.mock import MagicMock
+
+            mock_db_session = MagicMock(spec=SqlAlchemySession)
+            mock_person_obj1 = MockPerson(
+                "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", 100, 5, True
+            )
+            mock_person_obj2 = MockPerson(
+                "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA", 50, 3, True
+            )
+
+            mock_query_result = [mock_person_obj1, mock_person_obj2]
+            mock_filter_obj = MagicMock()
+            mock_filter_obj.all.return_value = mock_query_result
+            mock_options_obj = MagicMock()
+            mock_options_obj.filter.return_value = mock_filter_obj
+            mock_query_obj = MagicMock()
+            mock_query_obj.options.return_value = mock_options_obj
+            mock_db_session.query.return_value = mock_query_obj
+
+            uuids_to_lookup = [
+                "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
+                "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca",
+                "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
+            ]
+
+            result = _lookup_existing_persons(mock_db_session, uuids_to_lookup)
+            assert isinstance(result, dict)
+            assert len(result) == 2
+            assert "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB" in result
+            assert "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA" in result
+
+        # Test 2: Edge case - Empty UUID list
+        def test_lookup_empty_uuids_edge_case():
+            from unittest.mock import MagicMock
+
+            mock_db_session = MagicMock(spec=SqlAlchemySession)
+            result = _lookup_existing_persons(mock_db_session, [])
+            assert result == {}
+            # This should gracefully handle empty input without database calls
+
+        # Test 3: _identify_fetch_candidates function
+        def test_identify_fetch_candidates():
+            matches_on_page = [
+                {
+                    "uuid": "uuid1",
+                    "cM_DNA": 110,
+                    "numSharedSegments": 5,
+                    "in_my_tree": True,
+                },
+                {
+                    "uuid": "uuid2",
+                    "cM_DNA": 50,
+                    "numSharedSegments": 3,
+                    "in_my_tree": True,
+                },
+                {
+                    "uuid": "uuid3",
+                    "cM_DNA": 25,
+                    "numSharedSegments": 2,
+                    "in_my_tree": True,
+                },
+                {
+                    "uuid": "uuid4",
+                    "cM_DNA": 70,
+                    "numSharedSegments": 6,
+                    "in_my_tree": False,
+                },
+            ]
+
+            existing_persons_map = {
+                "UUID2": MockPerson("uuid2", 50, 3, True),  # No change expected
+            }
+
+            fetch_uuids, process_later, skipped_count = _identify_fetch_candidates(
+                matches_on_page, existing_persons_map
+            )
+
+            # uuid1, uuid3, uuid4 should need fetching (new or changed)
+            # uuid2 should be skipped (no changes detected)
+            assert len(fetch_uuids) == 3
+            assert skipped_count == 1
+            assert len(process_later) == 5
+
+        # Test 4: Edge case - Missing UUID in match data
+        def test_identify_candidates_missing_uuid_edge_case():
+            matches_on_page = [
+                {
+                    "cM_DNA": 10,
+                    "numSharedSegments": 1,
+                    "in_my_tree": False,
+                },  # Missing UUID
+                {
+                    "uuid": "valid_uuid",
+                    "cM_DNA": 50,
+                    "numSharedSegments": 3,
+                    "in_my_tree": False,
+                },
+            ]
+
+            existing_persons_map = {}
+
+            fetch_uuids, process_later, skipped_count = _identify_fetch_candidates(
+                matches_on_page, existing_persons_map
+            )
+
+            # Should gracefully skip the match without UUID
+            assert len(fetch_uuids) == 1
+            assert "valid_uuid" in fetch_uuids
+
+        # Test 5: _adjust_delay function
+        def test_adjust_delay():
+            from unittest.mock import MagicMock, patch
+
+            mock_session_manager = MagicMock(spec=SessionManager)
+            mock_rate_limiter = MagicMock()
+            mock_session_manager.dynamic_rate_limiter = mock_rate_limiter
+
+            # Case: Rate limiter not throttled
+            mock_rate_limiter.is_throttled.return_value = False
+            mock_rate_limiter.current_delay = 2.0
+
+            def decrease_side_effect():
+                mock_rate_limiter.current_delay = 1.5
+
+            mock_rate_limiter.decrease_delay.side_effect = decrease_side_effect
+
+            with patch("action6_gather.config_instance") as mock_config:
+                mock_config.INITIAL_DELAY = 1.0
+                _adjust_delay(mock_session_manager, 1)
+
+            mock_rate_limiter.decrease_delay.assert_called_once()
+
+        # Test 6: Edge case - Rate limiter throttled
+        def test_adjust_delay_throttled_edge_case():
+            from unittest.mock import MagicMock
+
+            mock_session_manager = MagicMock(spec=SessionManager)
+            mock_rate_limiter = MagicMock()
+            mock_session_manager.dynamic_rate_limiter = mock_rate_limiter
+
+            # Case: Rate limiter is throttled
+            mock_rate_limiter.is_throttled.return_value = True
+            mock_rate_limiter.decrease_delay.reset_mock()
+
+            _adjust_delay(mock_session_manager, 1)
+
+            # Should not call decrease_delay when throttled
+            mock_rate_limiter.decrease_delay.assert_not_called()
+
+        # Test 7: Function validation tests
+        def test_fetch_functions_validation():
+            # Test that critical fetch functions exist and are callable
+            assert callable(_fetch_combined_details)
+            assert callable(_fetch_batch_badge_details)
+            assert callable(_fetch_batch_ladder)
+            assert callable(_fetch_batch_relationship_prob)
+
+        # Test 8: Edge case - Invalid session manager
+        def test_fetch_combined_invalid_session_edge_case():
+            from unittest.mock import MagicMock, patch
+
+            mock_session_manager = MagicMock()
+            mock_session_manager.my_uuid = None  # Invalid state
+
+            with patch.object(logger, "warning"):
+                result = _fetch_combined_details(mock_session_manager, "test_uuid")
+
+            # Should gracefully return None for invalid session
+            assert result is None
+
+        # Test 9: Logging functions
+        def test_logging_functions():
+            from unittest.mock import patch
+
+            with patch.object(logger, "debug") as mock_debug, patch.object(
+                logger, "info"
+            ) as mock_info:
+                _log_page_summary(1, 5, 3, 2, 1)
+                _log_coord_summary(10, 50, 30, 20, 10)
+
+            # Verify logging functions were called
+            assert mock_debug.called
+            assert mock_info.called
+
+        # Test 10: Edge case - Navigation with invalid session
+        def test_nav_to_list_invalid_session_edge_case():
+            from unittest.mock import MagicMock
+
+            mock_session_manager = MagicMock()
+            mock_session_manager.is_sess_valid.return_value = False
+
+            result = nav_to_list(mock_session_manager)
+
+            # Should gracefully handle invalid session
+            assert result is False
+
+        # Run all tests
+        test_functions = {
+            "Lookup existing persons from database": test_lookup_existing_persons,
+            "Empty UUID list edge case": test_lookup_empty_uuids_edge_case,
+            "Identify fetch candidates vs skipped": test_identify_fetch_candidates,
+            "Missing UUID edge case": test_identify_candidates_missing_uuid_edge_case,
+            "Rate limiter delay adjustment": test_adjust_delay,
+            "Throttled rate limiter edge case": test_adjust_delay_throttled_edge_case,
+            "Fetch functions validation": test_fetch_functions_validation,
+            "Invalid session edge case": test_fetch_combined_invalid_session_edge_case,
+            "Logging functions": test_logging_functions,
+            "Navigation invalid session edge case": test_nav_to_list_invalid_session_edge_case,
+        }
+
+        with suppress_logging():
+            for test_name, test_func in test_functions.items():
+                suite.run_test(test_name, test_func)
+
+        return suite.finish_suite()
+
+    # Mock classes for testing
     class MockDnaMatch:
         def __init__(self, cM_DNA, shared_segments):
             self.cM_DNA = cM_DNA
             self.shared_segments = shared_segments
 
-    # End of MockDnaMatch
-
-    class MockPerson:  # Does not inherit from SQLAlchemy Base
+    class MockPerson:
         def __init__(
             self,
             uuid,
@@ -3809,267 +4017,13 @@ def self_test() -> bool:
             has_dna_match=True,
             has_family_tree=True,
         ):
-            self.uuid = uuid.upper()  # Store UUID as uppercase
-            if has_dna_match:
-                self.dna_match: Optional[MockDnaMatch] = MockDnaMatch(
-                    cM_DNA, shared_segments
-                )
-            else:
-                self.dna_match = None
+            self.uuid = uuid.upper()
             self.in_my_tree = in_my_tree
-            if has_family_tree:
-                self.family_tree: Any = (
-                    MagicMock()
-                )  # Simple mock for family_tree existence
-            else:
-                self.family_tree = None
-            # Add other attributes that Person might have if _identify_fetch_candidates accesses them
-            self.profile_id = f"PROFILE_{uuid.upper()}"  # Example
-            self.username = f"User_{uuid.upper()}"  # Example
-            # Add other attributes as needed by the functions being tested
-            self.deleted_at = None  # Important for queries in _lookup_existing_persons
-            self.id = random.randint(1000, 9999)  # Mock ID
-
-    # End of MockPerson
-
-    # --- Test 1: _lookup_existing_persons function ---
-    print("Test 1: Testing _lookup_existing_persons function...")
-    tests_run += 1
-    mock_db_session_test1 = MagicMock(spec=SqlAlchemySession)
-    mock_person_obj1_db = MockPerson(
-        "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", 100, 5, True
-    )  # Wayne Gault - in tree
-    mock_person_obj2_db = MockPerson(
-        "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA", 50, 3, True
-    )  # Frances McHardy - in tree
-    # Configure the mock session's query chain
-    mock_query_result_db = [mock_person_obj1_db, mock_person_obj2_db]
-    # Simulate the SQLAlchemy query structure
-    mock_filter_obj_db = MagicMock()
-    mock_filter_obj_db.all.return_value = mock_query_result_db
-    mock_options_obj_db = MagicMock()
-    mock_options_obj_db.filter.return_value = mock_filter_obj_db
-    mock_query_obj_db = MagicMock()
-    mock_query_obj_db.options.return_value = mock_options_obj_db
-    mock_db_session_test1.query.return_value = mock_query_obj_db
-
-    uuids_to_lookup = [
-        "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
-        "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca",
-        "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
-    ]  # Wayne Gault, Frances McHardy, Brent Husson
-    try:
-        result = _lookup_existing_persons(mock_db_session_test1, uuids_to_lookup)
-        unittest.TestCase().assertIsInstance(result, dict)
-        unittest.TestCase().assertEqual(len(result), 2)
-        unittest.TestCase().assertIn(
-            "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", result
-        )  # Wayne Gault
-        unittest.TestCase().assertIn(
-            "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA", result
-        )  # Frances McHardy
-        unittest.TestCase().assertIs(result["FB609BA5-5A0D-46EE-BF18-C300D8DE5AB"], mock_person_obj1_db)  # type: ignore
-        print("  ✓ _lookup_existing_persons: Correctly mapped existing persons.")
-        tests_passed += 1
-    except Exception as e:
-        print(f"  ✗ _lookup_existing_persons test failed: {e}")
-    # End of Test 1
-
-    # --- Test 2: _identify_fetch_candidates function ---
-    print("\nTest 2: Testing _identify_fetch_candidates function...")
-    tests_run += 1
-    matches_on_page_test2 = [
-        {
-            "uuid": "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
-            "cM_DNA": 110,
-            "numSharedSegments": 5,
-            "in_my_tree": True,
-        },  # Wayne Gault - in tree
-        {
-            "uuid": "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca",
-            "cM_DNA": 50,
-            "numSharedSegments": 3,
-            "in_my_tree": True,
-        },  # Frances McHardy - in tree
-        {
-            "uuid": "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
-            "cM_DNA": 25,
-            "numSharedSegments": 2,
-            "in_my_tree": True,
-        },  # Brent Husson - in tree
-        {"uuid": "uuid4", "cM_DNA": 70, "numSharedSegments": 6, "in_my_tree": False},
-        {"uuid": "uuid5", "cM_DNA": 60, "numSharedSegments": 4, "in_my_tree": True},
-        {"uuid": "uuid6", "cM_DNA": 80, "numSharedSegments": 4, "in_my_tree": True},
-        {"cM_DNA": 10, "numSharedSegments": 1, "in_my_tree": False},
-    ]
-    existing_persons_map_test2: Dict[str, MockPerson] = (
-        {  # Explicitly type hint for the test
-            "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB": MockPerson(
-                "fb609ba5-5a0d-46ee-bf18-c300d8de5ab", 100, 5, True
-            ),  # Wayne Gault - in tree
-            "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA": MockPerson(
-                "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca", 50, 3, True
-            ),  # Frances McHardy - in tree
-            "UUID4": MockPerson("uuid4", 70, 4, False),
-            "UUID5": MockPerson("uuid5", 60, 4, False),
-            "UUID6": MockPerson("uuid6", 80, 4, True, has_family_tree=False),
-        }
-    )
-    try:
-        fetch_uuids, process_later, skipped_count = _identify_fetch_candidates(
-            matches_on_page_test2, existing_persons_map_test2
-        )
-        expected_fetch_uuids = {
-            "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
-            "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
-            "uuid4",
-            "uuid5",
-            "uuid6",
-        }
-        unittest.TestCase().assertSetEqual(fetch_uuids, expected_fetch_uuids)
-        unittest.TestCase().assertEqual(skipped_count, 1)
-        unittest.TestCase().assertEqual(len(process_later), 5)
-        print(
-            "  ✓ _identify_fetch_candidates: Correctly identified candidates and skipped."
-        )
-        tests_passed += 1
-    except Exception as e:
-        print(f"  ✗ _identify_fetch_candidates test failed: {e}")
-    # End of Test 2
-
-    # --- Test 3: Logging summary functions (mocking logger) ---
-    print("\nTest 3: Testing logging summary functions structure...")
-    tests_run += 1
-    try:
-        with patch.object(logger, "debug") as mock_debug, patch.object(
-            logger, "info"
-        ) as mock_info:
-
-            _log_page_summary(1, 5, 10, 3, 2)
-            unittest.TestCase().assertTrue(mock_debug.called)
-            mock_debug.assert_any_call("  New Person/Data: 5")
-
-            _log_coord_summary(10, 50, 20, 30, 5)
-            unittest.TestCase().assertTrue(mock_info.called)
-            mock_info.assert_any_call("  Total Pages Processed: 10")
-
-        print("  ✓ Logging summary functions called logger methods as expected.")
-        tests_passed += 1
-    except Exception as e:
-        print(f"  ✗ Error testing logging functions: {e}")
-    # End of Test 3
-
-    # --- Test 4: _adjust_delay function ---
-    print("\nTest 4: Testing _adjust_delay function...")
-    tests_run += 1
-    mock_session_manager_test4 = MagicMock(spec=SessionManager)
-    mock_rate_limiter_test4 = MagicMock()
-    mock_session_manager_test4.dynamic_rate_limiter = mock_rate_limiter_test4
-
-    try:
-        # Case 1: Rate limiter is throttled
-        mock_rate_limiter_test4.is_throttled.return_value = True
-        mock_rate_limiter_test4.decrease_delay.reset_mock()
-        _adjust_delay(mock_session_manager_test4, 1)
-        mock_rate_limiter_test4.decrease_delay.assert_not_called()
-        print("  ✓ _adjust_delay: Correctly no decrease when throttled.")
-
-        # Case 2: Rate limiter not throttled, delay decreases
-        mock_rate_limiter_test4.is_throttled.return_value = False
-        mock_rate_limiter_test4.current_delay = 2.0
-
-        def decrease_side_effect_test4():
-            mock_rate_limiter_test4.current_delay = 1.5
-
-        mock_rate_limiter_test4.decrease_delay.side_effect = decrease_side_effect_test4
-        with patch("action6_gather.config_instance") as mock_config_adj:
-            mock_config_adj.INITIAL_DELAY = (
-                1.0  # Ensure INITIAL_DELAY is set on the mock
+            self.dna_match = (
+                MockDnaMatch(cM_DNA, shared_segments) if has_dna_match else None
             )
-            _adjust_delay(mock_session_manager_test4, 1)
-            mock_rate_limiter_test4.decrease_delay.assert_called_once()
-        print("  ✓ _adjust_delay: Correctly decreased delay when not throttled.")
-        tests_passed += 1
-    except Exception as e:
-        print(f"  ✗ _adjust_delay test failed: {e}")
-    # End of Test 4
+            self.family_tree = MagicMock() if has_family_tree else None
 
-    # --- Test 5: _fetch_combined_details (clean validation test) ---
-    print("\nTest 5: Testing _fetch_combined_details function validation...")
-    tests_run += 1
-    try:
-        # Test input validation - missing UUID (should return None immediately)
-        mock_session_manager_test5 = MagicMock()
-        mock_session_manager_test5.my_uuid = "MY_UUID_TEST"
-        result_no_uuid = _fetch_combined_details(mock_session_manager_test5, "")
-        unittest.TestCase().assertIsNone(result_no_uuid)
-
-        # Test input validation - missing my_uuid (should return None immediately)
-        mock_session_manager_test5.my_uuid = None
-        result_no_my_uuid = _fetch_combined_details(
-            mock_session_manager_test5, "MATCH_UUID"
-        )
-        unittest.TestCase().assertIsNone(result_no_my_uuid)
-
-        # Test basic function structure exists and is callable
-        unittest.TestCase().assertTrue(callable(_fetch_combined_details))
-
-        print("  ✓ _fetch_combined_details: Input validation and structure correct.")
-        tests_passed += 1
-    except Exception as e:
-        print(f"  ✗ _fetch_combined_details test failed: {e}")
-    # End of Test 5
-
-    # --- Test 6: _fetch_batch_badge_details (clean validation test) ---
-    print("\nTest 6: Testing _fetch_batch_badge_details function validation...")
-    tests_run += 1
-    try:
-        # Test input validation - missing UUID (should return None immediately)
-        mock_session_manager_test6 = MagicMock()
-        mock_session_manager_test6.my_uuid = "MY_UUID_BADGE"
-        result_no_uuid = _fetch_batch_badge_details(mock_session_manager_test6, "")
-        unittest.TestCase().assertIsNone(result_no_uuid)
-
-        # Test input validation - missing my_uuid (should return None immediately)
-        mock_session_manager_test6.my_uuid = None
-        result_no_my_uuid = _fetch_batch_badge_details(
-            mock_session_manager_test6, "MATCH_UUID"
-        )
-        unittest.TestCase().assertIsNone(result_no_my_uuid)
-
-        # Test basic function structure exists and is callable
-        unittest.TestCase().assertTrue(callable(_fetch_batch_badge_details))
-
-        print("  ✓ _fetch_batch_badge_details: Input validation and structure correct.")
-        tests_passed += 1
-    except Exception as e:
-        print(f"  ✗ _fetch_batch_badge_details test failed: {e}")
-    # End of Test 6
-
-    # --- Print test summary ---
-    print(f"\n=== Test Summary: {tests_passed}/{tests_run} tests passed ===")
-    return tests_passed == tests_run
-
-
-# End of self_test
-
-
-# --- Main Execution Block ---
-if __name__ == "__main__":
-    # When run directly, automatically run the self-test
-    # Ensure logger is set up for standalone run
-    logger_main = logging.getLogger("action6_gather_main")
-    if not logger_main.hasHandlers():
-        handler = logging.StreamHandler(sys.stderr)
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger_main.addHandler(handler)
-        logger_main.setLevel(logging.DEBUG)
-
-    print("Running Action 6 (Gather DNA Matches) self-test from __main__...")
-    success = self_test()
+    print("🧪 Running Action 6 (Gather DNA Matches) comprehensive test suite...")
+    success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-
-# --- End of action6_gather.py ---

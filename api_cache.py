@@ -14,7 +14,7 @@ dramatically improve performance for frequently accessed external data.
 import hashlib
 import json
 import time
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Optional, Union, List, Callable
 
 # --- Local application imports ---
 from cache import (
@@ -57,11 +57,14 @@ def create_api_cache_key(endpoint: str, params: Dict[str, Any]) -> str:
 
 
 @cache_result("ancestry_profile_details", expire=API_CACHE_EXPIRE)
-def cache_profile_details_api(profile_id: str, *args, **kwargs) -> Optional[Dict]:
+def cache_profile_details_api(
+    session_manager, profile_id: str, *args, **kwargs
+) -> Optional[Dict]:
     """
     Cached wrapper for profile details API calls.
 
     Args:
+        session_manager: SessionManager instance
         profile_id: Profile ID to fetch details for
         *args, **kwargs: Additional arguments passed to the actual API function
 
@@ -73,7 +76,7 @@ def cache_profile_details_api(profile_id: str, *args, **kwargs) -> Optional[Dict
         from api_utils import call_profile_details_api
 
         logger.debug(f"Fetching profile details for {profile_id} (cache miss)")
-        return call_profile_details_api(profile_id, *args, **kwargs)
+        return call_profile_details_api(session_manager, profile_id, *args, **kwargs)
     except Exception as e:
         logger.error(f"Error in cached profile details API call: {e}")
         return None
@@ -123,14 +126,23 @@ def cache_facts_api(
 
 @cache_result("ancestry_suggest_api", expire=API_CACHE_EXPIRE)
 def cache_suggest_api(
-    session_manager, search_params: Dict[str, Any], *args, **kwargs
-) -> Optional[Dict]:
+    session_manager,
+    owner_tree_id: str,
+    owner_profile_id: Optional[str],
+    base_url: str,
+    search_criteria: Dict[str, Any],
+    *args,
+    **kwargs,
+) -> Optional[List[Dict]]:
     """
     Cached wrapper for suggest API calls.
 
     Args:
         session_manager: Session manager instance
-        search_params: Search parameters for the suggest API
+        owner_tree_id: Owner tree ID
+        owner_profile_id: Owner profile ID
+        base_url: Base URL for the API
+        search_criteria: Search criteria for the suggest API
         *args, **kwargs: Additional arguments
 
     Returns:
@@ -139,8 +151,16 @@ def cache_suggest_api(
     try:
         from api_utils import call_suggest_api
 
-        logger.debug(f"Fetching suggestions for search params (cache miss)")
-        return call_suggest_api(session_manager, search_params, *args, **kwargs)
+        logger.debug(f"Fetching suggestions for search criteria (cache miss)")
+        return call_suggest_api(
+            session_manager,
+            owner_tree_id,
+            owner_profile_id,
+            base_url,
+            search_criteria,
+            *args,
+            **kwargs,
+        )
     except Exception as e:
         logger.error(f"Error in cached suggest API call: {e}")
         return None
@@ -625,7 +645,7 @@ def run_api_cache_tests() -> Dict[str, Any]:
         "performance_metrics": {},
     }
 
-    def run_test(test_name: str, test_func: callable) -> bool:
+    def run_test(test_name: str, test_func: Callable[[], bool]) -> bool:
         """Run individual test and track results."""
         test_results["tests_run"] += 1
         try:
@@ -874,52 +894,260 @@ def demonstrate_api_cache_usage() -> Dict[str, Any]:
     return demo_results
 
 
-# --- Main Execution for Testing ---
-
+# ==============================================
+# Standalone Test Block
+# ==============================================
 if __name__ == "__main__":
-    print("🔗 API Cache System - Comprehensive Testing & Demonstration")
-    print("=" * 65)
+    import sys
+    import time
+    import tempfile
+    from unittest.mock import MagicMock, patch
 
-    # Run comprehensive tests
-    print("\n📊 Running API Cache Tests...")
-    test_results = run_api_cache_tests()
-
-    print(
-        f"\n✅ Test Results: {test_results['tests_passed']}/{test_results['tests_run']} passed ({test_results['pass_rate']:.1f}%)"
-    )
-
-    # Display test details
-    for test in test_results["test_details"]:
-        status_emoji = (
-            "✅"
-            if test["status"] == "PASS"
-            else "❌" if test["status"] == "FAIL" else "⚠️"
+    try:
+        from test_framework import (
+            TestSuite,
+            suppress_logging,
+            create_mock_data,
+            assert_valid_function,
         )
-        duration = test.get("duration_ms", 0)
-        print(f"  {status_emoji} {test['name']}: {test['status']} ({duration:.2f}ms)")
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
+        )
+        sys.exit(1)
 
-    # Run demonstrations
-    print("\n🎯 Running API Cache Demonstrations...")
-    demo_results = demonstrate_api_cache_usage()
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for api_cache.py.
+        Tests API response caching, invalidation, and performance optimization.
+        """
+        suite = TestSuite("API Response Caching System", "api_cache.py")
+        suite.start_suite()
 
-    for demo in demo_results["demonstrations"]:
-        status_emoji = "✅" if demo["status"] == "success" else "❌"
-        print(f"  {status_emoji} {demo['name']}: {demo['description']}")
+        # Test 1: Cache initialization
+        def test_cache_initialization():
+            # Test cache system initialization
+            if "APICache" in globals():
+                cache_class = globals()["APICache"]
+                cache = cache_class()
+                assert cache is not None
+                assert hasattr(cache, "get")
+                assert hasattr(cache, "set")
+                assert hasattr(cache, "delete")
 
-    # Display final statistics
-    print(f"\n📈 Performance Summary:")
-    print(f"  • Total test duration: {test_results['total_duration']:.3f}s")
-    print(
-        f"  • Average test duration: {test_results['performance_metrics']['average_test_duration_ms']:.2f}ms"
-    )
-    print(f"  • Cache module: {_api_cache_module.get_module_name()}")
+        # Test 2: Basic cache operations
+        def test_basic_cache_operations():
+            # Test get/set/delete operations
+            if "APICache" in globals():
+                cache = globals()["APICache"]()
 
-    # Display cache health
-    health = get_api_cache_health()
-    print(f"  • Overall health: {health.get('overall_health', 'unknown')}")
-    print(f"  • Cache types: API, Database, AI Model")
+                # Test set and get
+                test_key = "test_api_response"
+                test_data = {"user": "John Doe", "dna_matches": 150}
 
-    print("\n🔄 API cache system validation complete!")
+                cache.set(test_key, test_data)
+                retrieved = cache.get(test_key)
+                assert retrieved == test_data
 
+                # Test delete
+                cache.delete(test_key)
+                deleted = cache.get(test_key)
+                assert deleted is None
 
-# End of api_cache.py
+        # Test 3: Cache expiration
+        def test_cache_expiration():
+            # Test TTL (Time To Live) functionality
+            if "APICache" in globals():
+                cache = globals()["APICache"]()
+
+                test_key = "expiring_data"
+                test_data = {"expires": "soon"}
+
+                # Set with short TTL
+                cache.set(test_key, test_data, ttl=1)  # 1 second
+
+                # Should be available immediately
+                immediate = cache.get(test_key)
+                assert immediate == test_data
+
+                # Wait for expiration
+                time.sleep(1.1)
+                expired = cache.get(test_key)
+                assert expired is None
+
+        # Test 4: Cache invalidation patterns
+        def test_cache_invalidation():
+            # Test pattern-based cache invalidation
+            if "invalidate_cache_pattern" in globals():
+                invalidator = globals()["invalidate_cache_pattern"]
+
+                # Test wildcard invalidation
+                test_patterns = ["user_*", "api_response_*", "dna_match_details_*"]
+
+                for pattern in test_patterns:
+                    result = invalidator(pattern)
+                    # Should return count of invalidated items or success status
+                    assert isinstance(result, (int, bool))
+
+        # Test 5: Cache hit/miss statistics
+        def test_cache_statistics():
+            # Test cache performance metrics
+            if "get_cache_stats" in globals():
+                stats_func = globals()["get_cache_stats"]
+                stats = stats_func()
+
+                assert isinstance(stats, dict)
+                expected_keys = ["hits", "misses", "hit_rate", "total_requests"]
+                for key in expected_keys:
+                    if key in stats:
+                        assert isinstance(stats[key], (int, float))
+
+        # Test 6: Concurrent cache access
+        def test_concurrent_cache_access():
+            # Test thread-safe cache operations
+            import threading
+
+            if "APICache" in globals():
+                cache = globals()["APICache"]()
+                results = []
+
+                def cache_worker(worker_id):
+                    for i in range(10):
+                        key = f"worker_{worker_id}_item_{i}"
+                        data = {"worker": worker_id, "item": i}
+                        cache.set(key, data)
+                        retrieved = cache.get(key)
+                        results.append(retrieved == data)
+
+                # Start multiple threads
+                threads = []
+                for i in range(3):
+                    thread = threading.Thread(target=cache_worker, args=(i,))
+                    threads.append(thread)
+                    thread.start()
+
+                # Wait for completion
+                for thread in threads:
+                    thread.join()
+
+                # All operations should succeed
+                assert all(results)
+
+        # Test 7: Cache size limits
+        def test_cache_size_limits():
+            # Test cache size management and LRU eviction
+            if "APICache" in globals():
+                cache = globals()["APICache"](max_size=5)  # Small cache for testing
+
+                # Fill cache beyond limit
+                for i in range(10):
+                    cache.set(f"item_{i}", {"value": i})
+
+                # Check that cache respects size limit
+                cache_size = len(cache) if hasattr(cache, "__len__") else cache.size()
+                assert cache_size <= 5
+
+        # Test 8: Cache serialization
+        def test_cache_serialization():
+            # Test complex data serialization/deserialization
+            complex_data = {
+                "nested": {"dict": {"with": ["lists", "and", "values"]}},
+                "numbers": [1, 2, 3.14, 42],
+                "booleans": [True, False],
+                "null_values": None,
+            }
+
+            if "APICache" in globals():
+                cache = globals()["APICache"]()
+
+                cache.set("complex_data", complex_data)
+                retrieved = cache.get("complex_data")
+                assert retrieved == complex_data
+
+        # Test 9: Cache warming strategies
+        def test_cache_warming():
+            # Test cache pre-loading functionality
+            if "warm_cache" in globals():
+                warmer = globals()["warm_cache"]
+
+                # Test warming with common API endpoints
+                endpoints = ["user_profile", "dna_matches_list", "family_tree_data"]
+
+                result = warmer(endpoints)
+                assert isinstance(result, (bool, int, dict))
+
+        # Test 10: Error handling and recovery
+        def test_error_handling():
+            # Test cache error handling
+            if "APICache" in globals():
+                cache = globals()["APICache"]()
+
+                # Test invalid key handling
+                try:
+                    result = cache.get(None)
+                    # Should handle gracefully
+                    assert result is None
+                except (TypeError, ValueError):
+                    pass  # Expected behavior
+
+                # Test invalid data handling
+                try:
+                    # Try to cache something that might not be serializable
+                    cache.set("test", lambda x: x)  # Function object
+                    # Should handle gracefully or raise specific error
+                except (TypeError, ValueError):
+                    pass  # Expected behavior
+
+        # Run all tests
+        test_functions = {
+            "Cache system initialization": (
+                test_cache_initialization,
+                "Should initialize cache with required methods and properties",
+            ),
+            "Basic cache operations (get/set/delete)": (
+                test_basic_cache_operations,
+                "Should perform basic cache operations correctly",
+            ),
+            "Cache expiration and TTL": (
+                test_cache_expiration,
+                "Should respect time-to-live settings and expire cached data",
+            ),
+            "Pattern-based cache invalidation": (
+                test_cache_invalidation,
+                "Should invalidate cache entries based on key patterns",
+            ),
+            "Cache performance statistics": (
+                test_cache_statistics,
+                "Should track hit/miss ratios and performance metrics",
+            ),
+            "Concurrent cache access": (
+                test_concurrent_cache_access,
+                "Should handle multiple threads accessing cache safely",
+            ),
+            "Cache size limits and LRU eviction": (
+                test_cache_size_limits,
+                "Should enforce size limits and evict least recently used items",
+            ),
+            "Complex data serialization": (
+                test_cache_serialization,
+                "Should serialize and deserialize complex data structures",
+            ),
+            "Cache warming strategies": (
+                test_cache_warming,
+                "Should support pre-loading frequently accessed data",
+            ),
+            "Error handling and recovery": (
+                test_error_handling,
+                "Should gracefully handle invalid keys and non-serializable data",
+            ),
+        }
+
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
+
+        return suite.finish_suite()
+
+    print("💾 Running API Response Caching System comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

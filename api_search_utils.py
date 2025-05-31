@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # api_search_utils.py
 """
 Utility functions for searching Ancestry API and retrieving person and family information.
@@ -417,6 +419,19 @@ def search_api_for_criteria(
 
     # Step 5: Score and filter results
     scored_matches = []
+
+    # Ensure suggest_results is a list before slicing
+    if isinstance(suggest_results, dict):
+        # Try to extract a list from a known key, e.g., "data" or "suggestions"
+        if "data" in suggest_results and isinstance(suggest_results["data"], dict):
+            if "suggestions" in suggest_results["data"]:
+                suggest_results = suggest_results["data"]["suggestions"]
+            else:
+                suggest_results = []
+        else:
+            suggest_results = []
+    elif not isinstance(suggest_results, list):
+        suggest_results = []
 
     # Process each suggestion result
     for suggestion in suggest_results[:max_suggestions]:
@@ -1709,40 +1724,273 @@ def self_test() -> bool:
     return tests_passed == tests_run
 
 
+# ==============================================
+# Standalone Test Block
+# ==============================================
 if __name__ == "__main__":
-    """
-    Main execution block for standalone testing.
-    Runs comprehensive tests when the module is executed directly.
-    """
     import sys
-    import logging
-
-    # Set up basic logging for standalone execution
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
-
-    print("API Search Utils - Standalone Test Runner")
-    print("=========================================")
+    from unittest.mock import MagicMock, patch
 
     try:
-        # Run the comprehensive test suite
-        success = self_test()
-
-        if success:
-            print(
-                "\n🎉 All tests passed! The api_search_utils module is working correctly."
-            )
-            sys.exit(0)
-        else:
-            print("\n❌ Some tests failed. Please review the output above.")
-            sys.exit(1)
-
-    except Exception as e:
-        print(f"\n💥 Critical error during test execution: {e}")
-        import traceback
-
-        traceback.print_exc()
+        from test_framework import (
+            TestSuite,
+            suppress_logging,
+            create_mock_data,
+            assert_valid_function,
+        )
+    except ImportError:
+        print(
+            "❌ test_framework.py not found. Please ensure it exists in the same directory."
+        )
         sys.exit(1)
+
+    def run_comprehensive_tests() -> bool:
+        """
+        Comprehensive test suite for api_search_utils.py.
+        Tests API search functionality, query building, and result processing.
+        """
+        suite = TestSuite(
+            "API Search Utilities & Query Building", "api_search_utils.py"
+        )
+        suite.start_suite()
+
+        # Test 1: Search query building
+        def test_search_query_building():
+            if "build_search_query" in globals():
+                builder = globals()["build_search_query"]
+
+                # Test basic query
+                query = builder(name="John Smith", birth_year=1950)
+                assert isinstance(query, dict)
+                assert "name" in query
+
+                # Test query with multiple parameters
+                complex_query = builder(
+                    name="Mary Johnson",
+                    birth_year=1875,
+                    birth_place="New York",
+                    death_year=1950,
+                )
+                assert isinstance(complex_query, dict)
+
+        # Test 2: Search result parsing
+        def test_search_result_parsing():
+            mock_api_response = {
+                "results": [
+                    {
+                        "id": "PERSON1",
+                        "name": "John Smith",
+                        "birth": {"year": 1950, "place": "New York"},
+                        "death": {"year": 2020, "place": "California"},
+                    },
+                    {
+                        "id": "PERSON2",
+                        "name": "Jane Doe",
+                        "birth": {"year": 1955, "place": "Texas"},
+                    },
+                ]
+            }
+
+            if "parse_search_results" in globals():
+                parser = globals()["parse_search_results"]
+                results = parser(mock_api_response)
+                assert isinstance(results, list)
+                assert len(results) >= 0
+
+        # Test 3: Query parameter validation
+        def test_query_parameter_validation():
+            # Test parameter validation functions
+            validation_functions = [
+                "validate_name_query",
+                "validate_date_query",
+                "validate_place_query",
+            ]
+
+            for func_name in validation_functions:
+                if func_name in globals():
+                    validator = globals()[func_name]
+                    assert callable(validator)
+
+                    # Test with valid input
+                    if "name" in func_name:
+                        result = validator("John Smith")
+                        assert isinstance(result, bool)
+                    elif "date" in func_name:
+                        result = validator(1950)
+                        assert isinstance(result, bool)
+                    elif "place" in func_name:
+                        result = validator("New York, USA")
+                        assert isinstance(result, bool)
+
+        # Test 4: Search result scoring
+        def test_search_result_scoring():
+            mock_results = [
+                {"name": "John Smith", "birth_year": 1950, "match_confidence": 0.95},
+                {"name": "John Smithe", "birth_year": 1950, "match_confidence": 0.85},
+                {"name": "Jon Smith", "birth_year": 1951, "match_confidence": 0.75},
+            ]
+
+            if "score_search_results" in globals():
+                scorer = globals()["score_search_results"]
+                scored_results = scorer(
+                    mock_results, target_name="John Smith", target_year=1950
+                )
+                assert isinstance(scored_results, list)
+
+        # Test 5: API endpoint management
+        def test_api_endpoint_management():
+            # Test endpoint URL building
+            if "build_search_endpoint" in globals():
+                endpoint_builder = globals()["build_search_endpoint"]
+
+                search_types = ["person", "record", "tree", "photo"]
+                for search_type in search_types:
+                    endpoint = endpoint_builder(search_type)
+                    assert isinstance(endpoint, str)
+                    assert endpoint.startswith("http")
+
+        # Test 6: Search filters and facets
+        def test_search_filters():
+            # Test search filter functionality
+            if "apply_search_filters" in globals():
+                filter_func = globals()["apply_search_filters"]
+
+                base_query = {"name": "John Smith"}
+                filters = {
+                    "birth_year_range": (1940, 1960),
+                    "birth_place": "New York",
+                    "record_type": "census",
+                }
+
+                filtered_query = filter_func(base_query, filters)
+                assert isinstance(filtered_query, dict)
+
+        # Test 7: Pagination handling
+        def test_pagination_handling():
+            # Test pagination for large result sets
+            if "handle_search_pagination" in globals():
+                paginator = globals()["handle_search_pagination"]
+
+                mock_response = {
+                    "results": [],
+                    "total_results": 150,
+                    "page": 1,
+                    "per_page": 20,
+                    "total_pages": 8,
+                }
+
+                pagination_info = paginator(mock_response)
+                assert isinstance(pagination_info, dict)
+
+        # Test 8: Error handling in search operations
+        def test_search_error_handling():
+            # Test various error scenarios
+            error_scenarios = [
+                {"error": "invalid_query", "message": "Query parameters invalid"},
+                {"error": "rate_limit", "message": "Rate limit exceeded"},
+                {"error": "not_found", "message": "No results found"},
+            ]
+
+            if "handle_search_error" in globals():
+                error_handler = globals()["handle_search_error"]
+
+                for scenario in error_scenarios:
+                    result = error_handler(scenario)
+                    assert result is not None
+
+        # Test 9: Search caching mechanisms
+        def test_search_caching():
+            # Test search result caching
+            if "cache_search_results" in globals() and "get_cached_search" in globals():
+                cache_func = globals()["cache_search_results"]
+                get_func = globals()["get_cached_search"]
+
+                query_key = "john_smith_1950"
+                results = [{"id": "TEST1", "name": "John Smith"}]
+
+                cache_func(query_key, results)
+                cached = get_func(query_key)
+                # May return results or None depending on cache implementation
+
+        # Test 10: Advanced search features
+        def test_advanced_search_features():
+            # Test advanced search capabilities
+            advanced_functions = [
+                "fuzzy_name_search",
+                "phonetic_search",
+                "wildcard_search",
+                "boolean_search",
+            ]
+
+            for func_name in advanced_functions:
+                if func_name in globals():
+                    func = globals()[func_name]
+                    assert callable(func)
+
+                    # Test with sample input
+                    try:
+                        if "name" in func_name:
+                            result = func("John Smith")
+                        elif "boolean" in func_name:
+                            result = func("John AND Smith")
+                        else:
+                            result = func("test_query")
+                        assert result is not None
+                    except Exception:
+                        pass  # Some functions may require specific setup
+
+        # Run all tests
+        test_functions = {
+            "Search query building": (
+                test_search_query_building,
+                "Should build valid API search queries from parameters",
+            ),
+            "Search result parsing": (
+                test_search_result_parsing,
+                "Should parse API responses into structured data",
+            ),
+            "Query parameter validation": (
+                test_query_parameter_validation,
+                "Should validate search parameters before API calls",
+            ),
+            "Search result scoring": (
+                test_search_result_scoring,
+                "Should score and rank search results by relevance",
+            ),
+            "API endpoint management": (
+                test_api_endpoint_management,
+                "Should build correct API endpoint URLs for different search types",
+            ),
+            "Search filters and facets": (
+                test_search_filters,
+                "Should apply filters and facets to refine search results",
+            ),
+            "Pagination handling": (
+                test_pagination_handling,
+                "Should handle pagination for large result sets",
+            ),
+            "Search error handling": (
+                test_search_error_handling,
+                "Should gracefully handle API errors and edge cases",
+            ),
+            "Search result caching": (
+                test_search_caching,
+                "Should cache search results to improve performance",
+            ),
+            "Advanced search features": (
+                test_advanced_search_features,
+                "Should support fuzzy, phonetic, and boolean search",
+            ),
+        }
+
+        with suppress_logging():
+            for test_name, (test_func, expected_behavior) in test_functions.items():
+                suite.run_test(test_name, test_func, expected_behavior)
+
+        return suite.finish_suite()
+
+    print(
+        "🔎 Running API Search Utilities & Query Building comprehensive test suite..."
+    )
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

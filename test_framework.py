@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+"""
+Standardized Test Framework for Ancestry Project
+Provides consistent test output formatting, colors, and icons across all scripts.
+"""
+
+import sys
+import time
+import traceback
+import logging
+from contextlib import contextmanager
+from typing import Any, Callable, Dict, List, Optional, Union
+from unittest.mock import MagicMock, patch
+
+
+# ANSI Color Codes for consistent formatting
+class Colors:
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    RESET = "\033[0m"
+
+
+# Icons for consistent visual indicators
+class Icons:
+    PASS = "✅"
+    FAIL = "❌"
+    WARNING = "⚠️"
+    INFO = "ℹ️"
+    GEAR = "⚙️"
+    ROCKET = "🚀"
+    BUG = "🐛"
+    CLOCK = "⏰"
+    MAGNIFY = "🔍"
+
+
+class TestSuite:
+    """Standardized test suite with consistent formatting and reporting."""
+
+    def __init__(self, suite_name: str, module_name: str):
+        self.suite_name = suite_name
+        self.module_name = module_name
+        self.start_time = None
+        self.tests_run = 0
+        self.tests_passed = 0
+        self.tests_failed = 0
+        self.warnings = 0
+        self.test_results: List[Dict[str, Any]] = []
+
+    def start_suite(self):
+        """Initialize the test suite with formatted header."""
+        self.start_time = time.time()
+        print(f"\n{Colors.BOLD}{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(
+            f"{Colors.BOLD}{Colors.CYAN}{Icons.ROCKET} Testing: {self.suite_name}{Colors.RESET}"
+        )
+        print(f"{Colors.GRAY}Module: {self.module_name}{Colors.RESET}")
+        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
+
+    def run_test(
+        self, test_name: str, test_func: Callable, expected_behavior: str = ""
+    ) -> bool:
+        """
+        Run a single test with standardized output and error handling.
+
+        Args:
+            test_name: Descriptive name for the test
+            test_func: Test function to execute
+            expected_behavior: Description of expected behavior for documentation
+
+        Returns:
+            True if test passed, False if failed
+        """
+        self.tests_run += 1
+        test_start = time.time()
+
+        print(
+            f"{Colors.BLUE}{Icons.GEAR} Test {self.tests_run}: {test_name}{Colors.RESET}"
+        )
+        if expected_behavior:
+            print(f"  {Colors.GRAY}Expected: {expected_behavior}{Colors.RESET}")
+
+        try:
+            test_func()
+            duration = time.time() - test_start
+            print(
+                f"  {Colors.GREEN}{Icons.PASS} PASSED{Colors.RESET} {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
+            )
+            self.tests_passed += 1
+            self.test_results.append(
+                {
+                    "name": test_name,
+                    "status": "PASSED",
+                    "duration": duration,
+                    "expected": expected_behavior,
+                }
+            )
+            return True
+
+        except AssertionError as e:
+            duration = time.time() - test_start
+            print(
+                f"  {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET} {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
+            )
+            print(f"    {Colors.RED}Assertion Error: {str(e)}{Colors.RESET}")
+            self.tests_failed += 1
+            self.test_results.append(
+                {
+                    "name": test_name,
+                    "status": "FAILED",
+                    "duration": duration,
+                    "error": str(e),
+                    "expected": expected_behavior,
+                }
+            )
+            return False
+
+        except Exception as e:
+            duration = time.time() - test_start
+            print(
+                f"  {Colors.RED}{Icons.BUG} ERROR{Colors.RESET} {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
+            )
+            print(f"    {Colors.RED}{type(e).__name__}: {str(e)}{Colors.RESET}")
+            if hasattr(e, "__traceback__"):
+                print(
+                    f"    {Colors.GRAY}{traceback.format_exc().strip()}{Colors.RESET}"
+                )
+            self.tests_failed += 1
+            self.test_results.append(
+                {
+                    "name": test_name,
+                    "status": "ERROR",
+                    "duration": duration,
+                    "error": f"{type(e).__name__}: {str(e)}",
+                    "expected": expected_behavior,
+                }
+            )
+            return False
+
+    def add_warning(self, message: str):
+        """Add a warning message to the test output."""
+        self.warnings += 1
+        print(f"  {Colors.YELLOW}{Icons.WARNING} WARNING: {message}{Colors.RESET}")
+
+    def finish_suite(self) -> bool:
+        """Complete the test suite and print summary."""
+        total_duration = time.time() - self.start_time if self.start_time else 0
+
+        print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(
+            f"{Colors.BOLD}{Colors.CYAN}{Icons.MAGNIFY} Test Summary: {self.suite_name}{Colors.RESET}"
+        )
+        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
+
+        # Overall results
+        if self.tests_failed == 0:
+            status_color = Colors.GREEN
+            status_icon = Icons.PASS
+            status_text = "ALL TESTS PASSED"
+        else:
+            status_color = Colors.RED
+            status_icon = Icons.FAIL
+            status_text = "SOME TESTS FAILED"
+
+        print(
+            f"{status_color}{Icons.CLOCK} Duration: {total_duration:.3f}s{Colors.RESET}"
+        )
+        print(f"{status_color}{status_icon} Status: {status_text}{Colors.RESET}")
+        print(f"{Colors.GREEN}{Icons.PASS} Passed: {self.tests_passed}{Colors.RESET}")
+        print(f"{Colors.RED}{Icons.FAIL} Failed: {self.tests_failed}{Colors.RESET}")
+        if self.warnings > 0:
+            print(
+                f"{Colors.YELLOW}{Icons.WARNING} Warnings: {self.warnings}{Colors.RESET}"
+            )
+
+        # Detailed results for failed tests
+        failed_tests = [
+            r for r in self.test_results if r["status"] in ["FAILED", "ERROR"]
+        ]
+        if failed_tests:
+            print(f"\n{Colors.YELLOW}{Icons.INFO} Failed Test Details:{Colors.RESET}")
+            for test in failed_tests:
+                print(f"  {Colors.RED}• {test['name']}{Colors.RESET}")
+                if "error" in test:
+                    print(f"    {Colors.GRAY}{test['error']}{Colors.RESET}")
+                if test.get("expected"):
+                    print(
+                        f"    {Colors.GRAY}Expected: {test['expected']}{Colors.RESET}"
+                    )
+
+        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
+
+        return self.tests_failed == 0
+
+
+@contextmanager
+def suppress_logging():
+    """Context manager to suppress logging during tests."""
+    logging.disable(logging.CRITICAL)
+    try:
+        yield
+    finally:
+        logging.disable(logging.NOTSET)
+
+
+def create_mock_data():
+    """Create standard mock data for testing."""
+    return {
+        "mock_session_manager": MagicMock(),
+        "mock_db_session": MagicMock(),
+        "mock_config": MagicMock(),
+        "sample_uuid": "TEST-UUID-1234-5678-ABCD",
+        "sample_dna_data": {
+            "uuid": "TEST-UUID-1234-5678-ABCD",
+            "cM_DNA": 85,
+            "shared_segments": 4,
+            "username": "Test User",
+        },
+    }
+
+
+def assert_valid_function(func: Any, func_name: str):
+    """Assert that a function exists and is callable."""
+    assert func is not None, f"Function {func_name} should exist"
+    assert callable(func), f"Function {func_name} should be callable"
+
+
+def assert_valid_config(config: Any, required_attrs: List[str]):
+    """Assert that a config object has required attributes."""
+    for attr in required_attrs:
+        assert hasattr(config, attr), f"Config should have attribute {attr}"
+
+
+if __name__ == "__main__":
+    # Test the framework itself
+    def demo_tests():
+        suite = TestSuite("Test Framework Demo", "test_framework.py")
+        suite.start_suite()
+
+        def test_colors():
+            assert Colors.RED == "\033[91m"
+            assert Colors.GREEN == "\033[92m"
+            assert Colors.RESET == "\033[0m"
+
+        def test_icons():
+            assert Icons.PASS == "✅"
+            assert Icons.FAIL == "❌"
+
+        def test_mock_data():
+            data = create_mock_data()
+            assert "mock_session_manager" in data
+            assert data["sample_dna_data"]["cM_DNA"] == 85
+
+        suite.run_test(
+            "Color constants", test_colors, "Should define standard ANSI color codes"
+        )
+        suite.run_test(
+            "Icon constants", test_icons, "Should define standard Unicode icons"
+        )
+        suite.run_test(
+            "Mock data creation",
+            test_mock_data,
+            "Should create valid test data structures",
+        )
+
+        return suite.finish_suite()
+
+    print(f"{Icons.ROCKET} Testing the test framework itself...")
+    success = demo_tests()
+    sys.exit(0 if success else 1)

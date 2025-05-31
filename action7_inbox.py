@@ -71,6 +71,7 @@ from logging_config import logger
 from utils import (
     DynamicRateLimiter,
     SessionManager,
+    SessionManagerType,  # Added SessionManagerType
     _api_req,
     format_name,
     retry,
