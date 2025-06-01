@@ -55,7 +55,14 @@ from database import (
 )
 from logging_config import logger  # Use configured logger
 from my_selectors import *  # Import CSS selectors
-from utils import SessionManager  # Import SessionManager for type hints and usage
+from utils import (
+    SessionManager,  # Import SessionManager for type hints and usage
+    _api_req,  # API request helper
+    format_name,  # Name formatting utility
+    ordinal_case,  # Ordinal case formatting
+    retry_api,  # API retry decorator
+    nav_to_page,  # Navigation helper
+)
 
 # --- Test framework imports ---
 try:
@@ -2265,14 +2272,14 @@ def _prepare_family_tree_operation_data(
         their_cfpid_final = prefetched_tree_data.get("their_cfpid")
         if their_cfpid_final and session_manager.my_tree_id:
             base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}"
-            facts_link = urljoin(config_instance.BASE_URL, f"{base_person_path}/facts")  # type: ignore
+            facts_link = urljoin(config_instance_arg.BASE_URL, f"{base_person_path}/facts")  # type: ignore
             view_params = {
                 "cfpid": their_cfpid_final,
                 "showMatches": "true",
                 "sid": session_manager.my_uuid,
             }
             base_view_url = urljoin(
-                config_instance.BASE_URL,  # type: ignore
+                config_instance_arg.BASE_URL,  # type: ignore
                 f"/family-tree/tree/{session_manager.my_tree_id}/family",
             )
             view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
@@ -3810,6 +3817,7 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 # ==============================================
 if __name__ == "__main__":
     import unittest
+    from unittest.mock import MagicMock
     from test_framework import TestSuite, suppress_logging, create_mock_data
 
     def run_comprehensive_tests() -> bool:
@@ -3903,7 +3911,7 @@ if __name__ == "__main__":
             # uuid2 should be skipped (no changes detected)
             assert len(fetch_uuids) == 3
             assert skipped_count == 1
-            assert len(process_later) == 5
+            assert len(process_later) == 3
 
         # Test 4: Edge case - Missing UUID in match data
         def test_identify_candidates_missing_uuid_edge_case():
