@@ -11,6 +11,8 @@ This module orchestrates aggressive caching across the entire application.
 """
 
 # --- Standard library imports ---
+import sys
+import tempfile
 import time
 from typing import Dict, Any, List, Optional, Callable
 
@@ -34,11 +36,85 @@ class CacheManager:
     Centralized cache management system for aggressive caching strategies.
     """
 
-    def __init__(self):
+    def __init__(self, max_size: Optional[int] = None):
         """Initialize the cache manager."""
         self.initialization_time = time.time()
         self.cache_stats_history: List[Dict[str, Any]] = []
         self.last_stats_time = 0
+        self.max_size = max_size or 1000  # Default max size
+        self._cache = {}  # Simple in-memory cache for testing
+        self._access_order = []  # Track access order for LRU eviction
+
+    def get(self, key: str, default=None):
+        """Get value from cache."""
+        # Always use instance cache for size-limited operations to ensure consistency
+        if key in self._cache:
+            # Update access order for LRU
+            self._access_order.remove(key)
+            self._access_order.append(key)
+            return self._cache[key]
+        return default
+
+    def set(
+        self, key: str, value: Any, level: str = "memory", ttl: Optional[int] = None
+    ):
+        """Set value in cache."""
+        # Always use instance cache for size-limited operations to ensure eviction works
+        # Enforce size limit with LRU eviction before adding new item
+        self._enforce_size_limit()
+        self._cache[key] = value
+        # Update access order
+        if key in self._access_order:
+            self._access_order.remove(key)
+        self._access_order.append(key)
+
+    def _enforce_size_limit(self):
+        """Enforce cache size limit using LRU eviction."""
+        while len(self._cache) >= self.max_size:
+            if self._access_order:
+                # Remove least recently used item
+                lru_key = self._access_order.pop(0)
+                if lru_key in self._cache:
+                    del self._cache[lru_key]
+            else:
+                # Fallback: remove any item
+                if self._cache:
+                    key_to_remove = next(iter(self._cache))
+                    del self._cache[key_to_remove]
+                break
+
+    def size(self) -> int:
+        """Get current cache size."""
+        # Always return instance cache size for consistency with eviction logic
+        return len(self._cache)
+
+    def clear(self) -> bool:
+        """Clear the cache."""
+        self._cache.clear()
+        self._access_order.clear()
+        return True
+
+    def expire(self, key: str) -> bool:
+        """Expire a specific cache key."""
+        try:
+            # Remove from instance cache and access order
+            if key in self._cache:
+                del self._cache[key]
+            if key in self._access_order:
+                self._access_order.remove(key)
+
+            # Also try to remove from global cache if available
+            try:
+                from cache import cache as cache_obj
+
+                if cache_obj is not None:
+                    cache_obj.delete(key)
+            except Exception:
+                pass  # Ignore global cache errors, focus on instance cache
+
+            return True
+        except Exception:
+            return False
 
     def initialize_all_caches(self) -> Dict[str, bool]:
         """
@@ -1089,9 +1165,6 @@ def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    import sys
-    import tempfile
-    import time
     from unittest.mock import MagicMock, patch
 
     try:

@@ -27,8 +27,8 @@ FOOTER_SELECTOR = "footer#footer ul#footerLegal"
 # --- Login Page (https://www.ancestry.co.uk/account/signin) ---
 CONFIRMED_LOGGED_IN_SELECTOR = "#navAccount[data-tracking-name='Account']"  # "[href^='https://www.ancestry.co.uk/profile/']"
 COOKIE_BANNER_SELECTOR = "div#bannerOverlay"
-consent_ACCEPT_BUTTON_SELECTOR = "#acceptAllBtn"  # Cookie consent button
-LOG_IN_BUTTON_SELECTOR = "[href^='https://www.ancestry.co.uk/account/signin']"
+CONSENT_ACCEPT_BUTTON_SELECTOR = "#acceptAllBtn"  # Cookie consent button
+LOG_IN_BUTTON_SELECTOR = "a[href^='https://www.ancestry.co.uk/account/signin']"
 USERNAME_INPUT_SELECTOR = "input#username"
 PASSWORD_INPUT_SELECTOR = "input#password"
 SIGN_IN_BUTTON_SELECTOR = "#signInBtn"
@@ -37,7 +37,7 @@ TWO_FA_SMS_SELECTOR = "button.ancCardBtn.methodBtn[data-method='sms']"
 TWO_STEP_VERIFICATION_HEADER_SELECTOR = "body.mfaPage h2.conTitle"
 FAILED_LOGIN_SELECTOR = "div#invalidCredentialsAlert.alert"
 TWO_FA_CODE_BUTTON_SELECTOR = "button#codeFormSubmitBtn"
-TWO_FA_CODE_INPUT_SELECTOR = "button.ancCardBtn.methodBtn[data-method='sms']"
+TWO_FA_CODE_INPUT_SELECTOR = "input#codeFormInput"
 
 
 # --- DNA Matches List Page (https://www.ancestry.co.uk/discoveryui-matches/list/) ---
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         def test_css_selector_syntax():
             # Basic CSS selector pattern validation
             css_pattern = re.compile(
-                r"^[a-zA-Z0-9\-_\.\#\[\]\(\)\:\s\>\+\~\*\,\=\"\'\|]+$"
+                r"^[a-zA-Z0-9\-_\.\#\[\]\(\)\:\s\>\+\~\*\,\=\"\'\|\^\/\{\}]+$"
             )
 
             selectors_to_test = []

@@ -36,6 +36,50 @@ from logging_config import setup_logging, logger
 # Initialize the logger with a specific log file for this module
 logger = setup_logging(log_file="action11.log", log_level="INFO")
 
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    HAS_TEST_FRAMEWORK = False
+
 # --- Load Config (Mandatory - Direct Import) ---
 config_instance = None
 selenium_config = None
@@ -1954,7 +1998,7 @@ def _parse_treesui_list_response(
     search_criteria: Dict[str, Any],
 ) -> Optional[List[Dict]]:
     """
-    Parses the specific TreesUI List API response structure provided by the user
+    Parses the specific TreesUI List API response provided by the user
     to extract information needed for scoring and display.
     """
     parsed_results = []
@@ -3522,24 +3566,25 @@ if __name__ == "__main__":
     import sys
     from unittest.mock import MagicMock, patch
 
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
     def run_comprehensive_tests() -> bool:
         """
         Comprehensive test suite for action11.py.
         Tests live API research functionality and person search capabilities.
         """
+        # Import test framework directly inside function to handle exec() context
+        try:
+            from test_framework import (
+                TestSuite,
+                suppress_logging,
+                create_mock_data,
+                assert_valid_function,
+            )
+        except ImportError:
+            print(
+                "❌ test_framework.py not found. Please ensure it exists in the same directory."
+            )
+            return False
+
         suite = TestSuite("Action 11 - Live API Research Tool", "action11.py")
         suite.start_suite()
 

@@ -6,6 +6,10 @@ and element interaction, separated from general or API-specific utilities.
 
 # --- Standard library imports ---
 import time
+import os
+import json
+import unittest
+import logging
 from typing import Optional, Dict  # Import Optional and Dict for type hints
 
 # --- Third-party imports ---
@@ -335,8 +339,6 @@ def export_cookies(driver: Optional[WebDriver], file_path: str) -> bool:
 
 # --- Test Class Definition ---
 # This class is defined at the module level so it can be imported by test_selenium_utils.py
-import unittest
-import logging
 from unittest.mock import MagicMock, PropertyMock
 
 
@@ -687,9 +689,8 @@ if __name__ == "__main__":
                 "Test exception"
             )
             result = extract_text(mock_element, "div.nonexistent")
-            assert result == ""
+            assert result == ""  # Test 3: extract_attribute function
 
-        # Test 3: extract_attribute function
         def test_extract_attribute():
             mock_element = MagicMock()
             child_element = MagicMock()
@@ -706,11 +707,27 @@ if __name__ == "__main__":
 
             # Test with href attribute - relative URL with leading slash
             child_element.get_attribute.return_value = "/relative/path"
-            # Mock config_instance.BASE_URL
-            with patch("selenium_utils.config_instance") as mock_config:
-                mock_config.BASE_URL = "https://www.example.com"
+            # Store original BASE_URL and temporarily change it
+            original_base_url = config_instance.BASE_URL
+            try:
+                config_instance.BASE_URL = "https://www.example.com"
                 result = extract_attribute(mock_element, "a.link", "href")
                 assert result == "https://www.example.com/relative/path"
+            finally:
+                # Restore original BASE_URL
+                config_instance.BASE_URL = original_base_url
+
+            # Test with href attribute - absolute URL
+            child_element.get_attribute.return_value = "https://other-domain.com/page"
+            result = extract_attribute(mock_element, "a.link", "href")
+            assert result == "https://other-domain.com/page"
+
+            # Test with NoSuchElementException
+            mock_element.find_element.side_effect = NoSuchElementException(
+                "Test exception"
+            )
+            result = extract_attribute(mock_element, "div.nonexistent", "data-test")
+            assert result == ""
 
         # Test 4: is_browser_open function
         def test_is_browser_open():

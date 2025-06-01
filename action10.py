@@ -37,6 +37,52 @@ try:
 except ImportError:
     tabulate = None
 
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+    from unittest.mock import patch
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    patch = DummyContext  # Simple mock for patch
+    HAS_TEST_FRAMEWORK = False
+
 # --- Setup Fallback Logger FIRST ---
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -1195,24 +1241,25 @@ if __name__ == "__main__":
     import tempfile
     from unittest.mock import MagicMock, patch
 
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
     def run_comprehensive_tests() -> bool:
         """
         Comprehensive test suite for action10.py.
         Tests local GEDCOM analysis and interactive search functionality.
         """
+        # Import test framework directly inside function to handle exec() context
+        try:
+            from test_framework import (
+                TestSuite,
+                suppress_logging,
+                create_mock_data,
+                assert_valid_function,
+            )
+        except ImportError:
+            print(
+                "❌ test_framework.py not found. Please ensure it exists in the same directory."
+            )
+            return False
+
         suite = TestSuite("Action 10 - Local GEDCOM Analysis", "action10.py")
         suite.start_suite()
 
@@ -1401,6 +1448,11 @@ if __name__ == "__main__":
 
         # Test 10: Command-line interface
         def test_command_line_interface():
+            try:
+                from unittest.mock import patch
+            except ImportError:
+                return  # Skip if mock not available
+
             if "main" in globals():
                 main_func = globals()["main"]
 

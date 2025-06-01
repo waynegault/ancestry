@@ -436,8 +436,6 @@ def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
     # Generate hash for long keys to keep them manageable
     key_string = "_".join(key_parts)
     if len(key_string) > 100:
-        import hashlib
-
         key_hash = hashlib.md5(key_string.encode()).hexdigest()[:16]
         key_string = f"{module}_{operation}_{key_hash}"
 
@@ -654,7 +652,6 @@ def enforce_cache_size_limit() -> Dict[str, Any]:
             logger.error(f"Error during manual cache eviction: {evict_error}")
             # Last resort: try using diskcache's built-in cull (size-based)
             try:
-                # This won't help with entry count, but might free up some space
                 culled = cache.cull()
                 logger.info(f"Fallback: diskcache culled {culled} entries by size")
             except Exception as cull_error:
@@ -1367,7 +1364,7 @@ if __name__ == "__main__":
 
                 call_count = 0
 
-                @cache_decorator()
+                @cache_decorator("test_expensive_function")
                 def expensive_function(x):
                     nonlocal call_count
                     call_count += 1

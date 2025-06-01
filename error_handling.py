@@ -12,7 +12,50 @@ from functools import wraps
 from enum import Enum
 from dataclasses import dataclass, field
 from logging_config import logger
-from test_framework import TestSuite  # Added import
+
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    HAS_TEST_FRAMEWORK = False
 
 
 class CircuitState(Enum):

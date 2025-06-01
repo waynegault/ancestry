@@ -779,7 +779,11 @@ def run_self_tests() -> bool:
 
     try:
         # Test config loading
-        gedcom_path = get_config_value("GEDCOM_FILE_PATH", None)
+        gedcom_path = (
+            getattr(config_instance, "GEDCOM_FILE_PATH", None)
+            if config_instance
+            else None
+        )
         test_result(
             "Config Value Retrieval",
             gedcom_path is not None,

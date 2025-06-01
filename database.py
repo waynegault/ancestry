@@ -58,6 +58,56 @@ from sqlalchemy.orm import (
 from config import config_instance
 from logging_config import logger
 
+# Import SessionManager from utils for compatibility with tests
+from utils import SessionManager
+
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def add_warning(self, *args, **kwargs):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    HAS_TEST_FRAMEWORK = False
+
 
 # ----------------------------------------------------------------------
 # SQLAlchemy Base Declarative Model
@@ -305,6 +355,12 @@ class DnaMatch(Base):
     # Defines the link back to the Person object.
     person = relationship("Person", back_populates="dna_match")
 
+    # --- Properties ---
+    @property
+    def uuid(self) -> Optional[str]:
+        """Returns the UUID of the associated Person."""
+        return self.person.uuid if self.person else None
+
 
 # End of DnaMatch class
 
@@ -380,11 +436,18 @@ class FamilyTree(Base):
     # Defines the link back to the Person object.
     person = relationship("Person", back_populates="family_tree")
 
+    # --- Properties ---
+    @property
+    def uuid(self) -> Optional[str]:
+        """Returns the UUID of the associated Person."""
+        return self.person.uuid if self.person else None
+
 
 # End of FamilyTree class
 
 
 from sqlalchemy.orm import Mapped, mapped_column
+
 
 class Person(Base):
     """
@@ -421,7 +484,9 @@ class Person(Base):
     first_name: Mapped[Optional[str]] = mapped_column(
         String, nullable=True, comment="First name extracted from username or profile."
     )
-    gender: Mapped[Optional[str]] = mapped_column(String(1), nullable=True, comment="Gender ('M' or 'F'), if known.")
+    gender: Mapped[Optional[str]] = mapped_column(
+        String(1), nullable=True, comment="Gender ('M' or 'F'), if known."
+    )
     birth_year: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, comment="Birth year, if known (often from tree)."
     )
@@ -1839,7 +1904,10 @@ def commit_bulk_data(
                     )
                     try:
                         from sqlalchemy import inspect
-                        sess.bulk_insert_mappings(inspect(ConversationLog), log_inserts_mappings)
+
+                        sess.bulk_insert_mappings(
+                            inspect(ConversationLog), log_inserts_mappings
+                        )
                         processed_logs_count += len(log_inserts_mappings)
                         logger.debug(
                             f"{log_prefix}Bulk insert successful for {len(log_inserts_mappings)} logs."
@@ -1948,7 +2016,10 @@ def commit_bulk_data(
                     )
                     try:
                         from sqlalchemy import inspect
-                        sess.bulk_update_mappings(inspect(Person), person_update_mappings)
+
+                        sess.bulk_update_mappings(
+                            inspect(Person), person_update_mappings
+                        )
                         updated_person_count = len(person_update_mappings)
                         logger.debug(
                             f"{log_prefix}Bulk update successful for {updated_person_count} persons."

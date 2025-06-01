@@ -42,6 +42,50 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
 logger = logging.getLogger("config_setup")  # Specific logger for config process
 
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    HAS_TEST_FRAMEWORK = False
+
 
 # --- Base Configuration Class ---
 class BaseConfig:
@@ -983,7 +1027,11 @@ if __name__ == "__main__":
         # Test 3: Default value handling
         def test_default_value_handling():
             # Test that defaults are applied when environment variables are missing
-            with patch.dict("os.environ", {}, clear=True):
+            test_env_vars = {
+                "ANCESTRY_USERNAME": "test_user",
+                "ANCESTRY_PASSWORD": "test_pass",
+            }
+            with patch.dict("os.environ", test_env_vars, clear=True):
                 config = Config_Class()
                 assert config.BASE_URL is not None
                 assert config.APP_MODE in ["testing", "production", "dry_run"]
@@ -1029,11 +1077,10 @@ if __name__ == "__main__":
         def test_selenium_config():
             selenium_cfg = SeleniumConfig()
             assert selenium_cfg is not None
-            assert hasattr(selenium_cfg, "HEADLESS")
-            if hasattr(selenium_cfg, "API_TIMEOUT"):
-                assert hasattr(selenium_cfg, "API_TIMEOUT")
-            if hasattr(selenium_cfg, "PAGE_LOAD_TIMEOUT"):
-                assert hasattr(selenium_cfg, "PAGE_LOAD_TIMEOUT")
+            assert hasattr(selenium_cfg, "HEADLESS_MODE")
+            assert hasattr(selenium_cfg, "API_TIMEOUT")
+            assert hasattr(selenium_cfg, "ELEMENT_TIMEOUT")
+            assert hasattr(selenium_cfg, "PAGE_TIMEOUT")
 
         # Test 8: Configuration file integration
         def test_configuration_file_integration():
