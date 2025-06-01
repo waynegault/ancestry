@@ -1746,7 +1746,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: Message template loading and validation
+        # Message template loading and validation
         def test_message_template_loading():
             if "load_message_templates" in globals():
                 loader = globals()["load_message_templates"]
@@ -1762,7 +1762,7 @@ if __name__ == "__main__":
                         assert isinstance(templates[template_key], str)
                         assert len(templates[template_key]) > 10  # Should have content
 
-        # Test 2: Message type determination logic
+        # Message type determination logic
         def test_message_type_determination():
             if "determine_next_message_type" in globals():
                 determiner = globals()["determine_next_message_type"]
@@ -1796,7 +1796,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific implementation
 
-        # Test 3: Recipient filtering based on app mode
+        # Recipient filtering based on app mode
         def test_recipient_filtering():
             if "filter_recipients_by_mode" in globals():
                 filter_func = globals()["filter_recipients_by_mode"]
@@ -1829,7 +1829,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific filtering logic
 
-        # Test 4: Message interval calculation
+        # Message interval calculation
         def test_message_interval_calculation():
             if "calculate_message_interval" in globals():
                 calculator = globals()["calculate_message_interval"]
@@ -1845,7 +1845,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific calculation logic
 
-        # Test 5: Database conversation log management
+        # Database conversation log management
         def test_conversation_log_management():
             if "update_conversation_log" in globals():
                 log_updater = globals()["update_conversation_log"]
@@ -1865,7 +1865,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require database connection
 
-        # Test 6: Message personalization and templating
+        # Message personalization and templating
         def test_message_personalization():
             if "personalize_message_template" in globals():
                 personalizer = globals()["personalize_message_template"]
@@ -1886,7 +1886,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific templating engine
 
-        # Test 7: Rate limiting and throttling
+        # Rate limiting and throttling
         def test_rate_limiting():
             if "apply_rate_limiting" in globals():
                 rate_limiter = globals()["apply_rate_limiting"]
@@ -1905,7 +1905,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific rate limiting logic
 
-        # Test 8: Message delivery status tracking
+        # Message delivery status tracking
         def test_delivery_status_tracking():
             if "track_delivery_status" in globals():
                 status_tracker = globals()["track_delivery_status"]
@@ -1924,7 +1924,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require message delivery service
 
-        # Test 9: Error handling and retry mechanisms
+        # Error handling and retry mechanisms
         def test_error_handling_retry():
             error_handling_functions = [
                 "handle_message_send_error",
@@ -1937,7 +1937,7 @@ if __name__ == "__main__":
                 if func_name in globals():
                     assert_valid_function(globals()[func_name], func_name)
 
-        # Test 10: Integration with external messaging services
+        # Integration with external messaging services
         def test_messaging_service_integration():
             if "send_message_via_service" in globals():
                 service_sender = globals()["send_message_via_service"]

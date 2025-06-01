@@ -91,7 +91,7 @@ if __name__ == "__main__":
         suite = TestSuite("Database Validation & Integrity Checks", "check_db.py")
         suite.start_suite()
 
-        # Test 1: Database connection validation
+        # Database connection validation
         def test_database_connection():
             if "check_database_connection" in globals():
                 connection_checker = globals()["check_database_connection"]
@@ -103,7 +103,7 @@ if __name__ == "__main__":
                 result = connection_checker(mock_connection)
                 assert isinstance(result, bool)
 
-        # Test 2: Table structure validation
+        # Table structure validation
         def test_table_structure_validation():
             if "validate_table_structure" in globals():
                 validator = globals()["validate_table_structure"]
@@ -114,7 +114,7 @@ if __name__ == "__main__":
                     result = validator(table)
                     assert isinstance(result, bool)
 
-        # Test 3: Data integrity checks
+        # Data integrity checks
         def test_data_integrity_checks():
             if "check_data_integrity" in globals():
                 integrity_checker = globals()["check_data_integrity"]
@@ -131,7 +131,7 @@ if __name__ == "__main__":
                     result = integrity_checker(test_type)
                     assert isinstance(result, (bool, dict, list))
 
-        # Test 4: Database statistics
+        # Database statistics
         def test_database_statistics():
             if "get_database_statistics" in globals():
                 stats_func = globals()["get_database_statistics"]
@@ -143,7 +143,7 @@ if __name__ == "__main__":
                     if stat in stats:
                         assert isinstance(stats[stat], (int, dict))
 
-        # Test 5: Index validation
+        # Index validation
         def test_index_validation():
             if "validate_database_indexes" in globals():
                 index_validator = globals()["validate_database_indexes"]
@@ -151,7 +151,7 @@ if __name__ == "__main__":
                 result = index_validator()
                 assert isinstance(result, (bool, dict))
 
-        # Test 6: Performance analysis
+        # Performance analysis
         def test_performance_analysis():
             if "analyze_query_performance" in globals():
                 perf_analyzer = globals()["analyze_query_performance"]
@@ -167,7 +167,7 @@ if __name__ == "__main__":
                     result = perf_analyzer(query)
                     assert isinstance(result, dict)
 
-        # Test 7: Database backup validation
+        # Database backup validation
         def test_backup_validation():
             if "validate_database_backup" in globals():
                 backup_validator = globals()["validate_database_backup"]
@@ -177,7 +177,7 @@ if __name__ == "__main__":
                     result = backup_validator(temp_file.name)
                     assert isinstance(result, bool)
 
-        # Test 8: Schema migration checks
+        # Schema migration checks
         def test_schema_migration_checks():
             if "check_schema_version" in globals():
                 version_checker = globals()["check_schema_version"]
@@ -191,7 +191,7 @@ if __name__ == "__main__":
                 result = migration_validator("1.0", "2.0")
                 assert isinstance(result, bool)
 
-        # Test 9: Data cleanup validation
+        # Data cleanup validation
         def test_data_cleanup_validation():
             # Test data cleanup and maintenance
             cleanup_functions = [
@@ -206,7 +206,7 @@ if __name__ == "__main__":
                     result = cleanup_func()
                     assert isinstance(result, (bool, int, dict))
 
-        # Test 10: Database health report
+        # Database health report
         def test_database_health_report():
             if "generate_health_report" in globals():
                 report_generator = globals()["generate_health_report"]

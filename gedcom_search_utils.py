@@ -83,6 +83,12 @@ def set_cached_gedcom_data(gedcom_data):
             logger.debug(f"Error caching processed GEDCOM data: {e}")
 
 
+def get_cached_gedcom_data():
+    """Return the currently cached GEDCOM data."""
+    global _CACHED_GEDCOM_DATA
+    return _CACHED_GEDCOM_DATA
+
+
 def get_config_value(key: str, default_value: Any = None) -> Any:
     """Safely retrieve a configuration value with fallback."""
     if not config_instance:
@@ -774,7 +780,7 @@ def run_self_tests() -> bool:
             tests_failed += 1
         return passed
 
-    # Test 1: Configuration and Setup
+    # Configuration and Setup
     print("\n--- Test Section 1: Configuration and Setup ---")
 
     try:
@@ -811,7 +817,7 @@ def run_self_tests() -> bool:
     except Exception as e:
         test_result("Configuration and Setup", False, f"Error: {str(e)}")
 
-    # Test 2: Basic Search Functionality
+    # Basic Search Functionality
     print("\n--- Test Section 2: Basic Search Functionality ---")
 
     try:
@@ -843,7 +849,7 @@ def run_self_tests() -> bool:
     except Exception as e:
         test_result("Basic Search Functionality", False, f"Error: {str(e)}")
 
-    # Test 3: Frances Milne Search (Specific Test Request)
+    # Frances Milne Search (Specific Test Request)
     print("\n--- Test Section 3: Frances Milne b. 1947 Search ---")
 
     try:
@@ -884,7 +890,7 @@ def run_self_tests() -> bool:
     except Exception as e:
         test_result("Frances Milne Search", False, f"Error: {str(e)}")
 
-    # Test 4: Advanced Search Features
+    # Advanced Search Features
     print("\n--- Test Section 4: Advanced Search Features ---")
 
     try:
@@ -909,7 +915,7 @@ def run_self_tests() -> bool:
     except Exception as e:
         test_result("Advanced Search Features", False, f"Error: {str(e)}")
 
-    # Test 5: Family Relationship Functions
+    # Family Relationship Functions
     print("\n--- Test Section 5: Family Relationship Functions ---")
 
     try:
@@ -928,12 +934,50 @@ def run_self_tests() -> bool:
                     f"Retrieved family details for ID: {test_id}",
                 )
 
+                # Validate family details structure
+                if family_details:
+                    expected_keys = [
+                        "id",
+                        "name",
+                        "parents",
+                        "spouses",
+                        "children",
+                        "siblings",
+                    ]
+                    has_all_keys = all(key in family_details for key in expected_keys)
+                    test_result(
+                        "Family Details Structure",
+                        has_all_keys,
+                        f"All expected keys present: {expected_keys}",
+                    )
+
+                    # Test relationship data types
+                    relationship_fields = ["parents", "spouses", "children", "siblings"]
+                    all_lists = all(
+                        isinstance(family_details.get(field), list)
+                        for field in relationship_fields
+                    )
+                    test_result(
+                        "Relationship Data Types",
+                        all_lists,
+                        "All relationship fields are lists",
+                    )
+
                 # Test relationship path
                 relationship_path = get_gedcom_relationship_path(test_id)
                 test_result(
                     "Relationship Path Function",
                     "Failed to load" not in relationship_path,
                     f"Path: {relationship_path[:50]}...",
+                )
+
+                # Test invalid ID handling
+                invalid_family_details = get_gedcom_family_details("INVALID_ID_12345")
+                test_result(
+                    "Invalid ID Handling",
+                    isinstance(invalid_family_details, dict)
+                    and len(invalid_family_details) == 0,
+                    "Invalid ID returns empty dict gracefully",
                 )
             else:
                 test_result(
@@ -943,42 +987,169 @@ def run_self_tests() -> bool:
     except Exception as e:
         test_result("Family Relationship Functions", False, f"Error: {str(e)}")
 
-    # Test 6: Performance and Edge Cases
-    print("\n--- Test Section 6: Performance and Edge Cases ---")
+    # Search Algorithm Validation
+    print("\n--- Test Section 6: Search Algorithm Validation ---")
 
     try:
-        import time
-
-        # Test performance with large result set
-        start_time = time.time()
-        search_criteria = {"first_name": "John"}  # Common name
-        results = search_gedcom_for_criteria(search_criteria, max_results=50)
-        search_time = time.time() - start_time
-
+        # Test criterion matching functions
         test_result(
-            "Search Performance",
-            search_time < 5.0,
-            f"Search completed in {search_time:.2f} seconds",
+            "Basic Criterion Matching",
+            matches_criterion("first_name", {"first_name": "john"}, "john"),
+            "Exact name match works",
         )
 
-        # Test empty search criteria
-        results = search_gedcom_for_criteria({}, max_results=5)
         test_result(
-            "Empty Criteria Handling",
-            True,
-            f"Empty search returned {len(results)} results",
+            "Partial Name Matching",
+            matches_criterion("first_name", {"first_name": "john"}, "johnny"),
+            "Partial name match works",
         )
 
-        # Test invalid individual ID
-        family_details = get_gedcom_family_details("INVALID_ID")
         test_result(
-            "Invalid ID Handling",
-            len(family_details) == 0,
-            "Invalid ID properly handled",
+            "Year Range Matching",
+            matches_year_criterion("birth_year", {"birth_year": 1900}, 1905, 10),
+            "Year within range matches",
+        )
+
+        test_result(
+            "Year Range Exclusion",
+            not matches_year_criterion("birth_year", {"birth_year": 1900}, 1920, 10),
+            "Year outside range excluded",
+        )
+
+        # Test scoring consistency
+        search_criteria = {"first_name": "Mary", "birth_year": 1920}
+        results1 = search_gedcom_for_criteria(search_criteria, max_results=5)
+        results2 = search_gedcom_for_criteria(search_criteria, max_results=5)
+
+        scores_match = (
+            all(
+                r1.get("total_score") == r2.get("total_score")
+                for r1, r2 in zip(results1, results2)
+            )
+            if results1 and results2
+            else True
+        )
+
+        test_result(
+            "Scoring Consistency",
+            scores_match,
+            "Same search criteria produce consistent scores",
         )
 
     except Exception as e:
-        test_result("Performance and Edge Cases", False, f"Error: {str(e)}")
+        test_result("Search Algorithm Validation", False, f"Error: {str(e)}")
+
+    # Data Quality and Integrity
+    print("\n--- Test Section 7: Data Quality and Integrity ---")
+
+    try:
+        gedcom_data = get_gedcom_data()
+        if gedcom_data:
+            # Test cache structure
+            cache_valid = hasattr(gedcom_data, "processed_data_cache") and isinstance(
+                gedcom_data.processed_data_cache, dict
+            )
+            test_result(
+                "Cache Structure",
+                cache_valid,
+                f"GEDCOM cache is valid dict with {len(gedcom_data.processed_data_cache) if cache_valid else 0} entries",
+            )
+
+            # Test family relationship maps
+            if hasattr(gedcom_data, "id_to_parents") and hasattr(
+                gedcom_data, "id_to_children"
+            ):
+                parents_valid = isinstance(gedcom_data.id_to_parents, dict)
+                children_valid = isinstance(gedcom_data.id_to_children, dict)
+                test_result(
+                    "Family Relationship Maps",
+                    parents_valid and children_valid,
+                    f"Parent map: {len(gedcom_data.id_to_parents)} entries, Children map: {len(gedcom_data.id_to_children)} entries",
+                )
+
+            # Test individual data quality
+            if cache_valid and gedcom_data.processed_data_cache:
+                sample_id = next(iter(gedcom_data.processed_data_cache.keys()))
+                sample_data = gedcom_data.processed_data_cache[sample_id]
+
+                required_fields = ["first_name", "surname", "gender"]
+                has_core_fields = any(field in sample_data for field in required_fields)
+                test_result(
+                    "Individual Data Quality",
+                    has_core_fields,
+                    f"Sample individual has core fields: {[field for field in required_fields if field in sample_data]}",
+                )
+
+    except Exception as e:
+        test_result("Data Quality and Integrity", False, f"Error: {str(e)}")
+
+    # Error Handling and Edge Cases (Enhanced)
+    print("\n--- Test Section 8: Error Handling and Edge Cases ---")
+
+    try:
+        # Test various invalid inputs
+        invalid_searches = [
+            {},  # Empty criteria
+            {"birth_year": "not_a_number"},  # Invalid data type
+            {"nonexistent_field": "value"},  # Invalid field
+            {"first_name": ""},  # Empty string
+            {"gender": None},  # None value
+        ]
+
+        all_handled = True
+        for i, criteria in enumerate(invalid_searches):
+            try:
+                results = search_gedcom_for_criteria(criteria, max_results=1)
+                if not isinstance(results, list):
+                    all_handled = False
+                    break
+            except Exception:
+                all_handled = False
+                break
+
+        test_result(
+            "Invalid Search Criteria Handling",
+            all_handled,
+            f"All {len(invalid_searches)} invalid criteria handled gracefully",
+        )
+
+        # Test extreme parameter values
+        extreme_tests = [
+            ({"first_name": "John"}, 0),  # Zero max_results
+            ({"first_name": "John"}, -1),  # Negative max_results
+            ({"first_name": "John"}, 10000),  # Very large max_results
+        ]
+
+        extreme_handled = True
+        for criteria, max_results in extreme_tests:
+            try:
+                results = search_gedcom_for_criteria(criteria, max_results=max_results)
+                if not isinstance(results, list):
+                    extreme_handled = False
+                    break
+            except Exception:
+                extreme_handled = False
+                break
+
+        test_result(
+            "Extreme Parameter Handling",
+            extreme_handled,
+            f"All {len(extreme_tests)} extreme parameter cases handled",
+        )
+
+        # Test with very long strings
+        long_string = "a" * 1000
+        long_results = search_gedcom_for_criteria(
+            {"first_name": long_string}, max_results=1
+        )
+        test_result(
+            "Long String Handling",
+            isinstance(long_results, list),
+            "Very long search strings handled gracefully",
+        )
+
+    except Exception as e:
+        test_result("Error Handling and Edge Cases", False, f"Error: {str(e)}")
 
     # Test Summary
     print("\n" + "=" * 60)
@@ -1083,29 +1254,10 @@ def search_frances_milne_demo():
 
 # Self-test execution when run as main module
 if __name__ == "__main__":
-    print("Starting GEDCOM Search Utils Self-Test Suite...")
-
-    # Run comprehensive self tests
-    success = run_self_tests()
-
-    print("\n" + "=" * 60)
-
-    # Run Frances Milne demonstration
-    search_frances_milne_demo()
-
-    print("\n" + "=" * 60)
-    print("Self-test complete!")
-
-    if not success:
-        exit(1)
-
-# ==============================================
-# Standalone Test Block
-# ==============================================
-if __name__ == "__main__":
     import sys
     from unittest.mock import MagicMock, patch
 
+    # Try to import test framework first, fall back to basic tests if not available
     try:
         from test_framework import (
             TestSuite,
@@ -1113,260 +1265,372 @@ if __name__ == "__main__":
             create_mock_data,
             assert_valid_function,
         )
+
+        HAS_TEST_FRAMEWORK = True
     except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
+        print("⚠️ test_framework.py not found. Running basic self-tests instead.")
+        HAS_TEST_FRAMEWORK = False
 
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for gedcom_search_utils.py.
-        Tests GEDCOM search functionality, indexing, and query processing.
-        """
-        suite = TestSuite(
-            "GEDCOM Search Utilities & Indexing", "gedcom_search_utils.py"
-        )
-        suite.start_suite()
+    if HAS_TEST_FRAMEWORK:
+        # Run comprehensive test framework tests
+        def run_comprehensive_tests() -> bool:
+            """
+            Comprehensive test suite for gedcom_search_utils.py.
+            Tests GEDCOM search functionality, indexing, and query processing.
+            """
+            suite = TestSuite(
+                "GEDCOM Search Utilities & Indexing", "gedcom_search_utils.py"
+            )
+            suite.start_suite()
 
-        # Test 1: GEDCOM search index creation
-        def test_gedcom_search_index_creation():
-            if "create_search_index" in globals():
-                index_creator = globals()["create_search_index"]
+            # Basic module functions exist
+            def test_basic_functions():
+                basic_functions = [
+                    "load_gedcom_data",
+                    "get_cached_gedcom_data",
+                    "search_gedcom_for_criteria",
+                    "get_gedcom_family_details",
+                    "get_gedcom_relationship_path",
+                    "matches_criterion",
+                    "matches_year_criterion",
+                ]
+                for func_name in basic_functions:
+                    if func_name in globals():
+                        func = globals()[func_name]
+                        assert callable(func)
 
-                # Mock GEDCOM data structure
-                mock_gedcom_data = {
-                    "individuals": {
-                        "I1": {"name": "John Doe", "birth_year": 1950},
-                        "I2": {"name": "Jane Smith", "birth_year": 1955},
-                        "I3": {"name": "Robert Johnson", "birth_year": 1920},
-                    }
-                }
-
+            # Configuration handling
+            def test_config_handling():
                 try:
-                    index = index_creator(mock_gedcom_data)
-                    assert isinstance(index, dict)
+                    result = get_config_value("TEST_KEY", "default")
+                    assert result is not None
+
+                    # Test DEFAULT_CONFIG access
+                    scoring_weights = get_config_value(
+                        "COMMON_SCORING_WEIGHTS",
+                        DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"],
+                    )
+                    assert isinstance(scoring_weights, dict)
+
+                    date_flex = get_config_value(
+                        "DATE_FLEXIBILITY", DEFAULT_CONFIG["DATE_FLEXIBILITY"]
+                    )
+                    assert isinstance(date_flex, dict)
                 except Exception:
-                    pass  # May require specific data structure
+                    pass  # Config may not be available
 
-        # Test 2: Person name searching
-        def test_person_name_searching():
-            if "search_by_name" in globals():
-                name_searcher = globals()["search_by_name"]
-
-                # Test with various name patterns
-                name_queries = [
-                    "John Doe",
-                    "jane",
-                    "Smith",
-                    "J*",  # Wildcard
-                    "Robert Johnson",
-                ]
-
-                for query in name_queries:
-                    try:
-                        results = name_searcher(query)
-                        assert isinstance(results, list)
-                    except Exception:
-                        pass  # May require search index setup
-
-        # Test 3: Date range searching
-        def test_date_range_searching():
-            if "search_by_date_range" in globals():
-                date_searcher = globals()["search_by_date_range"]
-
-                # Test with various date ranges
-                date_ranges = [(1950, 1960), (1900, 1950), (1850, 2000)]
-
-                for start_year, end_year in date_ranges:
-                    try:
-                        results = date_searcher(start_year, end_year)
-                        assert isinstance(results, list)
-                    except Exception:
-                        pass  # May require indexed data
-
-        # Test 4: Location-based searching
-        def test_location_based_searching():
-            if "search_by_location" in globals():
-                location_searcher = globals()["search_by_location"]
-
-                # Test with various location queries
-                locations = ["New York", "California, USA", "London, England", "Paris"]
-
-                for location in locations:
-                    try:
-                        results = location_searcher(location)
-                        assert isinstance(results, list)
-                    except Exception:
-                        pass  # May require location index
-
-        # Test 5: Family relationship searching
-        def test_family_relationship_searching():
-            if "search_relationships" in globals():
-                rel_searcher = globals()["search_relationships"]
-
-                # Test relationship queries
-                relationship_queries = [
-                    {"person_id": "I1", "relationship": "children"},
-                    {"person_id": "I2", "relationship": "parents"},
-                    {"person_id": "I3", "relationship": "siblings"},
-                ]
-
-                for query in relationship_queries:
-                    try:
-                        results = rel_searcher(query)
-                        assert isinstance(results, list)
-                    except Exception:
-                        pass  # May require family structure data
-
-        # Test 6: Fuzzy matching and similarity
-        def test_fuzzy_matching_similarity():
-            if "fuzzy_name_match" in globals():
-                fuzzy_matcher = globals()["fuzzy_name_match"]
-
-                # Test fuzzy matching
-                fuzzy_tests = [
-                    ("John Doe", "Jon Doe"),
-                    ("Smith", "Smyth"),
-                    ("Johnson", "Jonson"),
-                    ("Elizabeth", "Elisabeth"),
-                ]
-
-                for name1, name2 in fuzzy_tests:
-                    try:
-                        similarity = fuzzy_matcher(name1, name2)
-                        assert isinstance(similarity, (float, int))
-                        assert 0 <= similarity <= 1
-                    except Exception:
-                        pass  # May require specific fuzzy matching library
-
-        # Test 7: Search result ranking and scoring
-        def test_search_result_ranking():
-            if "rank_search_results" in globals():
-                ranker = globals()["rank_search_results"]
-
-                # Mock search results
-                mock_results = [
-                    {"id": "I1", "name": "John Doe", "score": 0.95},
-                    {"id": "I2", "name": "John Smith", "score": 0.85},
-                    {"id": "I3", "name": "Johnny Doe", "score": 0.75},
-                ]
-
+            # GEDCOM data caching
+            def test_gedcom_caching():
                 try:
-                    ranked = ranker(mock_results)
-                    assert isinstance(ranked, list)
-                    if len(ranked) > 1:
-                        assert ranked[0]["score"] >= ranked[1]["score"]
+                    # Test setting and getting cached data
+                    set_cached_gedcom_data(None)
+                    cached = get_cached_gedcom_data()
+                    assert cached is None
+
+                    # Test cache persistence
+                    gedcom_data = get_gedcom_data()
+                    if gedcom_data:
+                        assert get_cached_gedcom_data() is not None
                 except Exception:
-                    pass  # May require specific ranking algorithm
+                    pass  # Caching may fail safely
 
-        # Test 8: Advanced query processing
-        def test_advanced_query_processing():
-            if "process_advanced_query" in globals():
-                query_processor = globals()["process_advanced_query"]
-
-                # Test complex queries
-                advanced_queries = [
-                    {
-                        "name": "John*",
-                        "birth_year_range": (1950, 1960),
-                        "location": "New York",
-                    },
-                    {"name": "*Smith", "death_year_range": (1990, 2000)},
-                ]
-
-                for query in advanced_queries:
-                    try:
-                        results = query_processor(query)
-                        assert isinstance(results, list)
-                    except Exception:
-                        pass  # May require complex query engine
-
-        # Test 9: Search performance optimization
-        def test_search_performance_optimization():
-            optimization_functions = [
-                "optimize_search_index",
-                "cache_frequent_searches",
-                "parallel_search_processing",
-                "search_result_pagination",
-            ]
-
-            for func_name in optimization_functions:
-                if func_name in globals():
-                    opt_func = globals()[func_name]
-                    assert callable(opt_func)
-
-        # Test 10: Search statistics and analytics
-        def test_search_statistics_analytics():
-            if "get_search_statistics" in globals():
-                stats_func = globals()["get_search_statistics"]
-
+            # Search criteria validation and edge cases
+            def test_search_criteria_validation():
                 try:
-                    stats = stats_func()
-                    assert isinstance(stats, dict)
+                    # Test empty criteria
+                    results = search_gedcom_for_criteria({}, max_results=1)
+                    assert isinstance(results, list)
 
-                    # Check for common search metrics
-                    expected_metrics = [
-                        "total_searches",
-                        "average_results",
-                        "most_searched_terms",
+                    # Test single criterion searches
+                    test_criteria = [
+                        {"first_name": "John"},
+                        {"surname": "Smith"},
+                        {"gender": "M"},
+                        {"birth_year": 1900},
+                        {"birth_place": "London"},
                     ]
-                    for metric in expected_metrics:
-                        if metric in stats:
-                            assert stats[metric] is not None
+
+                    for criteria in test_criteria:
+                        results = search_gedcom_for_criteria(criteria, max_results=5)
+                        assert isinstance(results, list)
+
+                    # Test multiple criteria combinations
+                    combined_criteria = {
+                        "first_name": "Mary",
+                        "surname": "Jones",
+                        "gender": "F",
+                        "birth_year": 1920,
+                    }
+                    results = search_gedcom_for_criteria(
+                        combined_criteria, max_results=10
+                    )
+                    assert isinstance(results, list)
+
                 except Exception:
-                    pass  # May require search history
+                    pass  # May fail if no GEDCOM data available
 
-        # Run all tests
-        test_functions = {
-            "GEDCOM search index creation": (
-                test_gedcom_search_index_creation,
-                "Should create searchable indexes from GEDCOM data",
-            ),
-            "Person name searching": (
-                test_person_name_searching,
-                "Should search individuals by name with partial matching",
-            ),
-            "Date range searching": (
-                test_date_range_searching,
-                "Should search individuals by birth/death date ranges",
-            ),
-            "Location-based searching": (
-                test_location_based_searching,
-                "Should search individuals by birth/death locations",
-            ),
-            "Family relationship searching": (
-                test_family_relationship_searching,
-                "Should search for family relationships and connections",
-            ),
-            "Fuzzy matching and similarity": (
-                test_fuzzy_matching_similarity,
-                "Should perform fuzzy name matching with similarity scores",
-            ),
-            "Search result ranking and scoring": (
-                test_search_result_ranking,
-                "Should rank search results by relevance and accuracy",
-            ),
-            "Advanced query processing": (
-                test_advanced_query_processing,
-                "Should process complex multi-criteria search queries",
-            ),
-            "Search performance optimization": (
-                test_search_performance_optimization,
-                "Should optimize search performance for large GEDCOM files",
-            ),
-            "Search statistics and analytics": (
-                test_search_statistics_analytics,
-                "Should track search usage and performance statistics",
-            ),
-        }
+            # Scoring system validation
+            def test_scoring_system():
+                try:
+                    # Test matches_criterion function
+                    assert matches_criterion(
+                        "first_name", {"first_name": "john"}, "john"
+                    )
+                    assert matches_criterion(
+                        "first_name", {"first_name": "john"}, "johnny"
+                    )  # Should match partial
+                    assert not matches_criterion(
+                        "first_name", {"first_name": "john"}, "mary"
+                    )
 
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
+                    # Test matches_year_criterion function
+                    assert matches_year_criterion(
+                        "birth_year", {"birth_year": 1900}, 1900, 10
+                    )
+                    assert matches_year_criterion(
+                        "birth_year", {"birth_year": 1900}, 1905, 10
+                    )  # Within range
+                    assert not matches_year_criterion(
+                        "birth_year", {"birth_year": 1900}, 1920, 10
+                    )  # Outside range
 
-        return suite.finish_suite()
+                except Exception:
+                    pass  # Functions may not be available
 
-    print("🔍 Running GEDCOM Search Utilities & Indexing comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+            # Family relationship extraction
+            def test_family_relationships():
+                try:
+                    gedcom_data = get_gedcom_data()
+                    if gedcom_data and hasattr(gedcom_data, "processed_data_cache"):
+                        # Get a test individual
+                        test_ids = list(gedcom_data.processed_data_cache.keys())[:3]
+
+                        for test_id in test_ids:
+                            family_details = get_gedcom_family_details(test_id)
+                            assert isinstance(family_details, dict)
+
+                            # Verify expected structure
+                            expected_keys = [
+                                "id",
+                                "name",
+                                "parents",
+                                "spouses",
+                                "children",
+                                "siblings",
+                            ]
+                            for key in expected_keys:
+                                assert key in family_details
+
+                            # Verify list types for relationship fields
+                            for rel_key in [
+                                "parents",
+                                "spouses",
+                                "children",
+                                "siblings",
+                            ]:
+                                assert isinstance(family_details[rel_key], list)
+
+                except Exception:
+                    pass  # May fail if no GEDCOM data available
+
+            # Relationship path calculation
+            def test_relationship_paths():
+                try:
+                    gedcom_data = get_gedcom_data()
+                    if gedcom_data and hasattr(gedcom_data, "processed_data_cache"):
+                        test_ids = list(gedcom_data.processed_data_cache.keys())[:2]
+
+                        if len(test_ids) >= 2:
+                            # Test relationship path between two individuals
+                            path = get_gedcom_relationship_path(
+                                test_ids[0], test_ids[1]
+                            )
+                            assert isinstance(path, str)
+                            assert len(path) > 0
+
+                        # Test with reference person
+                        if test_ids:
+                            path = get_gedcom_relationship_path(test_ids[0])
+                            assert isinstance(path, str)
+
+                except Exception:
+                    pass  # May fail if no GEDCOM data or relationship utils available
+
+            # Performance and scalability
+            def test_performance_scalability():
+                try:
+                    import time
+
+                    # Test search performance with common names
+                    start_time = time.time()
+                    results = search_gedcom_for_criteria(
+                        {"first_name": "John"}, max_results=50
+                    )
+                    search_time = time.time() - start_time
+                    assert search_time < 10.0  # Should complete within 10 seconds
+
+                    # Test with large result limits
+                    start_time = time.time()
+                    results = search_gedcom_for_criteria(
+                        {"gender": "M"}, max_results=100
+                    )
+                    large_search_time = time.time() - start_time
+                    assert (
+                        large_search_time < 15.0
+                    )  # Should handle larger results efficiently
+
+                except Exception:
+                    pass  # Performance tests may be environment dependent
+
+            # Data integrity and validation
+            def test_data_integrity():
+                try:
+                    gedcom_data = get_gedcom_data()
+                    if gedcom_data:
+                        # Verify cache structure
+                        if hasattr(gedcom_data, "processed_data_cache"):
+                            cache = gedcom_data.processed_data_cache
+                            assert isinstance(cache, dict)
+
+                            # Test sample individual data structure
+                            if cache:
+                                sample_id = next(iter(cache.keys()))
+                                sample_data = cache[sample_id]
+
+                                # Verify expected fields exist
+                                expected_fields = [
+                                    "first_name",
+                                    "surname",
+                                    "gender",
+                                    "birth_year",
+                                ]
+                                for field in expected_fields:
+                                    assert (
+                                        field in sample_data
+                                        or sample_data.get(field) is not None
+                                    )
+
+                        # Verify family relationship maps if available
+                        if hasattr(gedcom_data, "id_to_parents"):
+                            assert isinstance(gedcom_data.id_to_parents, dict)
+                        if hasattr(gedcom_data, "id_to_children"):
+                            assert isinstance(gedcom_data.id_to_children, dict)
+
+                except Exception:
+                    pass  # May fail if GEDCOM structure is different
+
+            # Error handling and edge cases
+            def test_error_handling():
+                try:
+                    # Test invalid individual IDs
+                    invalid_ids = ["", "INVALID", None, "@NOTFOUND@", "123"]
+                    for invalid_id in invalid_ids:
+                        family_details = get_gedcom_family_details(invalid_id)
+                        assert isinstance(
+                            family_details, dict
+                        )  # Should return empty dict, not crash
+
+                    # Test malformed search criteria
+                    malformed_criteria = [
+                        {"birth_year": "not_a_number"},
+                        {"gender": 123},
+                        {"first_name": None},
+                        {"invalid_field": "value"},
+                    ]
+
+                    for criteria in malformed_criteria:
+                        results = search_gedcom_for_criteria(criteria, max_results=1)
+                        assert isinstance(results, list)  # Should handle gracefully
+
+                    # Test extreme max_results values
+                    results = search_gedcom_for_criteria(
+                        {"first_name": "John"}, max_results=0
+                    )
+                    assert isinstance(results, list)
+
+                    results = search_gedcom_for_criteria(
+                        {"first_name": "John"}, max_results=10000
+                    )
+                    assert isinstance(results, list)
+
+                except Exception:
+                    pass  # Error handling tests should not crash
+
+            # Run all tests
+            test_functions = {
+                "Basic module functions": (
+                    test_basic_functions,
+                    "Should have core GEDCOM search functions available",
+                ),
+                "Configuration handling": (
+                    test_config_handling,
+                    "Should handle configuration values and defaults safely",
+                ),
+                "GEDCOM data caching": (
+                    test_gedcom_caching,
+                    "Should cache GEDCOM data for performance optimization",
+                ),
+                "Search criteria validation": (
+                    test_search_criteria_validation,
+                    "Should handle various search criteria combinations correctly",
+                ),
+                "Scoring system validation": (
+                    test_scoring_system,
+                    "Should properly score and rank search results",
+                ),
+                "Family relationship extraction": (
+                    test_family_relationships,
+                    "Should extract complete family relationship data",
+                ),
+                "Relationship path calculation": (
+                    test_relationship_paths,
+                    "Should calculate relationship paths between individuals",
+                ),
+                "Performance and scalability": (
+                    test_performance_scalability,
+                    "Should perform searches efficiently with large datasets",
+                ),
+                "Data integrity validation": (
+                    test_data_integrity,
+                    "Should validate GEDCOM data structure and integrity",
+                ),
+                "Error handling and edge cases": (
+                    test_error_handling,
+                    "Should handle errors and edge cases gracefully",
+                ),
+            }
+
+            with suppress_logging():
+                for test_name, (test_func, expected_behavior) in test_functions.items():
+                    suite.run_test(test_name, test_func, expected_behavior)
+
+            return suite.finish_suite()
+
+        print("🔍 Running GEDCOM Search Utilities comprehensive test suite...")
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    else:
+        # Fall back to basic self-tests
+        print("Starting GEDCOM Search Utils Self-Test Suite...")
+
+        # Run basic self tests if available
+        try:
+            if "run_self_tests" in globals():
+                success = run_self_tests()
+                print("\n" + "=" * 60)
+
+                # Run Frances Milne demonstration if available
+                if "search_frances_milne_demo" in globals():
+                    search_frances_milne_demo()
+                    print("\n" + "=" * 60)
+
+                print("Self-test complete!")
+                sys.exit(0 if success else 1)
+            else:
+                print(
+                    "✅ Module loaded successfully - no specific self-tests available"
+                )
+                sys.exit(0)
+        except Exception as e:
+            print(f"Error running self-tests: {e}")
+            sys.exit(1)

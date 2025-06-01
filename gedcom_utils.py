@@ -2302,7 +2302,7 @@ if __name__ == "__main__":
         suite = TestSuite("GEDCOM File Processing & Data Extraction", "gedcom_utils.py")
         suite.start_suite()
 
-        # Test 1: GEDCOM file loading and validation
+        # GEDCOM file loading and validation
         def test_gedcom_file_loading():
             if "load_gedcom_file" in globals():
                 loader = globals()["load_gedcom_file"]
@@ -2342,7 +2342,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require ged4py library
 
-        # Test 2: Individual record processing
+        # Individual record processing
         def test_individual_record_processing():
             if "process_individual_record" in globals():
                 processor = globals()["process_individual_record"]
@@ -2359,7 +2359,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific record format
 
-        # Test 3: Date parsing and normalization
+        # Date parsing and normalization
         def test_date_parsing_normalization():
             if "parse_gedcom_date" in globals():
                 date_parser = globals()["parse_gedcom_date"]
@@ -2382,7 +2382,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Some formats may not be supported
 
-        # Test 4: Name parsing and formatting
+        # Name parsing and formatting
         def test_name_parsing_formatting():
             if "parse_gedcom_name" in globals():
                 name_parser = globals()["parse_gedcom_name"]
@@ -2404,7 +2404,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific parsing logic
 
-        # Test 5: Family relationship extraction
+        # Family relationship extraction
         def test_family_relationship_extraction():
             if "extract_family_relationships" in globals():
                 extractor = globals()["extract_family_relationships"]
@@ -2425,7 +2425,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific data structure
 
-        # Test 6: Person matching and deduplication
+        # Person matching and deduplication
         def test_person_matching_deduplication():
             if "match_persons" in globals():
                 matcher = globals()["match_persons"]
@@ -2449,7 +2449,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific matching algorithm
 
-        # Test 7: GEDCOM validation and error checking
+        # GEDCOM validation and error checking
         def test_gedcom_validation():
             if "validate_gedcom_structure" in globals():
                 validator = globals()["validate_gedcom_structure"]
@@ -2467,7 +2467,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific validation rules
 
-        # Test 8: Statistics and summary generation
+        # Statistics and summary generation
         def test_statistics_summary_generation():
             if "generate_gedcom_statistics" in globals():
                 stats_generator = globals()["generate_gedcom_statistics"]
@@ -2493,7 +2493,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific data processing
 
-        # Test 9: Export and format conversion
+        # Export and format conversion
         def test_export_format_conversion():
             export_functions = [
                 "export_to_csv",
@@ -2517,7 +2517,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific format or file handling
 
-        # Test 10: Performance optimization for large files
+        # Performance optimization for large files
         def test_performance_optimization():
             optimization_functions = [
                 "optimize_gedcom_loading",

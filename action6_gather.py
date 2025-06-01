@@ -3828,7 +3828,7 @@ if __name__ == "__main__":
         suite = TestSuite("Action 6 (Gather DNA Matches)", "action6_gather.py")
         suite.start_suite()
 
-        # Test 1: _lookup_existing_persons function
+        # _lookup_existing_persons function
         def test_lookup_existing_persons():
             from unittest.mock import MagicMock
 
@@ -3861,7 +3861,7 @@ if __name__ == "__main__":
             assert "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB" in result
             assert "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA" in result
 
-        # Test 2: Edge case - Empty UUID list
+        # Edge case - Empty UUID list
         def test_lookup_empty_uuids_edge_case():
             from unittest.mock import MagicMock
 
@@ -3870,7 +3870,7 @@ if __name__ == "__main__":
             assert result == {}
             # This should gracefully handle empty input without database calls
 
-        # Test 3: _identify_fetch_candidates function
+        # _identify_fetch_candidates function
         def test_identify_fetch_candidates():
             matches_on_page = [
                 {
@@ -3913,7 +3913,7 @@ if __name__ == "__main__":
             assert skipped_count == 1
             assert len(process_later) == 3
 
-        # Test 4: Edge case - Missing UUID in match data
+        # Edge case - Missing UUID in match data
         def test_identify_candidates_missing_uuid_edge_case():
             matches_on_page = [
                 {
@@ -3939,7 +3939,7 @@ if __name__ == "__main__":
             assert len(fetch_uuids) == 1
             assert "valid_uuid" in fetch_uuids
 
-        # Test 5: _adjust_delay function
+        # _adjust_delay function
         def test_adjust_delay():
             from unittest.mock import MagicMock, patch
 
@@ -3962,7 +3962,7 @@ if __name__ == "__main__":
 
             mock_rate_limiter.decrease_delay.assert_called_once()
 
-        # Test 6: Edge case - Rate limiter throttled
+        # Edge case - Rate limiter throttled
         def test_adjust_delay_throttled_edge_case():
             from unittest.mock import MagicMock
 
@@ -3979,7 +3979,7 @@ if __name__ == "__main__":
             # Should not call decrease_delay when throttled
             mock_rate_limiter.decrease_delay.assert_not_called()
 
-        # Test 7: Function validation tests
+        # Function validation tests
         def test_fetch_functions_validation():
             # Test that critical fetch functions exist and are callable
             assert callable(_fetch_combined_details)
@@ -3987,7 +3987,7 @@ if __name__ == "__main__":
             assert callable(_fetch_batch_ladder)
             assert callable(_fetch_batch_relationship_prob)
 
-        # Test 8: Edge case - Invalid session manager
+        # Edge case - Invalid session manager
         def test_fetch_combined_invalid_session_edge_case():
             from unittest.mock import MagicMock, patch
 
@@ -4000,7 +4000,7 @@ if __name__ == "__main__":
             # Should gracefully return None for invalid session
             assert result is None
 
-        # Test 9: Logging functions
+        # Logging functions
         def test_logging_functions():
             from unittest.mock import patch
 
@@ -4014,7 +4014,7 @@ if __name__ == "__main__":
             assert mock_debug.called
             assert mock_info.called
 
-        # Test 10: Edge case - Navigation with invalid session
+        # Edge case - Navigation with invalid session
         def test_nav_to_list_invalid_session_edge_case():
             from unittest.mock import MagicMock
 

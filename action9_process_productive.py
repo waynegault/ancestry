@@ -2213,7 +2213,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: Productive message identification
+        # Productive message identification
         def test_productive_message_identification():
             if "identify_productive_messages" in globals():
                 identifier = globals()["identify_productive_messages"]
@@ -2244,7 +2244,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific classification logic
 
-        # Test 2: AI-powered data extraction
+        # AI-powered data extraction
         def test_ai_data_extraction():
             if "extract_genealogical_data" in globals():
                 extractor = globals()["extract_genealogical_data"]
@@ -2272,7 +2272,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require AI service setup
 
-        # Test 3: Structured data validation
+        # Structured data validation
         def test_structured_data_validation():
             if "validate_extracted_data" in globals():
                 validator = globals()["validate_extracted_data"]
@@ -2310,7 +2310,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific validation schema
 
-        # Test 4: Person matching in GEDCOM/API
+        # Person matching in GEDCOM/API
         def test_person_matching():
             if "find_matching_persons" in globals():
                 matcher = globals()["find_matching_persons"]
@@ -2339,7 +2339,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific matching algorithm
 
-        # Test 5: Response generation
+        # Response generation
         def test_response_generation():
             if "generate_genealogical_response" in globals():
                 response_generator = globals()["generate_genealogical_response"]
@@ -2364,7 +2364,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require AI service or template setup
 
-        # Test 6: Microsoft To-Do task creation
+        # Microsoft To-Do task creation
         def test_todo_task_creation():
             if "create_research_tasks" in globals():
                 task_creator = globals()["create_research_tasks"]
@@ -2394,7 +2394,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require Microsoft Graph setup
 
-        # Test 7: Conversation tracking and updates
+        # Conversation tracking and updates
         def test_conversation_tracking():
             if "update_conversation_status" in globals():
                 status_updater = globals()["update_conversation_status"]
@@ -2416,7 +2416,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require database operations
 
-        # Test 8: Error handling and recovery
+        # Error handling and recovery
         def test_error_handling():
             if "handle_processing_errors" in globals():
                 error_handler = globals()["handle_processing_errors"]
@@ -2435,7 +2435,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Error handling may have specific requirements
 
-        # Test 9: Performance monitoring and metrics
+        # Performance monitoring and metrics
         def test_performance_monitoring():
             if "track_processing_metrics" in globals():
                 metrics_tracker = globals()["track_processing_metrics"]
@@ -2464,7 +2464,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific metrics calculation
 
-        # Test 10: Batch processing capabilities
+        # Batch processing capabilities
         def test_batch_processing():
             if "process_messages_batch" in globals():
                 batch_processor = globals()["process_messages_batch"]

@@ -582,7 +582,7 @@ if __name__ == "__main__":
         suite = TestSuite(
             "Performance Monitoring & Metrics Collection", "performance_monitor.py"
         )
-        suite.start_suite()  # Test 1: Performance decorator
+        suite.start_suite()  # Performance decorator
 
         def test_performance_decorator():
             if "monitor_performance" in globals():
@@ -601,7 +601,7 @@ if __name__ == "__main__":
                 assert result == "completed"
                 assert duration >= 0.1  # Should take at least 0.1 seconds
 
-        # Test 2: Timer context manager
+        # Timer context manager
         def test_timer_context_manager():
             if "Timer" in globals():
                 timer_class = globals()["Timer"]
@@ -612,7 +612,7 @@ if __name__ == "__main__":
                 assert hasattr(timer, "elapsed")
                 assert timer.elapsed >= 0.05
 
-        # Test 3: Memory usage tracking
+        # Memory usage tracking
         def test_memory_usage_tracking():
             if "track_memory_usage" in globals():
                 memory_tracker = globals()["track_memory_usage"]
@@ -630,7 +630,7 @@ if __name__ == "__main__":
                 # Memory should have increased
                 assert current_memory >= initial_memory
 
-        # Test 4: Performance metrics collection
+        # Performance metrics collection
         def test_performance_metrics_collection():
             if "collect_metrics" in globals():
                 metrics_collector = globals()["collect_metrics"]
@@ -650,7 +650,7 @@ if __name__ == "__main__":
                     if metric in metrics:
                         assert isinstance(metrics[metric], (int, float))
 
-        # Test 5: Function execution timing
+        # Function execution timing
         def test_function_execution_timing():
             if "time_function" in globals():
                 timer_func = globals()["time_function"]
@@ -665,7 +665,7 @@ if __name__ == "__main__":
                 assert isinstance(duration, float)
                 assert duration > 0
 
-        # Test 6: Performance statistics
+        # Performance statistics
         def test_performance_statistics():
             if "calculate_statistics" in globals():
                 stats_calculator = globals()["calculate_statistics"]
@@ -681,7 +681,7 @@ if __name__ == "__main__":
                     if stat in stats:
                         assert isinstance(stats[stat], (int, float))
 
-        # Test 7: Performance alerting
+        # Performance alerting
         def test_performance_alerting():
             if "check_performance_thresholds" in globals():
                 threshold_checker = globals()["check_performance_thresholds"]
@@ -706,7 +706,7 @@ if __name__ == "__main__":
                 assert isinstance(alerts, list)
                 # Should detect response_time, memory_usage, and error_rate violations
 
-        # Test 8: Performance reporting
+        # Performance reporting
         def test_performance_reporting():
             if "generate_performance_report" in globals():
                 report_generator = globals()["generate_performance_report"]
@@ -728,7 +728,7 @@ if __name__ == "__main__":
                 if isinstance(report, str):
                     assert len(report) > 0
 
-        # Test 9: Resource utilization monitoring
+        # Resource utilization monitoring
         def test_resource_utilization_monitoring():
             monitor_functions = [
                 "monitor_cpu",
@@ -749,7 +749,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific system resources
 
-        # Test 10: Performance data persistence
+        # Performance data persistence
         def test_performance_data_persistence():
             persistence_functions = [
                 "save_performance_data",

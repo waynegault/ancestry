@@ -132,6 +132,46 @@ try:
 
     # Do NOT import api_utils here at the top level
 
+    # --- Performance monitoring imports ---
+    try:
+        from performance_monitor import (
+            monitor_performance,
+            time_function,
+            Timer,
+            track_memory_usage,
+            collect_metrics,
+            calculate_statistics,
+            check_performance_thresholds,
+            generate_performance_report,
+            monitor_cpu,
+            monitor_memory,
+            monitor_disk,
+            monitor_network,
+            performance_monitor,
+            health_checker,
+        )
+
+        HAS_PERFORMANCE_MONITORING = True
+        logger.info("Performance monitoring functions imported successfully")
+    except ImportError as e:
+        HAS_PERFORMANCE_MONITORING = False
+        logger.warning(f"Could not import performance monitoring functions: {e}")
+
+        # Create dummy functions to prevent errors
+        def monitor_performance(service_name: str):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def time_function(func, *args, **kwargs):
+            import time
+
+            start = time.time()
+            result = func(*args, **kwargs)
+            duration = time.time() - start
+            return result, duration
+
     # --- Test framework imports ---
     try:
         from test_framework import (
@@ -6395,7 +6435,6 @@ if __name__ == "__main__":
         suite = TestSuite("Core Utilities & Session Management", "utils.py")
         suite.start_suite()
 
-        # Test 1: SessionManager class existence
         def test_session_manager_class():
             assert (
                 "SessionManager" in globals()
@@ -6404,7 +6443,6 @@ if __name__ == "__main__":
                 sm_class = globals()["SessionManager"]
                 assert callable(sm_class), "SessionManager should be instantiable"
 
-        # Test 2: Format name function
         def test_format_name_function():
             if "format_name" in globals():
                 format_name_func = globals()["format_name"]
@@ -6420,7 +6458,6 @@ if __name__ == "__main__":
             else:
                 suite.add_warning("format_name function not found in utils.py")
 
-        # Test 3: API request wrapper
         def test_api_request_wrapper():
             if "_api_req" in globals():
                 api_req_func = globals()["_api_req"]
@@ -6428,7 +6465,6 @@ if __name__ == "__main__":
             else:
                 suite.add_warning("_api_req function not found in utils.py")
 
-        # Test 4: Rate limiter functionality
         def test_rate_limiter():
             if "DynamicRateLimiter" in globals():
                 rate_limiter_class = globals()["DynamicRateLimiter"]
@@ -6446,7 +6482,6 @@ if __name__ == "__main__":
             else:
                 suite.add_warning("DynamicRateLimiter class not found in utils.py")
 
-        # Test 5: Navigation utilities
         def test_navigation_utilities():
             nav_functions = ["nav_to_page", "ordinal_case"]
 
@@ -6457,7 +6492,6 @@ if __name__ == "__main__":
                 else:
                     suite.add_warning(f"{func_name} function not found in utils.py")
 
-        # Test 6: Retry decorator
         def test_retry_decorator():
             if "retry_api" in globals():
                 retry_decorator = globals()["retry_api"]
@@ -6476,7 +6510,6 @@ if __name__ == "__main__":
             else:
                 suite.add_warning("retry_api decorator not found in utils.py")
 
-        # Test 7: Ordinal case function
         def test_ordinal_case():
             if "ordinal_case" in globals():
                 ordinal_func = globals()["ordinal_case"]
@@ -6498,7 +6531,6 @@ if __name__ == "__main__":
             else:
                 suite.add_warning("ordinal_case function not found in utils.py")
 
-        # Test 8: Session validation
         def test_session_validation():
             if "SessionManager" in globals():
                 # Test with mock session manager
@@ -6514,7 +6546,6 @@ if __name__ == "__main__":
                     "SessionManager not available for session validation testing"
                 )
 
-        # Test 9: Error handling utilities
         def test_error_handling():
             # Test that error handling functions exist if defined
             error_functions = ["handle_api_error", "log_error", "format_error"]
@@ -6524,7 +6555,6 @@ if __name__ == "__main__":
                     func = globals()[func_name]
                     assert callable(func), f"{func_name} should be callable"
 
-        # Test 10: Performance monitoring
         def test_performance_monitoring():
             # Test performance-related utilities if they exist
             perf_functions = ["time_function", "monitor_performance", "log_timing"]

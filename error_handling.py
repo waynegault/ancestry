@@ -522,7 +522,7 @@ if __name__ == "__main__":
         suite = TestSuite("Error Handling & Recovery Systems", "error_handling.py")
         suite.start_suite()
 
-        # Test 1: Exception handling decorators
+        # Exception handling decorators
         def test_exception_handling_decorators():
             decorator_functions = [
                 "handle_exceptions",
@@ -581,7 +581,7 @@ if __name__ == "__main__":
                         )
                         pass
 
-        # Test 2: Error classification
+        # Error classification
         def test_error_classification():
             if "classify_error" in globals():
                 classifier = globals()["classify_error"]
@@ -602,7 +602,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Classification may require specific error format
 
-        # Test 3: Error recovery strategies
+        # Error recovery strategies
         def test_error_recovery_strategies():
             recovery_functions = [
                 "recover_from_network_error",
@@ -622,7 +622,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Recovery may require specific context
 
-        # Test 4: Error logging and reporting
+        # Error logging and reporting
         def test_error_logging_reporting():
             if "log_error_with_context" in globals():
                 logger_func = globals()["log_error_with_context"]
@@ -637,7 +637,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require logging setup
 
-        # Test 5: Graceful degradation
+        # Graceful degradation
         def test_graceful_degradation():
             if "degrade_gracefully" in globals():
                 degrade_func = globals()["degrade_gracefully"]
@@ -656,7 +656,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific service setup
 
-        # Test 6: Error notification systems
+        # Error notification systems
         def test_error_notification_systems():
             notification_functions = [
                 "send_error_notification",
@@ -680,7 +680,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require notification service setup
 
-        # Test 7: Error context preservation
+        # Error context preservation
         def test_error_context_preservation():
             if "preserve_error_context" in globals():
                 context_func = globals()["preserve_error_context"]
@@ -699,7 +699,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific context format
 
-        # Test 8: Error rate limiting
+        # Error rate limiting
         def test_error_rate_limiting():
             if "limit_error_rate" in globals():
                 rate_limiter = globals()["limit_error_rate"]
@@ -712,7 +712,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require rate limiting setup
 
-        # Test 9: Error aggregation and analysis
+        # Error aggregation and analysis
         def test_error_aggregation_analysis():
             analysis_functions = [
                 "aggregate_errors",
@@ -736,7 +736,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific data format
 
-        # Test 10: Error handling configuration
+        # Error handling configuration
         def test_error_handling_configuration():
             config_functions = [
                 "load_error_config",

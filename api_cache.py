@@ -726,11 +726,11 @@ def run_api_cache_tests() -> Dict[str, Any]:
             logger.error(f"API Cache Test '{test_name}' ERROR: {e}")
             return False
 
-    # Test 1: Module Initialization
+    # Module Initialization
     def test_module_initialization():
         return _api_cache_module.get_module_name() == "api_cache"
 
-    # Test 2: Cache Key Generation
+    # Cache Key Generation
     def test_cache_key_generation():
         # Test API cache key
         api_key = create_unified_api_cache_key("test_endpoint", {"param1": "value1"})
@@ -743,7 +743,7 @@ def run_api_cache_tests() -> Dict[str, Any]:
             isinstance(api_key, str) and isinstance(ai_key, str) and api_key != ai_key
         )
 
-    # Test 3: Statistics Collection
+    # Statistics Collection
     def test_statistics_collection():
         stats = _api_cache_module.get_stats()
         required_fields = [
@@ -754,33 +754,33 @@ def run_api_cache_tests() -> Dict[str, Any]:
         ]
         return all(field in stats for field in required_fields)
 
-    # Test 4: Health Status Check
+    # Health Status Check
     def test_health_status():
         health = _api_cache_module.get_health_status()
         required_fields = ["overall_health", "config_health", "distribution_health"]
         return all(field in health for field in required_fields)
 
-    # Test 5: Cache Configuration Validation
+    # Cache Configuration Validation
     def test_cache_configuration():
         return API_CACHE_EXPIRE > 0 and DB_CACHE_EXPIRE > 0 and AI_CACHE_EXPIRE > 0
 
-    # Test 6: Cache Clearing
+    # Cache Clearing
     def test_cache_clearing():
         clear_result = _api_cache_module.clear()
         return isinstance(clear_result, bool)
 
-    # Test 7: Cache Warming
+    # Cache Warming
     def test_cache_warming():
         warm_result = _api_cache_module.warm()
         return isinstance(warm_result, bool)
 
-    # Test 8: API Cache Info Function
+    # API Cache Info Function
     def test_api_cache_info():
         info = get_api_cache_stats()
         expected_fields = ["api_cache_expire", "db_cache_expire", "ai_cache_expire"]
         return all(field in info for field in expected_fields)
 
-    # Test 9: Legacy Cache Key Function
+    # Legacy Cache Key Function
     def test_legacy_cache_key():
         legacy_key = create_api_cache_key("test_endpoint", {"param": "value"})
         return isinstance(legacy_key, str) and legacy_key.startswith("api_")
@@ -955,7 +955,7 @@ if __name__ == "__main__":
         suite = TestSuite("API Response Caching System", "api_cache.py")
         suite.start_suite()
 
-        # Test 1: Cache initialization
+        # Cache initialization
         def test_cache_initialization():
             # Test cache system initialization
             if "APICache" in globals():
@@ -966,7 +966,7 @@ if __name__ == "__main__":
                 assert hasattr(cache, "set")
                 assert hasattr(cache, "delete")
 
-        # Test 2: Basic cache operations
+        # Basic cache operations
         def test_basic_cache_operations():
             # Test get/set/delete operations
             if "APICache" in globals():
@@ -985,7 +985,7 @@ if __name__ == "__main__":
                 deleted = cache.get(test_key)
                 assert deleted is None
 
-        # Test 3: Cache expiration
+        # Cache expiration
         def test_cache_expiration():
             # Test TTL (Time To Live) functionality
             if "APICache" in globals():
@@ -1006,7 +1006,7 @@ if __name__ == "__main__":
                 expired = cache.get(test_key)
                 assert expired is None
 
-        # Test 4: Cache invalidation patterns
+        # Cache invalidation patterns
         def test_cache_invalidation():
             # Test pattern-based cache invalidation
             if "invalidate_cache_pattern" in globals():
@@ -1020,7 +1020,7 @@ if __name__ == "__main__":
                     # Should return count of invalidated items or success status
                     assert isinstance(result, (int, bool))
 
-        # Test 5: Cache hit/miss statistics
+        # Cache hit/miss statistics
         def test_cache_statistics():
             # Test cache performance metrics
             if "get_cache_stats" in globals():
@@ -1033,7 +1033,7 @@ if __name__ == "__main__":
                     if key in stats:
                         assert isinstance(stats[key], (int, float))
 
-        # Test 6: Concurrent cache access
+        # Concurrent cache access
         def test_concurrent_cache_access():
             # Test thread-safe cache operations
             import threading
@@ -1064,7 +1064,7 @@ if __name__ == "__main__":
                 # All operations should succeed
                 assert all(results)
 
-        # Test 7: Cache size limits
+        # Cache size limits
         def test_cache_size_limits():
             # Test cache size management and LRU eviction
             if "APICache" in globals():
@@ -1078,7 +1078,7 @@ if __name__ == "__main__":
                 cache_size = len(cache) if hasattr(cache, "__len__") else cache.size()
                 assert cache_size <= 5
 
-        # Test 8: Cache serialization
+        # Cache serialization
         def test_cache_serialization():
             # Test complex data serialization/deserialization
             complex_data = {
@@ -1095,7 +1095,7 @@ if __name__ == "__main__":
                 retrieved = cache.get("complex_data")
                 assert retrieved == complex_data
 
-        # Test 9: Cache warming strategies
+        # Cache warming strategies
         def test_cache_warming():
             # Test cache pre-loading functionality
             if "warm_cache" in globals():
@@ -1107,7 +1107,7 @@ if __name__ == "__main__":
                 result = warmer(endpoints)
                 assert isinstance(result, (bool, int, dict))
 
-        # Test 10: Error handling and recovery
+        # Error handling and recovery
         def test_error_handling():
             # Test cache error handling
             if "APICache" in globals():

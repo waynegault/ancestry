@@ -18,12 +18,10 @@ sys.path.insert(0, str(current_dir))
 
 def discover_test_modules() -> List[str]:
     """Discover all Python modules that contain tests by scanning the project directory."""
-    test_modules = []
-
-    # Scan all Python files in the current directory
+    test_modules = []  # Scan all Python files in the current directory
     for python_file in current_dir.glob("*.py"):
-        # Skip the test runner itself and __init__.py
-        if python_file.name in ["run_all_tests.py", "__init__.py"]:
+        # Skip the test runner itself, __init__.py, and main.py (interactive application)
+        if python_file.name in ["run_all_tests.py", "__init__.py", "main.py"]:
             continue
 
         module_name = python_file.stem
@@ -62,7 +60,7 @@ def discover_test_modules() -> List[str]:
 
 
 def run_module_test(module_name: str) -> Dict[str, Any]:
-    """Run tests for a specific module."""
+    """Run tests for a specific module using subprocess for safety."""
     print(f"\n{'='*60}")
     print(f"🧪 Testing {module_name}.py")
     print(f"{'='*60}")
@@ -70,47 +68,55 @@ def run_module_test(module_name: str) -> Dict[str, Any]:
     start_time = time.time()
 
     try:
-        # Import and run the module's tests
-        if module_name in sys.modules:
-            importlib.reload(sys.modules[module_name])
-        else:
-            importlib.import_module(module_name)
+        import subprocess
+        import sys
 
-        # Execute the module's test main block
-        module = sys.modules[module_name]
-        if hasattr(module, "__file__"):
-            # Run the module as script to trigger __main__ block
-            old_name = module.__name__
-            module.__name__ = "__main__"
+        # Use subprocess to run the module in isolation to avoid import loops
+        cmd = [sys.executable, f"{module_name}.py"]
 
-            try:
-                # Ensure module.__file__ is not None before using it
-                if module.__file__ is not None:
-                    with open(module.__file__, encoding="utf-8") as f:  # Added encoding
-                        exec(compile(f.read(), module.__file__, "exec"))
-                    success = True
-                    error = None
-                else:
-                    success = False
-                    error = f"Module {module_name} has no __file__ attribute."
-            except SystemExit as e:
-                success = e.code == 0
-                error = None if success else f"Test failed with exit code {e.code}"
-            except Exception as e:
-                success = False
-                error = str(e)
-            finally:
-                module.__name__ = old_name
+        # Run with timeout to prevent infinite loops
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,  # 30 second timeout per module
+            cwd=current_dir,
+        )
+
+        success = result.returncode == 0
+
+        if success:
+            print(f"✅ {module_name}.py tests passed")
         else:
-            success = False
-            error = "Module file not found"
+            print(f"❌ {module_name}.py tests failed (exit code: {result.returncode})")
+            if result.stderr:
+                print(f"   Error output: {result.stderr.strip()[:200]}")
+
+        error = (
+            None
+            if success
+            else f"Exit code {result.returncode}: {result.stderr.strip()[:500]}"
+        )
+
+    except subprocess.TimeoutExpired:
+        success = False
+        error = "Test timeout (30s) - possible infinite loop or hanging test"
+        print(f"⏰ {module_name}.py timed out after 30 seconds")
+
+    except FileNotFoundError:
+        success = False
+        error = f"Module file {module_name}.py not found"
+        print(f"📁 {module_name}.py file not found")
 
     except ImportError as e:
         success = False
         error = f"Import error: {e}"
+        print(f"📦 Import error in {module_name}.py: {e}")
+
     except Exception as e:
         success = False
         error = f"Unexpected error: {e}"
+        print(f"💥 Unexpected error in {module_name}.py: {e}")
 
     duration = time.time() - start_time
 
@@ -252,12 +258,31 @@ def main():
     if skipped_files:
         print(
             f"📋 Skipped files (no test indicators): {', '.join(sorted(skipped_files))}"
-        )
+        )  # Run individual module tests with progress tracking
+    print(f"\n🔄 Running tests for {len(test_modules)} modules...")
+    for i, module_name in enumerate(test_modules, 1):
+        print(f"\n📍 Progress: {i}/{len(test_modules)} - Testing {module_name}.py")
+        try:
+            result = run_module_test(module_name)
+            results.append(result)
 
-    # Run individual module tests
-    for module_name in test_modules:
-        result = run_module_test(module_name)
-        results.append(result)
+            # Show immediate result
+            status = "✅ PASS" if result["success"] else "❌ FAIL"
+            print(f"   {status} ({result['duration']:.1f}s)")
+
+        except KeyboardInterrupt:
+            print(f"\n⚠️  Test run interrupted by user at {module_name}")
+            break
+        except Exception as e:
+            print(f"💥 Critical error testing {module_name}: {e}")
+            results.append(
+                {
+                    "module": module_name,
+                    "success": False,
+                    "duration": 0,
+                    "error": f"Critical test runner error: {e}",
+                }
+            )
 
     # Run unittest suite if available
     unittest_result = run_unittest_suite()

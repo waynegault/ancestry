@@ -645,13 +645,13 @@ def run_all_tests(interactive=False):
     # Run tests
     test_results = {}
 
-    # Test 1: Preferences File
+    # Preferences File
     test_results["preferences_file"] = test_preferences_file()
 
-    # Test 2: Cleanup
+    # Cleanup
     test_results["cleanup"] = test_cleanup()
 
-    # Test 3: Driver Initialization (always headless for automated testing)
+    # Driver Initialization (always headless for automated testing)
     test_results["driver_init"] = test_driver_initialization(headless=True)
 
     # Summary
@@ -744,7 +744,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: ChromeDriver initialization
+        # ChromeDriver initialization
         def test_chromedriver_initialization():
             if "initialize_chrome_driver" in globals():
                 init_func = globals()["initialize_chrome_driver"]
@@ -758,7 +758,7 @@ if __name__ == "__main__":
                     driver = init_func(headless=True)
                     assert driver is not None
 
-        # Test 2: Chrome options configuration
+        # Chrome options configuration
         def test_chrome_options_configuration():
             if "configure_chrome_options" in globals():
                 options_func = globals()["configure_chrome_options"]
@@ -774,7 +774,7 @@ if __name__ == "__main__":
                     options = options_func(**config)
                     assert options is not None
 
-        # Test 3: Browser process management
+        # Browser process management
         def test_browser_process_management():
             # Test process management functions
             process_functions = [
@@ -788,7 +788,7 @@ if __name__ == "__main__":
                 if func_name in globals():
                     assert_valid_function(globals()[func_name], func_name)
 
-        # Test 4: Driver health checks
+        # Driver health checks
         def test_driver_health_checks():
             if "check_driver_health" in globals():
                 health_checker = globals()["check_driver_health"]
@@ -801,7 +801,7 @@ if __name__ == "__main__":
                 is_healthy = health_checker(mock_driver)
                 assert isinstance(is_healthy, bool)
 
-        # Test 5: Driver session recovery
+        # Driver session recovery
         def test_driver_session_recovery():
             if "recover_driver_session" in globals():
                 recovery_func = globals()["recover_driver_session"]
@@ -811,7 +811,7 @@ if __name__ == "__main__":
                 recovered = recovery_func(mock_driver)
                 assert isinstance(recovered, bool)
 
-        # Test 6: Browser profile management
+        # Browser profile management
         def test_browser_profile_management():
             profile_functions = [
                 "create_chrome_profile",
@@ -825,7 +825,7 @@ if __name__ == "__main__":
                     func = globals()[func_name]
                     assert callable(func)
 
-        # Test 7: Extension management
+        # Extension management
         def test_extension_management():
             if "manage_chrome_extensions" in globals():
                 extension_manager = globals()["manage_chrome_extensions"]
@@ -836,7 +836,7 @@ if __name__ == "__main__":
                     result = extension_manager(operation, "test_extension")
                     assert isinstance(result, bool)
 
-        # Test 8: Performance optimization
+        # Performance optimization
         def test_performance_optimization():
             if "optimize_chrome_performance" in globals():
                 optimizer = globals()["optimize_chrome_performance"]
@@ -852,7 +852,7 @@ if __name__ == "__main__":
                 result = optimizer(optimizations)
                 assert isinstance(result, (bool, dict))
 
-        # Test 9: Error handling and recovery
+        # Error handling and recovery
         def test_error_handling():
             # Test various error scenarios
             if "handle_chrome_error" in globals():
@@ -868,7 +868,7 @@ if __name__ == "__main__":
                     result = error_handler(scenario)
                     assert result is not None
 
-        # Test 10: Cleanup and resource management
+        # Cleanup and resource management
         def test_cleanup_and_resource_management():
             cleanup_functions = [
                 "cleanup_chrome_temp_files",

@@ -766,7 +766,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: Prompt loading and validation
+        # Prompt loading and validation
         def test_prompt_loading():
             try:
                 prompts_data = load_prompts()
@@ -791,7 +791,7 @@ if __name__ == "__main__":
             except Exception:
                 pass  # May require actual prompt file
 
-        # Test 2: Prompt retrieval and caching
+        # Prompt retrieval and caching
         def test_prompt_retrieval():
             # Test prompt retrieval functionality
             test_prompts = [
@@ -809,7 +809,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require actual prompt configuration
 
-        # Test 3: Prompt updating and modification
+        # Prompt updating and modification
         def test_prompt_updating():
             # Test prompt update functionality
             test_prompt_name = "test_prompt"
@@ -824,7 +824,7 @@ if __name__ == "__main__":
             except Exception:
                 pass  # May require file write permissions
 
-        # Test 4: Improved prompt importing
+        # Improved prompt importing
         def test_improved_prompt_importing():
             if "import_improved_prompts" in globals():
                 importer = globals()["import_improved_prompts"]
@@ -837,7 +837,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require improved prompts directory
 
-        # Test 5: Unicode and special character handling
+        # Unicode and special character handling
         def test_unicode_handling():
             # Test handling of special characters and unicode
             test_cases = [
@@ -856,7 +856,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific encoding handling
 
-        # Test 6: Prompt template validation
+        # Prompt template validation
         def test_prompt_template_validation():
             if "validate_prompt_template" in globals():
                 validator = globals()["validate_prompt_template"]
@@ -876,7 +876,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific validation logic
 
-        # Test 7: Prompt performance and optimization
+        # Prompt performance and optimization
         def test_prompt_performance():
             performance_functions = [
                 "optimize_prompt_length",
@@ -889,7 +889,7 @@ if __name__ == "__main__":
                 if func_name in globals():
                     assert_valid_function(globals()[func_name], func_name)
 
-        # Test 8: Error handling and recovery
+        # Error handling and recovery
         def test_error_handling():
             # Test error handling in prompt operations
             error_scenarios = [
@@ -906,7 +906,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # Expected for invalid inputs
 
-        # Test 9: Integration with AI systems
+        # Integration with AI systems
         def test_ai_integration():
             if "format_prompt_for_ai" in globals():
                 formatter = globals()["format_prompt_for_ai"]
@@ -925,7 +925,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific formatting logic
 
-        # Test 10: Backup and versioning
+        # Backup and versioning
         def test_backup_versioning():
             versioning_functions = [
                 "backup_prompts",

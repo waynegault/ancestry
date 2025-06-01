@@ -344,7 +344,7 @@ if __name__ == "__main__":
         suite = TestSuite("Logging Configuration & Management", "logging_config.py")
         suite.start_suite()
 
-        # Test 1: Logger configuration
+        # Logger configuration
         def test_logger_configuration():
             # Test that main logger is properly configured
             if "logger" in globals():
@@ -355,7 +355,7 @@ if __name__ == "__main__":
                 assert hasattr(main_logger, "debug")
                 assert hasattr(main_logger, "warning")
 
-        # Test 2: Log level management
+        # Log level management
         def test_log_level_management():
             if "set_log_level" in globals():
                 level_setter = globals()["set_log_level"]
@@ -369,7 +369,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Some implementations may require specific setup
 
-        # Test 3: File handler configuration
+        # File handler configuration
         def test_file_handler_configuration():
             if "setup_file_handler" in globals():
                 handler_setup = globals()["setup_file_handler"]
@@ -381,7 +381,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific permissions or setup
 
-        # Test 4: Console handler configuration
+        # Console handler configuration
         def test_console_handler_configuration():
             if "setup_console_handler" in globals():
                 console_setup = globals()["setup_console_handler"]
@@ -392,7 +392,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific terminal setup
 
-        # Test 5: Log formatting
+        # Log formatting
         def test_log_formatting():
             if "create_formatter" in globals():
                 formatter_creator = globals()["create_formatter"]
@@ -411,7 +411,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Format creation may fail for invalid formats
 
-        # Test 6: Log rotation
+        # Log rotation
         def test_log_rotation():
             rotation_functions = [
                 "setup_rotating_handler",
@@ -432,7 +432,7 @@ if __name__ == "__main__":
                         except Exception:
                             pass  # May require specific setup
 
-        # Test 7: Performance logging
+        # Performance logging
         def test_performance_logging():
             if "log_performance" in globals():
                 perf_logger = globals()["log_performance"]
@@ -451,7 +451,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific performance tracking setup
 
-        # Test 8: Error logging with context
+        # Error logging with context
         def test_error_logging_context():
             if "log_error_with_context" in globals():
                 error_logger = globals()["log_error_with_context"]
@@ -471,7 +471,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific error handling setup
 
-        # Test 9: Log filtering
+        # Log filtering
         def test_log_filtering():
             filter_functions = [
                 "create_level_filter",
@@ -494,7 +494,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific filter setup
 
-        # Test 10: Configuration loading and validation
+        # Configuration loading and validation
         def test_configuration_loading():
             config_functions = [
                 "load_logging_config",

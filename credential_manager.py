@@ -250,7 +250,7 @@ if __name__ == "__main__":
         suite = TestSuite("Credential Management & Security", "credential_manager.py")
         suite.start_suite()
 
-        # Test 1: Credential manager initialization
+        # Credential manager initialization
         def test_credential_manager_initialization():
             if "CredentialManager" in globals():
                 cred_manager_class = globals()["CredentialManager"]
@@ -264,7 +264,7 @@ if __name__ == "__main__":
                     # May require specific setup/config
                     pass
 
-        # Test 2: Credential storage operations
+        # Credential storage operations
         def test_credential_storage_operations():
             storage_functions = [
                 "store_credential",
@@ -277,7 +277,7 @@ if __name__ == "__main__":
                 if func_name in globals():
                     assert_valid_function(globals()[func_name], func_name)
 
-        # Test 3: Encryption and decryption
+        # Encryption and decryption
         def test_encryption_decryption():
             if "encrypt_credential" in globals() and "decrypt_credential" in globals():
                 encrypt_func = globals()["encrypt_credential"]
@@ -296,7 +296,7 @@ if __name__ == "__main__":
                     # May require encryption key setup
                     pass
 
-        # Test 4: Interactive credential input
+        # Interactive credential input
         def test_interactive_credential_input():
             if "get_credential_input" in globals():
                 input_func = globals()["get_credential_input"]
@@ -311,7 +311,7 @@ if __name__ == "__main__":
                             # Expected if function requires specific conditions
                             pass
 
-        # Test 5: Credential validation
+        # Credential validation
         def test_credential_validation():
             validation_functions = [
                 "validate_credential_format",
@@ -332,7 +332,7 @@ if __name__ == "__main__":
                         except Exception:
                             pass  # Some validators may have specific requirements
 
-        # Test 6: Credential file operations
+        # Credential file operations
         def test_credential_file_operations():
             if (
                 "save_credentials_to_file" in globals()
@@ -355,7 +355,7 @@ if __name__ == "__main__":
                         # May require encryption setup
                         pass
 
-        # Test 7: Security key management
+        # Security key management
         def test_security_key_management():
             key_functions = [
                 "generate_encryption_key",
@@ -380,7 +380,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific setup
 
-        # Test 8: Credential export and import
+        # Credential export and import
         def test_credential_export_import():
             export_import_functions = [
                 "export_credentials",
@@ -393,7 +393,7 @@ if __name__ == "__main__":
                     func = globals()[func_name]
                     assert callable(func)
 
-        # Test 9: Error handling and security
+        # Error handling and security
         def test_error_handling_security():
             # Test error scenarios
             error_scenarios = [
@@ -413,7 +413,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Expected for some error scenarios
 
-        # Test 10: Command-line interface
+        # Command-line interface
         def test_command_line_interface():
             cli_functions = [
                 "main",

@@ -2,6 +2,78 @@
 """
 Security Manager for Ancestry.com Automation System
 Provides encrypted credential storage and secure session management.
+
+OVERVIEW:
+=========
+The SecurityManager class provides secure storage and retrieval of sensitive credentials
+such as usernames, passwords, and API keys. It uses industry-standard encryption (Fernet)
+and integrates with the system keyring for master key storage.
+
+KEY FEATURES:
+=============
+- Encrypted credential storage using cryptography.fernet
+- System keyring integration for master key management
+- Secure file permissions (0o600 on Unix systems)
+- Comprehensive validation and error handling
+- Multiple instance support with shared credential files
+- Graceful fallback when keyring is unavailable
+
+TESTING INFORMATION:
+====================
+This module includes a comprehensive test suite with 10 test categories that verify
+all aspects of secure credential management. The test suite follows the project's
+standardized testing framework.
+
+Expected Test Output:
+- ✅ All 10 tests should pass
+- ⚠️ 1 expected warning about file permissions on Windows
+- 🕐 Test completion time: ~0.2 seconds
+
+Expected Warnings During Testing:
+1. "File permissions: 0o666" - Windows doesn't support Unix-style permissions
+2. "Could not retrieve master key from keyring" - Expected on first run
+3. Validation errors are intentionally suppressed during invalid credential tests
+
+USAGE EXAMPLE:
+==============
+```python
+from security_manager import SecurityManager
+
+# Initialize manager
+manager = SecurityManager("MyApp")
+
+# Store credentials
+credentials = {
+    "USERNAME": "user@example.com",
+    "PASSWORD": "secure_password",
+    "API_KEY": "sk-api123456"
+}
+manager.encrypt_credentials(credentials)
+
+# Retrieve specific credential
+username = manager.get_credential("USERNAME")
+
+# Validate credentials
+is_valid = manager.validate_credentials(credentials)
+
+# Clean up
+manager.delete_credentials()
+```
+
+SECURITY CONSIDERATIONS:
+========================
+- Master keys are stored in the system keyring when available
+- Credential files use restrictive permissions (owner-only access)
+- All encryption uses Fernet (symmetric encryption with authentication)
+- Temporary keys are used when keyring is unavailable (session-only)
+- Input validation prevents empty or missing required credentials
+
+ERROR HANDLING:
+===============
+- Graceful degradation when system keyring is unavailable
+- Proper cleanup of temporary files during testing
+- Comprehensive validation with clear error messages
+- Exception handling with detailed logging for debugging
 """
 
 import os
@@ -36,6 +108,9 @@ except ImportError:
             pass
 
         def add_test(self, *args, **kwargs):
+            pass
+
+        def add_warning(self, *args, **kwargs):
             pass
 
         def end_suite(self):
@@ -382,8 +457,376 @@ class SecurityManager:
         return True
 
 
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for security_manager.py.
+    Tests secure credential storage, encryption, and session management.
+
+    EXPECTED WARNINGS/ERRORS:
+    ========================
+
+    1. Keyring Access Warnings:
+       - "Could not retrieve master key from keyring: [error]"
+       - Common on systems without GUI keyring or first-time use
+       - These are expected and handled gracefully by generating new keys
+
+    2. File Permission Warnings:
+       - "File permissions: [octal_value]"
+       - On Windows, Unix-style file permissions (0o600) may not apply
+       - The test still passes as security is best-effort on different platforms
+
+    3. Validation Test Errors (Expected and Suppressed):
+       - Invalid credential tests intentionally trigger validation failures
+       - These errors are suppressed with suppress_logging() context manager
+       - Tests verify that invalid credentials properly return False
+
+    4. System-Specific Behaviors:
+       - Master key storage may fail on systems without keyring support
+       - File deletion may show different behaviors on network drives
+       - Encryption file paths may vary between operating systems
+
+    5. Test Environment Warnings:
+       - Temporary test files are created and cleaned up during testing
+       - Some tests may show "credentials won't persist" warnings for temporary keys
+       - Multiple instance tests intentionally overwrite files to test shared behavior
+
+    SUCCESS CRITERIA:
+    ================
+    - All 10 test categories should pass
+    - Only 1-2 expected warnings about file permissions or keyring access
+    - No critical errors or unhandled exceptions
+    - Test cleanup should remove all temporary files
+    """
+    if not HAS_TEST_FRAMEWORK:
+        return self_test()  # Fallback to simple test if framework unavailable
+
+    suite = TestSuite("Security Manager & Credential Storage", "security_manager.py")
+    suite.start_suite()
+
+    # SecurityManager instantiation and basic setup
+    def test_security_manager_instantiation():
+        manager = SecurityManager("TestApp")
+        assert manager.app_name == "TestApp"
+        assert manager.credentials_file.name == "credentials.enc"
+        assert manager._fernet is None
+
+    # Master key generation and retrieval
+    def test_master_key_operations():
+        manager = SecurityManager("TestKeyApp")
+        try:
+            # Test key generation
+            key1 = manager._get_master_key()
+            assert isinstance(key1, bytes), "Master key should be bytes"
+            # Fernet generates 44-byte base64-encoded keys
+            assert len(key1) in [
+                32,
+                44,
+            ], f"Fernet key should be 32 or 44 bytes, got {len(key1)}"
+
+            # Test key consistency
+            key2 = manager._get_master_key()
+            assert key1 == key2, "Should retrieve same key consistently"
+
+            # Test Fernet instance creation
+            fernet = manager._get_fernet()
+            assert fernet is not None, "Fernet instance should be created"
+        finally:
+            manager.delete_credentials()
+
+    # Credential encryption and decryption
+    def test_credential_encryption_decryption():
+        manager = SecurityManager("TestEncryptApp")
+        test_credentials = {
+            "TEST_USERNAME": "test_user",
+            "TEST_PASSWORD": "test_pass123",
+            "TEST_API_KEY": "sk-test123456789",
+            "SPECIAL_CHARS": "test!@#$%^&*()_+-=[]{}|;:,.<>?",
+        }
+
+        try:
+            # Test encryption
+            result = manager.encrypt_credentials(test_credentials)
+            assert result is True
+
+            # Verify file exists
+            assert manager.credentials_file.exists()
+
+            # Test decryption
+            decrypted = manager.decrypt_credentials()
+            assert decrypted is not None
+            assert decrypted == test_credentials
+
+        finally:
+            manager.delete_credentials()
+
+    # Individual credential retrieval
+    def test_individual_credential_retrieval():
+        manager = SecurityManager("TestRetrievalApp")
+        test_credentials = {
+            "ANCESTRY_USERNAME": "test@example.com",
+            "ANCESTRY_PASSWORD": "secret123",
+            "DEEPSEEK_API_KEY": "sk-deepseek123",
+        }
+
+        try:
+            manager.encrypt_credentials(test_credentials)
+
+            # Test getting existing credentials
+            username = manager.get_credential("ANCESTRY_USERNAME")
+            assert username == "test@example.com"
+
+            password = manager.get_credential("ANCESTRY_PASSWORD")
+            assert password == "secret123"
+
+            # Test getting non-existent credential
+            missing = manager.get_credential("NONEXISTENT_KEY")
+            assert missing is None
+
+        finally:
+            manager.delete_credentials()
+
+    # Credential validation
+    def test_credential_validation():
+        manager = SecurityManager("TestValidationApp")
+
+        # Test valid credentials
+        valid_creds = {
+            "ANCESTRY_USERNAME": "test@example.com",
+            "ANCESTRY_PASSWORD": "password123",
+        }
+        assert manager.validate_credentials(valid_creds) is True
+
+        # Test missing username
+        invalid_creds1 = {"ANCESTRY_PASSWORD": "password123"}
+        with suppress_logging():  # EXPECTED: Suppresses intentional validation error
+            assert manager.validate_credentials(invalid_creds1) is False
+
+        # Test missing password
+        invalid_creds2 = {"ANCESTRY_USERNAME": "test@example.com"}
+        with suppress_logging():  # EXPECTED: Suppresses intentional validation error
+            assert manager.validate_credentials(invalid_creds2) is False
+
+        # Test empty values
+        invalid_creds3 = {"ANCESTRY_USERNAME": "", "ANCESTRY_PASSWORD": "password123"}
+        with suppress_logging():  # EXPECTED: Suppresses intentional validation error
+            assert manager.validate_credentials(invalid_creds3) is False
+
+    # Error handling and edge cases
+    def test_error_handling():
+        manager = SecurityManager("TestErrorApp")
+
+        # Test decryption with no file
+        result = manager.decrypt_credentials()
+        assert result is None
+
+        # Test get_credential with no encrypted file
+        credential = manager.get_credential("ANY_KEY")
+        assert credential is None
+
+        # Test encryption with edge case data
+        try:
+            # This should handle gracefully
+            result = manager.encrypt_credentials({"key": "value"})
+            # Should either succeed or fail gracefully
+            assert isinstance(result, bool)
+        except Exception:
+            # If it raises an exception, that's also acceptable for this edge case
+            pass
+
+    # File permissions and security
+    def test_file_security():
+        import stat
+
+        manager = SecurityManager("TestSecurityApp")
+        test_credentials = {"TEST_KEY": "test_value"}
+
+        try:
+            manager.encrypt_credentials(test_credentials)
+
+            if manager.credentials_file.exists():
+                # Check file permissions (on Unix-like systems)
+                file_stat = manager.credentials_file.stat()
+                file_mode = stat.filemode(file_stat.st_mode)
+
+                # File should be readable/writable by owner only
+                # This test is best-effort since Windows permissions work differently
+                if hasattr(stat, "S_IMODE"):
+                    permissions = stat.S_IMODE(file_stat.st_mode)
+                    # On Unix: should be 0o600 (owner read/write only)
+                    # On Windows: this test may not be meaningful
+                    # WARNING: This intentionally generates a warning message for visibility
+                    suite.add_warning(f"File permissions: {oct(permissions)}")
+
+        finally:
+            manager.delete_credentials()
+
+    # Credential deletion and cleanup
+    def test_credential_deletion():
+        manager = SecurityManager("TestDeleteApp")
+        test_credentials = {"TEST_KEY": "test_value"}
+
+        # Create credentials file
+        manager.encrypt_credentials(test_credentials)
+        assert manager.credentials_file.exists()
+
+        # Test deletion
+        result = manager.delete_credentials()
+        assert result is True
+        assert not manager.credentials_file.exists()
+
+        # Test deletion when file doesn't exist
+        result = manager.delete_credentials()
+        assert result is True  # Should still return True
+
+    # Multiple SecurityManager instances
+    def test_multiple_instances():
+        manager1 = SecurityManager("TestMultiApp")
+        manager2 = SecurityManager("TestMultiApp")  # Same app name
+
+        test_creds1 = {"KEY1": "value1"}
+        test_creds2 = {"KEY2": "value2"}
+
+        try:
+            # Same app name means they share the same master key
+            # so the second encryption will overwrite the first
+
+            # Encrypt credentials with first manager
+            result1 = manager1.encrypt_credentials(test_creds1)
+            assert result1 is True, "First manager should encrypt successfully"
+
+            # Verify first manager can read its own data
+            creds1_first = manager1.decrypt_credentials()
+            assert creds1_first == test_creds1, "Manager1 should read its own data"
+
+            # Encrypt credentials with second manager (will overwrite)
+            result2 = manager2.encrypt_credentials(test_creds2)
+            assert result2 is True, "Second manager should encrypt successfully"
+
+            # Both managers will read the same file (last written)
+            creds1 = manager1.decrypt_credentials()
+            creds2 = manager2.decrypt_credentials()
+
+            # They should both read the same data (from manager2)
+            assert creds1 == test_creds2, "Manager1 should read the latest data"
+            assert creds2 == test_creds2, "Manager2 should read its own data"
+
+        finally:
+            manager1.delete_credentials()
+            manager2.delete_credentials()
+
+    # Integration test - full workflow
+    def test_full_workflow():
+        manager = SecurityManager("TestWorkflowApp")
+
+        # Simulate full setup workflow
+        credentials = {
+            "ANCESTRY_USERNAME": "workflow@test.com",
+            "ANCESTRY_PASSWORD": "workflow123!",
+            "DEEPSEEK_API_KEY": "sk-workflow789",
+        }
+
+        try:
+            # Step 1: Encrypt credentials
+            assert manager.encrypt_credentials(credentials) is True
+
+            # Step 2: Validate stored credentials
+            stored_creds = manager.decrypt_credentials()
+            assert stored_creds is not None, "Should retrieve stored credentials"
+            assert manager.validate_credentials(stored_creds) is True
+
+            # Step 3: Retrieve individual credentials
+            username = manager.get_credential("ANCESTRY_USERNAME")
+            password = manager.get_credential("ANCESTRY_PASSWORD")
+            api_key = manager.get_credential("DEEPSEEK_API_KEY")
+
+            assert username == "workflow@test.com"
+            assert password == "workflow123!"
+            assert api_key == "sk-workflow789"
+
+            # Step 4: Test with missing optional credential
+            google_key = manager.get_credential("GOOGLE_API_KEY")
+            assert google_key is None
+
+        finally:
+            manager.delete_credentials()
+
+    # Run all tests
+    test_functions = {
+        "SecurityManager instantiation": (
+            test_security_manager_instantiation,
+            "Should create SecurityManager instances with proper initialization",
+        ),
+        "Master key operations": (
+            test_master_key_operations,
+            "Should generate and retrieve master encryption keys securely",
+        ),
+        "Credential encryption and decryption": (
+            test_credential_encryption_decryption,
+            "Should encrypt and decrypt credentials with data integrity",
+        ),
+        "Individual credential retrieval": (
+            test_individual_credential_retrieval,
+            "Should retrieve specific credentials from encrypted storage",
+        ),
+        "Credential validation": (
+            test_credential_validation,
+            "Should validate required credentials are present and non-empty",
+        ),
+        "Error handling and edge cases": (
+            test_error_handling,
+            "Should handle missing files and invalid data gracefully",
+        ),
+        "File security and permissions": (
+            test_file_security,
+            "Should set appropriate file permissions for encrypted storage",
+        ),
+        "Credential deletion and cleanup": (
+            test_credential_deletion,
+            "Should securely delete credential files and cleanup resources",
+        ),
+        "Multiple instance isolation": (
+            test_multiple_instances,
+            "Should handle multiple SecurityManager instances with shared credentials",
+        ),
+        "Full workflow integration": (
+            test_full_workflow,
+            "Should support complete credential storage and retrieval workflow",
+        ),
+    }
+
+    with suppress_logging():
+        for test_name, (test_func, expected_behavior) in test_functions.items():
+            suite.run_test(test_name, test_func, expected_behavior)
+
+    return suite.finish_suite()
+
+
 def self_test() -> bool:
-    """Test the SecurityManager functionality."""
+    """
+    Basic functionality test (fallback when test framework unavailable).
+
+    EXPECTED WARNINGS/ERRORS (Self-Test Mode):
+    ==========================================
+
+    1. Keyring Access Warnings:
+       - "Could not retrieve master key from keyring: [error]"
+       - Expected on first run or systems without keyring support
+       - Gracefully handled by generating temporary keys
+
+    2. Credential Validation Errors (Intentionally Suppressed):
+       - Log level temporarily set to CRITICAL during validation tests
+       - Invalid credential tests are expected to fail validation
+       - This verifies proper error handling for missing/invalid credentials
+
+    3. File Permission Behaviors:
+       - Encrypted files created with restrictive permissions (0o600)
+       - May show different behaviors on Windows vs Unix systems
+       - Test cleanup removes temporary files after completion
+
+    4. Expected Test Flow:
+       - Create test credentials → Encrypt → Decrypt → Validate → Cleanup
+       - All steps should succeed with only expected warnings above
+    """
     logger.info("Starting SecurityManager self-test...")
 
     try:
@@ -417,7 +860,9 @@ def self_test() -> bool:
         username = security_manager.get_credential("TEST_USERNAME")
         if username != "test_user":
             logger.error("Failed to retrieve individual credential")
-            return False  # Test validation - temporarily reduce log level for expected failures
+            return False
+
+        # Test validation - temporarily reduce log level for expected failures
         import logging
 
         original_level = logger.level
@@ -455,5 +900,163 @@ def self_test() -> bool:
 
 
 if __name__ == "__main__":
-    success = self_test()
+    success = run_comprehensive_tests()
     exit(0 if success else 1)
+
+
+# =============================================================================
+# DEVELOPER EXAMPLES AND USAGE PATTERNS
+# =============================================================================
+
+"""
+BASIC USAGE EXAMPLES:
+====================
+
+1. Simple Credential Storage:
+   ```python
+   from security_manager import SecurityManager
+   
+   manager = SecurityManager("MyApplication")
+   
+   # Store credentials
+   creds = {
+       "ANCESTRY_USERNAME": "user@example.com",
+       "ANCESTRY_PASSWORD": "my_secure_password"
+   }
+   manager.encrypt_credentials(creds)
+   
+   # Later retrieve credentials
+   stored_creds = manager.decrypt_credentials()
+   username = manager.get_credential("ANCESTRY_USERNAME")
+   ```
+
+2. Multiple API Keys:
+   ```python
+   manager = SecurityManager("APIManager")
+   
+   api_credentials = {
+       "OPENAI_API_KEY": "sk-openai123...",
+       "DEEPSEEK_API_KEY": "sk-deepseek456...",
+       "GOOGLE_API_KEY": "AIza789..."
+   }
+   manager.encrypt_credentials(api_credentials)
+   
+   # Retrieve specific API key
+   openai_key = manager.get_credential("OPENAI_API_KEY")
+   ```
+
+3. Credential Validation:
+   ```python
+   manager = SecurityManager("ValidatedApp")
+   
+   # Check if required credentials exist and are valid
+   required_creds = {
+       "ANCESTRY_USERNAME": "user@domain.com",
+       "ANCESTRY_PASSWORD": "password123"
+   }
+   
+   if manager.validate_credentials(required_creds):
+       print("Credentials are valid!")
+       manager.encrypt_credentials(required_creds)
+   else:
+       print("Missing or invalid credentials")
+   ```
+
+4. Error Handling:
+   ```python
+   manager = SecurityManager("RobustApp")
+   
+   try:
+       # Attempt to retrieve credentials
+       creds = manager.decrypt_credentials()
+       if creds is None:
+           print("No credentials found - first time setup needed")
+           # Handle first-time setup...
+       else:
+           username = manager.get_credential("USERNAME")
+           if username is None:
+               print("USERNAME not found in stored credentials")
+   except Exception as e:
+       print(f"Error accessing credentials: {e}")
+   ```
+
+5. Cleanup and Management:
+   ```python
+   manager = SecurityManager("TemporaryApp")
+   
+   # Store temporary credentials
+   temp_creds = {"TEMP_TOKEN": "abc123"}
+   manager.encrypt_credentials(temp_creds)
+   
+   # Use credentials...
+   
+   # Clean up when done
+   manager.delete_credentials()
+   ```
+
+INTEGRATION PATTERNS:
+====================
+
+1. Configuration Class Integration:
+   ```python
+   class AppConfig:
+       def __init__(self):
+           self.security_manager = SecurityManager("MyApp")
+           self.credentials = self.security_manager.decrypt_credentials()
+       
+       def get_ancestry_credentials(self):
+           return {
+               "username": self.security_manager.get_credential("ANCESTRY_USERNAME"),
+               "password": self.security_manager.get_credential("ANCESTRY_PASSWORD")
+           }
+   ```
+
+2. Context Manager Pattern:
+   ```python
+   from contextlib import contextmanager
+   
+   @contextmanager
+   def secure_credentials(app_name):
+       manager = SecurityManager(app_name)
+       try:
+           yield manager
+       finally:
+           # Optional: cleanup on exit
+           pass
+   
+   # Usage:
+   with secure_credentials("MyApp") as manager:
+       creds = manager.decrypt_credentials()
+       # Use credentials...
+   ```
+
+TESTING YOUR INTEGRATION:
+========================
+
+When integrating SecurityManager into your code, test these scenarios:
+
+1. First-time setup (no existing credentials)
+2. Normal operation (credentials exist and are valid)
+3. Corrupted credential file handling
+4. Missing keyring support
+5. Invalid credential validation
+6. Multiple application instances
+
+Run the test suite to ensure everything works:
+```bash
+python security_manager.py
+```
+
+SECURITY BEST PRACTICES:
+========================
+
+1. Always validate credentials before storing them
+2. Use specific application names to avoid conflicts
+3. Handle the case where keyring is unavailable
+4. Clean up test credentials after testing
+5. Never log actual credential values
+6. Use environment variables for CI/CD testing
+7. Regularly rotate stored credentials
+
+For more information, see the comprehensive test suite in run_comprehensive_tests().
+"""

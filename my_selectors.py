@@ -126,7 +126,7 @@ if __name__ == "__main__":
         suite = TestSuite("CSS Selectors & Element Identification", "my_selectors.py")
         suite.start_suite()
 
-        # Test 1: Login selectors validation
+        # Login selectors validation
         def test_login_selectors():
             login_selectors = []
             for name in globals():
@@ -139,7 +139,7 @@ if __name__ == "__main__":
                 assert isinstance(selector, str), f"{name} should be a string"
                 assert len(selector) > 0, f"{name} should not be empty"
 
-        # Test 2: CSS selector syntax validation
+        # CSS selector syntax validation
         def test_css_selector_syntax():
             # Basic CSS selector pattern validation
             css_pattern = re.compile(
@@ -161,7 +161,7 @@ if __name__ == "__main__":
                         selector
                     ), f"{name} should be valid CSS selector syntax"
 
-        # Test 3: Two-factor authentication selectors
+        # Two-factor authentication selectors
         def test_2fa_selectors():
             tfa_selectors = []
             for name in globals():
@@ -176,7 +176,7 @@ if __name__ == "__main__":
                     assert isinstance(selector, str), f"{name} should be a string"
                     assert len(selector) > 0, f"{name} should not be empty"
 
-        # Test 4: Form element selectors
+        # Form element selectors
         def test_form_element_selectors():
             form_elements = ["INPUT", "BUTTON", "FORM", "FIELD"]
             found_form_selectors = []
@@ -205,7 +205,7 @@ if __name__ == "__main__":
                             f"{name} may not be a valid form selector: {selector}"
                         )
 
-        # Test 5: Navigation selectors
+        # Navigation selectors
         def test_navigation_selectors():
             nav_keywords = ["NAV", "MENU", "LINK", "TAB"]
             nav_selectors = []
@@ -223,7 +223,7 @@ if __name__ == "__main__":
                     # Basic validation for navigation elements
                     assert len(selector) > 0, f"{name} should not be empty"
 
-        # Test 6: Element state selectors
+        # Element state selectors
         def test_element_state_selectors():
             state_keywords = ["ACTIVE", "DISABLED", "VISIBLE", "HIDDEN", "LOADING"]
             state_selectors = []
@@ -238,7 +238,7 @@ if __name__ == "__main__":
             for name, selector in state_selectors:
                 assert isinstance(selector, str), f"{name} should be a string"
 
-        # Test 7: Data attribute selectors
+        # Data attribute selectors
         def test_data_attribute_selectors():
             # Look for selectors using data attributes
             data_selectors = []
@@ -254,7 +254,7 @@ if __name__ == "__main__":
                     "[data-" in selector or "data-" in selector
                 ), f"{name} should use proper data attribute syntax"
 
-        # Test 8: Error and message selectors
+        # Error and message selectors
         def test_error_message_selectors():
             message_keywords = ["ERROR", "MESSAGE", "ALERT", "NOTIFICATION", "WARNING"]
             message_selectors = []
@@ -269,7 +269,7 @@ if __name__ == "__main__":
             for name, selector in message_selectors:
                 assert isinstance(selector, str), f"{name} should be a string"
 
-        # Test 9: Modal and popup selectors
+        # Modal and popup selectors
         def test_modal_popup_selectors():
             modal_keywords = ["MODAL", "POPUP", "DIALOG", "OVERLAY"]
             modal_selectors = []
@@ -284,7 +284,7 @@ if __name__ == "__main__":
             for name, selector in modal_selectors:
                 assert isinstance(selector, str), f"{name} should be a string"
 
-        # Test 10: Selector organization and naming
+        # Selector organization and naming
         def test_selector_organization():
             all_selectors = []
             for name in globals():

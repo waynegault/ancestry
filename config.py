@@ -1002,7 +1002,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: Configuration class initialization
+        # Configuration class initialization
         def test_config_class_initialization():
             config = Config_Class()
             assert config is not None
@@ -1010,7 +1010,7 @@ if __name__ == "__main__":
             assert hasattr(config, "APP_MODE")
             assert hasattr(config, "MAX_PAGES")
 
-        # Test 2: Environment variable integration
+        # Environment variable integration
         def test_environment_variable_integration():
             # Test environment variable loading
             test_env_vars = {
@@ -1024,7 +1024,7 @@ if __name__ == "__main__":
                 assert config.BASE_URL == "https://test.ancestry.com/"
                 assert config.APP_MODE == "testing"
 
-        # Test 3: Default value handling
+        # Default value handling
         def test_default_value_handling():
             # Test that defaults are applied when environment variables are missing
             test_env_vars = {
@@ -1037,7 +1037,7 @@ if __name__ == "__main__":
                 assert config.APP_MODE in ["testing", "production", "dry_run"]
                 assert isinstance(config.MAX_PAGES, int)
 
-        # Test 4: Data type conversion and validation
+        # Data type conversion and validation
         def test_data_type_conversion():
             # Test that string environment variables are converted to appropriate types
             test_env_vars = {
@@ -1054,7 +1054,7 @@ if __name__ == "__main__":
 
                 # Config_Class does not have API_TIMEOUT; skip this check
 
-        # Test 5: Configuration validation
+        # Configuration validation
         def test_config_validation():
             config = Config_Class()
 
@@ -1065,7 +1065,7 @@ if __name__ == "__main__":
             if hasattr(config, "MAX_RETRIES"):
                 assert config.MAX_RETRIES >= 0
 
-        # Test 6: URL validation
+        # URL validation
         def test_url_validation():
             config = Config_Class()
 
@@ -1073,7 +1073,7 @@ if __name__ == "__main__":
             assert config.BASE_URL.startswith("http")
             assert config.BASE_URL.endswith("/")
 
-        # Test 7: Selenium configuration
+        # Selenium configuration
         def test_selenium_config():
             selenium_cfg = SeleniumConfig()
             assert selenium_cfg is not None
@@ -1082,13 +1082,13 @@ if __name__ == "__main__":
             assert hasattr(selenium_cfg, "ELEMENT_TIMEOUT")
             assert hasattr(selenium_cfg, "PAGE_TIMEOUT")
 
-        # Test 8: Configuration file integration
+        # Configuration file integration
         def test_configuration_file_integration():
             # Test integration with configuration files (.env, config files)
             # Skipped: Config_Class does not implement load_from_file.
             pass
 
-        # Test 9: Configuration inheritance and overrides
+        # Configuration inheritance and overrides
         def test_configuration_inheritance():
             # Test configuration inheritance patterns
             base_config = Config_Class()
@@ -1104,7 +1104,7 @@ if __name__ == "__main__":
             # except Exception:
             #     pass  # May not implement update method
 
-        # Test 10: Configuration persistence and caching
+        # Configuration persistence and caching
         def test_configuration_persistence():
             persistence_functions = [
                 "save_config",

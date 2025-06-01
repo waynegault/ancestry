@@ -1365,7 +1365,7 @@ if __name__ == "__main__":
         suite = TestSuite("AI Interface & Integration Layer", "ai_interface.py")
         suite.start_suite()
 
-        # Test 1: AI provider initialization
+        # AI provider initialization
         def test_ai_provider_initialization():
             if "initialize_ai_provider" in globals():
                 initializer = globals()["initialize_ai_provider"]
@@ -1384,7 +1384,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require actual API keys
 
-        # Test 2: Message intent classification
+        # Message intent classification
         def test_message_intent_classification():
             if "classify_message_intent" in globals():
                 classifier = globals()["classify_message_intent"]
@@ -1442,7 +1442,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require AI service setup
 
-        # Test 3: Structured data extraction
+        # Structured data extraction
         def test_structured_data_extraction():
             if "extract_genealogical_data" in globals():
                 extractor = globals()["extract_genealogical_data"]
@@ -1483,7 +1483,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require AI service configuration
 
-        # Test 4: Prompt template management
+        # Prompt template management
         def test_prompt_template_management():
             if "load_prompt_templates" in globals():
                 template_loader = globals()["load_prompt_templates"]
@@ -1505,7 +1505,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require ai_prompts.json file
 
-        # Test 5: Response generation
+        # Response generation
         def test_response_generation():
             if "generate_genealogical_response" in globals():
                 response_generator = globals()["generate_genealogical_response"]
@@ -1543,7 +1543,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require AI provider setup
 
-        # Test 6: Error handling and fallbacks
+        # Error handling and fallbacks
         def test_error_handling_fallbacks():
             if "handle_ai_error" in globals():
                 error_handler = globals()["handle_ai_error"]
@@ -1567,7 +1567,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific error handling logic
 
-        # Test 7: Token usage optimization
+        # Token usage optimization
         def test_token_usage_optimization():
             if "optimize_token_usage" in globals():
                 token_optimizer = globals()["optimize_token_usage"]
@@ -1595,7 +1595,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific optimization logic
 
-        # Test 8: Multi-provider fallback
+        # Multi-provider fallback
         def test_multi_provider_fallback():
             if "try_multiple_providers" in globals():
                 multi_provider = globals()["try_multiple_providers"]
@@ -1619,7 +1619,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require provider implementation
 
-        # Test 9: Response validation and sanitization
+        # Response validation and sanitization
         def test_response_validation_sanitization():
             if "validate_ai_response" in globals():
                 validator = globals()["validate_ai_response"]
@@ -1642,7 +1642,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific validation rules
 
-        # Test 10: Performance monitoring and metrics
+        # Performance monitoring and metrics
         def test_performance_monitoring():
             if "track_ai_performance" in globals():
                 performance_tracker = globals()["track_ai_performance"]

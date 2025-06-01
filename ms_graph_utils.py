@@ -482,7 +482,7 @@ if __name__ == "__main__":
         suite = TestSuite("Microsoft Graph API Integration", "ms_graph_utils.py")
         suite.start_suite()
 
-        # Test 1: OAuth2 authentication flow
+        # OAuth2 authentication flow
         def test_oauth2_authentication():
             if "authenticate_graph" in globals():
                 auth_func = globals()["authenticate_graph"]
@@ -502,7 +502,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require actual Graph API setup
 
-        # Test 2: Device code flow
+        # Device code flow
         def test_device_code_flow():
             if "start_device_flow" in globals():
                 device_flow = globals()["start_device_flow"]
@@ -522,7 +522,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific Graph API configuration
 
-        # Test 3: Token management
+        # Token management
         def test_token_management():
             token_functions = [
                 "save_token",
@@ -536,7 +536,7 @@ if __name__ == "__main__":
                     token_func = globals()[func_name]
                     assert_valid_function(token_func, func_name)
 
-        # Test 4: Task creation in Microsoft To-Do
+        # Task creation in Microsoft To-Do
         def test_task_creation():
             if "create_todo_task" in globals():
                 task_creator = globals()["create_todo_task"]
@@ -560,7 +560,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require actual Graph API access
 
-        # Test 5: Task list management
+        # Task list management
         def test_task_list_management():
             list_functions = ["get_task_lists", "create_task_list", "update_task_list"]
 
@@ -594,7 +594,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific implementation
 
-        # Test 6: Graph API error handling
+        # Graph API error handling
         def test_graph_api_error_handling():
             if "handle_graph_error" in globals():
                 error_handler = globals()["handle_graph_error"]
@@ -619,7 +619,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # Error handler may have specific requirements
 
-        # Test 7: Batch operations
+        # Batch operations
         def test_batch_operations():
             if "batch_graph_requests" in globals():
                 batch_func = globals()["batch_graph_requests"]
@@ -652,7 +652,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific batch implementation
 
-        # Test 8: User profile operations
+        # User profile operations
         def test_user_profile_operations():
             profile_functions = [
                 "get_user_profile",
@@ -686,7 +686,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific Graph API setup
 
-        # Test 9: Webhook and notification setup
+        # Webhook and notification setup
         def test_webhook_notifications():
             webhook_functions = [
                 "create_subscription",
@@ -699,7 +699,7 @@ if __name__ == "__main__":
                     webhook_func = globals()[func_name]
                     assert_valid_function(webhook_func, func_name)
 
-        # Test 10: Configuration and scopes management
+        # Configuration and scopes management
         def test_configuration_scopes():
             if "validate_graph_scopes" in globals():
                 scope_validator = globals()["validate_graph_scopes"]

@@ -55,7 +55,12 @@ except ImportError:
 
 # Import specific functions from gedcom_utils
 try:
-    from gedcom_utils import _are_spouses
+    from gedcom_utils import _are_spouses as _are_spouses_orig
+
+    def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
+        """Wrapper to match expected parameter names."""
+        return _are_spouses_orig(person1_id, person2_id, reader)
+
 except ImportError:
     # Define a fallback if import fails
     def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
@@ -160,9 +165,9 @@ except ImportError:
         parents2 = id_to_parents.get(id2, set())
         return bool(parents1 and parents2 and parents1.intersection(parents2))
 
-    def _are_spouses(id1: str, id2: str, reader: Any) -> bool:
-        """Fallback function for spouse detection."""
-        return False
+    # def _are_spouses(id1: str, id2: str, reader: Any) -> bool:
+    #     """Fallback function for spouse detection."""
+    #     return False
 
     def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
         """Check if id1 is grandparent of id2."""
@@ -1825,7 +1830,6 @@ if __name__ == "__main__":
         suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
         suite.start_suite()
 
-        # Test 1: Format name function
         def test_format_name():
             # Valid names
             assert format_name("john doe") == "John Doe"
@@ -1838,7 +1842,6 @@ if __name__ == "__main__":
             assert format_name("123") == "123"  # Numeric names preserved
             assert format_name("/John/") == "John"  # GEDCOM slashes removed
 
-        # Test 2: Relationship term mapping
         def test_get_relationship_term():
             # Standard relationships
             assert _get_relationship_term("M", "parent") == "father"
@@ -1850,7 +1853,6 @@ if __name__ == "__main__":
             assert _get_relationship_term(None, "parent") == "parent"
             assert _get_relationship_term("U", "child") == "child"
 
-        # Test 3: Fast bidirectional BFS
         def test_fast_bidirectional_bfs():
             # Mock family structure: A -> B -> C
             id_to_parents = {"B": {"A"}, "C": {"B"}}
@@ -1864,7 +1866,6 @@ if __name__ == "__main__":
             path = fast_bidirectional_bfs("A", "A", id_to_parents, id_to_children)
             assert path == ["A"]
 
-        # Test 4: Direct relationship detection
         def test_has_direct_relationship():
             id_to_parents = {"B": {"A"}}
             id_to_children = {"A": {"B"}}
@@ -1881,7 +1882,6 @@ if __name__ == "__main__":
                 == False
             )
 
-        # Test 5: Path to unified format conversion
         def test_convert_gedcom_path_to_unified():
             mock_reader = MagicMock()
             mock_indi_index = {
@@ -1897,7 +1897,6 @@ if __name__ == "__main__":
                 assert isinstance(result, list)
                 assert len(result) >= 0  # Should return a list
 
-        # Test 6: API relationship formatting
         def test_format_api_relationship_path():
             # Valid API response
             api_data = "John Doe is the father of Jane Doe"
@@ -1908,12 +1907,10 @@ if __name__ == "__main__":
             result = format_api_relationship_path(None, "John", "Jane")
             assert "No relationship data" in result
 
-        # Test 7: Edge case - Empty path
         def test_empty_path_handling():
             result = format_relationship_path_unified([], "Target", "Owner")
             assert "No relationship path data available" in result
 
-        # Test 8: Edge case - Invalid input data
         def test_invalid_input_handling():
             # Test with None values
             result = fast_bidirectional_bfs("A", "B", None, None)
@@ -1923,7 +1920,6 @@ if __name__ == "__main__":
             result = fast_bidirectional_bfs("A", "B", {}, {})
             assert result == ["A", "B"]
 
-        # Test 9: Performance limits
         def test_performance_limits():
             # Test timeout and node limits
             large_id_to_parents = {f"ID{i}": {f"ID{i-1}"} for i in range(1, 1000)}
@@ -1945,7 +1941,6 @@ if __name__ == "__main__":
             # Should complete within reasonable time due to limits
             assert duration < 5.0  # Should not take too long due to limits
 
-        # Test 10: Function existence validation
         def test_function_availability():
             assert_valid_function(format_name, "format_name")
             assert_valid_function(fast_bidirectional_bfs, "fast_bidirectional_bfs")

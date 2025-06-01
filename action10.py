@@ -1263,7 +1263,7 @@ if __name__ == "__main__":
         suite = TestSuite("Action 10 - Local GEDCOM Analysis", "action10.py")
         suite.start_suite()
 
-        # Test 1: GEDCOM file loading and processing
+        # GEDCOM file loading and processing
         def test_gedcom_loading():
             if "load_gedcom_file" in globals():
                 loader = globals()["load_gedcom_file"]
@@ -1291,7 +1291,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require ged4py or specific libraries
 
-        # Test 2: Person scoring algorithms
+        # Person scoring algorithms
         def test_person_scoring():
             if "calculate_person_score" in globals():
                 scorer = globals()["calculate_person_score"]
@@ -1316,7 +1316,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific scoring implementation
 
-        # Test 3: Interactive search interface
+        # Interactive search interface
         def test_interactive_search():
             if "interactive_search_menu" in globals():
                 search_menu = globals()["interactive_search_menu"]
@@ -1328,7 +1328,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific terminal interface
 
-        # Test 4: Relationship path calculation
+        # Relationship path calculation
         def test_relationship_paths():
             if "calculate_relationship_path" in globals():
                 path_calculator = globals()["calculate_relationship_path"]
@@ -1348,7 +1348,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific tree structure
 
-        # Test 5: Search result filtering and sorting
+        # Search result filtering and sorting
         def test_result_filtering():
             if "filter_search_results" in globals():
                 filter_func = globals()["filter_search_results"]
@@ -1368,7 +1368,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific filtering logic
 
-        # Test 6: Family information display
+        # Family information display
         def test_family_display():
             if "display_family_info" in globals():
                 display_func = globals()["display_family_info"]
@@ -1387,7 +1387,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific display formatting
 
-        # Test 7: GEDCOM validation and error handling
+        # GEDCOM validation and error handling
         def test_gedcom_validation():
             if "validate_gedcom_file" in globals():
                 validator = globals()["validate_gedcom_file"]
@@ -1409,7 +1409,7 @@ if __name__ == "__main__":
                         except Exception:
                             pass  # May require specific validation logic
 
-        # Test 8: Performance optimization for large trees
+        # Performance optimization for large trees
         def test_performance_optimization():
             optimization_functions = [
                 "optimize_tree_loading",
@@ -1423,7 +1423,7 @@ if __name__ == "__main__":
                     opt_func = globals()[func_name]
                     assert callable(opt_func)
 
-        # Test 9: Export and reporting functionality
+        # Export and reporting functionality
         def test_export_reporting():
             export_functions = [
                 "export_search_results",
@@ -1446,7 +1446,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require file operations
 
-        # Test 10: Command-line interface
+        # Command-line interface
         def test_command_line_interface():
             try:
                 from unittest.mock import patch

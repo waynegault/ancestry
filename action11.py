@@ -3588,7 +3588,7 @@ if __name__ == "__main__":
         suite = TestSuite("Action 11 - Live API Research Tool", "action11.py")
         suite.start_suite()
 
-        # Test 1: Person suggestion API integration
+        # Person suggestion API integration
         def test_person_suggestion_api():
             if "get_person_suggestions" in globals():
                 suggestion_func = globals()["get_person_suggestions"]
@@ -3621,7 +3621,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require actual API setup
 
-        # Test 2: Person selection and validation
+        # Person selection and validation
         def test_person_selection_validation():
             if "validate_person_selection" in globals():
                 validator = globals()["validate_person_selection"]
@@ -3643,7 +3643,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific validation rules
 
-        # Test 3: Person detail fetching
+        # Person detail fetching
         def test_person_detail_fetching():
             if "fetch_person_details" in globals():
                 detail_fetcher = globals()["fetch_person_details"]
@@ -3671,7 +3671,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require API authentication
 
-        # Test 4: Family data processing
+        # Family data processing
         def test_family_data_processing():
             if "process_family_data" in globals():
                 family_processor = globals()["process_family_data"]
@@ -3709,7 +3709,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific data processing logic
 
-        # Test 5: Relationship path calculation to tree owner
+        # Relationship path calculation to tree owner
         def test_relationship_path_calculation():
             if "calculate_relationship_to_tree_owner" in globals():
                 path_calculator = globals()["calculate_relationship_to_tree_owner"]
@@ -3734,7 +3734,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific calculation logic
 
-        # Test 6: Search scoring and ranking
+        # Search scoring and ranking
         def test_search_scoring_ranking():
             if "score_and_rank_results" in globals():
                 scorer_ranker = globals()["score_and_rank_results"]
@@ -3766,7 +3766,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific scoring algorithm
 
-        # Test 7: Interactive result presentation
+        # Interactive result presentation
         def test_interactive_result_presentation():
             if "present_search_results" in globals():
                 presenter = globals()["present_search_results"]
@@ -3789,7 +3789,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require terminal interface setup
 
-        # Test 8: Report generation
+        # Report generation
         def test_report_generation():
             if "generate_research_report" in globals():
                 report_generator = globals()["generate_research_report"]
@@ -3815,7 +3815,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific reporting format
 
-        # Test 9: Error handling and recovery
+        # Error handling and recovery
         def test_error_handling_recovery():
             error_handling_functions = [
                 "handle_api_errors",
@@ -3829,7 +3829,7 @@ if __name__ == "__main__":
                     error_func = globals()[func_name]
                     assert_valid_function(error_func, func_name)
 
-        # Test 10: Performance optimization
+        # Performance optimization
         def test_performance_optimization():
             optimization_functions = [
                 "cache_api_responses",

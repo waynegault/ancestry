@@ -658,11 +658,11 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
             logger.error(f"GEDCOM Cache Test '{test_name}' ERROR: {e}")
             return False
 
-    # Test 1: Module Initialization
+    # Module Initialization
     def test_module_initialization():
         return _gedcom_cache_module.get_module_name() == "gedcom_cache"
 
-    # Test 2: Memory Cache Basic Operations
+    # Memory Cache Basic Operations
     def test_memory_cache_operations():
         test_key = "test_operation_key"
         test_data = {"test": "data", "timestamp": time.time()}
@@ -679,7 +679,7 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
 
         return retrieved == test_data
 
-    # Test 3: Cache Key Generation
+    # Cache Key Generation
     def test_cache_key_generation():
         if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
             return True  # Skip if no GEDCOM configured
@@ -693,7 +693,7 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
 
         return key1 == key2  # Keys should be consistent
 
-    # Test 4: Statistics Collection
+    # Statistics Collection
     def test_statistics_collection():
         stats = _gedcom_cache_module.get_stats()
         required_fields = [
@@ -703,7 +703,7 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
         ]
         return all(field in stats for field in required_fields)
 
-    # Test 5: Health Status Check
+    # Health Status Check
     def test_health_status():
         health = _gedcom_cache_module.get_health_status()
         required_fields = [
@@ -713,7 +713,7 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
         ]
         return all(field in health for field in required_fields)
 
-    # Test 6: Cache Clearing
+    # Cache Clearing
     def test_cache_clearing():
         # Add some test data
         test_key = "clear_test_key"
@@ -725,13 +725,13 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
         # Check if cleared
         return clear_result and test_key not in _MEMORY_CACHE
 
-    # Test 7: Cache Warming
+    # Cache Warming
     def test_cache_warming():
         warm_result = _gedcom_cache_module.warm()
         # Warming should either succeed or fail gracefully
         return isinstance(warm_result, bool)
 
-    # Test 8: Memory Cache Expiration
+    # Memory Cache Expiration
     def test_memory_cache_expiration():
         test_key = "expiration_test_key"
         test_data = "expiration_test_data"
@@ -964,7 +964,7 @@ if __name__ == "__main__":
         suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")
         suite.start_suite()
 
-        # Test 1: GEDCOM cache initialization
+        # GEDCOM cache initialization
         def test_gedcom_cache_initialization():
             if "GedcomCache" in globals():
                 cache_class = globals()["GedcomCache"]
@@ -979,7 +979,7 @@ if __name__ == "__main__":
                     # May require specific configuration
                     pass
 
-        # Test 2: GEDCOM file parsing and caching
+        # GEDCOM file parsing and caching
         def test_gedcom_parsing_caching():
             if "parse_and_cache_gedcom" in globals():
                 parser = globals()["parse_and_cache_gedcom"]
@@ -1009,7 +1009,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require ged4py or specific setup
 
-        # Test 3: Cache invalidation based on file modification
+        # Cache invalidation based on file modification
         def test_cache_invalidation_file_modification():
             if "check_file_modification" in globals():
                 mod_checker = globals()["check_file_modification"]
@@ -1024,7 +1024,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific file system setup
 
-        # Test 4: Cached data retrieval
+        # Cached data retrieval
         def test_cached_data_retrieval():
             if "get_cached_gedcom_data" in globals():
                 retriever = globals()["get_cached_gedcom_data"]
@@ -1039,7 +1039,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # Expected if cache doesn't exist
 
-        # Test 5: Cache performance metrics
+        # Cache performance metrics
         def test_cache_performance_metrics():
             if "get_cache_performance_stats" in globals():
                 stats_func = globals()["get_cache_performance_stats"]
@@ -1061,7 +1061,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require cache activity first
 
-        # Test 6: Memory management and cleanup
+        # Memory management and cleanup
         def test_memory_management_cleanup():
             cleanup_functions = [
                 "cleanup_cache_memory",
@@ -1079,7 +1079,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require active cache
 
-        # Test 7: Cache serialization and persistence
+        # Cache serialization and persistence
         def test_cache_serialization_persistence():
             if (
                 "save_cache_to_disk" in globals()
@@ -1105,7 +1105,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific serialization format
 
-        # Test 8: Multi-file cache management
+        # Multi-file cache management
         def test_multifile_cache_management():
             if "manage_multiple_gedcom_caches" in globals():
                 manager = globals()["manage_multiple_gedcom_caches"]
@@ -1123,7 +1123,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require actual files
 
-        # Test 9: Cache validation and integrity
+        # Cache validation and integrity
         def test_cache_validation_integrity():
             if "validate_cache_integrity" in globals():
                 validator = globals()["validate_cache_integrity"]
@@ -1141,7 +1141,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific validation rules
 
-        # Test 10: Performance optimization strategies
+        # Performance optimization strategies
         def test_performance_optimization_strategies():
             optimization_functions = [
                 "optimize_cache_loading",

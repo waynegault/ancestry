@@ -306,16 +306,28 @@ def _run_simple_suggestion_scoring(
 
     # Score birth year
     if search_birth_year and cand_birth_year:
-        if search_birth_year == cand_birth_year:
-            score = birth_year_match_score
-            total_score += score
-            field_scores["birth_year"] = score
-            reasons.append(f"Birth year {search_birth_year} matched exactly")
-        elif abs(search_birth_year - cand_birth_year) <= year_range:
-            score = birth_year_close_score
-            total_score += score
-            field_scores["birth_year"] = score
-            reasons.append(f"Birth year {search_birth_year} close to {cand_birth_year}")
+        # Ensure both values are integers for arithmetic operations
+        try:
+            search_birth_year_int = int(search_birth_year)
+            cand_birth_year_int = int(cand_birth_year)
+
+            if search_birth_year_int == cand_birth_year_int:
+                score = birth_year_match_score
+                total_score += score
+                field_scores["birth_year"] = score
+                reasons.append(f"Birth year {search_birth_year} matched exactly")
+            elif abs(search_birth_year_int - cand_birth_year_int) <= year_range:
+                score = birth_year_close_score
+                total_score += score
+                field_scores["birth_year"] = score
+                reasons.append(
+                    f"Birth year {search_birth_year} close to {cand_birth_year}"
+                )
+        except (ValueError, TypeError) as e:
+            # Log the error but continue processing without awarding birth year points
+            logger.debug(
+                f"Birth year comparison failed - search: {search_birth_year} ({type(search_birth_year)}), candidate: {cand_birth_year} ({type(cand_birth_year)}), error: {e}"
+            )
 
     # Score birth place
     if (
@@ -332,16 +344,28 @@ def _run_simple_suggestion_scoring(
 
     # Score death year
     if search_death_year and cand_death_year:
-        if search_death_year == cand_death_year:
-            score = death_year_match_score
-            total_score += score
-            field_scores["death_year"] = score
-            reasons.append(f"Death year {search_death_year} matched exactly")
-        elif abs(search_death_year - cand_death_year) <= year_range:
-            score = death_year_close_score
-            total_score += score
-            field_scores["death_year"] = score
-            reasons.append(f"Death year {search_death_year} close to {cand_death_year}")
+        # Ensure both values are integers for arithmetic operations
+        try:
+            search_death_year_int = int(search_death_year)
+            cand_death_year_int = int(cand_death_year)
+
+            if search_death_year_int == cand_death_year_int:
+                score = death_year_match_score
+                total_score += score
+                field_scores["death_year"] = score
+                reasons.append(f"Death year {search_death_year} matched exactly")
+            elif abs(search_death_year_int - cand_death_year_int) <= year_range:
+                score = death_year_close_score
+                total_score += score
+                field_scores["death_year"] = score
+                reasons.append(
+                    f"Death year {search_death_year} close to {cand_death_year}"
+                )
+        except (ValueError, TypeError) as e:
+            # Log the error but continue processing without awarding death year points
+            logger.debug(
+                f"Death year comparison failed - search: {search_death_year} ({type(search_death_year)}), candidate: {cand_death_year} ({type(cand_death_year)}), error: {e}"
+            )
 
     # Score death place
     if (
@@ -1139,8 +1163,8 @@ def self_test() -> bool:
 
         return status == "PASS"
 
-    # Test 1: get_config_value function
-    print("Test 1: Testing get_config_value function...")
+    # get_config_value function
+    print("Testing get_config_value function...")
 
     def test_config_with_none():
         # Mock config_instance as None
@@ -1193,8 +1217,8 @@ def self_test() -> bool:
 
     run_test("get_config_value with missing key", test_config_missing_key, True)
 
-    # Test 2: _extract_year_from_date function
-    print("\nTest 2: Testing _extract_year_from_date function...")
+    # _extract_year_from_date function
+    print("\nTesting _extract_year_from_date function...")
 
     def test_extract_year_valid():
         return _extract_year_from_date("15 Jan 1985") == 1985
@@ -1223,8 +1247,8 @@ def self_test() -> bool:
         "_extract_year_from_date with complex string", test_extract_year_complex, True
     )
 
-    # Test 3: _run_simple_suggestion_scoring function
-    print("\nTest 3: Testing _run_simple_suggestion_scoring function...")
+    # _run_simple_suggestion_scoring function
+    print("\nTesting _run_simple_suggestion_scoring function...")
 
     def test_scoring_exact_match():
         search_criteria = {
@@ -1301,8 +1325,8 @@ def self_test() -> bool:
         True,
     )
 
-    # Test 4: search_api_for_criteria function (with mocked APIs)
-    print("\nTest 4: Testing search_api_for_criteria function...")
+    # search_api_for_criteria function (with mocked APIs)
+    print("\nTesting search_api_for_criteria function...")
 
     def test_search_invalid_session():
         mock_session = MagicMock()
@@ -1391,8 +1415,8 @@ def self_test() -> bool:
 
     run_test("search_api_for_criteria with mock API", test_search_with_mock_api, True)
 
-    # Test 5: get_api_family_details function (with mocked APIs)
-    print("\nTest 5: Testing get_api_family_details function...")
+    # get_api_family_details function (with mocked APIs)
+    print("\nTesting get_api_family_details function...")
 
     def test_family_details_invalid_session():
         mock_session = MagicMock()
@@ -1504,8 +1528,8 @@ def self_test() -> bool:
         "get_api_family_details with mock API", test_family_details_with_mock_api, True
     )
 
-    # Test 6: get_api_relationship_path function (with mocked APIs)
-    print("\nTest 6: Testing get_api_relationship_path function...")
+    # get_api_relationship_path function (with mocked APIs)
+    print("\nTesting get_api_relationship_path function...")
 
     def test_relationship_path_invalid_session():
         mock_session = MagicMock()
@@ -1599,8 +1623,8 @@ def self_test() -> bool:
         True,
     )
 
-    # Test 7: Error handling and edge cases
-    print("\nTest 7: Testing error handling and edge cases...")
+    # Error handling and edge cases
+    print("\nTesting error handling and edge cases...")
 
     def test_scoring_with_none_weights():
         search_criteria = {"first_name": "John"}
@@ -1656,8 +1680,8 @@ def self_test() -> bool:
 
     run_test("_extract_year_from_date edge cases", test_extract_year_edge_cases, True)
 
-    # Test 8: Integration test with multiple components
-    print("\nTest 8: Integration tests...")
+    # Integration test with multiple components
+    print("\nIntegration tests...")
 
     def test_full_search_workflow():
         """Test the complete search workflow with mocked dependencies"""
@@ -1799,7 +1823,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: Search query building
+        # Search query building
         def test_search_query_building():
             if "build_search_query" in globals():
                 builder = globals()["build_search_query"]
@@ -1818,7 +1842,7 @@ if __name__ == "__main__":
                 )
                 assert isinstance(complex_query, dict)
 
-        # Test 2: Search result parsing
+        # Search result parsing
         def test_search_result_parsing():
             mock_api_response = {
                 "results": [
@@ -1842,7 +1866,7 @@ if __name__ == "__main__":
                 assert isinstance(results, list)
                 assert len(results) >= 0
 
-        # Test 3: Query parameter validation
+        # Query parameter validation
         def test_query_parameter_validation():
             # Test parameter validation functions
             validation_functions = [
@@ -1867,7 +1891,7 @@ if __name__ == "__main__":
                         result = validator("New York, USA")
                         assert isinstance(result, bool)
 
-        # Test 4: Search result scoring
+        # Search result scoring
         def test_search_result_scoring():
             mock_results = [
                 {"name": "John Smith", "birth_year": 1950, "match_confidence": 0.95},
@@ -1882,7 +1906,7 @@ if __name__ == "__main__":
                 )
                 assert isinstance(scored_results, list)
 
-        # Test 5: API endpoint management
+        # API endpoint management
         def test_api_endpoint_management():
             # Test endpoint URL building
             if "build_search_endpoint" in globals():
@@ -1894,7 +1918,7 @@ if __name__ == "__main__":
                     assert isinstance(endpoint, str)
                     assert endpoint.startswith("http")
 
-        # Test 6: Search filters and facets
+        # Search filters and facets
         def test_search_filters():
             # Test search filter functionality
             if "apply_search_filters" in globals():
@@ -1910,7 +1934,7 @@ if __name__ == "__main__":
                 filtered_query = filter_func(base_query, filters)
                 assert isinstance(filtered_query, dict)
 
-        # Test 7: Pagination handling
+        # Pagination handling
         def test_pagination_handling():
             # Test pagination for large result sets
             if "handle_search_pagination" in globals():
@@ -1927,7 +1951,7 @@ if __name__ == "__main__":
                 pagination_info = paginator(mock_response)
                 assert isinstance(pagination_info, dict)
 
-        # Test 8: Error handling in search operations
+        # Error handling in search operations
         def test_search_error_handling():
             # Test various error scenarios
             error_scenarios = [
@@ -1943,7 +1967,7 @@ if __name__ == "__main__":
                     result = error_handler(scenario)
                     assert result is not None
 
-        # Test 9: Search caching mechanisms
+        # Search caching mechanisms
         def test_search_caching():
             # Test search result caching
             if "cache_search_results" in globals() and "get_cached_search" in globals():
@@ -1957,7 +1981,7 @@ if __name__ == "__main__":
                 cached = get_func(query_key)
                 # May return results or None depending on cache implementation
 
-        # Test 10: Advanced search features
+        # Advanced search features
         def test_advanced_search_features():
             # Test advanced search capabilities
             advanced_functions = [

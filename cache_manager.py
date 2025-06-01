@@ -461,7 +461,7 @@ def run_cache_manager_tests() -> bool:
 
     print(f"\n🧪 Starting {test_count} Cache Manager Tests...")
 
-    # Test 1: Cache Manager Initialization
+    # Cache Manager Initialization
     try:
         test_manager = CacheManager()
         test_result(
@@ -472,7 +472,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Cache Manager Initialization", False, f"(error: {e})")
 
-    # Test 2: Initialize All Caches
+    # Initialize All Caches
     try:
         results = cache_manager.initialize_all_caches()
         success_count = sum(results.values())
@@ -485,7 +485,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Cache System Initialization", False, f"(error: {e})")
 
-    # Test 3: Get Comprehensive Stats
+    # Get Comprehensive Stats
     try:
         stats = cache_manager.get_comprehensive_stats()
         required_keys = [
@@ -502,7 +502,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Comprehensive Statistics", False, f"(error: {e})")
 
-    # Test 4: Cache Performance Logging
+    # Cache Performance Logging
     try:
         # Capture log output (this will log to configured logger)
         cache_manager.log_cache_performance()
@@ -510,7 +510,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Cache Performance Logging", False, f"(error: {e})")
 
-    # Test 5: Cache Invalidation
+    # Cache Invalidation
     try:
         invalidated_count = cache_manager.invalidate_stale_caches()
         test_result(
@@ -521,7 +521,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Cache Invalidation", False, f"(error: {e})")
 
-    # Test 6: Cache Performance Optimization
+    # Cache Performance Optimization
     try:
         optimization_results = cache_manager.optimize_cache_performance()
         required_keys = [
@@ -540,7 +540,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Performance Optimization", False, f"(error: {e})")
 
-    # Test 7: Global Function Tests
+    # Global Function Tests
     try:
         success = initialize_aggressive_caching()
         test_result(
@@ -551,7 +551,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Global Initialize Function", False, f"(error: {e})")
 
-    # Test 8: Global Performance Report
+    # Global Performance Report
     try:
         report = get_cache_performance_report()
         test_result(
@@ -562,14 +562,14 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Global Performance Report", False, f"(error: {e})")
 
-    # Test 9: Global Cache Status Logging
+    # Global Cache Status Logging
     try:
         log_cache_status()
         test_result("Global Cache Status Logging", True, "(logged successfully)")
     except Exception as e:
         test_result("Global Cache Status Logging", False, f"(error: {e})")
 
-    # Test 10: Cache History Tracking
+    # Cache History Tracking
     try:
         # Generate multiple stats to test history tracking
         for i in range(3):
@@ -583,7 +583,7 @@ def run_cache_manager_tests() -> bool:
     except Exception as e:
         test_result("Cache History Tracking", False, f"(error: {e})")
 
-    # Test 11: Cache Clear Operations
+    # Cache Clear Operations
     try:
         clear_results = cache_manager.clear_all_caches()
         test_result(
@@ -1057,28 +1057,28 @@ def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
             logger.error(f"Enhanced Cache Manager Test '{test_name}' ERROR: {e}")
             return False
 
-    # Test 1: Manager Initialization
+    # Manager Initialization
     def test_manager_initialization():
         return _enhanced_cache_manager.get_module_name() == "cache_manager"
 
-    # Test 2: Module Registration
+    # Module Registration
     def test_module_registration():
         stats = _enhanced_cache_manager.get_stats()
         return stats.get("manager_stats", {}).get("managed_modules_count", 0) >= 0
 
-    # Test 3: Statistics Collection
+    # Statistics Collection
     def test_statistics_collection():
         stats = get_cache_manager_stats()
         required_fields = ["manager_stats", "module_stats"]
         return all(field in stats for field in required_fields)
 
-    # Test 4: Health Status Check
+    # Health Status Check
     def test_health_status():
         health = get_cache_manager_health()
         required_fields = ["overall_health", "manager_health", "modules_registered"]
         return all(field in health for field in required_fields)
 
-    # Test 5: Comprehensive Report
+    # Comprehensive Report
     def test_comprehensive_report():
         report = get_comprehensive_cache_report()
         required_fields = [
@@ -1090,27 +1090,27 @@ def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
         ]
         return all(field in report for field in required_fields)
 
-    # Test 6: Cache Coordination
+    # Cache Coordination
     def test_cache_coordination():
         coordination_stats = get_cache_coordination_stats()
         return isinstance(coordination_stats, dict)
 
-    # Test 7: Cache Clearing Coordination
+    # Cache Clearing Coordination
     def test_cache_clearing():
         clear_result = clear_all_managed_caches()
         return isinstance(clear_result, bool)
 
-    # Test 8: Cache Warming Coordination
+    # Cache Warming Coordination
     def test_cache_warming():
         warm_result = warm_all_managed_caches()
         return isinstance(warm_result, bool)
 
-    # Test 9: Invalidation Coordination
+    # Invalidation Coordination
     def test_invalidation_coordination():
         results = coordinate_invalidation("test_pattern_*", [])
         return isinstance(results, dict)
 
-    # Test 10: Legacy Manager Integration
+    # Legacy Manager Integration
     def test_legacy_manager_integration():
         # Test that the original manager still works
         manager = CacheManager()
@@ -1190,7 +1190,7 @@ if __name__ == "__main__":
         )
         suite.start_suite()
 
-        # Test 1: Cache manager initialization
+        # Cache manager initialization
         def test_cache_manager_initialization():
             if "CacheManager" in globals():
                 cache_manager_class = globals()["CacheManager"]
@@ -1200,7 +1200,7 @@ if __name__ == "__main__":
                 assert hasattr(cache_manager, "set")
                 assert hasattr(cache_manager, "clear")
 
-        # Test 2: Multi-level cache operations
+        # Multi-level cache operations
         def test_multilevel_cache_operations():
             if "CacheManager" in globals():
                 cache_manager = globals()["CacheManager"]()
@@ -1215,7 +1215,7 @@ if __name__ == "__main__":
                 result = cache_manager.get("disk_key")
                 assert result == "disk_value"
 
-        # Test 3: Cache eviction policies
+        # Cache eviction policies
         def test_cache_eviction_policies():
             if "CacheManager" in globals():
                 cache_manager = globals()["CacheManager"](max_size=3)
@@ -1228,7 +1228,7 @@ if __name__ == "__main__":
                 cache_size = cache_manager.size()
                 assert cache_size <= 3
 
-        # Test 4: Cache invalidation strategies
+        # Cache invalidation strategies
         def test_cache_invalidation():
             if "invalidate_cache" in globals():
                 invalidator = globals()["invalidate_cache"]
@@ -1239,7 +1239,7 @@ if __name__ == "__main__":
                     result = invalidator(pattern)
                     assert isinstance(result, (bool, int))
 
-        # Test 5: Cache warming
+        # Cache warming
         def test_cache_warming():
             if "warm_cache" in globals():
                 warmer = globals()["warm_cache"]
@@ -1253,7 +1253,7 @@ if __name__ == "__main__":
                 result = warmer(data_sources)
                 assert isinstance(result, (bool, dict))
 
-        # Test 6: Cache statistics and monitoring
+        # Cache statistics and monitoring
         def test_cache_statistics():
             if "get_cache_stats" in globals():
                 stats_func = globals()["get_cache_stats"]
@@ -1270,7 +1270,7 @@ if __name__ == "__main__":
                     if metric in stats:
                         assert isinstance(stats[metric], (int, float))
 
-        # Test 7: TTL (Time To Live) handling
+        # TTL (Time To Live) handling
         def test_ttl_handling():
             if "CacheManager" in globals():
                 cache_manager = globals()["CacheManager"]()
@@ -1289,7 +1289,7 @@ if __name__ == "__main__":
                     expired_result = cache_manager.get("ttl_key")
                     assert expired_result is None
 
-        # Test 8: Cache serialization
+        # Cache serialization
         def test_cache_serialization():
             complex_data = {
                 "nested": {"dict": ["with", "arrays"]},
@@ -1305,7 +1305,7 @@ if __name__ == "__main__":
                 retrieved = cache_manager.get("complex_key")
                 assert retrieved == complex_data
 
-        # Test 9: Cache persistence
+        # Cache persistence
         def test_cache_persistence():
             if (
                 "save_cache_to_disk" in globals()
@@ -1325,7 +1325,7 @@ if __name__ == "__main__":
                     if loaded_data:
                         assert isinstance(loaded_data, dict)
 
-        # Test 10: Cache cleanup and maintenance
+        # Cache cleanup and maintenance
         def test_cache_cleanup():
             # Test cache cleanup operations
             cleanup_functions = ["cleanup_expired", "compress_cache", "optimize_cache"]

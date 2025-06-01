@@ -1683,9 +1683,9 @@ def self_test():
     tests_run = 0
     tests_passed = 0
 
-    # --- Test 1: _extract_conversation_info method (Enhanced) ---
+    # --- _extract_conversation_info method (Enhanced) ---
     colored_print(
-        "Test 1: Testing _extract_conversation_info method (including edge cases)...",
+        "Testing _extract_conversation_info method (including edge cases)...",
         Colors.BLUE + Colors.BOLD,
     )
     tests_run += 1
@@ -1778,9 +1778,9 @@ def self_test():
             Colors.RED,
         )
 
-    # --- Test 2: _format_context_for_ai method (Enhanced) ---
+    # --- _format_context_for_ai method (Enhanced) ---
     colored_print(
-        "\nTest 2: Testing _format_context_for_ai method (including edge cases)...",
+        "\nTesting _format_context_for_ai method (including edge cases)...",
         Colors.BLUE + Colors.BOLD,
     )
     tests_run += 1
@@ -1864,9 +1864,9 @@ def self_test():
             Colors.RED,
         )
 
-    # --- Test 3: _create_comparator method (Enhanced) ---
+    # --- _create_comparator method (Enhanced) ---
     colored_print(
-        "\nTest 3: Testing _create_comparator method (including error cases)...",
+        "\nTesting _create_comparator method (including error cases)...",
         Colors.BLUE + Colors.BOLD,
     )
     tests_run += 1
@@ -1924,8 +1924,8 @@ def self_test():
             Colors.RED,
         )
 
-    # --- Test 4: Statistics tracking ---
-    colored_print("\nTest 4: Testing statistics tracking...", Colors.BLUE + Colors.BOLD)
+    # --- Statistics tracking ---
+    colored_print("\nTesting statistics tracking...", Colors.BLUE + Colors.BOLD)
     tests_run += 1
 
     stats = processor.get_statistics()
@@ -1942,8 +1942,8 @@ def self_test():
     else:
         colored_print(f"  ❌ Statistics tracking failed: {stats}", Colors.RED)
 
-    # --- Test 5: Input validation ---
-    colored_print("\nTest 5: Testing input validation...", Colors.BLUE + Colors.BOLD)
+    # --- Input validation ---
+    colored_print("\nTesting input validation...", Colors.BLUE + Colors.BOLD)
     tests_run += 1
 
     # Test with invalid config values
@@ -1968,7 +1968,7 @@ def self_test():
     else:
         colored_print("  ❌ Input validation failed", Colors.RED)
 
-    # --- Test 6: Comprehensive integration test ---
+    # --- Comprehensive integration test ---
     colored_print(
         "\nTest 6: Testing comprehensive integration scenario...",
         Colors.BLUE + Colors.BOLD,

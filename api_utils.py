@@ -13,17 +13,42 @@ Note: Relationship path formatting functions previously in test_relationship_pat
 """
 
 # --- Standard library imports ---
-import logging
 import re
 import json
 import time  # For rate limiting and delays
 import traceback  # For error reporting
 import requests  # Keep for exception types and Response object checking
+import logging
+import uuid
 from typing import Optional, Dict, Any, List, Tuple, Callable, cast, TYPE_CHECKING
 from datetime import (
     datetime,
     timezone,
 )  # Import datetime for parse_ancestry_person_details and self_check
+from urllib.parse import urljoin, quote, urlencode
+
+# --- Check for optional dependencies ---
+try:
+    import pydantic
+
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+
+try:
+    from bs4 import BeautifulSoup
+
+    BS4_AVAILABLE = True
+except ImportError:
+    BeautifulSoup = None  # type: ignore
+    BS4_AVAILABLE = False
+
+# --- Local application imports ---
+# Use centralized logging config setup
+from logging_config import setup_logging, logger
+
+# Initialize the logger with a specific log file for this module
+logger = setup_logging(log_file="api_utils.log", log_level="INFO")
 
 # --- Test framework imports ---
 try:

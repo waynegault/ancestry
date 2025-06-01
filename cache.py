@@ -959,7 +959,7 @@ def run_cache_tests():
             tests_failed += 1
         return passed
 
-    # Test 1: Cache Initialization
+    # Cache Initialization
     print("\n--- Test Section 1: Cache Initialization ---")
 
     test_result(
@@ -981,7 +981,7 @@ def run_cache_tests():
             "Statistics tracking for performance monitoring",
         )
 
-    # Test 2: Basic Cache Operations
+    # Basic Cache Operations
     print("\n--- Test Section 2: Cache Operations ---")
 
     if cache:
@@ -1019,7 +1019,7 @@ def run_cache_tests():
         except Exception as e:
             test_result("Basic Cache Operations", False, f"Error: {str(e)}")
 
-    # Test 3: Cache Decorator Functionality
+    # Cache Decorator Functionality
     print("\n--- Test Section 3: Cache Decorator Functionality ---")
 
     try:
@@ -1055,7 +1055,7 @@ def run_cache_tests():
     except Exception as e:
         test_result("Cache Decorator Functionality", False, f"Error: {str(e)}")
 
-    # Test 4: File-Based Caching
+    # File-Based Caching
     print("\n--- Test Section 4: File-Based Caching ---")
 
     try:
@@ -1089,7 +1089,7 @@ def run_cache_tests():
     except Exception as e:
         test_result("File-Based Caching", False, f"Error: {str(e)}")
 
-    # Test 5: Cache Management Functions
+    # Cache Management Functions
     print("\n--- Test Section 5: Cache Management Functions ---")
 
     try:
@@ -1134,7 +1134,7 @@ def run_cache_tests():
     except Exception as e:
         test_result("Cache Management Functions", False, f"Error: {str(e)}")
 
-    # Test 6: Performance and Stress Testing
+    # Performance and Stress Testing
     print("\n--- Test Section 6: Performance and Stress Testing ---")
 
     try:
@@ -1357,7 +1357,7 @@ if __name__ == "__main__":
         suite = TestSuite("Core Cache System & Decorators", "cache.py")
         suite.start_suite()
 
-        # Test 1: Cache decorator functionality
+        # Cache decorator functionality
         def test_cache_decorator():
             if "cache_result" in globals():
                 cache_decorator = globals()["cache_result"]
@@ -1380,7 +1380,7 @@ if __name__ == "__main__":
                 assert result2 == 10
                 assert call_count == 1  # Should not increment
 
-        # Test 2: Cache key generation
+        # Cache key generation
         def test_cache_key_generation():
             if "generate_cache_key" in globals():
                 key_generator = globals()["generate_cache_key"]
@@ -1395,7 +1395,7 @@ if __name__ == "__main__":
                     key1 != key3
                 )  # Different arguments should generate different keys
 
-        # Test 3: File modification time checking
+        # File modification time checking
         def test_file_modification_checking():
             if "check_file_modified" in globals():
                 checker = globals()["check_file_modified"]
@@ -1409,7 +1409,7 @@ if __name__ == "__main__":
                     is_modified = checker(temp_file.name, time.time() - 1)
                     assert isinstance(is_modified, bool)
 
-        # Test 4: Cache invalidation based on file changes
+        # Cache invalidation based on file changes
         def test_file_based_invalidation():
             if "invalidate_on_file_change" in globals():
                 invalidator = globals()["invalidate_on_file_change"]
@@ -1418,7 +1418,7 @@ if __name__ == "__main__":
                     result = invalidator(temp_file.name)
                     assert isinstance(result, bool)
 
-        # Test 5: Cache statistics tracking
+        # Cache statistics tracking
         def test_cache_statistics_tracking():
             # Test cache hit/miss tracking
             if "get_cache_statistics" in globals():
@@ -1432,7 +1432,7 @@ if __name__ == "__main__":
                     if field in stats:
                         assert isinstance(stats[field], (int, float))
 
-        # Test 6: Cache size management
+        # Cache size management
         def test_cache_size_management():
             if "manage_cache_size" in globals():
                 size_manager = globals()["manage_cache_size"]
@@ -1441,7 +1441,7 @@ if __name__ == "__main__":
                 result = size_manager(max_size_mb=100)
                 assert isinstance(result, bool)
 
-        # Test 7: Cache warming strategies
+        # Cache warming strategies
         def test_cache_warming_strategies():
             if "warm_function_cache" in globals():
                 warmer = globals()["warm_function_cache"]
@@ -1454,7 +1454,7 @@ if __name__ == "__main__":
                 result = warmer(sample_function, sample_inputs)
                 assert isinstance(result, (bool, int))
 
-        # Test 8: Cache cleanup operations
+        # Cache cleanup operations
         def test_cache_cleanup():
             cleanup_functions = [
                 "clear_cache",
@@ -1468,7 +1468,7 @@ if __name__ == "__main__":
                     result = cleanup_func()
                     # Should not raise exceptions
 
-        # Test 9: Cache persistence mechanisms
+        # Cache persistence mechanisms
         def test_cache_persistence():
             if "save_cache_state" in globals() and "restore_cache_state" in globals():
                 save_func = globals()["save_cache_state"]
@@ -1482,7 +1482,7 @@ if __name__ == "__main__":
                     assert isinstance(save_result, bool)
                     assert isinstance(restore_result, bool)
 
-        # Test 10: Advanced cache features
+        # Advanced cache features
         def test_advanced_cache_features():
             # Test advanced caching features
             advanced_functions = [

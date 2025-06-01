@@ -289,7 +289,6 @@ if __name__ == "__main__":
         suite = TestSuite("Person Search & Matching Engine", "person_search.py")
         suite.start_suite()
 
-        # Test 1: Search query parsing
         def test_search_query_parsing():
             if "parse_search_query" in globals():
                 parser = globals()["parse_search_query"]
@@ -310,7 +309,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific parsing logic
 
-        # Test 2: Name matching algorithms
+        # Name matching algorithms
         def test_name_matching_algorithms():
             if "calculate_name_similarity" in globals():
                 matcher = globals()["calculate_name_similarity"]
@@ -332,7 +331,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific similarity algorithm
 
-        # Test 3: Date range searching
+        # Date range searching
         def test_date_range_searching():
             if "search_by_date_range" in globals():
                 date_searcher = globals()["search_by_date_range"]
@@ -351,7 +350,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific date parsing
 
-        # Test 4: Location-based searching
+        # Location-based searching
         def test_location_searching():
             if "search_by_location" in globals():
                 location_searcher = globals()["search_by_location"]
@@ -371,7 +370,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require location database
 
-        # Test 5: Advanced search filters
+        # Advanced search filters
         def test_advanced_search_filters():
             if "apply_search_filters" in globals():
                 filter_func = globals()["apply_search_filters"]
@@ -395,7 +394,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require specific filter logic
 
-        # Test 6: Search result ranking
+        # Search result ranking
         def test_search_result_ranking():
             if "rank_search_results" in globals():
                 ranker = globals()["rank_search_results"]
@@ -415,7 +414,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require specific ranking algorithm
 
-        # Test 7: Fuzzy search capabilities
+        # Fuzzy search capabilities
         def test_fuzzy_search():
             if "fuzzy_search" in globals():
                 fuzzy_searcher = globals()["fuzzy_search"]
@@ -434,7 +433,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass  # May require fuzzy matching library
 
-        # Test 8: Search performance optimization
+        # Search performance optimization
         def test_search_performance():
             performance_functions = [
                 "optimize_search_index",
@@ -448,7 +447,7 @@ if __name__ == "__main__":
                     perf_func = globals()[func_name]
                     assert callable(perf_func)
 
-        # Test 9: Search statistics and analytics
+        # Search statistics and analytics
         def test_search_analytics():
             if "generate_search_analytics" in globals():
                 analytics_func = globals()["generate_search_analytics"]
@@ -481,7 +480,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass  # May require analytics processing
 
-        # Test 10: Export and save search results
+        # Export and save search results
         def test_search_export():
             export_functions = [
                 "export_search_results",
