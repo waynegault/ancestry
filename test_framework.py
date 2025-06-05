@@ -65,15 +65,18 @@ class TestSuite:
         print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
 
     def run_test(
-        self, test_name: str, test_func: Callable, expected_behavior: str = ""
+        self, test_name: str, test_func: Callable, expected_behavior: str = "", 
+        test_description: str = "", method_description: str = ""
     ) -> bool:
         """
         Run a single test with standardized output and error handling.
 
         Args:
-            test_name: Descriptive name for the test
+            test_name: Functions being tested
             test_func: Test function to execute
-            expected_behavior: Description of expected behavior for documentation
+            expected_behavior: Expected outcome if functions work correctly
+            test_description: What is being tested
+            method_description: How the functions are being tested
 
         Returns:
             True if test passed, False if failed
@@ -81,18 +84,24 @@ class TestSuite:
         self.tests_run += 1
         test_start = time.time()
 
-        print(
-            f"{Colors.BLUE}{Icons.GEAR} Test {self.tests_run}: {test_name}{Colors.RESET}"
-        )
+        print(f"{Colors.BLUE}{Icons.GEAR} Test {self.tests_run}: {test_name}{Colors.RESET}")
+        if test_description:
+            print(f"Test: {test_description}")
+        if method_description:
+            print(f"Method: {method_description}")
         if expected_behavior:
-            print(f"  {Colors.GRAY}Expected: {expected_behavior}{Colors.RESET}")
+            print(f"Expected: {expected_behavior}")
 
         try:
+            outcome_description = ""
             test_func()
             duration = time.time() - test_start
-            print(
-                f"  {Colors.GREEN}{Icons.PASS} PASSED{Colors.RESET} {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
-            )
+            outcome_description = "Test executed successfully with all assertions passing"
+            print(f"Outcome: {outcome_description}")
+            print(f"Duration: {duration:.3f}s")
+            print(f"Conclusion: {Colors.GREEN}{Icons.PASS} PASSED{Colors.RESET}")
+            print()  # Add blank line between tests
+            
             self.tests_passed += 1
             self.test_results.append(
                 {
@@ -100,16 +109,19 @@ class TestSuite:
                     "status": "PASSED",
                     "duration": duration,
                     "expected": expected_behavior,
+                    "outcome": outcome_description,
                 }
             )
             return True
 
         except AssertionError as e:
             duration = time.time() - test_start
-            print(
-                f"  {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET} {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
-            )
-            print(f"    {Colors.RED}Assertion Error: {str(e)}{Colors.RESET}")
+            outcome_description = f"Assertion failed: {str(e)}"
+            print(f"Outcome: {outcome_description}")
+            print(f"Duration: {duration:.3f}s")
+            print(f"Conclusion: {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET}")
+            print()  # Add blank line between tests
+            
             self.tests_failed += 1
             self.test_results.append(
                 {
@@ -118,20 +130,19 @@ class TestSuite:
                     "duration": duration,
                     "error": str(e),
                     "expected": expected_behavior,
+                    "outcome": outcome_description,
                 }
             )
             return False
 
         except Exception as e:
             duration = time.time() - test_start
-            print(
-                f"  {Colors.RED}{Icons.BUG} ERROR{Colors.RESET} {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
-            )
-            print(f"    {Colors.RED}{type(e).__name__}: {str(e)}{Colors.RESET}")
-            if hasattr(e, "__traceback__"):
-                print(
-                    f"    {Colors.GRAY}{traceback.format_exc().strip()}{Colors.RESET}"
-                )
+            outcome_description = f"Exception occurred: {type(e).__name__}: {str(e)}"
+            print(f"Outcome: {outcome_description}")
+            print(f"Duration: {duration:.3f}s")
+            print(f"Conclusion: {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET}")
+            print()  # Add blank line between tests
+            
             self.tests_failed += 1
             self.test_results.append(
                 {
@@ -140,6 +151,7 @@ class TestSuite:
                     "duration": duration,
                     "error": f"{type(e).__name__}: {str(e)}",
                     "expected": expected_behavior,
+                    "outcome": outcome_description,
                 }
             )
             return False

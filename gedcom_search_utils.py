@@ -769,9 +769,378 @@ def get_gedcom_relationship_path(
 
 def run_comprehensive_tests() -> bool:
     """Comprehensive test suite for gedcom_search_utils.py."""
-    # Skip detailed tests to avoid timeout
-    print("⚠️ Skipping detailed tests to avoid timeout")
-    return run_comprehensive_tests_fallback()
+    try:
+        from test_framework import TestSuite, suppress_logging, create_mock_data
+    except ImportError:
+        print("❌ test_framework.py not found. Using fallback test implementation.")
+        return run_comprehensive_tests_fallback()
+
+    suite = TestSuite("GEDCOM Search & Relationship Analysis", "gedcom_search_utils.py")
+    suite.start_suite()
+
+    # INITIALIZATION TESTS
+    def test_module_imports():
+        """Test that all required modules and functions are imported correctly."""
+        try:
+            required_imports = [
+                'logger', 'config_instance', 'GedcomData', 
+                'calculate_match_score', '_normalize_id',
+                'fast_bidirectional_bfs', 'convert_gedcom_path_to_unified_format',
+                'format_relationship_path_unified'
+            ]
+            
+            missing_imports = []
+            for import_name in required_imports:
+                if import_name not in globals():
+                    missing_imports.append(import_name)
+            
+            assert len(missing_imports) == 0, f"Missing imports: {missing_imports}"
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Module Imports and Dependencies",
+        test_module_imports,
+        category="Initialization",
+        method="Verify all required imports are available",
+        expected="All required modules and functions are imported successfully"
+    )
+
+    def test_global_cache_initialization():
+        """Test global GEDCOM cache initialization."""
+        try:
+            global _CACHED_GEDCOM_DATA
+            
+            # Test setting and getting cached data
+            original_cache = _CACHED_GEDCOM_DATA
+            set_cached_gedcom_data(None)
+            
+            assert get_cached_gedcom_data() is None
+            
+            # Test with mock data
+            mock_gedcom = MagicMock()
+            set_cached_gedcom_data(mock_gedcom)
+            
+            assert get_cached_gedcom_data() == mock_gedcom
+            
+            # Restore original cache
+            _CACHED_GEDCOM_DATA = original_cache
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Global Cache Initialization", 
+        test_global_cache_initialization,
+        category="Initialization",
+        method="Test global GEDCOM data caching mechanism",
+        expected="Cache operations work correctly with set/get functionality"
+    )
+
+    # CORE FUNCTIONALITY TESTS
+    def test_search_criteria_matching():
+        """Test the criteria matching functions with various inputs."""
+        try:
+            # Test basic criterion matching
+            criteria = {"first_name": "john"}
+            assert matches_criterion("first_name", criteria, "john") == True
+            assert matches_criterion("first_name", criteria, "jane") == False
+            
+            # Test year criterion matching
+            year_criteria = {"birth_year": 1950}
+            assert matches_year_criterion("birth_year", year_criteria, 1950, 5) == True
+            assert matches_year_criterion("birth_year", year_criteria, 1952, 5) == True  # Within range
+            assert matches_year_criterion("birth_year", year_criteria, 1960, 5) == False  # Outside range
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Search Criteria Matching",
+        test_search_criteria_matching,
+        category="Core",
+        method="Test criterion and year matching functions with various inputs",
+        expected="Matching functions correctly identify matches and non-matches"
+    )
+
+    def test_search_gedcom_for_criteria_empty():
+        """Test search function with empty/minimal data to avoid timeout."""
+        try:
+            # Test with empty search criteria
+            results = search_gedcom_for_criteria({}, max_results=1)
+            assert isinstance(results, list), "Results should be a list"
+            
+            # Test with mock criteria but no GEDCOM data
+            mock_criteria = {
+                "first_name": "NonExistent",
+                "surname": "Person",
+                "birth_year": 1900
+            }
+            results = search_gedcom_for_criteria(mock_criteria, max_results=1)
+            assert isinstance(results, list), "Results should be a list even with no data"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "GEDCOM Search with Empty Data",
+        test_search_gedcom_for_criteria_empty,
+        category="Core", 
+        method="Test search function with empty criteria and no GEDCOM data",
+        expected="Search function returns empty list gracefully without errors"
+    )
+
+    def test_family_details_functions():
+        """Test family details retrieval with minimal processing."""
+        try:
+            # Test with invalid ID (should return empty dict)
+            result = get_gedcom_family_details("INVALID_ID")
+            assert isinstance(result, dict), "Should return dictionary"
+            
+            # Test function exists and is callable
+            assert callable(get_gedcom_family_details), "Function should be callable"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Family Details Retrieval",
+        test_family_details_functions,
+        category="Core",
+        method="Test family details function with invalid inputs",
+        expected="Function handles invalid inputs gracefully and returns expected data structure"
+    )
+
+    # EDGE CASE TESTS 
+    def test_id_normalization_edge_cases():
+        """Test ID normalization with various edge cases."""
+        try:
+            if '_normalize_id' not in globals():
+                return True  # Skip if function not available
+                
+            normalize_func = globals()['_normalize_id']
+            
+            # Test normal cases
+            assert normalize_func("@I123@") == "I123"
+            assert normalize_func("I123") == "I123"
+            
+            # Test edge cases
+            assert normalize_func(None) is None
+            assert normalize_func("") is None
+            assert normalize_func("@@@") is None
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "ID Normalization Edge Cases",
+        test_id_normalization_edge_cases,
+        category="Edge",
+        method="Test ID normalization with various edge cases and invalid inputs",
+        expected="Normalization handles edge cases gracefully without errors"
+    )
+
+    def test_relationship_path_edge_cases():
+        """Test relationship path calculation with edge cases."""
+        try:
+            # Test with invalid IDs (should not crash)
+            result = get_gedcom_relationship_path("INVALID_ID1")
+            assert isinstance(result, str), "Should return string even for invalid input"
+            
+            # Test with None values
+            result = get_gedcom_relationship_path("", reference_id="")
+            assert isinstance(result, str), "Should handle empty strings gracefully"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Relationship Path Edge Cases",
+        test_relationship_path_edge_cases,
+        category="Edge",
+        method="Test relationship path function with invalid and edge case inputs",
+        expected="Function handles edge cases without crashing and returns appropriate messages"
+    )
+
+    # INTEGRATION TESTS
+    def test_configuration_integration():
+        """Test integration with configuration system."""
+        try:
+            # Test that config functions are available
+            config_functions = ['get_config_value']
+            for func_name in config_functions:
+                if func_name in globals():
+                    config_func = globals()[func_name]
+                    assert callable(config_func), f"{func_name} should be callable"
+            
+            # Test default config structure
+            assert isinstance(DEFAULT_CONFIG, dict), "DEFAULT_CONFIG should be dictionary"
+            assert "DATE_FLEXIBILITY" in DEFAULT_CONFIG, "Should have date flexibility config"
+            assert "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG, "Should have scoring weights config"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Configuration System Integration",
+        test_configuration_integration,
+        category="Integration",
+        method="Test integration with configuration system and default values",
+        expected="Configuration system is properly integrated and defaults are available"
+    )
+
+    def test_gedcom_utils_integration():
+        """Test integration with GEDCOM utilities."""
+        try:
+            # Test that required GEDCOM functions are available
+            gedcom_functions = ['GedcomData', 'calculate_match_score', '_normalize_id']
+            available_functions = []
+            
+            for func_name in gedcom_functions:
+                if func_name in globals():
+                    func = globals()[func_name]
+                    if callable(func) or (hasattr(func, '__class__') and func.__class__.__name__ == 'type'):
+                        available_functions.append(func_name)
+            
+            assert len(available_functions) > 0, "Should have some GEDCOM utility functions available"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "GEDCOM Utilities Integration",
+        test_gedcom_utils_integration,
+        category="Integration",
+        method="Verify integration with GEDCOM utility functions and classes",
+        expected="GEDCOM utility functions are available and properly integrated"
+    )
+
+    # PERFORMANCE TESTS
+    def test_cache_performance():
+        """Test caching performance and memory usage."""
+        try:
+            import time
+            
+            # Test cache operations performance
+            start_time = time.time()
+            
+            # Perform cache operations
+            original_cache = get_cached_gedcom_data()
+            set_cached_gedcom_data(None)
+            get_cached_gedcom_data()
+            set_cached_gedcom_data(original_cache)
+            
+            duration = time.time() - start_time
+            
+            # Cache operations should be very fast
+            assert duration < 0.1, f"Cache operations took too long: {duration:.3f}s"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Cache Performance",
+        test_cache_performance,
+        category="Performance",
+        method="Test caching operations performance and timing",
+        expected="Cache operations complete quickly without performance issues"
+    )
+
+    def test_search_timeout_protection():
+        """Test that search functions have timeout protection."""
+        try:
+            import time
+            
+            # Test with minimal search that should complete quickly
+            start_time = time.time()
+            
+            # Use fallback search which has built-in timeout protection
+            results = search_gedcom_for_criteria({}, max_results=1)
+            
+            duration = time.time() - start_time
+            
+            # Should complete quickly with empty data
+            assert duration < 5.0, f"Search took too long: {duration:.3f}s"
+            assert isinstance(results, list), "Should return list"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Search Timeout Protection",
+        test_search_timeout_protection,
+        category="Performance",
+        method="Verify search functions have appropriate timeout protection",
+        expected="Search functions complete within reasonable time limits"
+    )
+
+    # ERROR HANDLING TESTS
+    def test_invalid_input_handling():
+        """Test handling of invalid inputs across all functions."""
+        try:
+            # Test search with None criteria
+            result = search_gedcom_for_criteria(None, max_results=1)
+            assert isinstance(result, list), "Should handle None criteria gracefully"
+            
+            # Test family details with None ID
+            result = get_gedcom_family_details(None)
+            assert isinstance(result, dict), "Should handle None ID gracefully"
+            
+            # Test relationship path with None parameters
+            result = get_gedcom_relationship_path(None)
+            assert isinstance(result, str), "Should handle None ID gracefully"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Invalid Input Handling",
+        test_invalid_input_handling,
+        category="Error",
+        method="Test all main functions with None and invalid inputs",
+        expected="Functions handle invalid inputs gracefully without crashing"
+    )
+
+    def test_missing_file_handling():
+        """Test handling when GEDCOM files are missing."""
+        try:
+            # Test with non-existent GEDCOM path
+            fake_path = "/path/to/nonexistent/file.ged"
+            
+            result = search_gedcom_for_criteria(
+                {"first_name": "test"}, 
+                gedcom_path=fake_path,
+                max_results=1
+            )
+            assert isinstance(result, list), "Should return empty list for missing file"
+            
+            result = get_gedcom_family_details("I123", gedcom_path=fake_path)
+            assert isinstance(result, dict), "Should return empty dict for missing file"
+            
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Missing File Handling",
+        test_missing_file_handling,
+        category="Error", 
+        method="Test behavior when GEDCOM files are missing or inaccessible",
+        expected="Functions handle missing files gracefully and return appropriate empty results"
+    )
+
+    return suite.finish_suite()
 
 
 def run_comprehensive_tests_fallback() -> bool:

@@ -1433,10 +1433,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-    # end of main.py
-
-    print(
-        "🎯 Running Main Application Entry Point & Orchestration comprehensive test suite..."
-    )
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+# end of main.py

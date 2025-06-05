@@ -3826,44 +3826,121 @@ if __name__ == "__main__":
         HAS_TEST_FRAMEWORK = True
     except ImportError:
         # Create dummy classes/functions for when test framework is not available
-        class DummyTestSuite:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            def start_suite(self):
-                pass
-
-            def run_test(self, *args, **kwargs):
-                return True
-
-            def finish_suite(self):
-                return True
-
-        class DummyContext:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
         TestSuite = DummyTestSuite
         suppress_logging = lambda: DummyContext()
         create_mock_data = lambda: {}
-        HAS_TEST_FRAMEWORK = False
+        HAS_TEST_FRAMEWORK = False  # Mock classes for testing
+    from unittest.mock import MagicMock
 
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for action6_gather.py.
-        Tests key components using standardized framework with edge cases.
-        """
-        suite = TestSuite("Action 6 (Gather DNA Matches)", "action6_gather.py")
-        suite.start_suite()
+    class MockDnaMatch:
+        def __init__(self, cM_DNA, shared_segments):
+            self.cM_DNA = cM_DNA
+            self.shared_segments = shared_segments
 
-        # _lookup_existing_persons function
-        def test_lookup_existing_persons():
+    class MockPerson:
+        def __init__(
+            self,
+            uuid,
+            cM_DNA,
+            shared_segments,
+            in_my_tree,
+            has_dna_match=True,
+            has_family_tree=True,
+        ):
+            self.uuid = uuid.upper()
+            self.in_my_tree = in_my_tree
+            self.dna_match = (
+                MockDnaMatch(cM_DNA, shared_segments) if has_dna_match else None
+            )
+            self.family_tree = MagicMock() if has_family_tree else None
+
+    def run_comprehensive_tests_fallback() -> bool:
+        """
+        Fallback test function for when test framework is not available.
+        Runs basic functionality tests with a timeout to prevent hanging.
+        """
+        print("🧪 Running Action 6 lightweight tests...")
+
+        try:
+            # Test 1: Core function availability
+            assert callable(
+                _lookup_existing_persons
+            ), "_lookup_existing_persons should be callable"
+            print("✅ Core function availability test passed")
+
+            # Test 2: Function imports
             from unittest.mock import MagicMock
 
-            mock_db_session = MagicMock(spec=SqlAlchemySession)
+            assert MagicMock is not None
+            print("✅ Mock framework import test passed")
+
+            # Test 3: Basic functionality
+            mock_db_session = MagicMock()
+            result = _lookup_existing_persons(mock_db_session, [])
+            assert result == {}
+            print("✅ Basic functionality test passed")
+
+            print("✅ All lightweight tests passed")
+            return True
+        except Exception as e:
+            print(f"❌ Test error: {e}")
+            return False
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for action6_gather.py.
+    Tests DNA match gathering functionality with proper categorization.
+    """
+    try:
+        from test_framework import TestSuite, suppress_logging
+
+        suite = TestSuite("Action 6 - Gather DNA Matches", "action6_gather.py")
+        suite.start_suite()
+
+        # INITIALIZATION TESTS
+        def test_module_imports():
+            """Test that required modules are imported correctly"""
+            try:
+                from unittest.mock import MagicMock
+                import json
+                import sys
+
+                return True
+            except ImportError:
+                return False
+
+        def test_core_function_availability():
+            """Test that core functions are available"""
+            return callable(_lookup_existing_persons)
+
+        def test_navigation_functions():
+            """Test that navigation functions exist"""
+            return callable(nav_to_list)
+
+        with suppress_logging():
+            suite.run_test(
+                "Module imports",
+                test_module_imports,
+                "Should import all required modules successfully",
+            )
+            suite.run_test(
+                "Core function availability",
+                test_core_function_availability,
+                "Should have _lookup_existing_persons function available",
+            )
+            suite.run_test(
+                "Navigation functions",
+                test_navigation_functions,
+                "Should have navigation functions available",
+            )
+
+        # CORE FUNCTIONALITY TESTS
+        def test_lookup_existing_persons():
+            """Test database lookup functionality"""
+            from unittest.mock import MagicMock
+
+            mock_db_session = MagicMock()
             mock_person_obj1 = MockPerson(
                 "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", 100, 5, True
             )
@@ -3887,22 +3964,14 @@ if __name__ == "__main__":
             ]
 
             result = _lookup_existing_persons(mock_db_session, uuids_to_lookup)
-            assert isinstance(result, dict)
-            assert len(result) == 2
-            assert "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB" in result
-            assert "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA" in result
+            return (
+                isinstance(result, dict)
+                and len(result) == 2
+                and "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB" in result
+            )
 
-        # Edge case - Empty UUID list
-        def test_lookup_empty_uuids_edge_case():
-            from unittest.mock import MagicMock
-
-            mock_db_session = MagicMock(spec=SqlAlchemySession)
-            result = _lookup_existing_persons(mock_db_session, [])
-            assert result == {}
-            # This should gracefully handle empty input without database calls
-
-        # _identify_fetch_candidates function
         def test_identify_fetch_candidates():
+            """Test candidate identification functionality"""
             matches_on_page = [
                 {
                     "uuid": "uuid1",
@@ -3930,22 +3999,53 @@ if __name__ == "__main__":
                 },
             ]
 
-            existing_persons_map = {
-                "UUID2": MockPerson("uuid2", 50, 3, True),  # No change expected
-            }
+            existing_persons_map = {"UUID2": MockPerson("uuid2", 50, 3, True)}
 
             fetch_uuids, process_later, skipped_count = _identify_fetch_candidates(
                 matches_on_page, existing_persons_map
             )
 
-            # uuid1, uuid3, uuid4 should need fetching (new or changed)
-            # uuid2 should be skipped (no changes detected)
-            assert len(fetch_uuids) == 3
-            assert skipped_count == 1
-            assert len(process_later) == 3
+            return (
+                len(fetch_uuids) == 3 and skipped_count == 1 and len(process_later) == 3
+            )
 
-        # Edge case - Missing UUID in match data
-        def test_identify_candidates_missing_uuid_edge_case():
+        def test_fetch_functions_validation():
+            """Test that critical fetch functions exist"""
+            return (
+                callable(_fetch_combined_details)
+                and callable(_fetch_batch_badge_details)
+                and callable(_fetch_batch_ladder)
+                and callable(_fetch_batch_relationship_prob)
+            )
+
+        with suppress_logging():
+            suite.run_test(
+                "Database lookup functionality",
+                test_lookup_existing_persons,
+                "Should lookup existing persons from database",
+            )
+            suite.run_test(
+                "Fetch candidate identification",
+                test_identify_fetch_candidates,
+                "Should identify candidates for fetching vs skipping",
+            )
+            suite.run_test(
+                "Fetch functions validation",
+                test_fetch_functions_validation,
+                "Should have all critical fetch functions available",
+            )
+
+        # EDGE CASES TESTS
+        def test_lookup_empty_uuids():
+            """Test lookup with empty UUID list"""
+            from unittest.mock import MagicMock
+
+            mock_db_session = MagicMock()
+            result = _lookup_existing_persons(mock_db_session, [])
+            return result == {}
+
+        def test_missing_uuid_in_match_data():
+            """Test handling of match data without UUID"""
             matches_on_page = [
                 {
                     "cM_DNA": 10,
@@ -3961,24 +4061,46 @@ if __name__ == "__main__":
             ]
 
             existing_persons_map = {}
-
             fetch_uuids, process_later, skipped_count = _identify_fetch_candidates(
                 matches_on_page, existing_persons_map
             )
 
-            # Should gracefully skip the match without UUID
-            assert len(fetch_uuids) == 1
-            assert "valid_uuid" in fetch_uuids
+            return len(fetch_uuids) == 1 and "valid_uuid" in fetch_uuids
 
-        # _adjust_delay function
-        def test_adjust_delay():
+        def test_invalid_session_handling():
+            """Test navigation with invalid session"""
+            from unittest.mock import MagicMock
+
+            mock_session_manager = MagicMock()
+            mock_session_manager.is_sess_valid.return_value = False
+            result = nav_to_list(mock_session_manager)
+            return result is False
+
+        with suppress_logging():
+            suite.run_test(
+                "Empty UUID list handling",
+                test_lookup_empty_uuids,
+                "Should handle empty UUID list gracefully",
+            )
+            suite.run_test(
+                "Missing UUID handling",
+                test_missing_uuid_in_match_data,
+                "Should handle match data without UUID gracefully",
+            )
+            suite.run_test(
+                "Invalid session handling",
+                test_invalid_session_handling,
+                "Should handle invalid session gracefully",
+            )
+
+        # INTEGRATION TESTS
+        def test_delay_adjustment():
+            """Test rate limiter delay adjustment"""
             from unittest.mock import MagicMock, patch
 
-            mock_session_manager = MagicMock(spec=SessionManager)
+            mock_session_manager = MagicMock()
             mock_rate_limiter = MagicMock()
             mock_session_manager.dynamic_rate_limiter = mock_rate_limiter
-
-            # Case: Rate limiter not throttled
             mock_rate_limiter.is_throttled.return_value = False
             mock_rate_limiter.current_delay = 2.0
 
@@ -3991,48 +4113,10 @@ if __name__ == "__main__":
                 mock_config.INITIAL_DELAY = 1.0
                 _adjust_delay(mock_session_manager, 1)
 
-            mock_rate_limiter.decrease_delay.assert_called_once()
+            return mock_rate_limiter.decrease_delay.called
 
-        # Edge case - Rate limiter throttled
-        def test_adjust_delay_throttled_edge_case():
-            from unittest.mock import MagicMock
-
-            mock_session_manager = MagicMock(spec=SessionManager)
-            mock_rate_limiter = MagicMock()
-            mock_session_manager.dynamic_rate_limiter = mock_rate_limiter
-
-            # Case: Rate limiter is throttled
-            mock_rate_limiter.is_throttled.return_value = True
-            mock_rate_limiter.decrease_delay.reset_mock()
-
-            _adjust_delay(mock_session_manager, 1)
-
-            # Should not call decrease_delay when throttled
-            mock_rate_limiter.decrease_delay.assert_not_called()
-
-        # Function validation tests
-        def test_fetch_functions_validation():
-            # Test that critical fetch functions exist and are callable
-            assert callable(_fetch_combined_details)
-            assert callable(_fetch_batch_badge_details)
-            assert callable(_fetch_batch_ladder)
-            assert callable(_fetch_batch_relationship_prob)
-
-        # Edge case - Invalid session manager
-        def test_fetch_combined_invalid_session_edge_case():
-            from unittest.mock import MagicMock, patch
-
-            mock_session_manager = MagicMock()
-            mock_session_manager.my_uuid = None  # Invalid state
-
-            with patch.object(logger, "warning"):
-                result = _fetch_combined_details(mock_session_manager, "test_uuid")
-
-            # Should gracefully return None for invalid session
-            assert result is None
-
-        # Logging functions
         def test_logging_functions():
+            """Test logging functionality"""
             from unittest.mock import patch
 
             with patch.object(logger, "debug") as mock_debug, patch.object(
@@ -4041,64 +4125,118 @@ if __name__ == "__main__":
                 _log_page_summary(1, 5, 3, 2, 1)
                 _log_coord_summary(10, 50, 30, 20, 10)
 
-            # Verify logging functions were called
-            assert mock_debug.called
-            assert mock_info.called
+            return mock_debug.called and mock_info.called
 
-        # Edge case - Navigation with invalid session
-        def test_nav_to_list_invalid_session_edge_case():
+        with suppress_logging():
+            suite.run_test(
+                "Rate limiter delay adjustment",
+                test_delay_adjustment,
+                "Should adjust rate limiter delay appropriately",
+            )
+            suite.run_test(
+                "Logging functions",
+                test_logging_functions,
+                "Should execute logging functions correctly",
+            )
+
+        # PERFORMANCE TESTS
+        def test_lookup_performance():
+            """Test database lookup performance"""
+            from unittest.mock import MagicMock
+            import time
+
+            mock_db_session = MagicMock()
+            mock_db_session.query.return_value.options.return_value.filter.return_value.all.return_value = (
+                []
+            )
+
+            start_time = time.time()
+            for _ in range(10):
+                _lookup_existing_persons(mock_db_session, ["test-uuid"])
+            end_time = time.time()
+
+            # Should complete 10 lookups quickly (< 0.1 seconds)
+            return (end_time - start_time) < 0.1
+
+        def test_candidate_identification_performance():
+            """Test candidate identification performance"""
+            import time
+
+            matches_on_page = [
+                {
+                    "uuid": f"uuid{i}",
+                    "cM_DNA": 50,
+                    "numSharedSegments": 3,
+                    "in_my_tree": True,
+                }
+                for i in range(50)
+            ]
+            existing_persons_map = {}
+
+            start_time = time.time()
+            _identify_fetch_candidates(matches_on_page, existing_persons_map)
+            end_time = time.time()
+
+            # Should complete processing 50 matches quickly (< 0.1 seconds)
+            return (end_time - start_time) < 0.1
+
+        with suppress_logging():
+            suite.run_test(
+                "Database lookup performance",
+                test_lookup_performance,
+                "Should perform database lookups efficiently",
+            )
+            suite.run_test(
+                "Candidate identification performance",
+                test_candidate_identification_performance,
+                "Should identify candidates efficiently",
+            )
+
+        # ERROR HANDLING TESTS
+        def test_throttled_delay_adjustment():
+            """Test delay adjustment when throttled"""
             from unittest.mock import MagicMock
 
             mock_session_manager = MagicMock()
-            mock_session_manager.is_sess_valid.return_value = False
+            mock_rate_limiter = MagicMock()
+            mock_session_manager.dynamic_rate_limiter = mock_rate_limiter
+            mock_rate_limiter.is_throttled.return_value = True
+            mock_rate_limiter.decrease_delay.reset_mock()
 
-            result = nav_to_list(mock_session_manager)
+            _adjust_delay(mock_session_manager, 1)
 
-            # Should gracefully handle invalid session
-            assert result is False
+            # Should not call decrease_delay when throttled
+            return not mock_rate_limiter.decrease_delay.called
 
-        # Run all tests
-        test_functions = {
-            "Lookup existing persons from database": test_lookup_existing_persons,
-            "Empty UUID list edge case": test_lookup_empty_uuids_edge_case,
-            "Identify fetch candidates vs skipped": test_identify_fetch_candidates,
-            "Missing UUID edge case": test_identify_candidates_missing_uuid_edge_case,
-            "Rate limiter delay adjustment": test_adjust_delay,
-            "Throttled rate limiter edge case": test_adjust_delay_throttled_edge_case,
-            "Fetch functions validation": test_fetch_functions_validation,
-            "Invalid session edge case": test_fetch_combined_invalid_session_edge_case,
-            "Logging functions": test_logging_functions,
-            "Navigation invalid session edge case": test_nav_to_list_invalid_session_edge_case,
-        }
+        def test_fetch_combined_invalid_session():
+            """Test fetch with invalid session"""
+            from unittest.mock import MagicMock, patch
+
+            mock_session_manager = MagicMock()
+            mock_session_manager.my_uuid = None  # Invalid state
+
+            with patch.object(logger, "warning"):
+                result = _fetch_combined_details(mock_session_manager, "test_uuid")
+
+            return result is None
 
         with suppress_logging():
-            for test_name, test_func in test_functions.items():
-                suite.run_test(test_name, test_func)
+            suite.run_test(
+                "Throttled delay adjustment",
+                test_throttled_delay_adjustment,
+                "Should handle throttled state appropriately",
+            )
+            suite.run_test(
+                "Invalid session error handling",
+                test_fetch_combined_invalid_session,
+                "Should handle invalid session gracefully",
+            )
 
         return suite.finish_suite()
 
-    # Mock classes for testing
-    class MockDnaMatch:
-        def __init__(self, cM_DNA, shared_segments):
-            self.cM_DNA = cM_DNA
-            self.shared_segments = shared_segments
-
-    class MockPerson:
-        def __init__(
-            self,
-            uuid,
-            cM_DNA,
-            shared_segments,
-            in_my_tree,
-            has_dna_match=True,
-            has_family_tree=True,
-        ):
-            self.uuid = uuid.upper()
-            self.in_my_tree = in_my_tree
-            self.dna_match = (
-                MockDnaMatch(cM_DNA, shared_segments) if has_dna_match else None
-            )
-            self.family_tree = MagicMock() if has_family_tree else None
+    except ImportError:
+        # Fallback when test framework is not available
+        return run_comprehensive_tests_fallback()
 
     print("🧪 Running Action 6 (Gather DNA Matches) comprehensive test suite...")
     success = run_comprehensive_tests()

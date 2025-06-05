@@ -657,7 +657,7 @@ def run_comprehensive_tests() -> bool:
                     # On Unix: should be 0o600 (owner read/write only)
                     # On Windows: this test may not be meaningful
                     # Log permissions for visibility
-                    logger.info(f"File permissions: {oct(permissions)}")
+                    logger.debug(f"File permissions: {oct(permissions)}")
 
         finally:
             manager.delete_credentials()

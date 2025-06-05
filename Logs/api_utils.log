@@ -1,243 +1,48 @@
-00:29:43 INF [performa register 341 ] Registered health check: database
-00:29:43 INF [performa register 341 ] Registered health check: memory
-00:29:43 INF [performa register 341 ] Registered health check: disk
-00:29:43 INF [utils    <module> 155 ] Performance monitoring functions imported successfully
-00:29:53 INF [performa register 341 ] Registered health check: database
-00:29:53 INF [performa register 341 ] Registered health check: memory
-00:29:53 INF [performa register 341 ] Registered health check: disk
-00:29:53 INF [utils    <module> 155 ] Performance monitoring functions imported successfully
-00:31:44 INF [performa register 341 ] Registered health check: database
-00:31:44 INF [performa register 341 ] Registered health check: memory
-00:31:44 INF [performa register 341 ] Registered health check: disk
-00:31:44 INF [utils    <module> 155 ] Performance monitoring functions imported successfully
-00:33:30 INF [performa register 341 ] Registered health check: database
-00:33:30 INF [performa register 341 ] Registered health check: memory
-00:33:30 INF [performa register 341 ] Registered health check: disk
-00:33:30 INF [utils    <module> 155 ] Performance monitoring functions imported successfully
-00:33:47 INF [performa register 341 ] Registered health check: database
-00:33:47 INF [performa register 341 ] Registered health check: memory
-00:33:47 INF [performa register 341 ] Registered health check: disk
-00:33:47 INF [utils    <module> 155 ] Performance monitoring functions imported successfully
-12:20:25 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-12:20:25 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-12:20:25 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-12:20:25 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-12:20:32 INF [security decrypt_ 229 ] No encrypted credentials file found
-12:20:32 INF [performa register 342 ] Registered health check: database
-12:20:32 INF [performa register 342 ] Registered health check: memory
-12:20:32 INF [performa register 342 ] Registered health check: disk
-12:20:32 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-12:27:10 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-12:27:10 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-12:27:10 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-12:27:10 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-12:27:18 INF [performa register 342 ] Registered health check: database
-12:27:18 INF [performa register 342 ] Registered health check: memory
-12:27:18 INF [performa register 342 ] Registered health check: disk
-12:27:18 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-21:27:05 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-21:27:05 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-21:27:05 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-21:27:05 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-21:27:14 INF [performa register 342 ] Registered health check: database
-21:27:14 INF [performa register 342 ] Registered health check: memory
-21:27:14 INF [performa register 342 ] Registered health check: disk
-21:27:14 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-21:37:51 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-21:37:51 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-21:37:51 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-21:37:51 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-21:38:00 INF [performa register 342 ] Registered health check: database
-21:38:00 INF [performa register 342 ] Registered health check: memory
-21:38:00 INF [performa register 342 ] Registered health check: disk
-21:38:00 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-21:54:40 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-21:54:40 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-21:54:40 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-21:54:40 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-21:54:48 INF [performa register 342 ] Registered health check: database
-21:54:48 INF [performa register 342 ] Registered health check: memory
-21:54:48 INF [performa register 342 ] Registered health check: disk
-21:54:48 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:11:30 INF [performa register 342 ] Registered health check: database
-22:11:30 INF [performa register 342 ] Registered health check: memory
-22:11:30 INF [performa register 342 ] Registered health check: disk
-22:11:30 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:14:05 INF [performa register 342 ] Registered health check: database
-22:14:05 INF [performa register 342 ] Registered health check: memory
-22:14:05 INF [performa register 342 ] Registered health check: disk
-22:14:05 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:15:36 INF [performa register 342 ] Registered health check: database
-22:15:36 INF [performa register 342 ] Registered health check: memory
-22:15:36 INF [performa register 342 ] Registered health check: disk
-22:15:36 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:17:15 INF [performa register 342 ] Registered health check: database
-22:17:15 INF [performa register 342 ] Registered health check: memory
-22:17:15 INF [performa register 342 ] Registered health check: disk
-22:17:15 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:19:23 INF [performa register 342 ] Registered health check: database
-22:19:23 INF [performa register 342 ] Registered health check: memory
-22:19:23 INF [performa register 342 ] Registered health check: disk
-22:19:23 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:21:48 INF [performa register 342 ] Registered health check: database
-22:21:48 INF [performa register 342 ] Registered health check: memory
-22:21:48 INF [performa register 342 ] Registered health check: disk
-22:21:48 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-22:32:48 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-22:32:48 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-22:32:48 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-22:32:48 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-22:32:56 INF [performa register 342 ] Registered health check: database
-22:32:56 INF [performa register 342 ] Registered health check: memory
-22:32:56 INF [performa register 342 ] Registered health check: disk
-22:32:56 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-23:40:00 INF [performa register 342 ] Registered health check: database
-23:40:00 INF [performa register 342 ] Registered health check: memory
-23:40:00 INF [performa register 342 ] Registered health check: disk
-23:40:00 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:02:54 INF [performa register 342 ] Registered health check: database
-00:02:54 INF [performa register 342 ] Registered health check: memory
-00:02:54 INF [performa register 342 ] Registered health check: disk
-00:02:54 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:11:17 INF [performa register 342 ] Registered health check: database
-00:11:17 INF [performa register 342 ] Registered health check: memory
-00:11:17 INF [performa register 342 ] Registered health check: disk
-00:11:17 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:22:49 INF [performa register 342 ] Registered health check: database
-00:22:49 INF [performa register 342 ] Registered health check: memory
-00:22:49 INF [performa register 342 ] Registered health check: disk
-00:22:49 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:24:01 INF [performa register 342 ] Registered health check: database
-00:24:01 INF [performa register 342 ] Registered health check: memory
-00:24:01 INF [performa register 342 ] Registered health check: disk
-00:24:01 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:29:19 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-00:29:19 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-00:29:19 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-00:29:19 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-00:29:27 INF [performa register 342 ] Registered health check: database
-00:29:27 INF [performa register 342 ] Registered health check: memory
-00:29:27 INF [performa register 342 ] Registered health check: disk
-00:29:27 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:29:33 INF [performa register 342 ] Registered health check: database
-00:29:33 INF [performa register 342 ] Registered health check: memory
-00:29:33 INF [performa register 342 ] Registered health check: disk
-00:29:33 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:30:35 INF [performa register 342 ] Registered health check: database
-00:30:35 INF [performa register 342 ] Registered health check: memory
-00:30:35 INF [performa register 342 ] Registered health check: disk
-00:30:35 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:32:09 INF [performa register 342 ] Registered health check: database
-00:32:09 INF [performa register 342 ] Registered health check: memory
-00:32:09 INF [performa register 342 ] Registered health check: disk
-00:32:09 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:34:04 INF [performa register 342 ] Registered health check: database
-00:34:04 INF [performa register 342 ] Registered health check: memory
-00:34:04 INF [performa register 342 ] Registered health check: disk
-00:34:04 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:36:17 INF [performa register 342 ] Registered health check: database
-00:36:17 INF [performa register 342 ] Registered health check: memory
-00:36:17 INF [performa register 342 ] Registered health check: disk
-00:36:17 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:36:55 INF [performa register 342 ] Registered health check: database
-00:36:55 INF [performa register 342 ] Registered health check: memory
-00:36:55 INF [performa register 342 ] Registered health check: disk
-00:36:55 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:37:43 INF [performa register 342 ] Registered health check: database
-00:37:43 INF [performa register 342 ] Registered health check: memory
-00:37:43 INF [performa register 342 ] Registered health check: disk
-00:37:43 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:40:14 INF [performa register 342 ] Registered health check: database
-00:40:14 INF [performa register 342 ] Registered health check: memory
-00:40:14 INF [performa register 342 ] Registered health check: disk
-00:40:14 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:40:47 INF [performa register 342 ] Registered health check: database
-00:40:47 INF [performa register 342 ] Registered health check: memory
-00:40:47 INF [performa register 342 ] Registered health check: disk
-00:40:47 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:52:33 INF [performa register 342 ] Registered health check: database
-00:52:33 INF [performa register 342 ] Registered health check: memory
-00:52:33 INF [performa register 342 ] Registered health check: disk
-00:52:33 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-00:55:32 INF [performa register 342 ] Registered health check: database
-00:55:32 INF [performa register 342 ] Registered health check: memory
-00:55:32 INF [performa register 342 ] Registered health check: disk
-00:55:32 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-01:01:24 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-01:01:24 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-01:01:24 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-01:01:24 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-01:01:32 INF [performa register 342 ] Registered health check: database
-01:01:32 INF [performa register 342 ] Registered health check: memory
-01:01:32 INF [performa register 342 ] Registered health check: disk
-01:01:32 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-01:15:32 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-01:15:32 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-01:15:32 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-01:15:32 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-01:15:40 INF [performa register 342 ] Registered health check: database
-01:15:40 INF [performa register 342 ] Registered health check: memory
-01:15:40 INF [performa register 342 ] Registered health check: disk
-01:15:40 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-01:24:08 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-01:24:08 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-01:24:08 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-01:24:08 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-01:27:42 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-01:27:42 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-01:27:42 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-01:27:51 INF [performa register 342 ] Registered health check: database
-01:27:51 INF [performa register 342 ] Registered health check: memory
-01:27:51 INF [performa register 342 ] Registered health check: disk
-01:27:51 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-01:35:35 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-01:35:35 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-01:35:35 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-01:35:35 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-01:35:44 INF [performa register 342 ] Registered health check: database
-01:35:44 INF [performa register 342 ] Registered health check: memory
-01:35:44 INF [performa register 342 ] Registered health check: disk
-01:35:44 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-01:57:22 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-01:57:22 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-01:57:22 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-01:57:22 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-01:57:30 INF [performa register 342 ] Registered health check: database
-01:57:30 INF [performa register 342 ] Registered health check: memory
-01:57:30 INF [performa register 342 ] Registered health check: disk
-01:57:30 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-02:09:09 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-02:09:09 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-02:09:09 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-02:09:09 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-02:10:25 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-02:10:25 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-02:10:25 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-02:10:34 INF [performa register 342 ] Registered health check: database
-02:10:34 INF [performa register 342 ] Registered health check: memory
-02:10:34 INF [performa register 342 ] Registered health check: disk
-02:10:34 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-02:14:31 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-02:14:31 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-02:14:31 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-02:14:31 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-02:14:40 INF [performa register 342 ] Registered health check: database
-02:14:40 INF [performa register 342 ] Registered health check: memory
-02:14:40 INF [performa register 342 ] Registered health check: disk
-02:14:40 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-02:27:02 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-02:27:02 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-02:27:02 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-02:27:02 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-02:27:12 INF [performa register 342 ] Registered health check: database
-02:27:12 INF [performa register 342 ] Registered health check: memory
-02:27:12 INF [performa register 342 ] Registered health check: disk
-02:27:12 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
-02:30:17 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
-02:30:17 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
-02:30:17 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
-02:30:17 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
-02:30:27 INF [performa register 342 ] Registered health check: database
-02:30:27 INF [performa register 342 ] Registered health check: memory
-02:30:27 INF [performa register 342 ] Registered health check: disk
-02:30:27 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
+15:52:02 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
+15:52:02 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
+15:52:02 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
+15:52:02 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
+15:52:11 INF [performa register 342 ] Registered health check: database
+15:52:11 INF [performa register 342 ] Registered health check: memory
+15:52:11 INF [performa register 342 ] Registered health check: disk
+15:52:11 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
+20:58:46 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
+20:58:46 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
+20:58:46 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
+20:58:46 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
+20:58:54 INF [performa register 342 ] Registered health check: database
+20:58:54 INF [performa register 342 ] Registered health check: memory
+20:58:54 INF [performa register 342 ] Registered health check: disk
+20:58:54 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
+22:13:28 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
+22:13:28 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
+22:13:28 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
+22:13:28 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
+22:13:37 INF [performa register 342 ] Registered health check: database
+22:13:37 INF [performa register 342 ] Registered health check: memory
+22:13:37 INF [performa register 342 ] Registered health check: disk
+22:13:37 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
+22:16:21 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
+22:16:21 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
+22:16:21 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
+22:16:21 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
+22:16:29 INF [performa register 342 ] Registered health check: database
+22:16:29 INF [performa register 342 ] Registered health check: memory
+22:16:29 INF [performa register 342 ] Registered health check: disk
+22:16:29 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
+22:39:08 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
+22:39:08 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
+22:39:08 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
+22:39:08 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
+22:39:17 INF [performa register 342 ] Registered health check: database
+22:39:17 INF [performa register 342 ] Registered health check: memory
+22:39:17 INF [performa register 342 ] Registered health check: disk
+22:39:17 INF [utils    <module> 156 ] Performance monitoring functions imported successfully
+22:44:55 INF [action8_ <module> 185 ] Action 8 Initializing: APP_MODE is testing
+22:44:55 INF [action8_ <module> 196 ] Action 8 Using minimum message interval: 0:00:10
+22:44:55 CRI [action8_ load_mes 245 ] CRITICAL: messages.json content is not a valid dictionary of strings.
+22:44:55 CRI [action8_ <module> 288 ] Essential message templates failed to load. Cannot proceed reliably.
+22:45:04 INF [performa register 342 ] Registered health check: database
+22:45:04 INF [performa register 342 ] Registered health check: memory
+22:45:04 INF [performa register 342 ] Registered health check: disk
+22:45:04 INF [utils    <module> 156 ] Performance monitoring functions imported successfully

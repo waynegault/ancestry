@@ -6436,8 +6436,6 @@ def run_comprehensive_tests() -> bool:
             suppress_logging,
             create_mock_data,
             assert_valid_function,
-            create_integration_test_data,
-            measure_performance,
         )
     except ImportError:
         return run_comprehensive_tests_fallback()
@@ -6457,9 +6455,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Module Imports and Class Definitions",
         test_module_imports,
-        category="Initialization",
-        method="Check that required classes and functions are available in globals()",
-        expected="All core classes (SessionManager, DynamicRateLimiter) and functions (format_name) are defined",
+        "All core classes (SessionManager, DynamicRateLimiter) and functions (format_name) are defined",
+        "Check that required classes and functions are available in globals()",
+        "Test module imports and verify that core classes and functions exist in global namespace"
     )
 
     def test_config_loading():
@@ -6474,9 +6472,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Configuration Loading",
         test_config_loading,
-        category="Initialization",
-        method="Verify config_instance has required attributes like BASE_URL",
-        expected="Configuration object loads successfully with required attributes",
+        "Configuration object loads successfully with required attributes",
+        "Verify config_instance has required attributes like BASE_URL",
+        "Test configuration loading and validation of basic required attributes"
     )
 
     # CORE FUNCTIONALITY TESTS
@@ -6518,9 +6516,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Name Formatting Logic",
         test_format_name_comprehensive,
-        category="Core",
-        method="Test format_name() with various real-world names including edge cases",
-        expected="All name formats (normal, hyphenated, apostrophes, None, empty) are handled correctly",
+        "All name formats (normal, hyphenated, apostrophes, None, empty) are handled correctly",
+        "Test format_name() with various real-world names including edge cases",
+        "Test comprehensive name formatting with real-world examples and edge cases"
     )
 
     def test_ordinal_case_comprehensive():
@@ -6562,9 +6560,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Ordinal Number Conversion",
         test_ordinal_case_comprehensive,
-        category="Core",
-        method="Test ordinal_case() with numbers 1-1001 including special cases for 11th, 12th, 13th",
-        expected="All ordinal conversions follow English rules (1st, 2nd, 3rd, 4th, 11th, 21st, etc.)",
+        "All ordinal conversions follow English rules (1st, 2nd, 3rd, 4th, 11th, 21st, etc.)",
+        "Test ordinal_case() with numbers 1-1001 including special cases for 11th, 12th, 13th",
+        "Test comprehensive ordinal number conversion with edge cases and English grammar rules"
     )
 
     def test_rate_limiter_functionality():
@@ -6600,9 +6598,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Dynamic Rate Limiter Operations",
         test_rate_limiter_functionality,
-        category="Core",
-        method="Create DynamicRateLimiter, test wait timing, and delay adjustment functions",
-        expected="Rate limiter waits appropriate time and properly adjusts delays up/down",
+        "Rate limiter waits appropriate time and properly adjusts delays up/down",
+        "Create DynamicRateLimiter, test wait timing, and delay adjustment functions",
+        "Test rate limiter functionality with real timing validation and delay adjustments"
     )
 
     # EDGE CASE TESTS
@@ -6636,9 +6634,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Name Formatting Edge Cases",
         test_format_name_edge_cases,
-        category="Edge",
-        method="Test format_name() with extreme inputs: extra whitespace, unicode, single chars",
-        expected="Function handles edge cases gracefully without exceptions",
+        "Function handles edge cases gracefully without exceptions",
+        "Test format_name() with extreme inputs: extra whitespace, unicode, single chars",
+        "Test name formatting with extreme edge cases and special characters"
     )
 
     def test_rate_limiter_extreme_values():
@@ -6670,9 +6668,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Rate Limiter Boundary Conditions",
         test_rate_limiter_extreme_values,
-        category="Edge",
-        method="Test DynamicRateLimiter with extreme delay values (0, 0.001, max limits)",
-        expected="Rate limiter handles boundary conditions without errors or infinite delays",
+        "Rate limiter handles boundary conditions without errors or infinite delays",
+        "Test DynamicRateLimiter with extreme delay values (0, 0.001, max limits)",
+        "Test rate limiter with extreme delay values and boundary conditions"
     )
 
     # INTEGRATION TESTS
@@ -6682,7 +6680,7 @@ def run_comprehensive_tests() -> bool:
             return False
 
         session_manager_class = globals()["SessionManager"]
-        test_data = create_integration_test_data()
+        test_data = {}  # Simple test data
 
         try:
             # Test instantiation (don't actually start browser)
@@ -6710,9 +6708,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "SessionManager Integration Setup",
         test_session_manager_integration,
-        category="Integration",
-        method="Instantiate SessionManager and verify it has required methods and attributes",
-        expected="SessionManager creates successfully with browser management capabilities",
+        "SessionManager creates successfully with browser management capabilities",
+        "Instantiate SessionManager and verify it has required methods and attributes",
+        "Test SessionManager integration with browser configuration and methods"
     )
 
     def test_file_operations_integration():
@@ -6751,9 +6749,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "File Operations Integration",
         test_file_operations_integration,
-        category="Integration",
-        method="Create, write, read, and delete temporary test file with marked test content",
-        expected="File operations work correctly for configuration and logging needs",
+        "File operations work correctly for configuration and logging needs",
+        "Create, write, read, and delete temporary test file with marked test content",
+        "Test file operations integration for configuration and logging requirements"
     )
 
     # PERFORMANCE TESTS
@@ -6772,7 +6770,11 @@ def run_comprehensive_tests() -> bool:
                 format_name_func(name)
             return True
 
-        result, avg_duration = measure_performance(performance_test, iterations=1)
+        # Simple timing measurement
+        import time
+        start_time = time.time()
+        result = performance_test()
+        avg_duration = time.time() - start_time
 
         # Should complete 500 name formatting operations in reasonable time
         return result and avg_duration < 0.1  # Less than 100ms
@@ -6780,9 +6782,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Name Formatting Performance",
         test_format_name_performance,
-        category="Performance",
-        method="Format 500 names (mix of normal, None, empty) and measure execution time",
-        expected="Formats 500 names in under 100ms demonstrating efficient string processing",
+        "Formats 500 names in under 100ms demonstrating efficient string processing",
+        "Format 500 names (mix of normal, None, empty) and measure execution time",
+        "Test name formatting performance with large datasets"
     )
 
     def test_rate_limiter_precision():
@@ -6812,9 +6814,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Rate Limiter Timing Precision",
         test_rate_limiter_precision,
-        category="Performance",
-        method="Measure 5 consecutive 50ms waits and check timing consistency",
-        expected="Rate limiter maintains consistent timing with less than 20ms variance",
+        "Rate limiter maintains consistent timing with less than 20ms variance",
+        "Measure 5 consecutive 50ms waits and check timing consistency",
+        "Test rate limiter timing precision and consistency"
     )
 
     # ERROR HANDLING TESTS
@@ -6848,9 +6850,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Name Formatting Error Resilience",
         test_format_name_error_handling,
-        category="Error",
-        method="Pass invalid input types (dict, list, object) to format_name()",
-        expected="Function handles invalid inputs gracefully without crashing",
+        "Function handles invalid inputs gracefully without crashing",
+        "Pass invalid input types (dict, list, object) to format_name()",
+        "Test format_name error handling with invalid input types"
     )
 
     def test_rate_limiter_error_conditions():
@@ -6883,9 +6885,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Rate Limiter Error Conditions",
         test_rate_limiter_error_conditions,
-        category="Error",
-        method="Test rate limiter with invalid delays and repeated operations",
-        expected="Rate limiter handles error conditions without exceptions or system issues",
+        "Rate limiter handles error conditions without exceptions or system issues",
+        "Test rate limiter with invalid delays and repeated operations",
+        "Test rate limiter behavior under error conditions and edge cases"
     )
 
     return suite.finish_suite()
