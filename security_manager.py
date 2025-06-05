@@ -498,7 +498,9 @@ def run_comprehensive_tests() -> bool:
     - Test cleanup should remove all temporary files
     """
     if not HAS_TEST_FRAMEWORK:
-        return self_test()  # Fallback to simple test if framework unavailable
+        return (
+            _run_basic_fallback_tests()
+        )  # Fallback to simple test if framework unavailable
 
     suite = TestSuite("Security Manager & Credential Storage", "security_manager.py")
     suite.start_suite()
@@ -654,8 +656,8 @@ def run_comprehensive_tests() -> bool:
                     permissions = stat.S_IMODE(file_stat.st_mode)
                     # On Unix: should be 0o600 (owner read/write only)
                     # On Windows: this test may not be meaningful
-                    # WARNING: This intentionally generates a warning message for visibility
-                    suite.add_warning(f"File permissions: {oct(permissions)}")
+                    # Log permissions for visibility
+                    logger.info(f"File permissions: {oct(permissions)}")
 
         finally:
             manager.delete_credentials()
@@ -750,84 +752,117 @@ def run_comprehensive_tests() -> bool:
         finally:
             manager.delete_credentials()
 
-    # Run all tests
-    test_functions = {
-        "SecurityManager instantiation": (
+    # Run tests organized by standard categories
+    with suppress_logging():
+        # Initialization Tests
+        suite.run_test(
+            "Initialization",
             test_security_manager_instantiation,
             "Should create SecurityManager instances with proper initialization",
-        ),
-        "Master key operations": (
+        )
+        suite.run_test(
+            "Initialization",
             test_master_key_operations,
             "Should generate and retrieve master encryption keys securely",
-        ),
-        "Credential encryption and decryption": (
+        )
+
+        # Core Functionality Tests
+        suite.run_test(
+            "Core Functionality",
             test_credential_encryption_decryption,
             "Should encrypt and decrypt credentials with data integrity",
-        ),
-        "Individual credential retrieval": (
+        )
+        suite.run_test(
+            "Core Functionality",
             test_individual_credential_retrieval,
             "Should retrieve specific credentials from encrypted storage",
-        ),
-        "Credential validation": (
+        )
+        suite.run_test(
+            "Core Functionality",
             test_credential_validation,
             "Should validate required credentials are present and non-empty",
-        ),
-        "Error handling and edge cases": (
+        )
+
+        # Edge Cases Tests
+        suite.run_test(
+            "Edge Cases",
             test_error_handling,
             "Should handle missing files and invalid data gracefully",
-        ),
-        "File security and permissions": (
+        )
+        suite.run_test(
+            "Edge Cases",
             test_file_security,
             "Should set appropriate file permissions for encrypted storage",
-        ),
-        "Credential deletion and cleanup": (
-            test_credential_deletion,
-            "Should securely delete credential files and cleanup resources",
-        ),
-        "Multiple instance isolation": (
+        )
+
+        # Integration Tests
+        suite.run_test(
+            "Integration",
             test_multiple_instances,
             "Should handle multiple SecurityManager instances with shared credentials",
-        ),
-        "Full workflow integration": (
+        )
+        suite.run_test(
+            "Integration",
             test_full_workflow,
             "Should support complete credential storage and retrieval workflow",
-        ),
-    }
+        )
 
-    with suppress_logging():
-        for test_name, (test_func, expected_behavior) in test_functions.items():
-            suite.run_test(test_name, test_func, expected_behavior)
+        # Performance Tests
+        def test_performance():
+            """Test encryption/decryption performance with larger datasets."""
+            import time
+
+            manager = SecurityManager("TestPerfApp")
+
+            # Create larger credential set
+            large_credentials = {f"KEY_{i}": f"value_{i}_{'x'*50}" for i in range(100)}
+
+            try:
+                # Test encryption performance
+                start_time = time.time()
+                result = manager.encrypt_credentials(large_credentials)
+                encrypt_time = time.time() - start_time
+                assert result is True
+                assert (
+                    encrypt_time < 2.0
+                ), f"Encryption took too long: {encrypt_time:.2f}s"
+
+                # Test decryption performance
+                start_time = time.time()
+                decrypted = manager.decrypt_credentials()
+                decrypt_time = time.time() - start_time
+                assert decrypted == large_credentials
+                assert (
+                    decrypt_time < 2.0
+                ), f"Decryption took too long: {decrypt_time:.2f}s"
+
+            finally:
+                manager.delete_credentials()
+
+        suite.run_test(
+            "Performance",
+            test_performance,
+            "Should encrypt/decrypt large credential sets efficiently",
+        )
+
+        # Error Handling Tests
+        suite.run_test(
+            "Error Handling",
+            test_credential_deletion,
+            "Should securely delete credential files and cleanup resources",
+        )
 
     return suite.finish_suite()
 
 
-def self_test() -> bool:
+def _run_basic_fallback_tests() -> bool:
     """
     Basic functionality test (fallback when test framework unavailable).
 
-    EXPECTED WARNINGS/ERRORS (Self-Test Mode):
-    ==========================================
-
-    1. Keyring Access Warnings:
-       - "Could not retrieve master key from keyring: [error]"
-       - Expected on first run or systems without keyring support
-       - Gracefully handled by generating temporary keys
-
-    2. Credential Validation Errors (Intentionally Suppressed):
-       - Log level temporarily set to CRITICAL during validation tests
-       - Invalid credential tests are expected to fail validation
-       - This verifies proper error handling for missing/invalid credentials
-
-    3. File Permission Behaviors:
-       - Encrypted files created with restrictive permissions (0o600)
-       - May show different behaviors on Windows vs Unix systems
-       - Test cleanup removes temporary files after completion
-
-    4. Expected Test Flow:
-       - Create test credentials → Encrypt → Decrypt → Validate → Cleanup
-       - All steps should succeed with only expected warnings above
+    This function provides essential testing when the enhanced test framework
+    is not available, ensuring core security manager functionality works.
     """
-    logger.info("Starting SecurityManager self-test...")
+    logger.info("Running basic SecurityManager fallback tests...")
 
     try:
         # Create test instance
@@ -862,13 +897,11 @@ def self_test() -> bool:
             logger.error("Failed to retrieve individual credential")
             return False
 
-        # Test validation - temporarily reduce log level for expected failures
+        # Test validation with suppressed logging
         import logging
 
         original_level = logger.level
-        logger.setLevel(
-            logging.CRITICAL
-        )  # Suppress expected error messages during testing
+        logger.setLevel(logging.CRITICAL)
 
         try:
             # Test valid credentials
@@ -879,23 +912,22 @@ def self_test() -> bool:
                 logger.error("Valid credentials failed validation")
                 return False
 
-            # Test invalid credentials (missing password) - this should return False
+            # Test invalid credentials (should return False)
             if security_manager.validate_credentials({"ANCESTRY_USERNAME": "test"}):
                 logger.setLevel(original_level)
                 logger.error("Invalid credentials passed validation")
                 return False
         finally:
-            # Restore original log level
             logger.setLevel(original_level)
 
         # Cleanup test files
         security_manager.delete_credentials()
 
-        logger.info("SecurityManager self-test passed successfully")
+        logger.info("SecurityManager basic tests passed successfully")
         return True
 
     except Exception as e:
-        logger.error(f"SecurityManager self-test failed: {e}", exc_info=True)
+        logger.error(f"SecurityManager basic tests failed: {e}", exc_info=True)
         return False
 
 

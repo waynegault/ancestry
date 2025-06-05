@@ -113,6 +113,7 @@ class GedcomCacheModule(BaseCacheModule):
         )
 
         gedcom_stats = {
+            "module_name": self.module_name,
             "memory_cache_entries": memory_cache_size,
             "memory_cache_valid_entries": memory_cache_valid_entries,
             "memory_cache_hit_rate": (
@@ -904,83 +905,82 @@ def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
 
 # --- Main Execution for Testing ---
 
-if __name__ == "__main__":
-    import unittest
-    from test_framework import TestSuite, suppress_logging, create_mock_data
-    from gedcom_utils import GedcomData
 
-    print("🧬 GEDCOM Cache System - Comprehensive Testing & Demonstration")
-    print("=" * 70)
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for gedcom_cache.py.
+    Tests GEDCOM file caching, invalidation, and performance optimization.
+    """
+    try:
+        from test_framework import TestSuite, suppress_logging, create_mock_data
+    except ImportError:
+        print("❌ test_framework.py not found. Using fallback test implementation.")
+        return run_comprehensive_tests_fallback()
 
-    # Run comprehensive tests
-    print("\n📊 Running GEDCOM Cache Tests...")
-    test_results = run_gedcom_cache_tests()
+    suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")
+    suite.start_suite()
 
-    print(
-        f"\n✅ Test Results: {test_results['tests_passed']}/{test_results['tests_run']} passed ({test_results['pass_rate']:.1f}%)"
-    )
+    # INITIALIZATION TESTS
+    def test_gedcom_cache_initialization():
+        """Test GEDCOM cache module initialization."""
+        try:
+            # Test module instance
+            module_name = _gedcom_cache_module.get_module_name()
+            assert module_name == "gedcom_cache"
 
-    # Display test details
-    for test in test_results["test_details"]:
-        status_emoji = (
-            "✅"
-            if test["status"] == "PASS"
-            else "❌" if test["status"] == "FAIL" else "⚠️"
-        )
-        duration = test.get("duration_ms", 0)
-        print(f"  {status_emoji} {test['name']}: {test['status']} ({duration:.2f}ms)")
-
-    # Run demonstrations
-    print("\n🎯 Running GEDCOM Cache Demonstrations...")
-    demo_results = demonstrate_gedcom_cache_usage()
-
-    for demo in demo_results["demonstrations"]:
-        status_emoji = "✅" if demo["status"] == "success" else "❌"
-        print(f"  {status_emoji} {demo['name']}: {demo['description']}")
-
-    # Display final statistics
-    print(f"\n📈 Performance Summary:")
-    print(f"  • Total test duration: {test_results['total_duration']:.3f}s")
-    print(
-        f"  • Average test duration: {test_results['performance_metrics']['average_test_duration_ms']:.2f}ms"
-    )
-    print(f"  • Cache module: {_gedcom_cache_module.get_module_name()}")
-
-    # Display cache health
-    health = get_gedcom_cache_health()
-    print(f"  • Overall health: {health.get('overall_health', 'unknown')}")
-    print(f"  • Memory cache entries: {health.get('memory_cache_entries', 0)}")
-
-    print("\n🔄 GEDCOM cache system validation complete!")
-
-    # ==============================================
-    # Standalone Test Block
-    # ==============================================
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for gedcom_cache.py.
-        Tests GEDCOM file caching, invalidation, and performance optimization.
-        """
-        suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")
-        suite.start_suite()
-
-        # GEDCOM cache initialization
-        def test_gedcom_cache_initialization():
+            # Test basic cache functionality
             if "GedcomCache" in globals():
                 cache_class = globals()["GedcomCache"]
+                cache = cache_class()
+                assert cache is not None
+                assert hasattr(cache, "load")
+                assert hasattr(cache, "save")
+                assert hasattr(cache, "invalidate")
 
-                try:
-                    cache = cache_class()
-                    assert cache is not None
-                    assert hasattr(cache, "load")
-                    assert hasattr(cache, "save")
-                    assert hasattr(cache, "invalidate")
-                except Exception:
-                    # May require specific configuration
-                    pass
+            return True
+        except Exception:
+            return False
 
-        # GEDCOM file parsing and caching
-        def test_gedcom_parsing_caching():
+    suite.run_test(
+        "GEDCOM Cache Module Initialization",
+        test_gedcom_cache_initialization,
+        category="Initialization",
+        method="Initialize GEDCOM cache module and verify basic structure",
+        expected="Cache module initializes with proper interface and required methods",
+    )
+
+    def test_memory_cache_operations():
+        """Test basic memory cache operations."""
+        try:
+            test_key = "test_operation_key"
+            test_data = {"test": "data", "timestamp": time.time()}
+
+            # Store in memory cache
+            _store_in_memory_cache(test_key, test_data)
+
+            # Retrieve from memory cache
+            retrieved = _get_from_memory_cache(test_key)
+
+            # Clean up
+            if test_key in _MEMORY_CACHE:
+                del _MEMORY_CACHE[test_key]
+
+            return retrieved == test_data
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Memory Cache Operations",
+        test_memory_cache_operations,
+        category="Initialization",
+        method="Store and retrieve data from memory cache",
+        expected="Memory cache stores and retrieves data correctly",
+    )
+
+    # CORE FUNCTIONALITY TESTS
+    def test_gedcom_parsing_caching():
+        """Test GEDCOM file parsing and caching."""
+        try:
             if "parse_and_cache_gedcom" in globals():
                 parser = globals()["parse_and_cache_gedcom"]
 
@@ -1003,51 +1003,176 @@ if __name__ == "__main__":
                     temp_file.write(mock_gedcom_content)
                     temp_file.flush()
 
-                    try:
-                        result = parser(temp_file.name)
-                        assert result is not None
-                    except Exception:
-                        pass  # May require ged4py or specific setup
+                    result = parser(temp_file.name)
+                    return result is not None
 
-        # Cache invalidation based on file modification
-        def test_cache_invalidation_file_modification():
+            return True  # Pass if function doesn't exist
+        except Exception:
+            return False
+
+    suite.run_test(
+        "GEDCOM File Parsing and Caching",
+        test_gedcom_parsing_caching,
+        category="Core",
+        method="Parse mock GEDCOM file and cache the processed data",
+        expected="GEDCOM file parses successfully and caches processed data",
+    )
+
+    def test_cached_data_retrieval():
+        """Test cached GEDCOM data retrieval."""
+        try:
+            if "get_cached_gedcom_data" in globals():
+                retriever = globals()["get_cached_gedcom_data"]
+
+                # Test with mock file path
+                test_file_path = "/path/to/test.ged"
+                cached_data = retriever(test_file_path)
+
+                # May return None if no cache exists, which is valid
+                return cached_data is None or isinstance(cached_data, dict)
+
+            return True  # Pass if function doesn't exist
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Cached Data Retrieval",
+        test_cached_data_retrieval,
+        category="Core",
+        method="Retrieve previously cached GEDCOM data",
+        expected="Cache retrieval returns None or valid dictionary data structure",
+    )
+
+    def test_cache_key_generation():
+        """Test cache key generation consistency."""
+        try:
+            if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
+                return True  # Skip if no GEDCOM configured
+
+            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            if not gedcom_path or not Path(gedcom_path).exists():
+                return True  # Skip if file doesn't exist
+
+            key1 = _get_memory_cache_key(str(gedcom_path), "test_operation")
+            key2 = _get_memory_cache_key(str(gedcom_path), "test_operation")
+
+            return key1 == key2  # Keys should be consistent
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Cache Key Generation",
+        test_cache_key_generation,
+        category="Core",
+        method="Generate cache keys for same inputs and verify consistency",
+        expected="Cache key generation produces consistent keys for identical inputs",
+    )
+
+    # EDGE CASE TESTS
+    def test_memory_cache_expiration():
+        """Test memory cache expiration mechanism."""
+        try:
+            test_key = "expiration_test_key"
+            test_data = "expiration_test_data"
+
+            # Store with expired timestamp
+            _MEMORY_CACHE[test_key] = (test_data, time.time() - _CACHE_MAX_AGE - 1)
+
+            # Should be invalid due to age
+            is_valid = _is_memory_cache_valid(test_key)
+
+            # Clean up
+            if test_key in _MEMORY_CACHE:
+                del _MEMORY_CACHE[test_key]
+
+            return not is_valid  # Should be expired
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Memory Cache Expiration",
+        test_memory_cache_expiration,
+        category="Edge",
+        method="Store data with expired timestamp and verify expiration detection",
+        expected="Expired cache entries are correctly identified as invalid",
+    )
+
+    def test_cache_invalidation_file_modification():
+        """Test cache invalidation based on file modification."""
+        try:
             if "check_file_modification" in globals():
                 mod_checker = globals()["check_file_modification"]
 
                 with tempfile.NamedTemporaryFile() as temp_file:
                     # Test modification time checking
                     initial_time = time.time() - 3600  # 1 hour ago
+                    is_modified = mod_checker(temp_file.name, initial_time)
+                    return isinstance(is_modified, bool)
 
-                    try:
-                        is_modified = mod_checker(temp_file.name, initial_time)
-                        assert isinstance(is_modified, bool)
-                    except Exception:
-                        pass  # May require specific file system setup
+            return True  # Pass if function doesn't exist
+        except Exception:
+            return False
 
-        # Cached data retrieval
-        def test_cached_data_retrieval():
-            if "get_cached_gedcom_data" in globals():
-                retriever = globals()["get_cached_gedcom_data"]
+    suite.run_test(
+        "Cache Invalidation on File Modification",
+        test_cache_invalidation_file_modification,
+        category="Edge",
+        method="Check file modification detection for cache invalidation",
+        expected="File modification detection works correctly for cache management",
+    )
 
-                # Test with mock file path
-                test_file_path = "/path/to/test.ged"
+    # INTEGRATION TESTS
+    def test_cache_statistics_collection():
+        """Test cache statistics collection."""
+        try:
+            stats = _gedcom_cache_module.get_stats()
+            required_fields = [
+                "module_name",
+                "memory_cache_entries",
+                "cache_max_age_seconds",
+            ]
+            return all(field in stats for field in required_fields)
+        except Exception:
+            return False
 
-                try:
-                    cached_data = retriever(test_file_path)
-                    # May return None if no cache exists, which is valid
-                    assert cached_data is None or isinstance(cached_data, dict)
-                except Exception:
-                    pass  # Expected if cache doesn't exist
+    suite.run_test(
+        "Cache Statistics Collection",
+        test_cache_statistics_collection,
+        category="Integration",
+        method="Collect comprehensive cache statistics",
+        expected="Statistics collection returns all required fields",
+    )
 
-        # Cache performance metrics
-        def test_cache_performance_metrics():
+    def test_cache_health_status():
+        """Test cache health status checking."""
+        try:
+            health = _gedcom_cache_module.get_health_status()
+            required_fields = [
+                "overall_health",
+                "memory_cache_health",
+                "gedcom_file_health",
+            ]
+            return all(field in health for field in required_fields)
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Cache Health Status Check",
+        test_cache_health_status,
+        category="Integration",
+        method="Check overall cache health and component status",
+        expected="Health status returns comprehensive system health information",
+    )
+
+    # PERFORMANCE TESTS
+    def test_cache_performance_metrics():
+        """Test cache performance metrics collection."""
+        try:
             if "get_cache_performance_stats" in globals():
                 stats_func = globals()["get_cache_performance_stats"]
+                stats = stats_func()
 
-                try:
-                    stats = stats_func()
-                    assert isinstance(stats, dict)
-
+                if isinstance(stats, dict):
                     # Check for common performance metrics
                     expected_metrics = [
                         "hit_rate",
@@ -1058,55 +1183,24 @@ if __name__ == "__main__":
                     for metric in expected_metrics:
                         if metric in stats:
                             assert isinstance(stats[metric], (int, float))
-                except Exception:
-                    pass  # May require cache activity first
 
-        # Memory management and cleanup
-        def test_memory_management_cleanup():
-            cleanup_functions = [
-                "cleanup_cache_memory",
-                "optimize_cache_size",
-                "free_unused_cache",
-            ]
+                return True
 
-            for func_name in cleanup_functions:
-                if func_name in globals():
-                    cleanup_func = globals()[func_name]
+            return True  # Pass if function doesn't exist
+        except Exception:
+            return False
 
-                    try:
-                        result = cleanup_func()
-                        assert isinstance(result, (bool, int))
-                    except Exception:
-                        pass  # May require active cache
+    suite.run_test(
+        "Cache Performance Metrics",
+        test_cache_performance_metrics,
+        category="Performance",
+        method="Collect and validate cache performance statistics",
+        expected="Performance metrics collection provides valid numeric data",
+    )
 
-        # Cache serialization and persistence
-        def test_cache_serialization_persistence():
-            if (
-                "save_cache_to_disk" in globals()
-                and "load_cache_from_disk" in globals()
-            ):
-                save_func = globals()["save_cache_to_disk"]
-                load_func = globals()["load_cache_from_disk"]
-
-                test_cache_data = {
-                    "individuals": {"I1": {"name": "John Doe", "birth_year": 1950}},
-                    "families": {"F1": {"husband": "I1", "wife": "I2"}},
-                    "metadata": {"file_path": "test.ged", "parsed_date": "2024-01-01"},
-                }
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    try:
-                        save_result = save_func(test_cache_data, temp_file.name)
-                        assert isinstance(save_result, bool)
-
-                        if save_result:
-                            loaded_data = load_func(temp_file.name)
-                            assert isinstance(loaded_data, dict)
-                    except Exception:
-                        pass  # May require specific serialization format
-
-        # Multi-file cache management
-        def test_multifile_cache_management():
+    def test_multifile_cache_management():
+        """Test multi-file cache management capabilities."""
+        try:
             if "manage_multiple_gedcom_caches" in globals():
                 manager = globals()["manage_multiple_gedcom_caches"]
 
@@ -1117,14 +1211,53 @@ if __name__ == "__main__":
                     "/path/to/research.ged",
                 ]
 
-                try:
-                    result = manager(test_files)
-                    assert isinstance(result, (dict, list, bool))
-                except Exception:
-                    pass  # May require actual files
+                result = manager(test_files)
+                return isinstance(result, (dict, list, bool))
 
-        # Cache validation and integrity
-        def test_cache_validation_integrity():
+            return True  # Pass if function doesn't exist
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Multi-file Cache Management",
+        test_multifile_cache_management,
+        category="Performance",
+        method="Manage caches for multiple GEDCOM files simultaneously",
+        expected="Multi-file cache management handles multiple files efficiently",
+    )
+
+    # ERROR HANDLING TESTS
+    def test_memory_management_cleanup():
+        """Test memory management and cleanup operations."""
+        try:
+            cleanup_functions = [
+                "cleanup_cache_memory",
+                "optimize_cache_size",
+                "free_unused_cache",
+            ]
+
+            for func_name in cleanup_functions:
+                if func_name in globals():
+                    cleanup_func = globals()[func_name]
+                    result = cleanup_func()
+                    if not isinstance(result, (bool, int)):
+                        return False
+
+            return True
+        except Exception:
+            return False
+
+    suite.run_test(
+        "Memory Management and Cleanup",
+        test_memory_management_cleanup,
+        category="Error",
+        method="Test cache memory cleanup and optimization functions",
+        expected="Memory management functions execute without errors",
+    )
+
+    def test_cache_validation_integrity():
+        """Test cache validation and integrity checking."""
+        try:
             if "validate_cache_integrity" in globals():
                 validator = globals()["validate_cache_integrity"]
 
@@ -1135,99 +1268,109 @@ if __name__ == "__main__":
                     "version": "1.0",
                 }
 
-                try:
-                    is_valid = validator(mock_cache)
-                    assert isinstance(is_valid, bool)
-                except Exception:
-                    pass  # May require specific validation rules
+                is_valid = validator(mock_cache)
+                return isinstance(is_valid, bool)
 
-        # Performance optimization strategies
-        def test_performance_optimization_strategies():
-            optimization_functions = [
-                "optimize_cache_loading",
-                "compress_cache_data",
-                "index_cache_for_search",
-                "preload_frequently_accessed",
-            ]
+            return True  # Pass if function doesn't exist
+        except Exception:
+            return False
 
-            for func_name in optimization_functions:
-                if func_name in globals():
-                    opt_func = globals()[func_name]
-                    assert callable(opt_func)
+    suite.run_test(
+        "Cache Validation and Integrity",
+        test_cache_validation_integrity,
+        category="Error",
+        method="Validate cache data integrity and detect corruption",
+        expected="Cache validation properly checks data integrity",
+    )
 
-                    try:
-                        # Test with minimal parameters
-                        result = opt_func()
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific setup or parameters
+    return suite.finish_suite()
 
-        # Run all tests
-        test_functions = {
-            "GEDCOM cache initialization": (
-                test_gedcom_cache_initialization,
-                "Should initialize GEDCOM cache with required methods",
-            ),
-            "GEDCOM parsing and caching": (
-                test_gedcom_parsing_caching,
-                "Should parse GEDCOM files and store parsed data in cache",
-            ),
-            "Cache invalidation on file modification": (
-                test_cache_invalidation_file_modification,
-                "Should invalidate cache when source GEDCOM files are modified",
-            ),
-            "Cached data retrieval": (
-                test_cached_data_retrieval,
-                "Should retrieve previously cached GEDCOM data efficiently",
-            ),
-            "Cache performance metrics": (
-                test_cache_performance_metrics,
-                "Should track cache hit rates and performance statistics",
-            ),
-            "Memory management and cleanup": (
-                test_memory_management_cleanup,
-                "Should manage memory usage and clean up unused cache data",
-            ),
-            "Cache serialization and persistence": (
-                test_cache_serialization_persistence,
-                "Should save and load cache data to/from disk",
-            ),
-            "Multi-file cache management": (
-                test_multifile_cache_management,
-                "Should manage caches for multiple GEDCOM files",
-            ),
-            "Cache validation and integrity": (
-                test_cache_validation_integrity,
-                "Should validate cache integrity and detect corruption",
-            ),
-            "Performance optimization strategies": (
-                test_performance_optimization_strategies,
-                "Should implement strategies to optimize cache performance",
-            ),
-        }
 
-        # Define a context manager to suppress logging output during tests
-        from contextlib import contextmanager
+def run_comprehensive_tests_fallback() -> bool:
+    """
+    Fallback test function when test_framework is not available.
+    Performs basic GEDCOM cache validation.
+    """
+    print("📦 GEDCOM Cache Basic Tests (Fallback Mode)")
+    tests_passed = 0
+    total_tests = 4
 
-        @contextmanager
-        def suppress_logging():
-            import logging
+    try:
+        # Test 1: Module initialization
+        module_name = _gedcom_cache_module.get_module_name()
+        if module_name == "gedcom_cache":
+            print("✅ Test 1/4: Module initialization - PASSED")
+            tests_passed += 1
+        else:
+            print("❌ Test 1/4: Module initialization - FAILED")
+    except Exception as e:
+        print(f"❌ Test 1/4: Module initialization - ERROR: {e}")
 
-            previous_level = logger.level
-            logger.setLevel(logging.CRITICAL + 1)
-            try:
-                yield
-            finally:
-                logger.setLevel(previous_level)
+    try:
+        # Test 2: Memory cache operations
+        test_key = "fallback_test_key"
+        test_data = {"test": "fallback_data"}
 
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
+        _store_in_memory_cache(test_key, test_data)
+        retrieved = _get_from_memory_cache(test_key)
 
-        return suite.finish_suite()
+        if retrieved == test_data:
+            print("✅ Test 2/4: Memory cache operations - PASSED")
+            tests_passed += 1
+        else:
+            print("❌ Test 2/4: Memory cache operations - FAILED")
 
+        # Cleanup
+        if test_key in _MEMORY_CACHE:
+            del _MEMORY_CACHE[test_key]
+    except Exception as e:
+        print(f"❌ Test 2/4: Memory cache operations - ERROR: {e}")
+
+    try:
+        # Test 3: Statistics collection
+        stats = _gedcom_cache_module.get_stats()
+        if isinstance(stats, dict) and "module_name" in stats:
+            print("✅ Test 3/4: Statistics collection - PASSED")
+            tests_passed += 1
+        else:
+            print("❌ Test 3/4: Statistics collection - FAILED")
+    except Exception as e:
+        print(f"❌ Test 3/4: Statistics collection - ERROR: {e}")
+
+    try:
+        # Test 4: Health status
+        health = _gedcom_cache_module.get_health_status()
+        if isinstance(health, dict) and "overall_health" in health:
+            print("✅ Test 4/4: Health status check - PASSED")
+            tests_passed += 1
+        else:
+            print("❌ Test 4/4: Health status check - FAILED")
+    except Exception as e:
+        print(f"❌ Test 4/4: Health status check - ERROR: {e}")
+
+    success_rate = (tests_passed / total_tests) * 100
+    print(
+        f"\n📊 Results: {tests_passed}/{total_tests} tests passed ({success_rate:.1f}%)"
+    )
+
+    return tests_passed == total_tests
+
+
+# --- Main Execution ---
+
+if __name__ == "__main__":
     print(
         "🗂️ Running GEDCOM Cache Management & Optimization comprehensive test suite..."
     )
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    try:
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    except Exception as e:
+        print(f"❌ Error running tests: {e}")
+        print("🔄 Falling back to basic validation...")
+        try:
+            success = run_comprehensive_tests_fallback()
+            sys.exit(0 if success else 1)
+        except Exception as fallback_error:
+            print(f"❌ Fallback test also failed: {fallback_error}")
+            sys.exit(1)

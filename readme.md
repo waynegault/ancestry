@@ -1,5 +1,9 @@
 # Ancestry.com Genealogy Automation System
 
+## Latest Updates
+
+**June 5, 2025**: Standardized test framework across all modules. Improved test reliability by fixing suite.run_test() parameter format and adjusting timeouts for modules processing large datasets.
+
 ## 1. What the System is For
 
 This is a **comprehensive genealogy automation platform** designed to revolutionize DNA match research and family tree building on Ancestry.com. The system serves genealogists, family historians, and DNA researchers who need to efficiently manage large volumes of DNA matches, process communications, and extract meaningful genealogical insights from their research.
@@ -1060,25 +1064,301 @@ MS_TENANT_ID=your_tenant_id
 - `timestamp`: Message timestamp
 - `ai_classification`: AI-determined intent (TEXT)
 
-### 8.4 Testing Strategy
+### 8.4 Internal Self-Test Infrastructure
 
-#### Unit Testing
-- **Test Coverage**: Aim for 80%+ code coverage
-- **Mock External APIs**: Use `unittest.mock` for API calls
-- **Database Testing**: Use in-memory SQLite for tests
-- **AI Testing**: Mock AI responses for consistent testing
+Every script in this codebase contains a comprehensive internal self-test mechanism that validates functionality, ensures code quality, and provides regression testing. This standardized test infrastructure enables each module to be independently verified and facilitates confident code modifications.
 
-#### Integration Testing
-- **API Health Checks**: Verify critical endpoints
-- **End-to-End Workflows**: Test complete action sequences
-- **Database Integrity**: Verify data consistency
-- **Session Management**: Test authentication flows
+#### 8.4.1 Test Framework Architecture
 
-#### Performance Testing
-- **Load Testing**: Test with large datasets
-- **Memory Profiling**: Monitor memory usage patterns
-- **Cache Performance**: Verify caching effectiveness
-- **API Rate Limiting**: Test rate limiting behavior
+**Central Test Framework (`test_framework.py`)**
+
+The core of the testing infrastructure is the `TestSuite` class in `test_framework.py`, which provides:
+
+- **Unified Test Execution**: Consistent test runner with standardized output formatting
+- **Visual Feedback**: Color-coded results with success/failure indicators and emoji icons
+- **Test Categorization**: Organized test suites with clear labeling and progress tracking
+- **Error Handling**: Robust exception capture with detailed error reporting
+- **Performance Metrics**: Execution time tracking for performance regression detection
+
+```python
+class TestSuite:
+    def start_suite(self, name: str) -> None
+    def run_test(self, name: str, description: str, test_function: callable) -> bool
+    def finish_suite(self) -> bool
+```
+
+**Key Infrastructure Components:**
+
+- **Colors Class**: ANSI color codes for terminal output formatting
+- **Icons Class**: Unicode symbols for visual test result indicators
+- **suppress_logging()**: Context manager to silence log output during tests
+- **create_mock_data()**: Helper functions for generating test data
+- **assert_*()**: Custom assertion helpers with descriptive error messages
+
+#### 8.4.2 Standardized Test Pattern
+
+Every script follows a consistent pattern for implementing internal tests:
+
+**1. Import with Fallback**
+```python
+try:
+    from test_framework import TestSuite, suppress_logging, create_mock_data
+except ImportError:
+    # Fallback dummy classes when test framework unavailable
+    class TestSuite:
+        def start_suite(self, name): pass
+        def run_test(self, name, desc, func): return True
+        def finish_suite(self): return True
+    def suppress_logging(): return contextlib.nullcontext()
+    def create_mock_data(*args): return {}
+```
+
+**2. Test Function Structure**
+```python
+def run_comprehensive_tests():
+    """Comprehensive test suite for [module name]."""
+    suite = TestSuite()
+    suite.start_suite(f"{MODULE_NAME} Comprehensive Tests")
+    
+    # Test 1: Basic functionality
+    suite.run_test(
+        "basic_functionality",
+        "Tests core functionality with valid inputs",
+        test_basic_functionality
+    )
+    
+    # Test 2: Error handling
+    suite.run_test(
+        "error_handling", 
+        "Tests error handling with invalid inputs",
+        test_error_handling
+    )
+    
+    # Test 3: Edge cases
+    suite.run_test(
+        "edge_cases",
+        "Tests edge cases and boundary conditions", 
+        test_edge_cases
+    )
+    
+    return suite.finish_suite()
+```
+
+**3. Individual Test Functions**
+```python
+def test_basic_functionality():
+    """Test core functionality with valid inputs."""
+    with suppress_logging():
+        # Arrange
+        test_data = create_mock_data("valid_input")
+        
+        # Act
+        result = target_function(test_data)
+        
+        # Assert
+        assert result is not None, "Function should return a result"
+        assert isinstance(result, expected_type), f"Expected {expected_type}, got {type(result)}"
+        assert len(result) > 0, "Result should not be empty"
+        
+    return True  # Test passed
+```
+
+**4. Main Execution Block**
+```python
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
+```
+
+#### 8.4.3 Test Coverage Across Modules
+
+The following modules implement comprehensive internal test suites:
+
+**Core Action Modules:**
+- **`action6_gather.py`**: DNA match data harvesting validation
+- **`action8_messaging.py`**: Message template processing and API interaction tests
+- **`action9_process_productive.py`**: AI message processing and data extraction validation
+- **`action10.py`**: GEDCOM file processing and search algorithm tests
+- **`action11.py`**: Live API research functionality and relationship calculation tests
+
+**Utility Modules:**
+- **`api_utils.py`**: API wrapper function validation and error handling tests
+- **`cache.py`**: Caching mechanism validation and performance tests
+- **`config.py`**: Configuration loading and validation tests
+- **`utils.py`**: Core utility function tests including session management
+- **`selenium_utils.py`**: Browser automation and cookie handling tests
+- **`relationship_utils.py`**: Family tree relationship calculation and path finding tests
+- **`gedcom_utils.py`**: GEDCOM file parsing and person matching algorithm tests
+- **`error_handling.py`**: Error handling utility validation
+- **`credential_manager.py`**: Secure credential management tests
+- **`security_manager.py`**: Security function validation and encryption tests
+- **`database.py`**: Database model validation and transaction tests
+- **`my_selectors.py`**: CSS selector validation for web automation
+
+#### 8.4.4 Test Categories and Scope
+
+Each module's test suite typically covers:
+
+**1. Functional Tests**
+- Core functionality validation with valid inputs
+- API integration and response handling
+- Data processing and transformation accuracy
+- Algorithm correctness and expected outputs
+
+**2. Error Handling Tests** 
+- Invalid input handling and graceful degradation
+- Network failure simulation and recovery
+- Database connection failures and rollback
+- Authentication errors and re-authentication
+
+**3. Edge Case Tests**
+- Boundary condition validation
+- Empty data set handling  
+- Maximum/minimum value processing
+- Malformed data resilience
+
+**4. Integration Tests**
+- Cross-module interaction validation
+- Database transaction integrity
+- API authentication and session management
+- File system operations and permissions
+
+**5. Performance Tests**
+- Large dataset processing validation
+- Memory usage and leak detection
+- Cache effectiveness verification
+- Rate limiting compliance
+
+#### 8.4.5 Mock Data and Test Utilities
+
+**Mock Data Creation**
+The test framework provides sophisticated mock data generation:
+
+```python
+def create_mock_data(data_type: str, **kwargs):
+    """Create realistic mock data for testing."""
+    generators = {
+        'dna_match': create_mock_dna_match,
+        'message': create_mock_message,  
+        'person': create_mock_person,
+        'conversation': create_mock_conversation,
+        'gedcom_record': create_mock_gedcom_record
+    }
+    return generators.get(data_type, lambda: {})(**kwargs)
+```
+
+**Assertion Helpers**
+Custom assertion functions provide clear error messages:
+
+```python
+def assert_valid_email(email: str) -> None:
+    """Assert that string is a valid email address."""
+    
+def assert_valid_date(date_str: str) -> None:
+    """Assert that string represents a valid date."""
+    
+def assert_non_empty_list(lst: list, name: str = "list") -> None:
+    """Assert that list is not empty."""
+```
+
+#### 8.4.6 Running Tests
+
+**Individual Module Tests**
+```bash
+# Run tests for a specific module
+python action10.py
+python utils.py
+python gedcom_utils.py
+```
+
+**All Tests via Test Runner**
+```bash
+# Run all module tests sequentially
+python run_all_tests.py
+```
+
+**Test Output Example**
+```
+🧪 ACTION10 Comprehensive Tests
+✅ basic_search          Tests basic person search functionality
+✅ relationship_calc     Tests relationship path calculation  
+✅ scoring_algorithm     Tests person matching score calculation
+✅ error_handling        Tests error handling with invalid inputs
+✅ edge_cases           Tests edge cases and boundary conditions
+✅ performance          Tests performance with large datasets
+
+🎯 Test Results: 6/6 passed (100.0%) in 2.34s
+```
+
+#### 8.4.7 Test Development Guidelines
+
+**Adding Tests to New Modules**
+
+1. **Import the test framework** with fallback dummy classes
+2. **Implement test functions** following the standardized pattern
+3. **Create comprehensive test suite** covering all major functionality
+4. **Add main execution block** for standalone test running
+5. **Document test coverage** and any special testing considerations
+
+**Test Function Best Practices**
+
+- **Descriptive Names**: Use clear, descriptive test function names
+- **Comprehensive Coverage**: Test both success and failure scenarios  
+- **Isolated Tests**: Each test should be independent and not rely on others
+- **Clear Assertions**: Use specific assertions with meaningful error messages
+- **Mock External Dependencies**: Use mocks for API calls, file I/O, and database operations
+- **Performance Awareness**: Include performance validation for critical operations
+
+**Example New Module Test Implementation**
+```python
+def test_new_functionality():
+    """Test new functionality with comprehensive validation."""
+    with suppress_logging():
+        try:
+            # Arrange: Set up test data
+            input_data = create_mock_data('test_input')
+            expected_result = {'status': 'success', 'data': []}
+            
+            # Act: Execute function under test
+            actual_result = new_function(input_data)
+            
+            # Assert: Validate results
+            assert actual_result is not None, "Function must return a result"
+            assert actual_result['status'] == expected_result['status'], \
+                   f"Expected status {expected_result['status']}, got {actual_result['status']}"
+            assert isinstance(actual_result['data'], list), \
+                   "Data field must be a list"
+                   
+            return True
+            
+        except Exception as e:
+            print(f"Test failed with error: {e}")
+            return False
+```
+
+#### 8.4.8 Benefits of Internal Test Infrastructure
+
+**Development Confidence**
+- Immediate validation of code changes
+- Regression testing prevents breaking existing functionality
+- Clear indication of module health and reliability
+
+**Code Quality Assurance**
+- Enforces consistent error handling patterns
+- Validates edge case handling
+- Ensures proper API integration practices
+
+**Maintenance Efficiency**
+- Quick identification of broken functionality
+- Standardized testing approach across all modules
+- Easy integration into CI/CD pipelines
+
+**Documentation Through Tests**
+- Tests serve as executable documentation
+- Clear examples of expected module behavior
+- Validation of module contracts and interfaces
+
+This comprehensive internal test infrastructure ensures that every component of the system can be independently validated, providing confidence during development, maintenance, and enhancement activities. The standardized approach makes it easy to add tests to new modules and maintain consistent testing practices across the entire codebase.
 
 ### 8.5 Debugging and Troubleshooting
 
@@ -1309,7 +1589,9 @@ Ancestry.com's internal APIs are not officially documented for third-party use a
     *   Use an SQLite browser (e.g., "DB Browser for SQLite", DBeaver with SQLite driver) to open the `.db` file (`Data/ancestry.db`).
     *   Inspect table contents, check for data integrity, verify schema.
 *   **Python Debugger (`pdb` or IDE Debugger):**
-    *   Set break
+    *   Set breakpoints in action modules or utility functions
+    *   Inspect variable values, call stacks, and program flow
+    *   Step through code execution to identify issues
 
 ## 10. Comprehensive Caching System
 
@@ -1432,8 +1714,8 @@ def analyze_message_content(message_text):
 **Performance Impact**:
 - **First Load**: Standard GEDCOM parsing (~39 seconds for 14,530 individuals)
 - **Subsequent Loads**: Near-instantaneous from memory cache (<1 second)
-- **Partial Updates**: Only re-processes changed portions of GEDCOM data
-- **Index Acceleration**: Pre-computed indices provide instant name/date lookups
+- **Persistent Caching**: Survives application restarts
+- **Component Caching**: Individual indices and maps cached separately
 
 **Cache Structure**:
 ```python
@@ -1481,7 +1763,7 @@ gedcom_cache = {
 
 #### Resource Optimization
 - **Bandwidth Reduction**: 75% fewer API calls to Ancestry.com
-- **Cost Savings**: Significant reduction in AI API costs through intelligent caching
+- **Cost Savings**: Significant reduction in AI API costs through response caching
 - **CPU Usage**: Lower processing overhead for repeated operations
 - **Memory Efficiency**: Intelligent memory management with LRU eviction
 - **Disk I/O**: Reduced file system access through memory caching
@@ -1647,6 +1929,79 @@ This section details key configuration variables set in the `.env` file.
 *   `TESTING_PERSON_TREE_ID`: A specific person's ID *within a tree* (CFPID) used for certain tests (e.g., Action 11 relationship ladder).
 *   `REFERENCE_PERSON_ID`: The GEDCOM ID of the reference person (usually yourself) for relationship path calculations in Action 10.
 *   `REFERENCE_PERSON_NAME`: The display name for the reference person.
+*   `USER_NAME`: Your name used in message signatures and AI prompts.
+*   `USER_LOCATION`: Your location used in message signatures and AI prompts.
+
+### Test/Mock Values Configuration
+
+The system includes configurable test and mock values used for testing scenarios and API fallbacks. These typically don't need to be changed from their defaults unless you have specific testing requirements:
+
+*   `TEST_TREE_ID`: Default tree ID for testing fallbacks (default: `12345678`)
+*   `TEST_OWNER_NAME`: Default owner name for testing fallbacks (default: `Test Owner`) 
+*   `TEST_EMAIL`: Default email for testing contexts (default: `test@example.com`)
+*   `TEST_CSRF_TOKEN`: Default CSRF token for mock operations
+*   `TEST_PROFILE_ID`: Default profile ID for mock operations
+*   `TEST_UUID`: Default UUID for mock operations
+*   `TEST_TAB_HANDLE`: Default tab handle for mock operations
+*   `TEST_RECIPIENT_ID`: Default recipient ID for test messaging
+*   `TEST_RECIPIENT_USERNAME`: Default recipient username for test messaging
+
+**Note**: These test values are now fully configurable and no longer hardcoded in the source code, making the system more generalized and suitable for different testing environments.
+
+### Configuration Generalization Overview
+
+The codebase has undergone comprehensive configuration generalization to eliminate all hardcoded "special case" data manipulation and user-specific values. This ensures the system is truly portable and can be used by any researcher without code modifications.
+
+#### Changes Made for Generalization
+
+**Eliminated Hardcoded Values:**
+- ✅ **Profile IDs**: All profile IDs are now configurable via environment variables
+- ✅ **Personal Names**: Removed hardcoded "Wayne Gault" references and made names configurable
+- ✅ **Test/Mock Values**: All testing values moved from hardcoded constants to configuration
+- ✅ **Special Case Logic**: Removed user-specific handling and made behavior generalized
+- ✅ **AI Prompts**: Made dynamic with configurable user details instead of hardcoded names
+
+**Core Files Modified for Generalization:**
+- **`config.py`**: Added 9+ new configurable test variables with environment loading
+- **`api_utils.py`**: Updated tree ID fallbacks, owner name fallbacks, and mock API functions
+- **`utils.py`**: Converted all mock session values to use configurable test variables
+- **`action9_process_productive.py`**: Made message signatures use configurable user details
+- **`action11.py`**: Fixed hardcoded reference person fallbacks to use configuration
+- **`ai_interface.py`**: Converted static AI prompts to dynamic functions with user variables
+- **`main.py`**: Made profile deletion operations use configurable testing profile ID
+
+**New Configuration Variables Added:**
+```env
+# Core User Configuration
+USER_NAME=Your Name                    # Used in signatures and AI prompts
+USER_LOCATION=Your Location           # Used in signatures and AI prompts
+REFERENCE_PERSON_ID=I1234567890       # GEDCOM ID for relationship calculations
+REFERENCE_PERSON_NAME=Reference Name   # Display name for reference person
+
+# Test/Mock Configuration (with sensible defaults)
+TEST_TREE_ID=12345678                 # Default tree ID for testing
+TEST_OWNER_NAME=Test Owner            # Default owner name for testing
+TEST_EMAIL=test@example.com           # Default email for testing
+TEST_CSRF_TOKEN=mock_csrf_token_...   # Default CSRF token for mocks
+TEST_PROFILE_ID=mock_profile_id_...   # Default profile ID for mocks
+TEST_UUID=mock_uuid_12345             # Default UUID for mocks
+TEST_TAB_HANDLE=mock_tab_handle_...   # Default tab handle for mocks
+TEST_RECIPIENT_ID=DUMMY-RECIPIENT-ID  # Default recipient for test messages
+TEST_RECIPIENT_USERNAME=DummyRecipient # Default username for test messages
+```
+
+**Benefits of Generalization:**
+- **Portability**: Code works for any user without modification
+- **Testing Flexibility**: All test values can be customized per environment
+- **Maintainability**: No need to edit code when changing test parameters
+- **Professional Quality**: Eliminates user-specific hardcoded values from production code
+- **Backwards Compatibility**: All changes preserve existing behavior when environment variables aren't set
+
+**Documentation Created:**
+- **`.env.template`**: Comprehensive template showing all configurable options
+- **Configuration summary**: Detailed documentation of all changes made
+
+This generalization work ensures the codebase is production-ready and suitable for distribution to other genealogy researchers without exposing personal information or requiring code modifications.
 
 ### Processing Limits & Behavior
 
@@ -1704,7 +2059,7 @@ This section details key configuration variables set in the `.env` file.
 
 ## 11. Conclusion
 
-This Ancestry.com automation project represents a **cutting-edge, AI-powered solution** for streamlining genealogical research workflows. The recent major enhancements have transformed it into a sophisticated system that combines robust session management, intelligent API interaction, advanced AI-powered message processing, and comprehensive local data persistence.
+This Ancestry.com automation project represents a **cutting-edge, AI-powered solution** for streamlining genealogical research workflows. The recent major enhancements have transformed it into a sophisticated system that combines robust session management, dynamic API interaction, advanced AI-powered message processing, and comprehensive local data persistence.
 
 ### **🏆 What Makes This System Exceptional:**
 
@@ -1819,26 +2174,6 @@ Request → Memory Cache → Disk Cache → Original Source
 - **Memory cache for hottest data**
 - **Disk cache for persistence**
 
-## Configuration
-
-### Cache Settings (in `cache.py`)
-```python
-cache = Cache(
-    CACHE_DIR,
-    size_limit=int(2e9),  # 2 GB size limit
-    eviction_policy='least-recently-used',
-    timeout=60,  # Disk operation timeout
-    statistics=True,  # Enable performance tracking
-)
-```
-
-### Expiration Times (in `api_cache.py`)
-```python
-API_CACHE_EXPIRE = 3600   # 1 hour for API responses
-DB_CACHE_EXPIRE = 1800    # 30 minutes for database queries
-AI_CACHE_EXPIRE = 86400   # 24 hours for AI responses
-```
-
 ## Usage
 
 ### Automatic Initialization
@@ -1889,7 +2224,7 @@ A new menu option "s. Show Cache Statistics" provides real-time cache performanc
 ### Logging
 Comprehensive logging of cache operations:
 - Cache hits and misses
-- Load times and performance gains
+- Load times and performance metrics
 - Cache warming and invalidation events
 - Error handling and fallback behavior
 
@@ -2210,211 +2545,9 @@ For issues or questions about the improvements:
 
 ## Future Enhancements
 
-### Planned Improvements
-
-1. **Advanced Relationship Mapping**: Enhanced family tree visualization
-2. **Improved Confidence Scoring**: Better accuracy indicators for extracted data
-3. **Enhanced Integration**: Deeper integration between Actions 10 and 11
-4. **Performance Optimization**: Caching and batch processing improvements
-
-### Extensibility
-
-The enhanced data models and prompts are designed to be easily extended for:
-- Additional genealogical data types
-- New sentiment categories
-- Enhanced AI capabilities
-- Custom response templates
-
-## Conclusion
-
-These comprehensive improvements significantly enhance the genealogy system's ability to:
-- Better understand user intent and sentiment
-- Extract more detailed and structured genealogical information
-- Generate more effective and personalized responses
-- Provide better integration between different system actions
-
-The improvements maintain backward compatibility while providing a foundation for future enhancements.
-
-
-# Appendix # Ancestry Application Security Implementation
-
-## Overview
-This document outlines the security improvements implemented for the Ancestry automation application, focusing on credential encryption and secure storage practices.
-
-## Security Enhancements Completed
-
-### ✅ 1. Credential Encryption
-All sensitive credentials are now stored in encrypted format using the Fernet encryption scheme:
-
-**Encrypted Credentials:**
-- `ANCESTRY_USERNAME` - Ancestry.com login username
-- `ANCESTRY_PASSWORD` - Ancestry.com login password  
-- `DEEPSEEK_API_KEY` - DeepSeek AI API key
-- `GOOGLE_API_KEY` - Google/Gemini AI API key
-
-**Storage Location:** `credentials.enc` (encrypted binary file)
-
-### ✅ 2. Environment File Security
-The `.env` file has been cleaned of all plain text credentials:
-- Removed plain text API keys
-- Added comprehensive instructions for credential management
-- Commented out old credential entries with migration notes
-
-### ✅ 3. Configuration Security
-Updated `config.py` to:
-- Prioritize encrypted credentials over environment variables
-- Provide fallback to environment variables only if encryption fails
-- Log credential loading source for transparency
-
-### ✅ 4. User-Friendly Management Tools
-
-#### Credential Manager (`credential_manager.py`)
-Interactive tool for managing encrypted credentials:
-- View stored credentials (masked display)
-- Add/Update credentials securely
-- Remove specific credentials
-- Export for backup/migration
-- Delete all credentials
-
-#### Command-Line Access
-```bash
-# View credentials
-python credential_manager.py
-
-# Quick credential check
-python -c "from security_manager import SecurityManager; sm = SecurityManager(); creds = sm.decrypt_credentials(); print(list(creds.keys()))"
-```
-
-## Security Benefits
-
-### 🔒 **Data Protection**
-- **Encryption at Rest**: All sensitive data encrypted using industry-standard Fernet encryption
-- **No Plain Text**: Credentials never stored in readable format
-- **Key Management**: Encryption keys derived from system-specific data
-
-### 🛡️ **Access Control**
-- **File Permissions**: Encrypted credential file has restricted access
-- **Environment Isolation**: Credentials isolated from environment variables
-- **Process Isolation**: Only authorized application processes can decrypt
-
-### 📋 **Audit & Compliance**
-- **Change Tracking**: All credential changes logged
-- **Access Logging**: Credential access attempts logged
-- **Migration History**: Clear audit trail of security improvements
-
-## Usage Instructions
-
-### Adding New Credentials
-```bash
-# Interactive method (recommended)
-python credential_manager.py
-
-# Programmatic method
-python -c "
-from security_manager import SecurityManager
-sm = SecurityManager()
-existing = sm.decrypt_credentials() or {}
-existing['NEW_API_KEY'] = 'your-key-value'
-sm.encrypt_credentials(existing)
-"
-```
-
-### Changing Existing Credentials
-1. Run: `python credential_manager.py`
-2. Choose option "2. Add/Update credentials"
-3. Enter the credential name (e.g., `DEEPSEEK_API_KEY`)
-4. Enter the new value
-5. Type 'done' to save changes
-
-### Backup & Migration
-1. Export credentials: `python credential_manager.py` → option 4
-2. Copy the displayed values (⚠️ secure location only)
-3. On new system: Use credential manager to import
-4. Clear clipboard/terminal history after migration
-
-## Security Best Practices Implemented
-
-### ✅ **Principle of Least Privilege**
-- Credentials only accessible to application processes
-- Minimal permission set for credential files
-- No unnecessary credential exposure
-
-### ✅ **Defense in Depth**
-- Multiple layers: encryption + file permissions + environment isolation
-- Fallback mechanisms don't compromise security
-- Graceful degradation with security warnings
-
-### ✅ **Secure Development**
-- No credentials in source code
-- Secure defaults throughout application
-- Clear security documentation
-
-## Risk Mitigation
-
-### **Before Implementation:**
-- ❌ Plain text credentials in `.env` file
-- ❌ Credentials visible in file system
-- ❌ Credentials in version control history risk
-- ❌ Easy accidental exposure
-
-### **After Implementation:**
-- ✅ All credentials encrypted
-- ✅ No plain text credential storage
-- ✅ Secure credential management tools
-- ✅ Clear security procedures
-
-## Verification Commands
-
-```bash
-# Verify all credentials are encrypted
-python -c "
-from security_manager import SecurityManager
-sm = SecurityManager()
-creds = sm.decrypt_credentials()
-print('Encrypted credentials:', list(creds.keys()) if creds else 'None')
-"
-
-# Verify application loads correctly
-python -c "
-from config import config_instance
-print('✓ App loads:', bool(config_instance.ANCESTRY_USERNAME))
-"
-
-# Check .env file has no plain text credentials
-findstr /i "api.*key.*=" .env
-# Should return only commented lines
-```
-
-## Maintenance
-
-### Regular Tasks
-- **Monthly**: Review credential access logs
-- **Quarterly**: Rotate API keys using credential manager
-- **Annually**: Review and update encryption methods
-
-### Emergency Procedures
-- **Credential Compromise**: Use credential manager to immediately update affected credentials
-- **Lost Credentials**: Use export feature to recover from backup
-- **System Migration**: Use export/import procedure documented above
-
-## Support
-
-For credential management issues:
-1. Check application logs for credential loading errors
-2. Verify `credentials.enc` file exists and is readable
-3. Use credential manager to verify stored credentials
-4. Re-encrypt credentials if corruption suspected
-
-## Future Enhancements
-
-Potential security improvements for future consideration:
-- Hardware security module (HSM) integration
-- Multi-factor authentication for credential access
-- Credential rotation automation
-- Cloud-based secure credential storage
-- Certificate-based authentication
-
----
-**Last Updated:** May 28, 2025  
-**Security Level:** Production Ready  
-**Encryption Standard:** Fernet (AES 128 in CBC mode)
+Potential improvements for future consideration:
+- Expanded AI capabilities for deeper genealogical insights
+- Enhanced data validation and cleansing tools
+- Improved user interface for research workflow visualization
+- Advanced reporting and analytics features
+- Broader integration with other genealogy data sources and DNA services

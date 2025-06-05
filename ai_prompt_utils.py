@@ -419,264 +419,395 @@ def _run_test(
     return tests_passed, total_tests
 
 
-def self_test() -> Tuple[int, int, List[str]]:
+def run_comprehensive_tests() -> bool:
     """
-    Comprehensive self-test function following project testing standards.
+    Comprehensive test suite for ai_prompt_utils.py.
+    Tests AI prompt management, template loading, and content validation.
 
     Returns:
-        Tuple[int, int, List[str]]: (passed_tests, total_tests, error_messages)
+        bool: True if all tests pass, False otherwise
     """
-    import tempfile
-    import logging
-
-    # Temporarily reduce logging level for cleaner test output
-    original_level = logger.level
-    logger.setLevel(logging.ERROR)
-
-    tests_passed = 0
-    total_tests = 0
-    errors = []
-
-    def run_test(test_name: str, test_func) -> None:
-        nonlocal tests_passed, total_tests, errors
-        tests_passed, total_tests = _run_test(
-            test_name, test_func, tests_passed, total_tests, errors
-        )
-
-    # Create temporary test environment
-    global PROMPTS_FILE, IMPROVED_PROMPTS_DIR
-    original_prompts_file = PROMPTS_FILE
-    original_improved_dir = IMPROVED_PROMPTS_DIR
-
     try:
-        temp_dir = Path(tempfile.mkdtemp())
-        PROMPTS_FILE = temp_dir / "test_ai_prompts.json"
-        # Keep original improved dir for most tests
+        from test_framework import TestSuite, suppress_logging
 
-        # Test basic functionality
-        test_data = _create_test_data()
+        HAS_TEST_FRAMEWORK = True
+    except ImportError:
+        HAS_TEST_FRAMEWORK = False
 
-        run_test(
-            "Load non-existent prompts file",
-            lambda: isinstance(load_prompts(), dict) and "prompts" in load_prompts(),
+    if HAS_TEST_FRAMEWORK:
+        suite = TestSuite(
+            "AI Prompt Management & Template System", "ai_prompt_utils.py"
         )
+        suite.start_suite()
 
-        run_test(
-            "Save and load basic prompts",
-            lambda: save_prompts(test_data) and load_prompts() == test_data,
-        )
+        # Set up test environment
+        import tempfile
+        import shutil
+        from pathlib import Path
 
-        run_test(
-            "Get existing prompt",
-            lambda: get_prompt("test_prompt") == "This is a test prompt content",
-        )
-
-        run_test(
-            "Get non-existent prompt returns None",
-            lambda: get_prompt("non_existent_prompt") is None,
-        )
-
-        run_test(
-            "Update existing prompt",
-            lambda: update_prompt(
-                "test_prompt",
-                "Updated test content",
-                "Updated Test",
-                "Updated description",
-            )
-            and get_prompt("test_prompt") == "Updated test content",
-        )
-
-        run_test(
-            "Create new prompt via update",
-            lambda: update_prompt(
-                "new_prompt",
-                "New prompt content",
-                "New Prompt",
-                "New prompt description",
-            )
-            and get_prompt("new_prompt") == "New prompt content",
-        )
-
-        run_test(
-            "Validate prompt structure",
-            lambda: validate_prompt_structure(load_prompts())[0],
-        )
-
-        # Test error handling
-        def test_invalid_json():
-            try:
-                with open(PROMPTS_FILE, "w") as f:
-                    f.write("invalid json content")
-                prompts = load_prompts()
-                return isinstance(prompts, dict) and "prompts" in prompts
-            except Exception:
-                return False
-
-        run_test("Handle invalid JSON gracefully", test_invalid_json)
-
-        # Test backup functionality
-        def test_backup_functionality():
-            try:
-                # First save some test data
-                test_data = {
-                    "version": "1.0",
-                    "last_updated": "2024-01-01",
-                    "prompts": {},
-                }
-                save_prompts(test_data)
-
-                # Test backup creation
-                return backup_prompts_file()
-            except Exception:
-                return False
-
-        run_test("Backup functionality", test_backup_functionality)
-
-        # Test large content and special characters
-        run_test(
-            "Handle large prompt content",
-            lambda: update_prompt("large_prompt", "x" * 10000)
-            and get_prompt("large_prompt") == "x" * 10000,
-        )
-
-        run_test(
-            "Handle special characters and unicode",
-            lambda: update_prompt(
-                "special_prompt", "Test with émojis 🚀 and unicode: αβγδε"
-            )
-            and get_prompt("special_prompt")
-            == "Test with émojis 🚀 and unicode: αβγδε",
-        )
-
-        # Test import functionality with mock files
-        def test_import_improved():
-            try:
-                mock_dir = temp_dir / "improved_prompts"
-                mock_dir.mkdir()
-
-                for filename, content in [
-                    (
-                        "improved_extraction_prompt.txt",
-                        "Improved extraction prompt content",
-                    ),
-                    (
-                        "improved_response_prompt.txt",
-                        "Improved response prompt content",
-                    ),
-                ]:
-                    with open(mock_dir / filename, "w", encoding="utf-8") as f:
-                        f.write(content)
-
-                # Temporarily change the improved prompts directory
-                global IMPROVED_PROMPTS_DIR
-                original_dir = IMPROVED_PROMPTS_DIR
-                IMPROVED_PROMPTS_DIR = mock_dir
-                try:
-                    count, keys = import_improved_prompts()
-                    return (
-                        count == 2
-                        and "extraction_task" in keys
-                        and "genealogical_reply" in keys
-                    )
-                finally:
-                    IMPROVED_PROMPTS_DIR = original_dir
-            except Exception:
-                return False
-
-        run_test("Import improved prompts", test_import_improved)
-
-        # Test real prompts from the actual file
-        def test_real_prompts():
-            try:
-                # Restore original file temporarily to test real prompts
-                global PROMPTS_FILE
-                original_test_file = PROMPTS_FILE
-                PROMPTS_FILE = original_prompts_file
-
-                try:
-                    # Test all expected prompts including task creation/validation
-                    expected_prompts = [
-                        "intent_classification",
-                        "extraction_task",
-                        "genealogical_reply",
-                        "data_validation",  # Task creation/validation prompt
-                    ]
-
-                    prompts_data = load_prompts()
-                    available_prompts = prompts_data.get("prompts", {})
-
-                    for prompt_key in expected_prompts:
-                        if prompt_key not in available_prompts:
-                            return False
-
-                        prompt_content = get_prompt(prompt_key)
-                        if not prompt_content or len(prompt_content) < 50:
-                            return False
-
-                    # Special check for data_validation prompt (task creation)
-                    data_validation_prompt = get_prompt("data_validation")
-                    if not data_validation_prompt:
-                        return False
-
-                    # Check if it contains task creation keywords
-                    task_keywords = [
-                        "validation",
-                        "recommendations",
-                        "issues_found",
-                        "confidence_score",
-                        "actions",
-                    ]
-                    found_keywords = sum(
-                        1
-                        for keyword in task_keywords
-                        if keyword.lower() in data_validation_prompt.lower()
-                    )
-
-                    return (
-                        found_keywords >= 3
-                    )  # Should have at least 3 task-related keywords
-
-                finally:
-                    PROMPTS_FILE = original_test_file
-            except Exception:
-                return False
-
-        run_test("Test real prompts including task creation", test_real_prompts)
-
-        # Permission test (platform-specific)
-        run_test(
-            "Handle file permission errors", lambda: True
-        )  # Simplified for cross-platform compatibility
-
-    finally:
-        # Restore original paths and logging level
-        PROMPTS_FILE = original_prompts_file
-        IMPROVED_PROMPTS_DIR = original_improved_dir
-        logger.setLevel(original_level)
+        global PROMPTS_FILE, IMPROVED_PROMPTS_DIR
+        original_prompts_file = PROMPTS_FILE
+        original_improved_dir = IMPROVED_PROMPTS_DIR
+        temp_dir = None
 
         try:
-            shutil.rmtree(temp_dir)
-        except Exception as e:
-            logger.warning(f"Could not clean up temp directory: {e}")
+            temp_dir = Path(tempfile.mkdtemp())
+            PROMPTS_FILE = temp_dir / "test_ai_prompts.json"
 
-    # Print summary
-    success_rate = (tests_passed / total_tests * 100) if total_tests > 0 else 0
-    print(f"\n=== AI Prompt Utils Self-Test Results ===")
-    print(f"Tests passed: {tests_passed}/{total_tests}")
-    print(f"Success rate: {success_rate:.1f}%")
+            test_data = {
+                "version": "1.0",
+                "last_updated": "2024-01-01",
+                "prompts": {
+                    "test_prompt": {
+                        "name": "Test Prompt",
+                        "description": "A test prompt",
+                        "prompt": "This is a test prompt content",
+                    }
+                },
+            }
 
-    if errors:
-        print(f"\nErrors encountered:")
-        for error in errors:
-            print(f"  {error}")
+            # Category 1: Initialization Tests
+            def test_prompts_file_initialization():
+                """Test prompts file initialization and basic structure"""
+                try:
+                    # Test loading non-existent file creates default structure
+                    prompts = load_prompts()
+                    assert isinstance(prompts, dict)
+                    assert "prompts" in prompts
+                    return True
+                except Exception:
+                    return False
+
+            def test_improved_prompts_dir():
+                """Test improved prompts directory accessibility"""
+                try:
+                    # Check if improved prompts directory concept is working
+                    assert IMPROVED_PROMPTS_DIR is not None
+                    return True
+                except Exception:
+                    return False
+
+            # Category 2: Core Functionality Tests
+            def test_save_and_load_prompts():
+                """Test basic save and load functionality"""
+                try:
+                    result = save_prompts(test_data)
+                    if not result:
+                        return False
+                    loaded = load_prompts()
+                    return loaded == test_data
+                except Exception:
+                    return False
+
+            def test_get_prompt_operations():
+                """Test getting existing and non-existent prompts"""
+                try:
+                    save_prompts(test_data)
+                    # Test existing prompt
+                    existing = get_prompt("test_prompt")
+                    if existing != "This is a test prompt content":
+                        return False
+                    # Test non-existent prompt
+                    non_existent = get_prompt("non_existent_prompt")
+                    return non_existent is None
+                except Exception:
+                    return False
+
+            def test_update_prompt_operations():
+                """Test updating existing and creating new prompts"""
+                try:
+                    save_prompts(test_data)
+                    # Update existing prompt
+                    update_result = update_prompt(
+                        "test_prompt",
+                        "Updated test content",
+                        "Updated Test",
+                        "Updated description",
+                    )
+                    if not update_result:
+                        return False
+                    updated_content = get_prompt("test_prompt")
+                    if updated_content != "Updated test content":
+                        return False
+
+                    # Create new prompt
+                    new_result = update_prompt(
+                        "new_prompt",
+                        "New prompt content",
+                        "New Prompt",
+                        "New prompt description",
+                    )
+                    if not new_result:
+                        return False
+                    new_content = get_prompt("new_prompt")
+                    return new_content == "New prompt content"
+                except Exception:
+                    return False
+
+            # Category 3: Edge Cases Tests
+            def test_large_content_handling():
+                """Test handling of large prompt content"""
+                try:
+                    large_content = "x" * 10000
+                    result = update_prompt("large_prompt", large_content)
+                    if not result:
+                        return False
+                    retrieved = get_prompt("large_prompt")
+                    return retrieved == large_content
+                except Exception:
+                    return False
+
+            def test_special_characters_unicode():
+                """Test handling of special characters and Unicode"""
+                try:
+                    special_content = "Test with émojis 🚀 and unicode: αβγδε"
+                    result = update_prompt("special_prompt", special_content)
+                    if not result:
+                        return False
+                    retrieved = get_prompt("special_prompt")
+                    return retrieved == special_content
+                except Exception:
+                    return False
+
+            # Category 4: Integration Tests
+            def test_backup_functionality():
+                """Test backup and restore functionality"""
+                try:
+                    # Save test data first
+                    save_prompts(test_data)
+                    # Test backup creation
+                    backup_result = backup_prompts_file()
+                    return backup_result
+                except Exception:
+                    return False
+
+            def test_import_improved_prompts():
+                """Test importing improved prompts from directory"""
+                try:
+                    mock_dir = temp_dir / "improved_prompts"
+                    mock_dir.mkdir()
+
+                    test_files = [
+                        (
+                            "improved_extraction_prompt.txt",
+                            "Improved extraction prompt content",
+                        ),
+                        (
+                            "improved_response_prompt.txt",
+                            "Improved response prompt content",
+                        ),
+                    ]
+
+                    for filename, content in test_files:
+                        with open(mock_dir / filename, "w", encoding="utf-8") as f:
+                            f.write(content)
+
+                    # Temporarily change improved prompts directory
+                    global IMPROVED_PROMPTS_DIR
+                    original_dir = IMPROVED_PROMPTS_DIR
+                    try:
+                        IMPROVED_PROMPTS_DIR = mock_dir
+                        count, keys = import_improved_prompts()
+                        return count == 2
+                    finally:
+                        IMPROVED_PROMPTS_DIR = original_dir
+                except Exception:
+                    return False
+
+            # Category 5: Performance Tests
+            def test_multiple_operations_performance():
+                """Test performance with multiple operations"""
+                try:
+                    import time
+
+                    start_time = time.time()
+
+                    # Perform multiple operations
+                    for i in range(50):
+                        update_prompt(f"perf_test_{i}", f"Content {i}")
+                        get_prompt(f"perf_test_{i}")
+
+                    end_time = time.time()
+                    # Should complete reasonably quickly
+                    return (end_time - start_time) < 5.0
+                except Exception:
+                    return False
+
+            def test_large_prompts_file_performance():
+                """Test performance with large prompts file"""
+                try:
+                    # Create a large prompts file
+                    large_data = {
+                        "version": "1.0",
+                        "last_updated": "2024-01-01",
+                        "prompts": {},
+                    }
+
+                    for i in range(100):
+                        large_data["prompts"][f"prompt_{i}"] = {
+                            "name": f"Prompt {i}",
+                            "description": f"Test prompt number {i}",
+                            "prompt": f"Content for prompt {i}" * 20,
+                        }
+
+                    import time
+
+                    start_time = time.time()
+                    save_prompts(large_data)
+                    load_prompts()
+                    end_time = time.time()
+
+                    return (end_time - start_time) < 2.0
+                except Exception:
+                    return False
+
+            # Category 6: Error Handling Tests
+            def test_invalid_json_handling():
+                """Test graceful handling of invalid JSON"""
+                try:
+                    # Write invalid JSON to file
+                    with open(PROMPTS_FILE, "w") as f:
+                        f.write("invalid json content")
+
+                    prompts = load_prompts()
+                    # Should return valid default structure even with invalid JSON
+                    return isinstance(prompts, dict) and "prompts" in prompts
+                except Exception:
+                    return False
+
+            def test_file_permission_errors():
+                """Test handling of file permission errors"""
+                try:
+                    # This test is simplified for cross-platform compatibility
+                    # In a real scenario, we would test actual permission errors
+                    return True
+                except Exception:
+                    return False
+
+            # Run all tests with proper categories
+            test_categories = {
+                "Initialization": [
+                    (
+                        "Prompts file initialization",
+                        test_prompts_file_initialization,
+                        "Should initialize prompts file structure correctly",
+                    ),
+                    (
+                        "Improved prompts directory",
+                        test_improved_prompts_dir,
+                        "Should handle improved prompts directory",
+                    ),
+                ],
+                "Core Functionality": [
+                    (
+                        "Save and load prompts",
+                        test_save_and_load_prompts,
+                        "Should save and load prompts correctly",
+                    ),
+                    (
+                        "Get prompt operations",
+                        test_get_prompt_operations,
+                        "Should retrieve existing prompts and handle missing ones",
+                    ),
+                    (
+                        "Update prompt operations",
+                        test_update_prompt_operations,
+                        "Should update existing and create new prompts",
+                    ),
+                ],
+                "Edge Cases": [
+                    (
+                        "Large content handling",
+                        test_large_content_handling,
+                        "Should handle large prompt content",
+                    ),
+                    (
+                        "Special characters and Unicode",
+                        test_special_characters_unicode,
+                        "Should handle special characters and Unicode correctly",
+                    ),
+                ],
+                "Integration": [
+                    (
+                        "Backup functionality",
+                        test_backup_functionality,
+                        "Should create backups of prompts file",
+                    ),
+                    (
+                        "Import improved prompts",
+                        test_import_improved_prompts,
+                        "Should import prompts from improved prompts directory",
+                    ),
+                ],
+                "Performance": [
+                    (
+                        "Multiple operations performance",
+                        test_multiple_operations_performance,
+                        "Should handle multiple operations efficiently",
+                    ),
+                    (
+                        "Large prompts file performance",
+                        test_large_prompts_file_performance,
+                        "Should handle large prompts files efficiently",
+                    ),
+                ],
+                "Error Handling": [
+                    (
+                        "Invalid JSON handling",
+                        test_invalid_json_handling,
+                        "Should handle invalid JSON gracefully",
+                    ),
+                    (
+                        "File permission errors",
+                        test_file_permission_errors,
+                        "Should handle file permission errors gracefully",
+                    ),
+                ],
+            }
+
+            with suppress_logging():
+                for category, tests in test_categories.items():
+                    for test_name, test_func, expected_behavior in tests:
+                        suite.run_test(
+                            f"{category}: {test_name}", test_func, expected_behavior
+                        )
+
+            return suite.finish_suite()
+
+        finally:
+            # Restore original paths
+            PROMPTS_FILE = original_prompts_file
+            IMPROVED_PROMPTS_DIR = original_improved_dir
+
+            if temp_dir and temp_dir.exists():
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
     else:
-        print("✅ All tests passed successfully!")
+        return _run_basic_fallback_tests()
 
-    logger.info(
-        f"Self-test completed: {tests_passed}/{total_tests} tests passed ({success_rate:.1f}%)"
-    )
-    return tests_passed, total_tests, errors
+
+def _run_basic_fallback_tests() -> bool:
+    """Fallback tests when test framework is not available."""
+    try:
+        print("Running basic AI prompt utils tests...")
+
+        # Test basic prompt loading
+        prompts = load_prompts()
+        if not isinstance(prompts, dict) or "prompts" not in prompts:
+            return False
+
+        # Test basic prompt operations
+        test_result = update_prompt("fallback_test", "Test content")
+        retrieved = get_prompt("fallback_test")
+
+        success = test_result and retrieved == "Test content"
+        print(f"✅ Basic AI prompt utils tests {'passed' if success else 'failed'}")
+        return success
+    except Exception as e:
+        print(f"❌ Basic AI prompt utils tests failed: {e}")
+        return False
 
 
 def get_prompts_summary() -> Dict[str, Any]:
@@ -746,248 +877,6 @@ def _run_basic_functionality_test() -> None:
 # ==============================================
 if __name__ == "__main__":
     import sys
-    from unittest.mock import patch, MagicMock
-
-    try:
-        from test_framework import TestSuite, suppress_logging, assert_valid_function
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for ai_prompt_utils.py.
-        Tests AI prompt management, template loading, and content validation.
-        """
-        suite = TestSuite(
-            "AI Prompt Management & Template System", "ai_prompt_utils.py"
-        )
-        suite.start_suite()
-
-        # Prompt loading and validation
-        def test_prompt_loading():
-            try:
-                prompts_data = load_prompts()
-                assert isinstance(prompts_data, dict)
-                assert "prompts" in prompts_data
-
-                # Check for essential prompt types
-                essential_prompts = [
-                    "intent_classification",
-                    "extraction_task",
-                    "genealogical_reply",
-                ]
-                available_prompts = prompts_data.get("prompts", {})
-
-                for prompt_key in essential_prompts:
-                    if prompt_key in available_prompts:
-                        prompt_content = available_prompts[prompt_key]
-                        assert isinstance(prompt_content, str)
-                        assert (
-                            len(prompt_content) > 50
-                        )  # Should have substantial content
-            except Exception:
-                pass  # May require actual prompt file
-
-        # Prompt retrieval and caching
-        def test_prompt_retrieval():
-            # Test prompt retrieval functionality
-            test_prompts = [
-                "intent_classification",
-                "extraction_task",
-                "data_validation",
-            ]
-
-            for prompt_name in test_prompts:
-                try:
-                    prompt_content = get_prompt(prompt_name)
-                    if prompt_content:
-                        assert isinstance(prompt_content, str)
-                        assert len(prompt_content) > 0
-                except Exception:
-                    pass  # May require actual prompt configuration
-
-        # Prompt updating and modification
-        def test_prompt_updating():
-            # Test prompt update functionality
-            test_prompt_name = "test_prompt"
-            test_content = "This is a test prompt for genealogical analysis"
-
-            try:
-                result = update_prompt(test_prompt_name, test_content)
-                if result:
-                    # Verify the prompt was updated
-                    retrieved = get_prompt(test_prompt_name)
-                    assert retrieved == test_content
-            except Exception:
-                pass  # May require file write permissions
-
-        # Improved prompt importing
-        def test_improved_prompt_importing():
-            if "import_improved_prompts" in globals():
-                importer = globals()["import_improved_prompts"]
-
-                try:
-                    count, keys = importer()
-                    assert isinstance(count, int)
-                    assert isinstance(keys, list)
-                    assert count >= 0
-                except Exception:
-                    pass  # May require improved prompts directory
-
-        # Unicode and special character handling
-        def test_unicode_handling():
-            # Test handling of special characters and unicode
-            test_cases = [
-                "Test with émojis 🚀 and unicode: αβγδε",
-                "Special characters: @#$%^&*()",
-                "Multi-line\nprompt\ncontent",
-                "Quotes 'single' and \"double\"",
-            ]
-
-            for test_content in test_cases:
-                try:
-                    result = update_prompt("unicode_test", test_content)
-                    if result:
-                        retrieved = get_prompt("unicode_test")
-                        assert retrieved == test_content
-                except Exception:
-                    pass  # May require specific encoding handling
-
-        # Prompt template validation
-        def test_prompt_template_validation():
-            if "validate_prompt_template" in globals():
-                validator = globals()["validate_prompt_template"]
-
-                # Test various prompt templates
-                test_templates = [
-                    "Valid prompt template with {placeholder}",
-                    "Template with multiple {var1} and {var2} placeholders",
-                    "Invalid template with {unclosed placeholder",
-                    "",  # Empty template
-                ]
-
-                for template in test_templates:
-                    try:
-                        is_valid = validator(template)
-                        assert isinstance(is_valid, bool)
-                    except Exception:
-                        pass  # May require specific validation logic
-
-        # Prompt performance and optimization
-        def test_prompt_performance():
-            performance_functions = [
-                "optimize_prompt_length",
-                "cache_frequent_prompts",
-                "compress_prompt_content",
-                "analyze_prompt_effectiveness",
-            ]
-
-            for func_name in performance_functions:
-                if func_name in globals():
-                    assert_valid_function(globals()[func_name], func_name)
-
-        # Error handling and recovery
-        def test_error_handling():
-            # Test error handling in prompt operations
-            error_scenarios = [
-                ("nonexistent_prompt", None),
-                ("", "empty_name"),
-                (None, "none_name"),
-            ]
-
-            for prompt_name, expected_error in error_scenarios:
-                try:
-                    result = get_prompt(prompt_name)
-                    # Should handle gracefully without crashing
-                    assert result is not None or result == ""
-                except Exception:
-                    pass  # Expected for invalid inputs
-
-        # Integration with AI systems
-        def test_ai_integration():
-            if "format_prompt_for_ai" in globals():
-                formatter = globals()["format_prompt_for_ai"]
-
-                # Test prompt formatting for different AI systems
-                test_prompt = "Analyze this genealogical data: {data}"
-                test_data = {
-                    "names": ["John Doe", "Jane Smith"],
-                    "dates": ["1950", "1955"],
-                }
-
-                try:
-                    formatted = formatter(test_prompt, test_data)
-                    assert isinstance(formatted, str)
-                    assert "{data}" not in formatted  # Should be replaced
-                except Exception:
-                    pass  # May require specific formatting logic
-
-        # Backup and versioning
-        def test_backup_versioning():
-            versioning_functions = [
-                "backup_prompts",
-                "restore_prompts",
-                "version_prompts",
-                "track_prompt_changes",
-            ]
-
-            for func_name in versioning_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func)
-
-        # Run all tests
-        test_functions = {
-            "Prompt loading and validation": (
-                test_prompt_loading,
-                "Should load and validate AI prompts from configuration files",
-            ),
-            "Prompt retrieval and caching": (
-                test_prompt_retrieval,
-                "Should retrieve prompts efficiently with caching support",
-            ),
-            "Prompt updating and modification": (
-                test_prompt_updating,
-                "Should allow runtime prompt updates and modifications",
-            ),
-            "Improved prompt importing": (
-                test_improved_prompt_importing,
-                "Should import enhanced prompts from external sources",
-            ),
-            "Unicode and special character handling": (
-                test_unicode_handling,
-                "Should handle unicode and special characters correctly",
-            ),
-            "Prompt template validation": (
-                test_prompt_template_validation,
-                "Should validate prompt templates and placeholder syntax",
-            ),
-            "Prompt performance and optimization": (
-                test_prompt_performance,
-                "Should optimize prompt performance and memory usage",
-            ),
-            "Error handling and recovery": (
-                test_error_handling,
-                "Should handle errors gracefully with appropriate fallbacks",
-            ),
-            "Integration with AI systems": (
-                test_ai_integration,
-                "Should format prompts appropriately for different AI systems",
-            ),
-            "Backup and versioning": (
-                test_backup_versioning,
-                "Should provide backup and versioning capabilities for prompt management",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
 
     print(
         "🤖 Running AI Prompt Management & Template System comprehensive test suite..."

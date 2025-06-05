@@ -347,8 +347,14 @@ def all_but_first_actn(session_manager: SessionManager, *_):
     Closes the provided main session pool FIRST.
     Creates a temporary SessionManager for the delete operation.
     """
-    # Define the specific profile ID to keep (ensure it's uppercase for comparison)
-    profile_id_to_keep = "08FA6E79-0006-0000-0000-000000000000".upper()
+    # Define the specific profile ID to keep from config (ensure it's uppercase for comparison)
+    profile_id_to_keep = getattr(config_instance, "TESTING_PROFILE_ID", None)
+    if not profile_id_to_keep:
+        logger.error(
+            "TESTING_PROFILE_ID is not configured. Cannot determine which profile to keep."
+        )
+        return False
+    profile_id_to_keep = profile_id_to_keep.upper()
 
     temp_manager = None  # Initialize
     session = None

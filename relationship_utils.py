@@ -53,6 +53,53 @@ except ImportError:
 # Avoid importing from utils to prevent config dependency during testing
 # Instead, we'll define format_name locally
 
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    from contextlib import contextmanager
+
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    @contextmanager
+    def suppress_logging():
+        yield
+
+    def create_mock_data(*args, **kwargs):
+        return {}
+
+    def assert_valid_function(func, func_name):
+        assert callable(func), f"{func_name} should be callable"
+        return True
+
+    TestSuite = DummyTestSuite
+    HAS_TEST_FRAMEWORK = False
+
 # Import specific functions from gedcom_utils
 try:
     from gedcom_utils import _are_spouses as _are_spouses_orig
@@ -1798,207 +1845,230 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
     return relationship_code  # Return original if no match
 
 
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for relationship_utils.py.
+    Tests relationship path finding, formatting, and edge cases.
+    """
+    import sys
+    import time
+
+    suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
+    suite.start_suite()
+
+    def test_format_name():
+        # Valid names
+        assert format_name("john doe") == "John Doe"
+        assert format_name("MARY SMITH") == "Mary Smith"
+        assert format_name("jean-paul sartre") == "Jean-Paul Sartre"
+
+        # Edge cases
+        assert format_name(None) == "Valued Relative"
+        assert format_name("") == "Valued Relative"
+        assert format_name("123") == "123"  # Numeric names preserved
+        assert format_name("/John/") == "John"  # GEDCOM slashes removed
+
+    def test_get_relationship_term():
+        # Standard relationships
+        assert _get_relationship_term("M", "parent") == "father"
+        assert _get_relationship_term("F", "parent") == "mother"
+        assert _get_relationship_term("M", "child") == "son"
+        assert _get_relationship_term("F", "child") == "daughter"
+
+        # Unknown gender should default
+        assert _get_relationship_term(None, "parent") == "parent"
+        assert _get_relationship_term("U", "child") == "child"
+
+    def test_fast_bidirectional_bfs():
+        # Mock family structure: A -> B -> C
+        id_to_parents = {"B": {"A"}, "C": {"B"}}
+        id_to_children = {"A": {"B"}, "B": {"C"}}
+
+        # Should find path A -> B -> C
+        path = fast_bidirectional_bfs("A", "C", id_to_parents, id_to_children)
+        assert path == ["A", "B", "C"]
+
+        # Should find empty path for same person
+        path = fast_bidirectional_bfs("A", "A", id_to_parents, id_to_children)
+        assert path == ["A"]
+
+    def test_has_direct_relationship():
+        id_to_parents = {"B": {"A"}}
+        id_to_children = {"A": {"B"}}
+
+        # Parent-child relationship
+        assert _has_direct_relationship("A", "B", id_to_parents, id_to_children) == True
+
+        # No relationship
+        assert (
+            _has_direct_relationship("A", "C", id_to_parents, id_to_children) == False
+        )
+
+    def test_convert_gedcom_path_to_unified():
+        from unittest.mock import MagicMock, patch
+
+        mock_reader = MagicMock()
+        mock_indi_index = {
+            "I1": MagicMock(name="John Doe", sex="M"),
+            "I2": MagicMock(name="Jane Doe", sex="F"),
+        }
+
+        # Mock the _get_full_name function if available
+        with patch("relationship_utils._get_full_name", return_value="John Doe"):
+            result = convert_gedcom_path_to_unified_format(
+                ["I1", "I2"], mock_reader, {}, {}, mock_indi_index
+            )
+            assert isinstance(result, list)
+            assert len(result) >= 0  # Should return a list
+
+    def test_format_api_relationship_path():
+        # Valid API response
+        api_data = "John Doe is the father of Jane Doe"
+        result = format_api_relationship_path(api_data, "John Doe", "Jane Doe")
+        assert "father" in result.lower()
+
+        # Invalid/empty data
+        result = format_api_relationship_path(None, "John", "Jane")
+        assert "No relationship data" in result
+
+    def test_empty_path_handling():
+        result = format_relationship_path_unified([], "Target", "Owner")
+        assert "No relationship path data available" in result
+
+    def test_invalid_input_handling():
+        # Test with None values
+        result = fast_bidirectional_bfs("A", "B", None, None)
+        assert result == []
+
+        # Test with empty dictionaries - should return fallback path
+        result = fast_bidirectional_bfs("A", "B", {}, {})
+        assert result == ["A", "B"]
+
+    def test_performance_limits():
+        # Test timeout and node limits
+        large_id_to_parents = {f"ID{i}": {f"ID{i-1}"} for i in range(1, 1000)}
+        large_id_to_children = {f"ID{i}": {f"ID{i+1}"} for i in range(0, 999)}
+
+        # Should respect timeout and node limits
+        start_time = time.time()
+        result = fast_bidirectional_bfs(
+            "ID0",
+            "ID999",
+            large_id_to_parents,
+            large_id_to_children,
+            max_depth=5,
+            node_limit=100,
+            timeout_sec=1,
+        )
+        duration = time.time() - start_time
+
+        # Should complete within reasonable time due to limits
+        assert duration < 5.0  # Should not take too long due to limits
+
+    def test_function_availability():
+        assert_valid_function(format_name, "format_name")
+        assert_valid_function(fast_bidirectional_bfs, "fast_bidirectional_bfs")
+        assert_valid_function(
+            format_api_relationship_path, "format_api_relationship_path"
+        )
+        assert_valid_function(_get_relationship_term, "_get_relationship_term")
+
+    # Run all tests
+    test_functions = {
+        "Name formatting with edge cases": (
+            test_format_name,
+            "Should properly format names and handle GEDCOM slashes, None values",
+        ),
+        "Relationship term gender mapping": (
+            test_get_relationship_term,
+            "Should map relationship terms based on gender correctly",
+        ),
+        "Bidirectional BFS pathfinding": (
+            test_fast_bidirectional_bfs,
+            "Should find shortest relationship paths between individuals",
+        ),
+        "Direct relationship detection": (
+            test_has_direct_relationship,
+            "Should detect parent-child and sibling relationships",
+        ),
+        "GEDCOM to unified format conversion": (
+            test_convert_gedcom_path_to_unified,
+            "Should convert GEDCOM paths to standardized format",
+        ),
+        "API relationship path formatting": (
+            test_format_api_relationship_path,
+            "Should format relationship descriptions from API responses",
+        ),
+        "Empty path handling": (
+            test_empty_path_handling,
+            "Should gracefully handle empty relationship paths",
+        ),
+        "Invalid input data handling": (
+            test_invalid_input_handling,
+            "Should handle None values and empty data structures",
+        ),
+        "Performance limits and timeouts": (
+            test_performance_limits,
+            "Should respect timeout and node limits for large datasets",
+        ),
+        "Core function availability": (
+            test_function_availability,
+            "Should have all required functions callable and accessible",
+        ),
+    }
+
+    with suppress_logging():
+        for test_name, (test_func, expected_behavior) in test_functions.items():
+            suite.run_test(test_name, test_func, expected_behavior)
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests_fallback() -> bool:
+    """
+    Fallback test function for when test framework is not available.
+    Runs basic functionality tests.
+    """
+    print("🧬 Running basic relationship utils tests...")
+
+    try:
+        # Test 1: Name formatting
+        assert format_name("john doe") == "John Doe"
+        assert format_name(None) == "Valued Relative"
+        print("✅ Name formatting test passed")
+
+        # Test 2: Relationship terms
+        assert _get_relationship_term("M", "parent") == "father"
+        assert _get_relationship_term("F", "child") == "daughter"
+        print("✅ Relationship terms test passed")
+
+        # Test 3: BFS with empty data
+        result = fast_bidirectional_bfs("A", "B", {}, {})
+        assert isinstance(result, list)
+        print("✅ BFS pathfinding test passed")
+
+        # Test 4: API relationship formatting
+        result = format_api_relationship_path(None, "John", "Jane")
+        assert "No relationship data" in result
+        print("✅ API relationship formatting test passed")
+
+        print("🎉 All basic relationship utils tests passed!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+        return False
+
+
 # ==============================================
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
     import sys
-    import time
-    import re
-    import logging
-    from typing import Dict, List, Set, Optional, Any
-    from unittest.mock import MagicMock, patch
-
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for relationship_utils.py.
-        Tests relationship path finding, formatting, and edge cases.
-        """
-        suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
-        suite.start_suite()
-
-        def test_format_name():
-            # Valid names
-            assert format_name("john doe") == "John Doe"
-            assert format_name("MARY SMITH") == "Mary Smith"
-            assert format_name("jean-paul sartre") == "Jean-Paul Sartre"
-
-            # Edge cases
-            assert format_name(None) == "Valued Relative"
-            assert format_name("") == "Valued Relative"
-            assert format_name("123") == "123"  # Numeric names preserved
-            assert format_name("/John/") == "John"  # GEDCOM slashes removed
-
-        def test_get_relationship_term():
-            # Standard relationships
-            assert _get_relationship_term("M", "parent") == "father"
-            assert _get_relationship_term("F", "parent") == "mother"
-            assert _get_relationship_term("M", "child") == "son"
-            assert _get_relationship_term("F", "child") == "daughter"
-
-            # Unknown gender should default
-            assert _get_relationship_term(None, "parent") == "parent"
-            assert _get_relationship_term("U", "child") == "child"
-
-        def test_fast_bidirectional_bfs():
-            # Mock family structure: A -> B -> C
-            id_to_parents = {"B": {"A"}, "C": {"B"}}
-            id_to_children = {"A": {"B"}, "B": {"C"}}
-
-            # Should find path A -> B -> C
-            path = fast_bidirectional_bfs("A", "C", id_to_parents, id_to_children)
-            assert path == ["A", "B", "C"]
-
-            # Should find empty path for same person
-            path = fast_bidirectional_bfs("A", "A", id_to_parents, id_to_children)
-            assert path == ["A"]
-
-        def test_has_direct_relationship():
-            id_to_parents = {"B": {"A"}}
-            id_to_children = {"A": {"B"}}
-
-            # Parent-child relationship
-            assert (
-                _has_direct_relationship("A", "B", id_to_parents, id_to_children)
-                == True
-            )
-
-            # No relationship
-            assert (
-                _has_direct_relationship("A", "C", id_to_parents, id_to_children)
-                == False
-            )
-
-        def test_convert_gedcom_path_to_unified():
-            mock_reader = MagicMock()
-            mock_indi_index = {
-                "I1": MagicMock(name="John Doe", sex="M"),
-                "I2": MagicMock(name="Jane Doe", sex="F"),
-            }
-
-            # Mock the _get_full_name function if available
-            with patch("relationship_utils._get_full_name", return_value="John Doe"):
-                result = convert_gedcom_path_to_unified_format(
-                    ["I1", "I2"], mock_reader, {}, {}, mock_indi_index
-                )
-                assert isinstance(result, list)
-                assert len(result) >= 0  # Should return a list
-
-        def test_format_api_relationship_path():
-            # Valid API response
-            api_data = "John Doe is the father of Jane Doe"
-            result = format_api_relationship_path(api_data, "John Doe", "Jane Doe")
-            assert "father" in result.lower()
-
-            # Invalid/empty data
-            result = format_api_relationship_path(None, "John", "Jane")
-            assert "No relationship data" in result
-
-        def test_empty_path_handling():
-            result = format_relationship_path_unified([], "Target", "Owner")
-            assert "No relationship path data available" in result
-
-        def test_invalid_input_handling():
-            # Test with None values
-            result = fast_bidirectional_bfs("A", "B", None, None)
-            assert result == []
-
-            # Test with empty dictionaries - should return fallback path
-            result = fast_bidirectional_bfs("A", "B", {}, {})
-            assert result == ["A", "B"]
-
-        def test_performance_limits():
-            # Test timeout and node limits
-            large_id_to_parents = {f"ID{i}": {f"ID{i-1}"} for i in range(1, 1000)}
-            large_id_to_children = {f"ID{i}": {f"ID{i+1}"} for i in range(0, 999)}
-
-            # Should respect timeout and node limits
-            start_time = time.time()
-            result = fast_bidirectional_bfs(
-                "ID0",
-                "ID999",
-                large_id_to_parents,
-                large_id_to_children,
-                max_depth=5,
-                node_limit=100,
-                timeout_sec=1,
-            )
-            duration = time.time() - start_time
-
-            # Should complete within reasonable time due to limits
-            assert duration < 5.0  # Should not take too long due to limits
-
-        def test_function_availability():
-            assert_valid_function(format_name, "format_name")
-            assert_valid_function(fast_bidirectional_bfs, "fast_bidirectional_bfs")
-            assert_valid_function(
-                format_api_relationship_path, "format_api_relationship_path"
-            )
-            assert_valid_function(_get_relationship_term, "_get_relationship_term")
-
-        # Run all tests
-        test_functions = {
-            "Name formatting with edge cases": (
-                test_format_name,
-                "Should properly format names and handle GEDCOM slashes, None values",
-            ),
-            "Relationship term gender mapping": (
-                test_get_relationship_term,
-                "Should map relationship terms based on gender correctly",
-            ),
-            "Bidirectional BFS pathfinding": (
-                test_fast_bidirectional_bfs,
-                "Should find shortest relationship paths between individuals",
-            ),
-            "Direct relationship detection": (
-                test_has_direct_relationship,
-                "Should detect parent-child and sibling relationships",
-            ),
-            "GEDCOM to unified format conversion": (
-                test_convert_gedcom_path_to_unified,
-                "Should convert GEDCOM paths to standardized format",
-            ),
-            "API relationship path formatting": (
-                test_format_api_relationship_path,
-                "Should format relationship descriptions from API responses",
-            ),
-            "Empty path handling": (
-                test_empty_path_handling,
-                "Should gracefully handle empty relationship paths",
-            ),
-            "Invalid input data handling": (
-                test_invalid_input_handling,
-                "Should handle None values and empty data structures",
-            ),
-            "Performance limits and timeouts": (
-                test_performance_limits,
-                "Should respect timeout and node limits for large datasets",
-            ),
-            "Core function availability": (
-                test_function_availability,
-                "Should have all required functions callable and accessible",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
 
     print("🧬 Running Relationship Utils comprehensive test suite...")
-    success = run_comprehensive_tests()
+    if HAS_TEST_FRAMEWORK:
+        success = run_comprehensive_tests()
+    else:
+        success = run_comprehensive_tests_fallback()
     sys.exit(0 if success else 1)

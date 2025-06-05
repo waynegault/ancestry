@@ -15,6 +15,20 @@ import sys
 import tempfile
 import time
 from typing import Dict, Any, List, Optional, Callable
+from unittest.mock import MagicMock, patch
+
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    HAS_TEST_FRAMEWORK = False
 
 # --- Local application imports ---
 from cache import (
@@ -29,6 +43,267 @@ from cache import (
 )
 from config import config_instance
 from logging_config import logger
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for cache_manager.py.
+    Tests cache management, eviction policies, and performance optimization.
+    """
+    if not HAS_TEST_FRAMEWORK:
+        return run_comprehensive_tests_fallback()
+
+    suite = TestSuite("Cache Management & Performance Optimization", "cache_manager.py")
+    suite.start_suite()
+
+    # Cache manager initialization
+    def test_cache_manager_initialization():
+        if "CacheManager" in globals():
+            cache_manager_class = globals()["CacheManager"]
+            cache_manager = cache_manager_class()
+            assert cache_manager is not None
+            assert hasattr(cache_manager, "get")
+            assert hasattr(cache_manager, "set")
+            assert hasattr(cache_manager, "clear")
+
+    # Multi-level cache operations
+    def test_multilevel_cache_operations():
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+
+            # Test memory cache
+            cache_manager.set("memory_key", "memory_value", level="memory")
+            result = cache_manager.get("memory_key")
+            assert result == "memory_value"
+
+            # Test disk cache
+            cache_manager.set("disk_key", "disk_value", level="disk")
+            result = cache_manager.get("disk_key")
+            assert result == "disk_value"
+
+    # Cache eviction policies
+    def test_cache_eviction_policies():
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"](max_size=3)
+
+            # Fill cache beyond capacity
+            for i in range(5):
+                cache_manager.set(f"key_{i}", f"value_{i}")
+
+            # Check that cache respects size limit
+            cache_size = cache_manager.size()
+            assert cache_size <= 3
+
+    # Cache invalidation strategies
+    def test_cache_invalidation():
+        if "invalidate_cache" in globals():
+            invalidator = globals()["invalidate_cache"]
+
+            # Test pattern-based invalidation
+            patterns = ["user_*", "session_*", "temp_*"]
+            for pattern in patterns:
+                result = invalidator(pattern)
+                assert isinstance(result, (bool, int))
+
+    # Cache warming
+    def test_cache_warming():
+        if "warm_cache" in globals():
+            warmer = globals()["warm_cache"]
+
+            # Test cache pre-loading
+            data_sources = [
+                "frequently_accessed",
+                "user_preferences",
+                "system_config",
+            ]
+            result = warmer(data_sources)
+            assert isinstance(result, (bool, dict))
+
+    # Cache statistics and monitoring
+    def test_cache_statistics():
+        if "get_cache_stats" in globals():
+            stats_func = globals()["get_cache_stats"]
+            stats = stats_func()
+
+            assert isinstance(stats, dict)
+            expected_metrics = [
+                "hit_rate",
+                "miss_rate",
+                "total_requests",
+                "cache_size",
+            ]
+            for metric in expected_metrics:
+                if metric in stats:
+                    assert isinstance(stats[metric], (int, float))
+
+    # TTL (Time To Live) handling
+    def test_ttl_handling():
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+
+            # Set item with short TTL
+            cache_manager.set("ttl_key", "ttl_value", ttl=1)
+
+            # Should be available immediately
+            result = cache_manager.get("ttl_key")
+            assert result == "ttl_value"
+
+            # Wait for expiration (in real implementation, would sleep)
+            # For testing, we simulate expiration
+            if hasattr(cache_manager, "expire"):
+                cache_manager.expire("ttl_key")
+                expired_result = cache_manager.get("ttl_key")
+                assert expired_result is None
+
+    # Cache serialization
+    def test_cache_serialization():
+        complex_data = {
+            "nested": {"dict": ["with", "arrays"]},
+            "numbers": [1, 2, 3.14],
+            "booleans": True,
+            "none_value": None,
+        }
+
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+
+            cache_manager.set("complex_key", complex_data)
+            retrieved = cache_manager.get("complex_key")
+            assert retrieved == complex_data
+
+    # Cache persistence
+    def test_cache_persistence():
+        if "save_cache_to_disk" in globals() and "load_cache_from_disk" in globals():
+            save_func = globals()["save_cache_to_disk"]
+            load_func = globals()["load_cache_from_disk"]
+
+            # Test saving and loading
+            test_data = {"key1": "value1", "key2": "value2"}
+
+            with tempfile.NamedTemporaryFile() as temp_file:
+                save_result = save_func(test_data, temp_file.name)
+                loaded_data = load_func(temp_file.name)
+
+                assert isinstance(save_result, bool)
+                if loaded_data:
+                    assert isinstance(loaded_data, dict)
+
+    # Cache cleanup and maintenance
+    def test_cache_cleanup():
+        # Test cache cleanup operations
+        cleanup_functions = ["cleanup_expired", "compress_cache", "optimize_cache"]
+
+        for func_name in cleanup_functions:
+            if func_name in globals():
+                cleanup_func = globals()[func_name]
+                result = cleanup_func()
+                assert result is not None
+
+    # Run all tests
+    test_functions = {
+        "Cache manager initialization": (
+            test_cache_manager_initialization,
+            "Should initialize cache manager with required methods",
+        ),
+        "Multi-level cache operations": (
+            test_multilevel_cache_operations,
+            "Should support both memory and disk caching",
+        ),
+        "Cache eviction policies": (
+            test_cache_eviction_policies,
+            "Should enforce size limits and evict least recently used items",
+        ),
+        "Cache invalidation strategies": (
+            test_cache_invalidation,
+            "Should support pattern-based cache invalidation",
+        ),
+        "Cache warming mechanisms": (
+            test_cache_warming,
+            "Should pre-load frequently accessed data",
+        ),
+        "Cache statistics and monitoring": (
+            test_cache_statistics,
+            "Should track hit rates and performance metrics",
+        ),
+        "TTL (Time To Live) handling": (
+            test_ttl_handling,
+            "Should automatically expire cached items based on TTL",
+        ),
+        "Complex data serialization": (
+            test_cache_serialization,
+            "Should serialize and deserialize complex data structures",
+        ),
+        "Cache persistence": (
+            test_cache_persistence,
+            "Should save and load cache data to/from disk",
+        ),
+        "Cache cleanup and maintenance": (
+            test_cache_cleanup,
+            "Should provide cache maintenance and optimization functions",
+        ),
+    }
+
+    with suppress_logging():
+        for test_name, (test_func, expected_behavior) in test_functions.items():
+            suite.run_test(test_name, test_func, expected_behavior)
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests_fallback() -> bool:
+    """
+    Fallback testing when test_framework is not available.
+    Provides basic cache manager functionality verification.
+    """
+    print("⚠️  Test framework not available. Running basic cache manager tests...")
+
+    tests_passed = 0
+    total_tests = 0
+
+    # Test cache manager class exists
+    total_tests += 1
+    try:
+        if "CacheManager" in globals():
+            cache_manager_class = globals()["CacheManager"]
+            cache_manager = cache_manager_class()
+            assert cache_manager is not None
+            tests_passed += 1
+            print("✅ Cache manager initialization")
+        else:
+            print("⚠️  Cache manager class not found")
+    except Exception as e:
+        print(f"❌ Cache manager initialization failed: {e}")
+
+    # Test cache stats function exists
+    total_tests += 1
+    try:
+        if "get_cache_stats" in globals():
+            stats_func = globals()["get_cache_stats"]
+            stats = stats_func()
+            assert isinstance(stats, dict)
+            tests_passed += 1
+            print("✅ Cache statistics functionality")
+        else:
+            print("⚠️  Cache stats function not found")
+    except Exception as e:
+        print(f"❌ Cache statistics test failed: {e}")
+
+    # Test cache invalidation exists
+    total_tests += 1
+    try:
+        if "invalidate_cache_pattern" in globals():
+            invalidator = globals()["invalidate_cache_pattern"]
+            assert callable(invalidator)
+            tests_passed += 1
+            print("✅ Cache invalidation functionality")
+        else:
+            print("⚠️  Cache invalidation function not found")
+    except Exception as e:
+        print(f"❌ Cache invalidation test failed: {e}")
+
+    success = tests_passed == total_tests
+    print(f"📊 Basic cache manager tests: {tests_passed}/{total_tests} passed")
+    return success
 
 
 class CacheManager:
@@ -1165,229 +1440,5 @@ def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    from unittest.mock import MagicMock, patch
-
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for cache_manager.py.
-        Tests cache management, eviction policies, and performance optimization.
-        """
-        suite = TestSuite(
-            "Cache Management & Performance Optimization", "cache_manager.py"
-        )
-        suite.start_suite()
-
-        # Cache manager initialization
-        def test_cache_manager_initialization():
-            if "CacheManager" in globals():
-                cache_manager_class = globals()["CacheManager"]
-                cache_manager = cache_manager_class()
-                assert cache_manager is not None
-                assert hasattr(cache_manager, "get")
-                assert hasattr(cache_manager, "set")
-                assert hasattr(cache_manager, "clear")
-
-        # Multi-level cache operations
-        def test_multilevel_cache_operations():
-            if "CacheManager" in globals():
-                cache_manager = globals()["CacheManager"]()
-
-                # Test memory cache
-                cache_manager.set("memory_key", "memory_value", level="memory")
-                result = cache_manager.get("memory_key")
-                assert result == "memory_value"
-
-                # Test disk cache
-                cache_manager.set("disk_key", "disk_value", level="disk")
-                result = cache_manager.get("disk_key")
-                assert result == "disk_value"
-
-        # Cache eviction policies
-        def test_cache_eviction_policies():
-            if "CacheManager" in globals():
-                cache_manager = globals()["CacheManager"](max_size=3)
-
-                # Fill cache beyond capacity
-                for i in range(5):
-                    cache_manager.set(f"key_{i}", f"value_{i}")
-
-                # Check that cache respects size limit
-                cache_size = cache_manager.size()
-                assert cache_size <= 3
-
-        # Cache invalidation strategies
-        def test_cache_invalidation():
-            if "invalidate_cache" in globals():
-                invalidator = globals()["invalidate_cache"]
-
-                # Test pattern-based invalidation
-                patterns = ["user_*", "session_*", "temp_*"]
-                for pattern in patterns:
-                    result = invalidator(pattern)
-                    assert isinstance(result, (bool, int))
-
-        # Cache warming
-        def test_cache_warming():
-            if "warm_cache" in globals():
-                warmer = globals()["warm_cache"]
-
-                # Test cache pre-loading
-                data_sources = [
-                    "frequently_accessed",
-                    "user_preferences",
-                    "system_config",
-                ]
-                result = warmer(data_sources)
-                assert isinstance(result, (bool, dict))
-
-        # Cache statistics and monitoring
-        def test_cache_statistics():
-            if "get_cache_stats" in globals():
-                stats_func = globals()["get_cache_stats"]
-                stats = stats_func()
-
-                assert isinstance(stats, dict)
-                expected_metrics = [
-                    "hit_rate",
-                    "miss_rate",
-                    "total_requests",
-                    "cache_size",
-                ]
-                for metric in expected_metrics:
-                    if metric in stats:
-                        assert isinstance(stats[metric], (int, float))
-
-        # TTL (Time To Live) handling
-        def test_ttl_handling():
-            if "CacheManager" in globals():
-                cache_manager = globals()["CacheManager"]()
-
-                # Set item with short TTL
-                cache_manager.set("ttl_key", "ttl_value", ttl=1)
-
-                # Should be available immediately
-                result = cache_manager.get("ttl_key")
-                assert result == "ttl_value"
-
-                # Wait for expiration (in real implementation, would sleep)
-                # For testing, we simulate expiration
-                if hasattr(cache_manager, "expire"):
-                    cache_manager.expire("ttl_key")
-                    expired_result = cache_manager.get("ttl_key")
-                    assert expired_result is None
-
-        # Cache serialization
-        def test_cache_serialization():
-            complex_data = {
-                "nested": {"dict": ["with", "arrays"]},
-                "numbers": [1, 2, 3.14],
-                "booleans": True,
-                "none_value": None,
-            }
-
-            if "CacheManager" in globals():
-                cache_manager = globals()["CacheManager"]()
-
-                cache_manager.set("complex_key", complex_data)
-                retrieved = cache_manager.get("complex_key")
-                assert retrieved == complex_data
-
-        # Cache persistence
-        def test_cache_persistence():
-            if (
-                "save_cache_to_disk" in globals()
-                and "load_cache_from_disk" in globals()
-            ):
-                save_func = globals()["save_cache_to_disk"]
-                load_func = globals()["load_cache_from_disk"]
-
-                # Test saving and loading
-                test_data = {"key1": "value1", "key2": "value2"}
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    save_result = save_func(test_data, temp_file.name)
-                    loaded_data = load_func(temp_file.name)
-
-                    assert isinstance(save_result, bool)
-                    if loaded_data:
-                        assert isinstance(loaded_data, dict)
-
-        # Cache cleanup and maintenance
-        def test_cache_cleanup():
-            # Test cache cleanup operations
-            cleanup_functions = ["cleanup_expired", "compress_cache", "optimize_cache"]
-
-            for func_name in cleanup_functions:
-                if func_name in globals():
-                    cleanup_func = globals()[func_name]
-                    result = cleanup_func()
-                    assert result is not None
-
-        # Run all tests
-        test_functions = {
-            "Cache manager initialization": (
-                test_cache_manager_initialization,
-                "Should initialize cache manager with required methods",
-            ),
-            "Multi-level cache operations": (
-                test_multilevel_cache_operations,
-                "Should support both memory and disk caching",
-            ),
-            "Cache eviction policies": (
-                test_cache_eviction_policies,
-                "Should enforce size limits and evict least recently used items",
-            ),
-            "Cache invalidation strategies": (
-                test_cache_invalidation,
-                "Should support pattern-based cache invalidation",
-            ),
-            "Cache warming mechanisms": (
-                test_cache_warming,
-                "Should pre-load frequently accessed data",
-            ),
-            "Cache statistics and monitoring": (
-                test_cache_statistics,
-                "Should track hit rates and performance metrics",
-            ),
-            "TTL (Time To Live) handling": (
-                test_ttl_handling,
-                "Should automatically expire cached items based on TTL",
-            ),
-            "Complex data serialization": (
-                test_cache_serialization,
-                "Should serialize and deserialize complex data structures",
-            ),
-            "Cache persistence": (
-                test_cache_persistence,
-                "Should save and load cache data to/from disk",
-            ),
-            "Cache cleanup and maintenance": (
-                test_cache_cleanup,
-                "Should provide cache maintenance and optimization functions",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
-
-    print(
-        "💾 Running Cache Management & Performance Optimization comprehensive test suite..."
-    )
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

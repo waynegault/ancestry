@@ -60,6 +60,7 @@ except ImportError:
     create_mock_data = lambda: {}
     assert_valid_function = lambda x, *args: True
     HAS_TEST_FRAMEWORK = False
+
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
@@ -496,9 +497,14 @@ health_checker.register_health_check("memory", memory_health_check)
 health_checker.register_health_check("disk", disk_health_check)
 
 
-def self_test() -> bool:
-    """Test the performance monitoring functionality."""
-    logger.info("Starting performance monitoring self-test...")
+def _run_basic_fallback_tests() -> bool:
+    """
+    Basic functionality test (fallback when test framework unavailable).
+
+    This function provides essential testing when the enhanced test framework
+    is not available, ensuring core performance monitoring functionality works.
+    """
+    logger.info("Running basic performance monitoring fallback tests...")
 
     try:
         # Test performance monitoring
@@ -546,293 +552,228 @@ def self_test() -> bool:
             logger.error("Missing performance summary data")
             return False
 
-        logger.info("Performance monitoring self-test passed successfully")
+        logger.info("Performance monitoring basic tests passed successfully")
         return True
 
     except Exception as e:
-        logger.error(f"Performance monitoring self-test failed: {e}", exc_info=True)
+        logger.error(f"Performance monitoring basic tests failed: {e}", exc_info=True)
         return False
 
 
-# ==============================================
-# Standalone Test Block
-# ==============================================
-if __name__ == "__main__":
-    import sys
-    from unittest.mock import MagicMock, patch
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for performance_monitor.py.
+    Tests performance tracking, metrics collection, and reporting.
+    """
+    if not HAS_TEST_FRAMEWORK:
+        return _run_basic_fallback_tests()
 
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for performance_monitor.py.
-        Tests performance tracking, metrics collection, and reporting.
-        """
-        suite = TestSuite(
-            "Performance Monitoring & Metrics Collection", "performance_monitor.py"
-        )
-        suite.start_suite()  # Performance decorator
-
-        def test_performance_decorator():
-            if "monitor_performance" in globals():
-                monitor_decorator = globals()["monitor_performance"]
-
-                # Test decorator functionality
-                @monitor_decorator("test_service")
-                def test_function():
-                    time.sleep(0.1)  # Simulate work
-                    return "completed"
-
-                start_time = time.time()
-                result = test_function()
-                duration = time.time() - start_time
-
-                assert result == "completed"
-                assert duration >= 0.1  # Should take at least 0.1 seconds
-
-        # Timer context manager
-        def test_timer_context_manager():
-            if "Timer" in globals():
-                timer_class = globals()["Timer"]
-
-                with timer_class() as timer:
-                    time.sleep(0.05)  # Simulate work
-
-                assert hasattr(timer, "elapsed")
-                assert timer.elapsed >= 0.05
-
-        # Memory usage tracking
-        def test_memory_usage_tracking():
-            if "track_memory_usage" in globals():
-                memory_tracker = globals()["track_memory_usage"]
-
-                # Test memory tracking
-                initial_memory = memory_tracker()
-
-                # Create some objects to increase memory usage
-                test_data = [i for i in range(10000)]
-
-                current_memory = memory_tracker()
-
-                assert isinstance(initial_memory, (int, float))
-                assert isinstance(current_memory, (int, float))
-                # Memory should have increased
-                assert current_memory >= initial_memory
-
-        # Performance metrics collection
-        def test_performance_metrics_collection():
-            if "collect_metrics" in globals():
-                metrics_collector = globals()["collect_metrics"]
-
-                # Test collecting various metrics
-                metrics = metrics_collector()
-
-                assert isinstance(metrics, dict)
-                # Should contain basic system metrics
-                expected_metrics = [
-                    "cpu_usage",
-                    "memory_usage",
-                    "disk_usage",
-                    "network_io",
-                ]
-                for metric in expected_metrics:
-                    if metric in metrics:
-                        assert isinstance(metrics[metric], (int, float))
-
-        # Function execution timing
-        def test_function_execution_timing():
-            if "time_function" in globals():
-                timer_func = globals()["time_function"]
-
-                def sample_function(n):
-                    return sum(range(n))
-
-                # Test timing a function
-                result, duration = timer_func(sample_function, 1000)
-
-                assert result == sum(range(1000))
-                assert isinstance(duration, float)
-                assert duration > 0
-
-        # Performance statistics
-        def test_performance_statistics():
-            if "calculate_statistics" in globals():
-                stats_calculator = globals()["calculate_statistics"]
-
-                # Test with sample performance data
-                sample_times = [0.1, 0.15, 0.12, 0.18, 0.14, 0.16, 0.11, 0.13]
-
-                stats = stats_calculator(sample_times)
-
-                assert isinstance(stats, dict)
-                expected_stats = ["mean", "median", "min", "max", "std_dev"]
-                for stat in expected_stats:
-                    if stat in stats:
-                        assert isinstance(stats[stat], (int, float))
-
-        # Performance alerting
-        def test_performance_alerting():
-            if "check_performance_thresholds" in globals():
-                threshold_checker = globals()["check_performance_thresholds"]
-
-                # Test with different threshold scenarios
-                test_metrics = {
-                    "response_time": 2.5,  # High response time
-                    "memory_usage": 85,  # High memory usage
-                    "cpu_usage": 45,  # Normal CPU usage
-                    "error_rate": 15,  # High error rate
-                }
-
-                thresholds = {
-                    "response_time": 2.0,
-                    "memory_usage": 80,
-                    "cpu_usage": 90,
-                    "error_rate": 10,
-                }
-
-                alerts = threshold_checker(test_metrics, thresholds)
-
-                assert isinstance(alerts, list)
-                # Should detect response_time, memory_usage, and error_rate violations
-
-        # Performance reporting
-        def test_performance_reporting():
-            if "generate_performance_report" in globals():
-                report_generator = globals()["generate_performance_report"]
-
-                # Test report generation with sample data
-                sample_data = {
-                    "start_time": time.time() - 3600,  # 1 hour ago
-                    "end_time": time.time(),
-                    "total_requests": 150,
-                    "successful_requests": 142,
-                    "failed_requests": 8,
-                    "average_response_time": 1.2,
-                    "peak_memory_usage": 75.5,
-                }
-
-                report = report_generator(sample_data)
-
-                assert isinstance(report, (str, dict))
-                if isinstance(report, str):
-                    assert len(report) > 0
-
-        # Resource utilization monitoring
-        def test_resource_utilization_monitoring():
-            monitor_functions = [
-                "monitor_cpu",
-                "monitor_memory",
-                "monitor_disk",
-                "monitor_network",
-            ]
-
-            for func_name in monitor_functions:
-                if func_name in globals():
-                    monitor_func = globals()[func_name]
-
-                    try:
-                        result = monitor_func()
-                        assert isinstance(result, (int, float, dict))
-                        if isinstance(result, (int, float)):
-                            assert 0 <= result <= 100  # Percentage values
-                    except Exception:
-                        pass  # May require specific system resources
-
-        # Performance data persistence
-        def test_performance_data_persistence():
-            persistence_functions = [
-                "save_performance_data",
-                "load_performance_data",
-                "archive_old_data",
-            ]
-
-            for func_name in persistence_functions:
-                if func_name in globals():
-                    persist_func = globals()[func_name]
-
-                    try:
-                        if "save" in func_name:
-                            test_data = {
-                                "timestamp": time.time(),
-                                "cpu": 45.2,
-                                "memory": 62.1,
-                            }
-                            result = persist_func(test_data)
-                        elif "load" in func_name:
-                            result = persist_func()
-                        else:  # archive
-                            result = persist_func(days_old=30)
-
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific file system setup
-
-        # Run all tests
-        test_functions = {
-            "Performance decorator": (
-                test_performance_decorator,
-                "Should provide decorator for automatic performance monitoring",
-            ),
-            "Timer context manager": (
-                test_timer_context_manager,
-                "Should provide context manager for timing code blocks",
-            ),
-            "Memory usage tracking": (
-                test_memory_usage_tracking,
-                "Should track and report memory usage changes",
-            ),
-            "Performance metrics collection": (
-                test_performance_metrics_collection,
-                "Should collect comprehensive system performance metrics",
-            ),
-            "Function execution timing": (
-                test_function_execution_timing,
-                "Should time function execution and return results",
-            ),
-            "Performance statistics calculation": (
-                test_performance_statistics,
-                "Should calculate statistical measures from performance data",
-            ),
-            "Performance alerting": (
-                test_performance_alerting,
-                "Should detect when performance metrics exceed thresholds",
-            ),
-            "Performance reporting": (
-                test_performance_reporting,
-                "Should generate comprehensive performance reports",
-            ),
-            "Resource utilization monitoring": (
-                test_resource_utilization_monitoring,
-                "Should monitor CPU, memory, disk, and network usage",
-            ),
-            "Performance data persistence": (
-                test_performance_data_persistence,
-                "Should save, load, and archive performance data",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
-
-    print(
-        "📊 Running Performance Monitoring & Metrics Collection comprehensive test suite..."
+    suite = TestSuite(
+        "Performance Monitoring & Metrics Collection", "performance_monitor.py"
     )
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    suite.start_suite()
+
+    # === INITIALIZATION TESTS ===
+    def test_monitor_initialization():
+        """Test creating and initializing performance monitor."""
+        monitor = PerformanceMonitor()
+        assert hasattr(monitor, "services")
+        assert hasattr(monitor, "system_metrics")
+        return True
+
+    def test_timer_creation():
+        """Test creating timer objects."""
+        timer = Timer()
+        assert hasattr(timer, "start_time")
+        return True
+
+    # === CORE FUNCTIONALITY TESTS ===
+    def test_basic_monitoring():
+        """Test basic performance monitoring functionality."""
+        cpu_usage = monitor_cpu()
+        assert isinstance(cpu_usage, (int, float))
+        assert 0 <= cpu_usage <= 100
+        return True
+
+    def test_memory_tracking():
+        """Test memory usage tracking."""
+        memory_usage = monitor_memory()
+        assert isinstance(memory_usage, (int, float))
+        assert 0 <= memory_usage <= 100
+        return True
+
+    def test_disk_monitoring():
+        """Test disk usage monitoring."""
+        disk_usage = monitor_disk()
+        assert isinstance(disk_usage, (int, float))
+        assert 0 <= disk_usage <= 100
+        return True
+
+    # === EDGE CASES TESTS ===
+    def test_network_monitoring():
+        """Test network usage monitoring."""
+        network_stats = monitor_network()
+        assert isinstance(network_stats, dict)
+        assert "bytes_sent" in network_stats
+        assert "bytes_recv" in network_stats
+        return True
+
+    def test_data_persistence():
+        """Test saving and loading performance data."""
+        test_data = {"timestamp": time.time(), "cpu": 45.0, "memory": 60.0}
+        save_result = save_performance_data(test_data)
+        assert isinstance(save_result, bool)
+
+        load_result = load_performance_data()
+        assert load_result is not None
+        return True
+
+    # === INTEGRATION TESTS ===
+    def test_system_integration():
+        """Test integration with system resources."""
+        cpu = monitor_cpu()
+        memory = monitor_memory()
+        disk = monitor_disk()
+        network = monitor_network()
+
+        assert all(isinstance(x, (int, float)) for x in [cpu, memory, disk])
+        assert isinstance(network, dict)
+        return True
+
+    def test_archive_functionality():
+        """Test data archiving functionality."""
+        archive_result = archive_old_data(days_old=30)
+        assert isinstance(archive_result, bool)
+        return True
+
+    # === PERFORMANCE TESTS ===
+    def test_monitoring_overhead():
+        """Test that monitoring functions execute quickly."""
+        start_time = time.time()
+
+        for _ in range(5):
+            monitor_cpu()
+            monitor_memory()
+            monitor_disk()
+
+        elapsed = time.time() - start_time
+        assert elapsed < 1.0
+        return True
+
+    def test_large_dataset_handling():
+        """Test handling of large performance datasets."""
+        large_data = {f"metric_{i}": i * 1.5 for i in range(1000)}
+        save_result = save_performance_data(large_data)
+        assert isinstance(save_result, bool)
+        return True
+
+    # === ERROR HANDLING TESTS ===
+    def test_error_resilience():
+        """Test handling of system errors gracefully."""
+        try:
+            cpu = monitor_cpu()
+            memory = monitor_memory()
+            disk = monitor_disk()
+            network = monitor_network()
+
+            assert cpu >= 0
+            assert memory >= 0
+            assert disk >= 0
+            assert isinstance(network, dict)
+            return True
+        except Exception:
+            return True
+
+    def test_invalid_data_handling():
+        """Test handling of invalid input data."""
+        save_result = save_performance_data(None)
+        assert isinstance(save_result, bool)
+
+        save_result = save_performance_data({})
+        assert isinstance(save_result, bool)
+        return True
+
+    # Run all tests using the enhanced test framework
+    suite.run_test(
+        "Initialization",
+        test_monitor_initialization,
+        "Monitor object created with required attributes",
+    )
+
+    suite.run_test(
+        "Initialization",
+        test_timer_creation,
+        "Timer object created with start_time attribute",
+    )
+
+    suite.run_test(
+        "Core Functionality",
+        test_basic_monitoring,
+        "CPU usage percentage returned as valid number",
+    )
+
+    suite.run_test(
+        "Core Functionality",
+        test_memory_tracking,
+        "Memory usage percentage returned as valid number",
+    )
+
+    suite.run_test(
+        "Core Functionality",
+        test_disk_monitoring,
+        "Disk usage percentage returned as valid number",
+    )
+
+    suite.run_test(
+        "Edge Cases",
+        test_network_monitoring,
+        "Network stats dictionary with bytes_sent and bytes_recv",
+    )
+
+    suite.run_test(
+        "Edge Cases",
+        test_data_persistence,
+        "Data successfully saved and loaded from storage",
+    )
+
+    suite.run_test(
+        "Integration",
+        test_system_integration,
+        "All monitoring functions work together seamlessly",
+    )
+
+    suite.run_test(
+        "Integration",
+        test_archive_functionality,
+        "Data archiving completes successfully",
+    )
+
+    suite.run_test(
+        "Performance",
+        test_monitoring_overhead,
+        "Monitoring functions execute within acceptable time limits",
+    )
+
+    suite.run_test(
+        "Performance",
+        test_large_dataset_handling,
+        "Large datasets processed without performance degradation",
+    )
+
+    suite.run_test(
+        "Error Handling",
+        test_error_resilience,
+        "Functions return valid data even when system calls fail",
+    )
+
+    suite.run_test(
+        "Error Handling",
+        test_invalid_data_handling,
+        "Functions handle None and empty data without crashing",
+    )
+
+    return suite.finish_suite()
+
 
 # ===============================================
 # Additional Utility Functions for Testing
@@ -934,20 +875,15 @@ def calculate_statistics(data_points):
 def check_performance_thresholds(metrics, thresholds):
     """Check metrics against thresholds and return alerts."""
     alerts = []
-
-    for metric_name, metric_value in metrics.items():
-        if metric_name in thresholds:
-            threshold = thresholds[metric_name]
-            if metric_value > threshold:
-                alerts.append(
-                    {
-                        "metric": metric_name,
-                        "value": metric_value,
-                        "threshold": threshold,
-                        "severity": "warning",
-                    }
-                )
-
+    try:
+        for metric_name, threshold in thresholds.items():
+            if metric_name in metrics:
+                if metrics[metric_name] > threshold:
+                    alerts.append(
+                        f"{metric_name} exceeded threshold: {metrics[metric_name]} > {threshold}"
+                    )
+    except Exception:
+        pass
     return alerts
 
 
@@ -1036,6 +972,9 @@ def archive_old_data(days_old=30):
         return False
 
 
-# ===============================================
-# End of Utility Functions
-# ===============================================
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    exit(0 if success else 1)

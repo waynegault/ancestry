@@ -2274,13 +2274,13 @@ class GedcomData:
 
 
 # ==============================================
-# Standalone Test Block
+# Module-level Test Framework Function
 # ==============================================
-if __name__ == "__main__":
-    import sys
-    import tempfile
-    from unittest.mock import MagicMock, patch, mock_open
-
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for gedcom_utils.py.
+    Tests GEDCOM file processing, parsing, and data extraction.
+    """
     try:
         from test_framework import (
             TestSuite,
@@ -2292,294 +2292,380 @@ if __name__ == "__main__":
         print(
             "❌ test_framework.py not found. Please ensure it exists in the same directory."
         )
-        sys.exit(1)
+        return False
 
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for gedcom_utils.py.
-        Tests GEDCOM file processing, parsing, and data extraction.
-        """
-        suite = TestSuite("GEDCOM File Processing & Data Extraction", "gedcom_utils.py")
-        suite.start_suite()
+    suite = TestSuite("GEDCOM File Processing & Data Extraction", "gedcom_utils.py")
+    suite.start_suite()
 
-        # GEDCOM file loading and validation
-        def test_gedcom_file_loading():
-            if "load_gedcom_file" in globals():
-                loader = globals()["load_gedcom_file"]
+    # GEDCOM file loading and validation
+    def test_gedcom_file_loading():
+        if "load_gedcom_file" in globals():
+            loader = globals()["load_gedcom_file"]
 
-                # Mock GEDCOM content
-                mock_gedcom_content = """
-                0 HEAD
-                1 SOUR Test Family Tree
-                1 GEDC
-                2 VERS 5.5.1
-                0 @I1@ INDI
-                1 NAME John /Doe/
-                1 BIRT
-                2 DATE 1 JAN 1950
-                2 PLAC New York, USA
-                1 SEX M
-                0 @I2@ INDI
-                1 NAME Jane /Smith/
-                1 BIRT
-                2 DATE 15 MAR 1955
-                1 SEX F
-                0 @F1@ FAM
-                1 HUSB @I1@
-                1 WIFE @I2@
-                0 TRLR
-                """
+            # Mock GEDCOM content
+            mock_gedcom_content = """
+            0 HEAD
+            1 SOUR Test Family Tree
+            1 GEDC
+            2 VERS 5.5.1
+            0 @I1@ INDI
+            1 NAME John /Doe/
+            1 BIRT
+            2 DATE 1 JAN 1950
+            2 PLAC New York, USA
+            1 SEX M
+            0 @I2@ INDI
+            1 NAME Jane /Smith/
+            1 BIRT
+            2 DATE 15 MAR 1955
+            1 SEX F
+            0 @F1@ FAM
+            1 HUSB @I1@
+            1 WIFE @I2@
+            0 TRLR
+            """
 
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".ged", delete=False
-                ) as temp_file:
-                    temp_file.write(mock_gedcom_content)
-                    temp_file.flush()
+            import tempfile
 
-                    try:
-                        gedcom_data = loader(temp_file.name)
-                        assert gedcom_data is not None
-                    except Exception:
-                        pass  # May require ged4py library
-
-        # Individual record processing
-        def test_individual_record_processing():
-            if "process_individual_record" in globals():
-                processor = globals()["process_individual_record"]
-
-                # Mock individual record
-                mock_individual = MagicMock()
-                mock_individual.name = "John /Doe/"
-                mock_individual.sex = "M"
-                mock_individual.birth_year = 1950
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".ged", delete=False
+            ) as temp_file:
+                temp_file.write(mock_gedcom_content)
+                temp_file.flush()
 
                 try:
-                    processed = processor(mock_individual)
-                    assert isinstance(processed, dict)
+                    gedcom_data = loader(temp_file.name)
+                    assert gedcom_data is not None
                 except Exception:
-                    pass  # May require specific record format
+                    pass  # May require ged4py library
 
-        # Date parsing and normalization
-        def test_date_parsing_normalization():
-            if "parse_gedcom_date" in globals():
-                date_parser = globals()["parse_gedcom_date"]
+    # Individual record processing
+    def test_individual_record_processing():
+        if "process_individual_record" in globals():
+            processor = globals()["process_individual_record"]
 
-                # Test various GEDCOM date formats
-                date_formats = [
-                    "1 JAN 1950",
-                    "15 MAR 1955",
-                    "ABT 1920",
-                    "BEF 1945",
-                    "AFT 1960",
-                    "BET 1950 AND 1955",
-                    "1950",
-                ]
+            # Mock individual record
+            from unittest.mock import MagicMock
 
-                for date_str in date_formats:
-                    try:
-                        parsed_date = date_parser(date_str)
-                        assert parsed_date is not None
-                    except Exception:
-                        pass  # Some formats may not be supported
+            mock_individual = MagicMock()
+            mock_individual.name = "John /Doe/"
+            mock_individual.sex = "M"
+            mock_individual.birth_year = 1950
 
-        # Name parsing and formatting
-        def test_name_parsing_formatting():
-            if "parse_gedcom_name" in globals():
-                name_parser = globals()["parse_gedcom_name"]
+            try:
+                processed = processor(mock_individual)
+                assert isinstance(processed, dict)
+            except Exception:
+                pass  # May require specific record format
 
-                # Test various name formats
-                name_formats = [
-                    "John /Doe/",
-                    "Mary Jane /Smith/",
-                    "Robert /Johnson/ Jr.",
-                    "Elizabeth /Unknown/",
-                    "/Only Surname/",
-                ]
+    # Date parsing and normalization
+    def test_date_parsing_normalization():
+        if "parse_gedcom_date" in globals():
+            date_parser = globals()["parse_gedcom_date"]
 
-                for name_str in name_formats:
-                    try:
-                        parsed_name = name_parser(name_str)
-                        assert isinstance(parsed_name, dict)
-                        assert "given_name" in parsed_name or "surname" in parsed_name
-                    except Exception:
-                        pass  # May require specific parsing logic
+            # Test various GEDCOM date formats
+            date_formats = [
+                "1 JAN 1950",
+                "15 MAR 1955",
+                "ABT 1920",
+                "BEF 1945",
+                "AFT 1960",
+                "BET 1950 AND 1955",
+                "1950",
+            ]
 
-        # Family relationship extraction
-        def test_family_relationship_extraction():
-            if "extract_family_relationships" in globals():
-                extractor = globals()["extract_family_relationships"]
-
-                # Mock family data
-                mock_families = [
-                    {
-                        "id": "F1",
-                        "husband": "I1",
-                        "wife": "I2",
-                        "children": ["I3", "I4"],
-                    }
-                ]
-
+            for date_str in date_formats:
                 try:
-                    relationships = extractor(mock_families)
-                    assert isinstance(relationships, dict)
+                    parsed_date = date_parser(date_str)
+                    assert parsed_date is not None
                 except Exception:
-                    pass  # May require specific data structure
+                    pass  # Some formats may not be supported
 
-        # Person matching and deduplication
-        def test_person_matching_deduplication():
-            if "match_persons" in globals():
-                matcher = globals()["match_persons"]
+    # Name parsing and formatting
+    def test_name_parsing_formatting():
+        if "parse_gedcom_name" in globals():
+            name_parser = globals()["parse_gedcom_name"]
 
-                # Test persons with similar data
-                person1 = {
-                    "name": "John Doe",
-                    "birth_year": 1950,
-                    "birth_place": "New York",
+            # Test various name formats
+            name_formats = [
+                "John /Doe/",
+                "Mary Jane /Smith/",
+                "Robert /Johnson/ Jr.",
+                "Elizabeth /Unknown/",
+                "/Only Surname/",
+            ]
+
+            for name_str in name_formats:
+                try:
+                    parsed_name = name_parser(name_str)
+                    assert isinstance(parsed_name, dict)
+                    assert "given_name" in parsed_name or "surname" in parsed_name
+                except Exception:
+                    pass  # May require specific parsing logic
+
+    # Family relationship extraction
+    def test_family_relationship_extraction():
+        if "extract_family_relationships" in globals():
+            extractor = globals()["extract_family_relationships"]
+
+            # Mock family data
+            mock_families = [
+                {
+                    "id": "F1",
+                    "husband": "I1",
+                    "wife": "I2",
+                    "children": ["I3", "I4"],
                 }
-                person2 = {
-                    "name": "Jon Doe",
-                    "birth_year": 1950,
-                    "birth_place": "New York",
-                }
+            ]
 
-                try:
-                    match_score = matcher(person1, person2)
-                    assert isinstance(match_score, (float, int))
-                    assert 0 <= match_score <= 1
-                except Exception:
-                    pass  # May require specific matching algorithm
+            try:
+                relationships = extractor(mock_families)
+                assert isinstance(relationships, dict)
+            except Exception:
+                pass  # May require specific data structure
 
-        # GEDCOM validation and error checking
-        def test_gedcom_validation():
-            if "validate_gedcom_structure" in globals():
-                validator = globals()["validate_gedcom_structure"]
+    # Person matching and deduplication
+    def test_person_matching_deduplication():
+        if "match_persons" in globals():
+            matcher = globals()["match_persons"]
 
-                # Test with mock GEDCOM data
-                mock_gedcom = {
-                    "header": {"version": "5.5.1"},
-                    "individuals": {"I1": {"name": "John Doe"}},
-                    "families": {"F1": {"husband": "I1"}},
-                }
+            # Test persons with similar data
+            person1 = {
+                "name": "John Doe",
+                "birth_year": 1950,
+                "birth_place": "New York",
+            }
+            person2 = {
+                "name": "Jon Doe",
+                "birth_year": 1950,
+                "birth_place": "New York",
+            }
 
-                try:
-                    is_valid = validator(mock_gedcom)
-                    assert isinstance(is_valid, bool)
-                except Exception:
-                    pass  # May require specific validation rules
+            try:
+                match_score = matcher(person1, person2)
+                assert isinstance(match_score, (float, int))
+                assert 0 <= match_score <= 1
+            except Exception:
+                pass  # May require specific matching algorithm
 
-        # Statistics and summary generation
-        def test_statistics_summary_generation():
-            if "generate_gedcom_statistics" in globals():
-                stats_generator = globals()["generate_gedcom_statistics"]
+    # GEDCOM validation and error checking
+    def test_gedcom_validation():
+        if "validate_gedcom_structure" in globals():
+            validator = globals()["validate_gedcom_structure"]
 
-                # Mock GEDCOM data for statistics
+            # Test with mock GEDCOM data
+            mock_gedcom = {
+                "header": {"version": "5.5.1"},
+                "individuals": {"I1": {"name": "John Doe"}},
+                "families": {"F1": {"husband": "I1"}},
+            }
+
+            try:
+                is_valid = validator(mock_gedcom)
+                assert isinstance(is_valid, bool)
+            except Exception:
+                pass  # May require specific validation rules
+
+    # Statistics and summary generation
+    def test_statistics_summary_generation():
+        if "generate_gedcom_statistics" in globals():
+            stats_generator = globals()["generate_gedcom_statistics"]
+
+            # Mock GEDCOM data for statistics
+            mock_data = {
+                "individuals": ["I1", "I2", "I3", "I4", "I5"],
+                "families": ["F1", "F2"],
+                "sources": ["S1"],
+            }
+
+            try:
+                stats = stats_generator(mock_data)
+                assert isinstance(stats, dict)
+                expected_keys = [
+                    "total_individuals",
+                    "total_families",
+                    "date_range",
+                ]
+                for key in expected_keys:
+                    if key in stats:
+                        assert stats[key] is not None
+            except Exception:
+                pass  # May require specific data processing
+
+    # Export and format conversion
+    def test_export_format_conversion():
+        export_functions = [
+            "export_to_csv",
+            "export_to_json",
+            "convert_to_standard_format",
+        ]
+
+        for func_name in export_functions:
+            if func_name in globals():
+                export_func = globals()[func_name]
+
                 mock_data = {
-                    "individuals": ["I1", "I2", "I3", "I4", "I5"],
-                    "families": ["F1", "F2"],
-                    "sources": ["S1"],
+                    "individuals": [
+                        {"id": "I1", "name": "John Doe", "birth_year": 1950}
+                    ]
                 }
 
                 try:
-                    stats = stats_generator(mock_data)
-                    assert isinstance(stats, dict)
-                    expected_keys = [
-                        "total_individuals",
-                        "total_families",
-                        "date_range",
-                    ]
-                    for key in expected_keys:
-                        if key in stats:
-                            assert stats[key] is not None
+                    result = export_func(mock_data)
+                    assert result is not None
                 except Exception:
-                    pass  # May require specific data processing
+                    pass  # May require specific format or file handling
 
-        # Export and format conversion
-        def test_export_format_conversion():
-            export_functions = [
-                "export_to_csv",
-                "export_to_json",
-                "convert_to_standard_format",
-            ]
+    # Performance optimization for large files
+    def test_performance_optimization():
+        optimization_functions = [
+            "optimize_gedcom_loading",
+            "stream_process_gedcom",
+            "parallel_gedcom_processing",
+            "memory_efficient_parsing",
+        ]
 
-            for func_name in export_functions:
-                if func_name in globals():
-                    export_func = globals()[func_name]
+        for func_name in optimization_functions:
+            if func_name in globals():
+                opt_func = globals()[func_name]
+                assert callable(opt_func)
 
-                    mock_data = {
-                        "individuals": [
-                            {"id": "I1", "name": "John Doe", "birth_year": 1950}
-                        ]
-                    }
+    # Run all tests
+    test_functions = {
+        "GEDCOM file loading and validation": (
+            test_gedcom_file_loading,
+            "Should load and validate GEDCOM files correctly",
+        ),
+        "Individual record processing": (
+            test_individual_record_processing,
+            "Should process individual records and extract data",
+        ),
+        "Date parsing and normalization": (
+            test_date_parsing_normalization,
+            "Should parse various GEDCOM date formats",
+        ),
+        "Name parsing and formatting": (
+            test_name_parsing_formatting,
+            "Should parse GEDCOM name formats with surnames",
+        ),
+        "Family relationship extraction": (
+            test_family_relationship_extraction,
+            "Should extract family relationships and connections",
+        ),
+        "Person matching and deduplication": (
+            test_person_matching_deduplication,
+            "Should match similar persons and calculate similarity scores",
+        ),
+        "GEDCOM validation and error checking": (
+            test_gedcom_validation,
+            "Should validate GEDCOM structure and detect errors",
+        ),
+        "Statistics and summary generation": (
+            test_statistics_summary_generation,
+            "Should generate statistics and summaries from GEDCOM data",
+        ),
+        "Export and format conversion": (
+            test_export_format_conversion,
+            "Should export GEDCOM data to various formats",
+        ),
+        "Performance optimization for large files": (
+            test_performance_optimization,
+            "Should handle large GEDCOM files efficiently",
+        ),
+    }
 
-                    try:
-                        result = export_func(mock_data)
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific format or file handling
+    with suppress_logging():
+        for test_name, (test_func, expected_behavior) in test_functions.items():
+            suite.run_test(test_name, test_func, expected_behavior)
 
-        # Performance optimization for large files
-        def test_performance_optimization():
-            optimization_functions = [
-                "optimize_gedcom_loading",
-                "stream_process_gedcom",
-                "parallel_gedcom_processing",
-                "memory_efficient_parsing",
-            ]
+    return suite.finish_suite()
 
-            for func_name in optimization_functions:
-                if func_name in globals():
-                    opt_func = globals()[func_name]
-                    assert callable(opt_func)
 
-        # Run all tests
-        test_functions = {
-            "GEDCOM file loading and validation": (
-                test_gedcom_file_loading,
-                "Should load and validate GEDCOM files correctly",
-            ),
-            "Individual record processing": (
-                test_individual_record_processing,
-                "Should process individual records and extract data",
-            ),
-            "Date parsing and normalization": (
-                test_date_parsing_normalization,
-                "Should parse various GEDCOM date formats",
-            ),
-            "Name parsing and formatting": (
-                test_name_parsing_formatting,
-                "Should parse GEDCOM name formats with surnames",
-            ),
-            "Family relationship extraction": (
-                test_family_relationship_extraction,
-                "Should extract family relationships and connections",
-            ),
-            "Person matching and deduplication": (
-                test_person_matching_deduplication,
-                "Should match similar persons and calculate similarity scores",
-            ),
-            "GEDCOM validation and error checking": (
-                test_gedcom_validation,
-                "Should validate GEDCOM structure and detect errors",
-            ),
-            "Statistics and summary generation": (
-                test_statistics_summary_generation,
-                "Should generate statistics and summaries from GEDCOM data",
-            ),
-            "Export and format conversion": (
-                test_export_format_conversion,
-                "Should export GEDCOM data to various formats",
-            ),
-            "Performance optimization for large files": (
-                test_performance_optimization,
-                "Should handle large GEDCOM files efficiently",
-            ),
-        }
+def run_comprehensive_tests_fallback() -> bool:
+    """Fallback test function for when test framework is not available."""
+    print("🔍 Running basic GEDCOM utilities tests...")
+    tests_passed = 0
+    total_tests = 0
 
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
+    # Test 1: Basic imports
+    total_tests += 1
+    try:
+        functions_to_check = [
+            "_normalize_id",
+            "_get_full_name",
+            "_parse_date",
+            "_clean_display_date",
+            "calculate_match_score",
+        ]
+        all_available = all(func in globals() for func in functions_to_check)
+        if all_available:
+            tests_passed += 1
+            print("✅ Basic function imports test passed")
+        else:
+            print("❌ Basic function imports test failed")
+    except Exception as e:
+        print(f"❌ Basic function imports test error: {e}")
 
-        return suite.finish_suite()
+    # Test 2: ID normalization
+    total_tests += 1
+    try:
+        if "_normalize_id" in globals():
+            normalize_func = globals()["_normalize_id"]
+            test_id = normalize_func("@I123@")
+            if test_id == "I123":
+                tests_passed += 1
+                print("✅ ID normalization test passed")
+            else:
+                print("❌ ID normalization test failed")
+        else:
+            print("❌ ID normalization function not available")
+    except Exception as e:
+        print(f"❌ ID normalization test error: {e}")
+
+    # Test 3: Date parsing
+    total_tests += 1
+    try:
+        if "_parse_date" in globals():
+            parse_func = globals()["_parse_date"]
+            result = parse_func("1 JAN 1950")
+            if result is not None:
+                tests_passed += 1
+                print("✅ Date parsing test passed")
+            else:
+                print("❌ Date parsing test failed")
+        else:
+            print("❌ Date parsing function not available")
+    except Exception as e:
+        print(f"❌ Date parsing test error: {e}")
+
+    # Test 4: GedcomData class
+    total_tests += 1
+    try:
+        if "GedcomData" in globals():
+            gedcom_class = globals()["GedcomData"]
+            if hasattr(gedcom_class, "__init__"):
+                tests_passed += 1
+                print("✅ GedcomData class test passed")
+            else:
+                print("❌ GedcomData class test failed")
+        else:
+            print("❌ GedcomData class not available")
+    except Exception as e:
+        print(f"❌ GedcomData class test error: {e}")
+
+    success_rate = (tests_passed / total_tests) * 100 if total_tests > 0 else 0
+    print(
+        f"\n📊 Fallback Test Results: {tests_passed}/{total_tests} passed ({success_rate:.1f}%)"
+    )
+
+    return tests_passed == total_tests
+
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
+    import sys
 
     print(
         "📄 Running GEDCOM File Processing & Data Extraction comprehensive test suite..."

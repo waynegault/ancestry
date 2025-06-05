@@ -21,6 +21,9 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, quote
 from tabulate import tabulate
 import requests  # Keep for potential exception types
+import argparse
+import os
+from dotenv import load_dotenv
 
 # Import specific types needed locally
 from typing import Optional, List, Dict, Any, Tuple, Union, cast
@@ -36,49 +39,8 @@ from logging_config import setup_logging, logger
 # Initialize the logger with a specific log file for this module
 logger = setup_logging(log_file="action11.log", log_level="INFO")
 
-# --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    TestSuite = DummyTestSuite
-    suppress_logging = lambda: DummyContext()
-    create_mock_data = lambda: {}
-    assert_valid_function = lambda x, *args: True
-    HAS_TEST_FRAMEWORK = False
+# --- Test framework - No longer using external test framework ---
+# All testing is now self-contained within this script
 
 # --- Load Config (Mandatory - Direct Import) ---
 config_instance = None
@@ -2386,18 +2348,21 @@ def _handle_supplementary_info_phase(
 
         env_owner_name = os.environ.get("TREE_OWNER_NAME")
         if env_owner_name:
-            owner_name = env_owner_name
-            # Update the session manager with the owner name from environment
+            owner_name = env_owner_name  # Update the session manager with the owner name from environment
             session_manager_local.tree_owner_name = owner_name
             logger.info(
                 f"Using tree owner name from environment variables: {owner_name}"
             )
         else:
-            # If not in environment, set a default based on the profile ID
+            # If not in environment, try to get from config or use generic default
             if owner_profile_id:
-                owner_name = "Wayne Gault"  # Default name based on the profile ID
+                # Try to get from config first, then use generic default
+                config_owner_name = getattr(
+                    config_instance_local, "REFERENCE_PERSON_NAME", None
+                )
+                owner_name = config_owner_name if config_owner_name else "Tree Owner"
                 session_manager_local.tree_owner_name = owner_name
-                logger.info(f"Using default tree owner name: {owner_name}")
+                logger.info(f"Using tree owner name from config/default: {owner_name}")
 
     # --- Display Family ---
     # Get the person's name and birth/death years for display
@@ -2919,9 +2884,8 @@ def _handle_supplementary_info_phase(
     print("")
 
     if formatted_path:
-        # First, print a clear header indicating which API source was used
-        # Use a default value for owner_name if it's None
-        display_owner_name = owner_name if owner_name else "Wayne Gault"
+        # First, print a clear header indicating which API source was used        # Use a default value for owner_name if it's None
+        display_owner_name = owner_name if owner_name else "Tree Owner"
         if api_called_for_rel == "Tree Ladder (/getladder)":
             print(
                 f"=== Relationship Path to {display_owner_name} (via Tree Ladder API) ==="
@@ -3559,340 +3523,268 @@ def run_action11(*_):
     return handle_api_report()
 
 
+def load_test_person_from_env():
+    """Load Fraser Gault test person data from environment variables."""
+    load_dotenv()
+
+    return {
+        "name": os.getenv("TEST_PERSON_NAME", "Fraser Gault"),
+        "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
+        "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
+        "gender": os.getenv("TEST_PERSON_GENDER", "M"),
+        "spouse_name": os.getenv("TEST_PERSON_SPOUSE", "Helen"),
+        "children": [
+            os.getenv("TEST_PERSON_CHILD1", "Lynne"),
+            os.getenv("TEST_PERSON_CHILD2", "Robert"),
+            os.getenv("TEST_PERSON_CHILD3", "Fraser"),
+        ],
+        "relationship": os.getenv("TEST_PERSON_RELATIONSHIP", "uncle"),
+    }
+
+
+def run_standalone_fraser_test():
+    """Run standalone Fraser Gault test using .env configuration."""
+    print("🔍 Running Fraser Gault API Test (Action 11)...")
+
+    # Load test person data
+    test_person = load_test_person_from_env()
+    print(f"✅ Loaded test person: {test_person['name']}")
+    print(f"   Born: {test_person['birth_year']} in {test_person['birth_place']}")
+    print(f"   Gender: {test_person['gender']}")
+    print(f"   Spouse: {test_person['spouse_name']}")
+    print(f"   Children: {', '.join(test_person['children'])}")
+    print(f"   Relationship: {test_person['relationship']}")
+
+    # Test the main API functionality
+    try:
+        print(
+            "\n🔍 Testing API report functionality..."
+        )  # Mock the interactive input for Fraser Gault
+        import unittest.mock
+
+        # Split the full name into first and last name
+        name_parts = test_person["name"].split()
+        first_name = name_parts[0] if name_parts else ""
+        last_name = name_parts[-1] if len(name_parts) > 1 else ""
+
+        with unittest.mock.patch(
+            "builtins.input",
+            side_effect=[
+                first_name,  # First Name Contains
+                last_name,  # Last Name Contains
+                test_person["gender"],  # Gender (M/F)
+                str(test_person["birth_year"]),  # Birth Year (YYYY)
+                test_person["birth_place"],  # Birth Place Contains
+                "",  # Death Year (YYYY) - empty for living person
+                "",  # Death Place Contains - empty for living person
+                "1",  # Select first result (if any)
+                "y",  # Confirm selection
+            ],
+        ):
+            result = handle_api_report()
+
+        if result:
+            print("✅ Fraser Gault API test completed successfully")
+            return True
+        else:
+            print("❌ Fraser Gault API test failed")
+            return False
+
+    except Exception as e:
+        print(f"❌ Error during Fraser Gault API test: {e}")
+        return False
+
+
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for action11.py.
+    Tests live API research functionality and person search capabilities.
+    """
+    print("🧪 Starting Action 11 - Live API Research Tool test suite...")
+
+    # Self-contained testing - no external test framework dependencies
+    test_results = {"passed": 0, "failed": 0, "errors": []}
+
+    def run_test(test_name, test_func, description):
+        """Execute a single test and track results."""
+        try:
+            print(f"  ✓ Testing: {test_name}")
+            test_func()
+            test_results["passed"] += 1
+            print(f"    ✅ PASS: {description}")
+        except Exception as e:
+            test_results["failed"] += 1
+            test_results["errors"].append(f"{test_name}: {str(e)}")
+            print(f"    ❌ FAIL: {test_name} - {str(e)}")
+
+    # Test API search functionality
+    def test_api_search():
+        """Test basic API search functionality."""
+        assert callable(handle_api_report), "handle_api_report should be callable"
+        assert (
+            "_get_search_criteria" in globals()
+        ), "Search criteria function should exist"
+
+    # Test scoring functions
+    def test_scoring_functions():
+        """Test scoring and ranking functions."""
+        assert (
+            "_process_and_score_suggestions" in globals()
+        ), "Scoring function should exist"
+        assert (
+            "_run_simple_suggestion_scoring" in globals()
+        ), "Simple scoring should exist"
+
+    # Test display functions
+    def test_display_functions():
+        """Test result display functions."""
+        assert "_display_search_results" in globals(), "Display function should exist"
+        assert (
+            "_display_initial_comparison" in globals()
+        ), "Comparison display should exist"
+
+    # Test API integration
+    def test_api_integration():
+        """Test API integration functions."""
+        assert "_handle_search_phase" in globals(), "Search phase handler should exist"
+        assert (
+            "_handle_selection_phase" in globals()
+        ), "Selection phase handler should exist"
+
+    # Test family and relationship functions
+    def test_family_functions():
+        """Test family data processing functions."""
+        assert (
+            "_display_family_info" in globals()
+        ), "Family display function should exist"
+        assert (
+            "_display_tree_relationship" in globals()
+        ), "Tree relationship function should exist"
+
+    # Test data extraction
+    def test_data_extraction():
+        """Test data extraction functions."""
+        assert (
+            "_extract_fact_data" in globals()
+        ), "Fact extraction function should exist"
+        assert (
+            "_extract_detailed_info" in globals()
+        ), "Detail extraction function should exist"
+
+    # Test Fraser Gault functionality
+    def test_fraser_gault():
+        """Test Fraser Gault standalone test functionality."""
+        assert (
+            "run_standalone_fraser_test" in globals()
+        ), "Fraser Gault test function should exist"
+        assert (
+            "load_test_person_from_env" in globals()
+        ), "Environment loading function should exist"
+
+    # Test utility functions
+    def test_utility_functions():
+        """Test utility and helper functions."""
+        assert (
+            "_parse_treesui_list_response" in globals()
+        ), "Response parser should exist"
+        assert "_flatten_children_list" in globals(), "Children flattener should exist"
+
+    # Execute all tests
+    test_suite = [
+        ("API Search", test_api_search, "Should have core API search functionality"),
+        (
+            "Scoring Functions",
+            test_scoring_functions,
+            "Should have scoring and ranking capabilities",
+        ),
+        (
+            "Display Functions",
+            test_display_functions,
+            "Should have result display capabilities",
+        ),
+        (
+            "API Integration",
+            test_api_integration,
+            "Should have API integration handlers",
+        ),
+        (
+            "Family Functions",
+            test_family_functions,
+            "Should have family data processing",
+        ),
+        (
+            "Data Extraction",
+            test_data_extraction,
+            "Should have data extraction utilities",
+        ),
+        (
+            "Fraser Gault Test",
+            test_fraser_gault,
+            "Should have Fraser Gault test functionality",
+        ),
+        (
+            "Utility Functions",
+            test_utility_functions,
+            "Should have utility helper functions",
+        ),
+    ]
+
+    for test_name, test_func, description in test_suite:
+        run_test(test_name, test_func, description)
+
+    # Print summary
+    total_tests = test_results["passed"] + test_results["failed"]
+    print(f"\n📊 Test Results Summary:")
+    print(f"   Total Tests: {total_tests}")
+    print(f"   ✅ Passed: {test_results['passed']}")
+    print(f"   ❌ Failed: {test_results['failed']}")
+
+    if test_results["errors"]:
+        print(f"\n🚨 Error Details:")
+        for error in test_results["errors"]:
+            print(f"   • {error}")
+
+    success_rate = test_results["passed"] / total_tests if total_tests > 0 else 0
+    print(f"\n🎯 Success Rate: {success_rate:.1%}")
+
+    # Return True if all tests passed
+    return test_results["failed"] == 0
+
+
 if __name__ == "__main__":
     import sys
     from unittest.mock import MagicMock, patch
 
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for action11.py.
-        Tests live API research functionality and person search capabilities.
-        """
-        # Import test framework directly inside function to handle exec() context
-        try:
-            from test_framework import (
-                TestSuite,
-                suppress_logging,
-                create_mock_data,
-                assert_valid_function,
-            )
-        except ImportError:
-            print(
-                "❌ test_framework.py not found. Please ensure it exists in the same directory."
-            )
-            return False
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Action 11: API Report - Search Ancestry API"
+    )
+    parser.add_argument(
+        "--fraser-test",
+        action="store_true",
+        help="Run Fraser Gault standalone test using .env configuration",
+    )
+    parser.add_argument(
+        "--comprehensive", action="store_true", help="Run comprehensive test suite"
+    )
 
-        suite = TestSuite("Action 11 - Live API Research Tool", "action11.py")
-        suite.start_suite()
+    args = parser.parse_args()
 
-        # Person suggestion API integration
-        def test_person_suggestion_api():
-            if "get_person_suggestions" in globals():
-                suggestion_func = globals()["get_person_suggestions"]
-
-                # Test various search queries
-                search_queries = [
-                    {"first_name": "John", "last_name": "Smith", "birth_year": 1950},
-                    {"full_name": "Mary Johnson", "location": "New York"},
-                    {"last_name": "Wilson", "birth_decade": "1920s"},
-                ]
-
-                for query in search_queries:
-                    try:
-                        with patch("requests.get") as mock_get:
-                            mock_response = MagicMock()
-                            mock_response.json.return_value = {
-                                "suggestions": [
-                                    {
-                                        "id": "person_123",
-                                        "name": "John Smith",
-                                        "birth_year": 1950,
-                                    }
-                                ]
-                            }
-                            mock_response.status_code = 200
-                            mock_get.return_value = mock_response
-
-                            result = suggestion_func(query)
-                            assert isinstance(result, list)
-                    except Exception:
-                        pass  # May require actual API setup
-
-        # Person selection and validation
-        def test_person_selection_validation():
-            if "validate_person_selection" in globals():
-                validator = globals()["validate_person_selection"]
-
-                # Test various selection scenarios
-                selection_scenarios = [
-                    {"person_id": "valid_id", "confidence_score": 0.95},
-                    {"person_id": "", "confidence_score": 0.8},  # Invalid ID
-                    {
-                        "person_id": "low_confidence",
-                        "confidence_score": 0.3,
-                    },  # Low confidence
-                ]
-
-                for scenario in selection_scenarios:
-                    try:
-                        is_valid = validator(scenario)
-                        assert isinstance(is_valid, bool)
-                    except Exception:
-                        pass  # May require specific validation rules
-
-        # Person detail fetching
-        def test_person_detail_fetching():
-            if "fetch_person_details" in globals():
-                detail_fetcher = globals()["fetch_person_details"]
-
-                # Mock person IDs for detail fetching
-                test_person_ids = ["person_123", "person_456", "person_789"]
-
-                for person_id in test_person_ids:
-                    try:
-                        with patch("requests.get") as mock_get:
-                            mock_response = MagicMock()
-                            mock_response.json.return_value = {
-                                "id": person_id,
-                                "name": "John Doe",
-                                "birth_date": "1950-01-01",
-                                "death_date": "2020-12-31",
-                                "family_members": [],
-                            }
-                            mock_response.status_code = 200
-                            mock_get.return_value = mock_response
-
-                            details = detail_fetcher(person_id)
-                            assert isinstance(details, dict)
-                            assert "id" in details
-                    except Exception:
-                        pass  # May require API authentication
-
-        # Family data processing
-        def test_family_data_processing():
-            if "process_family_data" in globals():
-                family_processor = globals()["process_family_data"]
-
-                # Mock family data structure
-                mock_family_data = {
-                    "parents": [
-                        {
-                            "id": "parent1",
-                            "name": "Father Doe",
-                            "relationship": "father",
-                        },
-                        {
-                            "id": "parent2",
-                            "name": "Mother Doe",
-                            "relationship": "mother",
-                        },
-                    ],
-                    "children": [
-                        {"id": "child1", "name": "Child1 Doe", "birth_year": 1975},
-                        {"id": "child2", "name": "Child2 Doe", "birth_year": 1977},
-                    ],
-                    "siblings": [
-                        {"id": "sibling1", "name": "Sibling Doe", "birth_year": 1952}
-                    ],
-                }
-
-                try:
-                    processed = family_processor(mock_family_data)
-                    assert isinstance(processed, dict)
-                    expected_keys = ["family_tree", "relationships", "generation_info"]
-                    for key in expected_keys:
-                        if key in processed:
-                            assert processed[key] is not None
-                except Exception:
-                    pass  # May require specific data processing logic
-
-        # Relationship path calculation to tree owner
-        def test_relationship_path_calculation():
-            if "calculate_relationship_to_tree_owner" in globals():
-                path_calculator = globals()["calculate_relationship_to_tree_owner"]
-
-                # Mock relationship scenarios
-                relationship_scenarios = [
-                    {
-                        "target_person": {"id": "target1", "name": "Target Person"},
-                        "tree_owner": {"id": "owner1", "name": "Tree Owner"},
-                        "connection_data": {"degree": 2, "relationship_type": "cousin"},
-                    }
-                ]
-
-                for scenario in relationship_scenarios:
-                    try:
-                        path = path_calculator(
-                            scenario["target_person"],
-                            scenario["tree_owner"],
-                            scenario["connection_data"],
-                        )
-                        assert isinstance(path, (str, list, dict))
-                    except Exception:
-                        pass  # May require specific calculation logic
-
-        # Search scoring and ranking
-        def test_search_scoring_ranking():
-            if "score_and_rank_results" in globals():
-                scorer_ranker = globals()["score_and_rank_results"]
-
-                # Mock search results with various attributes
-                mock_results = [
-                    {
-                        "id": "person1",
-                        "name_match_score": 0.95,
-                        "date_match_score": 0.90,
-                        "location_match_score": 0.85,
-                        "family_match_score": 0.70,
-                    },
-                    {
-                        "id": "person2",
-                        "name_match_score": 0.80,
-                        "date_match_score": 0.95,
-                        "location_match_score": 0.75,
-                        "family_match_score": 0.90,
-                    },
-                ]
-
-                try:
-                    ranked_results = scorer_ranker(mock_results)
-                    assert isinstance(ranked_results, list)
-                    if len(ranked_results) > 1:
-                        # Check if results are properly ranked
-                        assert "total_score" in ranked_results[0]
-                except Exception:
-                    pass  # May require specific scoring algorithm
-
-        # Interactive result presentation
-        def test_interactive_result_presentation():
-            if "present_search_results" in globals():
-                presenter = globals()["present_search_results"]
-
-                # Mock search results for presentation
-                mock_results = [
-                    {
-                        "id": "result1",
-                        "name": "John Smith",
-                        "birth_date": "1950-01-01",
-                        "confidence_score": 0.95,
-                        "family_summary": "Son of William and Mary Smith",
-                    }
-                ]
-
-                try:
-                    with patch("builtins.input", return_value="1"):
-                        presentation_result = presenter(mock_results)
-                        assert presentation_result is not None
-                except Exception:
-                    pass  # May require terminal interface setup
-
-        # Report generation
-        def test_report_generation():
-            if "generate_research_report" in globals():
-                report_generator = globals()["generate_research_report"]
-
-                # Mock research session data
-                mock_session_data = {
-                    "search_query": {"first_name": "John", "last_name": "Smith"},
-                    "results_found": 5,
-                    "selected_person": {
-                        "id": "person_123",
-                        "name": "John Smith",
-                        "birth_year": 1950,
-                    },
-                    "family_data": {"parents": 2, "children": 3, "siblings": 1},
-                    "relationship_to_owner": "3rd cousin",
-                }
-
-                try:
-                    report = report_generator(mock_session_data)
-                    assert isinstance(report, (str, dict))
-                    if isinstance(report, str):
-                        assert len(report) > 100  # Should be substantial
-                except Exception:
-                    pass  # May require specific reporting format
-
-        # Error handling and recovery
-        def test_error_handling_recovery():
-            error_handling_functions = [
-                "handle_api_errors",
-                "recover_from_network_failure",
-                "validate_api_response",
-                "handle_search_timeout",
-            ]
-
-            for func_name in error_handling_functions:
-                if func_name in globals():
-                    error_func = globals()[func_name]
-                    assert_valid_function(error_func, func_name)
-
-        # Performance optimization
-        def test_performance_optimization():
-            optimization_functions = [
-                "cache_api_responses",
-                "batch_person_requests",
-                "optimize_search_queries",
-                "parallel_family_fetching",
-            ]
-
-            for func_name in optimization_functions:
-                if func_name in globals():
-                    opt_func = globals()[func_name]
-                    assert_valid_function(opt_func, func_name)
-
-        # Run all tests
-        test_functions = {
-            "Person suggestion API integration": (
-                test_person_suggestion_api,
-                "Should integrate with Ancestry's person suggestion APIs",
-            ),
-            "Person selection and validation": (
-                test_person_selection_validation,
-                "Should validate person selections with confidence scoring",
-            ),
-            "Person detail fetching": (
-                test_person_detail_fetching,
-                "Should fetch comprehensive person details from API",
-            ),
-            "Family data processing": (
-                test_family_data_processing,
-                "Should process and structure family relationship data",
-            ),
-            "Relationship path calculation to tree owner": (
-                test_relationship_path_calculation,
-                "Should calculate relationship paths to tree owner",
-            ),
-            "Search scoring and ranking": (
-                test_search_scoring_ranking,
-                "Should score and rank search results by relevance",
-            ),
-            "Interactive result presentation": (
-                test_interactive_result_presentation,
-                "Should present search results in user-friendly format",
-            ),
-            "Report generation": (
-                test_report_generation,
-                "Should generate comprehensive research reports",
-            ),
-            "Error handling and recovery": (
-                test_error_handling_recovery,
-                "Should handle API errors and network failures gracefully",
-            ),
-            "Performance optimization": (
-                test_performance_optimization,
-                "Should optimize API calls and data processing for performance",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
-
-    print("🔍 Running Action 11 - Live API Research Tool comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    if args.fraser_test:
+        success = run_standalone_fraser_test()
+        sys.exit(0 if success else 1)
+    elif args.comprehensive:
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    else:
+        # Default behavior - run comprehensive tests
+        print(
+            "🔍 Running Action 11 - Live API Research Tool comprehensive test suite..."
+        )
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)

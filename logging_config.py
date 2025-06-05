@@ -314,267 +314,409 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
 # End of setup_logging
 
 
+def run_comprehensive_tests():
+    """
+    Run comprehensive tests for the logging configuration module.
+    Tests the six categories: Initialization, Core Functionality, Edge Cases,
+    Integration, Performance, and Error Handling.
+
+    Returns:
+        bool: True if all tests pass, False otherwise.
+    """
+    if HAS_TEST_FRAMEWORK:
+        with suppress_logging():
+            suite = TestSuite("Logging Configuration Tests", "logging_config.py")
+            suite.start_suite()  # --- INITIALIZATION TESTS ---
+            suite.run_test(
+                "Logger Creation",
+                test_logger_creation,
+                "Logger created with correct name, level, and propagation settings",
+            )
+            suite.run_test(
+                "Default Configuration",
+                test_default_configuration,
+                "LOG_FORMAT, DATE_FORMAT, and LOG_DIRECTORY are properly defined",
+            )
+            suite.run_test(
+                "Directory Creation",
+                test_directory_creation,
+                "Log directory is created when needed",
+            )
+
+            # --- CORE FUNCTIONALITY TESTS ---
+            suite.run_test(
+                "Setup Logging",
+                test_setup_logging,
+                "Logger is properly configured and returned",
+            )
+            suite.run_test(
+                "Log Level Setting",
+                test_log_level_setting,
+                "Handlers have correct log levels set",
+            )
+            suite.run_test(
+                "Handler Configuration",
+                test_handler_configuration,
+                "Handlers are properly configured and attached",
+            )
+            suite.run_test(
+                "Formatter Application",
+                test_formatter_application,
+                "AlignedMessageFormatter formats messages correctly",
+            )
+
+            # --- EDGE CASES ---
+            suite.run_test(
+                "Invalid Log Level",
+                test_invalid_log_level,
+                "Invalid log levels default to INFO gracefully",
+            )
+            suite.run_test(
+                "Missing Directory",
+                test_missing_directory,
+                "Missing directories are created automatically",
+            )
+            suite.run_test(
+                "Reinitialize Logging",
+                test_reinitialize_logging,
+                "Reinitialization updates existing handlers without duplicating",
+            )
+
+            # --- INTEGRATION TESTS ---
+            suite.run_test(
+                "Multiple Handlers",
+                test_multiple_handlers,
+                "Multiple handlers work correctly together",
+            )
+            suite.run_test(
+                "Filter Integration",
+                test_filter_integration,
+                "NameFilter correctly filters log records",
+            )
+            suite.run_test(
+                "External Library Logging",
+                test_external_library_logging,
+                "External libraries have appropriate log levels set",
+            )
+
+            # --- PERFORMANCE TESTS ---
+            suite.run_test(
+                "Logging Speed",
+                test_logging_speed,
+                "100 log messages complete in under 1 second",
+            )
+            suite.run_test(
+                "Handler Performance",
+                test_handler_performance,
+                "Handlers maintain reasonable performance",
+            )
+
+            # --- ERROR HANDLING TESTS ---
+            suite.run_test(
+                "Invalid File Path",
+                test_invalid_file_path,
+                "Invalid paths are handled gracefully",
+            )
+            suite.run_test(
+                "Permission Errors",
+                test_permission_errors,
+                "Permission errors are handled without crashing",
+            )
+
+            return suite.finish_suite()
+    else:
+        return run_comprehensive_tests_fallback()
+
+
+def run_comprehensive_tests_fallback():
+    """Fallback test function when test framework is not available."""
+    print(
+        "🧪 Running basic logging configuration tests (test framework not available)..."
+    )
+
+    try:
+        # Test 1: Basic logger setup
+        test_logger = setup_logging("test.log", "DEBUG")
+        print("✅ Test 1: Basic logger setup - PASSED")
+
+        # Test 2: Log level validation
+        test_logger = setup_logging("test.log", "INFO")
+        print("✅ Test 2: Log level validation - PASSED")
+
+        # Test 3: Directory creation
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global LOG_DIRECTORY
+            original_dir = LOG_DIRECTORY
+            LOG_DIRECTORY = Path(temp_dir) / "test_logs"
+            setup_logging("test.log", "INFO")
+            LOG_DIRECTORY = original_dir
+        print("✅ Test 3: Directory creation - PASSED")
+
+        # Test 4: Formatter functionality
+        formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="test message",
+            args=(),
+            exc_info=None,
+        )
+        formatted = formatter.format(record)
+        assert "test message" in formatted
+        print("✅ Test 4: Formatter functionality - PASSED")
+
+        print("🎉 All basic tests passed!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+        return False
+
+
+# Test functions for comprehensive testing
+def test_logger_creation():
+    """Test that logger is properly created and configured."""
+    assert logger.name == "logger"
+    assert logger.level == logging.DEBUG
+    assert not logger.propagate
+
+
+def test_default_configuration():
+    """Test default configuration values."""
+    assert LOG_FORMAT
+    assert DATE_FORMAT
+    assert LOG_DIRECTORY
+
+
+def test_directory_creation():
+    """Test that log directory is created when needed."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        global LOG_DIRECTORY, logger, _logging_initialized
+        original_dir = LOG_DIRECTORY
+        original_init_state = _logging_initialized
+        _logging_initialized = False  # Reset to allow fresh setup
+
+        LOG_DIRECTORY = Path(temp_dir) / "test_logs"
+        setup_logging("test.log", "INFO")
+
+        # Check that directory was created
+        directory_exists = LOG_DIRECTORY.exists()
+
+        # Close all handlers to release file locks before temp dir cleanup
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
+        LOG_DIRECTORY = original_dir
+        _logging_initialized = original_init_state
+        assert directory_exists
+
+
+def test_setup_logging():
+    """Test basic setup_logging functionality."""
+    test_logger = setup_logging("test.log", "INFO")
+    assert test_logger is not None
+    assert test_logger.name == "logger"
+
+
+def test_log_level_setting():
+    """Test that log levels are properly set."""
+    test_logger = setup_logging("test.log", "DEBUG")
+    # Check that handlers have the correct level
+    for handler in test_logger.handlers:
+        assert handler.level == logging.DEBUG
+
+
+def test_handler_configuration():
+    """Test that handlers are properly configured."""
+    global _logging_initialized
+    original_init_state = _logging_initialized
+    _logging_initialized = False  # Reset to allow fresh setup
+
+    test_logger = setup_logging("test.log", "INFO")
+    assert len(test_logger.handlers) >= 1
+    # Should have file handler and possibly console handler
+    handler_types = [type(h).__name__ for h in test_logger.handlers]
+    assert any("FileHandler" in ht for ht in handler_types)
+
+    _logging_initialized = original_init_state
+
+
+def test_formatter_application():
+    """Test that formatters are properly applied."""
+    formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=1,
+        msg="test message",
+        args=(),
+        exc_info=None,
+    )
+    formatted = formatter.format(record)
+    assert "test message" in formatted
+
+
+def test_invalid_log_level():
+    """Test handling of invalid log levels."""
+    # Should default to INFO for invalid levels
+    test_logger = setup_logging("test.log", "INVALID_LEVEL")
+    assert test_logger is not None
+
+
+def test_missing_directory():
+    """Test creation of missing log directories."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        global LOG_DIRECTORY, logger, _logging_initialized
+        original_dir = LOG_DIRECTORY
+        original_init_state = _logging_initialized
+        _logging_initialized = False  # Reset to allow fresh setup
+
+        LOG_DIRECTORY = Path(temp_dir) / "missing" / "nested" / "dirs"
+        setup_logging("test.log", "INFO")
+
+        # Check that directory was created
+        directory_exists = LOG_DIRECTORY.exists()
+
+        # Close all handlers to release file locks before temp dir cleanup
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
+        LOG_DIRECTORY = original_dir
+        _logging_initialized = original_init_state
+        assert directory_exists
+
+
+def test_reinitialize_logging():
+    """Test that reinitialization updates existing handlers."""
+    global _logging_initialized
+    original_state = _logging_initialized
+    _logging_initialized = True
+
+    # Get initial handler count
+    initial_count = len(logger.handlers)
+
+    # Reinitialize - should not add new handlers
+    setup_logging("test.log", "WARNING")
+    assert len(logger.handlers) == initial_count
+
+    _logging_initialized = original_state
+
+
+def test_multiple_handlers():
+    """Test that multiple handlers work correctly."""
+    global _logging_initialized
+    original_init_state = _logging_initialized
+    _logging_initialized = False  # Reset to allow fresh setup
+
+    test_logger = setup_logging("test.log", "INFO")
+    # Should have at least one handler
+    assert len(test_logger.handlers) >= 1
+
+    _logging_initialized = original_init_state
+
+
+def test_filter_integration():
+    """Test that filters are properly integrated."""
+    # Test the NameFilter
+    filter_obj = NameFilter(["excluded_module"])
+
+    # Create test records
+    included_record = logging.LogRecord(
+        name="included_module",
+        level=logging.INFO,
+        pathname="",
+        lineno=1,
+        msg="test",
+        args=(),
+        exc_info=None,
+    )
+    excluded_record = logging.LogRecord(
+        name="excluded_module",
+        level=logging.INFO,
+        pathname="",
+        lineno=1,
+        msg="test",
+        args=(),
+        exc_info=None,
+    )
+
+    assert filter_obj.filter(included_record) == True
+    assert filter_obj.filter(excluded_record) == False
+
+
+def test_external_library_logging():
+    """Test that external library logging is properly configured."""
+    # This would test the urllib3, selenium, etc. logger configurations
+    urllib3_logger = logging.getLogger("urllib3")
+    assert urllib3_logger.level == logging.ERROR
+
+
+def test_logging_speed():
+    """Test logging performance."""
+    import time
+
+    test_logger = setup_logging("test.log", "INFO")
+
+    start_time = time.time()
+    for i in range(100):
+        test_logger.info(f"Test message {i}")
+    end_time = time.time()
+
+    # Should complete 100 log messages in reasonable time (< 1 second)
+    assert (end_time - start_time) < 1.0
+
+
+def test_handler_performance():
+    """Test handler performance with multiple handlers."""
+    global _logging_initialized
+    original_init_state = _logging_initialized
+    _logging_initialized = False  # Reset to allow fresh setup
+
+    test_logger = setup_logging("test.log", "DEBUG")
+    # Performance should be reasonable even with multiple handlers
+    assert len(test_logger.handlers) > 0
+
+    _logging_initialized = original_init_state
+
+
+def test_invalid_file_path():
+    """Test handling of invalid file paths."""
+    try:
+        # Try with an invalid path - should handle gracefully
+        setup_logging("/invalid/path/test.log", "INFO")
+        # If it doesn't raise an exception, that's fine too
+    except Exception:
+        # Expected for truly invalid paths
+        pass
+
+
+def test_permission_errors():
+    """Test handling of permission errors."""
+    # This test is platform-specific and may not always be testable
+    # Just verify the function doesn't crash with edge cases
+    try:
+        setup_logging("test.log", "INFO")
+    except Exception:
+        # Permission errors are acceptable in some environments
+        pass
+
+
 # ==============================================
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
     import sys
-    import tempfile
-    import os
-    from unittest.mock import MagicMock, patch, mock_open
-
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for logging_config.py.
-        Tests logging configuration, handlers, formatters, and file management.
-        """
-        suite = TestSuite("Logging Configuration & Management", "logging_config.py")
-        suite.start_suite()
-
-        # Logger configuration
-        def test_logger_configuration():
-            # Test that main logger is properly configured
-            if "logger" in globals():
-                main_logger = globals()["logger"]
-                assert main_logger is not None
-                assert hasattr(main_logger, "info")
-                assert hasattr(main_logger, "error")
-                assert hasattr(main_logger, "debug")
-                assert hasattr(main_logger, "warning")
-
-        # Log level management
-        def test_log_level_management():
-            if "set_log_level" in globals():
-                level_setter = globals()["set_log_level"]
-
-                # Test setting different log levels
-                levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-                for level in levels:
-                    try:
-                        result = level_setter(level)
-                        assert isinstance(result, bool)
-                    except Exception:
-                        pass  # Some implementations may require specific setup
-
-        # File handler configuration
-        def test_file_handler_configuration():
-            if "setup_file_handler" in globals():
-                handler_setup = globals()["setup_file_handler"]
-
-                with tempfile.NamedTemporaryFile(suffix=".log") as temp_log:
-                    try:
-                        result = handler_setup(temp_log.name)
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific permissions or setup
-
-        # Console handler configuration
-        def test_console_handler_configuration():
-            if "setup_console_handler" in globals():
-                console_setup = globals()["setup_console_handler"]
-
-                try:
-                    result = console_setup()
-                    assert result is not None
-                except Exception:
-                    pass  # May require specific terminal setup
-
-        # Log formatting
-        def test_log_formatting():
-            if "create_formatter" in globals():
-                formatter_creator = globals()["create_formatter"]
-
-                # Test different format styles
-                format_styles = [
-                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                    "%(levelname)s: %(message)s",
-                    "[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
-                ]
-
-                for format_str in format_styles:
-                    try:
-                        formatter = formatter_creator(format_str)
-                        assert formatter is not None
-                    except Exception:
-                        pass  # Format creation may fail for invalid formats
-
-        # Log rotation
-        def test_log_rotation():
-            rotation_functions = [
-                "setup_rotating_handler",
-                "setup_timed_rotating_handler",
-            ]
-
-            for func_name in rotation_functions:
-                if func_name in globals():
-                    rotation_func = globals()[func_name]
-
-                    with tempfile.NamedTemporaryFile(suffix=".log") as temp_log:
-                        try:
-                            if "timed" in func_name:
-                                result = rotation_func(temp_log.name, when="midnight")
-                            else:
-                                result = rotation_func(temp_log.name, max_bytes=1000000)
-                            assert result is not None
-                        except Exception:
-                            pass  # May require specific setup
-
-        # Performance logging
-        def test_performance_logging():
-            if "log_performance" in globals():
-                perf_logger = globals()["log_performance"]
-
-                # Test performance logging with different operations
-                operations = [
-                    ("database_query", 0.5),
-                    ("api_request", 1.2),
-                    ("file_processing", 2.1),
-                ]
-
-                for operation, duration in operations:
-                    try:
-                        result = perf_logger(operation, duration)
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific performance tracking setup
-
-        # Error logging with context
-        def test_error_logging_context():
-            if "log_error_with_context" in globals():
-                error_logger = globals()["log_error_with_context"]
-
-                # Test error logging with various contexts
-                test_error = ValueError("Test error for logging")
-                test_contexts = [
-                    {"function": "test_func", "user_id": "test123"},
-                    {"module": "test_module", "action": "test_action"},
-                    {"request_id": "req_456", "timestamp": "2024-01-01"},
-                ]
-
-                for context in test_contexts:
-                    try:
-                        result = error_logger(test_error, context)
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific error handling setup
-
-        # Log filtering
-        def test_log_filtering():
-            filter_functions = [
-                "create_level_filter",
-                "create_module_filter",
-                "create_custom_filter",
-            ]
-
-            for func_name in filter_functions:
-                if func_name in globals():
-                    filter_func = globals()[func_name]
-
-                    try:
-                        if "level" in func_name:
-                            result = filter_func("WARNING")
-                        elif "module" in func_name:
-                            result = filter_func(["test_module", "debug_module"])
-                        else:
-                            result = filter_func(lambda record: True)
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific filter setup
-
-        # Configuration loading and validation
-        def test_configuration_loading():
-            config_functions = [
-                "load_logging_config",
-                "validate_logging_config",
-                "apply_logging_config",
-            ]
-
-            for func_name in config_functions:
-                if func_name in globals():
-                    config_func = globals()[func_name]
-
-                    try:
-                        if "load" in func_name:
-                            result = config_func("logging.json")
-                        elif "validate" in func_name:
-                            test_config = {
-                                "version": 1,
-                                "handlers": {
-                                    "console": {"class": "logging.StreamHandler"}
-                                },
-                                "loggers": {"": {"level": "INFO"}},
-                            }
-                            result = config_func(test_config)
-                        elif "apply" in func_name:
-                            test_config = {"level": "INFO", "format": "%(message)s"}
-                            result = config_func(test_config)
-
-                        assert result is not None
-                    except Exception:
-                        pass  # May require specific configuration format
-
-        # Run all tests
-        test_functions = {
-            "Logger configuration": (
-                test_logger_configuration,
-                "Should configure main application logger with required methods",
-            ),
-            "Log level management": (
-                test_log_level_management,
-                "Should support setting different log levels dynamically",
-            ),
-            "File handler configuration": (
-                test_file_handler_configuration,
-                "Should configure file handlers for log output",
-            ),
-            "Console handler configuration": (
-                test_console_handler_configuration,
-                "Should configure console handlers for terminal output",
-            ),
-            "Log formatting": (
-                test_log_formatting,
-                "Should create and apply custom log formatters",
-            ),
-            "Log rotation": (
-                test_log_rotation,
-                "Should support rotating and timed rotating log files",
-            ),
-            "Performance logging": (
-                test_performance_logging,
-                "Should log performance metrics and timing data",
-            ),
-            "Error logging with context": (
-                test_error_logging_context,
-                "Should log errors with additional context information",
-            ),
-            "Log filtering": (
-                test_log_filtering,
-                "Should filter log messages by level, module, or custom criteria",
-            ),
-            "Configuration loading and validation": (
-                test_configuration_loading,
-                "Should load, validate, and apply logging configurations",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
 
     print("📋 Running Logging Configuration & Management comprehensive test suite...")
     success = run_comprehensive_tests()

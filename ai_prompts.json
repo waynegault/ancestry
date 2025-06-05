@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2025-06-01",
+  "last_updated": "2025-06-05",
   "prompts": {
     "test_prompt": {
       "name": "Test Prompt",
@@ -21,6 +21,11 @@
       "name": "Unicode Test",
       "description": "Prompt for unicode test",
       "prompt": "Quotes 'single' and \"double\""
+    },
+    "fallback_test": {
+      "name": "Fallback Test",
+      "description": "Prompt for fallback test",
+      "prompt": "Test content"
     }
   }
 }
