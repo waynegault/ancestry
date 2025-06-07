@@ -3750,6 +3750,21 @@ if __name__ == "__main__":
         suite = TestSuite("API Utilities & Ancestry Integration", "api_utils.py")
         suite.start_suite()
 
+        def measure_performance(func, iterations=1):
+            """Measure performance of a function over multiple iterations."""
+            import time
+
+            durations = []
+
+            for _ in range(iterations):
+                start = time.time()
+                result = func()
+                end = time.time()
+                durations.append(end - start)
+
+            avg_duration = sum(durations) / len(durations)
+            return result, avg_duration
+
         # INITIALIZATION TESTS
         def test_module_imports():
             """Test all required modules and dependencies are properly imported."""

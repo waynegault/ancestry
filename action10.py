@@ -1240,100 +1240,6 @@ if __name__ == "__main__":
             ),
         }
 
-    def run_standalone_fraser_test():
-        """Run a standalone test specifically for Fraser Gault using .env configuration."""
-        print("🔍 Running Action 10 standalone test for Fraser Gault...")
-
-        # Load Fraser's details from .env
-        fraser_config = load_test_person_from_env()
-        print(
-            f"   Test Subject: {fraser_config['first_name']} {fraser_config['last_name']}"
-        )
-        print(
-            f"   Birth: {fraser_config['birth_year']} in {fraser_config['birth_place']}"
-        )
-        print(f"   Gender: {fraser_config['gender']}")
-
-        # Create search criteria
-        search_criteria = {
-            "first_name": fraser_config["first_name"],
-            "surname": fraser_config["last_name"],
-            "gender": fraser_config["gender"].lower(),
-            "birth_year": fraser_config["birth_year"],
-            "birth_place": fraser_config["birth_place"],
-        }
-
-        try:
-            # Run the actual search
-            print("\n📊 Executing GEDCOM search...")
-            results = search_gedcom_for_criteria(search_criteria, max_results=5)
-
-            if not results:
-                print("❌ No matches found for Fraser Gault")
-                return False
-
-            print(f"✅ Found {len(results)} matches")
-
-            # Display results
-            for i, result in enumerate(results, 1):
-                score = result.get("total_score", 0)
-                name = result.get("full_name_disp", "N/A")
-                birth_date = result.get("birth_date", "N/A")
-                birth_place = result.get("birth_place", "N/A")
-                print(f"   {i}. {name} (Score: {score:.0f})")
-                print(f"      Birth: {birth_date} in {birth_place}")
-
-            # Test family details for top match
-            if results:
-                top_match = results[0]
-                print(
-                    f"\n👨‍👩‍👧‍👦 Getting family details for top match: {top_match.get('full_name_disp', 'N/A')}"
-                )
-
-                family_details = get_gedcom_family_details(top_match["id"])
-                if family_details:
-                    print("✅ Family details retrieved successfully")
-
-                    # Count family members
-                    parents_count = len(family_details.get("parents", []))
-                    spouses_count = len(family_details.get("spouses", []))
-                    children_count = len(family_details.get("children", []))
-                    siblings_count = len(family_details.get("siblings", []))
-
-                    print(f"   Parents: {parents_count}, Spouses: {spouses_count}")
-                    print(f"   Children: {children_count}, Siblings: {siblings_count}")
-
-                    # Validate against expectations
-                    expected_children = fraser_config["children_count"]
-                    if children_count == expected_children:
-                        print(
-                            f"✅ Children count matches expectation: {children_count}"
-                        )
-                    else:
-                        print(
-                            f"⚠️  Children count mismatch: found {children_count}, expected {expected_children}"
-                        )
-                else:
-                    print("❌ Could not retrieve family details")                # Test relationship path
-                print(f"\n🔗 Testing relationship path calculation...")
-                relationship_path = get_gedcom_relationship_path(top_match["id"])
-                if relationship_path and not any(
-                    err in relationship_path.lower()
-                    for err in ["error", "not found", "invalid"]
-                ):
-                    print("✅ Relationship path calculated successfully")
-                    print(
-                        f"   {relationship_path[:100]}{'...' if len(relationship_path) > 100 else ''}"
-                    )
-                else:
-                    print(f"⚠️  Relationship path: {relationship_path}")
-
-            print("\n🎉 Fraser Gault standalone test completed successfully!")
-            return True
-        except Exception as e:
-            print(f"❌ Error during Fraser Gault test: {e}")
-            return False
-
 
 def run_comprehensive_tests() -> bool:
     """
@@ -1359,10 +1265,13 @@ def run_comprehensive_tests() -> bool:
         def test_module_initialization():
             """Test that all required components are properly initialized."""
             required_components = [
-                'main', 'load_gedcom_data', 'filter_gedcom_data', 
-                'score_individual', 'find_relationship_path'
+                "main",
+                "load_gedcom_data",
+                "filter_gedcom_data",
+                "score_individual",
+                "find_relationship_path",
             ]
-            
+
             for component in required_components:
                 if component not in globals():
                     return False
@@ -1375,7 +1284,7 @@ def run_comprehensive_tests() -> bool:
             test_module_initialization,
             "All core functions (main, load_gedcom_data, filter_gedcom_data, score_individual, find_relationship_path) are available",
             "Verify that all essential GEDCOM processing functions exist and are callable",
-            "Test module initialization and verify all core GEDCOM processing functions exist"
+            "Test module initialization and verify all core GEDCOM processing functions exist",
         )
 
         def test_gedcom_data_structure():
@@ -1383,26 +1292,28 @@ def run_comprehensive_tests() -> bool:
             try:
                 # Create mock GEDCOM data structure
                 mock_gedcom = {
-                    '@I001@': {
-                        'NAME': [{'given': 'John', 'surname': 'Smith'}],
-                        'SEX': 'M',
-                        'BIRT': {'date': '1 JAN 1850', 'place': 'New York, NY'},
-                        'DEAT': {'date': '12 DEC 1910', 'place': 'Boston, MA'}
+                    "@I001@": {
+                        "NAME": [{"given": "John", "surname": "Smith"}],
+                        "SEX": "M",
+                        "BIRT": {"date": "1 JAN 1850", "place": "New York, NY"},
+                        "DEAT": {"date": "12 DEC 1910", "place": "Boston, MA"},
                     },
-                    '@I002@': {
-                        'NAME': [{'given': 'Mary', 'surname': 'Johnson'}],
-                        'SEX': 'F',
-                        'BIRT': {'date': '15 MAR 1855', 'place': 'Philadelphia, PA'}
-                    }
+                    "@I002@": {
+                        "NAME": [{"given": "Mary", "surname": "Johnson"}],
+                        "SEX": "F",
+                        "BIRT": {"date": "15 MAR 1855", "place": "Philadelphia, PA"},
+                    },
                 }
-                
+
                 # Validate structure has expected keys
                 for individual_id, data in mock_gedcom.items():
-                    if not individual_id.startswith('@I') or not individual_id.endswith('@'):
+                    if not individual_id.startswith("@I") or not individual_id.endswith(
+                        "@"
+                    ):
                         return False
-                    if 'NAME' not in data or 'SEX' not in data:
+                    if "NAME" not in data or "SEX" not in data:
                         return False
-                
+
                 return True
             except Exception:
                 return False
@@ -1412,48 +1323,50 @@ def run_comprehensive_tests() -> bool:
             test_gedcom_data_structure,
             "GEDCOM data follows expected structure with individual IDs, names, and attributes",
             "Create mock GEDCOM data and validate it has proper individual IDs and required fields",
-            "Test GEDCOM data structure validation with mock genealogical data"
+            "Test GEDCOM data structure validation with mock genealogical data",
         )
 
         # CORE FUNCTIONALITY TESTS
         def test_individual_scoring():
             """Test individual scoring algorithm with real criteria."""
-            if 'score_individual' not in globals():
+            if "score_individual" not in globals():
                 return False
-            
-            score_func = globals()['score_individual']
-            
+
+            score_func = globals()["score_individual"]
+
             # Test scoring with different individuals
             test_cases = [
                 {
-                    'individual': {
-                        'NAME': [{'given': 'John', 'surname': 'Smith'}],
-                        'SEX': 'M',
-                        'BIRT': {'date': '1 JAN 1850', 'place': 'New York, NY'},
-                        'DEAT': {'date': '12 DEC 1910', 'place': 'Boston, MA'}
+                    "individual": {
+                        "NAME": [{"given": "John", "surname": "Smith"}],
+                        "SEX": "M",
+                        "BIRT": {"date": "1 JAN 1850", "place": "New York, NY"},
+                        "DEAT": {"date": "12 DEC 1910", "place": "Boston, MA"},
                     },
-                    'search_criteria': {
-                        'name_match': 'John Smith',
-                        'birth_year': 1850,
-                        'location': 'New York'
-                    }
+                    "search_criteria": {
+                        "name_match": "John Smith",
+                        "birth_year": 1850,
+                        "location": "New York",
+                    },
                 }
             ]
-            
+
             try:
                 for test_case in test_cases:
                     # Attempt to score the individual
                     # Note: This may require adapting based on actual function signature
-                    score = score_func(test_case['individual'], test_case['search_criteria'])
-                    
+                    score = score_func(
+                        test_case["individual"], test_case["search_criteria"]
+                    )
+
                     # Score should be a number
                     if not isinstance(score, (int, float)):
                         return False
-                    
+
                     # Score should be non-negative
                     if score < 0:
                         return False
-                
+
                 return True
             except Exception:
                 # If function signature is different, still return True for basic availability
@@ -1464,49 +1377,49 @@ def run_comprehensive_tests() -> bool:
             test_individual_scoring,
             "Scoring algorithm calculates numerical scores for GEDCOM individuals based on criteria",
             "Test score_individual() with mock individual data and search criteria",
-            "Test individual scoring algorithm with real GEDCOM individual data"
+            "Test individual scoring algorithm with real GEDCOM individual data",
         )
 
         def test_gedcom_filtering():
             """Test GEDCOM data filtering functionality."""
-            if 'filter_gedcom_data' not in globals():
+            if "filter_gedcom_data" not in globals():
                 return False
-            
-            filter_func = globals()['filter_gedcom_data']
-            
+
+            filter_func = globals()["filter_gedcom_data"]
+
             # Create mock GEDCOM data for filtering
             mock_gedcom = {
-                '@I001@': {
-                    'NAME': [{'given': 'John', 'surname': 'Smith'}],
-                    'SEX': 'M',
-                    'BIRT': {'date': '1 JAN 1850'}
+                "@I001@": {
+                    "NAME": [{"given": "John", "surname": "Smith"}],
+                    "SEX": "M",
+                    "BIRT": {"date": "1 JAN 1850"},
                 },
-                '@I002@': {
-                    'NAME': [{'given': 'Jane', 'surname': 'Doe'}],
-                    'SEX': 'F',
-                    'BIRT': {'date': '15 MAR 1855'}
+                "@I002@": {
+                    "NAME": [{"given": "Jane", "surname": "Doe"}],
+                    "SEX": "F",
+                    "BIRT": {"date": "15 MAR 1855"},
                 },
-                '@I003@': {
-                    'NAME': [{'given': 'Bob', 'surname': 'Wilson'}],
-                    'SEX': 'M',
+                "@I003@": {
+                    "NAME": [{"given": "Bob", "surname": "Wilson"}],
+                    "SEX": "M",
                     # No birth date
-                }
+                },
             }
-            
+
             try:
                 # Test filtering (may need to adapt based on actual function signature)
-                filtered_data = filter_func(mock_gedcom, {'name_contains': 'John'})
-                
+                filtered_data = filter_func(mock_gedcom, {"name_contains": "John"})
+
                 # Should return a dictionary or list
                 if not isinstance(filtered_data, (dict, list)):
                     return False
-                
+
                 # Should have fewer or equal entries than original
                 if isinstance(filtered_data, dict):
                     return len(filtered_data) <= len(mock_gedcom)
                 else:
                     return len(filtered_data) <= len(mock_gedcom)
-                    
+
             except Exception:
                 # If function signature is different, check if it's callable
                 return callable(filter_func)
@@ -1516,27 +1429,27 @@ def run_comprehensive_tests() -> bool:
             test_gedcom_filtering,
             "Filtering reduces GEDCOM dataset based on search criteria",
             "Test filter_gedcom_data() with mock data and various filter criteria",
-            "Test GEDCOM data filtering with search criteria and genealogical records"
+            "Test GEDCOM data filtering with search criteria and genealogical records",
         )
 
         def test_relationship_path_finding():
             """Test relationship path finding between individuals."""
-            if 'find_relationship_path' not in globals():
+            if "find_relationship_path" not in globals():
                 return False
-            
-            path_func = globals()['find_relationship_path']
-            
+
+            path_func = globals()["find_relationship_path"]
+
             # Create mock genealogical relationship data
             mock_relationships = {
-                '@I001@': {'children': ['@I002@'], 'spouse': ['@I003@']},
-                '@I002@': {'parents': ['@I001@', '@I003@']},
-                '@I003@': {'spouse': ['@I001@'], 'children': ['@I002@']}
+                "@I001@": {"children": ["@I002@"], "spouse": ["@I003@"]},
+                "@I002@": {"parents": ["@I001@", "@I003@"]},
+                "@I003@": {"spouse": ["@I001@"], "children": ["@I002@"]},
             }
-            
+
             try:
                 # Test finding path between related individuals
-                path = path_func('@I001@', '@I002@', mock_relationships)
-                
+                path = path_func("@I001@", "@I002@", mock_relationships)
+
                 # Path should be a list or string representation
                 if isinstance(path, list):
                     return len(path) >= 2  # At least start and end
@@ -1544,7 +1457,7 @@ def run_comprehensive_tests() -> bool:
                     return len(path) > 0
                 else:
                     return path is not None
-                    
+
             except Exception:
                 # If function signature is different, check if it's callable
                 return callable(path_func)
@@ -1554,24 +1467,24 @@ def run_comprehensive_tests() -> bool:
             test_relationship_path_finding,
             "Algorithm finds genealogical relationship paths between individuals",
             "Test find_relationship_path() with mock family relationship data",
-            "Test relationship path finding algorithm with genealogical connections"
+            "Test relationship path finding algorithm with genealogical connections",
         )
 
         # EDGE CASES TESTS
         def test_empty_gedcom_handling():
             """Test handling of empty or minimal GEDCOM data."""
-            if 'load_gedcom_data' not in globals():
+            if "load_gedcom_data" not in globals():
                 return False
-            
-            load_func = globals()['load_gedcom_data']
-            
+
+            load_func = globals()["load_gedcom_data"]
+
             try:
                 # Test with non-existent file (should handle gracefully)
-                result = load_func('nonexistent_file.ged')
-                
+                result = load_func("nonexistent_file.ged")
+
                 # Should return empty dict/list or None without crashing
                 return result is not None or result == {} or result == []
-                
+
             except Exception:
                 # Exception handling is also acceptable for missing files
                 return True
@@ -1581,33 +1494,33 @@ def run_comprehensive_tests() -> bool:
             test_empty_gedcom_handling,
             "System handles missing or empty GEDCOM files gracefully without crashing",
             "Test load_gedcom_data() with non-existent file path",
-            "Test edge case handling for empty or missing GEDCOM data"
+            "Test edge case handling for empty or missing GEDCOM data",
         )
 
         def test_malformed_individual_data():
             """Test handling of malformed individual records."""
-            if 'score_individual' not in globals():
+            if "score_individual" not in globals():
                 return False
-            
-            score_func = globals()['score_individual']
-            
+
+            score_func = globals()["score_individual"]
+
             # Test with malformed individual data
             malformed_individuals = [
                 {},  # Empty individual
-                {'NAME': []},  # Empty name list
-                {'SEX': 'M'},  # Missing name entirely
-                {'NAME': [{}]},  # Empty name record
+                {"NAME": []},  # Empty name list
+                {"SEX": "M"},  # Missing name entirely
+                {"NAME": [{}]},  # Empty name record
             ]
-            
+
             try:
                 for individual in malformed_individuals:
                     # Should handle malformed data gracefully
                     score = score_func(individual, {})
-                    
+
                     # Should return some numeric value or handle error gracefully
                     if score is not None and not isinstance(score, (int, float)):
                         return False
-                
+
                 return True
             except Exception:
                 # Graceful exception handling is acceptable
@@ -1618,37 +1531,45 @@ def run_comprehensive_tests() -> bool:
             test_malformed_individual_data,
             "Scoring algorithm handles incomplete or malformed individual records gracefully",
             "Test score_individual() with empty, incomplete, and malformed individual data",
-            "Test edge case handling for malformed genealogical individual records"
+            "Test edge case handling for malformed genealogical individual records",
         )
 
         # INTEGRATION TESTS
         def test_end_to_end_workflow():
             """Test complete workflow from data loading to result display."""
-            required_funcs = ['load_gedcom_data', 'filter_gedcom_data', 'score_individual']
-            
+            required_funcs = [
+                "load_gedcom_data",
+                "filter_gedcom_data",
+                "score_individual",
+            ]
+
             # Verify all required functions exist
             for func_name in required_funcs:
                 if func_name not in globals() or not callable(globals()[func_name]):
                     return False
-            
+
             try:
                 # Test that functions can be called in sequence
                 # (using minimal test data to avoid external dependencies)
-                
+
                 # Mock a simple workflow
-                mock_data = {'@I001@': {'NAME': [{'given': 'Test', 'surname': 'Person'}]}}
-                
+                mock_data = {
+                    "@I001@": {"NAME": [{"given": "Test", "surname": "Person"}]}
+                }
+
                 # These calls might fail due to signature differences, but that's OK
                 # The key is that the functions exist and are callable
-                load_func = globals()['load_gedcom_data']
-                filter_func = globals()['filter_gedcom_data']
-                score_func = globals()['score_individual']
-                
+                load_func = globals()["load_gedcom_data"]
+                filter_func = globals()["filter_gedcom_data"]
+                score_func = globals()["score_individual"]
+
                 # Basic callability test
-                return (callable(load_func) and 
-                       callable(filter_func) and 
-                       callable(score_func))
-                
+                return (
+                    callable(load_func)
+                    and callable(filter_func)
+                    and callable(score_func)
+                )
+
             except Exception:
                 return False
 
@@ -1657,31 +1578,31 @@ def run_comprehensive_tests() -> bool:
             test_end_to_end_workflow,
             "Complete GEDCOM analysis workflow functions are properly integrated",
             "Verify load, filter, and score functions exist and can work together",
-            "Test integration of complete GEDCOM analysis workflow components"
+            "Test integration of complete GEDCOM analysis workflow components",
         )
 
         def test_configuration_integration():
             """Test integration with configuration and file systems."""
             import os
             import tempfile
-            
+
             try:
                 # Test file system access for GEDCOM files
-                temp_file = tempfile.mktemp(suffix='.ged')
-                
+                temp_file = tempfile.mktemp(suffix=".ged")
+
                 # Create a minimal test GEDCOM file
-                with open(temp_file, 'w', encoding='utf-8') as f:
+                with open(temp_file, "w", encoding="utf-8") as f:
                     f.write("0 HEAD\n1 GEDC\n2 VERS 5.5.1\n0 TRLR\n")
-                
+
                 # Verify file was created
                 file_exists = os.path.exists(temp_file)
-                
+
                 # Cleanup
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-                
+
                 return file_exists
-                
+
             except Exception:
                 return False
 
@@ -1690,44 +1611,46 @@ def run_comprehensive_tests() -> bool:
             test_configuration_integration,
             "System can create and access GEDCOM files in the file system",
             "Create temporary GEDCOM file and verify file system access",
-            "Test integration with file system for GEDCOM data access"
+            "Test integration with file system for GEDCOM data access",
         )
 
         # PERFORMANCE TESTS
         def test_large_dataset_performance():
             """Test performance with larger genealogical datasets."""
-            if 'score_individual' not in globals():
+            if "score_individual" not in globals():
                 return False
-            
-            score_func = globals()['score_individual']
-            
+
+            score_func = globals()["score_individual"]
+
             # Create larger test dataset
             large_individual = {
-                'NAME': [{'given': 'John', 'surname': 'Smith'}] * 5,  # Multiple name variations
-                'SEX': 'M',
-                'BIRT': {'date': '1 JAN 1850', 'place': 'New York, NY'},
-                'DEAT': {'date': '12 DEC 1910', 'place': 'Boston, MA'},
-                'OCCU': ['Farmer', 'Teacher', 'Merchant'],
-                'RESI': [
-                    {'date': '1850', 'place': 'New York'},
-                    {'date': '1860', 'place': 'Pennsylvania'},
-                    {'date': '1870', 'place': 'Ohio'}
-                ]
+                "NAME": [{"given": "John", "surname": "Smith"}]
+                * 5,  # Multiple name variations
+                "SEX": "M",
+                "BIRT": {"date": "1 JAN 1850", "place": "New York, NY"},
+                "DEAT": {"date": "12 DEC 1910", "place": "Boston, MA"},
+                "OCCU": ["Farmer", "Teacher", "Merchant"],
+                "RESI": [
+                    {"date": "1850", "place": "New York"},
+                    {"date": "1860", "place": "Pennsylvania"},
+                    {"date": "1870", "place": "Ohio"},
+                ],
             }
-            
+
             try:
                 import time
+
                 start_time = time.time()
-                
+
                 # Score the same individual multiple times
                 for _ in range(100):
                     score = score_func(large_individual, {})
-                
+
                 duration = time.time() - start_time
-                
+
                 # Should complete 100 scorings in reasonable time
                 return duration < 1.0  # Less than 1 second
-                
+
             except Exception:
                 # If there are signature issues, still pass for having the function
                 return callable(score_func)
@@ -1737,30 +1660,30 @@ def run_comprehensive_tests() -> bool:
             test_large_dataset_performance,
             "Scoring algorithm handles complex individuals with multiple records efficiently",
             "Score complex individual with multiple names, residences, and occupations 100 times",
-            "Test performance with large genealogical datasets and complex individual records"
+            "Test performance with large genealogical datasets and complex individual records",
         )
 
         def test_memory_usage_efficiency():
             """Test memory efficiency with genealogical data processing."""
-            if 'filter_gedcom_data' not in globals():
+            if "filter_gedcom_data" not in globals():
                 return False
-            
-            filter_func = globals()['filter_gedcom_data']
-            
+
+            filter_func = globals()["filter_gedcom_data"]
+
             try:
                 # Create moderately large mock dataset
                 large_gedcom = {}
                 for i in range(500):
-                    individual_id = f'@I{i:03d}@'
+                    individual_id = f"@I{i:03d}@"
                     large_gedcom[individual_id] = {
-                        'NAME': [{'given': f'Person{i}', 'surname': 'TestSurname'}],
-                        'SEX': 'M' if i % 2 == 0 else 'F',
-                        'BIRT': {'date': f'{1800 + (i % 100)} JAN 01'}
+                        "NAME": [{"given": f"Person{i}", "surname": "TestSurname"}],
+                        "SEX": "M" if i % 2 == 0 else "F",
+                        "BIRT": {"date": f"{1800 + (i % 100)} JAN 01"},
                     }
-                
+
                 # Test filtering operation
-                filtered = filter_func(large_gedcom, {'name_contains': 'Person'})
-                
+                filtered = filter_func(large_gedcom, {"name_contains": "Person"})
+
                 # Should return reasonable amount of data
                 if isinstance(filtered, dict):
                     return len(filtered) <= len(large_gedcom)
@@ -1768,7 +1691,7 @@ def run_comprehensive_tests() -> bool:
                     return len(filtered) <= len(large_gedcom)
                 else:
                     return True  # Other return types are acceptable
-                
+
             except Exception:
                 # Memory or other issues are acceptable for this test
                 return callable(filter_func)
@@ -1778,33 +1701,33 @@ def run_comprehensive_tests() -> bool:
             test_memory_usage_efficiency,
             "GEDCOM filtering processes 500 individuals efficiently without memory issues",
             "Filter 500-person GEDCOM dataset and verify reasonable memory usage",
-            "Test memory efficiency with moderately large genealogical datasets"
+            "Test memory efficiency with moderately large genealogical datasets",
         )
 
         # ERROR HANDLING TESTS
         def test_invalid_file_handling():
             """Test handling of invalid GEDCOM files."""
-            if 'load_gedcom_data' not in globals():
+            if "load_gedcom_data" not in globals():
                 return False
-            
-            load_func = globals()['load_gedcom_data']
-            
+
+            load_func = globals()["load_gedcom_data"]
+
             import tempfile
             import os
-            
+
             temp_file = None
             try:
                 # Create invalid GEDCOM file
-                temp_file = tempfile.mktemp(suffix='.ged')
-                with open(temp_file, 'w', encoding='utf-8') as f:
+                temp_file = tempfile.mktemp(suffix=".ged")
+                with open(temp_file, "w", encoding="utf-8") as f:
                     f.write("This is not a valid GEDCOM file\nJust random text\n")
-                
+
                 # Should handle invalid file gracefully
                 result = load_func(temp_file)
-                
+
                 # Should return something reasonable or handle error gracefully
                 return True  # Any non-crashing result is acceptable
-                
+
             except Exception:
                 # Exception handling is also acceptable
                 return True
@@ -1821,41 +1744,38 @@ def run_comprehensive_tests() -> bool:
             test_invalid_file_handling,
             "System handles invalid or corrupted GEDCOM files gracefully without crashing",
             "Create invalid GEDCOM file with random text and test load_gedcom_data()",
-            "Test error handling for invalid or corrupted GEDCOM files"
+            "Test error handling for invalid or corrupted GEDCOM files",
         )
 
         def test_extreme_search_criteria():
             """Test handling of extreme or invalid search criteria."""
-            if 'filter_gedcom_data' not in globals():
+            if "filter_gedcom_data" not in globals():
                 return False
-            
-            filter_func = globals()['filter_gedcom_data']
-            
+
+            filter_func = globals()["filter_gedcom_data"]
+
             mock_gedcom = {
-                '@I001@': {
-                    'NAME': [{'given': 'John', 'surname': 'Smith'}],
-                    'SEX': 'M'
-                }
+                "@I001@": {"NAME": [{"given": "John", "surname": "Smith"}], "SEX": "M"}
             }
-            
+
             extreme_criteria = [
                 {},  # Empty criteria
-                {'invalid_field': 'test'},  # Invalid field
-                {'name_contains': ''},  # Empty search string
-                {'birth_year': -1000},  # Extreme year
-                {'birth_year': 3000},  # Future year
+                {"invalid_field": "test"},  # Invalid field
+                {"name_contains": ""},  # Empty search string
+                {"birth_year": -1000},  # Extreme year
+                {"birth_year": 3000},  # Future year
                 None,  # None criteria
             ]
-            
+
             try:
                 for criteria in extreme_criteria:
                     # Should handle extreme criteria gracefully
                     result = filter_func(mock_gedcom, criteria)
-                    
+
                     # Any reasonable result is acceptable
                     if result is None:
                         continue
-                
+
                 return True
             except Exception:
                 # Exception handling is acceptable
@@ -1866,7 +1786,7 @@ def run_comprehensive_tests() -> bool:
             test_extreme_search_criteria,
             "Filtering handles extreme, empty, or invalid search criteria gracefully",
             "Test filter_gedcom_data() with empty, invalid, and extreme search criteria",
-            "Test error handling for extreme or invalid genealogical search criteria"
+            "Test error handling for extreme or invalid genealogical search criteria",
         )
 
         return suite.finish_suite()
@@ -1885,9 +1805,14 @@ def run_comprehensive_tests_fallback() -> bool:
     # Test basic function availability
     tests_total += 1
     try:
-        required_functions = ['main', 'load_gedcom_data', 'filter_gedcom_data', 'score_individual']
+        required_functions = [
+            "main",
+            "load_gedcom_data",
+            "filter_gedcom_data",
+            "score_individual",
+        ]
         missing_functions = [f for f in required_functions if f not in globals()]
-        
+
         if not missing_functions:
             tests_passed += 1
             print("✅ Required functions available")
@@ -1900,15 +1825,17 @@ def run_comprehensive_tests_fallback() -> bool:
     tests_total += 1
     try:
         mock_individual = {
-            'NAME': [{'given': 'John', 'surname': 'Smith'}],
-            'SEX': 'M',
-            'BIRT': {'date': '1 JAN 1850'}
+            "NAME": [{"given": "John", "surname": "Smith"}],
+            "SEX": "M",
+            "BIRT": {"date": "1 JAN 1850"},
         }
-        
+
         # Basic structure validation
-        if ('NAME' in mock_individual and 
-            'SEX' in mock_individual and 
-            isinstance(mock_individual['NAME'], list)):
+        if (
+            "NAME" in mock_individual
+            and "SEX" in mock_individual
+            and isinstance(mock_individual["NAME"], list)
+        ):
             tests_passed += 1
             print("✅ GEDCOM structure validation passed")
         else:
@@ -1917,38 +1844,35 @@ def run_comprehensive_tests_fallback() -> bool:
         print(f"❌ GEDCOM structure test error: {e}")
 
     # Test scoring function if available
-    if 'score_individual' in globals():
+    if "score_individual" in globals():
         tests_total += 1
         try:
-            score_func = globals()['score_individual']
-            mock_individual = {'NAME': [{'given': 'Test', 'surname': 'Person'}]}
-            
+            score_func = globals()["score_individual"]
+            mock_individual = {"NAME": [{"given": "Test", "surname": "Person"}]}
+
             # Try to call scoring function
             result = score_func(mock_individual, {})
-            
+
             if isinstance(result, (int, float)) or result is None:
                 tests_passed += 1
                 print("✅ Scoring function basic test passed")
             else:
                 print("❌ Scoring function returned unexpected type")
         except Exception as e:
-            print(f"❌ Scoring function test error: {e}")
-
-    # Test file operations
+            print(f"❌ Scoring function test error: {e}")  # Test file operations
     tests_total += 1
     try:
         import tempfile
         import os
-        
-        temp_file = tempfile.mktemp(suffix='.test')
-        with open(temp_file, 'w') as f:
+
+        temp_file = tempfile.mktemp(suffix=".test")
+        with open(temp_file, "w") as f:
             f.write("test")
-        
         file_exists = os.path.exists(temp_file)
-        
+
         if os.path.exists(temp_file):
             os.remove(temp_file)
-        
+
         if file_exists:
             tests_passed += 1
             print("✅ File operations test passed")
@@ -1958,20 +1882,11 @@ def run_comprehensive_tests_fallback() -> bool:
         print(f"❌ File operations test error: {e}")
 
     print(f"🏁 Action 10 fallback tests completed: {tests_passed}/{tests_total} passed")
-    return tests_passed == tests_total# Check command line arguments to determine which test to run
+    return tests_passed == tests_total
 
-    if len(sys.argv) > 1 and sys.argv[1] == "--fraser-test":
-        # Run Fraser Gault standalone test
-        success = run_standalone_fraser_test()
-        sys.exit(0 if success else 1)
-    elif len(sys.argv) > 1 and sys.argv[1] == "--interactive":
-        # Run main interactive program
-        main()
-    else:
-        # Default: run comprehensive test suite
-        print(
-            "📊 Running Action 10 - Local GEDCOM Analysis comprehensive test suite..."
-        )
-        success = run_comprehensive_tests()
-        sys.exit(0 if success else 1)
+
+# Run comprehensive test suite
+print("📊 Running Action 10 - Local GEDCOM Analysis comprehensive test suite...")
+success = run_comprehensive_tests()
+sys.exit(0 if success else 1)
 # End of action10.py

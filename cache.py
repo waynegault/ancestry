@@ -1616,4 +1616,8 @@ if __name__ == "__main__":
         except Exception as fallback_error:
             print(f"❌ Fallback test error: {fallback_error}")
             sys.exit(1)
+
 # End of cache.py
+
+# Export the global cache instance for backward compatibility
+__all__ = ["cache", "cache_result", "clear_cache", "close_cache", "get_cache_stats"]

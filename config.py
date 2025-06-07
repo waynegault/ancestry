@@ -229,61 +229,61 @@ def run_comprehensive_tests() -> bool:
             suite.run_test(
                 "Configuration Class Initialization",
                 test_config_class_initialization,
-                "Config_Class creates instance with required attributes"
+                "Config_Class creates instance with required attributes",
             )
 
             suite.run_test(
                 "Environment Variable Integration",
                 test_environment_variable_integration,
-                "Environment variables load with proper defaults and type conversion"
+                "Environment variables load with proper defaults and type conversion",
             )
 
             suite.run_test(
                 "Default Value Handling",
                 test_default_value_handling,
-                "Configuration provides sensible defaults for all required settings"
+                "Configuration provides sensible defaults for all required settings",
             )
 
             suite.run_test(
                 "Data Type Conversion",
                 test_data_type_conversion,
-                "String values convert to appropriate data types (int, float, bool, Path)"
+                "String values convert to appropriate data types (int, float, bool, Path)",
             )
 
             suite.run_test(
                 "Configuration Validation",
                 test_config_validation,
-                "Configuration validation passes with valid settings"
+                "Configuration validation passes with valid settings",
             )
 
             suite.run_test(
                 "URL Validation",
                 test_url_validation,
-                "URLs are properly formatted and API URLs constructed correctly"
+                "URLs are properly formatted and API URLs constructed correctly",
             )
 
             suite.run_test(
                 "Selenium Configuration",
                 test_selenium_config,
-                "Selenium configuration provides required browser automation settings"
+                "Selenium configuration provides required browser automation settings",
             )
 
             suite.run_test(
                 "Configuration File Integration",
                 test_configuration_file_integration,
-                "Configuration integrates with .env and other config files"
+                "Configuration integrates with .env and other config files",
             )
 
             suite.run_test(
                 "Configuration Inheritance",
                 test_configuration_inheritance,
-                "Configuration supports inheritance patterns and overrides"
+                "Configuration supports inheritance patterns and overrides",
             )
 
             suite.run_test(
                 "Configuration Persistence",
                 test_configuration_persistence,
-                "Configuration persistence functions are available and callable"
+                "Configuration persistence functions are available and callable",
             )
 
             return suite.finish_suite()
@@ -1233,6 +1233,7 @@ class SeleniumConfig(BaseConfig):
 # End of SeleniumConfig class
 
 # --- Create Singleton Instances ---
+_config_valid: bool = False  # Initialize before try block
 try:
     config_instance = Config_Class()
     selenium_config = SeleniumConfig()
@@ -1249,6 +1250,9 @@ except Exception as general_err:
     config_instance = None  # type: ignore
     selenium_config = None  # type: ignore
     _config_valid = False
+
+# --- Exports ---
+__all__ = ["config_instance", "selenium_config", "_config_valid"]
 
 # --- Log Module Load ---
 if _config_valid:

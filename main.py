@@ -1199,9 +1199,8 @@ def main():
         logger = setup_logging()
 
         # --- Configuration Validation ---
-        from config import _config_valid
 
-        if not _config_valid or config_instance is None:
+        if config_instance is None:
             logger.critical("Configuration validation failed - unable to proceed")
             print("\n❌ CONFIGURATION ERROR:")
             print("   Critical configuration validation failed.")

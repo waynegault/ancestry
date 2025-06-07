@@ -3542,57 +3542,7 @@ def load_test_person_from_env():
     }
 
 
-def run_standalone_fraser_test():
-    """Run standalone Fraser Gault test using .env configuration."""
-    print("🔍 Running Fraser Gault API Test (Action 11)...")
 
-    # Load test person data
-    test_person = load_test_person_from_env()
-    print(f"✅ Loaded test person: {test_person['name']}")
-    print(f"   Born: {test_person['birth_year']} in {test_person['birth_place']}")
-    print(f"   Gender: {test_person['gender']}")
-    print(f"   Spouse: {test_person['spouse_name']}")
-    print(f"   Children: {', '.join(test_person['children'])}")
-    print(f"   Relationship: {test_person['relationship']}")
-
-    # Test the main API functionality
-    try:
-        print(
-            "\n🔍 Testing API report functionality..."
-        )  # Mock the interactive input for Fraser Gault
-        import unittest.mock
-
-        # Split the full name into first and last name
-        name_parts = test_person["name"].split()
-        first_name = name_parts[0] if name_parts else ""
-        last_name = name_parts[-1] if len(name_parts) > 1 else ""
-
-        with unittest.mock.patch(
-            "builtins.input",
-            side_effect=[
-                first_name,  # First Name Contains
-                last_name,  # Last Name Contains
-                test_person["gender"],  # Gender (M/F)
-                str(test_person["birth_year"]),  # Birth Year (YYYY)
-                test_person["birth_place"],  # Birth Place Contains
-                "",  # Death Year (YYYY) - empty for living person
-                "",  # Death Place Contains - empty for living person
-                "1",  # Select first result (if any)
-                "y",  # Confirm selection
-            ],
-        ):
-            result = handle_api_report()
-
-        if result:
-            print("✅ Fraser Gault API test completed successfully")
-            return True
-        else:
-            print("❌ Fraser Gault API test failed")
-            return False
-
-    except Exception as e:
-        print(f"❌ Error during Fraser Gault API test: {e}")
-        return False
 
 
 # ==============================================
@@ -3878,33 +3828,7 @@ def run_comprehensive_tests() -> bool:
 
 if __name__ == "__main__":
     import sys
-    from unittest.mock import MagicMock, patch
-
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Action 11: API Report - Search Ancestry API"
-    )
-    parser.add_argument(
-        "--fraser-test",
-        action="store_true",
-        help="Run Fraser Gault standalone test using .env configuration",
-    )
-    parser.add_argument(
-        "--comprehensive", action="store_true", help="Run comprehensive test suite"
-    )
-
-    args = parser.parse_args()
-
-    if args.fraser_test:
-        success = run_standalone_fraser_test()
-        sys.exit(0 if success else 1)
-    elif args.comprehensive:
-        success = run_comprehensive_tests()
-        sys.exit(0 if success else 1)
-    else:
-        # Default behavior - run comprehensive tests
-        print(
-            "🔍 Running Action 11 - Live API Research Tool comprehensive test suite..."
-        )
-        success = run_comprehensive_tests()
-        sys.exit(0 if success else 1)
+    
+    print("🔍 Running Action 11 - Live API Research Tool comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

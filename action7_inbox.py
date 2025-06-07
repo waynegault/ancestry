@@ -461,7 +461,12 @@ class InboxProcessor:
         limit = self.ai_context_msg_count  # Get limit from config
         api_description = "Fetch Conversation Context"
         # Prepare headers (using contextual headers where possible)
-        headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {}).copy()
+        contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(api_description, {})
+        if isinstance(contextual_headers, dict):
+            headers = contextual_headers.copy()
+        else:
+            headers = {}
+            logger.warning(f"Expected dict for contextual headers, got {type(contextual_headers)}")
         # Ensure ancestry-userid is set correctly
         if "ancestry-userid" in headers:
             headers["ancestry-userid"] = self.session_manager.my_profile_id.upper()

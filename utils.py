@@ -3429,7 +3429,10 @@ def _prepare_base_headers(
 
     # Apply contextual headers from config
     contextual_headers = cfg.API_CONTEXTUAL_HEADERS.get(api_description, {})
-    base_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
+    if isinstance(contextual_headers, dict):
+        base_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
+    else:
+        logger.warning(f"[{api_description}] Expected dict for contextual headers, got {type(contextual_headers)}")
 
     # Apply explicit overrides
     if headers:

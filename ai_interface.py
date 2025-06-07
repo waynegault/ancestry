@@ -999,11 +999,11 @@ def test_fallback_functionality() -> bool:
             self.dynamic_rate_limiter = MockRateLimiter()
 
     test_sm = TestSessionManager()
-
+    
     # Test with empty AI provider (should trigger fallbacks)
     original_provider = config_instance.AI_PROVIDER
     try:
-        config_instance.AI_PROVIDER = ""  # Temporarily disable AI
+        setattr(config_instance, "AI_PROVIDER", "")  # Temporarily disable AI
 
         # Test intent classification fallback
         result = classify_message_intent("Test message", test_sm)  # type: ignore
@@ -1030,10 +1030,9 @@ def test_fallback_functionality() -> bool:
             return False
 
         return True
-
     finally:
         # Restore original provider
-        config_instance.AI_PROVIDER = original_provider
+        setattr(config_instance, "AI_PROVIDER", original_provider)
 
 
 def test_ai_functionality(session_manager: SessionManager) -> bool:
@@ -1163,23 +1162,21 @@ def run_comprehensive_tests() -> bool:
             extract_genealogical_entities, "extract_genealogical_entities"
         )
         assert_valid_function(test_configuration, "test_configuration")
-        assert_valid_function(test_ai_functionality, "test_ai_functionality")
-
-        # Check AI provider configuration
+        assert_valid_function(test_ai_functionality, "test_ai_functionality")        # Check AI provider configuration
         ai_provider = getattr(config_instance, "AI_PROVIDER", None)
         assert (
             ai_provider is not None or ai_provider == ""
         ), "AI_PROVIDER should be configured"
+        
+        return True
 
     suite.run_test(
         "Module Initialization",
         test_module_initialization,
-        category="Initialization",
-        method="Validate AI interface functions and configuration setup",
-        expected="All core AI functions available and configuration accessible",
-    )
-
-    # CORE FUNCTIONALITY TESTS
+        "All core AI functions available and configuration accessible",
+        "Validate AI interface functions and configuration setup",
+        "Test AI interface module initialization and dependencies"
+    )    # CORE FUNCTIONALITY TESTS
     def test_ai_configuration_validation():
         """Test AI configuration and provider settings."""
         config_result = test_configuration()
@@ -1187,14 +1184,14 @@ def run_comprehensive_tests() -> bool:
             config_result, bool
         ), "Configuration test should return boolean"
         # Note: May return False if AI not configured, which is acceptable
+        return True
 
     suite.run_test(
         "Configuration Validation",
         test_ai_configuration_validation,
-        category="Core",
-        method="Validate AI provider settings and API key configuration",
-        expected="Configuration validation completes without errors",
-    )
+        "Configuration validation completes without errors",
+        "Test AI provider settings and API key configuration",
+        "Validate AI provider settings and API key configuration",    )
 
     def test_prompt_loading_functionality():
         """Test AI prompt loading and template management."""
@@ -1202,13 +1199,14 @@ def run_comprehensive_tests() -> bool:
         assert isinstance(
             prompt_result, bool
         ), "Prompt loading test should return boolean"
+        return True
 
     suite.run_test(
         "Prompt Template Loading",
         test_prompt_loading_functionality,
-        category="Core",
-        method="Load and validate AI prompt templates for different tasks",
-        expected="Prompt templates load successfully or fail gracefully",
+        "Prompt templates load successfully or fail gracefully",
+        "Test AI prompt loading and template management",
+        "Load and validate AI prompt templates for different tasks",
     )
 
     def test_message_classification():
@@ -1233,18 +1231,17 @@ def run_comprehensive_tests() -> bool:
                 result = classify_message_intent(message, mock_session)
                 # Result can be None if AI is disabled, which is acceptable
                 if result is not None:
-                    assert isinstance(
-                        result, str
+                    assert isinstance(                result, str
                     ), "Classification should return string or None"
-            except Exception:
-                pass  # May require AI service setup
+            except Exception:                pass  # May require AI service setup
+        return True
 
     suite.run_test(
         "Message Intent Classification",
         test_message_classification,
-        category="Core",
-        method="Classify various message intents using AI or fallback logic",
-        expected="Classification returns valid categories or None when AI disabled",
+        "Classification returns valid categories or None when AI disabled",
+        "Test message intent classification functionality",
+        "Classify various message intents using AI or fallback logic",
     )
 
     # EDGE CASES TESTS
@@ -1272,9 +1269,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Edge Case Input Handling",
         test_edge_case_inputs,
-        category="Edge",
-        method="Test AI functions with empty, whitespace, long, and unicode inputs",
-        expected="Functions handle edge cases gracefully without crashing",
+        expected_behavior="Functions handle edge cases gracefully without crashing",
+        test_description="Test AI functions with empty, whitespace, long, and unicode inputs",
+        method_description="Edge case input validation testing"
     )
 
     def test_ai_service_unavailable():
@@ -1286,9 +1283,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "AI Service Unavailable Handling",
         test_ai_service_unavailable,
-        category="Edge",
-        method="Test fallback behavior when AI services are unavailable",
-        expected="System degrades gracefully with appropriate fallback responses",
+        expected_behavior="System degrades gracefully with appropriate fallback responses",
+        test_description="Test fallback behavior when AI services are unavailable",
+        method_description="Edge case testing for AI service unavailability"
     )
 
     # INTEGRATION TESTS
@@ -1313,9 +1310,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "AI Workflow Integration",
         test_ai_workflow_integration,
-        category="Integration",
-        method="Test complete AI workflow with session management integration",
-        expected="AI workflow integrates properly with session and configuration systems",
+        expected_behavior="AI workflow integrates properly with session and configuration systems",
+        test_description="Test complete AI workflow with session management integration",
+        method_description="Integration testing for AI workflow components"
     )
 
     # PERFORMANCE TESTS
@@ -1349,9 +1346,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "AI Response Performance",
         test_ai_response_timing,
-        category="Performance",
-        method="Measure AI response time and validate performance within limits",
-        expected="AI calls complete within 10 seconds or fall back quickly",
+        expected_behavior="AI calls complete within 10 seconds or fall back quickly",
+        test_description="Measure AI response time and validate performance within limits",
+        method_description="Performance testing for AI response timing"
     )
 
     # ERROR HANDLING TESTS
@@ -1364,9 +1361,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Malformed Response Handling",
         test_malformed_ai_responses,
-        category="Error",
-        method="Test error handling for malformed or invalid AI responses",
-        expected="System handles malformed responses gracefully with appropriate fallbacks",
+        expected_behavior="System handles malformed responses gracefully with appropriate fallbacks",
+        test_description="Test error handling for malformed or invalid AI responses",
+        method_description="Error handling testing for malformed AI responses"
     )
 
     def test_ai_authentication_errors():
@@ -1381,9 +1378,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Authentication Error Handling",
         test_ai_authentication_errors,
-        category="Error",
-        method="Verify error handling infrastructure for AI authentication failures",
-        expected="Error handling mechanisms are properly configured and accessible",
+        expected_behavior="Error handling mechanisms are properly configured and accessible",
+        test_description="Verify error handling infrastructure for AI authentication failures",
+        method_description="Error handling testing for AI authentication failures"
     )
 
     return suite.finish_suite()
@@ -1568,379 +1565,7 @@ USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They marr
 # ==============================================
 if __name__ == "__main__":
     import sys
-    from unittest.mock import MagicMock, patch
-
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        sys.exit(1)
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for ai_interface.py.
-        Tests AI integration, prompt management, and response processing.
-        """
-        suite = TestSuite("AI Interface & Integration Layer", "ai_interface.py")
-        suite.start_suite()
-
-        # AI provider initialization
-        def test_ai_provider_initialization():
-            if "initialize_ai_provider" in globals():
-                initializer = globals()["initialize_ai_provider"]
-
-                # Test different provider configurations
-                provider_configs = [
-                    {"provider": "deepseek", "api_key": "test_key_123"},
-                    {"provider": "gemini", "api_key": "test_gemini_key"},
-                    {"provider": "openai", "api_key": "test_openai_key"},
-                ]
-
-                for config in provider_configs:
-                    try:
-                        provider = initializer(config)
-                        assert provider is not None
-                    except Exception:
-                        pass  # May require actual API keys
-
-        # Message intent classification
-        def test_message_intent_classification():
-            if "classify_message_intent" in globals():
-                classifier = globals()["classify_message_intent"]
-
-                # Test messages with different intents
-                test_messages = [
-                    {
-                        "content": "Hello! Thanks for reaching out about our DNA match.",
-                        "expected_category": "GREETING",
-                    },
-                    {
-                        "content": "I found some records about John Smith born in 1850.",
-                        "expected_category": "PRODUCTIVE",
-                    },
-                    {
-                        "content": "Sorry, I'm not interested in genealogy research.",
-                        "expected_category": "NEGATIVE",
-                    },
-                    {
-                        "content": "Can you tell me more about your research methods?",
-                        "expected_category": "QUESTION",
-                    },
-                    {
-                        "content": "Please send me more information about the family.",
-                        "expected_category": "REQUEST",
-                    },
-                ]
-
-                for test_case in test_messages:
-                    try:
-                        with patch("requests.post") as mock_post:
-                            mock_response = MagicMock()
-                            mock_response.json.return_value = {
-                                "choices": [
-                                    {
-                                        "message": {
-                                            "content": test_case["expected_category"]
-                                        }
-                                    }
-                                ]
-                            }
-                            mock_post.return_value = mock_response
-
-                            classification = classifier(test_case["content"])
-                            assert isinstance(classification, str)
-                            valid_categories = [
-                                "GREETING",
-                                "PRODUCTIVE",
-                                "NEGATIVE",
-                                "QUESTION",
-                                "REQUEST",
-                                "OTHER",
-                            ]
-                            assert classification in valid_categories
-                    except Exception:
-                        pass  # May require AI service setup
-
-        # Structured data extraction
-        def test_structured_data_extraction():
-            if "extract_genealogical_data" in globals():
-                extractor = globals()["extract_genealogical_data"]
-
-                # Test message with genealogical information
-                genealogy_message = """
-                I found information about our common ancestor John Smith. 
-                He was born in 1850 in County Cork, Ireland and died in 1920 in Boston, Massachusetts.
-                He married Mary O'Brien in 1875 and they had three children: 
-                Patrick (born 1876), Catherine (born 1878), and Michael (born 1880).
-                """
-
-                try:
-                    with patch("requests.post") as mock_post:
-                        mock_response = MagicMock()
-                        mock_response.json.return_value = {
-                            "choices": [
-                                {
-                                    "message": {
-                                        "content": '{"individuals": [{"name": "John Smith", "birth_year": 1850}], "places": ["County Cork, Ireland"], "relationships": []}'
-                                    }
-                                }
-                            ]
-                        }
-                        mock_post.return_value = mock_response
-
-                        extracted_data = extractor(genealogy_message)
-                        assert isinstance(extracted_data, dict)
-                        expected_fields = [
-                            "individuals",
-                            "places",
-                            "relationships",
-                            "dates",
-                        ]
-                        for field in expected_fields:
-                            if field in extracted_data:
-                                assert extracted_data[field] is not None
-                except Exception:
-                    pass  # May require AI service configuration
-
-        # Prompt template management
-        def test_prompt_template_management():
-            if "load_prompt_templates" in globals():
-                template_loader = globals()["load_prompt_templates"]
-
-                try:
-                    templates = template_loader()
-                    assert isinstance(templates, dict)
-
-                    # Check for essential template categories
-                    expected_templates = [
-                        "classification",
-                        "data_extraction",
-                        "response_generation",
-                    ]
-                    for template_type in expected_templates:
-                        if template_type in templates:
-                            assert isinstance(templates[template_type], str)
-                            assert len(templates[template_type]) > 50
-                except Exception:
-                    pass  # May require ai_prompts.json file
-
-        # Response generation
-        def test_response_generation():
-            if "generate_genealogical_response" in globals():
-                response_generator = globals()["generate_genealogical_response"]
-
-                # Mock conversation context
-                mock_context = {
-                    "sender_name": "Jane Researcher",
-                    "conversation_history": ["Initial contact about Smith family"],
-                    "extracted_data": {
-                        "individuals": [{"name": "John Smith", "birth_year": 1850}],
-                        "places": ["Ireland", "Boston"],
-                    },
-                    "relationship_info": "3rd cousin",
-                }
-
-                try:
-                    with patch("requests.post") as mock_post:
-                        mock_response = MagicMock()
-                        mock_response.json.return_value = {
-                            "choices": [
-                                {
-                                    "message": {
-                                        "content": "Thank you for sharing information about John Smith. I'd be happy to collaborate on our Smith family research."
-                                    }
-                                }
-                            ]
-                        }
-                        mock_post.return_value = mock_response
-
-                        response = response_generator(mock_context)
-                        assert isinstance(response, str)
-                        assert len(response) > 50
-                        genealogy_terms = ["family", "research", "ancestor", "records"]
-                        assert any(term in response.lower() for term in genealogy_terms)
-                except Exception:
-                    pass  # May require AI provider setup
-
-        # Error handling and fallbacks
-        def test_error_handling_fallbacks():
-            if "handle_ai_error" in globals():
-                error_handler = globals()["handle_ai_error"]
-
-                # Test various AI error scenarios
-                ai_errors = [
-                    {"type": "rate_limit_exceeded", "message": "Rate limit exceeded"},
-                    {"type": "invalid_api_key", "message": "Authentication failed"},
-                    {
-                        "type": "service_unavailable",
-                        "message": "Service temporarily unavailable",
-                    },
-                    {"type": "invalid_response", "message": "Response parsing failed"},
-                ]
-
-                for error in ai_errors:
-                    try:
-                        result = error_handler(error)
-                        assert result is not None
-                        # Should provide fallback response or retry mechanism
-                    except Exception:
-                        pass  # May require specific error handling logic
-
-        # Token usage optimization
-        def test_token_usage_optimization():
-            if "optimize_token_usage" in globals():
-                token_optimizer = globals()["optimize_token_usage"]
-
-                # Test prompt optimization scenarios
-                optimization_scenarios = [
-                    {
-                        "prompt": "Very long prompt with lots of unnecessary details...",
-                        "max_tokens": 100,
-                    },
-                    {"prompt": "Short prompt", "max_tokens": 50},
-                    {
-                        "prompt": "Medium length prompt with some context",
-                        "max_tokens": 200,
-                    },
-                ]
-
-                for scenario in optimization_scenarios:
-                    try:
-                        optimized = token_optimizer(
-                            scenario["prompt"], scenario["max_tokens"]
-                        )
-                        assert isinstance(optimized, str)
-                        assert len(optimized) <= len(scenario["prompt"])
-                    except Exception:
-                        pass  # May require specific optimization logic
-
-        # Multi-provider fallback
-        def test_multi_provider_fallback():
-            if "try_multiple_providers" in globals():
-                multi_provider = globals()["try_multiple_providers"]
-
-                # Mock provider configurations
-                providers = [
-                    {"name": "primary", "available": False},
-                    {"name": "secondary", "available": True},
-                    {"name": "tertiary", "available": True},
-                ]
-
-                mock_request = {
-                    "prompt": "Test prompt for classification",
-                    "type": "classification",
-                }
-
-                try:
-                    result = multi_provider(mock_request, providers)
-                    assert result is not None
-                    # Should successfully use secondary provider when primary fails
-                except Exception:
-                    pass  # May require provider implementation
-
-        # Response validation and sanitization
-        def test_response_validation_sanitization():
-            if "validate_ai_response" in globals():
-                validator = globals()["validate_ai_response"]
-
-                # Test various response formats
-                test_responses = [
-                    {"response": '{"valid": "json"}', "expected_format": "json"},
-                    {"response": "PRODUCTIVE", "expected_format": "classification"},
-                    {"response": "Plain text response", "expected_format": "text"},
-                    {"response": "", "expected_format": "text"},  # Empty response
-                    {"response": None, "expected_format": "json"},  # Null response
-                ]
-
-                for test_case in test_responses:
-                    try:
-                        is_valid = validator(
-                            test_case["response"], test_case["expected_format"]
-                        )
-                        assert isinstance(is_valid, bool)
-                    except Exception:
-                        pass  # May require specific validation rules
-
-        # Performance monitoring and metrics
-        def test_performance_monitoring():
-            if "track_ai_performance" in globals():
-                performance_tracker = globals()["track_ai_performance"]
-
-                # Mock AI operation metrics
-                mock_metrics = {
-                    "operation_type": "classification",
-                    "provider": "deepseek",
-                    "start_time": "2024-01-01T10:00:00Z",
-                    "end_time": "2024-01-01T10:00:02Z",
-                    "tokens_used": 150,
-                    "success": True,
-                    "response_quality": 0.95,
-                }
-
-                try:
-                    tracking_result = performance_tracker(mock_metrics)
-                    assert tracking_result is not None
-                    # Should track usage statistics and performance
-                except Exception:
-                    pass  # May require metrics infrastructure
-
-        # Run all tests
-        test_functions = {
-            "AI provider initialization": (
-                test_ai_provider_initialization,
-                "Should initialize different AI providers with proper configuration",
-            ),
-            "Message intent classification": (
-                test_message_intent_classification,
-                "Should classify message intents into genealogy-specific categories",
-            ),
-            "Structured data extraction": (
-                test_structured_data_extraction,
-                "Should extract structured genealogical data from text using AI",
-            ),
-            "Prompt template management": (
-                test_prompt_template_management,
-                "Should manage and load AI prompt templates for different tasks",
-            ),
-            "Response generation": (
-                test_response_generation,
-                "Should generate contextual genealogical responses using AI",
-            ),
-            "Error handling and fallbacks": (
-                test_error_handling_fallbacks,
-                "Should handle AI service errors with appropriate fallback mechanisms",
-            ),
-            "Token usage optimization": (
-                test_token_usage_optimization,
-                "Should optimize prompts and responses for efficient token usage",
-            ),
-            "Multi-provider fallback": (
-                test_multi_provider_fallback,
-                "Should seamlessly switch between AI providers when one fails",
-            ),
-            "Response validation and sanitization": (
-                test_response_validation_sanitization,
-                "Should validate and sanitize AI responses for safety and format",
-            ),
-            "Performance monitoring and metrics": (
-                test_performance_monitoring,
-                "Should track AI performance metrics and usage statistics",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
-
+    
     print("🤖 Running AI Interface & Integration Layer comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
