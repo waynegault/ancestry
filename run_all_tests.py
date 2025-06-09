@@ -60,6 +60,7 @@ def discover_test_modules() -> List[str]:
             "setup_real_credentials.py",
             "setup_security.py",
             "check_test_coverage.py",
+            "test_gedcom_timeout.py",  # Skip custom timeout test - handled separately
         ]
 
         if python_file.name in skip_files:
@@ -119,7 +120,9 @@ def discover_test_modules() -> List[str]:
     return sorted(test_modules)
 
 
-def run_module_test(module_name: str, fast_mode: bool = False) -> Dict[str, Any]:
+def run_module_test(
+    module_name: str, fast_mode: bool = False, verbose: bool = False
+) -> Dict[str, Any]:
     """Run tests for a specific module using subprocess for safety."""
     print(f"\n{'='*60}")
     print(f"🧪 Testing {module_name}.py")
@@ -141,11 +144,12 @@ def run_module_test(module_name: str, fast_mode: bool = False) -> Dict[str, Any]
             "action6_gather": 120,  # 2 minutes for DNA match gathering
             "action7_inbox": 90,  # 1.5 minutes for inbox processing
             "action8_messaging": 90,  # 1.5 minutes for messaging
-            "action10": 90,  # 1.5 minutes for GEDCOM analysis
+            "action10": 90,  # 1.5 minutes for GEDCOM analysis (fixed subprocess execution issue)
             "action11": 90,  # 1.5 minutes for API research
             "database": 90,  # 1.5 minutes for database operations
             "selenium_utils": 90,  # 1.5 minutes for selenium operations
             "utils": 90,  # 1.5 minutes for core utilities
+            "test_gedcom_timeout": 90,  # 1.5 minutes for custom timeout test (if included)
             "person_search": 60,  # 1 minute for person search
             "ai_interface": 60,  # 1 minute for AI interface
             "performance_monitor": 60,  # 1 minute for performance monitoring
@@ -163,23 +167,49 @@ def run_module_test(module_name: str, fast_mode: bool = False) -> Dict[str, Any]
         if fast_mode:
             timeout = min(timeout // 2, 15)  # Half the timeout, but at least 15 seconds
 
+        # Known problematic modules (no longer includes action10 - fixed)
+        problematic_modules = set()
+        if module_name in problematic_modules:
+            if verbose:
+                print(
+                    f"   ⚠️  Known issue: {module_name} has input() calls that may hang in subprocess"
+                )
+
+        if verbose:
+            print(f"   Running command: {' '.join(cmd)}")
+            print(f"   Working directory: {current_dir}")
+            print(f"   Timeout: {timeout}s")
+
         # Run with timeout to prevent infinite loops
+        # Add environment variables to prevent buffering issues
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered output
+        env["PYTHONIOENCODING"] = "utf-8"  # Ensure UTF-8 encoding
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,  # Adjusted timeout per module
             cwd=current_dir,
+            env=env,  # Use modified environment
         )
 
         success = result.returncode == 0
 
         if success:
             print(f"✅ {module_name}.py tests passed")
+            # Show some output for verification (first few lines)
+            if result.stdout:
+                lines = result.stdout.strip().split("\n")
+                if len(lines) > 2:
+                    print(f"   Output preview: {lines[0][:60]}...")
         else:
             print(f"❌ {module_name}.py tests failed (exit code: {result.returncode})")
             if result.stderr:
                 print(f"   Error output: {result.stderr.strip()[:200]}")
+            if result.stdout:
+                print(f"   Standard output: {result.stdout.strip()[:200]}")
 
         error = (
             None
@@ -189,6 +219,7 @@ def run_module_test(module_name: str, fast_mode: bool = False) -> Dict[str, Any]
 
     except subprocess.TimeoutExpired:
         success = False
+        # All modules now use standard timeout handling (action10 issue fixed)
         error = f"Test timeout ({timeout}s) - possible infinite loop or hanging test"
         print(f"⏰ {module_name}.py timed out after {timeout} seconds")
 

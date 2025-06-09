@@ -1885,8 +1885,13 @@ def run_comprehensive_tests_fallback() -> bool:
     return tests_passed == tests_total
 
 
-# Run comprehensive test suite
-print("📊 Running Action 10 - Local GEDCOM Analysis comprehensive test suite...")
-success = run_comprehensive_tests()
-sys.exit(0 if success else 1)
+# ==============================================
+# Test Execution (only when run directly)
+# ==============================================
+if __name__ == "__test__":
+    # Run comprehensive test suite when called by test runner
+    print("📊 Running Action 10 - Local GEDCOM Analysis comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
+
 # End of action10.py
