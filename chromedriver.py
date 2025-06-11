@@ -94,11 +94,12 @@ except ImportError:
     def suppress_logging():
         yield
 
-    def create_mock_data(data_type):
+    def create_mock_data():
         return {}
 
     def assert_valid_function(func, func_name):
-        return callable(func)
+        # Fallback implementation - just check if callable
+        assert callable(func), f"Function {func_name} should be callable"
 
     TestSuite = DummyTestSuite
     HAS_TEST_FRAMEWORK = False
@@ -596,10 +597,10 @@ def test_driver_initialization(headless=True):
     """Test the init_webdvr function."""
     print("\n=== Testing WebDriver Initialization ===")
     driver = None
-    try:
-        # Temporarily set headless mode for testing
-        original_headless = selenium_config.HEADLESS_MODE
-        selenium_config.HEADLESS_MODE = headless
+    try:  # Temporarily set headless mode for testing
+        original_headless = getattr(selenium_config, "HEADLESS_MODE", False)
+        if hasattr(selenium_config, "HEADLESS_MODE"):
+            setattr(selenium_config, "HEADLESS_MODE", headless)
 
         print(f"  Initializing WebDriver (headless={headless})...")
         start_time = time.time()
@@ -653,15 +654,17 @@ def test_driver_initialization(headless=True):
             # Clean up
             print("  Closing WebDriver...")
             driver.quit()
-            print("✓ WebDriver closed successfully")
-
-            # Restore original headless setting
-            selenium_config.HEADLESS_MODE = original_headless
+            print(
+                "✓ WebDriver closed successfully"
+            )  # Restore original headless setting
+            if hasattr(selenium_config, "HEADLESS_MODE"):
+                setattr(selenium_config, "HEADLESS_MODE", original_headless)
             return True
         else:
             print("✗ WebDriver initialization failed")
             # Restore original headless setting
-            selenium_config.HEADLESS_MODE = original_headless
+            if hasattr(selenium_config, "HEADLESS_MODE"):
+                setattr(selenium_config, "HEADLESS_MODE", original_headless)
             return False
     except Exception as e:
         print(f"✗ Error in test_driver_initialization: {e}")
@@ -673,7 +676,8 @@ def test_driver_initialization(headless=True):
                 pass
         # Restore original headless setting if needed
         try:
-            selenium_config.HEADLESS_MODE = original_headless
+            if hasattr(selenium_config, "HEADLESS_MODE"):
+                setattr(selenium_config, "HEADLESS_MODE", original_headless)
         except:
             pass
         return False
@@ -933,106 +937,103 @@ def run_comprehensive_tests() -> bool:
             suite.run_test(
                 "ChromeDriver Initialization",
                 test_chromedriver_initialization,
-                "Chrome WebDriver initializes successfully with proper configuration"
+                "Chrome WebDriver initializes successfully with proper configuration",
             )
 
             suite.run_test(
                 "Chrome Options Configuration",
                 test_chrome_options_configuration,
-                "Chrome options configure correctly for various scenarios"
+                "Chrome options configure correctly for various scenarios",
             )
 
             suite.run_test(
                 "Browser Process Management",
                 test_browser_process_management,
-                "Process management functions are available and callable"
+                "Process management functions are available and callable",
             )
 
             suite.run_test(
                 "Driver Health Checks",
                 test_driver_health_checks,
-                "Health checks return boolean status correctly"
+                "Health checks return boolean status correctly",
             )
 
             suite.run_test(
                 "Driver Session Recovery",
                 test_driver_session_recovery,
-                "Session recovery handles failures gracefully"
+                "Session recovery handles failures gracefully",
             )
 
             suite.run_test(
                 "Browser Profile Management",
                 test_browser_profile_management,
-                "Profile management functions are available and callable"
+                "Profile management functions are available and callable",
             )
 
             suite.run_test(
                 "Extension Management",
                 test_extension_management,
-                "Extension operations return boolean results correctly"
+                "Extension operations return boolean results correctly",
             )
 
             suite.run_test(
                 "Performance Optimization",
                 test_performance_optimization,
-                "Performance optimization returns appropriate results"
+                "Performance optimization returns appropriate results",
             )
 
             suite.run_test(
                 "Error Handling Recovery",
                 test_error_handling,
-                "Error handling functions process scenarios without exceptions"
+                "Error handling functions process scenarios without exceptions",
             )
 
             suite.run_test(
                 "Cleanup Resource Management",
                 test_cleanup_and_resource_management,
-                "Cleanup functions execute without raising exceptions"
+                "Cleanup functions execute without raising exceptions",
             )
 
             return suite.finish_suite()
     else:
-        return run_comprehensive_tests_fallback()
+        # Run basic fallback tests when test framework not available
+        print("🧪 Running basic Chrome driver tests (test framework not available)...")
 
+        try:
+            # Test 1: Basic driver functions check
+            driver_functions = ["initialize_chrome_driver", "configure_chrome_options"]
+            available_functions = [
+                func for func in driver_functions if func in globals()
+            ]
+            print(
+                f"✅ Test 1: Driver functions check - Found {len(available_functions)} functions"
+            )  # Test 2: Process management functions
+            process_functions = ["stop_chrome_process", "check_chrome_running"]
+            available_process_functions = [
+                func for func in process_functions if func in globals()
+            ]
+            print(
+                f"✅ Test 2: Process management functions - Found {len(available_process_functions)} functions"
+            )
 
-def run_comprehensive_tests_fallback() -> bool:
-    """Fallback test function when test framework is not available."""
-    print("🧪 Running basic Chrome driver tests (test framework not available)...")
+            # Test 3: Configuration validation
+            if selenium_config:
+                print("✅ Test 3: Configuration validation - selenium_config available")
+            else:
+                print(
+                    "⚠️  Test 3: Configuration validation - selenium_config not available"
+                )
 
-    try:
-        # Test 1: Basic driver functions check
-        driver_functions = ["initialize_chrome_driver", "configure_chrome_options"]
-        available_functions = [func for func in driver_functions if func in globals()]
-        print(
-            f"✅ Test 1: Driver functions check - Found {len(available_functions)} functions"
-        )
+            # Test 4: Import validation
+            import selenium
 
-        # Test 2: Process management functions
-        process_functions = ["stop_chrome_process", "check_chrome_running"]
-        available_process_functions = [
-            func for func in process_functions if func in globals()
-        ]
-        print(
-            f"✅ Test 2: Process management functions - Found {len(available_process_functions)} functions"
-        )
+            print("✅ Test 4: Import validation - selenium imports successful")
 
-        # Test 3: Configuration validation
-        if selenium_config:
-            print("✅ Test 3: Configuration validation - selenium_config available")
-        else:
-            print("⚠️  Test 3: Configuration validation - selenium_config not available")
-
-        # Test 4: Import validation
-        import selenium
-
-        print("✅ Test 4: Import validation - selenium imports successful")
-
-        print("🎉 All basic tests passed!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
+            print("🎉 All basic tests passed!")
+            return True
+        except Exception as fallback_error:
+            print(f"❌ All tests failed: {fallback_error}")
+            return False
 
 
 # ==============================================

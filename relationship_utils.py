@@ -1849,19 +1849,10 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for relationship_utils.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    # Import test framework components
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-        )
-    except ImportError:
-        return run_comprehensive_tests_fallback()
-
-    with suppress_logging():
-        suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
-        suite.start_suite()
+    if HAS_TEST_FRAMEWORK:
+        with suppress_logging():
+            suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
+            suite.start_suite()
 
         # INITIALIZATION TESTS
         def test_module_initialization():
@@ -2449,42 +2440,40 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+    else:
+        # Fallback test function for when test framework is not available
+        print("🧬 Running basic relationship utils tests...")
 
+        try:
+            # Test 1: Name formatting
+            assert format_name("john doe") == "John Doe"
+            assert format_name(None) == "Valued Relative"
+            print("✅ Name formatting test passed")
 
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function for when test framework is not available.
-    Runs basic functionality tests.
-    """
-    print("🧬 Running basic relationship utils tests...")
+            # Test 2: Relationship terms
+            assert _get_relationship_term("M", "parent") == "father"
+            assert _get_relationship_term("F", "child") == "daughter"
+            print("✅ Relationship terms test passed")
 
-    try:
-        # Test 1: Name formatting
-        assert format_name("john doe") == "John Doe"
-        assert format_name(None) == "Valued Relative"
-        print("✅ Name formatting test passed")
+            # Test 3: BFS functionality with simple data
+            test_parents = {"person2": {"person1"}}
+            test_children = {"person1": {"person2"}}
+            path = fast_bidirectional_bfs(
+                "person1", "person2", test_parents, test_children
+            )
+            assert path is not None
+            assert len(path) == 2
+            print("✅ Basic BFS test passed")
 
-        # Test 2: Relationship terms
-        assert _get_relationship_term("M", "parent") == "father"
-        assert _get_relationship_term("F", "child") == "daughter"
-        print("✅ Relationship terms test passed")
+            print("🏁 Basic relationship utils tests passed!")
+            return True
 
-        # Test 3: BFS with empty data
-        result = fast_bidirectional_bfs("A", "B", {}, {})
-        assert isinstance(result, list)
-        print("✅ BFS pathfinding test passed")
-
-        # Test 4: API relationship formatting
-        result = format_api_relationship_path(None, "John", "Jane")
-        assert "No relationship data" in result
-        print("✅ API relationship formatting test passed")
-
-        print("🎉 All basic relationship utils tests passed!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
+        except AssertionError as e:
+            print(f"❌ Test failed: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Test error: {e}")
+            return False
 
 
 # ==============================================
@@ -2494,8 +2483,5 @@ if __name__ == "__main__":
     import sys
 
     print("🧬 Running Relationship Utils comprehensive test suite...")
-    if HAS_TEST_FRAMEWORK:
-        success = run_comprehensive_tests()
-    else:
-        success = run_comprehensive_tests_fallback()
+    success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

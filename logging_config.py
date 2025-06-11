@@ -409,72 +409,116 @@ def run_comprehensive_tests():
                 "Handler Performance",
                 test_handler_performance,
                 "Handlers maintain reasonable performance",
-            )
-
-            # --- ERROR HANDLING TESTS ---
+            )  # --- ERROR HANDLING TESTS ---
             suite.run_test(
                 "Invalid File Path",
                 test_invalid_file_path,
                 "Invalid paths are handled gracefully",
             )
+
             suite.run_test(
                 "Permission Errors",
                 test_permission_errors,
                 "Permission errors are handled without crashing",
             )
 
+            # Add fallback testing when test framework has issues
+            def test_fallback_functionality():
+                """Test core functionality with basic assertions."""
+                try:
+                    # Test 1: Basic logger setup
+                    test_logger = setup_logging("test.log", "DEBUG")
+                    assert test_logger is not None
+
+                    # Test 2: Log level validation
+                    test_logger = setup_logging("test.log", "INFO")
+                    assert test_logger is not None
+
+                    # Test 3: Directory creation
+                    import tempfile
+
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        global LOG_DIRECTORY
+                        original_dir = LOG_DIRECTORY
+                        LOG_DIRECTORY = Path(temp_dir) / "test_logs"
+                        setup_logging("test.log", "INFO")
+                        LOG_DIRECTORY = original_dir
+
+                    # Test 4: Formatter functionality
+                    formatter = AlignedMessageFormatter(
+                        fmt=LOG_FORMAT, datefmt=DATE_FORMAT
+                    )
+                    record = logging.LogRecord(
+                        name="test",
+                        level=logging.INFO,
+                        pathname="",
+                        lineno=1,
+                        msg="test message",
+                        args=(),
+                        exc_info=None,
+                    )
+                    formatted = formatter.format(record)
+                    assert "test message" in formatted
+
+                    return True
+                except Exception as e:
+                    print(f"❌ Fallback test failed: {e}")
+                    return False
+
+            suite.run_test(
+                "Fallback Functionality",
+                test_fallback_functionality,
+                "Core logging functionality works even without full test framework",
+            )
+
             return suite.finish_suite()
     else:
-        return run_comprehensive_tests_fallback()
-
-
-def run_comprehensive_tests_fallback():
-    """Fallback test function when test framework is not available."""
-    print(
-        "🧪 Running basic logging configuration tests (test framework not available)..."
-    )
-
-    try:
-        # Test 1: Basic logger setup
-        test_logger = setup_logging("test.log", "DEBUG")
-        print("✅ Test 1: Basic logger setup - PASSED")
-
-        # Test 2: Log level validation
-        test_logger = setup_logging("test.log", "INFO")
-        print("✅ Test 2: Log level validation - PASSED")
-
-        # Test 3: Directory creation
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            global LOG_DIRECTORY
-            original_dir = LOG_DIRECTORY
-            LOG_DIRECTORY = Path(temp_dir) / "test_logs"
-            setup_logging("test.log", "INFO")
-            LOG_DIRECTORY = original_dir
-        print("✅ Test 3: Directory creation - PASSED")
-
-        # Test 4: Formatter functionality
-        formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="",
-            lineno=1,
-            msg="test message",
-            args=(),
-            exc_info=None,
+        # Run basic fallback tests when test framework not available
+        print(
+            "🧪 Running basic logging configuration tests (test framework not available)..."
         )
-        formatted = formatter.format(record)
-        assert "test message" in formatted
-        print("✅ Test 4: Formatter functionality - PASSED")
 
-        print("🎉 All basic tests passed!")
-        return True
+        try:
+            # Test 1: Basic logger setup
+            test_logger = setup_logging("test.log", "DEBUG")
+            print("✅ Test 1: Basic logger setup - PASSED")
 
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
+            # Test 2: Log level validation
+            test_logger = setup_logging("test.log", "INFO")
+            print("✅ Test 2: Log level validation - PASSED")
+
+            # Test 3: Directory creation
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                global LOG_DIRECTORY
+                original_dir = LOG_DIRECTORY
+                LOG_DIRECTORY = Path(temp_dir) / "test_logs"
+                setup_logging("test.log", "INFO")
+                LOG_DIRECTORY = original_dir
+            print("✅ Test 3: Directory creation - PASSED")
+
+            # Test 4: Formatter functionality
+            formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+            record = logging.LogRecord(
+                name="test",
+                level=logging.INFO,
+                pathname="",
+                lineno=1,
+                msg="test message",
+                args=(),
+                exc_info=None,
+            )
+            formatted = formatter.format(record)
+            assert "test message" in formatted
+            print("✅ Test 4: Formatter functionality - PASSED")
+
+            print("🎉 All basic tests passed!")
+            return True
+
+        except Exception as e:
+            print(f"❌ Test failed: {e}")
+            return False
 
 
 # Test functions for comprehensive testing

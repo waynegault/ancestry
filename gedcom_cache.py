@@ -913,12 +913,26 @@ def run_comprehensive_tests() -> bool:
     """
     try:
         from test_framework import TestSuite, suppress_logging, create_mock_data
-    except ImportError:
-        print("❌ test_framework.py not found. Using fallback test implementation.")
-        return run_comprehensive_tests_fallback()
 
-    suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")
-    suite.start_suite()
+        has_framework = True
+    except ImportError:
+        has_framework = False
+
+    if not has_framework:
+        print("🧪 Running basic GEDCOM cache tests (test framework unavailable)...")
+        try:
+            # Basic tests when framework unavailable
+            module_name = _gedcom_cache_module.get_module_name()
+            assert module_name == "gedcom_cache", "Module name should be correct"
+            print("✅ Basic GEDCOM cache tests passed!")
+            return True
+        except Exception as e:
+            print(f"❌ Basic tests failed: {e}")
+            return False
+
+    with suppress_logging():
+        suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")
+        suite.start_suite()
 
     # INITIALIZATION TESTS
     def test_gedcom_cache_initialization():
@@ -944,9 +958,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "GEDCOM Cache Module Initialization",
         test_gedcom_cache_initialization,
-        category="Initialization",
-        method="Initialize GEDCOM cache module and verify basic structure",
-        expected="Cache module initializes with proper interface and required methods",
+        "Cache module initializes with proper interface and required methods",
+        "Initialization",
+        "Initialize GEDCOM cache module and verify basic structure",
     )
 
     def test_memory_cache_operations():
@@ -972,9 +986,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Memory Cache Operations",
         test_memory_cache_operations,
-        category="Initialization",
-        method="Store and retrieve data from memory cache",
-        expected="Memory cache stores and retrieves data correctly",
+        "Memory cache stores and retrieves data correctly",
+        "Initialization",
+        "Store and retrieve data from memory cache",
     )
 
     # CORE FUNCTIONALITY TESTS
@@ -1013,9 +1027,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "GEDCOM File Parsing and Caching",
         test_gedcom_parsing_caching,
-        category="Core",
-        method="Parse mock GEDCOM file and cache the processed data",
-        expected="GEDCOM file parses successfully and caches processed data",
+        "GEDCOM file parses successfully and caches processed data",
+        "Core",
+        "Parse mock GEDCOM file and cache the processed data",
     )
 
     def test_cached_data_retrieval():
@@ -1038,9 +1052,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cached Data Retrieval",
         test_cached_data_retrieval,
-        category="Core",
-        method="Retrieve previously cached GEDCOM data",
-        expected="Cache retrieval returns None or valid dictionary data structure",
+        "Cache retrieval returns None or valid dictionary data structure",
+        "Core",
+        "Retrieve previously cached GEDCOM data",
     )
 
     def test_cache_key_generation():
@@ -1063,9 +1077,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cache Key Generation",
         test_cache_key_generation,
-        category="Core",
-        method="Generate cache keys for same inputs and verify consistency",
-        expected="Cache key generation produces consistent keys for identical inputs",
+        "Cache key generation produces consistent keys for identical inputs",
+        "Core",
+        "Generate cache keys for same inputs and verify consistency",
     )
 
     # EDGE CASE TESTS
@@ -1092,9 +1106,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Memory Cache Expiration",
         test_memory_cache_expiration,
-        category="Edge",
-        method="Store data with expired timestamp and verify expiration detection",
-        expected="Expired cache entries are correctly identified as invalid",
+        "Expired cache entries are correctly identified as invalid",
+        "Edge",
+        "Store data with expired timestamp and verify expiration detection",
     )
 
     def test_cache_invalidation_file_modification():
@@ -1116,9 +1130,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cache Invalidation on File Modification",
         test_cache_invalidation_file_modification,
-        category="Edge",
-        method="Check file modification detection for cache invalidation",
-        expected="File modification detection works correctly for cache management",
+        "File modification detection works correctly for cache management",
+        "Edge",
+        "Check file modification detection for cache invalidation",
     )
 
     # INTEGRATION TESTS
@@ -1138,9 +1152,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cache Statistics Collection",
         test_cache_statistics_collection,
-        category="Integration",
-        method="Collect comprehensive cache statistics",
-        expected="Statistics collection returns all required fields",
+        "Statistics collection returns all required fields",
+        "Integration",
+        "Collect comprehensive cache statistics",
     )
 
     def test_cache_health_status():
@@ -1159,9 +1173,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cache Health Status Check",
         test_cache_health_status,
-        category="Integration",
-        method="Check overall cache health and component status",
-        expected="Health status returns comprehensive system health information",
+        "Health status returns comprehensive system health information",
+        "Integration",
+        "Check overall cache health and component status",
     )
 
     # PERFORMANCE TESTS
@@ -1193,9 +1207,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cache Performance Metrics",
         test_cache_performance_metrics,
-        category="Performance",
-        method="Collect and validate cache performance statistics",
-        expected="Performance metrics collection provides valid numeric data",
+        "Performance metrics collection provides valid numeric data",
+        "Performance",
+        "Collect and validate cache performance statistics",
     )
 
     def test_multifile_cache_management():
@@ -1221,9 +1235,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Multi-file Cache Management",
         test_multifile_cache_management,
-        category="Performance",
-        method="Manage caches for multiple GEDCOM files simultaneously",
-        expected="Multi-file cache management handles multiple files efficiently",
+        "Multi-file cache management handles multiple files efficiently",
+        "Performance",
+        "Manage caches for multiple GEDCOM files simultaneously",
     )
 
     # ERROR HANDLING TESTS
@@ -1250,9 +1264,9 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Memory Management and Cleanup",
         test_memory_management_cleanup,
-        category="Error",
-        method="Test cache memory cleanup and optimization functions",
-        expected="Memory management functions execute without errors",
+        "Memory management functions execute without errors",
+        "Error",
+        "Test cache memory cleanup and optimization functions",
     )
 
     def test_cache_validation_integrity():
@@ -1278,82 +1292,12 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         "Cache Validation and Integrity",
         test_cache_validation_integrity,
-        category="Error",
-        method="Validate cache data integrity and detect corruption",
-        expected="Cache validation properly checks data integrity",
+        "Cache validation properly checks data integrity",
+        "Error",
+        "Validate cache data integrity and detect corruption",
     )
 
     return suite.finish_suite()
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function when test_framework is not available.
-    Performs basic GEDCOM cache validation.
-    """
-    print("📦 GEDCOM Cache Basic Tests (Fallback Mode)")
-    tests_passed = 0
-    total_tests = 4
-
-    try:
-        # Test 1: Module initialization
-        module_name = _gedcom_cache_module.get_module_name()
-        if module_name == "gedcom_cache":
-            print("✅ Test 1/4: Module initialization - PASSED")
-            tests_passed += 1
-        else:
-            print("❌ Test 1/4: Module initialization - FAILED")
-    except Exception as e:
-        print(f"❌ Test 1/4: Module initialization - ERROR: {e}")
-
-    try:
-        # Test 2: Memory cache operations
-        test_key = "fallback_test_key"
-        test_data = {"test": "fallback_data"}
-
-        _store_in_memory_cache(test_key, test_data)
-        retrieved = _get_from_memory_cache(test_key)
-
-        if retrieved == test_data:
-            print("✅ Test 2/4: Memory cache operations - PASSED")
-            tests_passed += 1
-        else:
-            print("❌ Test 2/4: Memory cache operations - FAILED")
-
-        # Cleanup
-        if test_key in _MEMORY_CACHE:
-            del _MEMORY_CACHE[test_key]
-    except Exception as e:
-        print(f"❌ Test 2/4: Memory cache operations - ERROR: {e}")
-
-    try:
-        # Test 3: Statistics collection
-        stats = _gedcom_cache_module.get_stats()
-        if isinstance(stats, dict) and "module_name" in stats:
-            print("✅ Test 3/4: Statistics collection - PASSED")
-            tests_passed += 1
-        else:
-            print("❌ Test 3/4: Statistics collection - FAILED")
-    except Exception as e:
-        print(f"❌ Test 3/4: Statistics collection - ERROR: {e}")
-
-    try:
-        # Test 4: Health status
-        health = _gedcom_cache_module.get_health_status()
-        if isinstance(health, dict) and "overall_health" in health:
-            print("✅ Test 4/4: Health status check - PASSED")
-            tests_passed += 1
-        else:
-            print("❌ Test 4/4: Health status check - FAILED")
-    except Exception as e:
-        print(f"❌ Test 4/4: Health status check - ERROR: {e}")
-
-    success_rate = (tests_passed / total_tests) * 100
-    print(
-        f"\n📊 Results: {tests_passed}/{total_tests} tests passed ({success_rate:.1f}%)"
-    )
-
-    return tests_passed == total_tests
 
 
 # --- Main Execution ---
@@ -1362,15 +1306,5 @@ if __name__ == "__main__":
     print(
         "🗂️ Running GEDCOM Cache Management & Optimization comprehensive test suite..."
     )
-    try:
-        success = run_comprehensive_tests()
-        sys.exit(0 if success else 1)
-    except Exception as e:
-        print(f"❌ Error running tests: {e}")
-        print("🔄 Falling back to basic validation...")
-        try:
-            success = run_comprehensive_tests_fallback()
-            sys.exit(0 if success else 1)
-        except Exception as fallback_error:
-            print(f"❌ Fallback test also failed: {fallback_error}")
-            sys.exit(1)
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

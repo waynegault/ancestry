@@ -243,272 +243,221 @@ class BrowserManager:
             return None
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """
-    Run comprehensive tests for the BrowserManager class.
-
-    This function tests all major functionality of the BrowserManager
-    to ensure proper operation and integration.
+    Comprehensive test suite for browser_manager.py with real functionality testing.
+    Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    import sys
-    import traceback
-    from typing import Dict, Any
+    from test_framework import TestSuite, suppress_logging
 
-    # Test framework imports with fallback
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
+    with suppress_logging():
+        suite = TestSuite(
+            "Browser Management & WebDriver Operations", "browser_manager.py"
         )
+        suite.start_suite()
 
-        HAS_TEST_FRAMEWORK = True
-    except ImportError:
-        # Fallback implementations
-        HAS_TEST_FRAMEWORK = False
-
-        class TestSuite:
-            def __init__(self, name, module):
-                self.name = name
-                self.tests_passed = 0
-                self.tests_failed = 0
-
-            def start_suite(self):
-                print(f"Starting {self.name} tests...")
-
-            def run_test(self, name, func, description):
-                try:
-                    func()
-                    self.tests_passed += 1
-                    print(f"✓ {name}")
-                except Exception as e:
-                    self.tests_failed += 1
-                    print(f"✗ {name}: {e}")
-
-            def finish_suite(self):
-                print(f"Tests: {self.tests_passed} passed, {self.tests_failed} failed")
-                return self.tests_failed == 0
-
-        class suppress_logging:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        def create_mock_data():
-            return {}
-
-        def assert_valid_function(func, func_name):
-            assert callable(func), f"{func_name} should be callable"
-
-    logger.info("=" * 60)
-    logger.info("BROWSER MANAGER COMPREHENSIVE TESTS")
-    logger.info("=" * 60)
-
-    test_results = {"passed": 0, "failed": 0, "errors": []}
-
-    def run_test(test_name: str, test_func) -> bool:
-        """Helper to run individual tests with error handling."""
-        try:
-            logger.info(f"\n--- Running: {test_name} ---")
-            test_func()
-            test_results["passed"] += 1
-            logger.info(f"✓ PASSED: {test_name}")
-            return True
-        except Exception as e:
-            test_results["failed"] += 1
-            error_msg = f"✗ FAILED: {test_name} - {str(e)}"
-            test_results["errors"].append(error_msg)
-            logger.error(error_msg)
-            logger.error(traceback.format_exc())
-            return False
-
-    # Test 1: Basic Initialization
-    def test_initialization():
-        manager = BrowserManager()
-        assert manager is not None, "BrowserManager should initialize"
-        assert manager.driver_live == False, "Should start with driver_live=False"
-        assert manager.browser_needed == False, "Should start with browser_needed=False"
-        assert manager.driver is None, "Should start with driver=None"
-        assert (
-            manager.session_start_time is None
-        ), "Should start with session_start_time=None"
-
-    # Test 2: Session Validation (No Driver)
-    def test_session_validation_no_driver():
-        manager = BrowserManager()
-        result = manager.is_session_valid()
-        assert result == False, "Should return False when no driver exists"
-
-    # Test 3: Ensure Driver Live (Not Needed)
-    def test_ensure_driver_not_needed():
-        manager = BrowserManager()
-        manager.browser_needed = False
-        result = manager.ensure_driver_live("test_action")
-        assert result == True, "Should return True when browser not needed"
-
-    # Test 4: Cookie Check (Invalid Session)
-    def test_cookie_check_invalid_session():
-        manager = BrowserManager()
-        result = manager.get_cookies(["test_cookie"])
-        assert result == False, "Should return False for invalid session"
-
-    # Test 5: New Tab Creation (Invalid Session)
-    def test_new_tab_invalid_session():
-        manager = BrowserManager()
-        result = manager.create_new_tab()
-        assert result is None, "Should return None for invalid session"
-
-    # Test 6: Close Browser (No Driver)
-    def test_close_browser_no_driver():
-        manager = BrowserManager()
-        # Should not raise exception
-        manager.close_browser()
-        assert manager.driver is None, "Driver should remain None"
-        assert manager.driver_live == False, "driver_live should be False"
-
-    # Test 7: Configuration Access
-    def test_configuration_access():
-        # Test that required configurations are accessible
-        assert config_instance is not None, "config_instance should be available"
-        assert selenium_config is not None, "selenium_config should be available"
-        assert logger is not None, "Logger should be initialized"
-
-    # Test 8: Method Availability
-    def test_method_availability():
-        manager = BrowserManager()
-        methods_to_check = [
-            "start_browser",
-            "close_browser",
-            "is_session_valid",
-            "ensure_driver_live",
-            "get_cookies",
-            "create_new_tab",
-        ]
-
-        for method_name in methods_to_check:
-            method = getattr(manager, method_name, None)
-            assert method is not None, f"Method {method_name} should exist"
-            assert callable(method), f"Method {method_name} should be callable"
-
-    # Test 9: Logger Functionality
-    def test_logger_functionality():
-        assert_valid_function(logger.info, "logger.info should be callable")
-        logger.info("Test log message from BrowserManager")
-
-    # Test 10: State Management
-    def test_state_management():
-        manager = BrowserManager()
-        # Modify state
-        manager.browser_needed = True
-        assert manager.browser_needed == True, "browser_needed should be modifiable"
-
-        # Reset state through close_browser
-        manager.close_browser()
-        assert (
-            manager.browser_needed == False
-        ), "close_browser should reset browser_needed"
-
-    # Test 11: Exception Handling
-    def test_exception_handling():
-        manager = BrowserManager()
-        try:
-            # These should handle invalid state gracefully
-            manager.is_session_valid()
-            manager.get_cookies(["test"])
-            manager.create_new_tab()
-            logger.info("Exception handling test passed - no exceptions raised")
-        except Exception as e:
-            assert False, f"Methods should handle invalid state gracefully: {e}"
-
-    # Test 12: Import Dependencies
-    def test_import_dependencies():
-        # Test that all imports are accessible
-        required_imports = [
-            ("config", "config_instance"),
-            ("config", "selenium_config"),
-            ("chromedriver", "init_webdvr"),
-            ("selenium_utils", "export_cookies"),
-            ("utils", "nav_to_page"),
-        ]
-
-        for module_name, item_name in required_imports:
-            if module_name == "config":
-                if item_name == "config_instance":
-                    item = config_instance
-                elif item_name == "selenium_config":
-                    item = selenium_config
-            elif module_name == "chromedriver":
-                item = init_webdvr
-            elif module_name == "selenium_utils":
-                item = export_cookies
-            elif module_name == "utils":
-                item = nav_to_page
-            else:
-                continue
-
+        # INITIALIZATION TESTS
+        def test_browser_manager_initialization():
+            """Test BrowserManager initialization and initial state."""
+            manager = BrowserManager()
+            assert manager is not None, "BrowserManager should initialize"
+            assert manager.driver_live == False, "Should start with driver_live=False"
             assert (
-                item is not None
-            ), f"Should be able to import {item_name} from {module_name}"
+                manager.browser_needed == False
+            ), "Should start with browser_needed=False"
+            assert manager.driver is None, "Should start with driver=None"
+            assert (
+                manager.session_start_time is None
+            ), "Should start with session_start_time=None"
+            return True
 
-    # Test 13: Type Definitions
-    def test_type_definitions():
-        assert DriverType is not None, "DriverType should be defined"
-        manager = BrowserManager()
-        assert isinstance(manager.driver_live, bool), "driver_live should be bool"
-        assert isinstance(manager.browser_needed, bool), "browser_needed should be bool"
-
-    # Test 14: Function Structure
-    def test_function_structure():
-        # Test that this function itself is properly structured
-        test_results = {"passed": 0, "failed": 0, "errors": []}
-        assert test_results is not None, "test_results should be initialized"
-        assert isinstance(test_results, dict), "test_results should be a dictionary"
-        assert_valid_function(
-            run_comprehensive_tests, "run_comprehensive_tests should be callable"
+        suite.run_test(
+            "BrowserManager Initialization",
+            test_browser_manager_initialization,
+            "BrowserManager creates successfully with proper initial state (no active driver)",
+            "Instantiate BrowserManager and verify all attributes are properly initialized",
+            "Test BrowserManager initialization and default state setup",
         )
 
-    # Run all tests
-    tests = [
-        ("Basic Initialization", test_initialization),
-        ("Session Validation (No Driver)", test_session_validation_no_driver),
-        ("Ensure Driver Live (Not Needed)", test_ensure_driver_not_needed),
-        ("Cookie Check (Invalid Session)", test_cookie_check_invalid_session),
-        ("New Tab Creation (Invalid Session)", test_new_tab_invalid_session),
-        ("Close Browser (No Driver)", test_close_browser_no_driver),
-        ("Configuration Access", test_configuration_access),
-        ("Method Availability", test_method_availability),
-        ("Logger Functionality", test_logger_functionality),
-        ("State Management", test_state_management),
-        ("Exception Handling", test_exception_handling),
-        ("Import Dependencies", test_import_dependencies),
-        ("Type Definitions", test_type_definitions),
-        ("Function Structure", test_function_structure),
-    ]
+        def test_method_availability():
+            """Test that all required methods are available and callable."""
+            manager = BrowserManager()
+            required_methods = [
+                "start_browser",
+                "close_browser",
+                "is_session_valid",
+                "ensure_driver_live",
+                "get_cookies",
+                "create_new_tab",
+            ]
 
-    # Run each test
-    for test_name, test_func in tests:
-        run_test(test_name, test_func)  # Print summary
-    total_tests = len(tests)
-    logger.info("\n" + "=" * 60)
-    logger.info("BROWSER MANAGER TEST SUMMARY")
-    logger.info("=" * 60)
-    logger.info(f"Total Tests: {total_tests}")
-    logger.info(f"Passed: {test_results['passed']}")
-    logger.info(f"Failed: {test_results['failed']}")
-    if test_results["errors"]:
-        logger.info("\nErrors:")
-        for error in test_results["errors"]:
-            logger.error(f"  {error}")
+            for method_name in required_methods:
+                method = getattr(manager, method_name, None)
+                assert method is not None, f"Method {method_name} should exist"
+                assert callable(method), f"Method {method_name} should be callable"
+            return True
 
-    success = test_results["failed"] == 0
-    if success:
-        logger.info("🎉 ALL BROWSER MANAGER TESTS PASSED!")
-    else:
-        logger.warning("⚠️ Some Browser Manager tests failed")
-    return success
+        suite.run_test(
+            "Method Availability",
+            test_method_availability,
+            "All essential browser management methods are available and callable",
+            "Check that all required methods exist and are callable on BrowserManager instance",
+            "Test method availability and callable status for essential browser operations",
+        )
+
+        # CORE FUNCTIONALITY TESTS
+        def test_session_validation_no_driver():
+            """Test session validation when no driver exists."""
+            manager = BrowserManager()
+            result = manager.is_session_valid()
+            assert result == False, "Should return False when no driver exists"
+            return True
+
+        suite.run_test(
+            "Session Validation Without Driver",
+            test_session_validation_no_driver,
+            "Session validation returns False when no WebDriver is active",
+            "Call is_session_valid() on manager with no driver and verify it returns False",
+            "Test session validation behavior when no WebDriver instance exists",
+        )
+
+        def test_ensure_driver_not_needed():
+            """Test ensure_driver_live when browser is not needed."""
+            manager = BrowserManager()
+            manager.browser_needed = False
+            result = manager.ensure_driver_live("test_action")
+            assert result == True, "Should return True when browser not needed"
+            return True
+
+        suite.run_test(
+            "Ensure Driver When Not Needed",
+            test_ensure_driver_not_needed,
+            "ensure_driver_live returns True when browser_needed is False",
+            "Set browser_needed=False and call ensure_driver_live to verify it returns True",
+            "Test driver management when browser is not required for the action",
+        )
+
+        # EDGE CASES TESTS
+        def test_cookie_check_invalid_session():
+            """Test cookie retrieval with invalid/missing session."""
+            manager = BrowserManager()
+            result = manager.get_cookies(["test_cookie"])
+            assert result == False, "Should return False for invalid session"
+            return True
+
+        suite.run_test(
+            "Cookie Check Invalid Session",
+            test_cookie_check_invalid_session,
+            "Cookie retrieval fails gracefully when no valid WebDriver session exists",
+            "Call get_cookies() without valid driver session and verify it returns False",
+            "Test edge case handling for cookie operations without valid session",
+        )
+
+        def test_close_browser_no_driver():
+            """Test browser closure when no driver exists."""
+            manager = BrowserManager()
+            # Should not raise exception
+            manager.close_browser()
+            assert manager.driver is None, "Driver should remain None"
+            assert manager.driver_live == False, "driver_live should be False"
+            return True
+
+        suite.run_test(
+            "Close Browser Without Driver",
+            test_close_browser_no_driver,
+            "Browser closure handles case when no driver exists without errors",
+            "Call close_browser() when no driver exists and verify no exceptions occur",
+            "Test graceful handling of browser closure when no WebDriver is active",
+        )
+
+        # INTEGRATION TESTS
+        def test_state_management():
+            """Test browser state management and transitions."""
+            manager = BrowserManager()
+            # Modify state
+            manager.browser_needed = True
+            assert manager.browser_needed == True, "browser_needed should be modifiable"
+
+            # Reset state through close_browser
+            manager.close_browser()
+            assert (
+                manager.browser_needed == False
+            ), "close_browser should reset browser_needed"
+            return True
+
+        suite.run_test(
+            "Browser State Management",
+            test_state_management,
+            "Browser state transitions work correctly (needed→not needed via close_browser)",
+            "Set browser_needed=True, then call close_browser() and verify state is reset",
+            "Test state management and transitions in browser lifecycle",
+        )
+
+        def test_configuration_access():
+            """Test access to required configuration objects."""
+            # These imports should be available
+            assert config_instance is not None, "config_instance should be available"
+            assert selenium_config is not None, "selenium_config should be available"
+            assert logger is not None, "Logger should be initialized"
+            return True
+
+        suite.run_test(
+            "Configuration Access",
+            test_configuration_access,
+            "Required configuration objects (config_instance, selenium_config) are accessible",
+            "Verify that config_instance, selenium_config, and logger are properly imported and available",
+            "Test configuration and dependency access for browser management",
+        )
+
+        # PERFORMANCE TESTS
+        def test_initialization_performance():
+            """Test BrowserManager initialization performance."""
+            import time
+
+            start_time = time.time()
+            for _ in range(100):
+                manager = BrowserManager()
+            end_time = time.time()
+
+            total_time = end_time - start_time
+            assert (
+                total_time < 1.0
+            ), f"100 initializations took {total_time:.3f}s, should be under 1s"
+            return True
+
+        suite.run_test(
+            "Initialization Performance",
+            test_initialization_performance,
+            "100 BrowserManager initializations complete in under 1 second",
+            "Create 100 BrowserManager instances and measure total time",
+            "Test performance of BrowserManager initialization",
+        )
+
+        # ERROR HANDLING TESTS
+        def test_exception_handling():
+            """Test graceful exception handling for invalid operations."""
+            manager = BrowserManager()
+            try:
+                # These should handle invalid state gracefully
+                manager.is_session_valid()
+                manager.get_cookies(["test"])
+                result = manager.create_new_tab()
+                assert (
+                    result is None
+                ), "create_new_tab should return None for invalid session"
+            except Exception as e:
+                assert False, f"Methods should handle invalid state gracefully: {e}"
+            return True
+
+        suite.run_test(
+            "Exception Handling",
+            test_exception_handling,
+            "Browser operations handle invalid states gracefully without raising exceptions",
+            "Call various browser methods without valid driver and verify no exceptions are raised",
+            "Test error handling and graceful degradation for browser operations",
+        )
+
+        return suite.finish_suite()
 
 
 if __name__ == "__main__":

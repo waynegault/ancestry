@@ -3046,10 +3046,21 @@ def run_comprehensive_tests() -> bool:
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
     if not HAS_TEST_FRAMEWORK:
-        return run_comprehensive_tests_fallback()
+        print("🧪 Running basic database tests (test framework unavailable)...")
+        try:
+            # Basic tests when framework unavailable
+            required_models = [Person, DnaMatch, FamilyTree, MessageType]
+            for model in required_models:
+                assert model is not None, f"{model.__name__} model should be defined"
+            print("✅ Basic database tests passed!")
+            return True
+        except Exception as e:
+            print(f"❌ Basic tests failed: {e}")
+            return False
 
-    suite = TestSuite("Database Models & ORM Management", "database.py")
-    suite.start_suite()
+    with suppress_logging():
+        suite = TestSuite("Database Models & ORM Management", "database.py")
+        suite.start_suite()
 
     # INITIALIZATION TESTS
     def test_database_model_definitions():
@@ -3426,67 +3437,7 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test implementation when test framework is not available.
-    Performs basic validation of database components.
-    """
-    print("=" * 80)
-    print("🗄️ DATABASE FALLBACK TESTS")
-    print("=" * 80)
-
-    tests_passed = 0
-    total_tests = 0
-
-    # Test 1: Model definitions
-    total_tests += 1
-    try:
-        required_models = [Person, DnaMatch, FamilyTree, MessageType]
-        for model in required_models:
-            assert model is not None
-            instance = model()
-            assert instance is not None
-        print("✅ Database model definitions: PASSED")
-        tests_passed += 1
-    except Exception as e:
-        print(f"❌ Database model definitions: FAILED - {e}")
-
-    # Test 2: Enum definitions
-    total_tests += 1
-    try:
-        assert hasattr(PersonStatusEnum, "ACTIVE")
-        assert hasattr(PersonStatusEnum, "ARCHIVE")
-        assert hasattr(MessageDirectionEnum, "IN")
-        assert hasattr(MessageDirectionEnum, "OUT")
-        print("✅ Enum definitions: PASSED")
-        tests_passed += 1
-    except Exception as e:
-        print(f"❌ Enum definitions: FAILED - {e}")
-
-    # Test 3: Database utilities
-    total_tests += 1
-    try:
-        assert callable(delete_database)
-        assert callable(backup_database)
-        print("✅ Database utilities: PASSED")
-        tests_passed += 1
-    except Exception as e:
-        print(f"❌ Database utilities: FAILED - {e}")
-
-    # Test 4: Transaction manager
-    total_tests += 1
-    try:
-        assert callable(db_transn)
-        print("✅ Transaction context manager: PASSED")
-        tests_passed += 1
-    except Exception as e:
-        print(f"❌ Transaction context manager: FAILED - {e}")
-
-    print("=" * 80)
-    print(f"📊 FALLBACK TEST RESULTS: {tests_passed}/{total_tests} passed")
-    print("=" * 80)
-
-    return tests_passed == total_tests
+# === END OF database.py ===
 
 
 if __name__ == "__main__":

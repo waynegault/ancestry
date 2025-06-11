@@ -347,61 +347,64 @@ def run_comprehensive_tests() -> bool:
         for category_name, (test_func, expected_behavior) in test_categories.items():
             suite.run_test(category_name, test_func, expected_behavior)
 
+        # Add fallback testing when test framework has issues
+        def test_fallback_functionality():
+            """Test core functionality with basic assertions."""
+            try:
+                # Test 1: Basic selector availability
+                basic_selectors = [
+                    "WAIT_FOR_PAGE_SELECTOR",
+                    "POPUP_CLOSE_SELECTOR",
+                    "PAGE_NO_LONGER_AVAILABLE_SELECTOR",
+                ]
+                for selector_name in basic_selectors:
+                    assert (
+                        selector_name in globals()
+                    ), f"Missing selector: {selector_name}"
+                    assert isinstance(
+                        globals()[selector_name], str
+                    ), f"Selector {selector_name} should be string"
+
+                # Test 2: Selector format validation
+                test_selectors = [WAIT_FOR_PAGE_SELECTOR, POPUP_CLOSE_SELECTOR]
+                for selector in test_selectors:
+                    assert len(selector.strip()) > 0, "Selector should not be empty"
+                    assert (
+                        selector.strip() == selector
+                    ), "Selector should not have extra whitespace"
+
+                # Test 3: Error selector completeness
+                error_selectors = [
+                    name
+                    for name in globals()
+                    if "ERROR" in name or "UNAVAILABLE" in name
+                ]
+                assert len(error_selectors) >= 3, "Should have multiple error selectors"
+
+                # Test 4: Selector naming convention
+                all_selectors = [
+                    name for name in globals() if name.endswith("_SELECTOR")
+                ]
+                assert (
+                    len(all_selectors) >= 10
+                ), "Should have multiple selector definitions"
+                for selector_name in all_selectors[:5]:  # Test first 5
+                    assert (
+                        selector_name.isupper()
+                    ), f"Selector {selector_name} should be uppercase"
+
+                return True
+            except Exception as e:
+                print(f"❌ Fallback test failed: {e}")
+                return False
+
+        suite.run_test(
+            "Fallback Functionality",
+            test_fallback_functionality,
+            "Core selector functionality works even without full test framework",
+        )
+
     return suite.finish_suite()
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function for when test framework is not available.
-    Runs basic functionality tests for selector definitions.
-    """
-    print("🔍 Running basic CSS selector tests...")
-
-    try:
-        # Test 1: Basic selector availability
-        basic_selectors = [
-            "WAIT_FOR_PAGE_SELECTOR",
-            "POPUP_CLOSE_SELECTOR",
-            "PAGE_NO_LONGER_AVAILABLE_SELECTOR",
-        ]
-        for selector_name in basic_selectors:
-            assert selector_name in globals(), f"Missing selector: {selector_name}"
-            assert isinstance(
-                globals()[selector_name], str
-            ), f"Selector {selector_name} should be string"
-        print("✅ Basic selector availability test passed")
-
-        # Test 2: Selector format validation
-        test_selectors = [WAIT_FOR_PAGE_SELECTOR, POPUP_CLOSE_SELECTOR]
-        for selector in test_selectors:
-            assert len(selector.strip()) > 0, "Selector should not be empty"
-            assert (
-                selector.strip() == selector
-            ), "Selector should not have extra whitespace"
-        print("✅ Selector format validation test passed")
-
-        # Test 3: Error selector completeness
-        error_selectors = [
-            name for name in globals() if "ERROR" in name or "UNAVAILABLE" in name
-        ]
-        assert len(error_selectors) >= 3, "Should have multiple error selectors"
-        print("✅ Error selector completeness test passed")
-
-        # Test 4: Selector naming convention
-        all_selectors = [name for name in globals() if name.endswith("_SELECTOR")]
-        assert len(all_selectors) >= 10, "Should have multiple selector definitions"
-        for selector_name in all_selectors[:5]:  # Test first 5
-            assert (
-                selector_name.isupper()
-            ), f"Selector {selector_name} should be uppercase"
-        print("✅ Selector naming convention test passed")
-
-        print("🎉 All basic CSS selector tests passed!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
 
 
 # ==============================================

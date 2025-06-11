@@ -50,6 +50,8 @@ try:
         create_mock_data,
         assert_valid_function,
     )
+    from unittest.mock import patch
+    import sys
 
     HAS_TEST_FRAMEWORK = True
 except ImportError:
@@ -59,12 +61,6 @@ except ImportError:
             pass
 
         def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
             pass
 
         def run_test(self, *args, **kwargs):
@@ -84,244 +80,481 @@ except ImportError:
     suppress_logging = lambda: DummyContext()
     create_mock_data = lambda: {}
     assert_valid_function = lambda x, *args: True
+    try:
+        from unittest.mock import patch
+    except ImportError:
+        patch = lambda *args, **kwargs: DummyContext()
     HAS_TEST_FRAMEWORK = False
 
 
 def run_comprehensive_tests() -> bool:
     """
-    Comprehensive test suite for config.py.
+    Comprehensive test suite for config.py following the standardized 6-category TestSuite framework.
     Tests configuration management, validation, and environment integration.
+
+    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
     """
     if HAS_TEST_FRAMEWORK:
-        with suppress_logging():
-            suite = TestSuite(
-                "Configuration Management & Environment Integration", "config.py"
-            )
-            suite.start_suite()
+        try:
+            with suppress_logging():
+                suite = TestSuite(
+                    "Configuration Management & Environment Integration", "config.py"
+                )
+                suite.start_suite()
 
-            # Configuration class initialization
-            def test_config_class_initialization():
-                # Test basic Config_Class instantiation
-                config = Config_Class()
-                assert config is not None
-                assert hasattr(config, "BASE_URL")
-                assert hasattr(config, "DATABASE_FILE")
-                assert hasattr(config, "TREE_NAME")
+                # === INITIALIZATION TESTS ===
+                def test_module_imports():
+                    """Test all required modules and dependencies are properly imported."""
+                    required_modules = ["os", "sys", "pathlib", "logging", "typing"]
+                    for module_name in required_modules:
+                        # Check if module is imported or available
+                        module_imported = module_name in sys.modules or any(
+                            module_name in str(item)
+                            for item in globals().values()
+                            if hasattr(item, "__module__")
+                        )
+                        assert (
+                            module_imported
+                        ), f"Required module {module_name} not available"
 
-            # Environment variable integration
-            def test_environment_variable_integration():
-                # Test environment variable loading
-                test_config = Config_Class()
+                def test_config_class_initialization():
+                    """Test Config_Class initializes properly with all required attributes."""
+                    config = Config_Class()
+                    assert (
+                        config is not None
+                    ), "Config_Class instance should not be None"
 
-                # Test environment variable loading methods
-                test_string = test_config._get_string_env("TEST_VAR", "default")
-                assert test_string == "default"
+                    # Test core attributes exist
+                    required_attrs = [
+                        "BASE_URL",
+                        "DATABASE_FILE",
+                        "TREE_NAME",
+                        "USER_AGENTS",
+                    ]
+                    for attr in required_attrs:
+                        assert hasattr(
+                            config, attr
+                        ), f"Config_Class missing required attribute: {attr}"
 
-                test_int = test_config._get_int_env("TEST_INT_VAR", 42)
-                assert test_int == 42
+                def test_environment_setup():
+                    """Test environment variables and .env file loading."""
+                    # Test that dotenv was loaded
+                    assert "dotenv" in sys.modules, "dotenv module should be imported"
 
-                test_bool = test_config._get_bool_env("TEST_BOOL_VAR", True)
-                assert test_bool is True
+                    # Test environment variable access
+                    test_config = Config_Class()
+                    assert hasattr(
+                        test_config, "_get_env_var"
+                    ), "Config should have _get_env_var method"
 
-            # Default value handling
-            def test_default_value_handling():
-                # Test that defaults are properly set
-                config = Config_Class()
+                # === CORE FUNCTIONALITY TESTS ===
+                def test_environment_variable_methods():
+                    """Test all environment variable getter methods work correctly."""
+                    config = Config_Class()
 
-                # Test class defaults
-                assert hasattr(config, "INITIAL_DELAY")
-                assert hasattr(config, "MAX_DELAY")
-                assert hasattr(config, "BACKOFF_FACTOR")
-                assert hasattr(config, "USER_AGENTS")
-                assert isinstance(config.USER_AGENTS, list)
+                    # Test string environment variable with default
+                    test_string = config._get_string_env(
+                        "NONEXISTENT_VAR", "default_value"
+                    )
+                    assert (
+                        test_string == "default_value"
+                    ), "String env var should return default"
 
-            # Data type conversion and validation
-            def test_data_type_conversion():
-                # Test data type conversion methods
-                config = Config_Class()
+                    # Test integer environment variable with default
+                    test_int = config._get_int_env("NONEXISTENT_INT", 42)
+                    assert test_int == 42, "Int env var should return default"
+                    assert isinstance(
+                        test_int, int
+                    ), "Int env var should return integer type"
 
-                # Test path conversion
-                test_path = config._get_path_env("TEST_PATH", ".")
-                assert isinstance(test_path, (Path, type(None)))
+                    # Test boolean environment variable with default
+                    test_bool = config._get_bool_env("NONEXISTENT_BOOL", True)
+                    assert test_bool is True, "Bool env var should return default"
+                    assert isinstance(
+                        test_bool, bool
+                    ), "Bool env var should return boolean type"
 
-                # Test float conversion
-                test_float = config._get_float_env("TEST_FLOAT", 1.5)
-                assert isinstance(test_float, float)
-                assert test_float == 1.5
+                def test_data_type_conversions():
+                    """Test data type conversion methods handle various inputs correctly."""
+                    config = Config_Class()
 
-            # Configuration validation
-            def test_config_validation():
-                # Test configuration validation
-                config = Config_Class()
+                    # Test path conversion
+                    if hasattr(config, "_get_path_env"):
+                        test_path = config._get_path_env("NONEXISTENT_PATH", ".")
+                        assert test_path is not None, "Path env var should not be None"
 
-                # Test that validation doesn't raise exceptions with valid config
-                try:
-                    # Call validation method if it exists
-                    if hasattr(config, "_validate_critical_configs"):
-                        # Skip validation that might require actual files/credentials
-                        pass
-                    assert True
-                except Exception:
-                    # Some validation may fail in test environment
-                    pass
+                    # Test float conversion
+                    if hasattr(config, "_get_float_env"):
+                        test_float = config._get_float_env("NONEXISTENT_FLOAT", 1.5)
+                        assert test_float == 1.5, "Float env var should return default"
+                        assert isinstance(
+                            test_float, float
+                        ), "Float env var should return float type"
 
-            # URL validation
-            def test_url_validation():
-                # Test URL configuration
-                config = Config_Class()
+                def test_configuration_defaults():
+                    """Test that all required configuration defaults are properly set."""
+                    config = Config_Class()
 
-                # Test that BASE_URL is properly formatted if set
-                if config.BASE_URL:
-                    assert config.BASE_URL.startswith(("http://", "https://"))
+                    # Test timing defaults
+                    timing_attrs = ["INITIAL_DELAY", "MAX_DELAY", "BACKOFF_FACTOR"]
+                    for attr in timing_attrs:
+                        if hasattr(config, attr):
+                            value = getattr(config, attr)
+                            assert (
+                                value is not None
+                            ), f"{attr} should have a default value"
 
-                # Test API URL construction
-                if config.API_BASE_URL:
-                    assert isinstance(config.API_BASE_URL, str)
+                    # Test user agents list
+                    if hasattr(config, "USER_AGENTS"):
+                        assert isinstance(
+                            config.USER_AGENTS, list
+                        ), "USER_AGENTS should be a list"
+                        assert (
+                            len(config.USER_AGENTS) > 0
+                        ), "USER_AGENTS should not be empty"
 
-            # Selenium configuration
-            def test_selenium_config():
-                # Test Selenium configuration availability
-                try:
+                # === EDGE CASE TESTS ===
+                def test_invalid_environment_variables():
+                    """Test handling of invalid environment variable values."""
+                    config = Config_Class()
+
+                    # Test invalid integer conversion - should return default
+                    with patch.dict(os.environ, {"TEST_INVALID_INT": "not_a_number"}):
+                        result = config._get_int_env("TEST_INVALID_INT", 100)
+                        assert result == 100, "Invalid int should return default"
+
+                    # Test invalid boolean conversion - should return default
+                    with patch.dict(os.environ, {"TEST_INVALID_BOOL": "not_a_bool"}):
+                        result = config._get_bool_env("TEST_INVALID_BOOL", False)
+                        assert result is False, "Invalid bool should return default"
+
+                def test_empty_environment_variables():
+                    """Test handling of empty environment variable values."""
+                    config = Config_Class()
+
+                    # Test empty string handling
+                    with patch.dict(os.environ, {"TEST_EMPTY": ""}):
+                        result = config._get_string_env("TEST_EMPTY", "default")
+                        # Empty string should either return empty string or default based on implementation
+                        assert isinstance(result, str), "Result should be string type"
+
+                def test_none_values():
+                    """Test handling of None values in configuration."""
+                    config = Config_Class()
+
+                    # Test that _get_env_var returns None for non-existent variables
+                    result = config._get_env_var("DEFINITELY_NONEXISTENT_VAR_12345")
+                    assert result is None, "Non-existent env var should return None"
+
+                # === INTEGRATION TESTS ===
+                def test_global_config_instances():
+                    """Test that global configuration instances are properly created."""
+                    # Test main config instance
+                    from config import config_instance
+
+                    assert (
+                        config_instance is not None
+                    ), "Global config_instance should exist"
+                    assert isinstance(
+                        config_instance, Config_Class
+                    ), "config_instance should be Config_Class instance"
+
+                    # Test selenium config instance
                     from config import selenium_config
 
-                    if selenium_config:
-                        assert hasattr(selenium_config, "HEADLESS_MODE")
-                        assert hasattr(selenium_config, "CHROME_USER_DATA_DIR")
-                except ImportError:
-                    pass  # Selenium config may not be available in test environment
+                    assert (
+                        selenium_config is not None
+                    ), "Global selenium_config should exist"
 
-            # Configuration file integration
-            def test_configuration_file_integration():
-                # Test integration with configuration files (.env, config files)
-                # Skipped: Config_Class does not implement load_from_file.
-                pass
+                def test_selenium_integration():
+                    """Test Selenium configuration integration."""
+                    try:
+                        from config import selenium_config
 
-            # Configuration inheritance
-            def test_configuration_inheritance():
-                # Test configuration inheritance patterns
-                base_config = Config_Class()
+                        if selenium_config:
+                            # Test required Selenium attributes
+                            selenium_attrs = ["HEADLESS_MODE", "CHROME_USER_DATA_DIR"]
+                            for attr in selenium_attrs:
+                                if hasattr(selenium_config, attr):
+                                    value = getattr(selenium_config, attr)
+                                    assert (
+                                        value is not None
+                                    ), f"Selenium config {attr} should have a value"
+                    except ImportError:
+                        pass  # Selenium config may not be available in test environment
 
-                # Test that configuration can be extended or overridden
-                test_override = {"APP_MODE": "testing", "DEBUG": True}
+                def test_url_configuration():
+                    """Test URL configuration and validation."""
+                    config = Config_Class()
 
-                # Config_Class does not implement an update method; skip this test
-                # try:
-                #     if hasattr(base_config, "update"):
-                #         base_config.update(test_override)
-                #         assert base_config.APP_MODE == "testing"
-                # except Exception:
-                #     pass  # May not implement update method
+                    # Test BASE_URL format if set
+                    if hasattr(config, "BASE_URL") and config.BASE_URL:
+                        assert config.BASE_URL.startswith(
+                            ("http://", "https://")
+                        ), "BASE_URL should be properly formatted"
 
-            # Configuration persistence
-            def test_configuration_persistence():
-                persistence_functions = [
-                    "save_config",
-                    "load_config",
-                    "cache_config",
-                    "validate_config_file",
-                ]
+                    # Test API URL configuration if available
+                    if hasattr(config, "API_BASE_URL") and config.API_BASE_URL:
+                        assert isinstance(
+                            config.API_BASE_URL, str
+                        ), "API_BASE_URL should be string"
 
-                for func_name in persistence_functions:
-                    if func_name in globals():
-                        assert_valid_function(globals()[func_name], func_name)
+                # === PERFORMANCE TESTS ===
+                def test_config_initialization_performance():
+                    """Test that configuration initialization is performant."""
+                    import time
 
-            # Run all tests using the new format
-            suite.run_test(
-                "Configuration Class Initialization",
-                test_config_class_initialization,
-                "Config_Class creates instance with required attributes",
-            )
+                    start_time = time.time()
+                    config = Config_Class()
+                    end_time = time.time()
 
-            suite.run_test(
-                "Environment Variable Integration",
-                test_environment_variable_integration,
-                "Environment variables load with proper defaults and type conversion",
-            )
+                    initialization_time = end_time - start_time
+                    assert (
+                        initialization_time < 1.0
+                    ), f"Config initialization took {initialization_time:.3f}s, should be < 1.0s"
 
-            suite.run_test(
-                "Default Value Handling",
-                test_default_value_handling,
-                "Configuration provides sensible defaults for all required settings",
-            )
+                def test_environment_variable_access_performance():
+                    """Test that environment variable access is efficient."""
+                    import time
 
-            suite.run_test(
-                "Data Type Conversion",
-                test_data_type_conversion,
-                "String values convert to appropriate data types (int, float, bool, Path)",
-            )
+                    config = Config_Class()
 
-            suite.run_test(
-                "Configuration Validation",
-                test_config_validation,
-                "Configuration validation passes with valid settings",
-            )
+                    start_time = time.time()
+                    for i in range(100):
+                        config._get_string_env(f"TEST_VAR_{i}", "default")
+                    end_time = time.time()
 
-            suite.run_test(
-                "URL Validation",
-                test_url_validation,
-                "URLs are properly formatted and API URLs constructed correctly",
-            )
+                    total_time = end_time - start_time
+                    assert (
+                        total_time < 0.1
+                    ), f"100 env var accesses took {total_time:.3f}s, should be < 0.1s"
 
-            suite.run_test(
-                "Selenium Configuration",
-                test_selenium_config,
-                "Selenium configuration provides required browser automation settings",
-            )
+                def test_multiple_config_instances():
+                    """Test that creating multiple config instances is efficient."""
+                    import time
 
-            suite.run_test(
-                "Configuration File Integration",
-                test_configuration_file_integration,
-                "Configuration integrates with .env and other config files",
-            )
+                    start_time = time.time()
+                    configs = [Config_Class() for _ in range(10)]
+                    end_time = time.time()
 
-            suite.run_test(
-                "Configuration Inheritance",
-                test_configuration_inheritance,
-                "Configuration supports inheritance patterns and overrides",
-            )
+                    creation_time = end_time - start_time
+                    assert (
+                        creation_time < 0.5
+                    ), f"Creating 10 configs took {creation_time:.3f}s, should be < 0.5s"
+                    assert (
+                        len(configs) == 10
+                    ), "Should create exactly 10 config instances"
 
-            suite.run_test(
-                "Configuration Persistence",
-                test_configuration_persistence,
-                "Configuration persistence functions are available and callable",
-            )
+                # === ERROR HANDLING TESTS ===
+                def test_missing_critical_configuration():
+                    """Test handling of missing critical configuration values."""
+                    config = Config_Class()
 
-            return suite.finish_suite()
+                    # Test that missing values don't cause crashes
+                    try:
+                        # Try to access a method that might validate critical configs
+                        if hasattr(config, "_validate_critical_configs"):
+                            # This might fail in test environment, which is expected
+                            config._validate_critical_configs()
+                    except Exception:
+                        # Expected to fail in test environment without real credentials
+                        pass
+
+                def test_configuration_error_recovery():
+                    """Test that configuration errors are handled gracefully."""
+                    # Test that invalid JSON environment variables don't crash the system
+                    if hasattr(Config_Class(), "_get_json_env"):
+                        config = Config_Class()
+                        with patch.dict(
+                            os.environ, {"TEST_INVALID_JSON": "invalid json"}
+                        ):
+                            try:
+                                result = config._get_json_env("TEST_INVALID_JSON", {})
+                                assert isinstance(
+                                    result, dict
+                                ), "Should return default dict on invalid JSON"
+                            except AttributeError:
+                                pass  # Method might not exist
+
+                def test_import_error_handling():
+                    """Test that import errors are handled gracefully."""
+                    # Test that the module handles missing optional dependencies
+                    try:
+                        # This should not crash even if some imports fail
+                        config = Config_Class()
+                        assert (
+                            config is not None
+                        ), "Config should initialize even with missing dependencies"
+                    except ImportError as e:
+                        assert (
+                            False
+                        ), f"Config initialization should handle import errors: {e}"  # === RUN ALL TESTS ===
+
+                suite.run_test(
+                    "Module Imports",
+                    test_module_imports,
+                    "All modules should be importable and accessible",
+                    "All required modules and dependencies are properly imported",
+                    "Test verifies essential modules (os, sys, pathlib, logging, typing) are available",
+                )
+
+                suite.run_test(
+                    "Config Class Initialization",
+                    test_config_class_initialization,
+                    "Instance created successfully with BASE_URL, DATABASE_FILE, TREE_NAME, USER_AGENTS",
+                    "Config_Class initializes properly with all required attributes",
+                    "Test creates Config_Class instance and verifies core attributes exist",
+                )
+
+                suite.run_test(
+                    "Environment Setup",
+                    test_environment_setup,
+                    "Environment setup should be complete with access methods available",
+                    "Environment variables and .env file loading works correctly",
+                    "Test verifies dotenv loading and environment variable access methods",
+                )
+
+                suite.run_test(
+                    "Environment Variable Methods",
+                    test_environment_variable_methods,
+                    "All methods should return correct defaults with proper type conversion",
+                    "All environment variable getter methods work correctly with defaults",
+                    "Test each env var method with non-existent variables to verify defaults",
+                )
+
+                suite.run_test(
+                    "Data Type Conversions",
+                    test_data_type_conversions,
+                    "Type conversion should work correctly with proper default handling",
+                    "Data type conversion methods handle various inputs correctly",
+                    "Test path and float conversion methods with default values",
+                )
+
+                suite.run_test(
+                    "Configuration Defaults",
+                    test_configuration_defaults,
+                    "All defaults should be set with appropriate types and non-empty values",
+                    "All required configuration defaults are properly set",
+                    "Test timing attributes and USER_AGENTS list for proper default values",
+                )
+
+                suite.run_test(
+                    "Invalid Environment Variables",
+                    test_invalid_environment_variables,
+                    "Invalid values should return defaults without crashing",
+                    "Invalid environment variable values are handled gracefully",
+                    "Test with invalid integer and boolean values to verify default fallback",
+                )
+
+                suite.run_test(
+                    "Empty Environment Variables",
+                    test_empty_environment_variables,
+                    "Empty values should be handled consistently (return empty string or default)",
+                    "Empty environment variable values are handled appropriately",
+                    "Test with empty string environment variables",
+                )
+
+                suite.run_test(
+                    "None Values Handling",
+                    test_none_values,
+                    "Non-existent variables should return None",
+                    "None values and non-existent variables are handled properly",
+                    "Test with definitely non-existent environment variable",
+                )
+
+                suite.run_test(
+                    "Global Config Instances",
+                    test_global_config_instances,
+                    "Global instances should be available and properly typed",
+                    "Global configuration instances are properly created and accessible",
+                    "Test that global config_instance and selenium_config exist and are correct types",
+                )
+
+                suite.run_test(
+                    "Selenium Integration",
+                    test_selenium_integration,
+                    "Selenium config should have required attributes with valid values",
+                    "Selenium configuration integration works correctly",
+                    "Test Selenium config attributes like HEADLESS_MODE and CHROME_USER_DATA_DIR",
+                )
+
+                suite.run_test(
+                    "URL Configuration",
+                    test_url_configuration,
+                    "URLs should be properly formatted with http/https protocols",
+                    "URL configuration and validation works properly",
+                    "Test URL format validation for BASE_URL and API_BASE_URL",
+                )
+
+                suite.run_test(
+                    "Config Initialization Performance",
+                    test_config_initialization_performance,
+                    "Initialization should complete in less than 1 second",
+                    "Configuration initialization completes within acceptable time",
+                    "Measure time to create Config_Class instance",
+                )
+
+                suite.run_test(
+                    "Environment Variable Access Performance",
+                    test_environment_variable_access_performance,
+                    "100 env var accesses should complete in less than 0.1 seconds",
+                    "Environment variable access is efficient for multiple calls",
+                    "Measure time for 100 environment variable access calls",
+                )
+
+                suite.run_test(
+                    "Multiple Config Instances Performance",
+                    test_multiple_config_instances,
+                    "Creating 10 instances should complete in less than 0.5 seconds",
+                    "Creating multiple config instances is efficient",
+                    "Measure time to create 10 Config_Class instances",
+                )               
+                
+                suite.run_test(
+                    "Missing Critical Configuration",
+                    test_missing_critical_configuration,
+                    "Missing values should not cause application crashes",
+                    "Missing critical configuration values are handled gracefully",
+                    "Test configuration validation with potentially missing critical values",
+                )
+                
+                suite.run_test(
+                    "Configuration Error Recovery",
+                    test_configuration_error_recovery,
+                    "Invalid configurations should return defaults without crashing",
+                    "Configuration errors are handled gracefully with recovery",
+                    "Test invalid JSON environment variables to verify error handling",
+                )
+                
+                suite.run_test(
+                    "Import Error Handling",
+                    test_import_error_handling,
+                    "Initialization should succeed despite potential import errors",
+                    "Import errors are handled gracefully during initialization",
+                    "Test that Config_Class can initialize even with missing optional dependencies",
+                )
+
+                return suite.finish_suite()
+        except Exception as e:
+            logger.warning(f"Test framework error: {e}")
+            return False
     else:
-        return run_comprehensive_tests_fallback()
+        # Basic tests when framework unavailable
+        print("🧪 Running basic configuration tests (test framework unavailable)...")
+        try:
+            # Test basic config instantiation
+            config = Config_Class()
+            assert config is not None, "Config instance should not be None"
 
+            # Test environment variable methods
+            test_val = config._get_string_env("TEST_VAR", "default")
+            assert test_val == "default", "String env var should return default"
 
-def run_comprehensive_tests_fallback() -> bool:
-    """Fallback test function when test framework is not available."""
-    print("🧪 Running basic configuration tests (test framework not available)...")
-
-    try:
-        # Test 1: Configuration class instantiation
-        config = Config_Class()
-        print("✅ Test 1: Configuration class instantiation - Success")
-
-        # Test 2: Environment variable methods
-        test_val = config._get_string_env("TEST_VAR", "default")
-        assert test_val == "default"
-        print("✅ Test 2: Environment variable methods - Success")
-
-        # Test 3: Required attributes
-        required_attrs = ["BASE_URL", "DATABASE_FILE", "USER_AGENTS", "INITIAL_DELAY"]
-        for attr in required_attrs:
-            assert hasattr(config, attr)
-        print("✅ Test 3: Required attributes check - Success")
-
-        # Test 4: Global instances
-        from config import config_instance, selenium_config
-
-        print("✅ Test 4: Global configuration instances - Success")
-
-        print("🎉 All basic tests passed!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
+            print("✅ Basic configuration tests passed!")
+            return True
+        except Exception as e:
+            print(f"❌ Basic tests failed: {e}")
+            return False
 
 
 # --- Base Configuration Class ---

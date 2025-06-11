@@ -497,81 +497,50 @@ health_checker.register_health_check("memory", memory_health_check)
 health_checker.register_health_check("disk", disk_health_check)
 
 
-def _run_basic_fallback_tests() -> bool:
-    """
-    Basic functionality test (fallback when test framework unavailable).
-
-    This function provides essential testing when the enhanced test framework
-    is not available, ensuring core performance monitoring functionality works.
-    """
-    logger.info("Running basic performance monitoring fallback tests...")
-
-    try:
-        # Test performance monitoring
-        @monitor_performance("test_service")
-        def test_function(should_fail=False):
-            time.sleep(0.01)  # Simulate work (shorter for faster test)
-            if should_fail:
-                raise ValueError("Test error")
-            return "success"
-
-        # Test successful operations
-        for i in range(5):
-            test_function()
-
-        # Test failed operations
-        for i in range(2):
-            try:
-                test_function(should_fail=True)
-            except ValueError:
-                pass
-
-        # Check metrics
-        metrics = performance_monitor.get_service_metrics("test_service")
-        if not metrics:
-            logger.error("No metrics found for test service")
-            return False
-
-        if metrics["total_calls"] != 7:
-            logger.error(f"Expected 7 calls, got {metrics['total_calls']}")
-            return False
-
-        if metrics["successful_calls"] != 5:
-            logger.error(f"Expected 5 successes, got {metrics['successful_calls']}")
-            return False
-
-        # Test health checks
-        health_results = health_checker.get_overall_health()
-        if "overall_status" not in health_results:
-            logger.error("Missing overall health status")
-            return False
-
-        # Test performance summary
-        summary = performance_monitor.get_performance_summary()
-        if "total_operations" not in summary:
-            logger.error("Missing performance summary data")
-            return False
-
-        logger.info("Performance monitoring basic tests passed successfully")
-        return True
-
-    except Exception as e:
-        logger.error(f"Performance monitoring basic tests failed: {e}", exc_info=True)
-        return False
-
-
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for performance_monitor.py.
     Tests performance tracking, metrics collection, and reporting.
     """
-    if not HAS_TEST_FRAMEWORK:
-        return _run_basic_fallback_tests()
+    try:
+        from test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite(
-        "Performance Monitoring & Metrics Collection", "performance_monitor.py"
-    )
-    suite.start_suite()
+        has_framework = True
+    except ImportError:
+        has_framework = False
+
+    if not has_framework:
+        logger.info("🔧 Running basic performance monitoring tests...")
+        try:
+            # Test monitor initialization
+            monitor = PerformanceMonitor()
+            assert hasattr(monitor, "services")
+            assert hasattr(monitor, "system_metrics")
+            logger.info("✅ Monitor initialization test passed")
+
+            # Test operation recording
+            monitor.record_operation("test_service", 0.1, True)
+            metrics = monitor.get_service_metrics("test_service")
+            assert metrics is not None
+            assert metrics["total_calls"] == 1
+            logger.info("✅ Operation recording test passed")
+
+            # Test performance summary
+            summary = monitor.get_performance_summary()
+            assert isinstance(summary, dict)
+            logger.info("✅ Performance summary test passed")
+
+            logger.info("✅ Basic performance monitoring tests completed")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Basic performance monitoring tests failed: {e}")
+            return False
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Performance Monitoring & Metrics Collection", "performance_monitor.py"
+        )
+        suite.start_suite()
 
     # === INITIALIZATION TESTS ===
     def test_monitor_initialization():

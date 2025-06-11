@@ -396,15 +396,12 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for core/api_manager.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        return _run_basic_fallback_tests()
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
 
     suite = TestSuite("API Manager & HTTP Request Handling", "api_manager.py")
     suite.start_suite()
@@ -657,8 +654,9 @@ def run_comprehensive_tests() -> bool:
 
     return suite.finish_suite()
 
-
-def _run_basic_fallback_tests() -> bool:
+    # ==============================================
+    # Standalone Test Block
+    # =============================================
     """Fallback tests when test framework is not available."""
     print("📊 Running API Manager basic fallback tests...")
 

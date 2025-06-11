@@ -3430,9 +3430,13 @@ def _prepare_base_headers(
     # Apply contextual headers from config
     contextual_headers = cfg.API_CONTEXTUAL_HEADERS.get(api_description, {})
     if isinstance(contextual_headers, dict):
-        base_headers.update({k: v for k, v in contextual_headers.items() if v is not None})
+        base_headers.update(
+            {k: v for k, v in contextual_headers.items() if v is not None}
+        )
     else:
-        logger.warning(f"[{api_description}] Expected dict for contextual headers, got {type(contextual_headers)}")
+        logger.warning(
+            f"[{api_description}] Expected dict for contextual headers, got {type(contextual_headers)}"
+        )
 
     # Apply explicit overrides
     if headers:
@@ -6441,7 +6445,18 @@ def run_comprehensive_tests() -> bool:
             assert_valid_function,
         )
     except ImportError:
-        return run_comprehensive_tests_fallback()
+        # Basic tests when framework unavailable
+        print("🧪 Running Utils basic tests (test framework unavailable)...")
+        try:
+            # Test core function availability
+            required_functions = ["SessionManager", "format_name", "DynamicRateLimiter"]
+            missing_functions = [f for f in required_functions if f not in globals()]
+            assert not missing_functions, f"Missing functions: {missing_functions}"
+            print("✅ Basic utils tests passed!")
+            return True
+        except Exception as e:
+            print(f"❌ Basic tests failed: {e}")
+            return False
 
     suite = TestSuite("Core Utilities & Session Management", "utils.py")
     suite.start_suite()
@@ -6460,7 +6475,7 @@ def run_comprehensive_tests() -> bool:
         test_module_imports,
         "All core classes (SessionManager, DynamicRateLimiter) and functions (format_name) are defined",
         "Check that required classes and functions are available in globals()",
-        "Test module imports and verify that core classes and functions exist in global namespace"
+        "Test module imports and verify that core classes and functions exist in global namespace",
     )
 
     def test_config_loading():
@@ -6477,7 +6492,7 @@ def run_comprehensive_tests() -> bool:
         test_config_loading,
         "Configuration object loads successfully with required attributes",
         "Verify config_instance has required attributes like BASE_URL",
-        "Test configuration loading and validation of basic required attributes"
+        "Test configuration loading and validation of basic required attributes",
     )
 
     # CORE FUNCTIONALITY TESTS
@@ -6521,7 +6536,7 @@ def run_comprehensive_tests() -> bool:
         test_format_name_comprehensive,
         "All name formats (normal, hyphenated, apostrophes, None, empty) are handled correctly",
         "Test format_name() with various real-world names including edge cases",
-        "Test comprehensive name formatting with real-world examples and edge cases"
+        "Test comprehensive name formatting with real-world examples and edge cases",
     )
 
     def test_ordinal_case_comprehensive():
@@ -6565,7 +6580,7 @@ def run_comprehensive_tests() -> bool:
         test_ordinal_case_comprehensive,
         "All ordinal conversions follow English rules (1st, 2nd, 3rd, 4th, 11th, 21st, etc.)",
         "Test ordinal_case() with numbers 1-1001 including special cases for 11th, 12th, 13th",
-        "Test comprehensive ordinal number conversion with edge cases and English grammar rules"
+        "Test comprehensive ordinal number conversion with edge cases and English grammar rules",
     )
 
     def test_rate_limiter_functionality():
@@ -6603,7 +6618,7 @@ def run_comprehensive_tests() -> bool:
         test_rate_limiter_functionality,
         "Rate limiter waits appropriate time and properly adjusts delays up/down",
         "Create DynamicRateLimiter, test wait timing, and delay adjustment functions",
-        "Test rate limiter functionality with real timing validation and delay adjustments"
+        "Test rate limiter functionality with real timing validation and delay adjustments",
     )
 
     # EDGE CASE TESTS
@@ -6639,7 +6654,7 @@ def run_comprehensive_tests() -> bool:
         test_format_name_edge_cases,
         "Function handles edge cases gracefully without exceptions",
         "Test format_name() with extreme inputs: extra whitespace, unicode, single chars",
-        "Test name formatting with extreme edge cases and special characters"
+        "Test name formatting with extreme edge cases and special characters",
     )
 
     def test_rate_limiter_extreme_values():
@@ -6673,7 +6688,7 @@ def run_comprehensive_tests() -> bool:
         test_rate_limiter_extreme_values,
         "Rate limiter handles boundary conditions without errors or infinite delays",
         "Test DynamicRateLimiter with extreme delay values (0, 0.001, max limits)",
-        "Test rate limiter with extreme delay values and boundary conditions"
+        "Test rate limiter with extreme delay values and boundary conditions",
     )
 
     # INTEGRATION TESTS
@@ -6713,7 +6728,7 @@ def run_comprehensive_tests() -> bool:
         test_session_manager_integration,
         "SessionManager creates successfully with browser management capabilities",
         "Instantiate SessionManager and verify it has required methods and attributes",
-        "Test SessionManager integration with browser configuration and methods"
+        "Test SessionManager integration with browser configuration and methods",
     )
 
     def test_file_operations_integration():
@@ -6754,7 +6769,7 @@ def run_comprehensive_tests() -> bool:
         test_file_operations_integration,
         "File operations work correctly for configuration and logging needs",
         "Create, write, read, and delete temporary test file with marked test content",
-        "Test file operations integration for configuration and logging requirements"
+        "Test file operations integration for configuration and logging requirements",
     )
 
     # PERFORMANCE TESTS
@@ -6775,6 +6790,7 @@ def run_comprehensive_tests() -> bool:
 
         # Simple timing measurement
         import time
+
         start_time = time.time()
         result = performance_test()
         avg_duration = time.time() - start_time
@@ -6787,7 +6803,7 @@ def run_comprehensive_tests() -> bool:
         test_format_name_performance,
         "Formats 500 names in under 100ms demonstrating efficient string processing",
         "Format 500 names (mix of normal, None, empty) and measure execution time",
-        "Test name formatting performance with large datasets"
+        "Test name formatting performance with large datasets",
     )
 
     def test_rate_limiter_precision():
@@ -6819,7 +6835,7 @@ def run_comprehensive_tests() -> bool:
         test_rate_limiter_precision,
         "Rate limiter maintains consistent timing with less than 20ms variance",
         "Measure 5 consecutive 50ms waits and check timing consistency",
-        "Test rate limiter timing precision and consistency"
+        "Test rate limiter timing precision and consistency",
     )
 
     # ERROR HANDLING TESTS
@@ -6855,7 +6871,7 @@ def run_comprehensive_tests() -> bool:
         test_format_name_error_handling,
         "Function handles invalid inputs gracefully without crashing",
         "Pass invalid input types (dict, list, object) to format_name()",
-        "Test format_name error handling with invalid input types"
+        "Test format_name error handling with invalid input types",
     )
 
     def test_rate_limiter_error_conditions():
@@ -6890,7 +6906,7 @@ def run_comprehensive_tests() -> bool:
         test_rate_limiter_error_conditions,
         "Rate limiter handles error conditions without exceptions or system issues",
         "Test rate limiter with invalid delays and repeated operations",
-        "Test rate limiter behavior under error conditions and edge cases"
+        "Test rate limiter behavior under error conditions and edge cases",
     )
 
     return suite.finish_suite()

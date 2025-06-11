@@ -999,7 +999,7 @@ def test_fallback_functionality() -> bool:
             self.dynamic_rate_limiter = MockRateLimiter()
 
     test_sm = TestSessionManager()
-    
+
     # Test with empty AI provider (should trigger fallbacks)
     original_provider = config_instance.AI_PROVIDER
     try:
@@ -1147,12 +1147,41 @@ def run_comprehensive_tests() -> bool:
     Enhanced comprehensive test suite for ai_interface.py using standardized test framework.
     Tests AI integration, prompt management, response processing, and error handling.
     """
-    if not HAS_TEST_FRAMEWORK:
-        logger.warning("Test framework not available. Running basic fallback tests.")
-        return _run_basic_fallback_tests()
+    try:
+        from test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite("AI Interface & Integration Layer", "ai_interface.py")
-    suite.start_suite()
+        has_framework = True
+    except ImportError:
+        has_framework = False
+
+    if not has_framework:
+        logger.info("🔧 Running basic AI interface tests...")
+        try:
+            # Test basic function availability
+            assert callable(classify_message_intent)
+            assert callable(extract_genealogical_entities)
+            assert callable(test_configuration)
+            logger.info("✅ Core AI functions are available")
+
+            # Test configuration
+            config_result = test_configuration()
+            logger.info(
+                f"✅ Configuration test: {'PASSED' if config_result else 'WARNING - AI may not be configured'}"
+            )  # Test fallback functionality
+            fallback_result = test_fallback_functionality()
+            logger.info(
+                f"✅ Fallback test: {'PASSED' if fallback_result else 'FAILED'}"
+            )
+
+            logger.info("✅ Basic AI interface tests completed")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Basic AI interface tests failed: {e}")
+            return False
+
+    with suppress_logging():
+        suite = TestSuite("AI Interface & Integration Layer", "ai_interface.py")
+        suite.start_suite()
 
     # INITIALIZATION TESTS
     def test_module_initialization():
@@ -1162,12 +1191,14 @@ def run_comprehensive_tests() -> bool:
             extract_genealogical_entities, "extract_genealogical_entities"
         )
         assert_valid_function(test_configuration, "test_configuration")
-        assert_valid_function(test_ai_functionality, "test_ai_functionality")        # Check AI provider configuration
+        assert_valid_function(
+            test_ai_functionality, "test_ai_functionality"
+        )  # Check AI provider configuration
         ai_provider = getattr(config_instance, "AI_PROVIDER", None)
         assert (
             ai_provider is not None or ai_provider == ""
         ), "AI_PROVIDER should be configured"
-        
+
         return True
 
     suite.run_test(
@@ -1175,8 +1206,9 @@ def run_comprehensive_tests() -> bool:
         test_module_initialization,
         "All core AI functions available and configuration accessible",
         "Validate AI interface functions and configuration setup",
-        "Test AI interface module initialization and dependencies"
-    )    # CORE FUNCTIONALITY TESTS
+        "Test AI interface module initialization and dependencies",
+    )  # CORE FUNCTIONALITY TESTS
+
     def test_ai_configuration_validation():
         """Test AI configuration and provider settings."""
         config_result = test_configuration()
@@ -1191,7 +1223,8 @@ def run_comprehensive_tests() -> bool:
         test_ai_configuration_validation,
         "Configuration validation completes without errors",
         "Test AI provider settings and API key configuration",
-        "Validate AI provider settings and API key configuration",    )
+        "Validate AI provider settings and API key configuration",
+    )
 
     def test_prompt_loading_functionality():
         """Test AI prompt loading and template management."""
@@ -1231,9 +1264,11 @@ def run_comprehensive_tests() -> bool:
                 result = classify_message_intent(message, mock_session)
                 # Result can be None if AI is disabled, which is acceptable
                 if result is not None:
-                    assert isinstance(                result, str
+                    assert isinstance(
+                        result, str
                     ), "Classification should return string or None"
-            except Exception:                pass  # May require AI service setup
+            except Exception:
+                pass  # May require AI service setup
         return True
 
     suite.run_test(
@@ -1271,7 +1306,7 @@ def run_comprehensive_tests() -> bool:
         test_edge_case_inputs,
         expected_behavior="Functions handle edge cases gracefully without crashing",
         test_description="Test AI functions with empty, whitespace, long, and unicode inputs",
-        method_description="Edge case input validation testing"
+        method_description="Edge case input validation testing",
     )
 
     def test_ai_service_unavailable():
@@ -1285,7 +1320,7 @@ def run_comprehensive_tests() -> bool:
         test_ai_service_unavailable,
         expected_behavior="System degrades gracefully with appropriate fallback responses",
         test_description="Test fallback behavior when AI services are unavailable",
-        method_description="Edge case testing for AI service unavailability"
+        method_description="Edge case testing for AI service unavailability",
     )
 
     # INTEGRATION TESTS
@@ -1312,7 +1347,7 @@ def run_comprehensive_tests() -> bool:
         test_ai_workflow_integration,
         expected_behavior="AI workflow integrates properly with session and configuration systems",
         test_description="Test complete AI workflow with session management integration",
-        method_description="Integration testing for AI workflow components"
+        method_description="Integration testing for AI workflow components",
     )
 
     # PERFORMANCE TESTS
@@ -1348,7 +1383,7 @@ def run_comprehensive_tests() -> bool:
         test_ai_response_timing,
         expected_behavior="AI calls complete within 10 seconds or fall back quickly",
         test_description="Measure AI response time and validate performance within limits",
-        method_description="Performance testing for AI response timing"
+        method_description="Performance testing for AI response timing",
     )
 
     # ERROR HANDLING TESTS
@@ -1363,7 +1398,7 @@ def run_comprehensive_tests() -> bool:
         test_malformed_ai_responses,
         expected_behavior="System handles malformed responses gracefully with appropriate fallbacks",
         test_description="Test error handling for malformed or invalid AI responses",
-        method_description="Error handling testing for malformed AI responses"
+        method_description="Error handling testing for malformed AI responses",
     )
 
     def test_ai_authentication_errors():
@@ -1380,39 +1415,10 @@ def run_comprehensive_tests() -> bool:
         test_ai_authentication_errors,
         expected_behavior="Error handling mechanisms are properly configured and accessible",
         test_description="Verify error handling infrastructure for AI authentication failures",
-        method_description="Error handling testing for AI authentication failures"
+        method_description="Error handling testing for AI authentication failures",
     )
 
     return suite.finish_suite()
-
-
-def _run_basic_fallback_tests() -> bool:
-    """Basic fallback tests when test framework is not available."""
-    logger.info("🔧 Running basic AI interface fallback tests...")
-
-    try:
-        # Test basic function availability
-        assert callable(classify_message_intent)
-        assert callable(extract_genealogical_entities)
-        assert callable(test_configuration)
-        logger.info("✅ Core AI functions are available")
-
-        # Test configuration
-        config_result = test_configuration()
-        logger.info(
-            f"✅ Configuration test: {'PASSED' if config_result else 'WARNING - AI may not be configured'}"
-        )
-
-        # Test fallback functionality
-        fallback_result = test_fallback_functionality()
-        logger.info(f"✅ Fallback test: {'PASSED' if fallback_result else 'FAILED'}")
-
-        logger.info("✅ Basic fallback tests completed")
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Basic fallback tests failed: {e}")
-        return False
 
 
 def quick_health_check(session_manager: SessionManager) -> Dict[str, Any]:
@@ -1565,7 +1571,7 @@ USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They marr
 # ==============================================
 if __name__ == "__main__":
     import sys
-    
+
     print("🤖 Running AI Interface & Integration Layer comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

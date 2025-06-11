@@ -3542,43 +3542,9 @@ def load_test_person_from_env():
     }
 
 
-
-
-
 # ==============================================
 # Standalone Test Block
 # ==============================================
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function for when test framework is not available.
-    Runs basic functionality tests with a timeout to prevent hanging.
-    """
-    print("🧪 Running Action 11 lightweight tests...")
-
-    try:
-        # Test 1: Core function availability
-        assert callable(handle_api_report), "handle_api_report should be callable"
-        print("✅ Core function availability test passed")
-
-        # Test 2: Search criteria function
-        assert (
-            "_get_search_criteria" in globals()
-        ), "Search criteria function should exist"
-        print("✅ Search criteria function test passed")
-
-        # Test 3: Scoring functions
-        assert (
-            "_process_and_score_suggestions" in globals()
-        ), "Scoring function should exist"
-        print("✅ Scoring function test passed")
-
-        print("✅ All lightweight tests passed")
-        return True
-    except Exception as e:
-        print(f"❌ Test error: {e}")
-        return False
 
 
 def run_comprehensive_tests() -> bool:
@@ -3738,7 +3704,9 @@ def run_comprehensive_tests() -> bool:
                 "Should have utility helper functions",
             )
 
-            # PERFORMANCE TESTS        def test_function_lookup_performance():
+            # PERFORMANCE TESTS
+
+        def test_function_lookup_performance():
             """Test function lookup performance"""
             import time
 
@@ -3823,12 +3791,35 @@ def run_comprehensive_tests() -> bool:
 
     except ImportError:
         # Fallback when test framework is not available
-        return run_comprehensive_tests_fallback()
+        print("🧪 Running Action 11 lightweight tests...")
+
+        try:
+            # Test 1: Core function availability
+            assert callable(handle_api_report), "handle_api_report should be callable"
+            print("✅ Core function availability test passed")
+
+            # Test 2: Search criteria function
+            assert (
+                "_get_search_criteria" in globals()
+            ), "Search criteria function should exist"
+            print("✅ Search criteria function test passed")
+
+            # Test 3: Scoring functions
+            assert (
+                "_process_and_score_suggestions" in globals()
+            ), "Scoring function should exist"
+            print("✅ Scoring function test passed")
+
+            print("✅ All lightweight tests passed")
+            return True
+        except Exception as e:
+            print(f"❌ Test error: {e}")
+            return False
 
 
 if __name__ == "__main__":
     import sys
-    
+
     print("🔍 Running Action 11 - Live API Research Tool comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

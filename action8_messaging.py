@@ -1721,54 +1721,36 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 # ==============================================
 if __name__ == "__main__":
     import sys
-    from unittest.mock import MagicMock, patch
-
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-
-        HAS_TEST_FRAMEWORK = True
-    except ImportError:
-        # Create dummy classes/functions for when test framework is not available
-        class DummyTestSuite:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            def start_suite(self):
-                pass
-
-            def run_test(self, *args, **kwargs):
-                return True
-
-            def finish_suite(self):
-                return True
-
-        class DummyContext:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-        TestSuite = DummyTestSuite
-        suppress_logging = lambda: DummyContext()
-        create_mock_data = lambda: {}
-        assert_valid_function = lambda x, *args: True
-        HAS_TEST_FRAMEWORK = False
 
     def run_comprehensive_tests() -> bool:
         """
         Comprehensive test suite for action8_messaging.py.
         Tests automated messaging system with template management and recipient filtering.
         """
-        suite = TestSuite(
-            "Action 8 - Automated Messaging System", "action8_messaging.py"
-        )
-        suite.start_suite()
+        if not HAS_TEST_FRAMEWORK:
+            print("🧪 Running basic messaging tests (test framework unavailable)...")
+            try:
+                # Basic tests when framework unavailable
+                assert (
+                    MESSAGE_INTERVALS is not None
+                ), "Message intervals should be defined"
+                assert (
+                    MESSAGE_TYPES_ACTION8 is not None
+                ), "Message types should be defined"
+                print("✅ Basic messaging tests passed!")
+                return True
+            except Exception as e:
+                print(f"❌ Basic tests failed: {e}")
+                return False
+
+        with suppress_logging():
+            suite = TestSuite(
+                "Action 8 - Automated Messaging System", "action8_messaging.py"
+            )
+            suite.start_suite()
+
+            # Add necessary imports for testing
+            from unittest.mock import MagicMock, patch
 
         # Message template loading and validation
         def test_message_template_loading():

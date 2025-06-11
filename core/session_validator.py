@@ -413,361 +413,256 @@ class SessionValidator:
             return False
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """
-    Run comprehensive tests for SessionValidator functionality.
-    Tests cover: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
+    Comprehensive test suite for session_validator.py with real functionality testing.
+    Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    import sys
-    import os
-    import time
-    from unittest.mock import Mock, MagicMock, patch
+    from test_framework import TestSuite, suppress_logging
 
-    # Suppress logging during tests
-    import logging
+    with suppress_logging():
+        suite = TestSuite(
+            "Session Validation & Readiness Checks", "session_validator.py"
+        )
+        suite.start_suite()
 
-    logging.getLogger().setLevel(logging.CRITICAL)
+        # INITIALIZATION TESTS
+        def test_session_validator_initialization():
+            """Test SessionValidator initialization and component setup."""
+            validator = SessionValidator()
+            assert validator is not None, "SessionValidator should initialize"
+            assert hasattr(
+                validator, "last_js_error_check"
+            ), "Should have last_js_error_check attribute"
+            assert (
+                validator.last_js_error_check is not None
+            ), "last_js_error_check should be initialized"
+            from datetime import datetime
 
-    print("=" * 70)
-    print("SESSION VALIDATOR - COMPREHENSIVE TEST SUITE")
-    print("=" * 70)
+            assert isinstance(
+                validator.last_js_error_check, datetime
+            ), "last_js_error_check should be datetime"
+            return True
 
-    total_tests = 0
-    passed_tests = 0
-    failed_tests = []
+        suite.run_test(
+            "SessionValidator Initialization",
+            test_session_validator_initialization,
+            "SessionValidator creates successfully with required attributes for session validation",
+            "Instantiate SessionValidator and verify required attributes are properly initialized",
+            "Test SessionValidator initialization and attribute setup",
+        )
 
-    def run_test(test_name, test_func):
-        nonlocal total_tests, passed_tests
-        total_tests += 1
-        print(f"\n[TEST {total_tests:02d}] {test_name}")
-        print("-" * 50)
-        try:
-            test_func()
-            print("✓ PASSED")
-            passed_tests += 1
-        except Exception as e:
-            print(f"✗ FAILED: {str(e)}")
-            failed_tests.append(f"{test_name}: {str(e)}")
+        # CORE FUNCTIONALITY TESTS
+        def test_readiness_checks_success():
+            """Test successful readiness checks flow with mocked dependencies."""
+            from unittest.mock import Mock, patch
 
-    # =============================================================================
-    # INITIALIZATION TESTS
-    # =============================================================================
-    print("\n" + "=" * 50)
-    print("INITIALIZATION TESTS")
-    print("=" * 50)
+            validator = SessionValidator()
+            mock_browser = Mock()
+            mock_api = Mock()
 
-    def test_session_validator_initialization():
-        """Test SessionValidator initialization."""
-        validator = SessionValidator()
-        assert hasattr(
-            validator, "last_js_error_check"
-        ), "Missing last_js_error_check attribute"
-        assert (
-            validator.last_js_error_check is not None
-        ), "last_js_error_check not initialized"
-        print("SessionValidator initialized successfully")
+            # Mock all internal check methods to return success
+            with patch.object(
+                validator, "_check_login_and_attempt_relogin", return_value=(True, None)
+            ), patch.object(
+                validator, "_check_and_handle_url", return_value=True
+            ), patch.object(
+                validator, "_check_essential_cookies", return_value=(True, None)
+            ), patch.object(
+                validator, "_sync_cookies_to_requests", return_value=(True, None)
+            ), patch.object(
+                validator, "_check_csrf_token", return_value=(True, None)
+            ):
 
-    def test_attributes_setup():
-        """Test that all required attributes are properly set up."""
-        validator = SessionValidator()
-        assert isinstance(
-            validator.last_js_error_check, datetime
-        ), "last_js_error_check should be datetime"
-        print("All attributes properly initialized")
+                result = validator.perform_readiness_checks(
+                    mock_browser, mock_api, "test_action"
+                )
+                assert (
+                    result is True
+                ), "Readiness checks should succeed when all sub-checks pass"
+            return True
 
-    run_test("SessionValidator Initialization", test_session_validator_initialization)
-    run_test("Attributes Setup", test_attributes_setup)
+        suite.run_test(
+            "Readiness Checks Success Flow",
+            test_readiness_checks_success,
+            "All readiness checks pass when mocked dependencies return success",
+            "Mock all internal validation methods to return success and verify overall result",
+            "Test successful execution path of readiness checks with mocked dependencies",
+        )
 
-    # =============================================================================
-    # CORE FUNCTIONALITY TESTS
-    # =============================================================================
-    print("\n" + "=" * 50)
-    print("CORE FUNCTIONALITY TESTS")
-    print("=" * 50)
+        def test_login_verification():
+            """Test login status verification functionality."""
+            from unittest.mock import Mock
 
-    def test_readiness_checks_success():
-        """Test successful readiness checks flow."""
-        validator = SessionValidator()
+            validator = SessionValidator()
+            mock_api = Mock()
+            mock_api.verify_api_login_status.return_value = True
 
-        # Mock dependencies
-        mock_browser = Mock()
-        mock_api = Mock()
-
-        # Mock all the internal check methods to return success
-        with patch.object(
-            validator, "_check_login_and_attempt_relogin", return_value=(True, None)
-        ), patch.object(
-            validator, "_check_and_handle_url", return_value=True
-        ), patch.object(
-            validator, "_check_essential_cookies", return_value=(True, None)
-        ), patch.object(
-            validator, "_sync_cookies_to_requests", return_value=(True, None)
-        ), patch.object(
-            validator, "_check_csrf_token", return_value=(True, None)
-        ):
-
-            result = validator.perform_readiness_checks(
-                mock_browser, mock_api, "test_action"
-            )
+            result = validator.verify_login_status(mock_api)
             assert (
                 result is True
-            ), "Readiness checks should succeed when all sub-checks pass"
-            print("Readiness checks completed successfully")
+            ), "Login verification should succeed with valid API response"
+            mock_api.verify_api_login_status.assert_called_once()
+            return True
 
-    def test_login_verification():
-        """Test login status verification."""
-        validator = SessionValidator()
-        mock_api = Mock()
-        mock_api.verify_api_login_status.return_value = True
-
-        result = validator.verify_login_status(mock_api)
-        assert result is True, "Login verification should succeed"
-        mock_api.verify_api_login_status.assert_called_once()
-        print("Login verification working correctly")
-
-    def test_cookie_validation():
-        """Test session cookie validation."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_browser.is_session_valid.return_value = True
-        mock_browser.get_cookies.return_value = True
-
-        result = validator.validate_session_cookies(mock_browser, ["test_cookie"])
-        assert result is True, "Cookie validation should succeed with valid session"
-        print("Cookie validation working correctly")
-
-    run_test("Readiness Checks Success Flow", test_readiness_checks_success)
-    run_test("Login Verification", test_login_verification)
-    run_test("Cookie Validation", test_cookie_validation)
-
-    # =============================================================================
-    # EDGE CASES TESTS
-    # =============================================================================
-    print("\n" + "=" * 50)
-    print("EDGE CASES TESTS")
-    print("=" * 50)
-
-    def test_invalid_browser_session():
-        """Test handling of invalid browser session."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_browser.is_session_valid.return_value = False
-
-        result = validator.validate_session_cookies(mock_browser, ["test_cookie"])
-        assert result is False, "Should fail with invalid browser session"
-        print("Invalid browser session handled correctly")
-
-    def test_missing_required_cookies():
-        """Test handling of missing required cookies."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_browser.is_session_valid.return_value = True
-        mock_browser.get_cookies.return_value = False
-
-        result = validator.validate_session_cookies(mock_browser, ["missing_cookie"])
-        assert result is False, "Should fail with missing cookies"
-        print("Missing cookies handled correctly")
-
-    def test_login_verification_failure():
-        """Test login verification failure cases."""
-        validator = SessionValidator()
-        mock_api = Mock()
-        mock_api.verify_api_login_status.return_value = False
-
-        result = validator.verify_login_status(mock_api)
-        assert result is False, "Should fail when API reports not logged in"
-        print("Login verification failure handled correctly")
-
-    run_test("Invalid Browser Session", test_invalid_browser_session)
-    run_test("Missing Required Cookies", test_missing_required_cookies)
-    run_test("Login Verification Failure", test_login_verification_failure)
-
-    # =============================================================================
-    # INTEGRATION TESTS
-    # =============================================================================
-    print("\n" + "=" * 50)
-    print("INTEGRATION TESTS")
-    print("=" * 50)
-
-    def test_readiness_checks_with_retry():
-        """Test readiness checks with retry mechanism."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_api = Mock()
-
-        # First attempt fails, second succeeds
-        call_count = 0
-
-        def mock_login_check(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return False, "First attempt fail"
-            return True, None
-
-        with patch.object(
-            validator, "_check_login_and_attempt_relogin", side_effect=mock_login_check
-        ), patch.object(
-            validator, "_check_and_handle_url", return_value=True
-        ), patch.object(
-            validator, "_check_essential_cookies", return_value=(True, None)
-        ), patch.object(
-            validator, "_sync_cookies_to_requests", return_value=(True, None)
-        ), patch.object(
-            validator, "_check_csrf_token", return_value=(True, None)
-        ), patch(
-            "time.sleep"
-        ):  # Mock sleep to speed up test
-
-            result = validator.perform_readiness_checks(
-                mock_browser, mock_api, max_attempts=2
-            )
-            assert result is True, "Should succeed on retry"
-            assert call_count == 2, "Should have attempted twice"
-            print("Retry mechanism working correctly")
-
-    def test_full_validation_workflow():
-        """Test complete validation workflow integration."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_api = Mock()
-
-        # Set up successful responses
-        mock_browser.is_session_valid.return_value = True
-        mock_browser.get_cookies.return_value = True
-        mock_api.verify_api_login_status.return_value = True
-
-        # Test cookie validation
-        cookie_result = validator.validate_session_cookies(
-            mock_browser, ["session_cookie"]
+        suite.run_test(
+            "Login Status Verification",
+            test_login_verification,
+            "Login verification succeeds when API reports user is logged in",
+            "Mock API to return successful login status and verify verification result",
+            "Test login status verification with mocked API response",
         )
-        assert cookie_result is True, "Cookie validation should succeed"
 
-        # Test login verification
-        login_result = validator.verify_login_status(mock_api)
-        assert login_result is True, "Login verification should succeed"
+        # EDGE CASES TESTS
+        def test_invalid_browser_session():
+            """Test handling of invalid browser session."""
+            from unittest.mock import Mock
 
-        print("Full validation workflow completed successfully")
-
-    run_test("Readiness Checks with Retry", test_readiness_checks_with_retry)
-    run_test("Full Validation Workflow", test_full_validation_workflow)
-
-    # =============================================================================
-    # PERFORMANCE TESTS
-    # =============================================================================
-    print("\n" + "=" * 50)
-    print("PERFORMANCE TESTS")
-    print("=" * 50)
-
-    def test_initialization_performance():
-        """Test SessionValidator initialization performance."""
-        start_time = time.time()
-        for _ in range(100):
             validator = SessionValidator()
-        end_time = time.time()
+            mock_browser = Mock()
+            mock_browser.is_session_valid.return_value = False
 
-        total_time = end_time - start_time
-        assert (
-            total_time < 1.0
-        ), f"100 initializations took {total_time:.3f}s, should be under 1s"
-        print(f"100 initializations completed in {total_time:.3f}s")
+            result = validator.validate_session_cookies(mock_browser, ["test_cookie"])
+            assert result is False, "Should fail with invalid browser session"
+            return True
 
-    def test_validation_method_performance():
-        """Test validation method call performance."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_browser.is_session_valid.return_value = True
-        mock_browser.get_cookies.return_value = True
+        suite.run_test(
+            "Invalid Browser Session Handling",
+            test_invalid_browser_session,
+            "Cookie validation fails gracefully when browser session is invalid",
+            "Mock browser to return invalid session status and verify validation fails",
+            "Test edge case handling for invalid browser sessions",
+        )
 
-        start_time = time.time()
-        for _ in range(50):
-            validator.validate_session_cookies(mock_browser, ["test_cookie"])
-        end_time = time.time()
+        def test_login_verification_failure():
+            """Test login verification failure cases."""
+            from unittest.mock import Mock
 
-        total_time = end_time - start_time
-        assert (
-            total_time < 0.5
-        ), f"50 validations took {total_time:.3f}s, should be under 0.5s"
-        print(f"50 cookie validations completed in {total_time:.3f}s")
+            validator = SessionValidator()
+            mock_api = Mock()
+            mock_api.verify_api_login_status.return_value = False
 
-    run_test("Initialization Performance", test_initialization_performance)
-    run_test("Validation Method Performance", test_validation_method_performance)
+            result = validator.verify_login_status(mock_api)
+            assert result is False, "Should fail when API reports not logged in"
+            return True
 
-    # =============================================================================
-    # ERROR HANDLING TESTS
-    # =============================================================================
-    print("\n" + "=" * 50)
-    print("ERROR HANDLING TESTS")
-    print("=" * 50)
+        suite.run_test(
+            "Login Verification Failure",
+            test_login_verification_failure,
+            "Login verification fails when API reports user is not logged in",
+            "Mock API to return failed login status and verify verification fails",
+            "Test login verification failure handling",
+        )
 
-    def test_webdriver_exception_handling():
-        """Test handling of WebDriver exceptions."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_api = Mock()
+        # INTEGRATION TESTS
+        def test_full_validation_workflow():
+            """Test complete validation workflow integration."""
+            from unittest.mock import Mock
 
-        # Mock WebDriverException during readiness checks
-        with patch.object(validator, "_check_login_and_attempt_relogin") as mock_login:
-            mock_login.side_effect = WebDriverException("Browser crashed")
-            mock_browser.is_session_valid.return_value = True  # Session still valid
+            validator = SessionValidator()
+            mock_browser = Mock()
+            mock_api = Mock()
 
-            result = validator.perform_readiness_checks(
-                mock_browser, mock_api, max_attempts=1
+            # Set up successful responses
+            mock_browser.is_session_valid.return_value = True
+            mock_browser.get_cookies.return_value = True
+            mock_api.verify_api_login_status.return_value = True
+
+            # Test cookie validation
+            cookie_result = validator.validate_session_cookies(
+                mock_browser, ["session_cookie"]
             )
-            assert result is False, "Should fail when WebDriverException occurs"
-            print("WebDriverException handled correctly")
+            assert cookie_result is True, "Cookie validation should succeed"
 
-    def test_general_exception_handling():
-        """Test handling of general exceptions."""
-        validator = SessionValidator()
-        mock_browser = Mock()
-        mock_browser.is_session_valid.side_effect = Exception("Unexpected error")
+            # Test login verification
+            login_result = validator.verify_login_status(mock_api)
+            assert login_result is True, "Login verification should succeed"
+            return True
 
-        result = validator.validate_session_cookies(mock_browser, ["test_cookie"])
-        assert result is False, "Should handle unexpected exceptions gracefully"
-        print("General exceptions handled correctly")
+        suite.run_test(
+            "Full Validation Workflow Integration",
+            test_full_validation_workflow,
+            "Complete validation workflow succeeds when all components work together",
+            "Test both cookie validation and login verification in sequence with mocked success responses",
+            "Test integration of cookie validation and login verification workflows",
+        )
 
-    def test_api_failure_handling():
-        """Test handling of API failures."""
-        validator = SessionValidator()
-        mock_api = Mock()
-        mock_api.verify_api_login_status.side_effect = Exception("API error")
+        # PERFORMANCE TESTS
+        def test_initialization_performance():
+            """Test SessionValidator initialization performance."""
+            import time
 
-        result = validator.verify_login_status(mock_api)
-        assert result is False, "Should handle API failures gracefully"
-        print("API failures handled correctly")
+            start_time = time.time()
+            for _ in range(100):
+                validator = SessionValidator()
+            end_time = time.time()
 
-    run_test("WebDriver Exception Handling", test_webdriver_exception_handling)
-    run_test("General Exception Handling", test_general_exception_handling)
-    run_test("API Failure Handling", test_api_failure_handling)
+            total_time = end_time - start_time
+            assert (
+                total_time < 1.0
+            ), f"100 initializations took {total_time:.3f}s, should be under 1s"
+            return True
 
-    # =============================================================================
-    # TEST SUMMARY
-    # =============================================================================
-    print("\n" + "=" * 70)
-    print("TEST SUMMARY")
-    print("=" * 70)
-    print(f"Total Tests: {total_tests}")
-    print(f"Passed: {passed_tests}")
-    print(f"Failed: {len(failed_tests)}")
+        suite.run_test(
+            "Initialization Performance",
+            test_initialization_performance,
+            "100 SessionValidator initializations complete in under 1 second",
+            "Create 100 SessionValidator instances and measure total time",
+            "Test performance of SessionValidator initialization",
+        )
 
-    if failed_tests:
-        print(f"\nFailed Tests:")
-        for failure in failed_tests:
-            print(f"  ✗ {failure}")
+        # ERROR HANDLING TESTS
+        def test_webdriver_exception_handling():
+            """Test handling of WebDriver exceptions."""
+            from unittest.mock import Mock, patch
+            from selenium.common.exceptions import WebDriverException
 
-    success_rate = (passed_tests / total_tests) * 100 if total_tests > 0 else 0
-    print(f"\nSuccess Rate: {success_rate:.1f}%")
+            validator = SessionValidator()
+            mock_browser = Mock()
+            mock_api = Mock()
 
-    if success_rate >= 90:
-        print("🎉 EXCELLENT: Session validation functionality is working well!")
-    elif success_rate >= 70:
-        print("✅ GOOD: Session validation functionality is mostly working.")
-    else:
-        print("⚠️  NEEDS ATTENTION: Session validation functionality needs improvement.")
+            # Mock WebDriverException during readiness checks
+            with patch.object(
+                validator, "_check_login_and_attempt_relogin"
+            ) as mock_login:
+                mock_login.side_effect = WebDriverException("Browser crashed")
+                mock_browser.is_session_valid.return_value = True
 
-    print("=" * 70)
-    return success_rate >= 90
+                result = validator.perform_readiness_checks(
+                    mock_browser, mock_api, max_attempts=1
+                )
+                assert result is False, "Should fail when WebDriverException occurs"
+            return True
+
+        suite.run_test(
+            "WebDriver Exception Handling",
+            test_webdriver_exception_handling,
+            "Readiness checks fail gracefully when WebDriver exceptions occur",
+            "Mock WebDriverException during login check and verify graceful failure",
+            "Test error handling for WebDriver exceptions during validation",
+        )
+
+        def test_general_exception_handling():
+            """Test handling of general exceptions."""
+            from unittest.mock import Mock
+
+            validator = SessionValidator()
+            mock_browser = Mock()
+            mock_browser.is_session_valid.side_effect = Exception("Unexpected error")
+
+            result = validator.validate_session_cookies(mock_browser, ["test_cookie"])
+            assert result is False, "Should handle unexpected exceptions gracefully"
+            return True
+
+        suite.run_test(
+            "General Exception Handling",
+            test_general_exception_handling,
+            "Cookie validation handles unexpected exceptions gracefully",
+            "Mock browser to throw unexpected exception and verify graceful failure",
+            "Test error handling for general exceptions during validation",
+        )
+
+        return suite.finish_suite()
 
 
 if __name__ == "__main__":

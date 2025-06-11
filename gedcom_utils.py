@@ -2281,18 +2281,13 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for gedcom_utils.py.
     Tests GEDCOM file processing, parsing, and data extraction.
     """
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        print(
-            "❌ test_framework.py not found. Please ensure it exists in the same directory."
-        )
-        return False
+
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
 
     suite = TestSuite("GEDCOM File Processing & Data Extraction", "gedcom_utils.py")
     suite.start_suite()
@@ -2528,9 +2523,7 @@ def run_comprehensive_tests() -> bool:
         for func_name in optimization_functions:
             if func_name in globals():
                 opt_func = globals()[func_name]
-                assert callable(opt_func)
-
-    # Run all tests
+                assert callable(opt_func)    # Run all tests
     test_functions = {
         "GEDCOM file loading and validation": (
             test_gedcom_file_loading,
@@ -2579,88 +2572,7 @@ def run_comprehensive_tests() -> bool:
             suite.run_test(test_name, test_func, expected_behavior)
 
     return suite.finish_suite()
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """Fallback test function for when test framework is not available."""
-    print("🔍 Running basic GEDCOM utilities tests...")
-    tests_passed = 0
-    total_tests = 0
-
-    # Test 1: Basic imports
-    total_tests += 1
-    try:
-        functions_to_check = [
-            "_normalize_id",
-            "_get_full_name",
-            "_parse_date",
-            "_clean_display_date",
-            "calculate_match_score",
-        ]
-        all_available = all(func in globals() for func in functions_to_check)
-        if all_available:
-            tests_passed += 1
-            print("✅ Basic function imports test passed")
-        else:
-            print("❌ Basic function imports test failed")
-    except Exception as e:
-        print(f"❌ Basic function imports test error: {e}")
-
-    # Test 2: ID normalization
-    total_tests += 1
-    try:
-        if "_normalize_id" in globals():
-            normalize_func = globals()["_normalize_id"]
-            test_id = normalize_func("@I123@")
-            if test_id == "I123":
-                tests_passed += 1
-                print("✅ ID normalization test passed")
-            else:
-                print("❌ ID normalization test failed")
-        else:
-            print("❌ ID normalization function not available")
-    except Exception as e:
-        print(f"❌ ID normalization test error: {e}")
-
-    # Test 3: Date parsing
-    total_tests += 1
-    try:
-        if "_parse_date" in globals():
-            parse_func = globals()["_parse_date"]
-            result = parse_func("1 JAN 1950")
-            if result is not None:
-                tests_passed += 1
-                print("✅ Date parsing test passed")
-            else:
-                print("❌ Date parsing test failed")
-        else:
-            print("❌ Date parsing function not available")
-    except Exception as e:
-        print(f"❌ Date parsing test error: {e}")
-
-    # Test 4: GedcomData class
-    total_tests += 1
-    try:
-        if "GedcomData" in globals():
-            gedcom_class = globals()["GedcomData"]
-            if hasattr(gedcom_class, "__init__"):
-                tests_passed += 1
-                print("✅ GedcomData class test passed")
-            else:
-                print("❌ GedcomData class test failed")
-        else:
-            print("❌ GedcomData class not available")
-    except Exception as e:
-        print(f"❌ GedcomData class test error: {e}")
-
-    success_rate = (tests_passed / total_tests) * 100 if total_tests > 0 else 0
-    print(
-        f"\n📊 Fallback Test Results: {tests_passed}/{total_tests} passed ({success_rate:.1f}%)"
-    )
-
-    return tests_passed == total_tests
-
-
+   
 # ==============================================
 # Standalone Test Block
 # ==============================================

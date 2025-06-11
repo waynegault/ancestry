@@ -1127,7 +1127,71 @@ def run_comprehensive_tests() -> bool:
             assert_valid_function,
         )
     except ImportError:
-        return run_comprehensive_tests_fallback()
+        # Fallback when test framework is not available
+        print("🔎 Running API Search Utils tests (fallback mode)...")
+
+        tests_passed = 0
+        total_tests = 0
+
+        # Test 1: Year extraction
+        total_tests += 1
+        try:
+            if _extract_year_from_date("15 Jan 1985") == 1985:
+                tests_passed += 1
+                print("✅ Year extraction test passed")
+            else:
+                print("❌ Year extraction test failed")
+        except Exception as e:
+            print(f"❌ Year extraction test error: {e}")
+
+        # Test 2: Scoring algorithm
+        total_tests += 1
+        try:
+            search_criteria = {"first_name": "John", "surname": "Smith"}
+            candidate = {"first_name": "John", "surname": "Smith"}
+            score, _, _ = _run_simple_suggestion_scoring(search_criteria, candidate)
+            if score > 0:
+                tests_passed += 1
+                print("✅ Scoring algorithm test passed")
+            else:
+                print("❌ Scoring algorithm test failed")
+        except Exception as e:
+            print(f"❌ Scoring algorithm test error: {e}")
+
+        # Test 3: API search basic functionality
+        total_tests += 1
+        try:
+            from unittest.mock import MagicMock
+
+            mock_session = MagicMock()
+            mock_session.is_sess_valid.return_value = False
+            result = search_api_for_criteria(mock_session, {"first_name": "John"})
+            if result == []:
+                tests_passed += 1
+                print("✅ API search basic test passed")
+            else:
+                print("❌ API search basic test failed")
+        except Exception as e:
+            print(f"❌ API search basic test error: {e}")
+
+        # Test 4: Config handling
+        total_tests += 1
+        try:
+            result = get_config_value("TEST_KEY", "default")
+            if isinstance(result, str):
+                tests_passed += 1
+                print("✅ Config handling test passed")
+            else:
+                print("❌ Config handling test failed")
+        except Exception as e:
+            print(f"❌ Config handling test error: {e}")
+
+        success_rate = (tests_passed / total_tests) * 100 if total_tests > 0 else 0
+        print(
+            f"\n📊 Fallback Test Results: {tests_passed}/{total_tests} passed ({success_rate:.1f}%)"
+        )
+
+        return tests_passed == total_tests
 
     suite = TestSuite("API Search Utilities & Query Building", "api_search_utils.py")
     suite.start_suite()
@@ -1474,80 +1538,6 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function when test_framework is not available.
-    Provides basic functionality testing without the framework.
-
-    Returns:
-        bool: True if basic tests pass, False otherwise
-    """
-    print("🔎 Running API Search Utils tests (fallback mode)...")
-
-    tests_passed = 0
-    total_tests = 0
-
-    # Test 1: Year extraction
-    total_tests += 1
-    try:
-        if _extract_year_from_date("15 Jan 1985") == 1985:
-            tests_passed += 1
-            print("✅ Year extraction test passed")
-        else:
-            print("❌ Year extraction test failed")
-    except Exception as e:
-        print(f"❌ Year extraction test error: {e}")
-
-    # Test 2: Scoring algorithm
-    total_tests += 1
-    try:
-        search_criteria = {"first_name": "John", "surname": "Smith"}
-        candidate = {"first_name": "John", "surname": "Smith"}
-        score, _, _ = _run_simple_suggestion_scoring(search_criteria, candidate)
-        if score > 0:
-            tests_passed += 1
-            print("✅ Scoring algorithm test passed")
-        else:
-            print("❌ Scoring algorithm test failed")
-    except Exception as e:
-        print(f"❌ Scoring algorithm test error: {e}")
-
-    # Test 3: API search basic functionality
-    total_tests += 1
-    try:
-        from unittest.mock import MagicMock
-
-        mock_session = MagicMock()
-        mock_session.is_sess_valid.return_value = False
-        result = search_api_for_criteria(mock_session, {"first_name": "John"})
-        if result == []:
-            tests_passed += 1
-            print("✅ API search basic test passed")
-        else:
-            print("❌ API search basic test failed")
-    except Exception as e:
-        print(f"❌ API search basic test error: {e}")
-
-    # Test 4: Config handling
-    total_tests += 1
-    try:
-        result = get_config_value("TEST_KEY", "default")
-        if isinstance(result, str):
-            tests_passed += 1
-            print("✅ Config handling test passed")
-        else:
-            print("❌ Config handling test failed")
-    except Exception as e:
-        print(f"❌ Config handling test error: {e}")
-
-    success_rate = (tests_passed / total_tests) * 100 if total_tests > 0 else 0
-    print(
-        f"\n📊 Fallback Test Results: {tests_passed}/{total_tests} passed ({success_rate:.1f}%)"
-    )
-
-    return tests_passed == total_tests
 
 
 # ==============================================

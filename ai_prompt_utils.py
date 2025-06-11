@@ -430,11 +430,33 @@ def run_comprehensive_tests() -> bool:
     try:
         from test_framework import TestSuite, suppress_logging
 
-        HAS_TEST_FRAMEWORK = True
+        has_framework = True
     except ImportError:
-        HAS_TEST_FRAMEWORK = False
+        has_framework = False
 
-    if HAS_TEST_FRAMEWORK:
+    if not has_framework:
+        logger.info("🔧 Running basic AI prompt utils tests...")
+        try:
+            # Test basic prompt loading
+            prompts = load_prompts()
+            if not isinstance(prompts, dict) or "prompts" not in prompts:
+                logger.error("❌ Basic prompt loading failed")
+                return False
+
+            # Test basic prompt operations
+            test_result = update_prompt("fallback_test", "Test content")
+            retrieved = get_prompt("fallback_test")
+            if not test_result or retrieved != "Test content":
+                logger.error("❌ Basic prompt operations failed")
+                return False
+
+            logger.info("✅ Basic AI prompt utils tests completed")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Basic AI prompt utils tests failed: {e}")
+            return False
+
+    with suppress_logging():
         suite = TestSuite(
             "AI Prompt Management & Template System", "ai_prompt_utils.py"
         )
@@ -784,30 +806,8 @@ def run_comprehensive_tests() -> bool:
                     shutil.rmtree(temp_dir)
                 except Exception:
                     pass
-    else:
-        return _run_basic_fallback_tests()
 
-
-def _run_basic_fallback_tests() -> bool:
-    """Fallback tests when test framework is not available."""
-    try:
-        print("Running basic AI prompt utils tests...")
-
-        # Test basic prompt loading
-        prompts = load_prompts()
-        if not isinstance(prompts, dict) or "prompts" not in prompts:
-            return False
-
-        # Test basic prompt operations
-        test_result = update_prompt("fallback_test", "Test content")
-        retrieved = get_prompt("fallback_test")
-
-        success = test_result and retrieved == "Test content"
-        print(f"✅ Basic AI prompt utils tests {'passed' if success else 'failed'}")
-        return success
-    except Exception as e:
-        print(f"❌ Basic AI prompt utils tests failed: {e}")
-        return False
+        return suite.finish_suite()
 
 
 def get_prompts_summary() -> Dict[str, Any]:

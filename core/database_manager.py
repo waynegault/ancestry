@@ -15,7 +15,11 @@ from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from config import config_instance
+try:
+    from config import config_instance
+except ImportError:
+    # Handle when config module is not available
+    config_instance = None
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +49,16 @@ class DatabaseManager:
         Initialize the DatabaseManager.
 
         Args:
-            db_path: Path to the database file. If None, uses config default.
-        """
+            db_path: Path to the database file. If None, uses config default."""
         # Database configuration
         if db_path:
             self.db_path = db_path
         else:
-            db_file = config_instance.DATABASE_FILE
-            self.db_path = str(db_file.resolve()) if db_file else ""
+            if config_instance:
+                db_file = config_instance.DATABASE_FILE
+                self.db_path = str(db_file.resolve()) if db_file else ""
+            else:
+                self.db_path = "ancestry.db"  # Default fallback
 
         # SQLAlchemy components
         self.engine = None
@@ -385,17 +391,12 @@ class DatabaseManager:
 # Test Suite Implementation
 # ==============================================
 
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 
 def run_comprehensive_tests() -> bool:
@@ -403,10 +404,6 @@ def run_comprehensive_tests() -> bool:
     Enhanced comprehensive test suite for database_manager.py using standardized test framework.
     Tests database connections, session management, transaction handling, and error recovery.
     """
-    if not HAS_TEST_FRAMEWORK:
-        logger.warning("Test framework not available. Running basic fallback tests.")
-        return _run_basic_fallback_tests()
-
     suite = TestSuite("Database Manager & Connection Handling", "database_manager.py")
     suite.start_suite()
 
@@ -819,32 +816,6 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
-
-
-def _run_basic_fallback_tests() -> bool:
-    """Basic fallback tests when test framework is not available."""
-    logger.info("🔧 Running basic database manager fallback tests...")
-
-    try:
-        # Test basic class availability
-        assert DatabaseManager is not None
-        logger.info("✅ DatabaseManager class is available")
-
-        # Test basic initialization
-        db_manager = DatabaseManager()
-        assert db_manager is not None
-        logger.info("✅ DatabaseManager initializes successfully")
-
-        # Test basic attributes
-        assert hasattr(db_manager, "is_ready")
-        logger.info("✅ DatabaseManager has required attributes")
-
-        logger.info("🎉 Basic database manager tests completed successfully")
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Database manager fallback test failed: {e}")
-        return False
 
 
 # ==============================================

@@ -16,6 +16,53 @@ from logging_config import logger
 from config import config_instance
 from utils import SessionManager
 
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def add_warning(self, message: str):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    HAS_TEST_FRAMEWORK = False
+
 
 def get_config_value(key: str, default_value: Any = None) -> Any:
     """Safely retrieve a configuration value with fallback."""
@@ -27,34 +74,12 @@ def get_config_value(key: str, default_value: Any = None) -> Any:
         return default_value
 
 
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function for when test framework is not available.
-    Runs basic functionality tests with a timeout to prevent hanging.
-    """
-    print("🧪 Running person search lightweight tests...")
-
-    try:
-        # Test 1: Config function
-        result = get_config_value("test_key", "default_value")
-        assert result == "default_value"
-        print("✅ Config value test passed")
-
-        print("✅ All lightweight tests passed")
-        return True
-    except Exception as e:
-        print(f"❌ Test error: {e}")
-        return False
-
-
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for person_search.py.
     Tests person searching, filtering, and matching functionality.
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
-
+    if HAS_TEST_FRAMEWORK:
         suite = TestSuite("Person Search & Matching Engine", "person_search.py")
         suite.start_suite()
 
@@ -271,9 +296,7 @@ def run_comprehensive_tests() -> bool:
                     result = get_config_value("test_key", "fallback")
                     return result == "fallback"  # Should return fallback
                 except Exception:
-                    return False  # Should not raise exception
-
-        def test_config_attribute_error():
+                    return False  # Should not raise exception        def test_config_attribute_error():
             """Test config function handles missing attributes"""
             from unittest.mock import patch, MagicMock
 
@@ -289,18 +312,34 @@ def run_comprehensive_tests() -> bool:
                 "Config exception handling",
                 test_config_exception_handling,
                 "Should handle config exceptions gracefully",
+                "Test config exception handling behavior",
+                "Test that config exceptions are handled gracefully",
             )
+
             suite.run_test(
                 "Config attribute error handling",
                 test_config_attribute_error,
                 "Should handle missing attributes gracefully",
+                "Test handling of missing config attributes",
+                "Test graceful handling of missing configuration attributes",
             )
 
         return suite.finish_suite()
-
-    except ImportError:
+    else:
         # Fallback when test framework is not available
-        return run_comprehensive_tests_fallback()
+        print("🧪 Running person search lightweight tests...")
+
+        try:
+            # Test 1: Config function
+            result = get_config_value("test_key", "default_value")
+            assert result == "default_value"
+            print("✅ Config value test passed")
+
+            print("✅ All lightweight tests passed")
+            return True
+        except Exception as e:
+            print(f"❌ Test error: {e}")
+            return False
 
 
 # ==============================================
@@ -309,7 +348,6 @@ def run_comprehensive_tests() -> bool:
 if __name__ == "__main__":
     import sys
 
-    print("🔍 Running Person Search & Matching Engine lightweight test suite...")
-    # Always use the lightweight fallback tests to avoid timeout issues
-    success = run_comprehensive_tests_fallback()
+    print("🔍 Running Person Search & Matching Engine comprehensive test suite...")
+    success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

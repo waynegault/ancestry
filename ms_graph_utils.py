@@ -751,60 +751,60 @@ def run_comprehensive_tests() -> bool:
             test_error_handling,
             "Should handle network errors, authentication failures, and file issues",
         ),
-    }
-
-    # Run all test categories
+    }  # Run all test categories
     with suppress_logging():
         for category_name, (test_func, expected_behavior) in test_categories.items():
             suite.run_test(category_name, test_func, expected_behavior)
 
+        # Add fallback testing when test framework has issues
+        def test_fallback_functionality():
+            """Test core functionality with basic assertions."""
+            try:
+                # Test 1: Function availability
+                assert callable(
+                    acquire_token_device_flow
+                ), "acquire_token_device_flow should be callable"
+                assert callable(get_todo_list_id), "get_todo_list_id should be callable"
+                assert callable(create_todo_task), "create_todo_task should be callable"
+
+                # Test 2: Configuration access
+                assert (
+                    config_instance is not None
+                ), "Config instance should be available"
+
+                # Test 3: MSAL library availability
+                assert msal is not None, "MSAL library should be imported"
+
+                # Test 4: Basic authentication structure
+                try:
+                    # Test that we can at least attempt authentication setup
+                    from unittest.mock import patch, MagicMock
+
+                    with patch(
+                        "ms_graph_utils.msal.PublicClientApplication"
+                    ) as mock_msal:
+                        mock_app = MagicMock()
+                        mock_msal.return_value = mock_app
+                        mock_app.get_accounts.return_value = []
+                        # Just test that the structure works
+                        assert (
+                            mock_app is not None
+                        ), "Mock authentication setup should work"
+                except Exception:
+                    pass  # Expected in some environments
+
+                return True
+            except Exception as e:
+                print(f"❌ Fallback test failed: {e}")
+                return False
+
+        suite.run_test(
+            "Fallback Functionality",
+            test_fallback_functionality,
+            "Core Graph API functionality works even without full test framework",
+        )
+
     return suite.finish_suite()
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function for when test framework is not available.
-    Runs basic functionality tests for Graph API utilities.
-    """
-    print("🔍 Running basic Microsoft Graph API tests...")
-
-    try:  # Test 1: Function availability
-        assert callable(
-            acquire_token_device_flow
-        ), "acquire_token_device_flow should be callable"
-        assert callable(get_todo_list_id), "get_todo_list_id should be callable"
-        assert callable(create_todo_task), "create_todo_task should be callable"
-        print("✅ Function availability test passed")
-
-        # Test 2: Configuration access
-        assert config_instance is not None, "Config instance should be available"
-        print("✅ Configuration access test passed")
-
-        # Test 3: MSAL library availability
-        assert msal is not None, "MSAL library should be imported"
-        print("✅ MSAL library availability test passed")
-
-        # Test 4: Basic authentication structure
-        try:
-            # Test that we can at least attempt authentication setup
-            from unittest.mock import patch, MagicMock
-
-            with patch("ms_graph_utils.msal.PublicClientApplication") as mock_msal:
-                mock_app = MagicMock()
-                mock_msal.return_value = mock_app
-                mock_app.get_accounts.return_value = []
-                # Just test that the structure works
-                assert mock_app is not None, "Mock authentication setup should work"
-        except Exception:
-            pass  # Expected in some environments
-        print("✅ Basic authentication structure test passed")
-
-        print("🎉 All basic Microsoft Graph API tests passed!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
 
 
 # End of ms_graph_utils.py
@@ -815,7 +815,6 @@ def run_comprehensive_tests_fallback() -> bool:
 if __name__ == "__main__":
     import sys
 
-    print("🔍 Running Microsoft Graph API Integration lightweight test suite...")
-    # Use fallback tests to avoid timeout issues during migration testing
-    success = run_comprehensive_tests_fallback()
+    print("🔍 Running Microsoft Graph API Integration comprehensive test suite...")
+    success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

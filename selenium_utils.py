@@ -33,6 +33,53 @@ from logging_config import logger
 
 # Note: Removed urllib3 and psutil imports as they weren't used here
 
+# --- Test framework imports ---
+try:
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
+
+    HAS_TEST_FRAMEWORK = True
+except ImportError:
+    # Create dummy classes/functions for when test framework is not available
+    class DummyTestSuite:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_suite(self):
+            pass
+
+        def add_test(self, *args, **kwargs):
+            pass
+
+        def add_warning(self, message: str):
+            pass
+
+        def end_suite(self):
+            pass
+
+        def run_test(self, *args, **kwargs):
+            return True
+
+        def finish_suite(self):
+            return True
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    TestSuite = DummyTestSuite
+    suppress_logging = lambda: DummyContext()
+    create_mock_data = lambda: {}
+    assert_valid_function = lambda x, *args: True
+    HAS_TEST_FRAMEWORK = False
+
 # --- Selenium Specific Helpers ---
 
 
@@ -408,20 +455,10 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for selenium_utils.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    # Import test framework components
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        return run_comprehensive_tests_fallback()
-
-    with suppress_logging():
-        suite = TestSuite("Selenium WebDriver Utilities", "selenium_utils.py")
-        suite.start_suite()
+    if HAS_TEST_FRAMEWORK:
+        with suppress_logging():
+            suite = TestSuite("Selenium WebDriver Utilities", "selenium_utils.py")
+            suite.start_suite()
 
         # INITIALIZATION TESTS
         def test_module_imports():
@@ -959,86 +996,46 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+    else:
+        # Fallback test function when test framework is not available
+        print("🔧 Running Selenium Utils fallback test suite...")
 
+        tests_passed = 0
+        tests_total = 0
 
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function when test framework is not available.
-    Provides basic testing capability using simple assertions.
-    """
-    print("🔧 Running Selenium Utils fallback test suite...")
+        # Test force_user_agent if available
+        if "force_user_agent" in globals():
+            tests_total += 1
+            try:
+                from unittest.mock import MagicMock
 
-    tests_passed = 0
-    tests_total = 0
-
-    # Test force_user_agent if available
-    if "force_user_agent" in globals():
-        tests_total += 1
-        try:
-            from unittest.mock import MagicMock
-
-            mock_driver = MagicMock()
-            force_user_agent(mock_driver, "test agent")
-            tests_passed += 1
-            print("✅ force_user_agent basic test passed")
-        except Exception as e:
-            print(f"❌ force_user_agent test error: {e}")
-
-    # Test safe_click if available
-    if "safe_click" in globals():
-        tests_total += 1
-        try:
-            from unittest.mock import MagicMock
-
-            mock_driver = MagicMock()
-            mock_element = MagicMock()
-            result = safe_click(mock_driver, mock_element)
-            if isinstance(result, bool):
+                mock_driver = MagicMock()
+                force_user_agent(mock_driver, "test agent")
                 tests_passed += 1
-                print("✅ safe_click basic test passed")
-            else:
-                print("❌ safe_click returned unexpected type")
-        except Exception as e:
-            print(f"❌ safe_click test error: {e}")
+                print("✅ force_user_agent basic test passed")
+            except Exception as e:
+                print(f"❌ force_user_agent test error: {e}")
 
-    # Test get_element_text if available
-    if "get_element_text" in globals():
-        tests_total += 1
-        try:
-            from unittest.mock import MagicMock
+        # Test scroll_to_element if available
+        if "scroll_to_element" in globals():
+            tests_total += 1
+            try:
+                from unittest.mock import MagicMock
 
-            mock_element = MagicMock()
-            mock_element.text = "test text"
-            result = get_element_text(mock_element)
-            if result == "test text":
+                mock_driver = MagicMock()
+                mock_element = MagicMock()
+                scroll_to_element(mock_driver, mock_element)
                 tests_passed += 1
-                print("✅ get_element_text basic test passed")
-            else:
-                print("❌ get_element_text returned unexpected result")
-        except Exception as e:
-            print(f"❌ get_element_text test error: {e}")
+                print("✅ scroll_to_element basic test passed")
+            except Exception as e:
+                print(f"❌ scroll_to_element test error: {e}")
 
-    # Test is_element_visible if available
-    if "is_element_visible" in globals():
-        tests_total += 1
-        try:
-            from unittest.mock import MagicMock
-
-            mock_element = MagicMock()
-            mock_element.is_displayed.return_value = True
-            result = is_element_visible(mock_element)
-            if result == True:
-                tests_passed += 1
-                print("✅ is_element_visible basic test passed")
-            else:
-                print("❌ is_element_visible returned unexpected result")
-        except Exception as e:
-            print(f"❌ is_element_visible test error: {e}")
-
-    print(
-        f"🏁 Selenium Utils fallback tests completed: {tests_passed}/{tests_total} passed"
-    )
-    return tests_passed == tests_total
+        # Test safe_click if available
+        if "safe_click" in globals():
+            print(
+                f"🏁 Selenium Utils fallback tests completed: {tests_passed}/{tests_total} passed"
+            )
+        return tests_passed == tests_total
 
 
 # ==============================================

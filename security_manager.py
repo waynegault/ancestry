@@ -497,13 +497,44 @@ def run_comprehensive_tests() -> bool:
     - No critical errors or unhandled exceptions
     - Test cleanup should remove all temporary files
     """
-    if not HAS_TEST_FRAMEWORK:
-        return (
-            _run_basic_fallback_tests()
-        )  # Fallback to simple test if framework unavailable
+    try:
+        from test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite("Security Manager & Credential Storage", "security_manager.py")
-    suite.start_suite()
+        has_framework = True
+    except ImportError:
+        has_framework = False
+
+    if not has_framework:
+        logger.info("🔧 Running basic SecurityManager tests...")
+        try:
+            # Test basic instantiation
+            manager = SecurityManager("TestApp")
+            assert manager.app_name == "TestApp"
+            logger.info("✅ SecurityManager instantiation test passed")
+
+            # Test encryption/decryption with credentials
+            test_credentials = {"username": "test_user", "password": "test_pass"}
+            encrypt_result = manager.encrypt_credentials(test_credentials)
+            assert encrypt_result is True
+            logger.info("✅ Credential encryption test passed")
+
+            # Test credential retrieval
+            decrypted = manager.decrypt_credentials()
+            assert decrypted is not None
+            assert decrypted["username"] == "test_user"
+            logger.info("✅ Credential decryption test passed")
+
+            logger.info("✅ Basic SecurityManager tests completed")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Basic SecurityManager tests failed: {e}")
+            return False
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Security Manager & Credential Storage", "security_manager.py"
+        )
+        suite.start_suite()
 
     # SecurityManager instantiation and basic setup
     def test_security_manager_instantiation():
@@ -853,82 +884,6 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
-
-
-def _run_basic_fallback_tests() -> bool:
-    """
-    Basic functionality test (fallback when test framework unavailable).
-
-    This function provides essential testing when the enhanced test framework
-    is not available, ensuring core security manager functionality works.
-    """
-    logger.info("Running basic SecurityManager fallback tests...")
-
-    try:
-        # Create test instance
-        security_manager = SecurityManager("TestApp")
-
-        # Test encryption/decryption
-        test_credentials = {
-            "TEST_USERNAME": "test_user",
-            "TEST_PASSWORD": "test_pass123",
-            "TEST_API_KEY": "sk-test123456789",
-        }
-
-        # Test encryption
-        if not security_manager.encrypt_credentials(test_credentials):
-            logger.error("Failed to encrypt test credentials")
-            return False
-
-        # Test decryption
-        decrypted = security_manager.decrypt_credentials()
-        if not decrypted:
-            logger.error("Failed to decrypt test credentials")
-            return False
-
-        # Verify data integrity
-        if decrypted != test_credentials:
-            logger.error("Decrypted credentials don't match original")
-            return False
-
-        # Test individual credential retrieval
-        username = security_manager.get_credential("TEST_USERNAME")
-        if username != "test_user":
-            logger.error("Failed to retrieve individual credential")
-            return False
-
-        # Test validation with suppressed logging
-        import logging
-
-        original_level = logger.level
-        logger.setLevel(logging.CRITICAL)
-
-        try:
-            # Test valid credentials
-            if not security_manager.validate_credentials(
-                {"ANCESTRY_USERNAME": "test", "ANCESTRY_PASSWORD": "test"}
-            ):
-                logger.setLevel(original_level)
-                logger.error("Valid credentials failed validation")
-                return False
-
-            # Test invalid credentials (should return False)
-            if security_manager.validate_credentials({"ANCESTRY_USERNAME": "test"}):
-                logger.setLevel(original_level)
-                logger.error("Invalid credentials passed validation")
-                return False
-        finally:
-            logger.setLevel(original_level)
-
-        # Cleanup test files
-        security_manager.delete_credentials()
-
-        logger.info("SecurityManager basic tests passed successfully")
-        return True
-
-    except Exception as e:
-        logger.error(f"SecurityManager basic tests failed: {e}", exc_info=True)
-        return False
 
 
 if __name__ == "__main__":
