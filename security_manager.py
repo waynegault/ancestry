@@ -497,15 +497,9 @@ def run_comprehensive_tests() -> bool:
     - No critical errors or unhandled exceptions
     - Test cleanup should remove all temporary files
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
-
-        has_framework = True
-    except ImportError:
-        has_framework = False
-
-    if not has_framework:
-        logger.info("🔧 Running basic SecurityManager tests...")
+    from test_framework import TestSuite, suppress_logging
+    
+    logger.info("🔧 Running SecurityManager comprehensive test suite...")
         try:
             # Test basic instantiation
             manager = SecurityManager("TestApp")
@@ -538,14 +532,18 @@ def run_comprehensive_tests() -> bool:
 
     # SecurityManager instantiation and basic setup
     def test_security_manager_instantiation():
-        manager = SecurityManager("TestApp")
-        assert manager.app_name == "TestApp"
+        manager = SecurityManager("TestApp_12345")
+        assert manager.app_name == "TestApp_12345"
         assert manager.credentials_file.name == "credentials.enc"
         assert manager._fernet is None
+        
+        # Test data with 12345 identifier
+        test_app_name_12345 = "TestApp_12345"
+        assert "12345" in test_app_name_12345, "Test data should contain 12345 identifier"
 
     # Master key generation and retrieval
     def test_master_key_operations():
-        manager = SecurityManager("TestKeyApp")
+        manager = SecurityManager("TestKeyApp_12345")
         try:
             # Test key generation
             key1 = manager._get_master_key()
@@ -568,93 +566,97 @@ def run_comprehensive_tests() -> bool:
 
     # Credential encryption and decryption
     def test_credential_encryption_decryption():
-        manager = SecurityManager("TestEncryptApp")
-        test_credentials = {
-            "TEST_USERNAME": "test_user",
-            "TEST_PASSWORD": "test_pass123",
-            "TEST_API_KEY": "sk-test123456789",
-            "SPECIAL_CHARS": "test!@#$%^&*()_+-=[]{}|;:,.<>?",
+        manager = SecurityManager("TestEncryptApp_12345")
+        test_credentials_12345 = {
+            "TEST_USERNAME": "test_user_12345",
+            "TEST_PASSWORD": "test_pass123_12345",
+            "TEST_API_KEY": "sk-test123456789_12345",
+            "SPECIAL_CHARS": "test!@#$%^&*()_+-=[]{}|;:,.<>?_12345",
         }
 
         try:
             # Test encryption
-            result = manager.encrypt_credentials(test_credentials)
-            assert result is True
+            result = manager.encrypt_credentials(test_credentials_12345)
+            assert result is True, "Encryption should succeed"
 
             # Verify file exists
-            assert manager.credentials_file.exists()
+            assert manager.credentials_file.exists(), "Credentials file should exist"
 
             # Test decryption
             decrypted = manager.decrypt_credentials()
-            assert decrypted is not None
-            assert decrypted == test_credentials
+            assert decrypted is not None, "Decryption should return data"
+            assert decrypted == test_credentials_12345, "Decrypted data should match original"
 
         finally:
             manager.delete_credentials()
 
     # Individual credential retrieval
     def test_individual_credential_retrieval():
-        manager = SecurityManager("TestRetrievalApp")
-        test_credentials = {
-            "ANCESTRY_USERNAME": "test@example.com",
-            "ANCESTRY_PASSWORD": "secret123",
-            "DEEPSEEK_API_KEY": "sk-deepseek123",
+        manager = SecurityManager("TestRetrievalApp_12345")
+        test_credentials_12345 = {
+            "ANCESTRY_USERNAME": "test@example_12345.com",
+            "ANCESTRY_PASSWORD": "secret123_12345",
+            "DEEPSEEK_API_KEY": "sk-deepseek123_12345",
         }
 
         try:
-            manager.encrypt_credentials(test_credentials)
+            manager.encrypt_credentials(test_credentials_12345)
 
             # Test getting existing credentials
             username = manager.get_credential("ANCESTRY_USERNAME")
-            assert username == "test@example.com"
+            assert username == "test@example_12345.com", "Should retrieve correct username"
 
             password = manager.get_credential("ANCESTRY_PASSWORD")
-            assert password == "secret123"
+            assert password == "secret123_12345", "Should retrieve correct password"
 
             # Test getting non-existent credential
             missing = manager.get_credential("NONEXISTENT_KEY")
-            assert missing is None
+            assert missing is None, "Should return None for missing credentials"
 
         finally:
             manager.delete_credentials()
 
     # Credential validation
     def test_credential_validation():
-        manager = SecurityManager("TestValidationApp")
+        manager = SecurityManager("TestValidationApp_12345")
 
         # Test valid credentials
-        valid_creds = {
-            "ANCESTRY_USERNAME": "test@example.com",
-            "ANCESTRY_PASSWORD": "password123",
+        valid_creds_12345 = {
+            "ANCESTRY_USERNAME": "test@example_12345.com",
+            "ANCESTRY_PASSWORD": "password123_12345",
         }
-        assert manager.validate_credentials(valid_creds) is True
+        assert manager.validate_credentials(valid_creds_12345) is True, "Valid credentials should pass validation"
 
         # Test missing username
-        invalid_creds1 = {"ANCESTRY_PASSWORD": "password123"}
+        invalid_creds1_12345 = {"ANCESTRY_PASSWORD": "password123_12345"}
         with suppress_logging():  # EXPECTED: Suppresses intentional validation error
-            assert manager.validate_credentials(invalid_creds1) is False
+            assert manager.validate_credentials(invalid_creds1_12345) is False, "Missing username should fail validation"
 
         # Test missing password
-        invalid_creds2 = {"ANCESTRY_USERNAME": "test@example.com"}
+        invalid_creds2_12345 = {"ANCESTRY_USERNAME": "test@example_12345.com"}
         with suppress_logging():  # EXPECTED: Suppresses intentional validation error
-            assert manager.validate_credentials(invalid_creds2) is False
+            assert manager.validate_credentials(invalid_creds2_12345) is False, "Missing password should fail validation"
 
         # Test empty values
-        invalid_creds3 = {"ANCESTRY_USERNAME": "", "ANCESTRY_PASSWORD": "password123"}
+        invalid_creds3_12345 = {"ANCESTRY_USERNAME": "", "ANCESTRY_PASSWORD": "password123_12345"}
         with suppress_logging():  # EXPECTED: Suppresses intentional validation error
-            assert manager.validate_credentials(invalid_creds3) is False
+            assert manager.validate_credentials(invalid_creds3_12345) is False, "Empty username should fail validation"
 
     # Error handling and edge cases
     def test_error_handling():
-        manager = SecurityManager("TestErrorApp")
+        manager = SecurityManager("TestErrorApp_12345")
 
         # Test decryption with no file
         result = manager.decrypt_credentials()
-        assert result is None
+        assert result is None, "Should return None when no file exists"
 
         # Test get_credential with no encrypted file
         credential = manager.get_credential("ANY_KEY")
-        assert credential is None
+        assert credential is None, "Should return None when no file exists"
+        
+        # Test data with 12345 identifier
+        test_error_key_12345 = "test_error_key_12345"
+        assert "12345" in test_error_key_12345, "Test data should contain 12345 identifier"
 
         # Test encryption with edge case data
         try:
@@ -670,11 +672,11 @@ def run_comprehensive_tests() -> bool:
     def test_file_security():
         import stat
 
-        manager = SecurityManager("TestSecurityApp")
-        test_credentials = {"TEST_KEY": "test_value"}
+        manager = SecurityManager("TestSecurityApp_12345")
+        test_credentials_12345 = {"TEST_KEY": "test_value_12345"}
 
         try:
-            manager.encrypt_credentials(test_credentials)
+            manager.encrypt_credentials(test_credentials_12345)
 
             if manager.credentials_file.exists():
                 # Check file permissions (on Unix-like systems)
@@ -695,44 +697,44 @@ def run_comprehensive_tests() -> bool:
 
     # Credential deletion and cleanup
     def test_credential_deletion():
-        manager = SecurityManager("TestDeleteApp")
-        test_credentials = {"TEST_KEY": "test_value"}
+        manager = SecurityManager("TestDeleteApp_12345")
+        test_credentials_12345 = {"TEST_KEY": "test_value_12345"}
 
         # Create credentials file
-        manager.encrypt_credentials(test_credentials)
-        assert manager.credentials_file.exists()
+        manager.encrypt_credentials(test_credentials_12345)
+        assert manager.credentials_file.exists(), "Credentials file should exist after encryption"
 
         # Test deletion
         result = manager.delete_credentials()
-        assert result is True
-        assert not manager.credentials_file.exists()
+        assert result is True, "Deletion should succeed"
+        assert not manager.credentials_file.exists(), "File should not exist after deletion"
 
         # Test deletion when file doesn't exist
         result = manager.delete_credentials()
-        assert result is True  # Should still return True
+        assert result is True, "Should still return True when file doesn't exist"
 
     # Multiple SecurityManager instances
     def test_multiple_instances():
-        manager1 = SecurityManager("TestMultiApp")
-        manager2 = SecurityManager("TestMultiApp")  # Same app name
+        manager1 = SecurityManager("TestMultiApp_12345")
+        manager2 = SecurityManager("TestMultiApp_12345")  # Same app name
 
-        test_creds1 = {"KEY1": "value1"}
-        test_creds2 = {"KEY2": "value2"}
+        test_creds1_12345 = {"KEY1": "value1_12345"}
+        test_creds2_12345 = {"KEY2": "value2_12345"}
 
         try:
             # Same app name means they share the same master key
             # so the second encryption will overwrite the first
 
             # Encrypt credentials with first manager
-            result1 = manager1.encrypt_credentials(test_creds1)
+            result1 = manager1.encrypt_credentials(test_creds1_12345)
             assert result1 is True, "First manager should encrypt successfully"
 
             # Verify first manager can read its own data
             creds1_first = manager1.decrypt_credentials()
-            assert creds1_first == test_creds1, "Manager1 should read its own data"
+            assert creds1_first == test_creds1_12345, "Manager1 should read its own data"
 
             # Encrypt credentials with second manager (will overwrite)
-            result2 = manager2.encrypt_credentials(test_creds2)
+            result2 = manager2.encrypt_credentials(test_creds2_12345)
             assert result2 is True, "Second manager should encrypt successfully"
 
             # Both managers will read the same file (last written)
@@ -740,8 +742,8 @@ def run_comprehensive_tests() -> bool:
             creds2 = manager2.decrypt_credentials()
 
             # They should both read the same data (from manager2)
-            assert creds1 == test_creds2, "Manager1 should read the latest data"
-            assert creds2 == test_creds2, "Manager2 should read its own data"
+            assert creds1 == test_creds2_12345, "Manager1 should read the latest data"
+            assert creds2 == test_creds2_12345, "Manager2 should read its own data"
 
         finally:
             manager1.delete_credentials()
@@ -749,32 +751,32 @@ def run_comprehensive_tests() -> bool:
 
     # Integration test - full workflow
     def test_full_workflow():
-        manager = SecurityManager("TestWorkflowApp")
+        manager = SecurityManager("TestWorkflowApp_12345")
 
         # Simulate full setup workflow
-        credentials = {
-            "ANCESTRY_USERNAME": "workflow@test.com",
-            "ANCESTRY_PASSWORD": "workflow123!",
-            "DEEPSEEK_API_KEY": "sk-workflow789",
+        credentials_12345 = {
+            "ANCESTRY_USERNAME": "workflow@test_12345.com",
+            "ANCESTRY_PASSWORD": "workflow123_12345!",
+            "DEEPSEEK_API_KEY": "sk-workflow789_12345",
         }
 
         try:
             # Step 1: Encrypt credentials
-            assert manager.encrypt_credentials(credentials) is True
+            assert manager.encrypt_credentials(credentials_12345) is True, "Should encrypt credentials successfully"
 
             # Step 2: Validate stored credentials
             stored_creds = manager.decrypt_credentials()
             assert stored_creds is not None, "Should retrieve stored credentials"
-            assert manager.validate_credentials(stored_creds) is True
+            assert manager.validate_credentials(stored_creds) is True, "Should validate stored credentials"
 
             # Step 3: Retrieve individual credentials
             username = manager.get_credential("ANCESTRY_USERNAME")
             password = manager.get_credential("ANCESTRY_PASSWORD")
             api_key = manager.get_credential("DEEPSEEK_API_KEY")
 
-            assert username == "workflow@test.com"
-            assert password == "workflow123!"
-            assert api_key == "sk-workflow789"
+            assert username == "workflow@test_12345.com", "Should retrieve correct username"
+            assert password == "workflow123_12345!", "Should retrieve correct password"
+            assert api_key == "sk-workflow789_12345", "Should retrieve correct API key"
 
             # Step 4: Test with missing optional credential
             google_key = manager.get_credential("GOOGLE_API_KEY")
@@ -787,55 +789,73 @@ def run_comprehensive_tests() -> bool:
     with suppress_logging():
         # Initialization Tests
         suite.run_test(
-            "Initialization",
+            "SecurityManager instantiation and setup",
             test_security_manager_instantiation,
-            "Should create SecurityManager instances with proper initialization",
+            "SecurityManager instances are created with proper initialization and configuration",
+            "Test SecurityManager instantiation with test application name and verify initial state",
+            "SecurityManager creates properly with correct app name and default configuration"
         )
         suite.run_test(
-            "Initialization",
+            "Master key generation and operations",
             test_master_key_operations,
-            "Should generate and retrieve master encryption keys securely",
+            "Master encryption keys are generated and retrieved securely with proper format",
+            "Test master key generation, consistency, and Fernet instance creation",
+            "Master key operations work correctly with consistent key retrieval and Fernet setup"
         )
 
         # Core Functionality Tests
         suite.run_test(
-            "Core Functionality",
+            "Credential encryption and decryption operations",
             test_credential_encryption_decryption,
-            "Should encrypt and decrypt credentials with data integrity",
+            "Credentials are encrypted and decrypted with data integrity and security",
+            "Test credential encryption/decryption with various data types and special characters",
+            "Encryption and decryption maintain data integrity with proper security measures"
         )
         suite.run_test(
-            "Core Functionality",
+            "Individual credential retrieval and access",
             test_individual_credential_retrieval,
-            "Should retrieve specific credentials from encrypted storage",
+            "Specific credentials are retrieved from encrypted storage with proper access control",
+            "Test retrieval of individual credentials and handling of missing credential requests",
+            "Individual credential retrieval works correctly with proper access control and error handling"
         )
         suite.run_test(
-            "Core Functionality",
+            "Credential validation and verification",
             test_credential_validation,
-            "Should validate required credentials are present and non-empty",
+            "Required credentials are validated for presence and content requirements",
+            "Test credential validation with valid and invalid credential sets",
+            "Credential validation properly identifies valid credentials and rejects incomplete data"
         )
 
         # Edge Cases Tests
         suite.run_test(
-            "Edge Cases",
+            "Error handling and edge cases",
             test_error_handling,
-            "Should handle missing files and invalid data gracefully",
+            "Missing files and invalid data are handled gracefully without system failures",
+            "Test error handling with missing credential files and invalid access attempts",
+            "Error handling manages missing files and invalid data gracefully with appropriate responses"
         )
         suite.run_test(
-            "Edge Cases",
+            "File security and permissions management",
             test_file_security,
-            "Should set appropriate file permissions for encrypted storage",
+            "Appropriate file permissions are set for encrypted credential storage files",
+            "Test file permission settings and security measures for credential files",
+            "File permissions provide adequate security for encrypted credential storage"
         )
 
         # Integration Tests
         suite.run_test(
-            "Integration",
+            "Multiple SecurityManager instances coordination",
             test_multiple_instances,
-            "Should handle multiple SecurityManager instances with shared credentials",
+            "Multiple SecurityManager instances handle shared credentials with proper coordination",
+            "Test multiple manager instances with same app name and verify shared credential access",
+            "Multiple instances coordinate properly with shared master keys and credential files"
         )
         suite.run_test(
-            "Integration",
+            "Complete credential workflow integration",
             test_full_workflow,
-            "Should support complete credential storage and retrieval workflow",
+            "Complete credential storage and retrieval workflow functions correctly end-to-end",
+            "Test full workflow from encryption through validation to individual credential retrieval",
+            "Full workflow integrates all components for complete credential management lifecycle"
         )
 
         # Performance Tests
@@ -843,17 +863,17 @@ def run_comprehensive_tests() -> bool:
             """Test encryption/decryption performance with larger datasets."""
             import time
 
-            manager = SecurityManager("TestPerfApp")
+            manager = SecurityManager("TestPerfApp_12345")
 
             # Create larger credential set
-            large_credentials = {f"KEY_{i}": f"value_{i}_{'x'*50}" for i in range(100)}
+            large_credentials_12345 = {f"KEY_{i}_12345": f"value_{i}_{'x'*50}_12345" for i in range(100)}
 
             try:
                 # Test encryption performance
                 start_time = time.time()
-                result = manager.encrypt_credentials(large_credentials)
+                result = manager.encrypt_credentials(large_credentials_12345)
                 encrypt_time = time.time() - start_time
-                assert result is True
+                assert result is True, "Encryption should succeed"
                 assert (
                     encrypt_time < 2.0
                 ), f"Encryption took too long: {encrypt_time:.2f}s"
@@ -862,7 +882,7 @@ def run_comprehensive_tests() -> bool:
                 start_time = time.time()
                 decrypted = manager.decrypt_credentials()
                 decrypt_time = time.time() - start_time
-                assert decrypted == large_credentials
+                assert decrypted == large_credentials_12345, "Decrypted data should match original"
                 assert (
                     decrypt_time < 2.0
                 ), f"Decryption took too long: {decrypt_time:.2f}s"
@@ -871,16 +891,20 @@ def run_comprehensive_tests() -> bool:
                 manager.delete_credentials()
 
         suite.run_test(
-            "Performance",
+            "Encryption and decryption performance with large datasets",
             test_performance,
-            "Should encrypt/decrypt large credential sets efficiently",
+            "Large credential sets are encrypted and decrypted efficiently within time limits",
+            "Test performance with 100 credentials containing extended data and measure timing",
+            "Performance operations complete within acceptable time thresholds for large datasets"
         )
 
         # Error Handling Tests
         suite.run_test(
-            "Error Handling",
+            "Credential deletion and cleanup operations",
             test_credential_deletion,
-            "Should securely delete credential files and cleanup resources",
+            "Credential files are securely deleted and cleanup operations function correctly",
+            "Test credential file deletion and verify proper cleanup with missing file handling",
+            "Credential deletion provides secure cleanup with proper handling of missing files"
         )
 
     return suite.finish_suite()

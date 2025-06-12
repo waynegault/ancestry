@@ -61,51 +61,12 @@ from logging_config import logger
 # Note: SessionManager imported locally when needed to avoid circular imports
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def add_warning(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    TestSuite = DummyTestSuite
-    suppress_logging = lambda: DummyContext()
-    create_mock_data = lambda: {}
-    assert_valid_function = lambda x, *args: True
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 
 # ----------------------------------------------------------------------
@@ -3045,51 +3006,34 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for database.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    if not HAS_TEST_FRAMEWORK:
-        print("🧪 Running basic database tests (test framework unavailable)...")
-        try:
-            # Basic tests when framework unavailable
-            required_models = [Person, DnaMatch, FamilyTree, MessageType]
-            for model in required_models:
-                assert model is not None, f"{model.__name__} model should be defined"
-            print("✅ Basic database tests passed!")
-            return True
-        except Exception as e:
-            print(f"❌ Basic tests failed: {e}")
-            return False
+    from test_framework import TestSuite, suppress_logging
 
-    with suppress_logging():
-        suite = TestSuite("Database Models & ORM Management", "database.py")
-        suite.start_suite()
+    suite = TestSuite("Database Models & ORM Management", "database.py")
+    suite.start_suite()
 
     # INITIALIZATION TESTS
     def test_database_model_definitions():
         """Test that all required ORM models exist and can be instantiated."""
-        try:
-            # Test that all required models exist
-            required_models = [Person, DnaMatch, FamilyTree, MessageType]
-            for model in required_models:
-                assert model is not None, f"{model.__name__} model should be defined"
+        # Test that all required models exist
+        required_models = [Person, DnaMatch, FamilyTree, MessageType]
+        for model in required_models:
+            assert model is not None, f"{model.__name__} model should be defined"
 
-                # Test model instantiation
-                instance = model()
-                assert instance is not None, f"{model.__name__} should be instantiable"
+            # Test model instantiation
+            instance = model()
+            assert instance is not None, f"{model.__name__} should be instantiable"
 
-            return True
-        except Exception:
-            return False
+    with suppress_logging():
+        suite.run_test(
+            "Database Model Definitions",
+            test_database_model_definitions,
+            "All required ORM models (Person, DnaMatch, FamilyTree, MessageType) are defined and instantiable",
+            "Test database model definitions and basic instantiation capabilities",
+            "Verify that all database models exist in globals and can be instantiated without errors",
+        )
 
-    suite.run_test(
-        "Database Model Definitions",
-        test_database_model_definitions,
-        "All required ORM models (Person, DnaMatch, FamilyTree, MessageType) are defined and instantiable",
-        "Verify that all database models exist in globals and can be instantiated without errors",
-        "Test database model definitions and basic instantiation capabilities",
-    )
-
-    def test_enum_definitions():
-        """Test that required enum values are properly defined."""
-        try:
+        def test_enum_definitions():
+            """Test that required enum values are properly defined."""
             # Test PersonStatusEnum
             assert hasattr(
                 PersonStatusEnum, "ACTIVE"
@@ -3119,56 +3063,43 @@ def run_comprehensive_tests() -> bool:
             assert hasattr(RoleType, "AUTHOR"), "RoleType should have AUTHOR"
             assert hasattr(RoleType, "RECIPIENT"), "RoleType should have RECIPIENT"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Enum Value Definitions",
+            test_enum_definitions,
+            "All required enum values (PersonStatusEnum, MessageDirectionEnum, RoleType) are properly defined",
+            "Test enum definitions for status management and message direction handling",
+            "Verify that enum classes have required status values and direction indicators",
+        )
 
-    suite.run_test(
-        "Enum Value Definitions",
-        test_enum_definitions,
-        "All required enum values (PersonStatusEnum, MessageDirectionEnum, RoleType) are properly defined",
-        "Verify that enum classes have required status values and direction indicators",
-        "Test enum definitions for status management and message direction handling",
-    )
-
-    def test_database_base_setup():
-        """Test that SQLAlchemy base is properly configured."""
-        try:
+        def test_database_base_setup():
+            """Test that SQLAlchemy base is properly configured."""
             assert Base is not None, "Base declarative model should be defined"
             assert hasattr(Base, "metadata"), "Base should have metadata attribute"
-            return True
-        except Exception:
-            return False
 
-    suite.run_test(
-        "Database Base Configuration",
-        test_database_base_setup,
-        "SQLAlchemy Base declarative model is properly configured with metadata",
-        "Verify that the declarative base is set up correctly for ORM operations",
-        "Test database base declarative model configuration",
-    )
+        suite.run_test(
+            "Database Base Configuration",
+            test_database_base_setup,
+            "SQLAlchemy Base declarative model is properly configured with metadata",
+            "Test database base declarative model configuration",
+            "Verify that the declarative base is set up correctly for ORM operations",
+        )
 
-    # CORE FUNCTIONALITY TESTS
-    def test_transaction_context_manager():
-        """Test the db_transn context manager functionality."""
-        try:
+        # CORE FUNCTIONALITY TESTS
+        def test_transaction_context_manager():
+            """Test the db_transn context manager functionality."""
             assert callable(db_transn), "db_transn should be a callable function"
             # Test basic structure (without actual database operations)
-            return True
-        except Exception:
-            return False
 
-    suite.run_test(
-        "Transaction Context Manager",
-        test_transaction_context_manager,
-        "Database transaction context manager (db_transn) is available and callable",
-        "Verify that the transaction context manager function exists and can be called",
-        "Test database transaction management utility function",
-    )
+        suite.run_test(
+            "Transaction Context Manager",
+            test_transaction_context_manager,
+            "Database transaction context manager (db_transn) is available and callable",
+            "Test database transaction management utility function",
+            "Verify that the transaction context manager function exists and can be called",
+        )
 
-    def test_model_attributes():
-        """Test that models have required attributes."""
-        try:
+        def test_model_attributes():
+            """Test that models have required attributes."""
             # Test Person model attributes
             person = Person()
             person_attrs = [
@@ -3212,40 +3143,31 @@ def run_comprehensive_tests() -> bool:
                     family_tree, attr
                 ), f"FamilyTree model should have {attr} attribute"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Model Attribute Definitions",
+            test_model_attributes,
+            "All database models have required attributes defined",
+            "Test model attribute definitions for core database operations",
+            "Verify that Person, DnaMatch, and FamilyTree models have essential attributes",
+        )
 
-    suite.run_test(
-        "Model Attribute Definitions",
-        test_model_attributes,
-        "All database models have required attributes defined",
-        "Verify that Person, DnaMatch, and FamilyTree models have essential attributes",
-        "Test model attribute definitions for core database operations",
-    )
-
-    def test_database_utilities():
-        """Test database utility functions."""
-        try:
+        def test_database_utilities():
+            """Test database utility functions."""
             # Test that utility functions exist
             assert callable(delete_database), "delete_database should be callable"
             assert callable(backup_database), "backup_database should be callable"
-            return True
-        except Exception:
-            return False
 
-    suite.run_test(
-        "Database Utility Functions",
-        test_database_utilities,
-        "Database utility functions (delete, backup, restore, setup) are available",
-        "Verify that all database management utility functions are defined and callable",
-        "Test database utility function availability",
-    )
+        suite.run_test(
+            "Database Utility Functions",
+            test_database_utilities,
+            "Database utility functions (delete, backup, restore, setup) are available",
+            "Test database utility function availability",
+            "Verify that all database management utility functions are defined and callable",
+        )
 
-    # EDGE CASE TESTS
-    def test_enum_edge_cases():
-        """Test enum edge cases and validation."""
-        try:
+        # EDGE CASE TESTS
+        def test_enum_edge_cases():
+            """Test enum edge cases and validation."""
             # Test enum value access
             assert (
                 PersonStatusEnum.ACTIVE.value == "ACTIVE"
@@ -3262,21 +3184,16 @@ def run_comprehensive_tests() -> bool:
                 PersonStatusEnum.ACTIVE != PersonStatusEnum.ARCHIVE
             ), "Different enum values should not be equal"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Enum Edge Cases",
+            test_enum_edge_cases,
+            "Enum values can be accessed and compared correctly",
+            "Test enum value access and comparison edge cases",
+            "Verify that enum values have correct string representations and comparison behavior",
+        )
 
-    suite.run_test(
-        "Enum Edge Cases",
-        test_enum_edge_cases,
-        "Enum values can be accessed and compared correctly",
-        "Verify that enum values have correct string representations and comparison behavior",
-        "Test enum value access and comparison edge cases",
-    )
-
-    def test_model_instantiation_edge_cases():
-        """Test model instantiation with various scenarios."""
-        try:
+        def test_model_instantiation_edge_cases():
+            """Test model instantiation with various scenarios."""
             # Test instantiation with no parameters
             person1 = Person()
             assert person1 is not None, "Person should instantiate with no parameters"
@@ -3290,22 +3207,17 @@ def run_comprehensive_tests() -> bool:
                 person1 is not person2
             ), "Different instances should be different objects"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Model Instantiation Edge Cases",
+            test_model_instantiation_edge_cases,
+            "Models can be instantiated multiple times without conflicts",
+            "Test model instantiation patterns and object identity",
+            "Verify that model instances can be created independently without issues",
+        )
 
-    suite.run_test(
-        "Model Instantiation Edge Cases",
-        test_model_instantiation_edge_cases,
-        "Models can be instantiated multiple times without conflicts",
-        "Verify that model instances can be created independently without issues",
-        "Test model instantiation patterns and object identity",
-    )
-
-    # INTEGRATION TESTS
-    def test_model_relationships():
-        """Test that models have proper relationship definitions."""
-        try:
+        # INTEGRATION TESTS
+        def test_model_relationships():
+            """Test that models have proper relationship definitions."""
             person = Person()
 
             # Test relationship attributes exist
@@ -3316,21 +3228,16 @@ def run_comprehensive_tests() -> bool:
                 person, "family_tree"
             ), "Person should have family_tree relationship"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Model Relationship Integration",
+            test_model_relationships,
+            "Database models have proper relationship definitions",
+            "Test ORM relationship definitions between models",
+            "Verify that models define relationships to other models correctly",
+        )
 
-    suite.run_test(
-        "Model Relationship Integration",
-        test_model_relationships,
-        "Database models have proper relationship definitions",
-        "Verify that models define relationships to other models correctly",
-        "Test ORM relationship definitions between models",
-    )
-
-    def test_schema_integration():
-        """Test that the database schema components work together."""
-        try:
+        def test_schema_integration():
+            """Test that the database schema components work together."""
             # Test that models are registered with Base
             assert Person.__table__ is not None, "Person should have table definition"
             assert (
@@ -3340,22 +3247,17 @@ def run_comprehensive_tests() -> bool:
                 FamilyTree.__table__ is not None
             ), "FamilyTree should have table definition"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Database Schema Integration",
+            test_schema_integration,
+            "All models are properly integrated with SQLAlchemy Base",
+            "Test integration between models and SQLAlchemy schema system",
+            "Verify that models have table definitions registered with the declarative base",
+        )
 
-    suite.run_test(
-        "Database Schema Integration",
-        test_schema_integration,
-        "All models are properly integrated with SQLAlchemy Base",
-        "Verify that models have table definitions registered with the declarative base",
-        "Test integration between models and SQLAlchemy schema system",
-    )
-
-    # PERFORMANCE TESTS
-    def test_model_creation_performance():
-        """Test model creation performance."""
-        try:
+        # PERFORMANCE TESTS
+        def test_model_creation_performance():
+            """Test model creation performance."""
             import time
 
             start_time = time.time()
@@ -3374,22 +3276,17 @@ def run_comprehensive_tests() -> bool:
                 duration < 1.0
             ), f"Model creation took {duration:.3f}s, should be under 1.0s"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Model Creation Performance",
+            test_model_creation_performance,
+            "Model instances can be created efficiently",
+            "Test performance characteristics of model creation",
+            "Verify that model instantiation performs well under load",
+        )
 
-    suite.run_test(
-        "Model Creation Performance",
-        test_model_creation_performance,
-        "Model instances can be created efficiently",
-        "Verify that model instantiation performs well under load",
-        "Test performance characteristics of model creation",
-    )
-
-    # ERROR HANDLING TESTS
-    def test_import_error_handling():
-        """Test that module handles import errors gracefully."""
-        try:
+        # ERROR HANDLING TESTS
+        def test_import_error_handling():
+            """Test that module handles import errors gracefully."""
             # Test that test framework fallback works
             assert (
                 HAS_TEST_FRAMEWORK is not None
@@ -3401,38 +3298,29 @@ def run_comprehensive_tests() -> bool:
             ), "TestSuite should be available (real or dummy)"
             assert suppress_logging is not None, "suppress_logging should be available"
 
-            return True
-        except Exception:
-            return False
+        suite.run_test(
+            "Import Error Handling",
+            test_import_error_handling,
+            "Module handles missing test framework gracefully",
+            "Test graceful handling of optional test framework imports",
+            "Verify that the module works with or without test framework available",
+        )
 
-    suite.run_test(
-        "Import Error Handling",
-        test_import_error_handling,
-        "Module handles missing test framework gracefully",
-        "Verify that the module works with or without test framework available",
-        "Test graceful handling of optional test framework imports",
-    )
-
-    def test_configuration_error_handling():
-        """Test handling of configuration-related errors."""
-        try:
+        def test_configuration_error_handling():
+            """Test handling of configuration-related errors."""
             # Test that config_instance is available
             assert config_instance is not None, "config_instance should be imported"
 
             # Test that logger is available
             assert logger is not None, "logger should be imported"
 
-            return True
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Configuration Error Handling",
-        test_configuration_error_handling,
-        "Module handles configuration dependencies correctly",
-        "Verify that required configuration and logging components are available",
-        "Test handling of configuration and logging dependencies",
-    )
+        suite.run_test(
+            "Configuration Error Handling",
+            test_configuration_error_handling,
+            "Module handles configuration dependencies correctly",
+            "Test handling of configuration and logging dependencies",
+            "Verify that required configuration and logging components are available",
+        )
 
     return suite.finish_suite()
 

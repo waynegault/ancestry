@@ -18,17 +18,12 @@ from typing import Dict, Any, List, Optional, Callable
 from unittest.mock import MagicMock, patch
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # --- Local application imports ---
 from cache import (
@@ -45,227 +40,169 @@ from config import config_instance
 from logging_config import logger
 
 
+# (Removed duplicate definition of run_comprehensive_tests to avoid obscuring the main implementation.)
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for cache_manager.py.
     Tests cache management, eviction policies, and performance optimization.
     """
-    try:
-        if HAS_TEST_FRAMEWORK:
-            suite = TestSuite(
-                "Cache Management & Performance Optimization", "cache_manager.py"
-            )
-            suite.start_suite()
+    from test_framework import TestSuite, suppress_logging
 
-            # Cache manager initialization
-            def test_cache_manager_initialization():
-                if "CacheManager" in globals():
-                    cache_manager_class = globals()["CacheManager"]
-                    cache_manager = cache_manager_class()
-                    assert cache_manager is not None
-                    assert hasattr(cache_manager, "_cache")
-                    assert hasattr(cache_manager, "max_size")
-
-            # Cache operations
-            def test_cache_operations():
-                if "CacheManager" in globals():
-                    cache_manager = globals()["CacheManager"]()
-                    # Test basic cache operations if available
-                    if hasattr(cache_manager, "set") and hasattr(cache_manager, "get"):
-                        cache_manager.set("test_key", "test_value")
-                        value = cache_manager.get("test_key")
-                        assert value == "test_value"
-
-            # Cache statistics
-            def test_cache_statistics():
-                if "get_cache_stats" in globals():
-                    stats_func = globals()["get_cache_stats"]
-                    stats = stats_func()
-                    assert isinstance(stats, dict)
-
-            # Cache invalidation
-            def test_cache_invalidation():
-                if "invalidate_cache_pattern" in globals():
-                    invalidator = globals()["invalidate_cache_pattern"]
-                    assert callable(invalidator)
-
-            # Performance monitoring
-            def test_performance_monitoring():
-                if "CacheManager" in globals():
-                    cache_manager = globals()["CacheManager"]()
-                    if hasattr(cache_manager, "cache_stats_history"):
-                        assert isinstance(cache_manager.cache_stats_history, list)
-
-            # Eviction policies
-            def test_eviction_policies():
-                if "CacheManager" in globals():
-                    cache_manager = globals()["CacheManager"](max_size=2)
-                    # Test LRU eviction if implemented
-                    if hasattr(cache_manager, "set") and hasattr(
-                        cache_manager, "_access_order"
-                    ):
-                        cache_manager.set("key1", "value1")
-                        cache_manager.set("key2", "value2")
-                        cache_manager.set("key3", "value3")  # Should evict key1
-                        assert len(cache_manager._cache) <= cache_manager.max_size
-
-            # Fallback testing for when test framework has issues
-            def test_fallback_functionality():
-                """Test core functionality with basic assertions."""
-                try:
-                    tests_passed = 0
-                    total_tests = 0
-
-                    # Test cache manager class exists
-                    total_tests += 1
-                    if "CacheManager" in globals():
-                        cache_manager_class = globals()["CacheManager"]
-                        cache_manager = cache_manager_class()
-                        assert cache_manager is not None
-                        tests_passed += 1
-
-                    # Test cache stats function exists
-                    total_tests += 1
-                    if "get_cache_stats" in globals():
-                        stats_func = globals()["get_cache_stats"]
-                        stats = stats_func()
-                        assert isinstance(stats, dict)
-                        tests_passed += 1
-
-                    # Test cache invalidation exists
-                    total_tests += 1
-                    if "invalidate_cache_pattern" in globals():
-                        invalidator = globals()["invalidate_cache_pattern"]
-                        assert callable(invalidator)
-                        tests_passed += 1
-
-                    success = tests_passed == total_tests
-                    return success
-                except Exception as e:
-                    print(f"❌ Fallback test failed: {e}")
-                    return False
-
-            # Run all tests
-            suite.run_test(
-                "Cache Manager Initialization",
-                test_cache_manager_initialization,
-                "Cache manager can be instantiated with required attributes",
-            )
-
-            suite.run_test(
-                "Cache Operations",
-                test_cache_operations,
-                "Basic cache operations (set/get) work correctly",
-            )
-
-            suite.run_test(
-                "Cache Statistics",
-                test_cache_statistics,
-                "Cache statistics are properly tracked and reported",
-            )
-
-            suite.run_test(
-                "Cache Invalidation",
-                test_cache_invalidation,
-                "Cache invalidation patterns work correctly",
-            )
-
-            suite.run_test(
-                "Performance Monitoring",
-                test_performance_monitoring,
-                "Performance metrics are collected and stored",
-            )
-
-            suite.run_test(
-                "Eviction Policies",
-                test_eviction_policies,
-                "Cache eviction policies prevent memory overflow",
-            )
-
-            suite.run_test(
-                "Fallback Functionality",
-                test_fallback_functionality,
-                "Core functionality works even without full test framework",
-            )
-
-            return suite.finish_suite()
-        else:
-            # Run basic fallback tests when test framework not available
-            print(
-                "⚠️  Test framework not available. Running basic cache manager tests..."
-            )
-
-            tests_passed = 0
-            total_tests = 0
-
-            # Test cache manager class exists
-            total_tests += 1
-            try:
-                if "CacheManager" in globals():
-                    cache_manager_class = globals()["CacheManager"]
-                    cache_manager = cache_manager_class()
-                    assert cache_manager is not None
-                    tests_passed += 1
-                    print("✅ Cache manager initialization")
-                else:
-                    print("⚠️  Cache manager class not found")
-            except Exception as e:
-                print(f"❌ Cache manager initialization failed: {e}")
-
-            # Test cache stats function exists
-            total_tests += 1
-            try:
-                if "get_cache_stats" in globals():
-                    stats_func = globals()["get_cache_stats"]
-                    stats = stats_func()
-                    assert isinstance(stats, dict)
-                    tests_passed += 1
-                    print("✅ Cache statistics functionality")
-                else:
-                    print("⚠️  Cache stats function not found")
-            except Exception as e:
-                print(f"❌ Cache statistics test failed: {e}")
-
-            # Test cache invalidation exists
-            total_tests += 1
-            try:
-                if "invalidate_cache_pattern" in globals():
-                    invalidator = globals()["invalidate_cache_pattern"]
-                    assert callable(invalidator)
-                    tests_passed += 1
-                    print("✅ Cache invalidation functionality")
-                else:
-                    print("⚠️  Cache invalidation function not found")
-            except Exception as e:
-                print(f"❌ Cache invalidation test failed: {e}")
-
-            success = tests_passed == total_tests
-            print(f"📊 Basic cache manager tests: {tests_passed}/{total_tests} passed")
-            return success
-
-    except Exception as e:
-        # Final fallback for any errors
-        print(f"⚠️ Running minimal cache manager tests due to error: {e}")
-        try:
-            if "CacheManager" in globals():
-                cache_manager = globals()["CacheManager"]()
-                assert cache_manager is not None
-                print("✅ Minimal tests passed!")
-                return True
-        except Exception as fallback_error:
-            print(f"❌ All tests failed: {fallback_error}")
-            return False
+    suite = TestSuite(
+        "Cache Management & Performance Optimization", "cache_manager.py"
+    )
     suite.start_suite()
 
-    # Cache manager initialization
+    # INITIALIZATION TESTS
     def test_cache_manager_initialization():
+        """Test CacheManager initialization and basic setup."""
         if "CacheManager" in globals():
             cache_manager_class = globals()["CacheManager"]
             cache_manager = cache_manager_class()
             assert cache_manager is not None
-            assert hasattr(cache_manager, "get")
-            assert hasattr(cache_manager, "set")
-            assert hasattr(cache_manager, "clear")
+            assert hasattr(cache_manager, "_cache")
+            assert hasattr(cache_manager, "max_size")
+        return True
+
+    # CORE FUNCTIONALITY TESTS  
+    def test_cache_operations():
+        """Test basic cache operations."""
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+            if hasattr(cache_manager, "set") and hasattr(cache_manager, "get"):
+                cache_manager.set("test_key", "test_value")
+                value = cache_manager.get("test_key")
+                assert value == "test_value"
+        return True
+
+    def test_cache_statistics():
+        """Test cache statistics collection."""
+        if "get_cache_stats" in globals():
+            stats_func = globals()["get_cache_stats"]
+            stats = stats_func()
+            assert isinstance(stats, dict)
+        return True
+
+    def test_cache_invalidation():
+        """Test cache invalidation patterns."""
+        if "invalidate_cache_pattern" in globals():
+            invalidator = globals()["invalidate_cache_pattern"]
+            assert callable(invalidator)
+        return True
+
+    # EDGE CASE TESTS
+    def test_eviction_policies():
+        """Test cache eviction policies."""
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"](max_size=2)
+            if hasattr(cache_manager, "set") and hasattr(cache_manager, "_access_order"):
+                cache_manager.set("key1", "value1")
+                cache_manager.set("key2", "value2")
+                cache_manager.set("key3", "value3")  # Should evict key1
+                assert len(cache_manager._cache) <= cache_manager.max_size
+        return True
+
+    # INTEGRATION TESTS
+    def test_performance_monitoring():
+        """Test performance monitoring capabilities."""
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+            if hasattr(cache_manager, "cache_stats_history"):
+                assert isinstance(cache_manager.cache_stats_history, list)
+        return True
+
+    # PERFORMANCE TESTS
+    def test_cache_performance():
+        """Test cache performance under load."""
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+            if hasattr(cache_manager, "set") and hasattr(cache_manager, "get"):
+                import time
+                start_time = time.time()
+                for i in range(100):
+                    cache_manager.set(f"perf_key_{i}", f"value_{i}")
+                    cache_manager.get(f"perf_key_{i}")
+                duration = time.time() - start_time
+                assert duration < 1.0  # Should complete quickly
+        return True
+
+    # ERROR HANDLING TESTS
+    def test_error_handling():
+        """Test error handling in cache operations."""
+        if "CacheManager" in globals():
+            cache_manager = globals()["CacheManager"]()
+            # Test getting non-existent key
+            result = cache_manager.get("non_existent_key")
+            assert result is None or result == cache_manager.get("non_existent_key", None)
+        return True
+
+    # Run all tests using TestSuite
+    with suppress_logging():
+        suite.run_test(
+            "Cache Manager Initialization",
+            test_cache_manager_initialization,
+            "CacheManager initializes with required attributes",
+            "Test CacheManager class instantiation and attribute verification",
+            "Cache manager initialization and basic setup",
+        )
+
+        suite.run_test(
+            "Cache Operations",
+            test_cache_operations,
+            "Basic cache operations (set/get) work correctly",
+            "Test cache set and get operations with test data",
+            "Basic cache operations functionality",
+        )
+
+        suite.run_test(
+            "Cache Statistics",
+            test_cache_statistics,
+            "Cache statistics are properly tracked and reported",
+            "Test get_cache_stats function returns proper dictionary",
+            "Cache statistics collection and reporting",
+        )
+
+        suite.run_test(
+            "Cache Invalidation",
+            test_cache_invalidation,
+            "Cache invalidation patterns work correctly",
+            "Test invalidate_cache_pattern function is callable",
+            "Cache invalidation pattern functionality",
+        )
+
+        suite.run_test(
+            "Eviction Policies",
+            test_eviction_policies,
+            "Cache eviction policies prevent memory overflow",
+            "Test cache size limits and LRU eviction with max_size=2",
+            "Cache eviction policy enforcement",
+        )
+
+        suite.run_test(
+            "Performance Monitoring",
+            test_performance_monitoring,
+            "Performance metrics are collected and stored",
+            "Test cache_stats_history attribute exists and is a list",
+            "Performance monitoring capabilities",
+        )
+
+        suite.run_test(
+            "Cache Performance",
+            test_cache_performance,
+            "Cache operations perform efficiently under load",
+            "Test 100 cache operations complete within reasonable time",
+            "Cache performance under load testing",
+        )
+
+        suite.run_test(
+            "Error Handling",
+            test_error_handling,
+            "Cache handles errors gracefully",
+            "Test cache behavior with non-existent keys",
+            "Error handling in cache operations",
+        )
+
+    return suite.finish_suite()
 
     # Multi-level cache operations
     def test_multilevel_cache_operations():

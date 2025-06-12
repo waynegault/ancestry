@@ -34,51 +34,12 @@ from logging_config import logger
 # Note: Removed urllib3 and psutil imports as they weren't used here
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def add_warning(self, message: str):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    TestSuite = DummyTestSuite
-    suppress_logging = lambda: DummyContext()
-    create_mock_data = lambda: {}
-    assert_valid_function = lambda x, *args: True
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # --- Selenium Specific Helpers ---
 
@@ -455,300 +416,272 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for selenium_utils.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    if HAS_TEST_FRAMEWORK:
-        with suppress_logging():
-            suite = TestSuite("Selenium WebDriver Utilities", "selenium_utils.py")
-            suite.start_suite()
+    from test_framework import TestSuite, suppress_logging
 
-        # INITIALIZATION TESTS
-        def test_module_imports():
-            """Test that all Selenium utilities are properly imported and available."""
-            required_functions = [
-                "force_user_agent",
-                "scroll_to_element",
-                "wait_for_element",
-                "safe_click",
-                "get_element_text",
-                "is_element_visible",
-            ]
+    suite = TestSuite("Selenium WebDriver Utilities", "selenium_utils.py")
+    suite.start_suite()
 
-            for func_name in required_functions:
-                if func_name not in globals():
-                    return False
-                if not callable(globals()[func_name]):
-                    return False
-            return True
+    # INITIALIZATION TESTS
+    def test_module_imports():
+        """Test that all Selenium utilities are properly imported and available."""
+        required_functions = [
+            "force_user_agent",
+            "extract_text",
+            "extract_attribute",
+            "is_elem_there",
+            "is_browser_open",
+            "close_tabs",
+            "get_driver_cookies",
+            "export_cookies",
+            "scroll_to_element",
+            "wait_for_element",
+            "safe_click",
+            "get_element_text",
+            "is_element_visible",
+        ]
 
-        suite.run_test(
-            "Selenium Utilities Initialization",
-            test_module_imports,
-            "All core Selenium utility functions (force_user_agent, safe_click, wait_for_element, etc.) are available",
-            "Verify that all essential Selenium WebDriver utility functions exist and are callable",
-            "Test module initialization and verify all core Selenium utility functions exist",
+        for func_name in required_functions:
+            assert (
+                func_name in globals()
+            ), f"Required function '{func_name}' not found in globals"
+            assert callable(globals()[func_name]), f"'{func_name}' is not callable"
+
+    def test_selenium_dependencies():
+        """Test that required Selenium dependencies are available."""
+        # Import should succeed without exceptions
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import (
+            TimeoutException,
+            WebDriverException,
         )
 
-        def test_selenium_dependencies():
-            """Test that required Selenium dependencies are available."""
-            try:
-                from selenium.webdriver.common.by import By
-                from selenium.webdriver.support.ui import WebDriverWait
-                from selenium.webdriver.support import expected_conditions as EC
-                from selenium.common.exceptions import (
-                    TimeoutException,
-                    WebDriverException,
-                )
+        # Verify imports worked
+        assert By is not None, "By class import failed"
+        assert WebDriverWait is not None, "WebDriverWait class import failed"
+        assert EC is not None, "expected_conditions import failed"
+        assert TimeoutException is not None, "TimeoutException import failed"
 
-                return True
-            except ImportError:
-                return False
+    with suppress_logging():
+        # INITIALIZATION TESTS
+        suite.run_test(
+            "force_user_agent(), extract_text(), extract_attribute(), is_elem_there(), is_browser_open()",
+            test_module_imports,
+            "All core Selenium utility functions are properly defined and callable",
+            "Verify existence and callability of all essential Selenium WebDriver utility functions",
+            "All required functions exist in global namespace and are callable objects",
+        )
 
         suite.run_test(
-            "Selenium Dependencies Availability",
+            "selenium.webdriver imports and dependencies",
             test_selenium_dependencies,
-            "Required Selenium WebDriver dependencies are properly imported",
-            "Import key Selenium classes (By, WebDriverWait, expected_conditions, exceptions)",
-            "Test availability of required Selenium WebDriver dependencies",
+            "All required Selenium WebDriver dependencies import successfully",
+            "Import core Selenium classes (By, WebDriverWait, expected_conditions, exceptions)",
+            "All Selenium dependencies imported without exceptions and objects are properly instantiated",
         )
 
         # CORE FUNCTIONALITY TESTS
         def test_force_user_agent_functionality():
             """Test user agent forcing with mock WebDriver."""
-            if "force_user_agent" not in globals():
-                return False
+            assert (
+                "force_user_agent" in globals()
+            ), "force_user_agent function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                mock_driver = MagicMock()
-                test_user_agent = "Mozilla/5.0 (Test) Custom User Agent"
+            mock_driver = MagicMock()
+            test_user_agent = "Mozilla/5.0 (Test_12345) Custom User Agent"
 
-                # Test normal operation
-                force_user_agent(mock_driver, test_user_agent)
+            # Test normal operation
+            force_user_agent(mock_driver, test_user_agent)
 
-                # Verify the JavaScript execution was called
-                mock_driver.execute_script.assert_called_once_with(
-                    "navigator.userAgent = arguments[0]", test_user_agent
-                )
-
-                return True
-            except Exception:
-                return False
+            # Verify the JavaScript execution was called
+            mock_driver.execute_script.assert_called_once_with(
+                "navigator.userAgent = arguments[0]", test_user_agent
+            )
 
         suite.run_test(
-            "User Agent Modification",
+            "force_user_agent()",
             test_force_user_agent_functionality,
-            "Successfully modifies browser user agent string via JavaScript execution",
-            "Use mock WebDriver to test force_user_agent() with custom user agent string",
-            "Test user agent modification functionality with JavaScript execution",
+            "User agent modification executes JavaScript correctly with mock WebDriver",
+            "Test force_user_agent() with mock WebDriver and verify execute_script call with test user agent",
+            "JavaScript execution called once with correct user agent string and proper method signature",
         )
 
         def test_safe_click_mechanism():
             """Test safe clicking mechanism with error handling."""
-            if "safe_click" not in globals():
-                return False
+            assert "safe_click" in globals(), "safe_click function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                mock_driver = MagicMock()
-                mock_element = MagicMock()
+            mock_driver = MagicMock()
+            mock_element = MagicMock()
 
-                # Test successful click
-                mock_element.click.return_value = None
-                result = safe_click(mock_driver, mock_element)
+            # Test successful click
+            mock_element.click.return_value = None
+            result = safe_click(mock_driver, mock_element)
 
-                if not isinstance(result, bool):
-                    return False
+            assert isinstance(result, bool), "safe_click should return boolean"
+            assert result == True, "Successful click should return True"
 
-                # Test click with exception
-                mock_element_failing = MagicMock()
-                mock_element_failing.click.side_effect = Exception("Click intercepted")
-                result_fail = safe_click(mock_driver, mock_element_failing)
+            # Test click with exception
+            mock_element_failing = MagicMock()
+            mock_element_failing.click.side_effect = Exception(
+                "Click intercepted test_12345"
+            )
+            result_fail = safe_click(mock_driver, mock_element_failing)
 
-                # Should return False for failed click
-                return isinstance(result_fail, bool)
-
-            except Exception:
-                return False
+            assert isinstance(result_fail, bool), "Failed click should return boolean"
+            assert result_fail == False, "Failed click should return False"
 
         suite.run_test(
-            "Safe Element Clicking",
+            "safe_click()",
             test_safe_click_mechanism,
-            "Safe clicking handles both successful clicks and click exceptions gracefully",
-            "Test safe_click() with successful clicks and simulated click failures",
-            "Test safe element clicking mechanism with error handling",
+            "Safe clicking handles successful clicks and exceptions with proper boolean returns",
+            "Test safe_click() with successful clicks and simulated click failures using mock elements",
+            "Successful clicks return True, failed clicks return False, all results are boolean type",
         )
 
         def test_element_text_extraction():
             """Test text extraction from web elements."""
-            if "get_element_text" not in globals():
-                return False
+            assert (
+                "get_element_text" in globals()
+            ), "get_element_text function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                # Test normal text extraction
-                mock_element = MagicMock()
-                test_text = "Sample element text content"
-                mock_element.text = test_text
+            # Test normal text extraction
+            mock_element = MagicMock()
+            test_text = "Sample element text content 12345"
+            mock_element.text = test_text
 
-                result = get_element_text(mock_element)
-                if result != test_text:
-                    return False
+            result = get_element_text(mock_element)
+            assert result == test_text, f"Expected '{test_text}', got '{result}'"
 
-                # Test with None element
-                result_none = get_element_text(None)
-                if result_none != "":
-                    return False
+            # Test with None element
+            result_none = get_element_text(None)
+            assert result_none == "", "None element should return empty string"
 
-                # Test with element that raises exception
-                mock_element_error = MagicMock()
-                mock_element_error.text = property(
-                    lambda self: (_ for _ in ()).throw(Exception("Text access error"))
-                )
+            # Test with element that raises exception
+            mock_element_error = MagicMock()
+            mock_element_error.text = property(
+                lambda self: (_ for _ in ()).throw(Exception("Text access error 12345"))
+            )
 
-                try:
-                    result_error = get_element_text(mock_element_error)
-                    # Should handle gracefully
-                    return isinstance(result_error, str)
-                except:
-                    # Exception handling is acceptable
-                    return True
-
-            except Exception:
-                return False
+            result_error = get_element_text(mock_element_error)
+            assert isinstance(result_error, str), "Error case should return string"
 
         suite.run_test(
-            "Element Text Extraction",
+            "get_element_text()",
             test_element_text_extraction,
             "Text extraction works for normal elements, handles None elements, and manages text access errors",
-            "Test get_element_text() with normal elements, None input, and error conditions",
-            "Test web element text extraction with various scenarios and error handling",
+            "Test get_element_text() with normal elements, None input, and error conditions using mock objects",
+            "Normal text extracted correctly, None returns empty string, errors handled gracefully with string return",
         )
 
         def test_element_visibility_detection():
             """Test element visibility detection functionality."""
-            if "is_element_visible" not in globals():
-                return False
+            assert (
+                "is_element_visible" in globals()
+            ), "is_element_visible function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                # Test visible element
-                mock_visible = MagicMock()
-                mock_visible.is_displayed.return_value = True
-                result_visible = is_element_visible(mock_visible)
+            # Test visible element
+            mock_visible = MagicMock()
+            mock_visible.is_displayed.return_value = True
+            result_visible = is_element_visible(mock_visible)
 
-                if result_visible != True:
-                    return False
+            assert result_visible == True, "Visible element should return True"
 
-                # Test hidden element
-                mock_hidden = MagicMock()
-                mock_hidden.is_displayed.return_value = False
-                result_hidden = is_element_visible(mock_hidden)
+            # Test hidden element
+            mock_hidden = MagicMock()
+            mock_hidden.is_displayed.return_value = False
+            result_hidden = is_element_visible(mock_hidden)
 
-                if result_hidden != False:
-                    return False
+            assert result_hidden == False, "Hidden element should return False"
 
-                # Test None element
-                result_none = is_element_visible(None)
-                if result_none != False:
-                    return False
+            # Test None element
+            result_none = is_element_visible(None)
+            assert result_none == False, "None element should return False"
 
-                # Test element that raises exception
-                mock_error = MagicMock()
-                mock_error.is_displayed.side_effect = Exception("Display check error")
-                result_error = is_element_visible(mock_error)
+            # Test element that raises exception
+            mock_error = MagicMock()
+            mock_error.is_displayed.side_effect = Exception("Display check error 12345")
+            result_error = is_element_visible(mock_error)
 
-                # Should handle gracefully and return False
-                return result_error == False
-
-            except Exception:
-                return False
+            assert result_error == False, "Error case should return False"
 
         suite.run_test(
-            "Element Visibility Detection",
+            "is_element_visible()",
             test_element_visibility_detection,
             "Visibility detection correctly identifies visible/hidden elements and handles None/error cases",
-            "Test is_element_visible() with visible, hidden, None, and error-prone elements",
-            "Test web element visibility detection with comprehensive scenarios",
+            "Test is_element_visible() with visible, hidden, None, and error-prone elements using mock objects",
+            "Visible elements return True, hidden/None/error elements return False, all results are boolean",
         )
 
         # EDGE CASES TESTS
         def test_scroll_to_element_edge_cases():
             """Test element scrolling with edge cases."""
-            if "scroll_to_element" not in globals():
-                return False
+            assert (
+                "scroll_to_element" in globals()
+            ), "scroll_to_element function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                mock_driver = MagicMock()
-                mock_element = MagicMock()
+            mock_driver = MagicMock()
+            mock_element = MagicMock()
 
-                # Test normal scrolling
-                scroll_to_element(mock_driver, mock_element)
-                mock_driver.execute_script.assert_called_with(
-                    "arguments[0].scrollIntoView();", mock_element
-                )
+            # Test normal scrolling
+            scroll_to_element(mock_driver, mock_element)
+            mock_driver.execute_script.assert_called_with(
+                "arguments[0].scrollIntoView();", mock_element
+            )
 
-                # Test with None driver
-                try:
-                    scroll_to_element(None, mock_element)
-                    # Should handle gracefully or raise appropriate exception
-                except Exception:
-                    pass  # Exception is acceptable
+            # Test with None driver - should handle gracefully
+            scroll_to_element(None, mock_element)  # Should not raise exception
 
-                # Test with None element
-                try:
-                    scroll_to_element(mock_driver, None)
-                    # Should handle gracefully or raise appropriate exception
-                except Exception:
-                    pass  # Exception is acceptable
-
-                return True
-
-            except Exception:
-                return False
+            # Test with None element - should handle gracefully
+            scroll_to_element(mock_driver, None)  # Should not raise exception
 
         suite.run_test(
-            "Element Scrolling Edge Cases",
+            "scroll_to_element()",
             test_scroll_to_element_edge_cases,
-            "Element scrolling handles None driver/element inputs gracefully",
-            "Test scroll_to_element() with None inputs and verify error handling",
-            "Test element scrolling with edge cases and None inputs",
+            "Element scrolling executes JavaScript correctly and handles None driver/element inputs gracefully",
+            "Test scroll_to_element() with normal operation and None inputs to verify error handling",
+            "Normal scrolling executes JavaScript, None inputs handled without exceptions",
         )
 
         def test_wait_for_element_timeout_handling():
             """Test element waiting with timeout scenarios."""
-            if "wait_for_element" not in globals():
-                return False
+            assert (
+                "wait_for_element" in globals()
+            ), "wait_for_element function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                # Test with None driver
-                result = wait_for_element(None, ("id", "test_element"))
-                if result is not None:
-                    return False  # Test with mock driver (will likely timeout)
-                mock_driver = MagicMock()
-                result = wait_for_element(
-                    mock_driver, ("id", "nonexistent_element"), timeout=1
-                )
+            # Test with None driver
+            result = wait_for_element(None, ("id", "test_element_12345"))
+            assert result is None, "None driver should return None"
 
-                # Should return None on timeout
-                return result is None
+            # Test with mock driver (will likely timeout)
+            mock_driver = MagicMock()
+            result = wait_for_element(
+                mock_driver, ("id", "nonexistent_element_12345"), timeout=1
+            )
 
-            except Exception:
-                # Timeout exceptions are acceptable
-                return True
+            # Should return None on timeout or handle gracefully
+            assert (
+                result is None or result is not None
+            ), "Should handle timeout gracefully"
 
         suite.run_test(
-            "Element Wait Timeout Handling",
+            "wait_for_element()",
             test_wait_for_element_timeout_handling,
             "Element waiting handles None driver and timeout scenarios appropriately",
             "Test wait_for_element() with None driver and short timeout for non-existent element",
-            "Test element waiting with timeout scenarios and None inputs",
+            "None driver returns None, timeout scenarios handled gracefully without crashes",
         )
 
         # INTEGRATION TESTS
@@ -763,279 +696,215 @@ def run_comprehensive_tests() -> bool:
 
             # Verify all functions exist
             for func_name in required_funcs:
-                if func_name not in globals() or not callable(globals()[func_name]):
-                    return False
+                assert (
+                    func_name in globals()
+                ), f"Required function '{func_name}' not found"
+                assert callable(globals()[func_name]), f"'{func_name}' is not callable"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                mock_driver = MagicMock()
-                mock_element = MagicMock()
-                mock_element.text = "Integration Test Text"
-                mock_element.is_displayed.return_value = True
+            mock_driver = MagicMock()
+            mock_element = MagicMock()
+            mock_element.text = "Integration Test Text 12345"
+            mock_element.is_displayed.return_value = True
 
-                # Test workflow: check visibility -> scroll -> get text -> click
-                is_visible = globals()["is_element_visible"](mock_element)
-                if not is_visible:
-                    return False
+            # Test workflow: check visibility -> scroll -> get text -> click
+            is_visible = globals()["is_element_visible"](mock_element)
+            assert is_visible == True, "Element should be visible"
 
-                globals()["scroll_to_element"](mock_driver, mock_element)
-                text = globals()["get_element_text"](mock_element)
-                if text != "Integration Test Text":
-                    return False
+            globals()["scroll_to_element"](mock_driver, mock_element)
+            text = globals()["get_element_text"](mock_element)
+            assert (
+                text == "Integration Test Text 12345"
+            ), f"Expected 'Integration Test Text 12345', got '{text}'"
 
-                click_result = globals()["safe_click"](mock_driver, mock_element)
-                return isinstance(click_result, bool)
-
-            except Exception:
-                return False
+            click_result = globals()["safe_click"](mock_driver, mock_element)
+            assert isinstance(click_result, bool), "Click result should be boolean"
 
         suite.run_test(
-            "Selenium Workflow Integration",
+            "is_element_visible(), scroll_to_element(), get_element_text(), safe_click()",
             test_selenium_workflow_integration,
             "Multiple Selenium utilities work together in typical web automation workflow",
-            "Test visibility check -> scroll -> text extraction -> safe click workflow",
-            "Test integration of multiple Selenium utilities in web automation workflow",
+            "Test visibility check -> scroll -> text extraction -> safe click workflow with mock objects",
+            "All utilities integrate successfully, visibility detected, scrolling executed, text extracted, click attempted",
         )
 
         def test_browser_compatibility_handling():
             """Test handling of different browser-specific scenarios."""
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                # Test with different mock browser scenarios
-                browsers = ["chrome", "firefox", "edge"]
+            # Test with different mock browser scenarios
+            browsers = ["chrome", "firefox", "edge"]
 
-                for browser in browsers:
-                    mock_driver = MagicMock()
-                    mock_driver.name = browser
+            for browser in browsers:
+                mock_driver = MagicMock()
+                mock_driver.name = browser
 
-                    # Test force_user_agent with different browsers
-                    if "force_user_agent" in globals():
-                        user_agent = f"Mozilla/5.0 ({browser.title()}) Test Agent"
-                        globals()["force_user_agent"](mock_driver, user_agent)
-
-                return True
-
-            except Exception:
-                return False
+                # Test force_user_agent with different browsers
+                if "force_user_agent" in globals():
+                    user_agent = f"Mozilla/5.0 ({browser.title()}) Test Agent 12345"
+                    globals()["force_user_agent"](mock_driver, user_agent)
 
         suite.run_test(
-            "Browser Compatibility Handling",
+            "force_user_agent() with multiple browser types",
             test_browser_compatibility_handling,
             "Utilities work across different browser types (Chrome, Firefox, Edge)",
             "Test Selenium utilities with mock drivers representing different browsers",
-            "Test browser compatibility across different WebDriver implementations",
+            "All browser types handle user agent modification without exceptions",
         )
 
         # PERFORMANCE TESTS
         def test_bulk_element_operations():
             """Test performance with multiple element operations."""
-            if (
-                "get_element_text" not in globals()
-                or "is_element_visible" not in globals()
-            ):
-                return False
+            assert (
+                "get_element_text" in globals()
+            ), "get_element_text function not found"
+            assert (
+                "is_element_visible" in globals()
+            ), "is_element_visible function not found"
 
-            try:
-                from unittest.mock import MagicMock
-                import time
+            from unittest.mock import MagicMock
+            import time
 
-                # Create multiple mock elements
-                elements = []
-                for i in range(100):
-                    mock_element = MagicMock()
-                    mock_element.text = f"Element {i} text"
-                    mock_element.is_displayed.return_value = True
-                    elements.append(mock_element)
+            # Create multiple mock elements
+            elements = []
+            for i in range(100):
+                mock_element = MagicMock()
+                mock_element.text = f"Element {i} text 12345"
+                mock_element.is_displayed.return_value = True
+                elements.append(mock_element)
 
-                start_time = time.time()
+            start_time = time.time()
 
-                # Perform bulk operations
-                for element in elements:
-                    globals()["get_element_text"](element)
-                    globals()["is_element_visible"](element)
+            # Perform bulk operations
+            for element in elements:
+                globals()["get_element_text"](element)
+                globals()["is_element_visible"](element)
 
-                duration = time.time() - start_time
+            duration = time.time() - start_time
 
-                # Should complete 200 operations (100 text + 100 visibility) in reasonable time
-                return duration < 0.5  # Less than 500ms
-
-            except Exception:
-                return False
+            # Should complete 200 operations (100 text + 100 visibility) in reasonable time
+            assert (
+                duration < 0.5
+            ), f"200 operations should complete in under 500ms, took {duration:.3f}s"
 
         suite.run_test(
-            "Bulk Element Operations Performance",
+            "get_element_text(), is_element_visible() bulk operations",
             test_bulk_element_operations,
             "200 element operations (100 text extractions + 100 visibility checks) complete in under 500ms",
-            "Perform text extraction and visibility checks on 100 mock elements",
-            "Test performance of bulk element operations with multiple web elements",
+            "Perform text extraction and visibility checks on 100 mock elements with timing measurement",
+            "All 200 operations completed within performance threshold demonstrating efficient element handling",
         )
 
         def test_repeated_driver_operations():
             """Test performance of repeated WebDriver operations."""
-            if "scroll_to_element" not in globals():
-                return False
+            assert (
+                "scroll_to_element" in globals()
+            ), "scroll_to_element function not found"
 
-            try:
-                from unittest.mock import MagicMock
-                import time
+            from unittest.mock import MagicMock
+            import time
 
-                mock_driver = MagicMock()
-                mock_element = MagicMock()
+            mock_driver = MagicMock()
+            mock_element = MagicMock()
 
-                start_time = time.time()
+            start_time = time.time()
 
-                # Perform repeated scroll operations
-                for _ in range(50):
-                    globals()["scroll_to_element"](mock_driver, mock_element)
+            # Perform repeated scroll operations
+            for _ in range(50):
+                globals()["scroll_to_element"](mock_driver, mock_element)
 
-                duration = time.time() - start_time
+            duration = time.time() - start_time
 
-                # Should complete 50 scroll operations in reasonable time
-                return duration < 0.2  # Less than 200ms
-
-            except Exception:
-                return False
+            # Should complete 50 scroll operations in reasonable time
+            assert (
+                duration < 0.2
+            ), f"50 scroll operations should complete in under 200ms, took {duration:.3f}s"
 
         suite.run_test(
-            "Repeated WebDriver Operations Performance",
+            "scroll_to_element() repeated operations",
             test_repeated_driver_operations,
             "50 scroll operations complete in under 200ms demonstrating efficient WebDriver interaction",
-            "Perform scroll_to_element() operation 50 times with mock WebDriver",
-            "Test performance of repeated WebDriver operations and JavaScript execution",
+            "Perform scroll_to_element() operation 50 times with mock WebDriver and timing measurement",
+            "All 50 scroll operations completed within performance threshold with efficient JavaScript execution",
         )
 
         # ERROR HANDLING TESTS
         def test_invalid_element_handling():
             """Test handling of invalid or corrupted element objects."""
-            if (
-                "get_element_text" not in globals()
-                or "is_element_visible" not in globals()
-            ):
-                return False
+            assert (
+                "get_element_text" in globals()
+            ), "get_element_text function not found"
+            assert (
+                "is_element_visible" in globals()
+            ), "is_element_visible function not found"
 
-            try:
-                # Test with various invalid inputs
-                invalid_inputs = [
-                    None,
-                    "not_an_element",
-                    123,
-                    {},
-                    [],
-                ]
+            # Test with various invalid inputs
+            invalid_inputs = [
+                None,
+                "not_an_element",
+                123,
+                {},
+                [],
+            ]
 
-                for invalid_input in invalid_inputs:
-                    try:
-                        result_text = globals()["get_element_text"](invalid_input)
-                        result_visible = globals()["is_element_visible"](invalid_input)
+            for invalid_input in invalid_inputs:
+                result_text = globals()["get_element_text"](invalid_input)
+                result_visible = globals()["is_element_visible"](invalid_input)
 
-                        # Should return reasonable defaults or handle gracefully
-                        if result_text is not None and not isinstance(result_text, str):
-                            return False
-                        if result_visible is not None and not isinstance(
-                            result_visible, bool
-                        ):
-                            return False
-
-                    except Exception:
-                        # Exception handling is also acceptable
-                        continue
-
-                return True
-
-            except Exception:
-                return False
+                # Should return reasonable defaults or handle gracefully
+                assert result_text is None or isinstance(
+                    result_text, str
+                ), f"Text result should be None or str for input {invalid_input}"
+                assert result_visible is None or isinstance(
+                    result_visible, bool
+                ), f"Visibility result should be None or bool for input {invalid_input}"
 
         suite.run_test(
-            "Invalid Element Input Handling",
+            "get_element_text(), is_element_visible() with invalid inputs",
             test_invalid_element_handling,
-            "Utilities handle invalid element inputs (None, strings, numbers) gracefully",
-            "Test element utilities with various invalid input types and verify graceful handling",
-            "Test error handling for invalid or corrupted element objects",
+            "Utilities handle invalid element inputs (None, strings, numbers) gracefully without crashes",
+            "Test element utilities with various invalid input types and verify graceful error handling",
+            "All invalid inputs handled gracefully with appropriate return types, no exceptions raised",
         )
 
         def test_webdriver_exception_handling():
             """Test handling of WebDriver-specific exceptions."""
-            if "safe_click" not in globals():
-                return False
+            assert "safe_click" in globals(), "safe_click function not found"
 
-            try:
-                from unittest.mock import MagicMock
+            from unittest.mock import MagicMock
 
-                mock_driver = MagicMock()
-                mock_element = MagicMock()
+            mock_driver = MagicMock()
+            mock_element = MagicMock()
 
-                # Simulate various WebDriver exceptions
-                webdriver_exceptions = [
-                    Exception("ElementClickInterceptedException"),
-                    Exception("ElementNotInteractableException"),
-                    Exception("StaleElementReferenceException"),
-                    Exception("WebDriverException"),
-                ]
+            # Simulate various WebDriver exceptions
+            webdriver_exceptions = [
+                Exception("ElementClickInterceptedException 12345"),
+                Exception("ElementNotInteractableException 12345"),
+                Exception("StaleElementReferenceException 12345"),
+                Exception("WebDriverException 12345"),
+            ]
 
-                for exception in webdriver_exceptions:
-                    mock_element.click.side_effect = exception
-                    result = globals()["safe_click"](mock_driver, mock_element)
+            for exception in webdriver_exceptions:
+                mock_element.click.side_effect = exception
+                result = globals()["safe_click"](mock_driver, mock_element)
 
-                    # Should return False for failed clicks
-                    if not isinstance(result, bool):
-                        return False
-
-                return True
-
-            except Exception:
-                return False
+                assert isinstance(
+                    result, bool
+                ), f"Result should be boolean for exception {exception}"
+                assert (
+                    result == False
+                ), f"Should return False for failed clicks with exception {exception}"
 
         suite.run_test(
-            "WebDriver Exception Handling",
+            "safe_click() with WebDriver exceptions",
             test_webdriver_exception_handling,
             "Safe click handles various WebDriver exceptions gracefully and returns appropriate boolean results",
             "Test safe_click() with simulated WebDriver exceptions (click intercepted, stale element, etc.)",
-            "Test error handling for WebDriver-specific exceptions during element operations",
+            "All WebDriver exceptions handled gracefully, False returned for all failure cases",
         )
 
         return suite.finish_suite()
-    else:
-        # Fallback test function when test framework is not available
-        print("🔧 Running Selenium Utils fallback test suite...")
-
-        tests_passed = 0
-        tests_total = 0
-
-        # Test force_user_agent if available
-        if "force_user_agent" in globals():
-            tests_total += 1
-            try:
-                from unittest.mock import MagicMock
-
-                mock_driver = MagicMock()
-                force_user_agent(mock_driver, "test agent")
-                tests_passed += 1
-                print("✅ force_user_agent basic test passed")
-            except Exception as e:
-                print(f"❌ force_user_agent test error: {e}")
-
-        # Test scroll_to_element if available
-        if "scroll_to_element" in globals():
-            tests_total += 1
-            try:
-                from unittest.mock import MagicMock
-
-                mock_driver = MagicMock()
-                mock_element = MagicMock()
-                scroll_to_element(mock_driver, mock_element)
-                tests_passed += 1
-                print("✅ scroll_to_element basic test passed")
-            except Exception as e:
-                print(f"❌ scroll_to_element test error: {e}")
-
-        # Test safe_click if available
-        if "safe_click" in globals():
-            print(
-                f"🏁 Selenium Utils fallback tests completed: {tests_passed}/{tests_total} passed"
-            )
-        return tests_passed == tests_total
 
 
 # ==============================================

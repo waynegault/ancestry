@@ -19,12 +19,12 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 # --- Test framework imports ---
-try:
-    import test_framework
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # --- Local module imports ---
 from logging_config import logger
@@ -772,33 +772,7 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for gedcom_search_utils.py.
     Tests GEDCOM searching, filtering, and relationship mapping.
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
-
-        has_framework = True
-    except ImportError:
-        has_framework = False
-
-    if not has_framework:
-        print("🔍 Running basic GEDCOM search utilities tests...")
-        try:
-            # Basic tests when framework unavailable
-            required_functions = [
-                "search_gedcom_by_name",
-                "find_person_in_gedcom",
-                "get_relationship_path",
-            ]
-
-            for func_name in required_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func), f"{func_name} should be callable"
-
-            print("✅ Basic GEDCOM search utilities tests passed!")
-            return True
-        except Exception as e:
-            print(f"❌ Basic tests failed: {e}")
-            return False
+    from test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite(

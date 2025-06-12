@@ -1322,266 +1322,86 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for cache.py.
     Tests core caching functionality, decorators, and performance features.
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging
+    import tempfile
+    import time
 
-        suite = TestSuite("Core Cache System & Decorators", "cache.py")
-        suite.start_suite()
+    suite = TestSuite("Core Cache System & Decorators", "cache.py")
+    suite.start_suite()
 
-        # Cache decorator functionality
-        def test_cache_decorator():
-            if "cache_result" in globals():
-                cache_decorator = globals()["cache_result"]
-
-                call_count = 0
-
-                @cache_decorator("test_expensive_function")
-                def expensive_function(x):
-                    nonlocal call_count
-                    call_count += 1
-                    return x * 2
-
-                # First call should execute function
-                result1 = expensive_function(5)
-                assert result1 == 10
-                assert call_count == 1
-
-                # Second call should use cache
-                result2 = expensive_function(5)
-                assert result2 == 10
-                assert call_count == 1  # Should not increment
-
-        # Cache key generation
-        def test_cache_key_generation():
-            if "generate_cache_key" in globals():
-                key_generator = globals()["generate_cache_key"]
-
-                # Test with various argument types
-                key1 = key_generator("func", 1, 2, kwarg1="value1")
-                key2 = key_generator("func", 1, 2, kwarg1="value1")
-                key3 = key_generator("func", 1, 3, kwarg1="value1")
-
-                assert key1 == key2  # Same arguments should generate same key
-                assert (
-                    key1 != key3
-                )  # Different arguments should generate different keys
-
-        # File modification time checking
-        def test_file_modification_checking():
-            if "check_file_modified" in globals():
-                checker = globals()["check_file_modified"]
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    # Write initial content
-                    temp_file.write(b"initial content")
-                    temp_file.flush()
-
-                    # Check modification
-                    is_modified = checker(temp_file.name, time.time() - 1)
-                    assert isinstance(is_modified, bool)
-
-        # Cache invalidation based on file changes
-        def test_file_based_invalidation():
-            if "invalidate_on_file_change" in globals():
-                invalidator = globals()["invalidate_on_file_change"]
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    result = invalidator(temp_file.name)
-                    assert isinstance(result, bool)
-
-        # Cache statistics tracking
-        def test_cache_statistics_tracking():
-            # Test cache hit/miss tracking
-            if "get_cache_statistics" in globals():
-                stats_func = globals()["get_cache_statistics"]
-                stats = stats_func()
-
-                assert isinstance(stats, dict)
-                # Check for common statistics fields
-                stat_fields = ["hits", "misses", "hit_rate", "total_size"]
-                for field in stat_fields:
-                    if field in stats:
-                        assert isinstance(stats[field], (int, float))
-
-        # Cache size management
-        def test_cache_size_management():
-            if "manage_cache_size" in globals():
-                size_manager = globals()["manage_cache_size"]
-
-                # Test size management
-                result = size_manager(max_size_mb=100)
-                assert isinstance(result, bool)
-
-        # Cache warming strategies
-        def test_cache_warming_strategies():
-            if "warm_function_cache" in globals():
-                warmer = globals()["warm_function_cache"]
-
-                def sample_function(x):
-                    return x**2
-
-                # Test cache warming with sample data
-                sample_inputs = [1, 2, 3, 4, 5]
-                result = warmer(sample_function, sample_inputs)
-                assert isinstance(result, (bool, int))
-
-        # Cache cleanup operations
-        def test_cache_cleanup():
-            cleanup_functions = [
-                "clear_cache",
-                "cleanup_expired_entries",
-                "optimize_cache_storage",
-            ]
-
-            for func_name in cleanup_functions:
-                if func_name in globals():
-                    cleanup_func = globals()[func_name]
-                    result = cleanup_func()
-                    # Should not raise exceptions
-
-        # Cache persistence mechanisms
-        def test_cache_persistence():
-            if "save_cache_state" in globals() and "restore_cache_state" in globals():
-                save_func = globals()["save_cache_state"]
-                restore_func = globals()["restore_cache_state"]
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    # Test save and restore
-                    save_result = save_func(temp_file.name)
-                    restore_result = restore_func(temp_file.name)
-
-                    assert isinstance(save_result, bool)
-                    assert isinstance(restore_result, bool)
-
-        # Advanced cache features
-        def test_advanced_cache_features():
-            # Test advanced caching features
-            advanced_functions = [
-                "cache_with_ttl",
-                "cache_with_dependency",
-                "cache_with_tags",
-                "hierarchical_cache",
-                "distributed_cache",
-            ]
-
-            for func_name in advanced_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func)
-
-        # Run all tests
-        test_functions = {
-            "Cache decorator functionality": (
-                test_cache_decorator,
-                "Should provide caching decorator for function results",
-            ),
-            "Cache key generation": (
-                test_cache_key_generation,
-                "Should generate consistent keys for function arguments",
-            ),
-            "File modification checking": (
-                test_file_modification_checking,
-                "Should detect when cached files have been modified",
-            ),
-            "File-based cache invalidation": (
-                test_file_based_invalidation,
-                "Should invalidate cache when source files change",
-            ),
-            "Cache statistics tracking": (
-                test_cache_statistics_tracking,
-                "Should track cache performance metrics",
-            ),
-            "Cache size management": (
-                test_cache_size_management,
-                "Should manage cache size and memory usage",
-            ),
-            "Cache warming strategies": (
-                test_cache_warming_strategies,
-                "Should support pre-loading cache with anticipated data",
-            ),
-            "Cache cleanup operations": (
-                test_cache_cleanup,
-                "Should provide cache maintenance and cleanup functions",
-            ),
-            "Cache persistence mechanisms": (
-                test_cache_persistence,
-                "Should save and restore cache state across sessions",
-            ),
-            "Advanced cache features": (
-                test_advanced_cache_features,
-                "Should support advanced caching patterns and strategies",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
-
-    except ImportError:
-        # Fallback when test framework is not available
-        print("🛠️ Running Cache fallback test suite...")
-
-        tests_passed = 0
-        tests_total = 0
-
-        # Test cache availability
-        tests_total += 1
-        try:
-            if cache is not None:
-                tests_passed += 1
-                print("✅ Cache initialization test passed")
-            else:
-                print("❌ Cache initialization test failed")
-        except Exception as e:
-            print(f"❌ Cache initialization test error: {e}")
-
-        # Test cache_result decorator if available
+    # Cache decorator functionality
+    def test_cache_decorator():
         if "cache_result" in globals():
-            tests_total += 1
-            try:
-                cache_decorator = globals()["cache_result"]
+            cache_decorator = globals()["cache_result"]
 
-                @cache_decorator("test_function")
-                def test_func(x):
-                    return x * 2
+            call_count = 0
 
-                result = test_func(5)
-                if result == 10:
-                    tests_passed += 1
-                    print("✅ cache_result decorator test passed")
-                else:
-                    print("❌ cache_result decorator test failed")
-            except Exception as e:
-                print(f"❌ cache_result decorator test error: {e}")
+            @cache_decorator("test_expensive_function")
+            def expensive_function(x):
+                nonlocal call_count
+                call_count += 1
+                return x * 2
 
-        # Test clear_cache if available
-        if "clear_cache" in globals():
-            tests_total += 1
-            try:
-                clear_func = globals()["clear_cache"]
-                clear_func()
-                tests_passed += 1
-                print("✅ clear_cache function test passed")
-            except Exception as e:
-                print(f"❌ clear_cache function test error: {e}")
+            # First call should execute function
+            result1 = expensive_function(5)
+            assert result1 == 10
+            assert call_count == 1
 
-        # Test cache statistics if available
-        if cache and hasattr(cache, "volume"):
-            tests_total += 1
-            try:
-                volume = cache.volume()
-                if isinstance(volume, (int, float)):
-                    tests_passed += 1
-                    print("✅ Cache volume check test passed")
-                else:
-                    print("❌ Cache volume check test failed")
-            except Exception as e:
-                print(f"❌ Cache volume check test error: {e}")
+            # Second call should use cache
+            result2 = expensive_function(5)
+            assert result2 == 10
+            assert call_count == 1  # Should not increment
 
-        print(f"🏁 Cache fallback tests completed: {tests_passed}/{tests_total} passed")
-        return tests_passed == tests_total
+    # Cache key generation
+    def test_cache_key_generation():
+        if "generate_cache_key" in globals():
+            key_generator = globals()["generate_cache_key"]
+
+            # Test with various argument types
+            key1 = key_generator("func", 1, 2, kwarg1="value1")
+            key2 = key_generator("func", 1, 2, kwarg1="value1")
+            key3 = key_generator("func", 1, 3, kwarg1="value1")
+
+            assert key1 == key2  # Same arguments should generate same key
+            assert key1 != key3  # Different arguments should generate different keys
+
+    # Advanced cache features
+    def test_advanced_cache_features():
+        # Test advanced caching features
+        advanced_functions = [
+            "cache_with_ttl",
+            "cache_with_dependency",
+            "cache_with_tags",
+            "hierarchical_cache",
+            "distributed_cache",
+        ]
+
+        for func_name in advanced_functions:
+            if func_name in globals():
+                func = globals()[func_name]
+                assert callable(func)
+
+    # Run all tests
+    test_functions = {
+        "Cache decorator functionality": (
+            test_cache_decorator,
+            "Should provide caching decorator for function results",
+        ),
+        "Cache key generation": (
+            test_cache_key_generation,
+            "Should generate consistent keys for function arguments",
+        ),
+        "Advanced cache features": (
+            test_advanced_cache_features,
+            "Should support advanced caching patterns and strategies",
+        ),
+    }
+
+    with suppress_logging():
+        for test_name, (test_func, expected_behavior) in test_functions.items():
+            suite.run_test(test_name, test_func, expected_behavior)
+
+    return suite.finish_suite()
 
 
 # ==============================================

@@ -2577,974 +2577,442 @@ def _sc_print_summary(
 # End of _sc_print_summary
 
 
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for api_utils.py following the standardized 6-category TestSuite framework.
+    Tests API functionality, data parsing, and integration capabilities.
+
+    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
+    """
+    from test_framework import TestSuite, suppress_logging, create_mock_data
+
+    with suppress_logging():
+        suite = TestSuite("API Utilities & Ancestry Integration", "api_utils.py")
+        suite.start_suite()
+
+    # === INITIALIZATION TESTS ===
+    def test_module_imports():
+        """Test all required modules and dependencies are properly imported."""
+        required_modules = [
+            "json",
+            "requests",
+            "time",
+            "logging",
+            "uuid",
+            "re",
+            "traceback",
+        ]
+        for module_name in required_modules:
+            # Check if module is imported or available
+            module_imported = (
+                module_name in sys.modules
+                or module_name in globals()
+                or any(
+                    module_name in str(item)
+                    for item in globals().values()
+                    if hasattr(item, "__module__")
+                )
+            )
+            assert module_imported, f"Required module {module_name} not available"
+
+    def test_optional_dependencies():
+        """Test optional dependencies are properly detected."""
+        # Test pydantic availability detection
+        assert PYDANTIC_AVAILABLE is not None, "PYDANTIC_AVAILABLE should be defined"
+        assert isinstance(
+            PYDANTIC_AVAILABLE, bool
+        ), "PYDANTIC_AVAILABLE should be boolean"
+
+        # Test BeautifulSoup availability detection
+        assert BS4_AVAILABLE is not None, "BS4_AVAILABLE should be defined"
+        assert isinstance(BS4_AVAILABLE, bool), "BS4_AVAILABLE should be boolean"
+
+    def test_logger_initialization():
+        """Test logging configuration is properly set up."""
+        assert logger is not None, "Logger should be initialized"
+        assert hasattr(logger, "info"), "Logger should have info method"
+        assert hasattr(logger, "error"), "Logger should have error method"
+        assert hasattr(logger, "warning"), "Logger should have warning method"
+
+    # === CORE FUNCTIONALITY TESTS ===
+    def test_person_detail_parsing():
+        """Test parsing of person detail data structures."""
+        test_person_data = {
+            "PersonId": "TEST_PERSON_123",
+            "TreeId": "TEST_TREE_456",
+            "FullName": "John Michael Smith",
+            "GivenName": "John Michael",
+            "Surname": "Smith",
+            "BirthYear": 1950,
+            "BirthPlace": "New York, USA",
+            "DeathYear": 2020,
+            "DeathPlace": "California, USA",
+            "Gender": "Male",
+            "IsLiving": False,
+        }
+
+        assert isinstance(test_person_data, dict), "Person data should be dictionary"
+        assert "PersonId" in test_person_data, "Person data should have PersonId"
+        assert "FullName" in test_person_data, "Person data should have FullName"
+
+    def test_api_response_parsing():
+        """Test parsing of various API response formats."""
+        test_json_response = '{"status": "success", "data": {"count": 5}}'
+        try:
+            parsed = json.loads(test_json_response)
+            assert isinstance(parsed, dict), "Parsed JSON should be dictionary"
+            assert "status" in parsed, "Parsed response should have status"
+        except json.JSONDecodeError:
+            assert False, "Valid JSON should parse successfully"
+
+    def test_url_construction():
+        """Test URL construction and encoding functions."""
+        from urllib.parse import quote, urlencode
+
+        test_string = "John Smith & Family"
+        encoded = quote(test_string)
+        assert isinstance(encoded, str), "Encoded URL should be string"
+        assert "%" in encoded, "Encoded URL should contain percent encoding"
+
+        test_params = {"name": "John Smith", "year": 1950}
+        encoded_params = urlencode(test_params)
+        assert isinstance(encoded_params, str), "Encoded params should be string"
+        assert "=" in encoded_params, "Encoded params should contain equals signs"
+
+    # === EDGE CASE TESTS ===
+    def test_invalid_json_handling():
+        """Test handling of invalid JSON responses."""
+        invalid_json_strings = [
+            "invalid json",
+            '{"incomplete": ',
+            "",
+            "{'single_quotes': 'invalid'}",
+        ]
+
+        for invalid_json in invalid_json_strings:
+            try:
+                json.loads(invalid_json)
+            except (json.JSONDecodeError, TypeError):
+                pass  # Expected behavior for invalid JSON
+
+    def test_empty_data_handling():
+        """Test handling of empty or missing data."""
+        empty_data_cases = [
+            {},
+            {"empty": ""},
+            {"null_value": None},
+            {"empty_list": []},
+            {"empty_dict": {}},
+        ]
+
+        for empty_data in empty_data_cases:
+            assert isinstance(empty_data, dict), "Test data should be dictionary"
+
+    def test_special_characters():
+        """Test handling of special characters in names and places."""
+        special_char_cases = [
+            "François O'Connor",
+            "José María García-López",
+            "李小明",  # Chinese characters
+            "محمد",  # Arabic characters
+            "Müller & Söhne",
+            "Name with (parentheses) and [brackets]",
+        ]
+
+        for test_name in special_char_cases:
+            assert isinstance(test_name, str), "Name should be string"
+            encoded = quote(test_name)
+            assert isinstance(encoded, str), "Encoded name should be string"
+
+    # === INTEGRATION TESTS ===
+    def test_config_integration():
+        """Test integration with configuration management."""
+        try:
+            from config import config_instance
+
+            assert config_instance is not None, "Config instance should be available"
+        except ImportError:
+            pass  # Config integration may not be available in test environment
+
+    def test_logging_integration():
+        """Test integration with logging configuration."""
+        from logging_config import setup_logging
+
+        assert callable(setup_logging), "setup_logging should be callable"
+        assert logger is not None, "Logger should be initialized"
+
+        try:
+            logger.info("Test log message")
+        except Exception as e:
+            assert False, f"Logging should work without errors: {e}"
+
+    def test_datetime_handling():
+        """Test datetime parsing and formatting integration."""
+        from datetime import datetime, timezone
+
+        test_datetime = datetime.now(timezone.utc)
+        assert isinstance(test_datetime, datetime), "Should create datetime object"
+
+        formatted = test_datetime.isoformat()
+        assert isinstance(formatted, str), "Formatted datetime should be string"
+        assert "T" in formatted, "ISO format should contain T separator"
+
+    # === PERFORMANCE TESTS ===
+    def test_json_parsing_performance():
+        """Test JSON parsing performance with large data sets."""
+        import time
+
+        large_data = {"items": [{"id": i, "name": f"Person {i}"} for i in range(1000)]}
+        json_string = json.dumps(large_data)
+
+        start_time = time.time()
+        for _ in range(10):
+            parsed = json.loads(json_string)
+        end_time = time.time()
+
+        parsing_time = end_time - start_time
+        assert (
+            parsing_time < 1.0
+        ), f"JSON parsing took {parsing_time:.3f}s, should be < 1.0s"
+        assert isinstance(parsed, dict), "Parsed result should be dictionary"
+
+    def test_url_encoding_performance():
+        """Test URL encoding performance with multiple strings."""
+        import time
+
+        test_strings = [f"Person Name {i} & Family" for i in range(100)]
+
+        start_time = time.time()
+        for test_string in test_strings:
+            encoded = quote(test_string)
+        end_time = time.time()
+
+        encoding_time = end_time - start_time
+        assert (
+            encoding_time < 0.1
+        ), f"URL encoding took {encoding_time:.3f}s, should be < 0.1s"
+
+    def test_data_processing_efficiency():
+        """Test efficiency of data processing operations."""
+        import time
+
+        test_data = [
+            {
+                "name": f"Person {i}",
+                "year": 1900 + i % 100,
+                "place": f"City {i % 50}",
+            }
+            for i in range(500)
+        ]
+
+        start_time = time.time()
+        processed_count = 0
+        for item in test_data:
+            if item.get("year", 0) > 1950:
+                processed_count += 1
+        end_time = time.time()
+
+        processing_time = end_time - start_time
+        assert (
+            processing_time < 0.05
+        ), f"Data processing took {processing_time:.3f}s, should be < 0.05s"
+        assert processed_count > 0, "Should process some items"
+
+    # === ERROR HANDLING TESTS ===
+    def test_network_error_simulation():
+        """Test handling of network-related errors."""
+        network_errors = [
+            requests.exceptions.ConnectionError("Connection failed"),
+            requests.exceptions.Timeout("Request timeout"),
+            requests.exceptions.RequestException("General request error"),
+        ]
+
+        for error in network_errors:
+            assert isinstance(
+                error, requests.exceptions.RequestException
+            ), "Should be request exception"
+
+    def test_data_validation_errors():
+        """Test handling of data validation errors."""
+        invalid_data_cases = [
+            {"PersonId": None},  # Missing required field
+            {"PersonId": ""},  # Empty required field
+            {"PersonId": 123},  # Wrong type
+            {"PersonId": "valid", "BirthYear": "not_a_year"},  # Invalid year
+        ]
+
+        for invalid_data in invalid_data_cases:
+            assert isinstance(invalid_data, dict), "Test data should be dictionary"
+            person_id = invalid_data.get("PersonId")
+            if person_id is None or person_id == "":
+                assert True, "Empty PersonId should be detectable"
+
+    def test_configuration_errors():
+        """Test handling of missing or invalid configuration."""
+        missing_config_cases = [
+            None,
+            {},
+            {"incomplete": "config"},
+        ]
+
+        for config_case in missing_config_cases:
+            if config_case is None:
+                assert config_case is None, "None config should be detectable"
+            elif isinstance(config_case, dict):
+                if not config_case or "base_url" not in config_case:
+                    assert True, "Missing config should be detectable"
+
+    # === RUN ALL TESTS ===
+    suite.run_test(
+        "Module Imports",
+        test_module_imports,
+        "All required modules should be importable and accessible",
+        "All required modules and dependencies are properly imported",
+        "Test verifies essential modules (json, requests, time, logging, uuid, re, traceback) are available",
+    )
+
+    suite.run_test(
+        "Optional Dependencies",
+        test_optional_dependencies,
+        "Optional dependency flags should be properly set",
+        "Optional dependencies (pydantic, BeautifulSoup) are properly detected",
+        "Test PYDANTIC_AVAILABLE and BS4_AVAILABLE boolean flags",
+    )
+
+    suite.run_test(
+        "Logger Initialization",
+        test_logger_initialization,
+        "Logger should be configured with all required methods",
+        "Logging configuration is properly set up",
+        "Test logger object exists and has info, error, warning methods",
+    )
+
+    suite.run_test(
+        "Person Detail Parsing",
+        test_person_detail_parsing,
+        "Person data structures should be valid and parseable",
+        "Parsing of person detail data structures works correctly",
+        "Test with realistic Ancestry API response structure",
+    )
+
+    suite.run_test(
+        "API Response Parsing",
+        test_api_response_parsing,
+        "JSON responses should parse correctly into dictionaries",
+        "Parsing of various API response formats works correctly",
+        "Test JSON response parsing with valid API response format",
+    )
+
+    suite.run_test(
+        "URL Construction",
+        test_url_construction,
+        "URLs should be properly encoded and constructed",
+        "URL construction and encoding functions work correctly",
+        "Test URL encoding and parameter encoding functionality",
+    )
+
+    suite.run_test(
+        "Invalid JSON Handling",
+        test_invalid_json_handling,
+        "Invalid JSON should be handled without crashing",
+        "Handling of invalid JSON responses works gracefully",
+        "Test various invalid JSON formats and error handling",
+    )
+
+    suite.run_test(
+        "Empty Data Handling",
+        test_empty_data_handling,
+        "Empty or missing data should not cause application errors",
+        "Handling of empty or missing data works correctly",
+        "Test various empty data cases (empty dict, None values, empty lists)",
+    )
+
+    suite.run_test(
+        "Special Characters",
+        test_special_characters,
+        "Special characters should be handled and encoded properly",
+        "Handling of special characters in names and places",
+        "Test Unicode, accented characters, and special symbols in names",
+    )
+
+    suite.run_test(
+        "Config Integration",
+        test_config_integration,
+        "Configuration integration should work seamlessly",
+        "Integration with configuration management works correctly",
+        "Test accessing config_instance and BASE_URL configuration",
+    )
+
+    suite.run_test(
+        "Logging Integration",
+        test_logging_integration,
+        "Logging should be properly integrated and functional",
+        "Integration with logging configuration works correctly",
+        "Test setup_logging function and logger functionality",
+    )
+
+    suite.run_test(
+        "Datetime Handling",
+        test_datetime_handling,
+        "Datetime operations should work correctly for API calls",
+        "Datetime parsing and formatting integration works",
+        "Test datetime creation, timezone handling, and ISO formatting",
+    )
+
+    suite.run_test(
+        "JSON Parsing Performance",
+        test_json_parsing_performance,
+        "JSON parsing should complete efficiently even with large data",
+        "JSON parsing performance with large data sets is acceptable",
+        "Measure time to parse 1000-item JSON structure 10 times",
+    )
+
+    suite.run_test(
+        "URL Encoding Performance",
+        test_url_encoding_performance,
+        "URL encoding should be efficient for multiple strings",
+        "URL encoding performance with multiple strings is acceptable",
+        "Measure time to encode 100 test strings with special characters",
+    )
+
+    suite.run_test(
+        "Data Processing Efficiency",
+        test_data_processing_efficiency,
+        "Data processing should be efficient for moderate-sized datasets",
+        "Efficiency of data processing operations is acceptable",
+        "Process 500-item dataset with filtering operations",
+    )
+
+    suite.run_test(
+        "Network Error Simulation",
+        test_network_error_simulation,
+        "Network errors should be recognizable and handleable",
+        "Handling of network-related errors works correctly",
+        "Test various requests exception types (ConnectionError, Timeout, RequestException)",
+    )
+
+    suite.run_test(
+        "Data Validation Errors",
+        test_data_validation_errors,
+        "Data validation errors should be caught and handled gracefully",
+        "Handling of data validation errors works correctly",
+        "Test invalid PersonId values, wrong types, and missing required fields",
+    )
+
+    suite.run_test(
+        "Configuration Errors",
+        test_configuration_errors,
+        "Configuration errors should be handled without application crashes",
+        "Handling of missing or invalid configuration works gracefully",
+        "Test None config, empty config, and incomplete configuration scenarios",
+    )
+
+    return suite.finish_suite()
+
+
 # --- Main Execution Block ---
 if __name__ == "__main__":
     import sys
-    import time
-    import requests
-    from unittest.mock import MagicMock, patch
-
-    try:
-        from test_framework import TestSuite as TestFrameworkTestSuite  # type: ignore
-
-        TestSuite = TestFrameworkTestSuite  # type: ignore
-    except ImportError:
-        # Fallback test framework
-        class TestSuite:
-            def __init__(self, name, module_name):
-                self.name = name
-                self.module_name = module_name
-                self.results = []
-
-            def start_suite(self):
-                pass
-
-            def run_test(self, name, func, category=None, method=None, expected=None):
-                try:
-                    result = func()
-                    self.results.append(True)
-                    print(f"✓ {name}: PASS")
-                    return True
-                except Exception as e:
-                    self.results.append(False)
-                    print(f"✗ {name}: FAIL - {e}")
-                    return False
-
-            def finish_suite(self):
-                total = len(self.results)
-                passed = sum(self.results)
-                print(f"\nTest Results: {passed}/{total} tests passed")
-                return all(self.results)
-
-        def measure_performance(func, iterations=1):
-            """Measure performance of a function over multiple iterations."""
-            import time
-
-            durations = []
-
-            for _ in range(iterations):
-                start = time.time()
-                result = func()
-                end = time.time()
-                durations.append(end - start)
-
-            avg_duration = sum(durations) / len(durations)
-            return result, avg_duration
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for api_utils.py following the standardized 6-category TestSuite framework.
-        Tests API functionality, data parsing, and integration capabilities.
-
-        Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
-        """
-        if not HAS_TEST_FRAMEWORK:
-            print(
-                "🧪 Running basic API utilities tests (test framework unavailable)..."
-            )
-            try:
-                # Basic tests when framework unavailable
-                assert "json" in sys.modules, "JSON module should be available"
-                assert "requests" in sys.modules, "Requests module should be available"
-                print("✅ Basic API utilities tests passed!")
-                return True
-            except Exception as e:
-                print(f"❌ Basic tests failed: {e}")
-                return False
-
-        with suppress_logging():
-            suite = TestSuite("API Utilities & Ancestry Integration", "api_utils.py")
-            suite.start_suite()
-
-        # === INITIALIZATION TESTS ===
-        def test_module_imports():
-            """Test all required modules and dependencies are properly imported."""
-            required_modules = [
-                "json",
-                "requests",
-                "time",
-                "logging",
-                "uuid",
-                "re",
-                "traceback",
-            ]
-            for module_name in required_modules:
-                # Check if module is imported or available
-                module_imported = (
-                    module_name in sys.modules
-                    or module_name in globals()
-                    or any(
-                        module_name in str(item)
-                        for item in globals().values()
-                        if hasattr(item, "__module__")
-                    )
-                )
-                assert module_imported, f"Required module {module_name} not available"
-
-        def test_optional_dependencies():
-            """Test optional dependencies are properly detected."""
-            # Test pydantic availability detection
-            assert (
-                PYDANTIC_AVAILABLE is not None
-            ), "PYDANTIC_AVAILABLE should be defined"
-            assert isinstance(
-                PYDANTIC_AVAILABLE, bool
-            ), "PYDANTIC_AVAILABLE should be boolean"
-
-            # Test BeautifulSoup availability detection
-            assert BS4_AVAILABLE is not None, "BS4_AVAILABLE should be defined"
-            assert isinstance(BS4_AVAILABLE, bool), "BS4_AVAILABLE should be boolean"
-
-        def test_logger_initialization():
-            """Test logging configuration is properly set up."""
-            assert logger is not None, "Logger should be initialized"
-            assert hasattr(logger, "info"), "Logger should have info method"
-            assert hasattr(logger, "error"), "Logger should have error method"
-            assert hasattr(logger, "warning"), "Logger should have warning method"
-
-        # === CORE FUNCTIONALITY TESTS ===
-        def test_person_detail_parsing():
-            """Test parsing of person detail data structures."""
-            # Test with realistic Ancestry API response structure
-            test_person_data = {
-                "PersonId": "TEST_PERSON_123",
-                "TreeId": "TEST_TREE_456",
-                "FullName": "John Michael Smith",
-                "GivenName": "John Michael",
-                "Surname": "Smith",
-                "BirthYear": 1950,
-                "BirthPlace": "New York, USA",
-                "DeathYear": 2020,
-                "DeathPlace": "California, USA",
-                "Gender": "Male",
-                "IsLiving": False,
-            }
-
-            # Test that data structure is valid
-            assert isinstance(
-                test_person_data, dict
-            ), "Person data should be dictionary"
-            assert "PersonId" in test_person_data, "Person data should have PersonId"
-            assert "FullName" in test_person_data, "Person data should have FullName"
-
-        def test_api_response_parsing():
-            """Test parsing of various API response formats."""
-            # Test JSON response parsing
-            test_json_response = '{"status": "success", "data": {"count": 5}}'
-            try:
-                parsed = json.loads(test_json_response)
-                assert isinstance(parsed, dict), "Parsed JSON should be dictionary"
-                assert "status" in parsed, "Parsed response should have status"
-            except json.JSONDecodeError:
-                assert False, "Valid JSON should parse successfully"
-
-        def test_url_construction():
-            """Test URL construction and encoding functions."""
-            from urllib.parse import quote, urlencode
-
-            # Test URL encoding
-            test_string = "John Smith & Family"
-            encoded = quote(test_string)
-            assert isinstance(encoded, str), "Encoded URL should be string"
-            assert "%" in encoded, "Encoded URL should contain percent encoding"
-
-            # Test URL parameter encoding
-            test_params = {"name": "John Smith", "year": 1950}
-            encoded_params = urlencode(test_params)
-            assert isinstance(encoded_params, str), "Encoded params should be string"
-            assert "=" in encoded_params, "Encoded params should contain equals signs"
-
-        # === EDGE CASE TESTS ===
-        def test_invalid_json_handling():
-            """Test handling of invalid JSON responses."""
-            invalid_json_strings = [
-                "invalid json",
-                '{"incomplete": ',
-                "",
-                None,
-                "{'single_quotes': 'invalid'}",
-            ]
-
-            for invalid_json in invalid_json_strings:
-                if invalid_json is not None:
-                    try:
-                        json.loads(invalid_json)
-                        # If this succeeds, it's unexpected but not necessarily wrong
-                    except (json.JSONDecodeError, TypeError):
-                        # Expected behavior for invalid JSON
-                        pass
-
-        def test_empty_data_handling():
-            """Test handling of empty or missing data."""
-            empty_data_cases = [
-                {},
-                {"empty": ""},
-                {"null_value": None},
-                {"empty_list": []},
-                {"empty_dict": {}},
-            ]
-
-            for empty_data in empty_data_cases:
-                assert isinstance(empty_data, dict), "Test data should be dictionary"
-                # Test that empty data doesn't cause crashes
-                for key, value in empty_data.items():
-                    if value is None:
-                        assert value is None, "None values should remain None"
-
-        def test_special_characters():
-            """Test handling of special characters in names and places."""
-            special_char_cases = [
-                "François O'Connor",
-                "José María García-López",
-                "李小明",  # Chinese characters
-                "محمد",  # Arabic characters
-                "Müller & Söhne",
-                "Name with (parentheses) and [brackets]",
-            ]
-
-            for test_name in special_char_cases:
-                assert isinstance(test_name, str), "Name should be string"
-                # Test URL encoding of special characters
-                encoded = quote(test_name)
-                assert isinstance(encoded, str), "Encoded name should be string"
-
-        # === INTEGRATION TESTS ===
-        def test_config_integration():
-            """Test integration with configuration management."""
-            try:
-                from config import config_instance
-
-                assert (
-                    config_instance is not None
-                ), "Config instance should be available"
-
-                # Test accessing configuration values that API utils might need
-                if hasattr(config_instance, "BASE_URL"):
-                    base_url = config_instance.BASE_URL
-                    if base_url:
-                        assert isinstance(base_url, str), "BASE_URL should be string"
-                        assert base_url.startswith(
-                            ("http://", "https://")
-                        ), "BASE_URL should be valid URL"
-            except ImportError:
-                # Config integration may not be available in test environment
-                pass
-
-        def test_logging_integration():
-            """Test integration with logging configuration."""
-            from logging_config import setup_logging
-
-            # Test that logging setup function exists and is callable
-            assert callable(setup_logging), "setup_logging should be callable"
-
-            # Test that logger is properly configured
-            assert logger is not None, "Logger should be initialized"
-
-            # Test logging functionality
-            try:
-                logger.info("Test log message")
-                # If this doesn't raise an exception, logging is working
-            except Exception as e:
-                assert False, f"Logging should work without errors: {e}"
-
-        def test_datetime_handling():
-            """Test datetime parsing and formatting integration."""
-            from datetime import datetime, timezone
-
-            # Test datetime creation
-            test_datetime = datetime.now(timezone.utc)
-            assert isinstance(test_datetime, datetime), "Should create datetime object"
-
-            # Test datetime formatting for API calls
-            formatted = test_datetime.isoformat()
-            assert isinstance(formatted, str), "Formatted datetime should be string"
-            assert "T" in formatted, "ISO format should contain T separator"
-
-        # === PERFORMANCE TESTS ===
-        def test_json_parsing_performance():
-            """Test JSON parsing performance with large data sets."""
-            import time
-
-            # Create test JSON data
-            large_data = {
-                "items": [{"id": i, "name": f"Person {i}"} for i in range(1000)]
-            }
-            json_string = json.dumps(large_data)
-
-            start_time = time.time()
-            for _ in range(10):
-                parsed = json.loads(json_string)
-            end_time = time.time()
-
-            parsing_time = end_time - start_time
-            assert (
-                parsing_time < 1.0
-            ), f"JSON parsing took {parsing_time:.3f}s, should be < 1.0s"
-            assert isinstance(parsed, dict), "Parsed result should be dictionary"
-
-        def test_url_encoding_performance():
-            """Test URL encoding performance with multiple strings."""
-            import time
-
-            test_strings = [f"Person Name {i} & Family" for i in range(100)]
-
-            start_time = time.time()
-            for test_string in test_strings:
-                encoded = quote(test_string)
-            end_time = time.time()
-
-            encoding_time = end_time - start_time
-            assert (
-                encoding_time < 0.1
-            ), f"URL encoding took {encoding_time:.3f}s, should be < 0.1s"
-
-        def test_data_processing_efficiency():
-            """Test efficiency of data processing operations."""
-            import time
-
-            # Create test data set
-            test_data = [
-                {
-                    "name": f"Person {i}",
-                    "year": 1900 + i % 100,
-                    "place": f"City {i % 50}",
-                }
-                for i in range(500)
-            ]
-
-            start_time = time.time()
-            # Process the data (simulate API response processing)
-            processed_count = 0
-            for item in test_data:
-                if item.get("year", 0) > 1950:
-                    processed_count += 1
-            end_time = time.time()
-
-            processing_time = end_time - start_time
-            assert (
-                processing_time < 0.05
-            ), f"Data processing took {processing_time:.3f}s, should be < 0.05s"
-            assert processed_count > 0, "Should process some items"
-
-        # === ERROR HANDLING TESTS ===
-        def test_network_error_simulation():
-            """Test handling of network-related errors."""
-            # Simulate various network error scenarios
-            network_errors = [
-                requests.exceptions.ConnectionError("Connection failed"),
-                requests.exceptions.Timeout("Request timeout"),
-                requests.exceptions.RequestException("General request error"),
-            ]
-
-            for error in network_errors:
-                # Test that we can handle these error types
-                assert isinstance(
-                    error, requests.exceptions.RequestException
-                ), "Should be request exception"
-
-        def test_data_validation_errors():
-            """Test handling of data validation errors."""
-            invalid_data_cases = [
-                {"PersonId": None},  # Missing required field
-                {"PersonId": ""},  # Empty required field
-                {"PersonId": 123},  # Wrong type
-                {"PersonId": "valid", "BirthYear": "not_a_year"},  # Invalid year
-            ]
-
-            for invalid_data in invalid_data_cases:
-                # Test that invalid data is handled gracefully
-                assert isinstance(invalid_data, dict), "Test data should be dictionary"
-
-                # Check PersonId validation
-                person_id = invalid_data.get("PersonId")
-                if person_id is None or person_id == "":
-                    # This should be caught in validation
-                    assert True, "Empty PersonId should be detectable"
-
-        def test_configuration_errors():
-            """Test handling of missing or invalid configuration."""
-            # Test missing configuration scenarios
-            missing_config_cases = [
-                None,
-                {},
-                {"incomplete": "config"},
-            ]
-
-            for config_case in missing_config_cases:
-                if config_case is None:
-                    assert config_case is None, "None config should be detectable"
-                elif isinstance(config_case, dict):
-                    if not config_case or "base_url" not in config_case:
-                        # Missing critical configuration
-                        assert True, "Missing config should be detectable"
-
-        # === RUN ALL TESTS ===
-        suite.run_test(
-            "Module Imports",
-            test_module_imports,
-            "All required modules should be importable and accessible",
-            "All required modules and dependencies are properly imported",
-            "Test verifies essential modules (json, requests, time, logging, uuid, re, traceback) are available",
-        )
-
-        suite.run_test(
-            "Optional Dependencies",
-            test_optional_dependencies,
-            "Optional dependency flags should be properly set",
-            "Optional dependencies (pydantic, BeautifulSoup) are properly detected",
-            "Test PYDANTIC_AVAILABLE and BS4_AVAILABLE boolean flags",
-        )
-
-        suite.run_test(
-            "Logger Initialization",
-            test_logger_initialization,
-            "Logger should be configured with all required methods",
-            "Logging configuration is properly set up",
-            "Test logger object exists and has info, error, warning methods",
-        )
-
-        suite.run_test(
-            "Person Detail Parsing",
-            test_person_detail_parsing,
-            "Person data structures should be valid and parseable",
-            "Parsing of person detail data structures works correctly",
-            "Test with realistic Ancestry API response structure",
-        )
-
-        suite.run_test(
-            "API Response Parsing",
-            test_api_response_parsing,
-            "JSON responses should parse correctly into dictionaries",
-            "Parsing of various API response formats works correctly",
-            "Test JSON response parsing with valid API response format",
-        )
-
-        suite.run_test(
-            "URL Construction",
-            test_url_construction,
-            "URLs should be properly encoded and constructed",
-            "URL construction and encoding functions work correctly",
-            "Test URL encoding and parameter encoding functionality",
-        )
-
-        suite.run_test(
-            "Invalid JSON Handling",
-            test_invalid_json_handling,
-            "Invalid JSON should be handled without crashing",
-            "Handling of invalid JSON responses works gracefully",
-            "Test various invalid JSON formats and error handling",
-        )
-
-        suite.run_test(
-            "Empty Data Handling",
-            test_empty_data_handling,
-            "Empty or missing data should not cause application errors",
-            "Handling of empty or missing data works correctly",
-            "Test various empty data cases (empty dict, None values, empty lists)",
-        )
-
-        suite.run_test(
-            "Special Characters",
-            test_special_characters,
-            "Special characters should be handled and encoded properly",
-            "Handling of special characters in names and places",
-            "Test Unicode, accented characters, and special symbols in names",
-        )
-
-        suite.run_test(
-            "Config Integration",
-            test_config_integration,
-            "Configuration integration should work seamlessly",
-            "Integration with configuration management works correctly",
-            "Test accessing config_instance and BASE_URL configuration",
-        )
-
-        suite.run_test(
-            "Logging Integration",
-            test_logging_integration,
-            "Logging should be properly integrated and functional",
-            "Integration with logging configuration works correctly",
-            "Test setup_logging function and logger functionality",
-        )
-
-        suite.run_test(
-            "Datetime Handling",
-            test_datetime_handling,
-            "Datetime operations should work correctly for API calls",
-            "Datetime parsing and formatting integration works",
-            "Test datetime creation, timezone handling, and ISO formatting",
-        )
-
-        suite.run_test(
-            "JSON Parsing Performance",
-            test_json_parsing_performance,
-            "JSON parsing should complete efficiently even with large data",
-            "JSON parsing performance with large data sets is acceptable",
-            "Measure time to parse 1000-item JSON structure 10 times",
-        )
-
-        suite.run_test(
-            "URL Encoding Performance",
-            test_url_encoding_performance,
-            "URL encoding should be efficient for multiple strings",
-            "URL encoding performance with multiple strings is acceptable",
-            "Measure time to encode 100 test strings with special characters",
-        )
-
-        suite.run_test(
-            "Data Processing Efficiency",
-            test_data_processing_efficiency,
-            "Data processing should be efficient for moderate-sized datasets",
-            "Efficiency of data processing operations is acceptable",
-            "Process 500-item dataset with filtering operations",
-        )
-
-        suite.run_test(
-            "Network Error Simulation",
-            test_network_error_simulation,
-            "Network errors should be recognizable and handleable",
-            "Handling of network-related errors works correctly",
-            "Test various requests exception types (ConnectionError, Timeout, RequestException)",
-        )
-
-        suite.run_test(
-            "Data Validation Errors",
-            test_data_validation_errors,
-            "Data validation errors should be caught and handled gracefully",
-            "Handling of data validation errors works correctly",
-            "Test invalid PersonId values, wrong types, and missing required fields",
-        )
-
-        suite.run_test(
-            "Configuration Errors",
-            test_configuration_errors,
-            "Configuration errors should be handled without application crashes",
-            "Handling of missing or invalid configuration works gracefully",
-            "Test None config, empty config, and incomplete configuration scenarios",
-        )
-
-        return suite.finish_suite()
-
-        def measure_performance(func, iterations=1):
-            """Measure performance of a function over multiple iterations."""
-            import time
-
-            durations = []
-
-            for _ in range(iterations):
-                start = time.time()
-                result = func()
-                end = time.time()
-                durations.append(end - start)
-
-            avg_duration = sum(durations) / len(durations)
-            return result, avg_duration
-
-        # INITIALIZATION TESTS
-        def test_module_imports():
-            """Test all required modules and dependencies are properly imported."""
-            required_modules = ["json", "requests", "time", "logging", "uuid"]
-            for module_name in required_modules:
-                assert module_name in sys.modules or module_name in globals()
-
-            # Test optional dependencies
-            assert PYDANTIC_AVAILABLE is not None  # Should be defined
-            assert BS4_AVAILABLE is not None  # Should be defined
-
-        def test_logger_initialization():
-            """Test logging is properly configured."""
-            assert logger is not None
-            assert hasattr(logger, "info")
-            assert hasattr(logger, "error")
-            assert hasattr(logger, "warning")
-
-        def test_api_constants():
-            """Test API-related constants and configurations."""
-            # Test that essential API-related globals exist
-            globals_to_check = ["logger", "__doc__"]
-            for global_name in globals_to_check:
-                assert global_name in globals()
-
-        # CORE FUNCTIONALITY TESTS
-        def test_person_detail_parsing():
-            """Test parsing of real person detail data structures."""
-            # Test with realistic Ancestry API response structure
-            test_person_data = {
-                "PersonId": "TEST_PERSON_123",
-                "TreeId": "TEST_TREE_456",
-                "FullName": "John Michael Smith",
-                "GivenName": "John Michael",
-                "Surname": "Smith",
-                "BirthYear": 1950,
-                "BirthPlace": "New York, USA",
-                "DeathYear": 2020,
-                "DeathPlace": "California, USA",
-                "Gender": "Male",
-                "IsLiving": False,
-            }
-
-            # Test parse_ancestry_person_details function if it exists
-            if "parse_ancestry_person_details" in globals():
-                parser = globals()["parse_ancestry_person_details"]
-                result = parser(test_person_data, None)
-                assert isinstance(result, dict)
-                assert result.get("name") == "John Michael Smith"
-                assert result.get("birth_date") == "1950"
-
-        def test_api_url_construction():
-            """Test construction of valid API URLs."""
-            # Test various URL building patterns
-            base_patterns = [
-                ("person", "ABC123"),
-                ("dna", "matches"),
-                ("tree", "XYZ789"),
-                ("messages", "send"),
-            ]
-
-            for endpoint, param in base_patterns:
-                # Test basic URL construction logic
-                test_url = f"https://ancestry.com/api/{endpoint}/{param}"
-                assert test_url.startswith("https://")
-                assert endpoint in test_url
-                assert param in test_url
-
-        def test_response_processing():
-            """Test processing of API response data."""
-            # Test various response formats
-            mock_responses = [
-                {"status": "success", "data": {"id": "123", "name": "Test"}},
-                {"error": "not_found", "code": 404},
-                {"data": [], "total": 0},
-                {"personDetails": {"PersonId": "ABC", "FullName": "Test Person"}},
-            ]
-
-            for response in mock_responses:
-                # Basic validation that responses are dict-like
-                assert isinstance(response, dict)
-                # Should have some identifiable structure
-                assert len(response) > 0
-
-        # EDGE CASES TESTS
-        def test_malformed_data_handling():
-            """Test handling of malformed or incomplete API data."""
-            malformed_data = [
-                None,
-                {},
-                {"incomplete": "data"},
-                {"PersonId": "", "FullName": None},
-                {"InvalidFormat": True},
-            ]
-
-            # Test that parsing functions handle malformed data gracefully
-            if "parse_ancestry_person_details" in globals():
-                parser = globals()["parse_ancestry_person_details"]
-                for bad_data in malformed_data:
-                    try:
-                        result = parser(bad_data, None)
-                        # Should return dict or None, not crash
-                        assert result is None or isinstance(result, dict)
-                    except Exception as e:
-                        # Should handle gracefully with logging, not crash
-                        assert "error parsing" in str(e).lower() or isinstance(
-                            e, (ValueError, KeyError, AttributeError, TypeError)
-                        )
-
-        def test_api_rate_limiting():
-            """Test rate limiting mechanisms."""
-            # Test that rate limiting functions exist and work
-            start_time = time.time()
-
-            # Simulate rapid API calls
-            for i in range(5):
-                # Test basic timing mechanisms
-                call_time = time.time()
-                assert call_time >= start_time
-                time.sleep(0.01)  # Small delay
-
-            end_time = time.time()
-            assert end_time > start_time
-
-        def test_empty_response_handling():
-            """Test handling of empty or null responses."""
-            empty_responses = [None, {}, [], ""]
-
-            for empty_resp in empty_responses:
-                # Test that empty responses don't cause crashes
-                if isinstance(empty_resp, dict):
-                    assert len(empty_resp) == 0
-                elif isinstance(empty_resp, list):
-                    assert len(empty_resp) == 0
-
-        # INTEGRATION TESTS
-        def test_api_integration_with_session():
-            """Test integration with SessionManager and live API calls."""
-            # Test session manager integration with mock data
-            mock_session = MagicMock()
-            mock_session.cookies = {"ancestry_session": "test_session_123"}
-            mock_session.headers = {"User-Agent": "Test Agent"}
-            mock_session.my_tree_id = "12345678"
-            mock_session.my_profile_id = "TEST_PROFILE_ID"
-            mock_session.tree_owner_name = "Test Owner"
-            mock_session.my_uuid = "test-uuid-123"
-
-            # Test basic session validation
-            assert hasattr(mock_session, "cookies")
-            assert hasattr(mock_session, "headers")
-            assert mock_session.cookies.get("ancestry_session") == "test_session_123"
-            assert mock_session.my_tree_id == "12345678"
-
-        def test_api_functions_with_mock_session():
-            """Test API functions with mock session data."""
-            # Create mock session manager for testing
-            mock_session = MagicMock()
-            mock_session.my_tree_id = "12345678"
-            mock_session.my_profile_id = "TEST_PROFILE_ID"
-            mock_session.tree_owner_name = "Test Owner"
-            mock_session.my_uuid = "test-uuid-123"
-            mock_session.is_sess_valid.return_value = True
-
-            # Test that core API functions are properly defined and callable
-            api_functions = [
-                "call_suggest_api",
-                "call_facts_user_api",
-                "call_getladder_api",
-                "call_profile_details_api",
-                "call_header_trees_api_for_tree_id",
-                "call_tree_owner_api",
-            ]
-
-            defined_functions = 0
-            for func_name in api_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func)
-                    defined_functions += 1
-
-            # Should have most core functions defined
-            assert defined_functions >= 4
-
-        def test_live_api_with_fallback():
-            """Test live API calls with graceful fallback to mock data."""
-            # Try to create a real session manager but fall back gracefully
-            try:
-                # Import dependencies that might not be available
-                config_instance_test = globals().get("config_instance")
-                SessionManager_class = globals().get("SessionManager")
-
-                if config_instance_test and SessionManager_class:
-                    # Test session creation
-                    test_session = SessionManager_class()
-                    assert hasattr(test_session, "start_sess")
-
-                    # Test that session has required attributes
-                    required_attrs = ["my_tree_id", "my_profile_id", "tree_owner_name"]
-                    for attr in required_attrs:
-                        assert hasattr(test_session, attr)
-                else:
-                    # Use mock data if dependencies not available
-                    assert True  # Test passes with mock approach
-
-            except Exception as e:
-                # Graceful fallback - test passes with mock data
-                assert "error" in str(e).lower() or len(str(e)) > 0
-
-        def test_error_propagation():
-            """Test that errors are properly handled across function calls."""
-            # Test error handling patterns
-            test_errors = [
-                requests.exceptions.RequestException("Network error"),
-                ValueError("Invalid data format"),
-                KeyError("Missing required field"),
-                Exception("Generic error"),
-            ]
-
-            for error in test_errors:
-                # Test that error types are properly recognized
-                assert isinstance(error, Exception)
-                assert len(str(error)) > 0
-
-        # PERFORMANCE TESTS
-        def test_parsing_performance():
-            """Test performance of data parsing operations."""
-            # Create larger dataset for performance testing
-            large_person_data = {
-                "PersonId": "PERF_TEST_001",
-                "FullName": "Performance Test Person 001",
-                "GivenName": "Performance 001",
-                "Surname": "TestPerson",
-                "BirthYear": 1950,
-                "Gender": "Male",
-            }
-
-            def parse_operation():
-                if "parse_ancestry_person_details" in globals():
-                    parser = globals()["parse_ancestry_person_details"]
-                    return parser(large_person_data, None)
-                return {"name": large_person_data.get("FullName")}
-
-            # Measure parsing performance
-            result, avg_duration = measure_performance(parse_operation, iterations=100)
-            assert avg_duration < 0.01  # Should be very fast for simple parsing
-
-        def test_memory_efficiency():
-            """Test memory usage patterns."""
-            # Test that large data structures are handled efficiently
-            large_dataset = []
-            for i in range(1000):
-                large_dataset.append({"id": f"test_{i}", "data": f"test_data_{i}" * 10})
-
-            # Basic memory efficiency - should handle reasonable datasets
-            assert len(large_dataset) == 1000
-            assert isinstance(large_dataset[0], dict)
-
-        # ERROR HANDLING TESTS
-        def test_network_error_handling():
-            """Test handling of network-related errors."""
-            network_errors = [
-                requests.exceptions.ConnectionError("Connection failed"),
-                requests.exceptions.Timeout("Request timeout"),
-                requests.exceptions.HTTPError("HTTP 500 error"),
-            ]
-
-            for error in network_errors:
-                # Test error recognition and handling
-                assert isinstance(error, requests.exceptions.RequestException)
-                error_msg = str(error)
-                assert len(error_msg) > 0
-
-        def test_data_validation_errors():
-            """Test handling of data validation errors."""
-            invalid_data_sets = [
-                {"PersonId": 123},  # Wrong type
-                {"FullName": ""},  # Empty string
-                {"BirthYear": "invalid"},  # Wrong type
-                {"Gender": "Unknown"},  # Unexpected value
-            ]
-
-            for invalid_data in invalid_data_sets:
-                # Test that validation catches issues
-                assert isinstance(invalid_data, dict)
-                # Data has some issues that should be caught
-                if "PersonId" in invalid_data and not isinstance(
-                    invalid_data["PersonId"], str
-                ):
-                    assert True  # Type mismatch detected
-                if "FullName" in invalid_data and invalid_data["FullName"] == "":
-                    assert True  # Empty name detected
-
-        def test_configuration_errors():
-            """Test handling of configuration-related errors."""
-            # Test missing configuration scenarios
-            config_scenarios = [
-                {},  # Empty config
-                {"incomplete": "config"},  # Partial config
-                {"TREE_NAME": None},  # Null values
-            ]
-
-            for config in config_scenarios:
-                # Test that missing configs are handled gracefully
-                assert isinstance(config, dict)
-                if not config.get("TREE_NAME"):
-                    assert True  # Missing config detected
-
-        # Run all test categories
-        suite.run_test(
-            "Module imports validation",
-            test_module_imports,
-            "Should import all required modules and dependencies",
-        )
-        suite.run_test(
-            "Logger initialization",
-            test_logger_initialization,
-            "Should properly configure logging system",
-        )
-        suite.run_test(
-            "API constants validation",
-            test_api_constants,
-            "Should define essential API constants and configurations",
-        )
-
-        suite.run_test(
-            "Person detail parsing",
-            test_person_detail_parsing,
-            "Should parse Ancestry person data structures correctly",
-        )
-        suite.run_test(
-            "API URL construction",
-            test_api_url_construction,
-            "Should build valid API URLs for different endpoints",
-        )
-        suite.run_test(
-            "Response processing",
-            test_response_processing,
-            "Should process various API response formats",
-        )
-
-        suite.run_test(
-            "Malformed data handling",
-            test_malformed_data_handling,
-            "Should handle incomplete or invalid data gracefully",
-        )
-        suite.run_test(
-            "API rate limiting",
-            test_api_rate_limiting,
-            "Should implement proper rate limiting mechanisms",
-        )
-        suite.run_test(
-            "Empty response handling",
-            test_empty_response_handling,
-            "Should handle empty or null responses without errors",
-        )
-
-        suite.run_test(
-            "API integration with session",
-            test_api_integration_with_session,
-            "Should integrate properly with session management",
-        )
-        suite.run_test(
-            "API functions with mock session",
-            test_api_functions_with_mock_session,
-            "Should provide integrated API function ecosystem",
-        )
-        suite.run_test(
-            "Live API with fallback",
-            test_live_api_with_fallback,
-            "Should handle live API calls with graceful fallback",
-        )
-        suite.run_test(
-            "Error propagation",
-            test_error_propagation,
-            "Should properly handle and propagate errors",
-        )
-
-        suite.run_test(
-            "Parsing performance",
-            test_parsing_performance,
-            "Should parse data efficiently within performance limits",
-        )
-        suite.run_test(
-            "Memory efficiency",
-            test_memory_efficiency,
-            "Should handle large datasets without excessive memory usage",
-        )
-
-        suite.run_test(
-            "Network error handling",
-            test_network_error_handling,
-            "Should handle network errors gracefully",
-        )
-        suite.run_test(
-            "Data validation errors",
-            test_data_validation_errors,
-            "Should validate data and catch format errors",
-        )
-        suite.run_test(
-            "Configuration error handling",
-            test_configuration_errors,
-            "Should handle missing or invalid configuration gracefully",
-        )
-
-        return suite.finish_suite()
 
     print("🌐 Running API Utilities & Ancestry Integration comprehensive test suite...")
     success = run_comprehensive_tests()

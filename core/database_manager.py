@@ -404,6 +404,8 @@ def run_comprehensive_tests() -> bool:
     Enhanced comprehensive test suite for database_manager.py using standardized test framework.
     Tests database connections, session management, transaction handling, and error recovery.
     """
+    from test_framework import TestSuite, suppress_logging
+
     suite = TestSuite("Database Manager & Connection Handling", "database_manager.py")
     suite.start_suite()
 
@@ -414,59 +416,50 @@ def run_comprehensive_tests() -> bool:
         assert_valid_function(DatabaseManager, "DatabaseManager")
 
         # Test initialization with default config
-        try:
-            db_manager = DatabaseManager()
-            assert hasattr(
-                db_manager, "engine"
-            ), "DatabaseManager should have engine attribute"
-            assert hasattr(
-                db_manager, "Session"
-            ), "DatabaseManager should have Session attribute"
-            assert hasattr(
-                db_manager, "is_ready"
-            ), "DatabaseManager should have is_ready property"
-            return True
-        except Exception:
-            # May require specific database setup
-            return True
+        db_manager = DatabaseManager()
+        assert hasattr(
+            db_manager, "engine"
+        ), "DatabaseManager should have engine attribute"
+        assert hasattr(
+            db_manager, "Session"
+        ), "DatabaseManager should have Session attribute"
+        assert hasattr(
+            db_manager, "is_ready"
+        ), "DatabaseManager should have is_ready property"
 
-    suite.run_test(
-        "Database Manager Initialization",
-        test_database_manager_initialization,
-        "DatabaseManager initializes with proper attributes and configuration",
-        "Test DatabaseManager class initialization and basic attributes",
-        "Test database manager initialization and verify core attributes exist",
-    )
+    with suppress_logging():
+        suite.run_test(
+            "Database Manager Initialization",
+            test_database_manager_initialization,
+            "DatabaseManager initializes with proper attributes and configuration",
+            "Test DatabaseManager class initialization and basic attributes",
+            "Test database manager initialization and verify core attributes exist",
+        )
 
     def test_database_configuration():
         """Test database configuration and path handling."""
         import tempfile
         import os
 
-        try:
-            # Test with custom database path
-            temp_db = tempfile.mktemp(suffix=".db")
-            db_manager = DatabaseManager(db_path=temp_db)
+        # Test with custom database path
+        temp_db = tempfile.mktemp(suffix=".db")
+        db_manager = DatabaseManager(db_path=temp_db)
 
-            # Verify path is set
-            assert (
-                db_manager is not None
-            ), "DatabaseManager should initialize with custom path"
+        # Verify path is set
+        assert (
+            db_manager is not None
+        ), "DatabaseManager should initialize with custom path"
 
-            # Cleanup
-            if os.path.exists(temp_db):
-                os.remove(temp_db)
-
-            return True
-        except Exception:
-            return True
+        # Cleanup
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
 
     suite.run_test(
         "Database Configuration",
         test_database_configuration,
         "DatabaseManager handles custom database paths correctly",
-        "Test DatabaseManager with custom database file path",
         "Test database configuration with custom file paths",
+        "Test DatabaseManager with custom database file path",
     )
 
     # CORE FUNCTIONALITY TESTS

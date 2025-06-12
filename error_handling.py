@@ -14,48 +14,12 @@ from dataclasses import dataclass, field
 from logging_config import logger
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    TestSuite = DummyTestSuite
-    suppress_logging = lambda: DummyContext()
-    create_mock_data = lambda: {}
-    assert_valid_function = lambda x, *args: True
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 
 class CircuitState(Enum):
@@ -443,180 +407,152 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for error_handling.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging
 
-        has_framework = True
-    except ImportError:
-        has_framework = False
+    suite = TestSuite("Error Handling & Recovery Systems", "error_handling.py")
+    suite.start_suite()
 
-    if not has_framework:
-        print("🧪 Running basic error handling tests (test framework unavailable)...")
-        try:
-            # Basic tests when framework unavailable - just check imports work
-            assert True, "Basic import test"
-            print("✅ Basic error handling tests passed!")
-            return True
-        except Exception as e:
-            print(f"❌ Basic tests failed: {e}")
-            return False
+    # INITIALIZATION TESTS
+    def test_error_recovery_manager_initialization():
+        """Test error recovery manager and circuit breaker initialization."""
+        # Verify error recovery manager exists
+        assert (
+            "error_recovery_manager" in globals()
+        ), "error_recovery_manager not found in globals"
+
+        manager = globals()["error_recovery_manager"]
+
+        # Test that manager has required methods
+        required_methods = ["get_circuit_breaker", "reset_all_circuit_breakers"]
+        for method in required_methods:
+            assert hasattr(
+                manager, method
+            ), f"Manager missing required method: {method}"
+
+        # Test circuit breaker creation
+        test_breaker = manager.get_circuit_breaker("test_initialization")
+        assert test_breaker is not None, "Failed to create circuit breaker"
 
     with suppress_logging():
-        suite = TestSuite("Error Handling & Recovery Systems", "error_handling.py")
-        suite.start_suite()
-
-        # INITIALIZATION TESTS
-        def test_error_recovery_manager_initialization():
-            """Test error recovery manager and circuit breaker initialization."""
-            try:
-                # Verify error recovery manager exists
-                if "error_recovery_manager" not in globals():
-                    return False
-
-                manager = globals()["error_recovery_manager"]
-
-                # Test that manager has required methods
-                required_methods = ["get_circuit_breaker", "reset_all_circuit_breakers"]
-                for method in required_methods:
-                    if not hasattr(manager, method):
-                        return False
-
-                # Test circuit breaker creation
-                test_breaker = manager.get_circuit_breaker("test_initialization")
-                return test_breaker is not None
-            except Exception:
-                return False
-
         suite.run_test(
             "Error Recovery Manager Initialization",
             test_error_recovery_manager_initialization,
             "Error recovery manager initializes with circuit breaker creation capabilities",
-            "Verify error_recovery_manager exists and can create circuit breakers with required methods",
             "Test error recovery manager initialization and circuit breaker factory methods",
+            "Verify error_recovery_manager exists and can create circuit breakers with required methods",
         )
 
         def test_circuit_breaker_configurations():
             """Test that circuit breaker configurations are properly defined."""
-            try:
-                # Check for configuration constants
-                config_names = [
-                    "ANCESTRY_API_CONFIG",
-                    "ANCESTRY_SESSION_CONFIG",
-                    "ANCESTRY_DATABASE_CONFIG",
-                ]
+            # Check for configuration constants
+            config_names = [
+                "ANCESTRY_API_CONFIG",
+                "ANCESTRY_SESSION_CONFIG",
+                "ANCESTRY_DATABASE_CONFIG",
+            ]
 
-                configs_found = 0
-                for config_name in config_names:
-                    if config_name in globals():
-                        config = globals()[config_name]
-                        if hasattr(config, "failure_threshold") and hasattr(
-                            config, "recovery_timeout"
-                        ):
-                            configs_found += 1
+            configs_found = 0
+            for config_name in config_names:
+                if config_name in globals():
+                    config = globals()[config_name]
+                    if hasattr(config, "failure_threshold") and hasattr(
+                        config, "recovery_timeout"
+                    ):
+                        configs_found += 1
 
-                return configs_found >= 2  # At least 2 valid configurations
-            except Exception:
-                return False
+            assert (
+                configs_found >= 2
+            ), f"Expected at least 2 valid configurations, found {configs_found}"
 
         suite.run_test(
             "Circuit Breaker Configuration Setup",
             test_circuit_breaker_configurations,
             "Circuit breaker configurations are properly defined with required parameters",
-            "Verify ANCESTRY_*_CONFIG constants exist with proper failure_threshold and recovery_timeout",
             "Test circuit breaker configuration constants for system components",
+            "Verify ANCESTRY_*_CONFIG constants exist with proper failure_threshold and recovery_timeout",
         )
 
         # CORE FUNCTIONALITY TESTS
         def test_circuit_breaker_operation():
             """Test basic circuit breaker operation patterns."""
+            # Create test circuit breaker
+            cb = error_recovery_manager.get_circuit_breaker("test_operation")
+
+            # Should start in CLOSED state
+            assert (
+                cb.state == CircuitState.CLOSED
+            ), f"Expected CLOSED state, got {cb.state}"
+
+            # Test successful operation
+            @with_circuit_breaker("test_operation")
+            def success_function():
+                return "success"
+
+            result = success_function()
+            assert result == "success", f"Expected 'success', got {result}"
+
+            # Test failure handling
+            @with_circuit_breaker("test_operation_fail")
+            def failing_function():
+                raise Exception("Test failure")
+
+            # Test exception handling
             try:
-                # Create test circuit breaker
-                cb = error_recovery_manager.get_circuit_breaker("test_operation")
-
-                # Should start in CLOSED state
-                if cb.state != CircuitState.CLOSED:
-                    return False
-
-                # Test successful operation
-                @with_circuit_breaker("test_operation")
-                def success_function():
-                    return "success"
-
-                result = success_function()
-                if result != "success":
-                    return False
-
-                # Test failure handling
-                @with_circuit_breaker("test_operation_fail")
-                def failing_function():
-                    raise Exception("Test failure")
-
-                # Test exception handling
-                try:
-                    failing_function()
-                    return False  # Should have raised exception
-                except Exception:
-                    pass  # Expected
-
-                return True
-            except Exception:
-                return False
+                failing_function()
+                assert False, "Should have raised exception"
+            except Exception as e:
+                assert "Test failure" in str(e), f"Unexpected exception: {e}"
 
         suite.run_test(
             "Circuit Breaker Operation",
             test_circuit_breaker_operation,
             "Circuit breaker operates correctly with state transitions and error handling",
-            "Verify circuit breaker starts closed, handles success/failure scenarios appropriately",
             "Test core circuit breaker operation with success/failure scenarios and state management",
+            "Verify circuit breaker starts closed, handles success/failure scenarios appropriately",
         )
 
         def test_error_decorators():
             """Test error handling decorators."""
-            try:
-                # Test with_circuit_breaker decorator exists and is callable
-                if "with_circuit_breaker" not in globals():
-                    return False
+            # Test with_circuit_breaker decorator exists and is callable
+            assert (
+                "with_circuit_breaker" in globals()
+            ), "with_circuit_breaker decorator not found"
 
-                cb_decorator = globals()["with_circuit_breaker"]
-                if not callable(cb_decorator):
-                    return False
+            cb_decorator = globals()["with_circuit_breaker"]
+            assert callable(cb_decorator), "with_circuit_breaker is not callable"
 
-                # Test with_recovery decorator
-                if "with_recovery" not in globals():
-                    return False
+            # Test with_recovery decorator
+            assert "with_recovery" in globals(), "with_recovery decorator not found"
 
-                recovery_decorator = globals()["with_recovery"]
-                return callable(recovery_decorator)
-            except Exception:
-                return False
+            recovery_decorator = globals()["with_recovery"]
+            assert callable(recovery_decorator), "with_recovery is not callable"
 
         suite.run_test(
             "Error Handling Decorators",
             test_error_decorators,
             "Error decorators are available and callable",
-            "Verify @with_circuit_breaker and @with_recovery decorators exist and are callable",
             "Test error handling decorators availability and basic functionality",
+            "Verify @with_circuit_breaker and @with_recovery decorators exist and are callable",
         )
 
         # EDGE CASES TESTS
         def test_recovery_strategies():
             """Test recovery strategy registration and execution."""
-            try:
-                # Test recovery strategy functions exist
-                strategies = [
-                    "ancestry_session_recovery",
-                    "ancestry_api_recovery",
-                    "ancestry_database_recovery",
-                ]
+            # Test recovery strategy functions exist
+            strategies = [
+                "ancestry_session_recovery",
+                "ancestry_api_recovery",
+                "ancestry_database_recovery",
+            ]
 
-                registered_count = 0
-                for strategy in strategies:
-                    if strategy in globals() and callable(globals()[strategy]):
-                        registered_count += 1
+            registered_count = 0
+            for strategy in strategies:
+                if strategy in globals() and callable(globals()[strategy]):
+                    registered_count += 1
 
-                return registered_count >= 2  # At least 2 strategies available
-            except Exception:
-                return False
+            assert (
+                registered_count >= 2
+            ), f"Expected at least 2 strategies available, found {registered_count}"
 
         suite.run_test(
             "Recovery Strategy Registration",
@@ -628,82 +564,77 @@ def run_comprehensive_tests() -> bool:
 
         def test_fallback_handlers():
             """Test fallback handler registration."""
-            try:
-                # Test fallback handlers exist
-                handlers = [
-                    "ancestry_session_fallback",
-                    "ancestry_api_fallback",
-                    "ancestry_database_fallback",
-                ]
+            # Test fallback handlers exist
+            handlers = [
+                "ancestry_session_fallback",
+                "ancestry_api_fallback",
+                "ancestry_database_fallback",
+            ]
 
-                handlers_found = 0
-                for handler_name in handlers:
-                    if handler_name in globals():
-                        handler = globals()[handler_name]
-                        if callable(handler):
-                            handlers_found += 1
+            handlers_found = 0
+            for handler_name in handlers:
+                if handler_name in globals():
+                    handler = globals()[handler_name]
+                    if callable(handler):
+                        handlers_found += 1
 
-                return handlers_found >= 2  # At least 2 fallback handlers
-            except Exception:
-                return False
+            assert (
+                handlers_found >= 2
+            ), f"Expected at least 2 fallback handlers, found {handlers_found}"
 
         suite.run_test(
             "Fallback Handler Availability",
             test_fallback_handlers,
             "Fallback handlers are available for system components",
-            "Verify fallback handler functions exist for ancestry services",
             "Test fallback handler function availability and callability",
+            "Verify fallback handler functions exist for ancestry services",
         )
 
         # INTEGRATION TESTS
         def test_circuit_state_management():
             """Test circuit state management and transitions."""
-            try:
-                # Test CircuitState enum exists
-                if "CircuitState" not in globals():
-                    return False
+            # Test CircuitState enum exists
+            assert "CircuitState" in globals(), "CircuitState enum not found"
 
-                state_enum = globals()["CircuitState"]
-                required_states = ["CLOSED", "OPEN", "HALF_OPEN"]
+            state_enum = globals()["CircuitState"]
+            required_states = ["CLOSED", "OPEN", "HALF_OPEN"]
 
-                states_found = 0
-                for state in required_states:
-                    if hasattr(state_enum, state):
-                        states_found += 1
+            states_found = 0
+            for state in required_states:
+                if hasattr(state_enum, state):
+                    states_found += 1
 
-                return states_found >= 3
-            except Exception:
-                return False
+            assert states_found >= 3, f"Expected 3 circuit states, found {states_found}"
 
         suite.run_test(
             "Circuit State Management",
             test_circuit_state_management,
             "Circuit state enum provides proper state management",
-            "Verify CircuitState enum has CLOSED, OPEN, HALF_OPEN states",
             "Test circuit breaker state enumeration and management",
+            "Verify CircuitState enum has CLOSED, OPEN, HALF_OPEN states",
         )
 
         # PERFORMANCE TESTS
         def test_error_handling_performance():
             """Test error handling performance under load."""
-            try:
-                import time
+            import time
 
-                # Test multiple operations with circuit breaker
-                start_time = time.time()
+            # Test multiple operations with circuit breaker
+            start_time = time.time()
 
-                # Execute multiple circuit breaker creations
-                for i in range(50):
-                    cb = error_recovery_manager.get_circuit_breaker(f"perf_test_{i}")
-                    if cb is None:
-                        return False
+            # Execute multiple circuit breaker creations
+            for i in range(50):
+                cb = error_recovery_manager.get_circuit_breaker(f"perf_test_{i}")
+                assert (
+                    cb is not None
+                ), f"Failed to create circuit breaker for perf_test_{i}"
 
-                execution_time = time.time() - start_time
+            execution_time = time.time() - start_time
 
-                # Should complete reasonably quickly (less than 1 second)
-                return execution_time < 1.0
-            except Exception:
-                return False
+            # Should complete reasonably quickly (less than 1 second)
+            assert (
+                execution_time < 1.0
+            ), f"Performance test took too long: {execution_time}s"
 
         suite.run_test(
             "Error Handling Performance",
@@ -716,32 +647,29 @@ def run_comprehensive_tests() -> bool:
         # ERROR HANDLING TESTS
         def test_exception_types():
             """Test custom exception types."""
-            try:
-                # Test custom exception classes exist
-                exception_types = ["CircuitBreakerOpenError"]
+            # Test custom exception classes exist
+            exception_types = ["CircuitBreakerOpenError"]
 
-                exceptions_found = 0
-                for exc_type in exception_types:
-                    if exc_type in globals():
-                        exc_class = globals()[exc_type]
-                        if isinstance(exc_class, type) and issubclass(
-                            exc_class, Exception
-                        ):
-                            exceptions_found += 1
+            exceptions_found = 0
+            for exc_type in exception_types:
+                if exc_type in globals():
+                    exc_class = globals()[exc_type]
+                    if isinstance(exc_class, type) and issubclass(exc_class, Exception):
+                        exceptions_found += 1
 
-                return exceptions_found >= 1  # At least one custom exception
-            except Exception:
-                return False
+            assert (
+                exceptions_found >= 1
+            ), f"Expected at least 1 custom exception, found {exceptions_found}"
 
         suite.run_test(
             "Custom Exception Types",
             test_exception_types,
             "Custom exception types are properly defined",
-            "Verify CircuitBreakerOpenError exception class exists",
             "Test custom exception type definitions and inheritance",
+            "Verify CircuitBreakerOpenError exception class exists",
         )
 
-        return suite.finish_suite()
+    return suite.finish_suite()
 
 
 # === END OF error_handling.py ===

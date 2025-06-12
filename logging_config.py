@@ -314,211 +314,120 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
 # End of setup_logging
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """
     Run comprehensive tests for the logging configuration module.
-    Tests the six categories: Initialization, Core Functionality, Edge Cases,
-    Integration, Performance, and Error Handling.
+    Tests the six categories: Initialization, Core Functionality, Edge Cases,    Integration, Performance, and Error Handling.
 
     Returns:
         bool: True if all tests pass, False otherwise.
     """
-    if HAS_TEST_FRAMEWORK:
-        with suppress_logging():
-            suite = TestSuite("Logging Configuration Tests", "logging_config.py")
-            suite.start_suite()  # --- INITIALIZATION TESTS ---
-            suite.run_test(
-                "Logger Creation",
-                test_logger_creation,
-                "Logger created with correct name, level, and propagation settings",
-            )
-            suite.run_test(
-                "Default Configuration",
-                test_default_configuration,
-                "LOG_FORMAT, DATE_FORMAT, and LOG_DIRECTORY are properly defined",
-            )
-            suite.run_test(
-                "Directory Creation",
-                test_directory_creation,
-                "Log directory is created when needed",
-            )
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
 
-            # --- CORE FUNCTIONALITY TESTS ---
-            suite.run_test(
-                "Setup Logging",
-                test_setup_logging,
-                "Logger is properly configured and returned",
-            )
-            suite.run_test(
-                "Log Level Setting",
-                test_log_level_setting,
-                "Handlers have correct log levels set",
-            )
-            suite.run_test(
-                "Handler Configuration",
-                test_handler_configuration,
-                "Handlers are properly configured and attached",
-            )
-            suite.run_test(
-                "Formatter Application",
-                test_formatter_application,
-                "AlignedMessageFormatter formats messages correctly",
-            )
-
-            # --- EDGE CASES ---
-            suite.run_test(
-                "Invalid Log Level",
-                test_invalid_log_level,
-                "Invalid log levels default to INFO gracefully",
-            )
-            suite.run_test(
-                "Missing Directory",
-                test_missing_directory,
-                "Missing directories are created automatically",
-            )
-            suite.run_test(
-                "Reinitialize Logging",
-                test_reinitialize_logging,
-                "Reinitialization updates existing handlers without duplicating",
-            )
-
-            # --- INTEGRATION TESTS ---
-            suite.run_test(
-                "Multiple Handlers",
-                test_multiple_handlers,
-                "Multiple handlers work correctly together",
-            )
-            suite.run_test(
-                "Filter Integration",
-                test_filter_integration,
-                "NameFilter correctly filters log records",
-            )
-            suite.run_test(
-                "External Library Logging",
-                test_external_library_logging,
-                "External libraries have appropriate log levels set",
-            )
-
-            # --- PERFORMANCE TESTS ---
-            suite.run_test(
-                "Logging Speed",
-                test_logging_speed,
-                "100 log messages complete in under 1 second",
-            )
-            suite.run_test(
-                "Handler Performance",
-                test_handler_performance,
-                "Handlers maintain reasonable performance",
-            )  # --- ERROR HANDLING TESTS ---
-            suite.run_test(
-                "Invalid File Path",
-                test_invalid_file_path,
-                "Invalid paths are handled gracefully",
-            )
-
-            suite.run_test(
-                "Permission Errors",
-                test_permission_errors,
-                "Permission errors are handled without crashing",
-            )
-
-            # Add fallback testing when test framework has issues
-            def test_fallback_functionality():
-                """Test core functionality with basic assertions."""
-                try:
-                    # Test 1: Basic logger setup
-                    test_logger = setup_logging("test.log", "DEBUG")
-                    assert test_logger is not None
-
-                    # Test 2: Log level validation
-                    test_logger = setup_logging("test.log", "INFO")
-                    assert test_logger is not None
-
-                    # Test 3: Directory creation
-                    import tempfile
-
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        global LOG_DIRECTORY
-                        original_dir = LOG_DIRECTORY
-                        LOG_DIRECTORY = Path(temp_dir) / "test_logs"
-                        setup_logging("test.log", "INFO")
-                        LOG_DIRECTORY = original_dir
-
-                    # Test 4: Formatter functionality
-                    formatter = AlignedMessageFormatter(
-                        fmt=LOG_FORMAT, datefmt=DATE_FORMAT
-                    )
-                    record = logging.LogRecord(
-                        name="test",
-                        level=logging.INFO,
-                        pathname="",
-                        lineno=1,
-                        msg="test message",
-                        args=(),
-                        exc_info=None,
-                    )
-                    formatted = formatter.format(record)
-                    assert "test message" in formatted
-
-                    return True
-                except Exception as e:
-                    print(f"❌ Fallback test failed: {e}")
-                    return False
-
-            suite.run_test(
-                "Fallback Functionality",
-                test_fallback_functionality,
-                "Core logging functionality works even without full test framework",
-            )
-
-            return suite.finish_suite()
-    else:
-        # Run basic fallback tests when test framework not available
-        print(
-            "🧪 Running basic logging configuration tests (test framework not available)..."
+    with suppress_logging():
+        suite = TestSuite("Logging Configuration Tests", "logging_config.py")
+        suite.start_suite()  # --- INITIALIZATION TESTS ---
+        suite.run_test(
+            "Logger Creation",
+            test_logger_creation,
+            "Logger created with correct name, level, and propagation settings",
+        )
+        suite.run_test(
+            "Default Configuration",
+            test_default_configuration,
+            "LOG_FORMAT, DATE_FORMAT, and LOG_DIRECTORY are properly defined",
+        )
+        suite.run_test(
+            "Directory Creation",
+            test_directory_creation,
+            "Log directory is created when needed",
         )
 
-        try:
-            # Test 1: Basic logger setup
-            test_logger = setup_logging("test.log", "DEBUG")
-            print("✅ Test 1: Basic logger setup - PASSED")
+        # --- CORE FUNCTIONALITY TESTS ---
+        suite.run_test(
+            "Setup Logging",
+            test_setup_logging,
+            "Logger is properly configured and returned",
+        )
+        suite.run_test(
+            "Log Level Setting",
+            test_log_level_setting,
+            "Handlers have correct log levels set",
+        )
+        suite.run_test(
+            "Handler Configuration",
+            test_handler_configuration,
+            "Handlers are properly configured and attached",
+        )
+        suite.run_test(
+            "Formatter Application",
+            test_formatter_application,
+            "AlignedMessageFormatter formats messages correctly",
+        )
 
-            # Test 2: Log level validation
-            test_logger = setup_logging("test.log", "INFO")
-            print("✅ Test 2: Log level validation - PASSED")
+        # --- EDGE CASES ---
+        suite.run_test(
+            "Invalid Log Level",
+            test_invalid_log_level,
+            "Invalid log levels default to INFO gracefully",
+        )
+        suite.run_test(
+            "Missing Directory",
+            test_missing_directory,
+            "Missing directories are created automatically",
+        )
+        suite.run_test(
+            "Reinitialize Logging",
+            test_reinitialize_logging,
+            "Reinitialization updates existing handlers without duplicating",
+        )
 
-            # Test 3: Directory creation
-            import tempfile
+        # --- INTEGRATION TESTS ---
+        suite.run_test(
+            "Multiple Handlers",
+            test_multiple_handlers,
+            "Multiple handlers work correctly together",
+        )
+        suite.run_test(
+            "Filter Integration",
+            test_filter_integration,
+            "NameFilter correctly filters log records",
+        )
+        suite.run_test(
+            "External Library Logging",
+            test_external_library_logging,
+            "External libraries have appropriate log levels set",
+        )
 
-            with tempfile.TemporaryDirectory() as temp_dir:
-                global LOG_DIRECTORY
-                original_dir = LOG_DIRECTORY
-                LOG_DIRECTORY = Path(temp_dir) / "test_logs"
-                setup_logging("test.log", "INFO")
-                LOG_DIRECTORY = original_dir
-            print("✅ Test 3: Directory creation - PASSED")
+        # --- PERFORMANCE TESTS ---
+        suite.run_test(
+            "Logging Speed",
+            test_logging_speed,
+            "100 log messages complete in under 1 second",
+        )
+        suite.run_test(
+            "Handler Performance",
+            test_handler_performance,
+            "Handlers maintain reasonable performance",
+        )  # --- ERROR HANDLING TESTS ---
+        suite.run_test(
+            "Invalid File Path",
+            test_invalid_file_path,
+            "Invalid paths are handled gracefully",
+        )
 
-            # Test 4: Formatter functionality
-            formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
-            record = logging.LogRecord(
-                name="test",
-                level=logging.INFO,
-                pathname="",
-                lineno=1,
-                msg="test message",
-                args=(),
-                exc_info=None,
-            )
-            formatted = formatter.format(record)
-            assert "test message" in formatted
-            print("✅ Test 4: Formatter functionality - PASSED")
+        suite.run_test(
+            "Permission Errors",
+            test_permission_errors,
+            "Permission errors are handled without crashing",
+        )
 
-            print("🎉 All basic tests passed!")
-            return True
-
-        except Exception as e:
-            print(f"❌ Test failed: {e}")
-            return False
+        return suite.finish_suite()
 
 
 # Test functions for comprehensive testing

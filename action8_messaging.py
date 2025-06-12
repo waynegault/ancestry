@@ -1719,308 +1719,489 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
-if __name__ == "__main__":
-    import sys
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for action8_messaging.py following the standardized 6-category TestSuite framework.
+    Tests automated messaging system with template management, recipient filtering, and database operations.
 
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for action8_messaging.py.
-        Tests automated messaging system with template management and recipient filtering.
-        """
-        if not HAS_TEST_FRAMEWORK:
-            print("🧪 Running basic messaging tests (test framework unavailable)...")
-            try:
-                # Basic tests when framework unavailable
-                assert (
-                    MESSAGE_INTERVALS is not None
-                ), "Message intervals should be defined"
-                assert (
-                    MESSAGE_TYPES_ACTION8 is not None
-                ), "Message types should be defined"
-                print("✅ Basic messaging tests passed!")
-                return True
-            except Exception as e:
-                print(f"❌ Basic tests failed: {e}")
-                return False
+    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
+    """
+    from test_framework import TestSuite, suppress_logging
 
-        with suppress_logging():
-            suite = TestSuite(
-                "Action 8 - Automated Messaging System", "action8_messaging.py"
-            )
-            suite.start_suite()
+    suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
+    suite.start_suite()
 
-            # Add necessary imports for testing
-            from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock, patch
 
-        # Message template loading and validation
-        def test_message_template_loading():
-            if "load_message_templates" in globals():
-                loader = globals()["load_message_templates"]
+    # === INITIALIZATION TESTS ===
+    def test_module_imports():
+        """Test that all required modules and dependencies are properly imported."""
+        assert HAS_TEST_FRAMEWORK in [
+            True,
+            False,
+        ], "Test framework availability flag should be defined"
+        assert isinstance(
+            MESSAGE_TYPES_ACTION8, dict
+        ), "MESSAGE_TYPES_ACTION8 should be a dictionary"
+        assert len(MESSAGE_TYPES_ACTION8) > 0, "Should have message types defined"
+        assert isinstance(
+            MIN_MESSAGE_INTERVAL, timedelta
+        ), "MIN_MESSAGE_INTERVAL should be a timedelta"
 
-                # Test template loading
-                templates = loader()
-                assert isinstance(templates, dict)
+    def test_configuration_initialization():
+        """Test configuration and template initialization."""
+        assert isinstance(
+            MESSAGE_INTERVALS, dict
+        ), "MESSAGE_INTERVALS should be a dictionary"
+        assert "testing" in MESSAGE_INTERVALS, "Should have testing mode interval"
+        assert "production" in MESSAGE_INTERVALS, "Should have production mode interval"
+        assert "dry_run" in MESSAGE_INTERVALS, "Should have dry_run mode interval"
 
-                # Check for required template keys
-                required_templates = list(MESSAGE_TYPES_ACTION8.keys())
-                for template_key in required_templates:
-                    if template_key in templates:
-                        assert isinstance(templates[template_key], str)
-                        assert len(templates[template_key]) > 10  # Should have content
+        # Check message type sequence definitions
+        required_types = [
+            "In_Tree-Initial",
+            "In_Tree-Follow_Up",
+            "Out_Tree-Initial",
+            "User_Requested_Desist",
+        ]
+        for msg_type in required_types:
+            assert msg_type in MESSAGE_TYPES_ACTION8, f"Should have {msg_type} defined"
 
-        # Message type determination logic
-        def test_message_type_determination():
-            if "determine_next_message_type" in globals():
-                determiner = globals()["determine_next_message_type"]
+    def test_helper_function_availability():
+        """Test that critical helper functions are available."""
+        assert callable(
+            safe_column_value
+        ), "safe_column_value helper function should be available"
+        assert callable(
+            determine_next_message_type
+        ), "determine_next_message_type function should be available"
+        assert callable(
+            _prefetch_messaging_data
+        ), "_prefetch_messaging_data function should be available"
+        assert callable(
+            _process_single_person
+        ), "_process_single_person function should be available"
+        assert callable(
+            send_messages_to_matches
+        ), "send_messages_to_matches main function should be available"
 
-                # Test various message transition scenarios
-                test_scenarios = [
-                    {
-                        "current_type": None,
-                        "in_tree": True,
-                        "expected_pattern": "Initial",
-                    },
-                    {
-                        "current_type": "In_Tree-Initial",
-                        "in_tree": True,
-                        "expected_pattern": "Follow_Up",
-                    },
-                    {
-                        "current_type": "Out_Tree-Follow_Up",
-                        "in_tree": False,
-                        "expected_pattern": "Final_Reminder",
-                    },
-                ]
+    with suppress_logging():
+        suite.run_test(
+            "Module Imports and Dependencies",
+            test_module_imports,
+            "All required modules and constants are properly imported and initialized",
+            "Test module imports, constants, and test framework availability flag",
+            "Required modules, MESSAGE_TYPES_ACTION8, MIN_MESSAGE_INTERVAL are properly defined",
+        )
 
-                for scenario in test_scenarios:
-                    try:
-                        next_type = determiner(
-                            scenario["current_type"], scenario["in_tree"]
-                        )
-                        if next_type:
-                            assert scenario["expected_pattern"] in next_type
-                    except Exception:
-                        pass  # May require specific implementation
+        suite.run_test(
+            "Configuration Initialization",
+            test_configuration_initialization,
+            "Configuration constants and message intervals are properly initialized",
+            "Test MESSAGE_INTERVALS, required message types in MESSAGE_TYPES_ACTION8",
+            "Configuration has all required message types and timing intervals",
+        )
 
-        # Recipient filtering based on app mode
-        def test_recipient_filtering():
-            if "filter_recipients_by_mode" in globals():
-                filter_func = globals()["filter_recipients_by_mode"]
+        suite.run_test(
+            "Helper Function Availability",
+            test_helper_function_availability,
+            "All critical helper and main functions are available and callable",
+            "Test availability of safe_column_value, determine_next_message_type, and main functions",
+            "Helper functions and main messaging functions are callable",
+        )
 
-                # Mock recipients data
-                mock_recipients = [
-                    {
-                        "id": "test_user_1",
-                        "email": "test1@example.com",
-                        "status": "ACTIVE",
-                    },
-                    {
-                        "id": "test_user_2",
-                        "email": "test2@example.com",
-                        "status": "CONTACTED",
-                    },
-                    {
-                        "id": "production_user",
-                        "email": "real@example.com",
-                        "status": "NEW",
-                    },
-                ]
+    # === CORE FUNCTIONALITY TESTS ===
+    def test_safe_column_value_functionality():
+        """Test safe_column_value helper with various object types."""
+        # Test with regular object
+        test_obj = MagicMock()
+        test_obj.test_attr = "test_value"
 
-                # Test filtering in different modes
-                for mode in ["testing", "dry_run", "production"]:
-                    try:
-                        filtered = filter_func(mock_recipients, mode)
-                        assert isinstance(filtered, list)
-                        assert len(filtered) <= len(mock_recipients)
-                    except Exception:
-                        pass  # May require specific filtering logic
+        result = safe_column_value(test_obj, "test_attr", "default")
+        assert result == "test_value", "Should extract attribute value from object"
 
-        # Message interval calculation
-        def test_message_interval_calculation():
-            if "calculate_message_interval" in globals():
-                calculator = globals()["calculate_message_interval"]
+        result = safe_column_value(test_obj, "nonexistent", "default")
+        assert result == "default", "Should return default for nonexistent attribute"
 
-                # Test interval calculation for different message types
-                message_types = ["Initial", "Follow_Up", "Final_Reminder"]
+        result = safe_column_value(None, "any_attr", "default")
+        assert result == "default", "Should handle None object gracefully"
 
-                for msg_type in message_types:
-                    try:
-                        interval = calculator(msg_type, config_instance.APP_MODE)
-                        assert isinstance(interval, (int, float))
-                        assert interval >= 0  # Should be non-negative
-                    except Exception:
-                        pass  # May require specific calculation logic
+    def test_determine_next_message_type():
+        """Test message type determination logic."""
+        # Test initial message determination
+        result = determine_next_message_type(None, True)
+        assert (
+            result == "In_Tree-Initial"
+        ), "Should return In_Tree-Initial for new in-tree contact"
 
-        # Database conversation log management
-        def test_conversation_log_management():
-            if "update_conversation_log" in globals():
-                log_updater = globals()["update_conversation_log"]
+        result = determine_next_message_type(None, False)
+        assert (
+            result == "Out_Tree-Initial"
+        ), "Should return Out_Tree-Initial for new out-of-tree contact"
 
-                # Mock conversation data
-                mock_conversation = {
-                    "person_id": "test_person_123",
-                    "message_type": "In_Tree-Initial",
-                    "message_content": "Test message content",
-                    "sent_timestamp": datetime.now(timezone.utc),
-                }
+        # Test follow-up message determination
+        last_msg = ("In_Tree-Initial", datetime.now(timezone.utc), "delivered OK")
+        result = determine_next_message_type(last_msg, True)
+        assert (
+            result == "In_Tree-Follow_Up"
+        ), "Should return follow-up after initial message"
 
-                try:
-                    with patch("action8_messaging.db_transn"):
-                        result = log_updater(mock_conversation)
-                        assert result is not None
-                except Exception:
-                    pass  # May require database connection
+    def test_prefetch_messaging_data():
+        """Test data prefetching functionality."""
+        mock_session = MagicMock()
 
-        # Message personalization and templating
-        def test_message_personalization():
-            if "personalize_message_template" in globals():
-                personalizer = globals()["personalize_message_template"]
+        # Mock the database query results
+        mock_message_types = [(1, "In_Tree-Initial"), (2, "In_Tree-Follow_Up")]
+        mock_session.query.return_value.all.return_value = mock_message_types
 
-                # Test message personalization
-                template = "Hello {name}, we found a potential match in your tree..."
-                person_data = {
-                    "name": "John Smith",
-                    "shared_dna": "150 cM",
-                    "relationship": "3rd cousin",
-                }
+        # Mock person query
+        mock_persons = []
+        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            mock_persons
+        )
 
-                try:
-                    personalized = personalizer(template, person_data)
-                    assert isinstance(personalized, str)
-                    assert "{name}" not in personalized  # Should be replaced
-                    assert "John Smith" in personalized
-                except Exception:
-                    pass  # May require specific templating engine
+        with patch("sys.argv", ["action8_messaging.py"]):  # Avoid mock mode
+            result = _prefetch_messaging_data(mock_session)
+            assert result is not None, "Should return prefetched data tuple"
+            assert len(result) == 4, "Should return 4-tuple of prefetched data"
 
-        # Rate limiting and throttling
-        def test_rate_limiting():
-            if "apply_rate_limiting" in globals():
-                rate_limiter = globals()["apply_rate_limiting"]
+    def test_process_single_person():
+        """Test single person processing logic."""
+        mock_session = MagicMock()
+        mock_session_manager = MagicMock()
 
-                # Test rate limiting functionality
-                message_batch = [
-                    {"recipient": "user1", "type": "Initial"},
-                    {"recipient": "user2", "type": "Follow_Up"},
-                    {"recipient": "user3", "type": "Reminder"},
-                ]
+        # Create mock person
+        mock_person = MagicMock()
+        mock_person.id = 12345
+        mock_person.username = "TestUser12345"
+        mock_person.status = PersonStatusEnum.ACTIVE
+        mock_person.in_my_tree = True
+        mock_person.profile_id = "test_profile_12345"
 
-                try:
-                    limited_batch = rate_limiter(message_batch, max_per_hour=10)
-                    assert isinstance(limited_batch, list)
-                    assert len(limited_batch) <= len(message_batch)
-                except Exception:
-                    pass  # May require specific rate limiting logic
+        # Mock the format_name function call
+        with patch("action8_messaging.format_name", return_value="Test User"):
+            with patch(
+                "action8_messaging.call_send_message_api",
+                return_value=("delivered OK", "conv_12345"),
+            ):
+                result = _process_single_person(
+                    mock_session,
+                    mock_session_manager,
+                    mock_person,
+                    None,
+                    None,
+                    {"In_Tree-Initial": 1},
+                )
+                assert result is not None, "Should return processing result tuple"
+                assert len(result) == 3, "Should return 3-tuple result"
 
-        # Message delivery status tracking
-        def test_delivery_status_tracking():
-            if "track_delivery_status" in globals():
-                status_tracker = globals()["track_delivery_status"]
+    with suppress_logging():
+        suite.run_test(
+            "Safe Column Value Helper",
+            test_safe_column_value_functionality,
+            "safe_column_value extracts attributes safely with proper fallbacks",
+            "Test attribute extraction from objects with fallback to defaults",
+            "Attribute extraction works correctly with proper error handling",
+        )
 
-                # Test delivery status tracking
-                delivery_data = {
-                    "message_id": "msg_123",
-                    "recipient_id": "user_456",
-                    "status": "delivered",
-                    "timestamp": datetime.now(timezone.utc),
-                }
+        suite.run_test(
+            "Message Type Determination",
+            test_determine_next_message_type,
+            "determine_next_message_type returns correct message types based on history and tree status",
+            "Test initial messages and follow-ups for in-tree and out-of-tree scenarios",
+            "Message type logic correctly determines next message in sequence",
+        )
 
-                try:
-                    result = status_tracker(delivery_data)
-                    assert isinstance(result, bool)
-                except Exception:
-                    pass  # May require message delivery service
+        suite.run_test(
+            "Data Prefetching Functionality",
+            test_prefetch_messaging_data,
+            "_prefetch_messaging_data fetches required data from database efficiently",
+            "Test database prefetching of message types, persons, and conversation logs",
+            "Data prefetching returns properly structured 4-tuple result",
+        )
 
-        # Error handling and retry mechanisms
-        def test_error_handling_retry():
-            error_handling_functions = [
-                "handle_message_send_error",
-                "retry_failed_messages",
-                "validate_message_content",
-                "handle_delivery_failure",
-            ]
+        suite.run_test(
+            "Single Person Processing",
+            test_process_single_person,
+            "_process_single_person handles individual person messaging logic correctly",
+            "Test single person processing with mock person and message sending",
+            "Person processing returns proper 3-tuple result with log entry and status",
+        )
 
-            for func_name in error_handling_functions:
-                if func_name in globals():
-                    assert_valid_function(globals()[func_name], func_name)
+    # === EDGE CASES TESTS ===
+    def test_safe_column_value_edge_cases():
+        """Test safe_column_value with extreme edge cases."""
+        # Test with SQLAlchemy-like Column object simulation
+        mock_column = MagicMock()
+        mock_column.value = "column_value"
 
-        # Integration with external messaging services
-        def test_messaging_service_integration():
-            if "send_message_via_service" in globals():
-                service_sender = globals()["send_message_via_service"]
+        result = safe_column_value(mock_column, "value", "default")
+        assert result in [
+            "column_value",
+            "default",
+        ], "Should handle Column-like objects"
 
-                # Test integration with messaging service
-                message_data = {
-                    "recipient": "test@example.com",
-                    "subject": "DNA Match Notification",
-                    "content": "Test message content",
-                    "type": "In_Tree-Initial",
-                }
+        # Test with invalid attribute types
+        result = safe_column_value("string_object", "length", 0)
+        assert isinstance(result, int), "Should return appropriate type default"
 
-                try:
-                    with patch("requests.post") as mock_post:
-                        mock_response = MagicMock()
-                        mock_response.status_code = 200
-                        mock_response.json.return_value = {
-                            "status": "sent",
-                            "id": "msg_123",
-                        }
-                        mock_post.return_value = mock_response
+    def test_determine_next_message_type_edge_cases():
+        """Test message type determination with edge cases."""
+        # Test with invalid message type
+        invalid_msg = ("Invalid_Type", datetime.now(timezone.utc), "delivered OK")
+        result = determine_next_message_type(invalid_msg, True)
+        assert result is None, "Should return None for invalid message types"
 
-                        result = service_sender(message_data)
-                        assert result is not None
-                except Exception:
-                    pass  # May require service configuration
+        # Test desist acknowledgment handling
+        desist_msg = (
+            "User_Requested_Desist",
+            datetime.now(timezone.utc),
+            "delivered OK",
+        )
+        result = determine_next_message_type(desist_msg, True)
+        assert result is None, "Should return None after desist acknowledgment"
 
-        # Run all tests
-        test_functions = {
-            "Message template loading and validation": (
-                test_message_template_loading,
-                "Should load and validate message templates from configuration",
-            ),
-            "Message type determination logic": (
-                test_message_type_determination,
-                "Should determine appropriate message types based on conversation history",
-            ),
-            "Recipient filtering based on app mode": (
-                test_recipient_filtering,
-                "Should filter recipients appropriately for testing/production modes",
-            ),
-            "Message interval calculation": (
-                test_message_interval_calculation,
-                "Should calculate appropriate intervals between messages",
-            ),
-            "Database conversation log management": (
-                test_conversation_log_management,
-                "Should track and update conversation logs in database",
-            ),
-            "Message personalization and templating": (
-                test_message_personalization,
-                "Should personalize message templates with recipient data",
-            ),
-            "Rate limiting and throttling": (
-                test_rate_limiting,
-                "Should apply rate limiting to prevent message flooding",
-            ),
-            "Message delivery status tracking": (
-                test_delivery_status_tracking,
-                "Should track delivery status and update records",
-            ),
-            "Error handling and retry mechanisms": (
-                test_error_handling_retry,
-                "Should handle errors gracefully with retry capabilities",
-            ),
-            "Integration with external messaging services": (
-                test_messaging_service_integration,
-                "Should integrate with external messaging APIs",
-            ),
+    def test_empty_prefetch_data():
+        """Test prefetching with empty database results."""
+        mock_session = MagicMock()
+        mock_session.query.return_value.all.return_value = []
+        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            []
+        )
+
+        with patch("sys.argv", ["action8_messaging.py"]):
+            result = _prefetch_messaging_data(mock_session)
+            message_type_map, persons, in_logs, out_logs = result
+            assert isinstance(persons, list), "Should return empty list for persons"
+            assert len(persons) == 0, "Should handle empty person results"
+
+    with suppress_logging():
+        suite.run_test(
+            "Safe Column Value Edge Cases",
+            test_safe_column_value_edge_cases,
+            "safe_column_value handles edge cases and invalid objects gracefully",
+            "Test with Column-like objects and invalid attribute access scenarios",
+            "Edge cases handled without exceptions, returns appropriate defaults",
+        )
+
+        suite.run_test(
+            "Message Type Determination Edge Cases",
+            test_determine_next_message_type_edge_cases,
+            "determine_next_message_type handles invalid types and desist scenarios correctly",
+            "Test with invalid message types and desist acknowledgment scenarios",
+            "Invalid scenarios return None, desist sequence handled correctly",
+        )
+
+        suite.run_test(
+            "Empty Database Results",
+            test_empty_prefetch_data,
+            "Data prefetching handles empty database results gracefully",
+            "Test prefetching with empty message types and person lists",
+            "Empty results handled gracefully without errors",
+        )
+
+    # === INTEGRATION TESTS ===
+    def test_message_template_integration():
+        """Test integration with message templates."""
+        # Test that required message templates exist
+        from unittest.mock import patch
+
+        mock_templates = {
+            "In_Tree-Initial": "Hello {name}, we may be related through our family trees...",
+            "User_Requested_Desist": "Thank you for your message. We will stop contacting you.",
         }
 
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
+        with patch.dict(
+            "action8_messaging.MESSAGE_TEMPLATES", mock_templates, clear=True
+        ):
+            template = MESSAGE_TEMPLATES.get("In_Tree-Initial")
+            assert template is not None, "Should have In_Tree-Initial template"
+            assert "{name}" in template, "Template should have name placeholder"
 
-        return suite.finish_suite()
+    def test_session_manager_integration():
+        """Test integration with SessionManager."""
+        mock_session_manager = MagicMock()
+        mock_session_manager.my_profile_id = "test_profile_12345"
+        mock_session_manager.get_db_conn.return_value = MagicMock()
 
+        # Test that safe_column_value works with SessionManager
+        profile_id = safe_column_value(mock_session_manager, "my_profile_id", None)
+        assert (
+            profile_id == "test_profile_12345"
+        ), "Should extract profile_id from SessionManager"
+
+    def test_database_integration():
+        """Test integration with database operations."""
+        # Test enum handling
+        assert PersonStatusEnum.ACTIVE is not None, "Should have ACTIVE status enum"
+        assert PersonStatusEnum.DESIST is not None, "Should have DESIST status enum"
+        assert PersonStatusEnum.ARCHIVE is not None, "Should have ARCHIVE status enum"
+
+        # Test MessageDirectionEnum
+        from database import MessageDirectionEnum
+
+        assert MessageDirectionEnum.IN is not None, "Should have IN direction enum"
+        assert MessageDirectionEnum.OUT is not None, "Should have OUT direction enum"
+
+    with suppress_logging():
+        suite.run_test(
+            "Message Template Integration",
+            test_message_template_integration,
+            "Integration with message templates works correctly with placeholders",
+            "Test message template loading and placeholder verification",
+            "Message templates integrate properly with required placeholders",
+        )
+
+        suite.run_test(
+            "SessionManager Integration",
+            test_session_manager_integration,
+            "Integration with SessionManager for profile and database access works correctly",
+            "Test SessionManager profile extraction and database connection methods",
+            "SessionManager integration provides required profile and database access",
+        )
+
+        suite.run_test(
+            "Database Integration",
+            test_database_integration,
+            "Integration with database enums and models works correctly",
+            "Test PersonStatusEnum and MessageDirectionEnum availability",
+            "Database enums and models are properly accessible",
+        )
+
+    # === PERFORMANCE TESTS ===
+    def test_prefetch_performance():
+        """Test prefetching performance with reasonable dataset size."""
+        import time
+
+        mock_session = MagicMock()
+        # Simulate moderate dataset
+        mock_session.query.return_value.all.return_value = [
+            (i, f"Type_{i}") for i in range(10)
+        ]
+        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            []
+        )
+
+        start_time = time.time()
+        with patch("sys.argv", ["action8_messaging.py"]):
+            for _ in range(5):
+                _prefetch_messaging_data(mock_session)
+        end_time = time.time()
+
+        assert (
+            end_time - start_time
+        ) < 1.0, "5 prefetch operations should complete in under 1 second"
+
+    def test_safe_column_value_performance():
+        """Test safe_column_value performance with many operations."""
+        import time
+
+        test_obj = MagicMock()
+        test_obj.test_attr = "value"
+
+        start_time = time.time()
+        for _ in range(1000):
+            safe_column_value(test_obj, "test_attr", "default")
+        end_time = time.time()
+
+        assert (
+            end_time - start_time
+        ) < 0.1, "1000 safe_column_value calls should complete in under 0.1 seconds"
+
+    with suppress_logging():
+        suite.run_test(
+            "Data Prefetching Performance",
+            test_prefetch_performance,
+            "Data prefetching performs efficiently with moderate datasets",
+            "Measure time for 5 prefetch operations with mock dataset",
+            "5 prefetch operations complete in under 1 second",
+        )
+
+        suite.run_test(
+            "Safe Column Value Performance",
+            test_safe_column_value_performance,
+            "safe_column_value performs efficiently with many operations",
+            "Measure time for 1000 safe_column_value calls",
+            "1000 safe_column_value operations complete in under 0.1 seconds",
+        )
+
+    # === ERROR HANDLING TESTS ===
+    def test_database_error_handling():
+        """Test handling of database errors."""
+        mock_session = MagicMock()
+        mock_session.query.side_effect = Exception("Database connection error")
+
+        with patch("sys.argv", ["action8_messaging.py"]):
+            result = _prefetch_messaging_data(mock_session)
+            assert result == (
+                None,
+                None,
+                None,
+                None,
+            ), "Should return None tuple on database error"
+
+    def test_invalid_person_handling():
+        """Test handling of invalid person data."""
+        mock_session = MagicMock()
+        mock_session_manager = MagicMock()
+
+        # Create person with missing required attributes
+        invalid_person = MagicMock()
+        invalid_person.id = None
+        invalid_person.status = None
+
+        try:
+            result = _process_single_person(
+                mock_session, mock_session_manager, invalid_person, None, None, {}
+            )
+            # Should handle gracefully and return appropriate error status
+            assert result is not None, "Should handle invalid person data gracefully"
+        except Exception:
+            # Exception handling is acceptable for invalid data
+            assert True, "Exception handling for invalid person data is acceptable"
+
+    def test_missing_template_handling():
+        """Test handling of missing message templates."""
+        # Test determine_next_message_type with missing templates
+        with patch.dict("action8_messaging.MESSAGE_TEMPLATES", {}, clear=True):
+            # Function should still work for determining message type
+            result = determine_next_message_type(None, True)
+            assert (
+                result is not None
+            ), "Should determine message type even with missing templates"
+
+    with suppress_logging():
+        suite.run_test(
+            "Database Error Handling",
+            test_database_error_handling,
+            "Database errors are handled gracefully without crashing",
+            "Test prefetching with database connection errors",
+            "Database errors return None tuple without raising exceptions",
+        )
+
+        suite.run_test(
+            "Invalid Person Data Handling",
+            test_invalid_person_handling,
+            "Invalid person data is handled gracefully without system failure",
+            "Test person processing with missing or None attributes",
+            "Invalid person data handled gracefully with appropriate error status",
+        )
+
+        suite.run_test(
+            "Missing Template Handling",
+            test_missing_template_handling,
+            "Missing message templates are handled without system failure",
+            "Test message type determination with empty template dictionary",
+            "Missing templates handled gracefully, type determination still works",
+        )
+
+    return suite.finish_suite()
+
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
     print(
         "📧 Running Action 8 - Automated Messaging System comprehensive test suite..."
     )

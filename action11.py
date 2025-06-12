@@ -3549,272 +3549,295 @@ def load_test_person_from_env():
 
 def run_comprehensive_tests() -> bool:
     """
-    Comprehensive test suite for action11.py.
-    Tests live API research functionality and person search capabilities.
+    Comprehensive test suite for action11.py following the standardized 6-category TestSuite framework.
+    Tests live API research functionality, person search capabilities, and genealogical data processing.
+
+    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging
 
-        suite = TestSuite("Action 11 - Live API Research Tool", "action11.py")
-        suite.start_suite()
+    suite = TestSuite("Action 11 - Live API Research Tool", "action11.py")
+    suite.start_suite()
 
+    # === INITIALIZATION TESTS ===
+    def test_module_imports():
+        """Test that required modules are imported correctly"""
+        import json
+        import re
+        import time
+        from typing import Dict, List, Any, Optional, Tuple
+
+        # If we get here, all imports succeeded
+
+    def test_core_function_availability():
+        """Test that core functions are available"""
+        assert callable(handle_api_report), "handle_api_report should be callable"
+
+    def test_search_functions():
+        """Test that search-related functions exist"""
+        assert (
+            "_get_search_criteria" in globals()
+        ), "Search criteria function should exist in globals"
+
+    # === CORE FUNCTIONALITY TESTS ===
+    def test_scoring_functions():
+        """Test scoring and ranking functions"""
+        assert (
+            "_process_and_score_suggestions" in globals()
+        ), "Scoring function should exist"
+        assert (
+            "_run_simple_suggestion_scoring" in globals()
+        ), "Simple scoring function should exist"
+
+    def test_display_functions():
+        """Test result display functions"""
+        assert (
+            "_display_search_results" in globals()
+        ), "Display results function should exist"
+        assert (
+            "_display_initial_comparison" in globals()
+        ), "Display comparison function should exist"
+
+    def test_api_integration_functions():
+        """Test API integration handlers"""
+        assert "_handle_search_phase" in globals(), "Search phase handler should exist"
+        assert (
+            "_handle_selection_phase" in globals()
+        ), "Selection phase handler should exist"
+
+    # === EDGE CASE TESTS ===
+    def test_empty_globals_handling():
+        """Test handling of missing functions gracefully"""
+        # This should not crash even if some functions are missing
+        result = "_nonexistent_function" in globals()
+        assert result == False, "Non-existent function check should return False"
+
+    def test_function_callable_check():
+        """Test that callable checks work properly"""
+        # Test with known callable
+        assert callable(handle_api_report), "handle_api_report should be callable"
+
+    # === INTEGRATION TESTS ===
+    def test_family_functions():
+        """Test family data processing functions"""
+        assert (
+            "_display_family_info" in globals()
+        ), "Family info display function should exist"
+        assert (
+            "_display_tree_relationship" in globals()
+        ), "Tree relationship display function should exist"
+
+    def test_data_extraction_functions():
+        """Test data extraction functions"""
+        assert (
+            "_extract_fact_data" in globals()
+        ), "Fact data extraction function should exist"
+        assert (
+            "_extract_detailed_info" in globals()
+        ), "Detailed info extraction function should exist"
+
+    def test_utility_functions():
+        """Test utility and helper functions"""
+        assert (
+            "_parse_treesui_list_response" in globals()
+        ), "Tree UI list parser should exist"
+        assert (
+            "_flatten_children_list" in globals()
+        ), "Children list flattener should exist"
+
+    # === PERFORMANCE TESTS ===
+    def test_function_lookup_performance():
+        """Test function lookup performance"""
+        import time
+
+        start_time = time.time()
+
+        # Test multiple function lookups
+        functions_to_check = [
+            "handle_api_report",
+            "_get_search_criteria",
+            "_process_and_score_suggestions",
+            "_display_search_results",
+            "_handle_search_phase",
+        ]
+
+        for func_name in functions_to_check:
+            assert (
+                func_name in globals()
+            ), f"Function {func_name} should exist in globals"
+
+        end_time = time.time()
+        # Should complete lookups quickly (< 0.01 seconds)
+        duration = end_time - start_time
+        assert (
+            duration < 0.01
+        ), f"Function lookups should complete in under 0.01s, took {duration:.3f}s"
+
+    def test_callable_check_performance():
+        """Test callable check performance"""
+        import time
+
+        start_time = time.time()
+
+        for _ in range(50):
+            callable(handle_api_report)
+
+        end_time = time.time()
+        # Should complete 50 callable checks quickly (< 0.01 seconds)
+        duration = end_time - start_time
+        assert (
+            duration < 0.01
+        ), f"50 callable checks should complete in under 0.01s, took {duration:.3f}s"
+
+    # === ERROR HANDLING TESTS ===
+    def test_fraser_gault_functions():
+        """Test Fraser Gault functionality availability"""
+        try:
+            return (
+                "run_standalone_fraser_test" in globals()
+                and "load_test_person_from_env" in globals()
+            )
+        except Exception:
+            return True  # Exception is acceptable
+
+    def test_exception_handling():
+        """Test that function checks handle exceptions gracefully"""
+        try:
+            # This should not raise an exception
+            result = callable(None)
+            return result == False
+        except Exception:
+            return True  # Exception handling is working
+
+    # === RUN ALL TESTS ===
+    with suppress_logging():
         # INITIALIZATION TESTS
-        def test_module_imports():
-            """Test that required modules are imported correctly"""
-            try:
-                import json
-                import re
-                import time
-                from typing import Dict, List, Any, Optional, Tuple
+        suite.run_test(
+            "Module imports",
+            test_module_imports,
+            "Should import all required modules successfully for API research functionality",
+            "Test imports of json, re, time, and typing modules for live API operations",
+            "All required modules import successfully without errors",
+        )
 
-                return True
-            except ImportError:
-                return False
+        suite.run_test(
+            "Core function availability",
+            test_core_function_availability,
+            "Should have handle_api_report function available for live research operations",
+            "Test handle_api_report function availability and callability",
+            "handle_api_report function exists and is callable for API research",
+        )
 
-        def test_core_function_availability():
-            """Test that core functions are available"""
-            return callable(handle_api_report)
-
-        def test_search_functions():
-            """Test that search-related functions exist"""
-            return "_get_search_criteria" in globals()
-
-        with suppress_logging():
-            suite.run_test(
-                "Module imports",
-                test_module_imports,
-                "Should import all required modules successfully",
-            )
-            suite.run_test(
-                "Core function availability",
-                test_core_function_availability,
-                "Should have handle_api_report function available",
-            )
-            suite.run_test(
-                "Search functions availability",
-                test_search_functions,
-                "Should have search criteria functions available",
-            )
+        suite.run_test(
+            "Search functions availability",
+            test_search_functions,
+            "Should have search criteria functions available for genealogical research",
+            "Test _get_search_criteria function availability in globals",
+            "Search criteria functions exist for genealogical API research",
+        )
 
         # CORE FUNCTIONALITY TESTS
-        def test_scoring_functions():
-            """Test scoring and ranking functions"""
-            return (
-                "_process_and_score_suggestions" in globals()
-                and "_run_simple_suggestion_scoring" in globals()
-            )
+        suite.run_test(
+            "Scoring functions",
+            test_scoring_functions,
+            "Should have scoring and ranking capabilities for genealogical research suggestions",
+            "Test availability of _process_and_score_suggestions and _run_simple_suggestion_scoring",
+            "Scoring functions exist for processing and ranking genealogical research suggestions",
+        )
 
-        def test_display_functions():
-            """Test result display functions"""
-            return (
-                "_display_search_results" in globals()
-                and "_display_initial_comparison" in globals()
-            )
+        suite.run_test(
+            "Display functions",
+            test_display_functions,
+            "Should have result display capabilities for research results and comparisons",
+            "Test availability of _display_search_results and _display_initial_comparison",
+            "Display functions exist for showing research results and genealogical comparisons",
+        )
 
-        def test_api_integration_functions():
-            """Test API integration handlers"""
-            return (
-                "_handle_search_phase" in globals()
-                and "_handle_selection_phase" in globals()
-            )
+        suite.run_test(
+            "API integration functions",
+            test_api_integration_functions,
+            "Should have API integration handlers for search and selection phases",
+            "Test availability of _handle_search_phase and _handle_selection_phase",
+            "API integration handlers exist for managing search and selection workflows",
+        )
 
-        with suppress_logging():
-            suite.run_test(
-                "Scoring functions",
-                test_scoring_functions,
-                "Should have scoring and ranking capabilities",
-            )
-            suite.run_test(
-                "Display functions",
-                test_display_functions,
-                "Should have result display capabilities",
-            )
-            suite.run_test(
-                "API integration functions",
-                test_api_integration_functions,
-                "Should have API integration handlers",
-            )
+        # EDGE CASE TESTS
+        suite.run_test(
+            "Empty globals handling",
+            test_empty_globals_handling,
+            "Should handle missing functions gracefully without crashing system",
+            "Test checking for non-existent functions in globals without exceptions",
+            "Missing function checks handled gracefully without system errors",
+        )
 
-        # EDGE CASES TESTS
-        def test_empty_globals_handling():
-            """Test handling of missing functions gracefully"""
-            try:
-                # This should not crash even if some functions are missing
-                result = "_nonexistent_function" in globals()
-                return result == False
-            except Exception:
-                return False
-
-        def test_function_callable_check():
-            """Test that callable checks work properly"""
-            try:
-                # Test with known callable
-                return callable(handle_api_report)
-            except Exception:
-                return False
-
-        with suppress_logging():
-            suite.run_test(
-                "Empty globals handling",
-                test_empty_globals_handling,
-                "Should handle missing functions gracefully",
-            )
-            suite.run_test(
-                "Function callable check",
-                test_function_callable_check,
-                "Should properly check if functions are callable",
-            )
+        suite.run_test(
+            "Function callable check",
+            test_function_callable_check,
+            "Should properly check if functions are callable for API research operations",
+            "Test callable() function with known functions to verify proper operation",
+            "Callable checks work properly for verifying function availability",
+        )
 
         # INTEGRATION TESTS
-        def test_family_functions():
-            """Test family data processing functions"""
-            return (
-                "_display_family_info" in globals()
-                and "_display_tree_relationship" in globals()
-            )
+        suite.run_test(
+            "Family functions",
+            test_family_functions,
+            "Should have family data processing capabilities for genealogical tree management",
+            "Test availability of _display_family_info and _display_tree_relationship",
+            "Family data processing functions exist for genealogical relationship management",
+        )
 
-        def test_data_extraction_functions():
-            """Test data extraction functions"""
-            return (
-                "_extract_fact_data" in globals()
-                and "_extract_detailed_info" in globals()
-            )
+        suite.run_test(
+            "Data extraction functions",
+            test_data_extraction_functions,
+            "Should have data extraction utilities for genealogical fact processing",
+            "Test availability of _extract_fact_data and _extract_detailed_info",
+            "Data extraction functions exist for processing genealogical facts and details",
+        )
 
-        def test_utility_functions():
-            """Test utility and helper functions"""
-            return (
-                "_parse_treesui_list_response" in globals()
-                and "_flatten_children_list" in globals()
-            )
+        suite.run_test(
+            "Utility functions",
+            test_utility_functions,
+            "Should have utility helper functions for API response processing",
+            "Test availability of _parse_treesui_list_response and _flatten_children_list",
+            "Utility helper functions exist for processing tree UI responses and data structures",
+        )
 
-        with suppress_logging():
-            suite.run_test(
-                "Family functions",
-                test_family_functions,
-                "Should have family data processing capabilities",
-            )
-            suite.run_test(
-                "Data extraction functions",
-                test_data_extraction_functions,
-                "Should have data extraction utilities",
-            )
-            suite.run_test(
-                "Utility functions",
-                test_utility_functions,
-                "Should have utility helper functions",
-            )
+        # PERFORMANCE TESTS
+        suite.run_test(
+            "Function lookup performance",
+            test_function_lookup_performance,
+            "Should perform function lookups efficiently for API research operations",
+            "Test multiple function lookups with timing validation under 0.01 seconds",
+            "Function lookups complete efficiently for genealogical API research functions",
+        )
 
-            # PERFORMANCE TESTS
-
-        def test_function_lookup_performance():
-            """Test function lookup performance"""
-            import time
-
-            start_time = time.time()
-
-            # Test multiple function lookups
-            functions_to_check = [
-                "handle_api_report",
-                "_get_search_criteria",
-                "_process_and_score_suggestions",
-                "_display_search_results",
-                "_handle_search_phase",
-            ]
-
-            for func_name in functions_to_check:
-                assert (
-                    func_name in globals()
-                ), f"Function {func_name} should exist in globals"
-
-            end_time = time.time()
-            # Should complete lookups quickly (< 0.01 seconds)
-            return (end_time - start_time) < 0.01
-
-        def test_callable_check_performance():
-            """Test callable check performance"""
-            import time
-
-            start_time = time.time()
-
-            for _ in range(50):
-                callable(handle_api_report)
-
-            end_time = time.time()
-            # Should complete 50 callable checks quickly (< 0.01 seconds)
-            return (end_time - start_time) < 0.01
-
-        with suppress_logging():
-            suite.run_test(
-                "Function lookup performance",
-                test_function_lookup_performance,
-                "Should perform function lookups efficiently",
-            )
-            suite.run_test(
-                "Callable check performance",
-                test_callable_check_performance,
-                "Should perform callable checks efficiently",
-            )
+        suite.run_test(
+            "Callable check performance",
+            test_callable_check_performance,
+            "Should perform callable checks efficiently for function validation",
+            "Test 50 callable checks with timing validation under 0.01 seconds",
+            "Callable checks complete efficiently for API function validation",
+        )
 
         # ERROR HANDLING TESTS
-        def test_fraser_gault_functions():
-            """Test Fraser Gault functionality availability"""
-            try:
-                return (
-                    "run_standalone_fraser_test" in globals()
-                    and "load_test_person_from_env" in globals()
-                )
-            except Exception:
-                return True  # Exception is acceptable
+        suite.run_test(
+            "Fraser Gault functions",
+            test_fraser_gault_functions,
+            "Should have Fraser Gault test functionality available for specialized testing",
+            "Test availability of run_standalone_fraser_test and load_test_person_from_env functions",
+            "Fraser Gault test functions exist for specialized genealogical testing scenarios",
+        )
 
-        def test_exception_handling():
-            """Test that function checks handle exceptions gracefully"""
-            try:
-                # This should not raise an exception
-                result = callable(None)
-                return result == False
-            except Exception:
-                return True  # Exception handling is working
+        suite.run_test(
+            "Exception handling",
+            test_exception_handling,
+            "Should handle exceptions in function checks gracefully without system crashes",
+            "Test callable() function with None value to verify exception handling",
+            "Exception handling works properly for function validation operations",
+        )
 
-        with suppress_logging():
-            suite.run_test(
-                "Fraser Gault functions",
-                test_fraser_gault_functions,
-                "Should have Fraser Gault test functionality",
-            )
-            suite.run_test(
-                "Exception handling",
-                test_exception_handling,
-                "Should handle exceptions in function checks gracefully",
-            )
-
-        return suite.finish_suite()
-
-    except ImportError:
-        # Fallback when test framework is not available
-        print("🧪 Running Action 11 lightweight tests...")
-
-        try:
-            # Test 1: Core function availability
-            assert callable(handle_api_report), "handle_api_report should be callable"
-            print("✅ Core function availability test passed")
-
-            # Test 2: Search criteria function
-            assert (
-                "_get_search_criteria" in globals()
-            ), "Search criteria function should exist"
-            print("✅ Search criteria function test passed")
-
-            # Test 3: Scoring functions
-            assert (
-                "_process_and_score_suggestions" in globals()
-            ), "Scoring function should exist"
-            print("✅ Scoring function test passed")
-
-            print("✅ All lightweight tests passed")
-            return True
-        except Exception as e:
-            print(f"❌ Test error: {e}")
-            return False
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":

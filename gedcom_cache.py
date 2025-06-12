@@ -911,24 +911,7 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for gedcom_cache.py.
     Tests GEDCOM file caching, invalidation, and performance optimization.
     """
-    try:
-        from test_framework import TestSuite, suppress_logging, create_mock_data
-
-        has_framework = True
-    except ImportError:
-        has_framework = False
-
-    if not has_framework:
-        print("🧪 Running basic GEDCOM cache tests (test framework unavailable)...")
-        try:
-            # Basic tests when framework unavailable
-            module_name = _gedcom_cache_module.get_module_name()
-            assert module_name == "gedcom_cache", "Module name should be correct"
-            print("✅ Basic GEDCOM cache tests passed!")
-            return True
-        except Exception as e:
-            print(f"❌ Basic tests failed: {e}")
-            return False
+    from test_framework import TestSuite, suppress_logging, create_mock_data
 
     with suppress_logging():
         suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")

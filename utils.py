@@ -6437,26 +6437,12 @@ def run_comprehensive_tests() -> bool:
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
     # Import test framework components
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-    except ImportError:
-        # Basic tests when framework unavailable
-        print("🧪 Running Utils basic tests (test framework unavailable)...")
-        try:
-            # Test core function availability
-            required_functions = ["SessionManager", "format_name", "DynamicRateLimiter"]
-            missing_functions = [f for f in required_functions if f not in globals()]
-            assert not missing_functions, f"Missing functions: {missing_functions}"
-            print("✅ Basic utils tests passed!")
-            return True
-        except Exception as e:
-            print(f"❌ Basic tests failed: {e}")
-            return False
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
 
     suite = TestSuite("Core Utilities & Session Management", "utils.py")
     suite.start_suite()
@@ -6466,9 +6452,7 @@ def run_comprehensive_tests() -> bool:
         """Test that all required modules and classes are properly imported."""
         required_globals = ["SessionManager", "format_name", "DynamicRateLimiter"]
         for item in required_globals:
-            if item not in globals():
-                return False
-        return True
+            assert item in globals(), f"Required global '{item}' not found"
 
     suite.run_test(
         "Module Imports and Class Definitions",
@@ -6484,8 +6468,10 @@ def run_comprehensive_tests() -> bool:
             config = globals()["config_instance"]
             # Test that config has basic required attributes
             required_attrs = ["BASE_URL"]
-            return all(hasattr(config, attr) for attr in required_attrs)
-        return True  # If no config_instance, that's also valid
+            for attr in required_attrs:
+                assert hasattr(
+                    config, attr
+                ), f"Config missing required attribute '{attr}'"
 
     suite.run_test(
         "Configuration Loading",
@@ -6498,8 +6484,7 @@ def run_comprehensive_tests() -> bool:
     # CORE FUNCTIONALITY TESTS
     def test_format_name_comprehensive():
         """Test name formatting with comprehensive real-world cases."""
-        if "format_name" not in globals():
-            return False
+        assert "format_name" in globals(), "format_name function not found"
 
         format_name_func = globals()["format_name"]
 
@@ -6526,10 +6511,9 @@ def run_comprehensive_tests() -> bool:
 
         for input_name, expected in test_cases:
             result = format_name_func(input_name)
-            if result != expected:
-                return False
-
-        return True
+            assert (
+                result == expected
+            ), f"format_name('{input_name}') returned '{result}', expected '{expected}'"
 
     suite.run_test(
         "Name Formatting Logic",
@@ -6541,8 +6525,7 @@ def run_comprehensive_tests() -> bool:
 
     def test_ordinal_case_comprehensive():
         """Test ordinal number conversion with comprehensive cases."""
-        if "ordinal_case" not in globals():
-            return False
+        assert "ordinal_case" in globals(), "ordinal_case function not found"
 
         ordinal_func = globals()["ordinal_case"]
 
@@ -6570,10 +6553,9 @@ def run_comprehensive_tests() -> bool:
 
         for number, expected in test_cases:
             result = ordinal_func(number)
-            if result != expected:
-                return False
-
-        return True
+            assert (
+                result == expected
+            ), f"ordinal_case({number}) returned '{result}', expected '{expected}'"
 
     suite.run_test(
         "Ordinal Number Conversion",
@@ -6585,8 +6567,7 @@ def run_comprehensive_tests() -> bool:
 
     def test_rate_limiter_functionality():
         """Test DynamicRateLimiter with real timing validation."""
-        if "DynamicRateLimiter" not in globals():
-            return False
+        assert "DynamicRateLimiter" in globals(), "DynamicRateLimiter class not found"
 
         rate_limiter_class = globals()["DynamicRateLimiter"]
 
@@ -6601,8 +6582,9 @@ def run_comprehensive_tests() -> bool:
         duration = time.time() - start_time
 
         # Should have waited at least the initial delay
-        if duration < 0.005:  # Allow some margin for timing variations
-            return False
+        assert (
+            duration >= 0.005
+        ), f"Rate limiter wait too short: {duration}s, expected >= 0.005s"
 
         # Test delay adjustment
         limiter.increase_delay()
@@ -6611,7 +6593,9 @@ def run_comprehensive_tests() -> bool:
         limiter.decrease_delay()
         decreased_delay = limiter.current_delay
 
-        return increased_delay > decreased_delay
+        assert (
+            increased_delay > decreased_delay
+        ), f"Delay adjustment failed: {increased_delay} should be > {decreased_delay}"
 
     suite.run_test(
         "Dynamic Rate Limiter Operations",
@@ -6910,74 +6894,6 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
-
-
-def run_comprehensive_tests_fallback() -> bool:
-    """
-    Fallback test function when test framework is not available.
-    Provides basic testing capability using simple assertions.
-    """
-    print("🛠️ Running Utils fallback test suite...")
-
-    tests_passed = 0
-    tests_total = 0
-
-    # Test format_name if available
-    if "format_name" in globals():
-        tests_total += 1
-        try:
-            format_name_func = globals()["format_name"]
-            result = format_name_func("john doe")
-            if result == "John Doe":
-                tests_passed += 1
-                print("✅ format_name basic test passed")
-            else:
-                print("❌ format_name basic test failed")
-        except Exception as e:
-            print(f"❌ format_name test error: {e}")
-
-    # Test rate limiter if available
-    if "DynamicRateLimiter" in globals():
-        tests_total += 1
-        try:
-            rate_limiter_class = globals()["DynamicRateLimiter"]
-            limiter = rate_limiter_class(initial_delay=0.001)
-            limiter.wait()
-            tests_passed += 1
-            print("✅ DynamicRateLimiter basic test passed")
-        except Exception as e:
-            print(f"❌ DynamicRateLimiter test error: {e}")
-
-    # Test SessionManager if available
-    if "SessionManager" in globals():
-        tests_total += 1
-        try:
-            session_manager_class = globals()["SessionManager"]
-            session_manager = session_manager_class()
-            if hasattr(session_manager, "start_sess"):
-                tests_passed += 1
-                print("✅ SessionManager basic test passed")
-            else:
-                print("❌ SessionManager missing expected methods")
-        except Exception as e:
-            print(f"❌ SessionManager test error: {e}")
-
-    # Test ordinal_case if available
-    if "ordinal_case" in globals():
-        tests_total += 1
-        try:
-            ordinal_func = globals()["ordinal_case"]
-            result = ordinal_func(1)
-            if result == "1st":
-                tests_passed += 1
-                print("✅ ordinal_case basic test passed")
-            else:
-                print("❌ ordinal_case basic test failed")
-        except Exception as e:
-            print(f"❌ ordinal_case test error: {e}")
-
-    print(f"🏁 Utils fallback tests completed: {tests_passed}/{tests_total} passed")
-    return tests_passed == tests_total
 
 
 # ==============================================
