@@ -34,6 +34,7 @@ def discover_test_modules() -> List[str]:
         "action11",
         "ai_interface",
         "api_utils",
+        "cache",  # Added - has standardized TestSuite implementation
         "cache_manager",
         "config",
         "database",
@@ -59,8 +60,6 @@ def discover_test_modules() -> List[str]:
             "setup_credentials_helper.py",
             "setup_real_credentials.py",
             "setup_security.py",
-            "check_test_coverage.py",
-            "test_gedcom_timeout.py",  # Skip custom timeout test - handled separately
         ]
 
         if python_file.name in skip_files:
@@ -207,14 +206,32 @@ def run_module_test(
         else:
             print(f"❌ {module_name}.py tests failed (exit code: {result.returncode})")
             if result.stderr:
-                print(f"   Error output: {result.stderr.strip()[:200]}")
+                # Show more error context for debugging, but truncate if too long
+                stderr_lines = result.stderr.strip().split("\n")
+                if len(stderr_lines) > 5:
+                    stderr_preview = (
+                        "\n".join(stderr_lines[:3])
+                        + f"\n... ({len(stderr_lines)-3} more lines)"
+                    )
+                else:
+                    stderr_preview = result.stderr.strip()
+                print(f"   Error output: {stderr_preview[:400]}")
             if result.stdout:
-                print(f"   Standard output: {result.stdout.strip()[:200]}")
+                # Show more stdout context to see test progress
+                stdout_lines = result.stdout.strip().split("\n")
+                if len(stdout_lines) > 5:
+                    stdout_preview = (
+                        "\n".join(stdout_lines[:3])
+                        + f"\n... ({len(stdout_lines)-3} more lines)"
+                    )
+                else:
+                    stdout_preview = result.stdout.strip()
+                print(f"   Standard output: {stdout_preview[:400]}")
 
         error = (
             None
             if success
-            else f"Exit code {result.returncode}: {result.stderr.strip()[:500]}"
+            else f"Exit code {result.returncode}: {(result.stderr or '').strip()[:300]}"
         )
 
     except subprocess.TimeoutExpired:

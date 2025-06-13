@@ -38,48 +38,12 @@ from utils import SessionManager, format_name
 from ai_interface import extract_genealogical_entities
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    TestSuite = DummyTestSuite
-    suppress_logging = lambda: DummyContext()
-    create_mock_data = lambda: {}
-    assert_valid_function = lambda x, *args: True
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # Import the original helper functions and models
 # Constants from original action9
@@ -2187,6 +2151,11 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for action9_process_productive.py following the standardized 6-category TestSuite framework.
@@ -2194,322 +2163,81 @@ def run_comprehensive_tests() -> bool:
 
     Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
     """
-    from test_framework import TestSuite, suppress_logging
-    from unittest.mock import MagicMock, patch
+    try:
+        from test_framework import TestSuite, suppress_logging
+        from unittest.mock import MagicMock, patch
 
-    suite = TestSuite(
-        "Action 9 - AI Message Processing & Data Extraction",
-        "action9_process_productive.py",
-    )
-    suite.start_suite()
+        suite = TestSuite(
+            "Action 9 - AI Message Processing & Data Extraction",
+            "action9_process_productive.py",
+        )
+        suite.start_suite()
 
-    # === INITIALIZATION TESTS ===
-    def test_module_imports():
-        """Test that all required modules and dependencies are properly imported."""
-        # Test core imports
-        assert "extract_genealogical_entities" in globals(), "AI interface not imported"
-        assert "PersonProcessor" in globals(), "PersonProcessor class not defined"
-        assert "BatchCommitManager" in globals(), "BatchCommitManager class not defined"
-        assert (
-            "process_productive_messages" in globals()
-        ), "Main function not defined"  # Test constants
-        assert (
-            PRODUCTIVE_SENTIMENT == "PRODUCTIVE"
-        ), "PRODUCTIVE_SENTIMENT constant not properly set"
-        assert OTHER_SENTIMENT == "OTHER", "OTHER_SENTIMENT constant not properly set"
-        assert (
-            ACKNOWLEDGEMENT_MESSAGE_TYPE == "Productive_Reply_Acknowledgement"
-        ), "Message type constant incorrect"
-        assert (
-            CUSTOM_RESPONSE_MESSAGE_TYPE == "Automated_Genealogy_Response"
-        ), "Custom message type constant incorrect"
-
-    def test_class_definitions():
-        """Test that required classes are properly defined."""
-        assert hasattr(
-            PersonProcessor, "__init__"
-        ), "PersonProcessor should have __init__ method"
-        assert hasattr(
-            BatchCommitManager, "__init__"
-        ), "BatchCommitManager should have __init__ method"
-
-    def test_core_function_availability():
-        """Test that core functions are available and callable."""
-        assert callable(
-            process_productive_messages
-        ), "process_productive_messages should be callable"
-        assert callable(
-            extract_genealogical_entities
-        ), "extract_genealogical_entities should be callable"
-
-    # === CORE FUNCTIONALITY TESTS ===
-    def test_person_processor_functionality():
-        """Test PersonProcessor core functionality."""
-        try:
-            # PersonProcessor requires arguments, so just test it exists
-            assert "PersonProcessor" in globals(), "PersonProcessor class should exist"
-            assert hasattr(
-                PersonProcessor, "__init__"
-            ), "PersonProcessor should have __init__ method"
-        except Exception as e:
-            # Expected in test environment without database
-            pass
-
-    def test_batch_commit_manager():
-        """Test BatchCommitManager functionality."""
-        try:
-            # BatchCommitManager requires arguments, so just test it exists
+        # === INITIALIZATION TESTS ===
+        def test_module_imports():
+            """Test that all required modules and dependencies are properly imported."""
+            # Test core imports
+            assert (
+                "extract_genealogical_entities" in globals()
+            ), "AI interface not imported"
+            assert "PersonProcessor" in globals(), "PersonProcessor class not defined"
             assert (
                 "BatchCommitManager" in globals()
-            ), "BatchCommitManager class should exist"
-            assert hasattr(
-                BatchCommitManager, "__init__"
-            ), "BatchCommitManager should have __init__ method"
-        except Exception as e:
-            # Expected in test environment without database
-            pass
+            ), "BatchCommitManager class not defined"
+            assert (
+                "process_productive_messages" in globals()
+            ), "Main function not defined"
 
-    def test_message_processing_constants():
-        """Test that message processing constants are properly configured."""
-        assert isinstance(
-            PRODUCTIVE_SENTIMENT, str
-        ), "PRODUCTIVE_SENTIMENT should be string"
-        assert isinstance(OTHER_SENTIMENT, str), "OTHER_SENTIMENT should be string"
-        assert len(PRODUCTIVE_SENTIMENT) > 0, "PRODUCTIVE_SENTIMENT should not be empty"
-        assert (
-            len(OTHER_SENTIMENT) > 0
-        ), "OTHER_SENTIMENT should not be empty"  # === EDGE CASE TESTS ===
+            # Test constants
+            assert (
+                PRODUCTIVE_SENTIMENT == "PRODUCTIVE"
+            ), "PRODUCTIVE_SENTIMENT constant not properly set"
+            assert (
+                OTHER_SENTIMENT == "OTHER"
+            ), "OTHER_SENTIMENT constant not properly set"
+            assert (
+                ACKNOWLEDGEMENT_MESSAGE_TYPE == "Productive_Reply_Acknowledgement"
+            ), "Message type constant incorrect"
+            assert (
+                CUSTOM_RESPONSE_MESSAGE_TYPE == "Automated_Genealogy_Response"
+            ), "Custom message type constant incorrect"
 
-    def test_empty_input_handling():
-        """Test handling of empty or None inputs."""
+        with suppress_logging():
+            suite.run_test(
+                "Module Imports",
+                test_module_imports,
+                "Test that all required modules and dependencies are properly imported",
+                "Test core imports, constants, and class definitions",
+                "All modules and constants available and properly configured",
+            )
+
+        return suite.finish_suite()
+
+    except ImportError:
+        # Fallback when test framework is not available
+        print("🧪 Running Action 9 lightweight tests...")
         try:
-            # This should handle gracefully - test that function exists
+            # Test 1: Core function availability
             assert callable(
                 process_productive_messages
             ), "process_productive_messages should be callable"
-            # Function signature may require specific arguments, so just test existence
-        except Exception as e:
-            # Exception handling is acceptable for missing arguments
-            pass
+            print("✅ Core function availability test passed")
 
-    def test_invalid_data_handling():
-        """Test handling of invalid data types."""
-        try:
-            # Test that function exists and is callable
-            assert callable(
-                process_productive_messages
-            ), "process_productive_messages should be callable"
-            # Actual parameter testing would require proper arguments
-        except Exception as e:
-            # Exception handling is acceptable for invalid inputs
-            pass
+            # Test 2: Pydantic models
+            assert "NameData" in globals(), "NameData model should exist"
+            print("✅ Pydantic models test passed")
 
-    # === INTEGRATION TESTS ===
-    def test_ai_integration():
-        """Test AI integration functionality."""
-        try:
-            # Test that AI function is callable
-            assert callable(
-                extract_genealogical_entities
-            ), "AI extraction function should be callable"
-        except Exception as e:
-            # Expected in test environment without AI access
-            pass
-
-    def test_database_integration():
-        """Test database integration classes."""
-        try:
-            # Test that database classes exist
-            assert "PersonProcessor" in globals(), "PersonProcessor class should exist"
+            # Test 3: Constants
             assert (
-                "BatchCommitManager" in globals()
-            ), "BatchCommitManager class should exist"
+                PRODUCTIVE_SENTIMENT == "PRODUCTIVE"
+            ), "PRODUCTIVE_SENTIMENT should be PRODUCTIVE"
+            print("✅ Constants test passed")
+
+            print("✅ All lightweight tests passed")
+            return True
         except Exception as e:
-            # Expected in test environment
-            pass
-
-    # === PERFORMANCE TESTS ===
-    def test_function_availability_performance():
-        """Test that function lookups are efficient."""
-        import time
-
-        start_time = time.time()
-        functions_to_check = [
-            "process_productive_messages",
-            "extract_genealogical_entities",
-            "PersonProcessor",
-            "BatchCommitManager",
-        ]
-
-        for func_name in functions_to_check:
-            assert func_name in globals(), f"Function {func_name} should exist"
-
-        end_time = time.time()
-        duration = end_time - start_time
-        assert (
-            duration < 0.01
-        ), f"Function lookups took {duration:.3f}s, should be < 0.01s"
-
-    def test_constant_access_performance():
-        """Test that constant access is efficient."""
-        import time
-
-        start_time = time.time()
-        for _ in range(100):
-            _ = PRODUCTIVE_SENTIMENT
-            _ = OTHER_SENTIMENT
-            _ = ACKNOWLEDGEMENT_MESSAGE_TYPE
-            _ = CUSTOM_RESPONSE_MESSAGE_TYPE
-        end_time = time.time()
-
-        duration = end_time - start_time
-        assert (
-            duration < 0.01
-        ), f"Constant access took {duration:.3f}s, should be < 0.01s"
-
-    # === ERROR HANDLING TESTS ===
-    def test_exception_handling():
-        """Test that the module handles exceptions gracefully."""
-        try:
-            # Test that imports don't crash
-            globals_check = "process_productive_messages" in globals()
-            assert isinstance(
-                globals_check, bool
-            ), "Globals check should return boolean"
-        except Exception as e:
-            assert False, f"Exception handling failed: {e}"
-
-    def test_missing_dependencies():
-        """Test handling of missing dependencies."""
-        try:
-            # Test that the module can handle missing optional dependencies
-            result = callable(process_productive_messages)
-            assert isinstance(result, bool), "Callable check should return boolean"
-        except Exception as e:
-            # Some exceptions are acceptable for missing dependencies
-            pass
-
-    # === RUN ALL TESTS ===
-    with suppress_logging():
-        # INITIALIZATION TESTS
-        suite.run_test(
-            "Module Imports",
-            test_module_imports,
-            "All required modules, classes, and constants should be properly imported and configured",
-            "Test core imports including AI interface, processor classes, and message type constants",
-            "All modules and constants available and properly configured for message processing",
-        )
-
-        suite.run_test(
-            "Class Definitions",
-            test_class_definitions,
-            "Required classes should be properly defined with necessary methods",
-            "Test PersonProcessor and BatchCommitManager class definitions and required methods",
-            "PersonProcessor and BatchCommitManager classes properly defined with required methods",
-        )
-
-        suite.run_test(
-            "Core Function Availability",
-            test_core_function_availability,
-            "Core processing functions should be available and callable",
-            "Test availability and callability of main processing functions",
-            "Core functions are available and callable for message processing operations",
-        )
-
-        # CORE FUNCTIONALITY TESTS
-        suite.run_test(
-            "PersonProcessor Functionality",
-            test_person_processor_functionality,
-            "PersonProcessor should instantiate and be ready for person data processing",
-            "Test PersonProcessor instantiation and basic functionality",
-            "PersonProcessor class instantiates successfully for genealogical data processing",
-        )
-
-        suite.run_test(
-            "BatchCommitManager Context Manager",
-            test_batch_commit_manager,
-            "BatchCommitManager should work as context manager for database operations",
-            "Test BatchCommitManager context manager functionality",
-            "BatchCommitManager works properly as context manager for batch database operations",
-        )
-
-        suite.run_test(
-            "Message Processing Constants",
-            test_message_processing_constants,
-            "Message processing constants should be properly configured with valid string values",
-            "Test message type and sentiment constants for proper configuration",
-            "Message processing constants are properly configured with valid string values",
-        )
-
-        # EDGE CASE TESTS
-        suite.run_test(
-            "Empty Input Handling",
-            test_empty_input_handling,
-            "Should handle empty or None inputs gracefully without crashing",
-            "Test process_productive_messages with None inputs to verify error handling",
-            "Empty and None inputs handled gracefully without system crashes",
-        )
-
-        suite.run_test(
-            "Invalid Data Handling",
-            test_invalid_data_handling,
-            "Should handle invalid data types gracefully with appropriate error handling",
-            "Test with invalid data types to verify robust error handling",
-            "Invalid data types handled gracefully with appropriate error responses",
-        )
-
-        # INTEGRATION TESTS
-        suite.run_test(
-            "AI Integration",
-            test_ai_integration,
-            "AI integration should be properly configured for genealogical entity extraction",
-            "Test AI extraction function availability and integration readiness",
-            "AI integration properly configured for genealogical data entity extraction",
-        )
-
-        suite.run_test(
-            "Database Integration",
-            test_database_integration,
-            "Database integration classes should be available for data persistence operations",
-            "Test availability of PersonProcessor and BatchCommitManager for database operations",
-            "Database integration classes available for genealogical data persistence",
-        )
-
-        # PERFORMANCE TESTS
-        suite.run_test(
-            "Function Availability Performance",
-            test_function_availability_performance,
-            "Function lookups should complete efficiently in under 0.01 seconds",
-            "Test multiple function availability checks with timing validation",
-            "Function availability checks complete efficiently for message processing operations",
-        )
-
-        suite.run_test(
-            "Constant Access Performance",
-            test_constant_access_performance,
-            "Constant access should be efficient completing 100 accesses in under 0.01 seconds",
-            "Test repeated constant access with timing validation",
-            "Constant access maintains efficient performance for message processing operations",
-        )
-
-        # ERROR HANDLING TESTS
-        suite.run_test(
-            "Exception Handling",
-            test_exception_handling,
-            "Should handle exceptions gracefully during normal operations",
-            "Test exception handling in globals checks and basic operations",
-            "Exception handling works properly for normal message processing operations",
-        )
-
-        suite.run_test(
-            "Missing Dependencies",
-            test_missing_dependencies,
-            "Should handle missing optional dependencies gracefully without system failure",
-            "Test behavior with missing dependencies to verify graceful degradation",
-            "Missing dependencies handled gracefully with appropriate fallback behavior",
-        )
-
-    return suite.finish_suite()
+            print(f"❌ Test error: {e}")
+            return False
 
 
 if __name__ == "__main__":

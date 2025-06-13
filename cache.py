@@ -36,17 +36,12 @@ from config import config_instance  # Use configured instance
 from logging_config import logger  # Use configured logger
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    TEST_FRAMEWORK_AVAILABLE = True
-except ImportError:
-    TEST_FRAMEWORK_AVAILABLE = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # --- Global Cache Initialization ---
 
@@ -1331,55 +1326,64 @@ def run_comprehensive_tests() -> bool:
 
     # Cache decorator functionality
     def test_cache_decorator():
-        if "cache_result" in globals():
-            cache_decorator = globals()["cache_result"]
+        # Ensure cache is available for testing
+        if cache is None:
+            # Skip test if cache is not available
+            return True
 
-            call_count = 0
+        # Clear any existing cache entries for this test
+        try:
+            cache.clear()
+        except:
+            pass  # Ignore errors if cache can't be cleared
 
-            @cache_decorator("test_expensive_function")
-            def expensive_function(x):
-                nonlocal call_count
-                call_count += 1
-                return x * 2
+        call_count = 0
 
-            # First call should execute function
-            result1 = expensive_function(5)
-            assert result1 == 10
-            assert call_count == 1
+        @cache_result("test_expensive_function")
+        def expensive_function(x):
+            nonlocal call_count
+            call_count += 1
+            return x * 2
 
-            # Second call should use cache
-            result2 = expensive_function(5)
-            assert result2 == 10
-            assert call_count == 1  # Should not increment
+        # First call should execute function
+        result1 = expensive_function(5)
+        assert result1 == 10, f"Expected 10, got {result1}"
+        assert (
+            call_count == 1
+        ), f"Expected call_count=1 after first call, got {call_count}"
+
+        # Second call should use cache
+        result2 = expensive_function(5)
+        assert result2 == 10, f"Expected 10, got {result2}"
+        assert (
+            call_count == 1
+        ), f"Expected call_count=1 after second call (cached), got {call_count}"
 
     # Cache key generation
     def test_cache_key_generation():
-        if "generate_cache_key" in globals():
-            key_generator = globals()["generate_cache_key"]
+        # Test with get_unified_cache_key function
+        key1 = get_unified_cache_key("test_module", "test_op", 1, 2, kwarg1="value1")
+        key2 = get_unified_cache_key("test_module", "test_op", 1, 2, kwarg1="value1")
+        key3 = get_unified_cache_key("test_module", "test_op", 1, 3, kwarg1="value1")
 
-            # Test with various argument types
-            key1 = key_generator("func", 1, 2, kwarg1="value1")
-            key2 = key_generator("func", 1, 2, kwarg1="value1")
-            key3 = key_generator("func", 1, 3, kwarg1="value1")
-
-            assert key1 == key2  # Same arguments should generate same key
-            assert key1 != key3  # Different arguments should generate different keys
+        assert key1 == key2  # Same arguments should generate same key
+        assert key1 != key3  # Different arguments should generate different keys
 
     # Advanced cache features
     def test_advanced_cache_features():
-        # Test advanced caching features
-        advanced_functions = [
-            "cache_with_ttl",
-            "cache_with_dependency",
-            "cache_with_tags",
-            "hierarchical_cache",
-            "distributed_cache",
+        # Test actual cache management functions
+        real_functions = [
+            "clear_cache",
+            "close_cache",
+            "get_cache_stats",
+            "get_cache_entry_count",
+            "invalidate_related_caches",
         ]
 
-        for func_name in advanced_functions:
-            if func_name in globals():
-                func = globals()[func_name]
-                assert callable(func)
+        for func_name in real_functions:
+            assert func_name in globals(), f"Function {func_name} should exist"
+            func = globals()[func_name]
+            assert callable(func), f"Function {func_name} should be callable"
 
     # Run all tests
     test_functions = {

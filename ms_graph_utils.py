@@ -16,10 +16,9 @@ import atexit  # For saving cache on exit
 import json
 import logging
 import os
-import sys  # Not strictly needed now, but kept if used later
-import time
+import sys  # Used for sys.exit in main block
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 # --- Third-party imports ---
 import msal  # MSAL library for authentication
@@ -31,32 +30,53 @@ from config import config_instance  # Required for DATA_DIR to store cache
 from logging_config import logger  # Use configured application logger
 
 # --- Test framework imports with fallbacks ---
-try:
-    from test_framework import TestSuite, suppress_logging
-except ImportError:
-    # Fallback implementations when test framework is not available
-    from contextlib import contextmanager
+from contextlib import contextmanager
 
-    @contextmanager
-    def suppress_logging():
-        yield
 
-    class TestSuite:
-        def __init__(self, name, module):
-            self.name = name
-            self.module = module
+# Fallback implementations
+@contextmanager
+def _fallback_suppress_logging() -> Any:
+    """Fallback suppress_logging context manager."""
+    yield
 
-        def start_suite(self):
+
+class _FallbackTestSuite:
+    """Fallback TestSuite implementation."""
+
+    def __init__(self, name: str, module: str) -> None:
+        self.name = name
+        self.module = module
+
+    def start_suite(self) -> None:
+        """Fallback start_suite method."""
+        pass
+
+    def run_test(
+        self,
+        name: str,
+        func: Callable[[], None],
+        description: str,
+        test_desc: str = "",
+        method_desc: str = "",
+    ) -> None:
+        """Fallback run_test method."""
+        try:
+            func()
+        except Exception:
             pass
 
-        def run_test(self, name, func, description, test_desc="", method_desc=""):
-            try:
-                func()
-            except:
-                pass
+    def finish_suite(self) -> bool:
+        """Fallback finish_suite method."""
+        return True
 
-        def finish_suite(self):
-            return True
+
+# Try to import test framework components
+try:
+    from test_framework import TestSuite, suppress_logging  # type: ignore
+except ImportError:
+    # Use fallback implementations when test framework is not available
+    TestSuite = _FallbackTestSuite  # type: ignore
+    suppress_logging = _fallback_suppress_logging  # type: ignore
 
 
 # --- Initial Setup ---
@@ -554,18 +574,24 @@ def run_comprehensive_tests() -> bool:
     # Edge Cases Tests
     def test_edge_cases():
         """Test edge cases and error handling."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import (
+            patch,
+            MagicMock,
+        )  # Test authentication with no environment variables
 
-        # Test authentication with no environment variables
         with patch.dict(os.environ, {}, clear=True):
-            try:
-                # Should handle missing client ID gracefully
-                acquire_token_device_flow()
-                assert False, "Should have failed with missing client ID"
-            except Exception as e:
-                assert (
-                    "client" in str(e).lower() or "id" in str(e).lower() or True
-                ), "Should indicate missing client configuration"
+            with patch("ms_graph_utils.msal.PublicClientApplication") as mock_msal:
+                mock_msal.side_effect = Exception("Missing client configuration")
+                try:
+                    # Should handle missing client ID gracefully
+                    acquire_token_device_flow()
+                    assert False, "Should have failed with missing client ID"
+                except Exception as e:
+                    assert (
+                        "client" in str(e).lower()
+                        or "id" in str(e).lower()
+                        or "Missing" in str(e)
+                    ), "Should indicate missing client configuration"
 
         # Test task creation with invalid parameters
         try:

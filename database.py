@@ -2988,17 +2988,12 @@ if __name__ == "__main__":
 # ==============================================
 # Test Framework Integration
 # ==============================================
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 
 def run_comprehensive_tests() -> bool:
@@ -3287,15 +3282,8 @@ def run_comprehensive_tests() -> bool:
         # ERROR HANDLING TESTS
         def test_import_error_handling():
             """Test that module handles import errors gracefully."""
-            # Test that test framework fallback works
-            assert (
-                HAS_TEST_FRAMEWORK is not None
-            ), "HAS_TEST_FRAMEWORK flag should be set"
-
-            # Test that either real or dummy classes are available
-            assert (
-                TestSuite is not None
-            ), "TestSuite should be available (real or dummy)"
+            # Test that test framework is available
+            assert TestSuite is not None, "TestSuite should be available"
             assert suppress_logging is not None, "suppress_logging should be available"
 
         suite.run_test(

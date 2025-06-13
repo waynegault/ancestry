@@ -54,50 +54,12 @@ except ImportError:
 # Instead, we'll define format_name locally
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    from contextlib import contextmanager
-
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    @contextmanager
-    def suppress_logging():
-        yield
-
-    def create_mock_data(*args, **kwargs):
-        return {}
-
-    def assert_valid_function(func, func_name):
-        assert callable(func), f"{func_name} should be callable"
-
-    TestSuite = DummyTestSuite
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # Import specific functions from gedcom_utils
 try:
@@ -1849,10 +1811,11 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for relationship_utils.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    if HAS_TEST_FRAMEWORK:
-        with suppress_logging():
-            suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
-            suite.start_suite()
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
+        suite.start_suite()
 
         # INITIALIZATION TESTS
         def test_module_initialization():
@@ -2440,40 +2403,6 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
-    else:
-        # Fallback test function for when test framework is not available
-        print("🧬 Running basic relationship utils tests...")
-
-        try:
-            # Test 1: Name formatting
-            assert format_name("john doe") == "John Doe"
-            assert format_name(None) == "Valued Relative"
-            print("✅ Name formatting test passed")
-
-            # Test 2: Relationship terms
-            assert _get_relationship_term("M", "parent") == "father"
-            assert _get_relationship_term("F", "child") == "daughter"
-            print("✅ Relationship terms test passed")
-
-            # Test 3: BFS functionality with simple data
-            test_parents = {"person2": {"person1"}}
-            test_children = {"person1": {"person2"}}
-            path = fast_bidirectional_bfs(
-                "person1", "person2", test_parents, test_children
-            )
-            assert path is not None
-            assert len(path) == 2
-            print("✅ Basic BFS test passed")
-
-            print("🏁 Basic relationship utils tests passed!")
-            return True
-
-        except AssertionError as e:
-            print(f"❌ Test failed: {e}")
-            return False
-        except Exception as e:
-            print(f"❌ Test error: {e}")
-            return False
 
 
 # ==============================================

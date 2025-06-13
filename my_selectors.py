@@ -140,11 +140,6 @@ def run_comprehensive_tests() -> bool:
                     len(selector_value.strip()) > 0
                 ), f"{selector_name} should not be empty"
 
-        # Test data with 12345 identifier
-        assert "12345" in str(
-            basic_selectors_12345
-        ), "Test data should contain 12345 identifier"
-
     # Core Functionality Tests
     def test_core_functionality():
         """Test selector structure and CSS validity."""

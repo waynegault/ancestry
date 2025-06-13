@@ -1091,7 +1091,13 @@ def run_comprehensive_tests() -> bool:
 
     def test_gedcom_data_loading():
         """Test GEDCOM data loading functionality."""
-        data = load_gedcom_data_for_tests()
+        # Use globals() to access module-level function
+        load_function = globals().get("load_gedcom_data_for_tests")
+        assert (
+            load_function is not None
+        ), "load_gedcom_data_for_tests function should exist"
+
+        data = load_function()
         assert isinstance(data, dict), "GEDCOM data should be a dictionary"
 
     with suppress_logging():
@@ -1222,11 +1228,17 @@ def run_comprehensive_tests() -> bool:
             "Boundary conditions produce valid scores or appropriate None values",
         )
 
-    # INTEGRATION TESTS
-    def test_end_to_end_workflow():
-        """Test complete workflow integration."""
+        # INTEGRATION TESTS
+        def test_end_to_end_workflow():
+            """Test complete workflow integration."""
+
         # Test that all functions work together
-        gedcom_data = load_gedcom_data_for_tests()
+        load_function = globals().get("load_gedcom_data_for_tests")
+        assert (
+            load_function is not None
+        ), "load_gedcom_data_for_tests function should exist"
+
+        gedcom_data = load_function()
         filtered_data = filter_gedcom_data(gedcom_data, {})
 
         if filtered_data.get("individuals"):
@@ -1387,9 +1399,14 @@ def run_comprehensive_tests() -> bool:
         """Test GEDCOM data loading performance."""
         import time
 
+        load_function = globals().get("load_gedcom_data_for_tests")
+        assert (
+            load_function is not None
+        ), "load_gedcom_data_for_tests function should exist"
+
         start_time = time.time()
         for i in range(10):
-            load_gedcom_data_for_tests()
+            load_function()
         duration = time.time() - start_time
 
         assert (
@@ -1539,15 +1556,6 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
-# ==============================================
-# Standalone Test Block
-# ==============================================
-if __name__ == "__main__":
-    print("🧬 Running Action 10 - GEDCOM Analysis comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
-
-
 def load_gedcom_data_for_tests() -> Dict[str, Any]:
     """Load GEDCOM data for testing purposes (parameterless version)."""
     try:
@@ -1573,3 +1581,12 @@ def load_gedcom_data_for_tests() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error loading GEDCOM data: {e}")
         return {}
+
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
+if __name__ == "__main__":
+    print("🧬 Running Action 10 - GEDCOM Analysis comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

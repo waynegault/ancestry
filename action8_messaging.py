@@ -1813,9 +1813,13 @@ def run_comprehensive_tests() -> bool:
     # === CORE FUNCTIONALITY TESTS ===
     def test_safe_column_value_functionality():
         """Test safe_column_value helper with various object types."""
-        # Test with regular object
-        test_obj = MagicMock()
-        test_obj.test_attr = "test_value"
+
+        # Test with regular object instead of MagicMock to ensure hasattr works correctly
+        class TestObj:
+            def __init__(self):
+                self.test_attr = "test_value"
+
+        test_obj = TestObj()
 
         result = safe_column_value(test_obj, "test_attr", "default")
         assert result == "test_value", "Should extract attribute value from object"
@@ -1969,7 +1973,7 @@ def run_comprehensive_tests() -> bool:
             []
         )
 
-        with patch("sys.argv", ["action8_messaging.py"]):
+        with patch("sys.argv", ["action8_messaging.py", "--test"]):
             result = _prefetch_messaging_data(mock_session)
             message_type_map, persons, in_logs, out_logs = result
             assert isinstance(persons, list), "Should return empty list for persons"

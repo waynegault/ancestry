@@ -557,20 +557,21 @@ def run_comprehensive_tests() -> bool:
             mock_element.text = test_text
 
             result = get_element_text(mock_element)
-            assert result == test_text, f"Expected '{test_text}', got '{result}'"
-
-            # Test with None element
+            assert (
+                result == test_text
+            ), f"Expected '{test_text}', got '{result}'"  # Test with None element
             result_none = get_element_text(None)
             assert result_none == "", "None element should return empty string"
-
             # Test with element that raises exception
             mock_element_error = MagicMock()
-            mock_element_error.text = property(
-                lambda self: (_ for _ in ()).throw(Exception("Text access error 12345"))
+            # Configure text property to raise exception when accessed
+            type(mock_element_error).text = PropertyMock(
+                side_effect=Exception("Text access error 12345")
             )
 
             result_error = get_element_text(mock_element_error)
             assert isinstance(result_error, str), "Error case should return string"
+            assert result_error == "", "Error case should return empty string"
 
         suite.run_test(
             "get_element_text()",
