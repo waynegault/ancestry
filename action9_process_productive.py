@@ -2157,87 +2157,244 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 # Standalone Test Block
 # ==============================================
 def run_comprehensive_tests() -> bool:
-    """
-    Comprehensive test suite for action9_process_productive.py following the standardized 6-category TestSuite framework.
-    Tests AI-powered message processing, genealogical data extraction, and productive conversation handling.
+    """Comprehensive test suite for action9_process_productive.py"""
+    from test_framework import TestSuite, suppress_logging
 
-    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
-    """
-    try:
-        from test_framework import TestSuite, suppress_logging
+    suite = TestSuite(
+        "Action 9 - AI Message Processing & Data Extraction",
+        "action9_process_productive.py",
+    )
+    suite.start_suite()  # INITIALIZATION TESTS
+
+    def test_module_initialization():
+        """Test module initialization and constants"""
+        # Test constants
+        assert (
+            PRODUCTIVE_SENTIMENT == "PRODUCTIVE"
+        ), "PRODUCTIVE_SENTIMENT constant not properly set"
+        assert OTHER_SENTIMENT == "OTHER", "OTHER_SENTIMENT constant not properly set"
+        assert (
+            ACKNOWLEDGEMENT_MESSAGE_TYPE == "Productive_Reply_Acknowledgement"
+        ), "ACKNOWLEDGEMENT_MESSAGE_TYPE not set"
+        assert (
+            CUSTOM_RESPONSE_MESSAGE_TYPE == "Automated_Genealogy_Response"
+        ), "CUSTOM_RESPONSE_MESSAGE_TYPE not set"
+
+        # Test class availability
+        assert "PersonProcessor" in globals(), "PersonProcessor class not defined"
+        assert "BatchCommitManager" in globals(), "BatchCommitManager class not defined"
+
+        # Test function availability
+        assert callable(
+            process_productive_messages
+        ), "process_productive_messages should be callable"
+        assert callable(
+            safe_column_value
+        ), "safe_column_value should be callable"  # CORE FUNCTIONALITY TESTS
+
+    def test_core_functionality():
+        """Test all core AI processing and data extraction functions"""
+        from unittest.mock import MagicMock
+
+        # Test safe_column_value function with a simple object
+        class TestObj:
+            def __init__(self):
+                self.test_attr = "test_value_12345"
+
+        test_obj = TestObj()
+        result = safe_column_value(test_obj, "test_attr", "default")
+        assert result == "test_value_12345", "Should extract attribute value"
+
+        result = safe_column_value(test_obj, "missing_attr", "default_12345")
+        assert result == "default_12345", "Should return default for missing attribute"
+
+        # Test should_exclude_message function
+        result = should_exclude_message("Hi there!")
+        assert isinstance(result, bool), "Should return boolean value"
+
+        result = should_exclude_message("test message 12345")
+        assert isinstance(result, bool), "Should handle test messages"
+
+    def test_ai_processing_functions():
+        """Test AI processing and extraction functions"""
+        from unittest.mock import MagicMock
+
+        # Test _process_ai_response function
+        mock_response = {"status": "success", "data": {"extracted": "test_12345"}}
+        result = _process_ai_response(mock_response, "TEST")
+        assert isinstance(result, dict), "Should return dictionary"
+
+        # Test _generate_ack_summary function
+        test_data = {"names": ["Test Person 12345"], "dates": ["1985"]}
+        result = _generate_ack_summary(test_data)
+        assert isinstance(result, str), "Should return string summary"
+        assert (
+            "12345" in result or len(result) > 0
+        ), "Should generate meaningful summary"
+
+    # EDGE CASE TESTS
+    def test_edge_cases():
+        """Test edge cases and boundary conditions"""
+        # Test safe_column_value with None object
+        result = safe_column_value(None, "any_attr", "default_12345")
+        assert result == "default_12345", "Should handle None object"
+
+        # Test should_exclude_message with empty string
+        result = should_exclude_message("")
+        assert isinstance(result, bool), "Should handle empty string"
+
+        # Test with empty string instead of None for type safety
+        result = should_exclude_message("")
+        assert isinstance(result, bool), "Should handle empty string input"
+
+        # Test _process_ai_response with invalid data
+        result = _process_ai_response(None, "TEST")
+        assert isinstance(result, dict), "Should handle None response"
+
+        result = _process_ai_response({}, "TEST_12345")
+        assert isinstance(
+            result, dict
+        ), "Should handle empty response"  # INTEGRATION TESTS
+
+    def test_integration():
+        """Test integration with external dependencies"""
         from unittest.mock import MagicMock, patch
 
-        suite = TestSuite(
-            "Action 9 - AI Message Processing & Data Extraction",
-            "action9_process_productive.py",
+        # Test get_gedcom_data integration - patch the import
+        with patch("gedcom_cache.load_gedcom_with_aggressive_caching") as mock_loader:
+            mock_loader.return_value = {"test": "data_12345"}
+            # Set global to None to force reload
+            global _CACHED_GEDCOM_DATA
+            original_cache = _CACHED_GEDCOM_DATA
+            _CACHED_GEDCOM_DATA = None
+            try:
+                result = get_gedcom_data()
+                assert result is not None, "Should return GEDCOM data"
+            finally:
+                _CACHED_GEDCOM_DATA = original_cache
+
+        # Test template loading integration
+        result = _load_templates_for_action9()
+        assert isinstance(
+            result, dict
+        ), "Should return templates dictionary"  # PERFORMANCE TESTS
+
+    def test_performance():
+        """Test performance of processing operations"""
+        import time
+        from unittest.mock import MagicMock
+
+        # Test safe_column_value performance
+        mock_obj = MagicMock()
+        mock_obj.test_attr = "value"
+
+        start_time = time.time()
+        for i in range(1000):
+            safe_column_value(mock_obj, "test_attr", f"default_{i}_12345")
+        duration = time.time() - start_time
+
+        assert (
+            duration < 0.5
+        ), f"1000 safe_column_value calls should be fast, took {duration:.3f}s"
+
+        # Test should_exclude_message performance
+        start_time = time.time()
+        for i in range(500):
+            should_exclude_message(f"test message {i} 12345")
+        duration = time.time() - start_time
+
+        assert (
+            duration < 0.5
+        ), f"500 exclusion checks should be fast, took {duration:.3f}s"  # ERROR HANDLING TESTS
+
+    def test_error_handling():
+        """Test error handling scenarios"""
+        from unittest.mock import MagicMock, PropertyMock
+
+        # Test safe_column_value with attribute access exception
+        class ErrorObj:
+            @property
+            def test_attr(self):
+                raise Exception("Test error 12345")
+
+        error_obj = ErrorObj()
+        result = safe_column_value(error_obj, "test_attr", "fallback_12345")
+        assert result == "fallback_12345", "Should handle attribute access errors"
+
+        # Test _process_ai_response with malformed data
+        malformed_data = {"invalid": "structure_12345"}
+        result = _process_ai_response(malformed_data, "ERROR_TEST")
+        assert isinstance(result, dict), "Should handle malformed AI responses"
+
+        # Test _generate_ack_summary with empty data
+        result = _generate_ack_summary({})
+        assert isinstance(result, str), "Should handle empty extraction data"
+
+    # Run all tests with suppress_logging
+    with suppress_logging():
+        # INITIALIZATION TESTS
+        suite.run_test(
+            test_name="Module constants, classes, and function availability",
+            test_func=test_module_initialization,
+            expected_behavior="Module initializes correctly with proper constants and function definitions",
+            test_description="Module initialization and configuration verification",
+            method_description="Testing constants, class definitions, and core function availability for AI processing",
         )
-        suite.start_suite()
 
-        # === INITIALIZATION TESTS ===
-        def test_module_imports():
-            """Test that all required modules and dependencies are properly imported."""
-            # Test core imports
-            assert (
-                "extract_genealogical_entities" in globals()
-            ), "AI interface not imported"
-            assert "PersonProcessor" in globals(), "PersonProcessor class not defined"
-            assert (
-                "BatchCommitManager" in globals()
-            ), "BatchCommitManager class not defined"
-            assert (
-                "process_productive_messages" in globals()
-            ), "Main function not defined"
+        # CORE FUNCTIONALITY TESTS
+        suite.run_test(
+            test_name="safe_column_value(), should_exclude_message() core functions",
+            test_func=test_core_functionality,
+            expected_behavior="All core functions execute correctly with proper data handling and validation",
+            test_description="Core utility and message filtering functionality",
+            method_description="Testing attribute extraction, message filtering, and core utility functions",
+        )
 
-            # Test constants
-            assert (
-                PRODUCTIVE_SENTIMENT == "PRODUCTIVE"
-            ), "PRODUCTIVE_SENTIMENT constant not properly set"
-            assert (
-                OTHER_SENTIMENT == "OTHER"
-            ), "OTHER_SENTIMENT constant not properly set"
-            assert (
-                ACKNOWLEDGEMENT_MESSAGE_TYPE == "Productive_Reply_Acknowledgement"
-            ), "Message type constant incorrect"
-            assert (
-                CUSTOM_RESPONSE_MESSAGE_TYPE == "Automated_Genealogy_Response"
-            ), "Custom message type constant incorrect"
+        suite.run_test(
+            test_name="_process_ai_response(), _generate_ack_summary() AI processing",
+            test_func=test_ai_processing_functions,
+            expected_behavior="AI processing functions handle response data correctly and generate summaries",
+            test_description="AI response processing and summary generation functions",
+            method_description="Testing AI response parsing, data extraction, and summary generation functionality",
+        )
 
-        with suppress_logging():
-            suite.run_test(
-                "Module Imports",
-                test_module_imports,
-                "Test that all required modules and dependencies are properly imported",
-                "Test core imports, constants, and class definitions",
-                "All modules and constants available and properly configured",
-            )
+        # EDGE CASE TESTS
+        suite.run_test(
+            test_name="ALL functions with edge case inputs",
+            test_func=test_edge_cases,
+            expected_behavior="All functions handle edge cases gracefully without crashes or unexpected behavior",
+            test_description="Edge case handling across all AI processing functions",
+            method_description="Testing functions with empty, None, invalid, and boundary condition inputs",
+        )
 
-        return suite.finish_suite()
+        # INTEGRATION TESTS
+        suite.run_test(
+            test_name="get_gedcom_data(), _load_templates_for_action9() integration",
+            test_func=test_integration,
+            expected_behavior="Integration functions work correctly with external data sources and templates",
+            test_description="Integration with GEDCOM data and template systems",
+            method_description="Testing integration with genealogical data cache and message template loading",
+        )
 
-    except ImportError:
-        # Fallback when test framework is not available
-        print("🧪 Running Action 9 lightweight tests...")
-        try:
-            # Test 1: Core function availability
-            assert callable(
-                process_productive_messages
-            ), "process_productive_messages should be callable"
-            print("✅ Core function availability test passed")
+        # PERFORMANCE TESTS
+        suite.run_test(
+            test_name="Performance of utility and filtering operations",
+            test_func=test_performance,
+            expected_behavior="All operations complete within acceptable time limits with good performance",
+            test_description="Performance characteristics of AI processing operations",
+            method_description="Testing execution speed of attribute extraction and message filtering functions",
+        )
 
-            # Test 2: Pydantic models
-            assert "NameData" in globals(), "NameData model should exist"
-            print("✅ Pydantic models test passed")
+        # ERROR HANDLING TESTS
+        suite.run_test(
+            test_name="Error handling for AI processing and utility functions",
+            test_func=test_error_handling,
+            expected_behavior="All error conditions handled gracefully with appropriate fallback responses",
+            test_description="Error handling and recovery functionality for AI operations",
+            method_description="Testing error scenarios with invalid data, exceptions, and malformed responses",
+        )
 
-            # Test 3: Constants
-            assert (
-                PRODUCTIVE_SENTIMENT == "PRODUCTIVE"
-            ), "PRODUCTIVE_SENTIMENT should be PRODUCTIVE"
-            print("✅ Constants test passed")
-
-            print("✅ All lightweight tests passed")
-            return True
-        except Exception as e:
-            print(f"❌ Test error: {e}")
-            return False
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":

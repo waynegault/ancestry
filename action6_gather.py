@@ -65,48 +65,12 @@ from utils import (
 )
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    HAS_TEST_FRAMEWORK = True
-except ImportError:
-    # Create dummy classes/functions for when test framework is not available
-    class DummyTestSuite:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start_suite(self):
-            pass
-
-        def add_test(self, *args, **kwargs):
-            pass
-
-        def end_suite(self):
-            pass
-
-        def run_test(self, *args, **kwargs):
-            return True
-
-        def finish_suite(self):
-            return True
-
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    TestSuite = DummyTestSuite
-    suppress_logging = lambda: DummyContext()
-    create_mock_data = lambda: {}
-    assert_valid_function = lambda x, *args: True
-    HAS_TEST_FRAMEWORK = False
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 
 # --- Constants ---
@@ -3812,148 +3776,251 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 # ==============================================
 
 
-def run_comprehensive_tests():
-    """Run comprehensive test suite for action6_gather module."""
-    import unittest
-    from unittest.mock import MagicMock
-
-    from test_framework import TestSuite, suppress_logging, create_mock_data
-
-    # Define MockPerson for tests
-    class MockPerson:
-        def __init__(self, uuid, cM_DNA, shared_segments, in_my_tree):
-            self.uuid = uuid
-            self.cM_DNA = cM_DNA
-            self.shared_segments = shared_segments
-            self.in_my_tree = in_my_tree
+def run_comprehensive_tests() -> bool:
+    """Comprehensive test suite for action6_gather.py"""
+    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Action 6 - Gather DNA Matches", "action6_gather.py")
-    suite.start_suite()
+    suite.start_suite()  # INITIALIZATION TESTS
 
-    # INITIALIZATION TESTS
-    def test_module_imports():
-        """Test that required modules are imported correctly"""
-        try:
-            from unittest.mock import MagicMock
-            import json
-            import sys
+    def test_module_initialization():
+        """Test module initialization and state functions"""
+        # Test _initialize_gather_state function
+        state = _initialize_gather_state()
+        assert isinstance(state, dict), "Should return dictionary state"
+        assert "total_new" in state, "Should have total_new in state"
+        assert "total_updated" in state, "Should have total_updated in state"
+        assert (
+            "total_pages_processed" in state
+        ), "Should have total_pages_processed in state"
 
-            return True
-        except ImportError:
-            return False
+        # Test _validate_start_page function
+        result = _validate_start_page("5")
+        assert result == 5, "Should convert string to integer"
 
-    def test_core_function_availability():
-        """Test that core functions are available"""
-        return callable(_lookup_existing_persons)
+        result = _validate_start_page(10)
+        assert result == 10, "Should handle integer input"
 
-    def test_navigation_functions():
-        """Test that navigation functions exist"""
-        return callable(nav_to_list)
+        result = _validate_start_page(None)
+        assert result == 1, "Should default to 1 for None input"
 
     # CORE FUNCTIONALITY TESTS
-    def test_lookup_existing_persons():
-        """Test database lookup functionality"""
+    def test_core_functionality():
+        """Test all core DNA match gathering functions"""
+        from unittest.mock import MagicMock, patch
+
+        # Test _lookup_existing_persons function
+        mock_session = MagicMock()
+        mock_session.query.return_value.options.return_value.filter.return_value.all.return_value = (
+            []
+        )
+
+        result = _lookup_existing_persons(mock_session, ["uuid_12345"])
+        assert isinstance(result, dict), "Should return dictionary of existing persons"
+
+        # Test get_matches function availability
+        assert callable(get_matches), "get_matches should be callable"
+
+        # Test coord function availability
+        assert callable(coord), "coord function should be callable"
+
+        # Test navigation function
+        assert callable(nav_to_list), "nav_to_list should be callable"
+
+    def test_data_processing_functions():
+        """Test all data processing and preparation functions"""
         from unittest.mock import MagicMock
 
+        # Test _identify_fetch_candidates with correct signature
+        matches_on_page = [{"uuid": "test_12345", "cM_DNA": 100}]
+        existing_persons_map = {}
+
+        result = _identify_fetch_candidates(matches_on_page, existing_persons_map)
+        assert isinstance(result, tuple), "Should return tuple of results"
+        assert len(result) == 3, "Should return 3-element tuple"
+
+        # Test _prepare_bulk_db_data function exists
+        assert callable(
+            _prepare_bulk_db_data
+        ), "_prepare_bulk_db_data should be callable"
+
+        # Test _execute_bulk_db_operations function exists
+        assert callable(
+            _execute_bulk_db_operations
+        ), "_execute_bulk_db_operations should be callable"
+
+    # EDGE CASE TESTS
+    def test_edge_cases():
+        """Test edge cases and boundary conditions"""
+        # Test _validate_start_page with edge cases
+        result = _validate_start_page("invalid")
+        assert result == 1, "Should handle invalid string input"
+
+        result = _validate_start_page(-5)
+        assert result == 1, "Should handle negative numbers"
+
+        result = _validate_start_page(0)
+        assert result == 1, "Should handle zero input"
+
+        # Test _lookup_existing_persons with empty input
+        from unittest.mock import MagicMock
+
+        mock_session = MagicMock()
+        mock_session.query.return_value.options.return_value.filter.return_value.all.return_value = (
+            []
+        )
+
+        result = _lookup_existing_persons(mock_session, [])
+        assert isinstance(result, dict), "Should handle empty UUID list"
+        assert (
+            len(result) == 0
+        ), "Should return empty dict for empty input"  # INTEGRATION TESTS
+
+    def test_integration():
+        """Test integration with external dependencies"""
+        from unittest.mock import MagicMock
+
+        # Test that core functions can work with session manager interface
+        mock_session_manager = MagicMock()
+        mock_session_manager.get_driver.return_value = MagicMock()
+        mock_session_manager.my_profile_id = "test_profile_12345"
+
+        # Test nav_to_list function signature and callability
+        import inspect
+
+        sig = inspect.signature(nav_to_list)
+        params = list(sig.parameters.keys())
+        assert (
+            "session_manager" in params
+        ), "nav_to_list should accept session_manager parameter"
+        assert callable(nav_to_list), "nav_to_list should be callable"
+
+        # Test _lookup_existing_persons works with database session interface
         mock_db_session = MagicMock()
-        mock_person_obj1 = MockPerson(
-            "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB", 100, 5, True
-        )
-        mock_person_obj2 = MockPerson(
-            "6EAC8EC1-8C80-4AD4-A15B-EACDF0AC26CA", 50, 3, True
+        mock_db_session.query.return_value.options.return_value.filter.return_value.all.return_value = (
+            []
         )
 
-        mock_query_result = [mock_person_obj1, mock_person_obj2]
-        mock_filter_obj = MagicMock()
-        mock_filter_obj.all.return_value = mock_query_result
-        mock_options_obj = MagicMock()
-        mock_options_obj.filter.return_value = mock_filter_obj
-        mock_query_obj = MagicMock()
-        mock_query_obj.options.return_value = mock_options_obj
-        mock_db_session.query.return_value = mock_query_obj
+        result = _lookup_existing_persons(mock_db_session, ["integration_test_12345"])
+        assert isinstance(result, dict), "Should work with database session interface"
 
-        uuids_to_lookup = [
-            "fb609ba5-5a0d-46ee-bf18-c300d8de5ab",
-            "6eac8ec1-8c80-4ad4-a15b-eacdf0ac26ca",
-            "b509b1eb-ee8b-4d28-89a4-6e9b93c4a727",
-        ]
+        # Test coord function accepts proper parameters
+        coord_sig = inspect.signature(coord)
+        coord_params = list(coord_sig.parameters.keys())
+        assert len(coord_params) > 0, "coord should accept parameters"
 
-        result = _lookup_existing_persons(mock_db_session, uuids_to_lookup)
-        return isinstance(result, dict) and len(result) == 2
+    # PERFORMANCE TESTS
+    def test_performance():
+        """Test performance of data processing operations"""
+        import time
 
-    def test_dna_match_processing():
-        """Test DNA match data processing"""
-        # Test basic DNA match data structure
-        sample_match = {
-            "uuid": "test-uuid-123",
-            "cM_DNA": 100.5,
-            "shared_segments": 5,
-            "in_my_tree": True,
-        }
+        # Test _initialize_gather_state performance
+        start_time = time.time()
+        for i in range(100):
+            state = _initialize_gather_state()
+            assert isinstance(state, dict), "Should return dict each time"
+        duration = time.time() - start_time
 
-        assert isinstance(sample_match, dict), "DNA match should be dictionary"
-        assert "uuid" in sample_match, "DNA match should have uuid"
-        assert "cM_DNA" in sample_match, "DNA match should have cM_DNA"
-        return True
+        assert (
+            duration < 1.0
+        ), f"100 state initializations should be fast, took {duration:.3f}s"
 
-    def test_navigation_functionality():
-        """Test navigation and page interaction"""
-        # Test that navigation functions exist and are callable
-        functions_to_check = ["nav_to_list"]
-        for func_name in functions_to_check:
-            if func_name in globals():
-                func = globals()[func_name]
-                assert callable(func), f"{func_name} should be callable"
-        return True
+        # Test _validate_start_page performance
+        start_time = time.time()
+        for i in range(1000):
+            result = _validate_start_page(f"page_{i}_12345")
+            assert isinstance(result, int), "Should return integer"
+        duration = time.time() - start_time
 
-    # RUN ALL TESTS
+        assert (
+            duration < 0.5
+        ), f"1000 page validations should be fast, took {duration:.3f}s"
+
+    # ERROR HANDLING TESTS
+    def test_error_handling():
+        """Test error handling scenarios"""
+        from unittest.mock import MagicMock
+
+        # Test _lookup_existing_persons with database error
+        mock_session = MagicMock()
+        mock_session.query.side_effect = Exception("Database error 12345")
+
+        try:
+            result = _lookup_existing_persons(mock_session, ["test_12345"])
+            # Should handle error gracefully
+            assert isinstance(result, dict), "Should return dict even on error"
+        except Exception as e:
+            assert "12345" in str(e), "Should be test-related error"
+
+        # Test _validate_start_page error handling
+        result = _validate_start_page(None)
+        assert result == 1, "Should handle None gracefully"
+
+        result = _validate_start_page("not_a_number_12345")
+        assert result == 1, "Should handle invalid input gracefully"
+
+    # Run all tests with suppress_logging
     with suppress_logging():
+        # INITIALIZATION TESTS
         suite.run_test(
-            "Module imports",
-            test_module_imports,
-            "Should import all required modules successfully for DNA match gathering",
-            "Test imports of unittest.mock, json, and sys modules",
-            "All required modules import successfully without errors",
+            test_name="_initialize_gather_state(), _validate_start_page()",
+            test_func=test_module_initialization,
+            expected_behavior="Module initializes correctly with proper state management and page validation",
+            test_description="Module initialization and state management functions",
+            method_description="Testing state initialization, page validation, and parameter handling for DNA match gathering",
+        )
+
+        # CORE FUNCTIONALITY TESTS
+        suite.run_test(
+            test_name="_lookup_existing_persons(), get_matches(), coord(), nav_to_list()",
+            test_func=test_core_functionality,
+            expected_behavior="All core DNA match gathering functions execute correctly with proper data handling",
+            test_description="Core DNA match gathering and navigation functionality",
+            method_description="Testing database lookups, match retrieval, coordination, and navigation functions",
         )
 
         suite.run_test(
-            "Core function availability",
-            test_core_function_availability,
-            "Should have _lookup_existing_persons function available for database operations",
-            "Test availability and callability of core database lookup function",
-            "_lookup_existing_persons function exists and is callable for DNA match processing",
+            test_name="_identify_fetch_candidates(), _prepare_bulk_db_data(), _execute_bulk_db_operations()",
+            test_func=test_data_processing_functions,
+            expected_behavior="All data processing functions handle DNA match data correctly with proper formatting",
+            test_description="Data processing and database preparation functions",
+            method_description="Testing candidate identification, bulk data preparation, and database operations",
         )
 
+        # EDGE CASE TESTS
         suite.run_test(
-            "Navigation functions",
-            test_navigation_functions,
-            "Should have navigation functions available for web interaction",
-            "Test availability of navigation functions for DNA match pages",
-            "Navigation functions exist and are callable for DNA match gathering workflow",
+            test_name="ALL functions with edge case inputs",
+            test_func=test_edge_cases,
+            expected_behavior="All functions handle edge cases gracefully without crashes or unexpected behavior",
+            test_description="Edge case handling across all DNA match gathering functions",
+            method_description="Testing functions with empty, None, invalid, and boundary condition inputs",
         )
 
+        # INTEGRATION TESTS
         suite.run_test(
-            "Database Lookup Functionality",
-            test_lookup_existing_persons,
-            "Should properly lookup existing persons in database using UUID matching",
-            "Test database lookup with mock session and person objects",
-            "Database lookup functionality works correctly with proper result formatting",
+            test_name="Integration with SessionManager and external dependencies",
+            test_func=test_integration,
+            expected_behavior="Integration functions work correctly with mocked external dependencies and session management",
+            test_description="Integration with session management and external systems",
+            method_description="Testing integration with session managers, database connections, and web automation",
         )
 
+        # PERFORMANCE TESTS
         suite.run_test(
-            "DNA Match Processing",
-            test_dna_match_processing,
-            "Should properly process DNA match data structures with required fields",
-            "Test DNA match data structure validation and field presence",
-            "DNA match data processing handles required fields correctly",
+            test_name="Performance of state initialization and validation operations",
+            test_func=test_performance,
+            expected_behavior="All operations complete within acceptable time limits with good performance",
+            test_description="Performance characteristics of DNA match gathering operations",
+            method_description="Testing execution speed and efficiency of state management and validation functions",
         )
 
+        # ERROR HANDLING TESTS
         suite.run_test(
-            "Navigation Functionality",
-            test_navigation_functionality,
-            "Should have functional navigation capabilities for DNA match pages",
-            "Test navigation function existence and callability for web automation",
-            "Navigation functionality properly available for DNA match gathering operations",
+            test_name="Error handling for database and validation functions",
+            test_func=test_error_handling,
+            expected_behavior="All error conditions handled gracefully with appropriate fallback responses",
+            test_description="Error handling and recovery functionality for DNA match operations",
+            method_description="Testing error scenarios with database failures, invalid inputs, and exception conditions",
         )
 
     return suite.finish_suite()

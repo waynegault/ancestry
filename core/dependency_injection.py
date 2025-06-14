@@ -509,7 +509,7 @@ class DIScope:
             container._interfaces = self._original_registrations["interfaces"]
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for DependencyInjection module.
 
@@ -522,23 +522,15 @@ def run_comprehensive_tests():
     - Dependency injection
     - Service registry
     - Scoping
+
+    Returns:
+        bool: True if all tests pass, False otherwise
     """
-    print("=" * 50)
-    print("RUNNING DEPENDENCY INJECTION COMPREHENSIVE TESTS")
-    print("=" * 50)
+    from test_framework import TestSuite
 
-    passed = 0
-    failed = 0
-
-    def run_test(test_func, test_name):
-        nonlocal passed, failed
-        try:
-            test_func()
-            print(f"✓ {test_name} passed")
-            passed += 1
-        except Exception as e:
-            print(f"✗ {test_name} failed: {e}")
-            failed += 1
+    # Initialize test suite
+    suite = TestSuite("DependencyInjection", __name__)
+    suite.start_suite()
 
     # Test 1: DIContainer basics
     def test_di_container_basics():
@@ -558,8 +550,6 @@ def run_comprehensive_tests():
         assert service1 is service2  # Singleton behavior
         assert service1.value == "test"
 
-    run_test(test_di_container_basics, "DIContainer basics")
-
     # Test 2: Transient services
     def test_transient_services():
         container = DIContainer()
@@ -578,8 +568,6 @@ def run_comprehensive_tests():
         assert service1 is not service2  # Different instances
         assert service1.id != service2.id
 
-    run_test(test_transient_services, "Transient services")
-
     # Test 3: Factory registration
     def test_factory_registration():
         container = DIContainer()
@@ -596,8 +584,6 @@ def run_comprehensive_tests():
         service = container.resolve(FactoryService)
         assert isinstance(service, FactoryService)
         assert service.value == "factory_created"
-
-    run_test(test_factory_registration, "Factory registration")
 
     # Test 4: Named services
     def test_named_services():
@@ -621,8 +607,6 @@ def run_comprehensive_tests():
         assert resolved1.name == "service1"
         assert resolved2.name == "service2"
 
-    run_test(test_named_services, "Named services")
-
     # Test 5: Dependency resolution
     def test_dependency_resolution():
         container = DIContainer()
@@ -644,8 +628,6 @@ def run_comprehensive_tests():
         assert isinstance(user_service.db_service, DatabaseService)
         assert user_service.db_service.connected is True
 
-    run_test(test_dependency_resolution, "Dependency resolution")
-
     # Test 6: DIResolutionError handling
     def test_di_resolution_error():
         container = DIContainer()
@@ -659,8 +641,6 @@ def run_comprehensive_tests():
         except DIResolutionError:
             pass  # Expected
 
-    run_test(test_di_resolution_error, "DIResolutionError handling")
-
     # Test 7: Injectable base class
     def test_injectable_class():
         class InjectableService(Injectable):
@@ -668,9 +648,8 @@ def run_comprehensive_tests():
                 self.injected = True
 
         service = InjectableService()
+        assert isinstance(service, Injectable)
         assert service.injected is True
-
-    run_test(test_injectable_class, "Injectable base class")
 
     # Test 8: inject decorator
     def test_inject_decorator():
@@ -689,8 +668,6 @@ def run_comprehensive_tests():
         result = test_function()
         assert result == "injected"
 
-    run_test(test_inject_decorator, "inject decorator")
-
     # Test 9: ServiceRegistry functionality
     def test_service_registry():
         container1 = ServiceRegistry.get_container("test_container")
@@ -705,8 +682,6 @@ def run_comprehensive_tests():
         ServiceRegistry.clear_container("test_container")
         ServiceRegistry.clear_all_containers()
 
-    run_test(test_service_registry, "ServiceRegistry functionality")
-
     # Test 10: Global container
     def test_global_container():
         container1 = get_container()
@@ -717,16 +692,12 @@ def run_comprehensive_tests():
         named_container = get_container("test_container")
         assert named_container is not container1
 
-    run_test(test_global_container, "Global container")
-
     # Test 11: configure_dependencies
     def test_configure_dependencies():
         try:
             configure_dependencies()
         except Exception as e:
             print(f"Warning: configure_dependencies failed: {e}")
-
-    run_test(test_configure_dependencies, "configure_dependencies")
 
     # Test 12: get_service convenience function
     def test_get_service_convenience():
@@ -741,8 +712,6 @@ def run_comprehensive_tests():
         assert isinstance(service, ConvenienceService)
         assert service.convenient is True
 
-    run_test(test_get_service_convenience, "get_service convenience function")
-
     # Test 13: DIScope context manager
     def test_di_scope():
         with DIScope() as container:
@@ -756,8 +725,6 @@ def run_comprehensive_tests():
             service = container.resolve(ScopedService)
             assert isinstance(service, ScopedService)
             assert service.scoped is True
-
-    run_test(test_di_scope, "DIScope context manager")
 
     # Test 14: Container state management
     def test_container_state_management():
@@ -776,8 +743,6 @@ def run_comprehensive_tests():
         assert service2 is service
         assert service2.state == "modified"
 
-    run_test(test_container_state_management, "Container state management")
-
     # Test 15: Type annotations
     def test_type_annotations():
         import inspect
@@ -788,8 +753,6 @@ def run_comprehensive_tests():
 
         sig = inspect.signature(get_service)
         assert "service_type" in sig.parameters
-
-    run_test(test_type_annotations, "Type annotations")
 
     # Test 16: Imports and availability
     def test_imports_and_availability():
@@ -802,8 +765,6 @@ def run_comprehensive_tests():
         assert get_container is not None
         assert configure_dependencies is not None
         assert get_service is not None
-
-    run_test(test_imports_and_availability, "Imports and availability")
 
     # Test 17: Integration test
     def test_integration():
@@ -832,15 +793,34 @@ def run_comprehensive_tests():
         assert isinstance(app, AppService)
         assert isinstance(app.log, LogService)
         assert isinstance(app.config, ConfigService)
-        assert app.log.config is app.config
+        assert app.log.config is app.config  # Define all tests
 
-    run_test(test_integration, "Integration test")
+    tests = [
+        ("DIContainer basics", test_di_container_basics),
+        ("Transient services", test_transient_services),
+        ("Factory registration", test_factory_registration),
+        ("Named services", test_named_services),
+        ("Dependency resolution", test_dependency_resolution),
+        ("DIResolutionError handling", test_di_resolution_error),
+        ("Injectable base class", test_injectable_class),
+        ("inject decorator", test_inject_decorator),
+        ("ServiceRegistry functionality", test_service_registry),
+        ("Global container", test_global_container),
+        ("configure_dependencies", test_configure_dependencies),
+        ("get_service convenience function", test_get_service_convenience),
+        ("DIScope context manager", test_di_scope),
+        ("Container state management", test_container_state_management),
+        ("Type annotations", test_type_annotations),
+        ("Imports and availability", test_imports_and_availability),
+        ("Integration test", test_integration),
+    ]
 
-    print("=" * 50)
-    print(f"DEPENDENCY INJECTION TESTS COMPLETE: {passed} passed, {failed} failed")
-    print("=" * 50)
+    # Run each test using TestSuite
+    for test_name, test_func in tests:
+        suite.run_test(test_name, test_func, f"Test {test_name}")
 
-    return failed == 0
+    # Finish suite and return result
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":

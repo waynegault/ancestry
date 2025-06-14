@@ -29,54 +29,8 @@ from dotenv import load_dotenv  # To load .env file
 from config import config_instance  # Required for DATA_DIR to store cache
 from logging_config import logger  # Use configured application logger
 
-# --- Test framework imports with fallbacks ---
-from contextlib import contextmanager
-
-
-# Fallback implementations
-@contextmanager
-def _fallback_suppress_logging() -> Any:
-    """Fallback suppress_logging context manager."""
-    yield
-
-
-class _FallbackTestSuite:
-    """Fallback TestSuite implementation."""
-
-    def __init__(self, name: str, module: str) -> None:
-        self.name = name
-        self.module = module
-
-    def start_suite(self) -> None:
-        """Fallback start_suite method."""
-        pass
-
-    def run_test(
-        self,
-        name: str,
-        func: Callable[[], None],
-        description: str,
-        test_desc: str = "",
-        method_desc: str = "",
-    ) -> None:
-        """Fallback run_test method."""
-        try:
-            func()
-        except Exception:
-            pass
-
-    def finish_suite(self) -> bool:
-        """Fallback finish_suite method."""
-        return True
-
-
-# Try to import test framework components
-try:
-    from test_framework import TestSuite, suppress_logging  # type: ignore
-except ImportError:
-    # Use fallback implementations when test framework is not available
-    TestSuite = _FallbackTestSuite  # type: ignore
-    suppress_logging = _fallback_suppress_logging  # type: ignore
+# --- Test framework imports ---
+from test_framework import TestSuite, suppress_logging
 
 
 # --- Initial Setup ---

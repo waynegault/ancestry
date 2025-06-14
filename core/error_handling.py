@@ -546,7 +546,7 @@ class ErrorContext:
             return True
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for ErrorHandling module.
 
@@ -556,11 +556,18 @@ def run_comprehensive_tests():
     - Context managers
     - Error transformation
     - Registry functionality
+
+    Returns:
+        bool: True if all tests pass, False otherwise
     """
+    from test_framework import TestSuite
+
+    # Initialize test suite
+    suite = TestSuite("ErrorHandling", __name__)
+    suite.start_suite()
 
     def test_error_enums():
         """Test ErrorSeverity and ErrorCategory enums."""
-        print("Testing error enums...")
 
         # Test ErrorSeverity
         assert ErrorSeverity.LOW.value == "low"
@@ -575,11 +582,8 @@ def run_comprehensive_tests():
         assert ErrorCategory.BROWSER.value == "browser"
         assert ErrorCategory.API.value == "api"
 
-        print("✓ Error enums working correctly")
-
     def test_app_error():
         """Test AppError class functionality."""
-        print("Testing AppError class...")
 
         # Basic error creation
         error = AppError("Test error")
@@ -617,11 +621,8 @@ def run_comprehensive_tests():
         assert error_dict["category"] == "authentication"
         assert error_dict["severity"] == "high"
 
-        print("✓ AppError class working correctly")
-
     def test_specialized_errors():
         """Test specialized error classes."""
-        print("Testing specialized error classes...")
 
         # Test AuthenticationError
         auth_error = AuthenticationError("Invalid credentials")
@@ -658,11 +659,8 @@ def run_comprehensive_tests():
         assert config_error.category == ErrorCategory.CONFIGURATION
         assert config_error.severity == ErrorSeverity.HIGH
 
-        print("✓ Specialized error classes working correctly")
-
     def test_error_handlers():
         """Test error handler implementations."""
-        print("Testing error handlers...")
 
         # Test DatabaseErrorHandler
         db_handler = DatabaseErrorHandler()
@@ -697,11 +695,8 @@ def run_comprehensive_tests():
         assert isinstance(result, AppError)
         assert result.category == ErrorCategory.BROWSER
 
-        print("✓ Error handlers working correctly")
-
     def test_error_handler_registry():
         """Test ErrorHandlerRegistry functionality."""
-        print("Testing ErrorHandlerRegistry...")
 
         registry = ErrorHandlerRegistry()
 
@@ -724,11 +719,8 @@ def run_comprehensive_tests():
         result = registry.handle_error(test_error)
         assert isinstance(result, AppError)
 
-        print("✓ ErrorHandlerRegistry working correctly")
-
     def test_handle_error_function():
         """Test global handle_error function."""
-        print("Testing handle_error function...")
 
         # Test with regular Exception
         try:
@@ -752,11 +744,8 @@ def run_comprehensive_tests():
             app_error = handle_error(e, context)
             assert app_error.context == context
 
-        print("✓ handle_error function working correctly")
-
     def test_error_handler_decorator():
         """Test error_handler decorator."""
-        print("Testing error_handler decorator...")
 
         @error_handler(category=ErrorCategory.API, severity=ErrorSeverity.HIGH)
         def test_function(should_fail=False):
@@ -772,11 +761,8 @@ def run_comprehensive_tests():
         result = test_function(should_fail=True)
         assert result is None  # Default return value on error
 
-        print("✓ error_handler decorator working correctly")
-
     def test_safe_execute():
         """Test safe_execute function."""
-        print("Testing safe_execute function...")
 
         def successful_function():
             return "success"
@@ -796,11 +782,8 @@ def run_comprehensive_tests():
         result = safe_execute(failing_function)
         assert result is None
 
-        print("✓ safe_execute function working correctly")
-
     def test_error_context():
         """Test ErrorContext context manager."""
-        print("Testing ErrorContext...")
 
         # Test successful operation
         with ErrorContext("test operation") as ctx:
@@ -813,11 +796,8 @@ def run_comprehensive_tests():
         except ValueError:
             pass  # Expected to propagate
 
-        print("✓ ErrorContext working correctly")
-
     def test_imports_and_availability():
         """Test that all required imports are available."""
-        print("Testing imports and availability...")
 
         # Test enum imports
         assert ErrorSeverity is not None
@@ -844,11 +824,8 @@ def run_comprehensive_tests():
         assert safe_execute is not None
         assert register_error_handler is not None
 
-        print("✓ All imports and availability working correctly")
-
     def test_type_annotations():
         """Test type annotation consistency."""
-        print("Testing type annotations...")
 
         # Test that classes have proper type hints
         import inspect
@@ -863,11 +840,8 @@ def run_comprehensive_tests():
         sig = inspect.signature(handle_error)
         assert "error" in sig.parameters
 
-        print("✓ Type annotations working correctly")
-
     def test_error_categories_comprehensive():
         """Test all error categories have proper handling."""
-        print("Testing comprehensive error categories...")
 
         categories = [
             ErrorCategory.AUTHENTICATION,
@@ -889,11 +863,8 @@ def run_comprehensive_tests():
             assert error.user_message is not None
             assert len(error.user_message) > 0
 
-        print("✓ All error categories working correctly")
-
     def test_integration():
         """Test integration between components."""
-        print("Testing component integration...")
 
         # Test error registry with global handle_error function
         test_exception = ValueError("Integration test error")
@@ -912,11 +883,8 @@ def run_comprehensive_tests():
         with ErrorContext("integration test"):
             test_value = "integration successful"
 
-        print("✓ Component integration working correctly")
-
     def test_error_message_generation():
         """Test user-friendly error message generation."""
-        print("Testing error message generation...")
 
         # Test various categories have appropriate messages
         auth_error = AppError("Auth failed", category=ErrorCategory.AUTHENTICATION)
@@ -934,46 +902,35 @@ def run_comprehensive_tests():
         db_error = AppError("DB failed", category=ErrorCategory.DATABASE)
         assert "database" in db_error.user_message.lower()
 
-        print("✓ Error message generation working correctly")
+    # Define all tests
 
-    # Run all tests
     tests = [
-        test_error_enums,
-        test_app_error,
-        test_specialized_errors,
-        test_error_handlers,
-        test_error_handler_registry,
-        test_handle_error_function,
-        test_error_handler_decorator,
-        test_safe_execute,
-        test_error_context,
-        test_imports_and_availability,
-        test_type_annotations,
-        test_error_categories_comprehensive,
-        test_integration,
-        test_error_message_generation,
+        ("Error enums", test_error_enums),
+        ("AppError class", test_app_error),
+        ("Specialized errors", test_specialized_errors),
+        ("Error handlers", test_error_handlers),
+        ("Error handler registry", test_error_handler_registry),
+        ("Handle error function", test_handle_error_function),
+        ("Error handler decorator", test_error_handler_decorator),
+        ("Safe execute", test_safe_execute),
+        ("Error context", test_error_context),
+        ("Imports and availability", test_imports_and_availability),
+        ("Type annotations", test_type_annotations),
+        ("Error categories comprehensive", test_error_categories_comprehensive),
+        ("Integration test", test_integration),
+        ("Error message generation", test_error_message_generation),
     ]
 
-    print("=" * 50)
-    print("RUNNING ERROR HANDLING COMPREHENSIVE TESTS")
-    print("=" * 50)
+    # Run each test using TestSuite
+    for test_name, test_func in tests:
+        suite.run_test(test_name, test_func, f"Test {test_name}")
 
-    passed = 0
-    failed = 0
+    # Finish suite and return result
+    return suite.finish_suite()
 
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception as e:
-            print(f"✗ {test.__name__} FAILED: {e}")
-            failed += 1
 
-    print("=" * 50)
-    print(f"ERROR HANDLING TESTS COMPLETE: {passed} passed, {failed} failed")
-    print("=" * 50)
-
-    return failed == 0
+if __name__ == "__main__":
+    run_comprehensive_tests()
 
 
 if __name__ == "__main__":

@@ -350,119 +350,55 @@ class ConfigSchema:
         return errors
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """
     Run comprehensive tests for the Config Schema classes.
 
     This function tests all major functionality of the configuration schemas
     to ensure proper validation and data handling.
+
+    Returns:
+        bool: True if all tests pass, False otherwise
     """
-    import sys
-    import traceback
-    from typing import Dict, Any
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        assert_valid_function,
+    )
     import tempfile
     from pathlib import Path
 
-    # Test framework imports with fallback
-    try:
-        from test_framework import (
-            TestSuite,
-            suppress_logging,
-            create_mock_data,
-            assert_valid_function,
-        )
-
-        HAS_TEST_FRAMEWORK = True
-    except ImportError:
-        # Fallback implementations
-        HAS_TEST_FRAMEWORK = False
-
-        class TestSuite:
-            def __init__(self, name, module):
-                self.name = name
-                self.tests_passed = 0
-                self.tests_failed = 0
-
-            def start_suite(self):
-                print(f"Starting {self.name} tests...")
-
-            def run_test(self, name, func, description):
-                try:
-                    func()
-                    self.tests_passed += 1
-                    print(f"✓ {name}")
-                except Exception as e:
-                    self.tests_failed += 1
-                    print(f"✗ {name}: {e}")
-
-            def finish_suite(self):
-                print(f"Tests: {self.tests_passed} passed, {self.tests_failed} failed")
-                return self.tests_failed == 0
-
-        class suppress_logging:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        def create_mock_data():
-            return {}
-
-        def assert_valid_function(func, func_name):
-            assert callable(func), f"{func_name} should be callable"
-
-    logger.info("=" * 60)
-    logger.info("CONFIG SCHEMA COMPREHENSIVE TESTS")
-    logger.info("=" * 60)
-
-    test_results = {"passed": 0, "failed": 0, "errors": []}
-
-    def run_test(test_name: str, test_func) -> bool:
-        """Helper to run individual tests with error handling."""
-        try:
-            logger.info(f"\n--- Running: {test_name} ---")
-            test_func()
-            test_results["passed"] += 1
-            logger.info(f"✓ PASSED: {test_name}")
-            return True
-        except Exception as e:
-            test_results["failed"] += 1
-            error_msg = f"✗ FAILED: {test_name} - {str(e)}"
-            test_results["errors"].append(error_msg)
-            logger.error(error_msg)
-            logger.error(traceback.format_exc())
-            return False
+    # Initialize test suite
+    suite = TestSuite("ConfigSchema", __name__)
+    suite.start_suite()
 
     # Test 1: Database Config Creation and Validation
     def test_database_config():
         """Test DatabaseConfig creation and validation."""
-        with suppress_logging():
-            # Test default creation
-            db_config = DatabaseConfig()
-            assert db_config.pool_size == 10
-            assert db_config.journal_mode == "WAL"
-            assert db_config.backup_enabled is True
+        # Test default creation
+        db_config = DatabaseConfig()
+        assert db_config.pool_size == 10
+        assert db_config.journal_mode == "WAL"
+        assert db_config.backup_enabled is True
 
-            # Test custom values
-            custom_config = DatabaseConfig(
-                pool_size=20, journal_mode="DELETE", backup_enabled=False
-            )
-            assert custom_config.pool_size == 20
-            assert custom_config.journal_mode == "DELETE"
+        # Test custom values
+        custom_config = DatabaseConfig(
+            pool_size=20, journal_mode="DELETE", backup_enabled=False
+        )
+        assert custom_config.pool_size == 20
+        assert custom_config.journal_mode == "DELETE"  # Test validation errors
+        try:
+            DatabaseConfig(pool_size=-1)
+            assert False, "Should have raised ValueError for negative pool_size"
+        except ValueError:
+            pass  # Expected
 
-            # Test validation errors
-            try:
-                DatabaseConfig(pool_size=-1)
-                assert False, "Should have raised ValueError for negative pool_size"
-            except ValueError:
-                pass  # Expected
-
-            try:
-                DatabaseConfig(journal_mode="INVALID")
-                assert False, "Should have raised ValueError for invalid journal_mode"
-            except ValueError:
-                pass  # Expected
+        try:
+            DatabaseConfig(journal_mode="INVALID")
+            assert False, "Should have raised ValueError for invalid journal_mode"
+        except ValueError:
+            pass  # Expected
 
     # Test 2: Selenium Config Creation and Validation
     def test_selenium_config():
@@ -855,29 +791,12 @@ def run_comprehensive_tests():
         ("Import Dependencies", test_import_dependencies),
     ]
 
-    # Run each test
+    # Run each test using TestSuite
     for test_name, test_func in tests:
-        run_test(test_name, test_func)
+        suite.run_test(test_name, test_func, f"Test {test_name}")
 
-    # Print summary
-    total_tests = len(tests)
-    logger.info("\n" + "=" * 60)
-    logger.info("CONFIG SCHEMA TEST SUMMARY")
-    logger.info("=" * 60)
-    logger.info(f"Total Tests: {total_tests}")
-    logger.info(f"Passed: {test_results['passed']}")
-    logger.info(f"Failed: {test_results['failed']}")
-    if test_results["errors"]:
-        logger.info("\nErrors:")
-        for error in test_results["errors"]:
-            logger.error(f"  {error}")
-
-    success = test_results["failed"] == 0
-    if success:
-        logger.info("🎉 ALL CONFIG SCHEMA TESTS PASSED!")
-    else:
-        logger.warning("⚠️ Some Config Schema tests failed")
-    return success
+    # Finish suite and return result
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":
