@@ -67,7 +67,7 @@ EXCLUSION_KEYWORDS = [
 ]
 
 
-def safe_column_value(obj, attr_name: str, default=None) -> Any:
+def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
     """
     Safely extract a value from a SQLAlchemy object attribute.
     Handles cases where the attribute might be a SQLAlchemy Column or None.

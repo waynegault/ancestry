@@ -135,43 +135,95 @@ try:
 
     # --- Performance monitoring imports ---
     try:
-        from performance_monitor import (
-            monitor_performance,
-            time_function,
-            Timer,
-            track_memory_usage,
-            collect_metrics,
-            calculate_statistics,
-            check_performance_thresholds,
-            generate_performance_report,
-            monitor_cpu,
-            monitor_memory,
-            monitor_disk,
-            monitor_network,
-            performance_monitor,
-            health_checker,
-        )
+        # Performance monitoring module not available, using fallback implementations
+        # from performance_monitor import (
+        #     monitor_performance,
+        #     time_function,
+        #     Timer,
+        #     track_memory_usage,
+        #     collect_metrics,
+        #     calculate_statistics,
+        #     check_performance_thresholds,
+        #     generate_performance_report,
+        #     monitor_cpu,
+        #     monitor_memory,
+        #     monitor_disk,
+        #     monitor_network,
+        #     performance_monitor,
+        #     health_checker,
+        # )
 
-        HAS_PERFORMANCE_MONITORING = True
-        logger.info("Performance monitoring functions imported successfully")
+        # Since performance_monitor module doesn't exist, skip import and use fallbacks
+        raise ImportError("performance_monitor module not available")
+
     except ImportError as e:
         HAS_PERFORMANCE_MONITORING = False
         logger.warning(f"Could not import performance monitoring functions: {e}")
 
         # Create dummy functions to prevent errors
-        def monitor_performance(service_name: str):
-            def decorator(func):
+        def monitor_performance(service_name: str) -> Callable:
+            def decorator(func: Callable) -> Callable:
                 return func
 
             return decorator
 
-        def time_function(func, *args, **kwargs):
+        def time_function(
+            func: Callable, *args: Any, **kwargs: Any
+        ) -> Tuple[Any, float]:
             import time
 
             start = time.time()
             result = func(*args, **kwargs)
             duration = time.time() - start
             return result, duration
+
+        # Additional fallback implementations for other functions
+        class Timer:
+            def __init__(self) -> None:
+                self.start_time = 0.0
+
+            def start(self) -> None:
+                import time
+
+                self.start_time = time.time()
+
+            def stop(self) -> float:
+                import time
+
+                return time.time() - self.start_time
+
+        def track_memory_usage() -> Dict[str, Any]:
+            return {"memory_usage": "unavailable"}
+
+        def collect_metrics() -> Dict[str, Any]:
+            return {"metrics": "unavailable"}
+
+        def calculate_statistics(data: Any) -> Dict[str, Any]:
+            return {"statistics": "unavailable"}
+
+        def check_performance_thresholds(metrics: Any) -> bool:
+            return True
+
+        def generate_performance_report(metrics: Any) -> str:
+            return "Performance monitoring unavailable"
+
+        def monitor_cpu() -> Dict[str, Any]:
+            return {"cpu": "unavailable"}
+
+        def monitor_memory() -> Dict[str, Any]:
+            return {"memory": "unavailable"}
+
+        def monitor_disk() -> Dict[str, Any]:
+            return {"disk": "unavailable"}
+
+        def monitor_network() -> Dict[str, Any]:
+            return {"network": "unavailable"}
+
+        def performance_monitor() -> Dict[str, Any]:
+            return {"performance": "unavailable"}
+
+        def health_checker() -> Dict[str, Any]:
+            return {"health": "unavailable"}
 
 except ImportError as import_err:
     # Log failure for other imports but don't define dummies
@@ -445,9 +497,9 @@ def retry(
 ):
     """Decorator factory to retry a function with exponential backoff and jitter."""
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             cfg = config_instance  # Assume config_instance is available
             attempts = (
                 MAX_RETRIES
@@ -790,7 +842,7 @@ class DynamicRateLimiter:
 
     # End of __init__
 
-    def _refill_tokens(self):
+    def _refill_tokens(self) -> None:
         now = time.monotonic()
         elapsed = max(0, now - self.last_refill_time)
         tokens_to_add = elapsed * self.fill_rate
@@ -838,7 +890,7 @@ class DynamicRateLimiter:
 
     # End of wait
 
-    def reset_delay(self):
+    def reset_delay(self) -> None:
         if self.current_delay != self.initial_delay:
             logger.info(
                 f"Rate limiter base delay reset from {self.current_delay:.2f}s to initial: {self.initial_delay:.2f}s"
@@ -849,7 +901,7 @@ class DynamicRateLimiter:
 
     # End of reset_delay
 
-    def decrease_delay(self):
+    def decrease_delay(self) -> None:
         if not self.last_throttled and self.current_delay > self.initial_delay:
             previous_delay = self.current_delay
             self.current_delay = max(
@@ -867,7 +919,7 @@ class DynamicRateLimiter:
 
     # End of decrease_delay
 
-    def increase_delay(self):
+    def increase_delay(self) -> None:
         previous_delay = self.current_delay
         self.current_delay = min(
             self.current_delay * self.backoff_factor, self.MAX_DELAY
@@ -909,7 +961,7 @@ class SessionManager:
     allowing for more efficient resource management when only database access is needed.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.driver: DriverType = None
         self.driver_live: bool = False
         self.session_ready: bool = False
@@ -1114,7 +1166,7 @@ class SessionManager:
 
     # End of start_browser
 
-    def close_browser(self):
+    def close_browser(self) -> None:
         """
         Closes the browser session without affecting the database connection.
         """
@@ -2347,7 +2399,7 @@ class SessionManager:
 
     # End of get_db_conn_context
 
-    def cls_db_conn(self, keep_db: bool = True):
+    def cls_db_conn(self, keep_db: bool = True) -> None:
         # Option to keep engine alive (e.g., between restarts)
         if keep_db:
             engine_id_str = str(id(self.engine)) if self.engine else "None"
@@ -3099,7 +3151,7 @@ class SessionManager:
 
     # End of is_sess_valid
 
-    def close_sess(self, keep_db: bool = False):
+    def close_sess(self, keep_db: bool = False) -> None:
         """
         Closes the session, including browser and optionally database connections.
 
@@ -3253,7 +3305,7 @@ class SessionManager:
 
     # End of make_tab
 
-    def check_js_errors(self):
+    def check_js_errors(self) -> None:
         if not self.is_sess_valid() or not self.driver:
             logger.debug("Skipping JS error check: Session invalid or driver None.")
             return
@@ -4865,12 +4917,14 @@ def consent(driver: WebDriver) -> bool:  # type: ignore
 
     # Attempt 2: Try clicking the specific accept button if JS removal failed/skipped
     if not removed_via_js:
-        logger.debug(f"JS removal failed/skipped. Trying specific accept button: '{consent_ACCEPT_BUTTON_SELECTOR}'")  # type: ignore
+        logger.debug(
+            f"JS removal failed/skipped. Trying specific accept button: '{CONSENT_ACCEPT_BUTTON_SELECTOR}'"
+        )
         try:
             # Wait for the button to be clickable
             accept_button = WebDriverWait(driver, 3).until(  # type: ignore
                 EC.element_to_be_clickable(  # type: ignore
-                    (By.CSS_SELECTOR, consent_ACCEPT_BUTTON_SELECTOR)  # type: ignore
+                    (By.CSS_SELECTOR, CONSENT_ACCEPT_BUTTON_SELECTOR)  # type: ignore
                 )
             )
             logger.info("Found specific clickable accept button.")
@@ -4932,7 +4986,9 @@ def consent(driver: WebDriver) -> bool:  # type: ignore
             # End of try/except JS click
 
         except TimeoutException:  # type: ignore
-            logger.warning(f"Specific accept button '{consent_ACCEPT_BUTTON_SELECTOR}' not found or not clickable.")  # type: ignore
+            logger.warning(
+                f"Specific accept button '{CONSENT_ACCEPT_BUTTON_SELECTOR}' not found or not clickable."
+            )
         except (
             WebDriverException
         ) as find_err:  # Catch errors finding/interacting # type: ignore
@@ -5806,7 +5862,7 @@ def _check_for_unavailability(
 # End of _check_for_unavailability
 
 
-def main():
+def main() -> None:
     """
     Standalone test suite for utils.py.
     Runs a sequence of tests covering core utilities, session management,

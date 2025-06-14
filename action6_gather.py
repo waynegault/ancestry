@@ -22,7 +22,10 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config import Config_Class
 from urllib.parse import urljoin, urlparse, urlencode, unquote
 
 # --- Third-party imports ---
@@ -1805,7 +1808,7 @@ def _prepare_person_operation_data(
     existing_person: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_instance_arg: Any,  # Renamed to avoid conflict
+    config_instance_arg: Any,  # Config instance argument
     match_uuid: str,
     formatted_match_username: str,
     match_in_my_tree: bool,
@@ -3677,7 +3680,7 @@ def _log_coord_summary(
 # End of _log_coord_summary
 
 
-def _adjust_delay(session_manager: SessionManager, current_page: int):
+def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
     """
     Adjusts the dynamic rate limiter's delay based on throttling feedback
     received during the processing of the current page.

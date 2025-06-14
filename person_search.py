@@ -25,7 +25,10 @@ from test_framework import (
 )
 
 
-def get_config_value(key: str, default_value: Any = None) -> Any:
+def get_config_value(
+    key: str,
+    default_value: Optional[Union[str, int, bool, Dict[str, Any], List[Any]]] = None,
+) -> Optional[Union[str, int, bool, Dict[str, Any], List[Any]]]:
     """Safely retrieve a configuration value with fallback."""
     try:
         if not config_instance:
