@@ -19,7 +19,6 @@ import random
 import re
 import sys
 import time
-import unittest
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone

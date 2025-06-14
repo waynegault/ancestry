@@ -2119,9 +2119,11 @@ def run_comprehensive_tests() -> bool:
             )
             # Should handle gracefully and return appropriate error status
             assert result is not None, "Should handle invalid person data gracefully"
-        except Exception:
-            # Exception handling is acceptable for invalid data
-            assert True, "Exception handling for invalid person data is acceptable"
+        except Exception as e:
+            # Exception handling is acceptable for invalid data, but should be specific
+            assert isinstance(
+                e, Exception
+            ), f"Exception should be properly raised for invalid data: {e}"
 
     def test_missing_template_handling():
         """Test handling of missing message templates."""

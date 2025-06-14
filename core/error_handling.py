@@ -560,14 +560,13 @@ def run_comprehensive_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from test_framework import TestSuite
+    from test_framework import TestSuite, suppress_logging
 
     # Initialize test suite
     suite = TestSuite("ErrorHandling", __name__)
     suite.start_suite()
 
     def test_error_enums():
-        """Test ErrorSeverity and ErrorCategory enums."""
 
         # Test ErrorSeverity
         assert ErrorSeverity.LOW.value == "low"
@@ -720,11 +719,9 @@ def run_comprehensive_tests() -> bool:
         assert isinstance(result, AppError)
 
     def test_handle_error_function():
-        """Test global handle_error function."""
-
-        # Test with regular Exception
+        """Test global handle_error function."""  # Test with regular Exception
         try:
-            1 / 0
+            result = 1 / 0  # This will raise ZeroDivisionError
         except Exception as e:
             app_error = handle_error(e)
             assert isinstance(app_error, AppError)
@@ -900,37 +897,128 @@ def run_comprehensive_tests() -> bool:
         )
 
         db_error = AppError("DB failed", category=ErrorCategory.DATABASE)
-        assert "database" in db_error.user_message.lower()
+        assert (
+            "database" in db_error.user_message.lower()
+        )  # Run all tests with suppress_logging
 
-    # Define all tests
+    with suppress_logging():
+        # INITIALIZATION TESTS
+        suite.run_test(
+            test_name="ErrorSeverity, ErrorCategory, AppError.__init__()",
+            test_func=test_error_enums,
+            test_description="Error enums and severity levels initialization and validation",
+            method_description="Testing ErrorSeverity and ErrorCategory enum values and proper initialization",
+            expected_behavior="All error enums have correct values and are properly accessible",
+        )
 
-    tests = [
-        ("Error enums", test_error_enums),
-        ("AppError class", test_app_error),
-        ("Specialized errors", test_specialized_errors),
-        ("Error handlers", test_error_handlers),
-        ("Error handler registry", test_error_handler_registry),
-        ("Handle error function", test_handle_error_function),
-        ("Error handler decorator", test_error_handler_decorator),
-        ("Safe execute", test_safe_execute),
-        ("Error context", test_error_context),
-        ("Imports and availability", test_imports_and_availability),
-        ("Type annotations", test_type_annotations),
-        ("Error categories comprehensive", test_error_categories_comprehensive),
-        ("Integration test", test_integration),
-        ("Error message generation", test_error_message_generation),
-    ]
+        suite.run_test(
+            test_name="AppError.__init__(), to_dict(), specialized error classes",
+            test_func=test_app_error,
+            test_description="AppError class initialization and functionality with all parameters",
+            method_description="Testing AppError creation with various parameters and to_dict conversion",
+            expected_behavior="AppError instances are created correctly with proper attributes and serialization",
+        )
 
-    # Run each test using TestSuite
-    for test_name, test_func in tests:
-        suite.run_test(test_name, test_func, f"Test {test_name}")
+        suite.run_test(
+            test_name="AuthenticationError, ValidationError, DatabaseError, NetworkError, BrowserError, APIError, ConfigurationError",
+            test_func=test_specialized_errors,
+            test_description="All specialized error classes inherit correctly from AppError",
+            method_description="Testing specialized error class instantiation and proper category/severity assignment",
+            expected_behavior="All specialized errors have correct categories and severity levels",
+        )
 
-    # Finish suite and return result
+        # CORE FUNCTIONALITY TESTS
+        suite.run_test(
+            test_name="DatabaseErrorHandler.handle(), NetworkErrorHandler.handle(), BrowserErrorHandler.handle()",
+            test_func=test_error_handlers,
+            test_description="Error handler implementations process exceptions correctly",
+            method_description="Testing error handler can_handle and handle methods with mock exceptions",
+            expected_behavior="Error handlers correctly identify and transform exceptions into AppError instances",
+        )
+
+        suite.run_test(
+            test_name="ErrorHandlerRegistry.register_handler(), handle_error()",
+            test_func=test_error_handler_registry,
+            test_description="Error handler registry manages handlers and processes errors",
+            method_description="Testing handler registration and error processing through registry",
+            expected_behavior="Registry correctly manages handlers and routes errors to appropriate handlers",
+        )
+
+        suite.run_test(
+            test_name="handle_error() global function",
+            test_func=test_handle_error_function,
+            test_description="Global error handling function processes various exception types",
+            method_description="Testing handle_error with different exception types and context parameters",
+            expected_behavior="Global error handler correctly transforms exceptions and preserves context",
+        )
+
+        # INTEGRATION TESTS
+        suite.run_test(
+            test_name="@error_handler decorator",
+            test_func=test_error_handler_decorator,
+            test_description="Error handler decorator wraps functions and handles exceptions",
+            method_description="Testing decorator functionality with successful and failing functions",
+            expected_behavior="Decorator correctly handles exceptions and returns appropriate values",
+        )
+
+        suite.run_test(
+            test_name="safe_execute() utility function",
+            test_func=test_safe_execute,
+            test_description="Safe execution wrapper handles function failures gracefully",
+            method_description="Testing safe_execute with successful and failing functions using default returns",
+            expected_behavior="Safe execute handles failures gracefully and returns appropriate default values",
+        )
+
+        suite.run_test(
+            test_name="ErrorContext context manager",
+            test_func=test_error_context,
+            test_description="Error context manager provides operation context tracking",
+            method_description="Testing context manager with successful and failing operations",
+            expected_behavior="Context manager properly tracks operations and handles exceptions",
+        )
+
+        # ERROR HANDLING TESTS
+        suite.run_test(
+            test_name="All imports and module availability",
+            test_func=test_imports_and_availability,
+            test_description="All required classes and functions are properly imported and available",
+            method_description="Testing availability of all error classes, handlers, and utility functions",
+            expected_behavior="All error handling components are available and properly imported",
+        )
+
+        suite.run_test(
+            test_name="Type annotation consistency",
+            test_func=test_type_annotations,
+            test_description="Type annotations are consistent and properly defined",
+            method_description="Testing function signatures and parameter annotations using inspection",
+            expected_behavior="All functions have proper type annotations and parameter definitions",
+        )
+
+        suite.run_test(
+            test_name="All error categories handling",
+            test_func=test_error_categories_comprehensive,
+            test_description="All error categories are properly handled with appropriate messages",
+            method_description="Testing each error category produces proper AppError instances with user messages",
+            expected_behavior="All error categories have appropriate handling and user-friendly messages",
+        )
+
+        suite.run_test(
+            test_name="Integration between all error handling components",
+            test_func=test_integration,
+            test_description="All error handling components work together correctly",
+            method_description="Testing integration between registry, decorators, and context managers",
+            expected_behavior="All components integrate properly for comprehensive error handling",
+        )
+
+        suite.run_test(
+            test_name="User-friendly error message generation",
+            test_func=test_error_message_generation,
+            test_description="Error messages are user-friendly and category-appropriate",
+            method_description="Testing error message generation for different categories and contexts",
+            expected_behavior="Error messages are clear, helpful, and appropriate for each error category",
+        )
+
     return suite.finish_suite()
-
-
-if __name__ == "__main__":
-    run_comprehensive_tests()
 
 
 if __name__ == "__main__":

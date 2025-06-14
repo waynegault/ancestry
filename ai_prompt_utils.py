@@ -391,34 +391,7 @@ def run_comprehensive_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    try:
-        from test_framework import TestSuite, suppress_logging
-
-        has_framework = True
-    except ImportError:
-        has_framework = False
-
-    if not has_framework:
-        logger.info("🔧 Running basic AI prompt utils tests...")
-        try:
-            # Test basic prompt loading
-            prompts = load_prompts()
-            if not isinstance(prompts, dict) or "prompts" not in prompts:
-                logger.error("❌ Basic prompt loading failed")
-                return False
-
-            # Test basic prompt operations
-            test_result = update_prompt("fallback_test", "Test content")
-            retrieved = get_prompt("fallback_test")
-            if not test_result or retrieved != "Test content":
-                logger.error("❌ Basic prompt operations failed")
-                return False
-
-            logger.info("✅ Basic AI prompt utils tests completed")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Basic AI prompt utils tests failed: {e}")
-            return False
+    from test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite(

@@ -173,14 +173,6 @@ try:
             duration = time.time() - start
             return result, duration
 
-    # --- Test framework imports ---
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
 except ImportError as import_err:
     # Log failure for other imports but don't define dummies
     logging.critical(
@@ -190,6 +182,14 @@ except ImportError as import_err:
     # Re-raise the error to stop execution
     raise import_err
 # End of try/except
+
+# --- Test framework imports ---
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)

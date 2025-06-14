@@ -54,27 +54,16 @@ try:
 except ImportError:
     tabulate = None
 
-# --- Test framework - No longer using external test framework ---
-# All testing is now self-contained within this script
+# --- Test framework imports ---
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
-try:
-    from unittest.mock import patch
-
-    HAS_MOCK = True
-except ImportError:
-    # Create dummy context for when unittest.mock is not available
-    class DummyContext:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    def dummy_patch(*args, **kwargs):
-        return DummyContext()
-
-    patch = dummy_patch
-    HAS_MOCK = False
+# --- Mock imports ---
+from unittest.mock import patch
 
 # --- Setup Fallback Logger FIRST ---
 logging.basicConfig(

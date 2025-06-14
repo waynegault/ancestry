@@ -220,264 +220,153 @@ def main():
         input("\nPress Enter to continue...")
 
 
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for setup_credentials_interactive.py.
+    Tests credential management, interactive setup, and security operations.
+    """
+    from test_framework import TestSuite, suppress_logging
+    from unittest.mock import MagicMock, patch
+
+    suite = TestSuite(
+        "Interactive Credential Setup & Management", "setup_credentials_interactive.py"
+    )
+    suite.start_suite()
+
+    def test_module_initialization():
+        """Test module initialization and function availability."""
+        # Test that main function exists
+        assert callable(main), "main function should be callable"
+
+        # Test that display functions exist
+        assert callable(display_menu), "display_menu function should be callable"
+        assert callable(
+            view_credentials
+        ), "view_credentials function should be callable"
+        assert callable(
+            add_update_credentials
+        ), "add_update_credentials function should be callable"
+
+    def test_interactive_functionality():
+        """Test interactive credential setup functionality."""
+        # Test with mock inputs - need to include the "Press Enter" prompts
+        with patch(
+            "builtins.input", side_effect=["1", "", "6"]
+        ):  # View credentials, press enter, then exit
+            with patch("setup_credentials_interactive.SecurityManager") as mock_sm:
+                mock_instance = MagicMock()
+                mock_instance.decrypt_credentials.return_value = {}
+                mock_sm.return_value = mock_instance
+
+                try:
+                    main()
+                except SystemExit:
+                    # Expected when choosing exit option
+                    pass
+
+    def test_menu_functions():
+        """Test individual menu functions."""
+        mock_sm = MagicMock()
+        mock_sm.decrypt_credentials.return_value = {"test": "value"}
+
+        # Test view_credentials function
+        with patch("builtins.print"):
+            view_credentials(mock_sm)
+            mock_sm.decrypt_credentials.assert_called()
+
+    def test_error_handling():
+        """Test error handling in interactive setup."""
+        # Test with invalid menu choices - need to include "Press Enter" prompts after each invalid choice
+        with patch("builtins.input", side_effect=["invalid", "", "99", "", "6"]):
+            with patch("setup_credentials_interactive.SecurityManager") as mock_sm:
+                mock_instance = MagicMock()
+                mock_sm.return_value = mock_instance
+                try:
+                    main()
+                except SystemExit:
+                    # Expected when choosing exit
+                    pass
+
+    with suppress_logging():
+        suite.run_test(
+            "Module initialization",
+            test_module_initialization,
+            "Module initializes with required functions for interactive credential setup",
+            "Test main function and setup function availability",
+            "Module provides necessary functions for credential management",
+        )
+
+        suite.run_test(
+            "Interactive functionality",
+            test_interactive_functionality,
+            "Interactive setup process works with user input simulation",
+            "Test interactive credential setup with mocked user inputs",
+            "Setup process handles user interaction correctly",
+        )
+
+        suite.run_test(
+            "Menu functions",
+            test_menu_functions,
+            "Menu functions work correctly with SecurityManager",
+            "Test view_credentials and other menu functions",
+            "Menu functions handle SecurityManager interaction properly",
+        )
+
+        suite.run_test(
+            "Error handling",
+            test_error_handling,
+            "Error handling works correctly with invalid inputs",
+            "Test error handling with invalid menu choices",
+            "Error handling prevents crashes and provides feedback",
+        )
+
+    return suite.finish_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "Module initialization",
+            test_module_initialization,
+            "Module initializes with required functions for interactive credential setup",
+            "Test main function and setup function availability",
+            "Module provides necessary functions for credential management",
+        )
+
+        suite.run_test(
+            "Interactive functionality",
+            test_interactive_functionality,
+            "Interactive setup process works with user input simulation",
+            "Test interactive credential setup with mocked user inputs",
+            "Setup process handles user interaction correctly",
+        )
+
+        suite.run_test(
+            "Menu functions",
+            test_menu_functions,
+            "Menu functions work correctly with SecurityManager",
+            "Test view_credentials and other menu functions",
+            "Menu functions handle SecurityManager interaction properly",
+        )
+
+        suite.run_test(
+            "Error handling",
+            test_error_handling,
+            "Error handling works correctly with invalid inputs",
+            "Test error handling with invalid menu choices",
+            "Error handling prevents crashes and provides feedback",
+        )
+
+    return suite.finish_suite()
+
+
 # ==============================================
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
     import sys
-    import tempfile
-    import os
-    from unittest.mock import MagicMock, patch, mock_open
 
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
-
-    def run_comprehensive_tests() -> bool:
-        """
-        Comprehensive test suite for credential_manager.py.
-        Tests credential storage, encryption, and management operations.
-        """
-        suite = TestSuite("Credential Management & Security", "credential_manager.py")
-        suite.start_suite()
-
-        # Credential manager initialization
-        def test_credential_manager_initialization():
-            if "CredentialManager" in globals():
-                cred_manager_class = globals()["CredentialManager"]
-                assert callable(cred_manager_class)
-
-                # Test initialization
-                try:
-                    cred_manager = cred_manager_class()
-                    assert cred_manager is not None
-                except Exception:
-                    # May require specific setup/config
-                    pass
-
-        # Credential storage operations
-        def test_credential_storage_operations():
-            storage_functions = [
-                "store_credential",
-                "get_credential",
-                "delete_credential",
-                "list_credentials",
-            ]
-
-            for func_name in storage_functions:
-                if func_name in globals():
-                    assert_valid_function(globals()[func_name], func_name)
-
-        # Encryption and decryption
-        def test_encryption_decryption():
-            if "encrypt_credential" in globals() and "decrypt_credential" in globals():
-                encrypt_func = globals()["encrypt_credential"]
-                decrypt_func = globals()["decrypt_credential"]
-
-                # Test with sample data
-                test_data = "test_password_123"
-
-                try:
-                    encrypted = encrypt_func(test_data)
-                    assert encrypted != test_data  # Should be different when encrypted
-
-                    decrypted = decrypt_func(encrypted)
-                    assert decrypted == test_data  # Should match original
-                except Exception:
-                    # May require encryption key setup
-                    pass
-
-        # Interactive credential input
-        def test_interactive_credential_input():
-            if "get_credential_input" in globals():
-                input_func = globals()["get_credential_input"]
-
-                # Test with mock input
-                with patch("builtins.input", return_value="test_input"):
-                    with patch("getpass.getpass", return_value="test_password"):
-                        try:
-                            result = input_func("test_service")
-                            assert isinstance(result, (dict, tuple, str))
-                        except Exception:
-                            # Expected if function requires specific conditions
-                            pass
-
-        # Credential validation
-        def test_credential_validation():
-            validation_functions = [
-                "validate_credential_format",
-                "validate_service_name",
-                "sanitize_credential_data",
-            ]
-
-            for func_name in validation_functions:
-                if func_name in globals():
-                    validator = globals()[func_name]
-
-                    # Test with various inputs
-                    test_inputs = ["valid_input", "", None, "special!@#chars", "12345"]
-                    for test_input in test_inputs:
-                        try:
-                            result = validator(test_input)
-                            assert isinstance(result, bool)
-                        except Exception:
-                            pass  # Some validators may have specific requirements
-
-        # Credential file operations
-        def test_credential_file_operations():
-            if (
-                "save_credentials_to_file" in globals()
-                and "load_credentials_from_file" in globals()
-            ):
-                save_func = globals()["save_credentials_to_file"]
-                load_func = globals()["load_credentials_from_file"]
-
-                test_credentials = {"service1": "cred1", "service2": "cred2"}
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    try:
-                        save_result = save_func(test_credentials, temp_file.name)
-                        loaded_creds = load_func(temp_file.name)
-
-                        assert isinstance(save_result, bool)
-                        if loaded_creds:
-                            assert isinstance(loaded_creds, dict)
-                    except Exception:
-                        # May require encryption setup
-                        pass
-
-        # Security key management
-        def test_security_key_management():
-            key_functions = [
-                "generate_encryption_key",
-                "load_encryption_key",
-                "save_encryption_key",
-            ]
-
-            for func_name in key_functions:
-                if func_name in globals():
-                    key_func = globals()[func_name]
-
-                    try:
-                        if "generate" in func_name:
-                            result = key_func()
-                            assert result is not None
-                        elif "load" in func_name:
-                            result = key_func("test_key_file")
-                            # May return None if file doesn't exist
-                        elif "save" in func_name:
-                            result = key_func(b"test_key", "test_file")
-                            assert isinstance(result, bool)
-                    except Exception:
-                        pass  # May require specific setup
-
-        # Credential export and import
-        def test_credential_export_import():
-            export_import_functions = [
-                "export_credentials",
-                "import_credentials",
-                "backup_credentials",
-            ]
-
-            for func_name in export_import_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func)
-
-        # Error handling and security
-        def test_error_handling_security():
-            # Test error scenarios
-            error_scenarios = [
-                ("invalid_service_name", ""),
-                ("malformed_credential", None),
-                ("missing_encryption_key", "no_key_file"),
-                ("corrupted_data", "invalid_format"),
-            ]
-
-            if "handle_credential_error" in globals():
-                error_handler = globals()["handle_credential_error"]
-
-                for scenario_name, test_data in error_scenarios:
-                    try:
-                        result = error_handler(scenario_name, test_data)
-                        assert result is not None
-                    except Exception:
-                        pass  # Expected for some error scenarios
-
-        # Command-line interface
-        def test_command_line_interface():
-            cli_functions = [
-                "main",
-                "parse_arguments",
-                "display_menu",
-                "handle_user_choice",
-            ]
-
-            found_cli_functions = 0
-            for func_name in cli_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func)
-                    found_cli_functions += 1
-
-            if found_cli_functions == 0:
-                suite.add_warning("No command-line interface functions found")
-
-        # Run all tests
-        test_functions = {
-            "Credential manager initialization": (
-                test_credential_manager_initialization,
-                "Should initialize credential manager with required methods",
-            ),
-            "Credential storage operations": (
-                test_credential_storage_operations,
-                "Should provide store, get, delete, and list operations",
-            ),
-            "Encryption and decryption": (
-                test_encryption_decryption,
-                "Should encrypt credentials and decrypt them correctly",
-            ),
-            "Interactive credential input": (
-                test_interactive_credential_input,
-                "Should handle secure credential input from users",
-            ),
-            "Credential validation": (
-                test_credential_validation,
-                "Should validate credential format and service names",
-            ),
-            "Credential file operations": (
-                test_credential_file_operations,
-                "Should save and load credentials to/from files",
-            ),
-            "Security key management": (
-                test_security_key_management,
-                "Should generate, load, and save encryption keys",
-            ),
-            "Credential export and import": (
-                test_credential_export_import,
-                "Should support credential backup and migration",
-            ),
-            "Error handling and security": (
-                test_error_handling_security,
-                "Should handle errors securely without exposing credentials",
-            ),
-            "Command-line interface": (
-                test_command_line_interface,
-                "Should provide user-friendly CLI for credential management",
-            ),
-        }
-
-        with suppress_logging():
-            for test_name, (test_func, expected_behavior) in test_functions.items():
-                suite.run_test(test_name, test_func, expected_behavior)
-
-        return suite.finish_suite()
-
-    print("🔐 Running Credential Management & Security comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
-
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        print("🔐 Running Interactive Credential Setup comprehensive test suite...")
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    else:
+        main()

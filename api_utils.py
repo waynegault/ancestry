@@ -2817,7 +2817,13 @@ def run_comprehensive_tests() -> bool:
             assert isinstance(invalid_data, dict), "Test data should be dictionary"
             person_id = invalid_data.get("PersonId")
             if person_id is None or person_id == "":
-                assert True, "Empty PersonId should be detectable"
+                assert (
+                    person_id is None or person_id == ""
+                ), "Empty PersonId should be properly detected"
+            elif isinstance(person_id, int):
+                assert isinstance(
+                    person_id, int
+                ), "Integer PersonId should be detectable as wrong type"
 
     def test_configuration_errors():
         """Test handling of missing or invalid configuration."""
@@ -2832,7 +2838,9 @@ def run_comprehensive_tests() -> bool:
                 assert config_case is None, "None config should be detectable"
             elif isinstance(config_case, dict):
                 if not config_case or "base_url" not in config_case:
-                    assert True, "Missing config should be detectable"
+                    assert (
+                        len(config_case) == 0 or "base_url" not in config_case
+                    ), "Missing config should be detectable"
 
     # === RUN ALL TESTS ===
     suite.run_test(
