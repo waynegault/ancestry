@@ -37,6 +37,7 @@ def discover_test_modules() -> List[str]:
         "cache",  # Added - has standardized TestSuite implementation
         "cache_manager",
         "config",
+        "credentials",  # Added - expanded test coverage for credential management
         "database",
         "error_handling",
         "gedcom_search_utils",
@@ -176,6 +177,9 @@ def run_module_test(
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered output
         env["PYTHONIOENCODING"] = "utf-8"  # Ensure UTF-8 encoding
+        env["RUNNING_ANCESTRY_TESTS"] = (
+            "1"  # Signal to test modules they're being run by test harness
+        )
 
         result = subprocess.run(
             cmd,
@@ -194,12 +198,20 @@ def run_module_test(
             if result.stdout:
                 # Count test results from output
                 stdout_lines = result.stdout.strip().split("\n")
-                test_summary_lines = [line for line in stdout_lines if "✅ Passed:" in line or "Status:" in line]
+                test_summary_lines = [
+                    line
+                    for line in stdout_lines
+                    if "✅ Passed:" in line or "Status:" in line
+                ]
                 if test_summary_lines:
-                    for summary_line in test_summary_lines[-2:]:  # Show last 2 summary lines
+                    for summary_line in test_summary_lines[
+                        -2:
+                    ]:  # Show last 2 summary lines
                         print(f"   📊 {summary_line.strip()}")
         else:
-            print(f"❌ FAILED: {module_name}.py tests failed (exit code: {result.returncode})")
+            print(
+                f"❌ FAILED: {module_name}.py tests failed (exit code: {result.returncode})"
+            )
             if result.stderr:
                 # Show error context for debugging, but truncate if too long
                 stderr_lines = result.stderr.strip().split("\n")
@@ -252,7 +264,7 @@ def run_module_test(
 def run_unittest_suite() -> Dict[str, Any]:
     """
     Check for legacy unittest TestSeleniumUtils and suggest conversion to TestSuite framework.
-    
+
     This function exists because some modules may still use the old unittest framework
     instead of the standardized TestSuite framework. We run it separately to:
     1. Identify modules that need migration to TestSuite
@@ -276,7 +288,7 @@ def run_unittest_suite() -> Dict[str, Any]:
             print(f"⚠️  LEGACY FRAMEWORK DETECTED: selenium_utils.TestSeleniumUtils")
             print(f"   📋 This module uses the old unittest framework")
             print(f"   🔄 Consider migrating to the standardized TestSuite framework")
-            
+
             # Create test suite
             loader = unittest.TestLoader()
             suite = loader.loadTestsFromTestCase(TestSeleniumUtils)
@@ -290,9 +302,13 @@ def run_unittest_suite() -> Dict[str, Any]:
 
             if success:
                 print(f"✅ PASSED: All {result.testsRun} legacy unittest cases passed")
-                print(f"   💡 Recommendation: Migrate to TestSuite framework for consistency")
+                print(
+                    f"   💡 Recommendation: Migrate to TestSuite framework for consistency"
+                )
             else:
-                print(f"❌ FAILED: {error_count} unittest failures out of {result.testsRun} tests")
+                print(
+                    f"❌ FAILED: {error_count} unittest failures out of {result.testsRun} tests"
+                )
 
             return {
                 "module": "selenium_utils (legacy unittest)",
@@ -318,7 +334,7 @@ def run_unittest_suite() -> Dict[str, Any]:
     except ImportError as ie:
         print(f"📁 selenium_utils module not found: {ie}")
         return {
-            "module": "legacy_framework_check", 
+            "module": "legacy_framework_check",
             "success": True,
             "duration": time.time() - start_time,
             "error": f"selenium_utils module not available: {ie}",
@@ -342,7 +358,11 @@ def print_summary(results: List[Dict[str, Any]]):
     print(f"{'='*60}")
 
     # Separate legacy framework results from standard TestSuite results
-    standard_results = [r for r in results if not r.get("is_legacy", False) and r["module"] != "legacy_framework_check"]
+    standard_results = [
+        r
+        for r in results
+        if not r.get("is_legacy", False) and r["module"] != "legacy_framework_check"
+    ]
     legacy_results = [r for r in results if r.get("is_legacy", False)]
     framework_check = [r for r in results if r["module"] == "legacy_framework_check"]
 
@@ -356,14 +376,20 @@ def print_summary(results: List[Dict[str, Any]]):
     print(f"   • ✅ Passed: {passed_tests}")
     print(f"   • ❌ Failed: {failed_tests}")
     print(f"   • ⏱️ Total time: {total_duration:.2f}s")
-    print(f"   • � Success rate: {(passed_tests/total_tests*100):.1f}%" if total_tests > 0 else "   • 📊 Success rate: N/A")
+    print(
+        f"   • � Success rate: {(passed_tests/total_tests*100):.1f}%"
+        if total_tests > 0
+        else "   • 📊 Success rate: N/A"
+    )
 
     # Report on legacy framework usage
     if legacy_results:
         print(f"\n⚠️  Legacy unittest Framework Results:")
         for result in legacy_results:
             status = "✅ PASSED" if result["success"] else "❌ FAILED"
-            print(f"   • {status} {result['module']} ({result.get('tests_run', 0)} tests)")
+            print(
+                f"   • {status} {result['module']} ({result.get('tests_run', 0)} tests)"
+            )
             print(f"     � Recommendation: Migrate to standardized TestSuite framework")
     elif framework_check:
         print(f"\n✅ Framework Compliance:")
@@ -432,15 +458,19 @@ def print_summary(results: List[Dict[str, Any]]):
                 status = "✅ PASS" if result["success"] else "❌ FAIL"
                 duration = result["duration"]
                 print(f"    {status} | {result['module']:<20} | {duration:>6.2f}s")
-    
+
     # Show legacy framework results separately if any exist
     if legacy_results:
         print(f"\n  ⚠️  Legacy Framework Results:")
         for result in legacy_results:
             status = "✅ PASS" if result["success"] else "❌ FAIL"
             duration = result["duration"]
-            tests_info = f"({result.get('tests_run', 0)} tests)" if 'tests_run' in result else ""
-            print(f"    {status} | {result['module']:<20} | {duration:>6.2f}s | {tests_info}")
+            tests_info = (
+                f"({result.get('tests_run', 0)} tests)" if "tests_run" in result else ""
+            )
+            print(
+                f"    {status} | {result['module']:<20} | {duration:>6.2f}s | {tests_info}"
+            )
             print(f"         💡 Consider migrating to TestSuite framework")
 
 
@@ -542,7 +572,7 @@ def main():
     # Run individual module tests with progress tracking
     print(f"\n🔄 EXECUTING TESTSUITE FRAMEWORK TESTS")
     print(f"📊 Running {len(test_modules)} standardized test suites...")
-    
+
     for i, module_name in enumerate(test_modules, 1):
         print(f"\n📍 Progress: [{i:2d}/{len(test_modules)}] - {module_name}.py")
         try:
@@ -552,7 +582,9 @@ def main():
             # Show immediate result with consistent formatting
             status_emoji = "✅" if result["success"] else "❌"
             status_text = "PASSED" if result["success"] else "FAILED"
-            print(f"   {status_emoji} {status_text} | Duration: {result['duration']:.2f}s")
+            print(
+                f"   {status_emoji} {status_text} | Duration: {result['duration']:.2f}s"
+            )
 
         except KeyboardInterrupt:
             print(f"\n⚠️  Test execution interrupted by user at {module_name}")

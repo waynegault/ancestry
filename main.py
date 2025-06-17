@@ -26,7 +26,7 @@ from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
-from action10 import run_action10
+from action10 import main as run_action10
 from action11 import run_action11
 
 # Core modules
@@ -93,7 +93,10 @@ def menu():
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
     print("")
-    print("sec. Setup Security (Encrypt Credentials)")
+    print("test. Run Main.py Internal Tests")
+    print("testall. Run All Module Tests")
+    print("")
+    print("sec. Credential Manager (Setup/View/Update/Import from .env)")
     print("s. Show Cache Statistics")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
@@ -141,6 +144,33 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
 
 
 # End of clear_log_file
+
+
+# Global flag to track if caching has been initialized
+_caching_initialized = False
+
+
+def ensure_caching_initialized():
+    """Initialize aggressive caching systems if not already done."""
+    global _caching_initialized
+
+    if not _caching_initialized:
+        logger.info("Initializing caching systems on-demand...")
+        cache_init_success = initialize_aggressive_caching()
+        if cache_init_success:
+            logger.info("Caching systems initialized successfully")
+            _caching_initialized = True
+        else:
+            logger.warning(
+                "Some caching systems failed to initialize, continuing with reduced performance"
+            )
+        return cache_init_success
+    else:
+        logger.debug("Caching systems already initialized")
+        return True
+
+
+# End of ensure_caching_initialized
 
 
 def exec_actn(
@@ -1207,27 +1237,27 @@ def main():
             print("   This usually means missing credentials or configuration files.")
             print("")
             print("💡 SOLUTIONS:")
+            print("\n🔒 Recommended: Use the secure credential manager")
+            print("   python credentials.py")
+
+            print("\n📋 Alternative options:")
             print(
                 "   1. Run 'sec. Setup Security (Encrypt Credentials)' from main menu"
             )
-            print("   2. Check your .env file for missing required variables")
-            print("   3. Ensure encrypted credentials are properly set up")
-            print("")
-            print("🔧 To set up credentials programmatically:")
-            print("   python setup_credentials_helper.py")
-            print("")
-            print("Exiting application...")
-            sys.exit(1)
+            print("   2. Copy .env.example to .env and add your credentials")
+            print("   3. Ensure the required security dependencies are installed:")
+            print("      pip install cryptography keyring")
 
-        # --- Initialize Aggressive Caching ---
-        logger.info("Initializing aggressive caching systems...")
-        cache_init_success = initialize_aggressive_caching()
-        if cache_init_success:
-            logger.info("Aggressive caching systems initialized successfully")
-        else:
-            logger.warning(
-                "Some caching systems failed to initialize, continuing with reduced performance"
-            )
+            print("\n📚 For detailed instructions:")
+            print("   See ENV_IMPORT_GUIDE.md")
+
+            print("\n⚠️ Security Note:")
+            print("   The secure credential manager requires:")
+            print("   - cryptography package (for encryption)")
+            print("   - keyring package (for secure key storage)")
+
+            print("\nExiting application...")
+            sys.exit(1)
 
         # --- Instantiate SessionManager ---
         session_manager = SessionManager()  # No browser started by default
@@ -1291,6 +1321,8 @@ def main():
 
             # --- Browser-required actions ---
             elif choice == "1":
+                # Initialize caching for GEDCOM operations (needed for action 9 in workflow)
+                ensure_caching_initialized()
                 # exec_actn will set browser_needed=True based on the action
                 exec_actn(
                     run_core_workflow_action,
@@ -1326,30 +1358,113 @@ def main():
             elif choice == "8":
                 exec_actn(send_messages_action, session_manager, choice)  # Keep open
             elif choice == "9":
+                # Initialize caching for GEDCOM operations
+                ensure_caching_initialized()
                 exec_actn(
                     process_productive_messages_action, session_manager, choice
                 )  # Keep open
             elif choice == "10":
+                # Initialize caching for GEDCOM operations
+                ensure_caching_initialized()
                 exec_actn(run_action10, session_manager, choice)
             elif choice == "11":
+                # Initialize caching for GEDCOM operations
+                ensure_caching_initialized()
                 # Use the wrapper function to run Action 11 through exec_actn
                 exec_actn(run_action11_wrapper, session_manager, choice)
+            # --- Test Options ---
+            elif choice == "test":
+                # Run Main.py Internal Tests
+                try:
+                    print("\n" + "=" * 60)
+                    print("RUNNING MAIN.PY INTERNAL TESTS")
+                    print("=" * 60)
+                    result = run_comprehensive_tests()
+                    if result:
+                        print("\n🎉 All main.py tests completed successfully!")
+                    else:
+                        print("\n⚠️ Some main.py tests failed. Check output above.")
+                except Exception as e:
+                    logger.error(f"Error running main.py tests: {e}")
+                    print(f"Error running main.py tests: {e}")
+                print("\nReturning to main menu...")
+                input("Press Enter to continue...")
+            elif choice == "testall":
+                # Run All Module Tests
+                try:
+                    import subprocess
+
+                    print("\n" + "=" * 60)
+                    print("RUNNING ALL MODULE TESTS")
+                    print("=" * 60)
+                    result = subprocess.run(
+                        [sys.executable, "run_all_tests.py"],
+                        capture_output=False,
+                        text=True,
+                    )
+                    if result.returncode == 0:
+                        print("\n🎉 All module tests completed successfully!")
+                    else:
+                        print(f"\n⚠️ Some tests failed (exit code: {result.returncode})")
+                except FileNotFoundError:
+                    print("Error: run_all_tests.py not found in current directory.")
+                except Exception as e:
+                    logger.error(f"Error running all tests: {e}")
+                    print(f"Error running all tests: {e}")
+                print("\nReturning to main menu...")
+                input("Press Enter to continue...")
             # --- Meta Options ---
             elif choice == "sec":
                 # Setup Security (Encrypt Credentials)
                 try:
-                    from setup_security import main as setup_security_main
+                    from credentials import UnifiedCredentialManager
 
                     print("\n" + "=" * 50)
-                    print("SETUP SECURITY - ENCRYPT CREDENTIALS")
+                    print("CREDENTIAL MANAGEMENT")
                     print("=" * 50)
-                    setup_security_main()
+                    manager = UnifiedCredentialManager()
+                    manager.run()
                 except ImportError as e:
-                    logger.error(f"Error importing setup_security: {e}")
-                    print("Error: setup_security.py not found or has import issues.")
+                    logger.error(f"Error importing credentials manager: {e}")
+                    print("\n❌ Error: Unable to use the credential manager.")
+
+                    if "No module named 'cryptography'" in str(
+                        e
+                    ) or "No module named 'keyring'" in str(e):
+                        print("\n" + "=" * 60)
+                        print("       SECURITY DEPENDENCIES MISSING")
+                        print("=" * 60)
+                        print("\nRequired security packages are not installed:")
+                        print("  - cryptography: For secure encryption/decryption")
+                        print("  - keyring: For secure storage of master keys")
+
+                        print("\n📋 Installation Instructions:")
+                        print("  1. Install required packages:")
+                        print("     pip install cryptography keyring")
+                        print("     - OR -")
+                        print("     pip install -r requirements.txt")
+
+                        if os.name != "nt":  # Not Windows
+                            print("\n  For Linux/macOS users, you may also need:")
+                            print("     pip install keyrings.alt")
+                            print(
+                                "     Some Linux distributions may require: sudo apt-get install python3-dbus"
+                            )
+
+                        print("\n📚 For more information, see:")
+                        print("  - ENV_IMPORT_GUIDE.md")
+                        print("  - SECURITY_STREAMLINED.md")
+                    else:
+                        print(
+                            "Error: credentials.py not found or has other import issues."
+                        )
+                        print(f"Details: {e}")
+                        print(
+                            "\nPlease check that all files are in the correct location."
+                        )
                 except Exception as e:
-                    logger.error(f"Error running security setup: {e}")
-                    print(f"Error running security setup: {e}")
+                    logger.error(f"Error running credential manager: {e}")
+                    print(f"Error running credential manager: {e}")
                 print("\nReturning to main menu...")
                 input("Press Enter to continue...")
             elif choice == "s":
@@ -1428,15 +1543,14 @@ def main():
 
 # end main
 
-# --- Entry Point ---
-if __name__ == "__main__":
-    main()
 
-
-# end of main.py
 def run_comprehensive_tests() -> bool:
     """Comprehensive test suite for main.py"""
-    from test_framework import TestSuite, suppress_logging
+    try:
+        from test_framework import TestSuite, suppress_logging
+    except ImportError:
+        # Fall back to relative import if absolute import fails
+        from .test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Main Application Controller & Menu System", "main.py")
     suite.start_suite()
@@ -1928,4 +2042,9 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
-# end main
+# --- Entry Point ---
+if __name__ == "__main__":
+    main()
+
+
+# end of main.py

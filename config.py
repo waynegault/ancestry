@@ -1205,6 +1205,23 @@ class Config_Class(BaseConfig):
 
         except ImportError:
             logger.warning("SecurityManager not available, using environment variables")
+            logger.warning("=" * 60)
+            logger.warning("SECURITY DEPENDENCIES MISSING")
+            logger.warning("=" * 60)
+            logger.warning("Required security packages are not installed:")
+            logger.warning("  - cryptography: For secure encryption/decryption")
+            logger.warning("  - keyring: For secure storage of master keys")
+
+            logger.warning("\nInstallation Instructions:")
+            logger.warning("  1. Install required packages:")
+            logger.warning("     pip install cryptography keyring")
+            logger.warning("     - OR -")
+            logger.warning("     pip install -r requirements.txt")
+
+            logger.warning("\nFor secure credential management, run:")
+            logger.warning("  python credentials.py")
+
+            # Fallback to environment variables
             self.ANCESTRY_USERNAME = self._get_string_env("ANCESTRY_USERNAME", "")
             self.ANCESTRY_PASSWORD = self._get_string_env("ANCESTRY_PASSWORD", "")
             self.DEEPSEEK_API_KEY = self._get_string_env("DEEPSEEK_API_KEY", "")

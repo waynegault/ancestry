@@ -2,6 +2,25 @@
 
 ## Latest Updates
 
+**June 18, 2025**: **Comprehensive Credential Testing Framework Added ✅**
+- **Expanded Test Coverage**: Added extensive tests for edge cases and error conditions in credential management
+- **Dedicated Test Suite**: New `test_credentials.py` with specialized tests for all credential operations
+- **Test Coverage Analysis**: Added `analyze_credential_coverage.py` to identify undertested code paths
+- **Integration with Test Framework**: Full integration with project-wide test suite via `run_all_tests.py`
+- **Focused Test Runner**: Added `test_credential_system.py` for targeted credential system testing
+
+**June 17, 2025**: **Flexible Credential Management System Enhancements ✅**
+- **Configurable Credential Types**: Added support for loading credential types from `credential_types.json`
+- **Interactive Configuration Editor**: New option in credential manager to edit credential types
+- **Enhanced Status Reporting**: Now displays all configured credential types with validation status
+- **Extensibility Improvements**: Easy addition of new API keys and credential types without code changes
+
+**June 16, 2025**: **Credential Management System Streamlined ✅**
+- **Unified Credential Manager**: Consolidated 3 complex security scripts into single `credentials.py` interface
+- **Enhanced .env Import**: Added bulk credential import from .env files with intelligent conflict resolution
+- **Simplified User Experience**: Single entry point for all credential operations with clear menu system
+- **Documentation Consolidation**: Streamlined all security documentation into main README for better accessibility
+
 **June 14, 2025**: **MAJOR UPDATE - Architecture Modernization and Security Enhancement COMPLETE ✅**
 - **Modular Architecture Implemented**: Successfully refactored monolithic SessionManager into specialized components in `core/` directory
 - **Enhanced Security Framework**: Implemented comprehensive credential encryption via `security_manager.py` with Fernet encryption
@@ -305,38 +324,229 @@ The system operates through a sophisticated hybrid approach:
 - Integrates with keyring library for secure key storage
 - Provides comprehensive security validation and compliance features
 
-**`credential_manager.py`** - Interactive Credential Management Interface  
-- Command-line interface for secure credential management operations
+**`credentials.py`** - Unified Credential Management System ✨ **STREAMLINED**
+- **Single entry point** for all credential management operations
+- Interactive command-line interface with clear menu system
 - Supports viewing, adding, updating, and removing encrypted credentials
+- **NEW**: Import credentials from .env files with conflict resolution
 - Provides secure credential export functionality for backup/migration
 - Masks sensitive values when displaying stored credentials for security
+- Includes comprehensive credential validation and status checking
 - Integrates seamlessly with SecurityManager for all encryption/decryption operations
-- Includes credential validation and integrity checking features
+- Replaces multiple legacy scripts with unified, user-friendly interface
 
-**`setup_credentials_interactive.py`** - Interactive Credential Setup Wizard
-- Guided setup process for initial credential configuration
-- Handles migration from plain-text .env files to encrypted storage
-- Provides interactive prompts for all required credentials
-- Validates credential format and completeness during setup
-- Creates secure backup of credentials during migration process
-- Includes rollback capabilities for failed migrations
+## 🔐 Credential Management System
 
-**`setup_security.py`** - Security Initialization and Migration Tool
-- Automated setup script for migrating to secure credential storage
-- Handles detection and migration of existing plain-text credentials
-- Provides comprehensive security validation and verification
-- Creates encrypted credential store with proper key management
-- Implements secure cleanup of plain-text credential files
-- Includes security audit and compliance verification features
+### Overview
+The Ancestry Project features a **streamlined, unified credential management system** that replaced multiple confusing security scripts with a single, user-friendly interface. All credentials are encrypted using Fernet symmetric encryption and stored securely.
 
-#### Security Documentation
+### Quick Start
 
-**`SECURITY_IMPLEMENTATION.md`** - Comprehensive Security Guide
-- Complete documentation of security enhancements and encryption implementation
-- Detailed instructions for credential management and best practices
-- Security risk mitigation strategies and audit procedures
-- Step-by-step guides for credential migration and system security
-- Future security enhancement recommendations and compliance guidelines
+#### From Main Menu:
+```bash
+python main.py
+# Choose option: sec. Credential Manager (Setup/View/Update)
+```
+
+#### Direct Access:
+```bash
+python credentials.py
+```
+
+### Available Operations
+
+1. **View stored credentials** - Display all credentials with masked values for security
+2. **Setup/Update credentials** - Interactive setup with prompts for required fields
+3. **Remove specific credential** - Delete individual credentials safely
+4. **Delete all credentials** - Complete credential reset with confirmation
+5. **Setup test credentials** - Quick setup for development/testing
+6. **Import credentials from .env file** - Bulk import with conflict resolution ✨ **NEW**
+7. **Export credentials for backup** - Secure backup functionality
+8. **Check credential status** - Security health check and validation
+
+### .env File Import Feature
+
+The system now supports importing credentials from `.env` files, making it easy to migrate from other projects or bulk-import credentials.
+
+#### How to Use .env Import:
+
+**1. Create a .env file:**
+```bash
+# Required credentials
+ANCESTRY_USERNAME=your_username@example.com
+ANCESTRY_PASSWORD=your_secure_password
+
+# Optional AI API keys
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**2. Import via credential manager:**
+```bash
+python credentials.py
+# Choose option 6: "Import credentials from .env file"
+# Enter file path (or press Enter for default .env)
+```
+
+**3. Conflict Resolution:**
+If you have existing credentials, choose:
+- **Merge**: Keep existing, add new credentials
+- **Overwrite**: Replace conflicts with .env values
+- **Replace all**: Use only .env credentials
+- **Cancel**: Cancel the import
+
+#### .env File Format Support:
+- Basic format: `KEY=VALUE`
+- Quoted values: `API_KEY="value with spaces"`
+- Comments: `# This is a comment`
+- Empty lines are ignored
+
+#### Security Notes:
+- .env files contain **unencrypted** credentials - handle securely
+- After import, credentials are encrypted using SecurityManager
+- Consider deleting .env file after successful import
+- Never commit .env files to version control
+
+## Environment Variables and Credentials Guide
+
+### Security Dependencies
+
+The secure credential management system requires the following dependencies:
+
+| Dependency | Purpose | Required |
+|------------|---------|----------|
+| cryptography | For secure encryption/decryption of credentials | Yes |
+| keyring | For secure storage of master encryption keys | Yes |
+| keyrings.alt | Alternative keyring backend for Linux/macOS | Recommended for Linux/macOS |
+
+### Installation Instructions
+
+```bash
+# Install core dependencies
+pip install cryptography keyring
+
+# For Linux/macOS users
+pip install keyrings.alt
+```
+
+Alternatively, install all dependencies using the requirements.txt file:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Platform-Specific Notes
+
+- **Windows**: No additional configuration needed
+- **Linux/macOS**: You may need additional system packages:
+  - Ubuntu/Debian: `sudo apt-get install python3-dbus`
+  - Fedora: `sudo dnf install python3-dbus`
+
+### Using the Credential Manager (Recommended)
+
+The safest way to manage your credentials is with the credential manager:
+
+```bash
+python credentials.py
+```
+
+This tool will:
+1. Encrypt your credentials with a master key
+2. Store the master key securely in your system's keyring
+3. Provide an interactive interface for managing credentials
+
+### Using Environment Variables (Alternative)
+
+If you prefer to use environment variables:
+
+1. Copy the `.env.example` file to `.env`
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit the `.env` file and add your credentials:
+   ```
+   ANCESTRY_USERNAME=your_username_or_email
+   ANCESTRY_PASSWORD=your_password
+   DEEPSEEK_API_KEY=your_deepseek_api_key
+   GOOGLE_API_KEY=your_google_api_key
+   ```
+
+### Importing Existing Credentials
+
+If you already have credentials in a `.env` file and want to import them into the secure storage:
+
+1. Run the credential manager:
+   ```bash
+   python credentials.py
+   ```
+
+2. Select option 6: "Import credentials from .env file"
+3. Follow the prompts to import your credentials
+
+### Troubleshooting
+
+#### Security Dependency Issues
+
+If you encounter issues with security dependencies:
+
+1. **Installation Errors**:
+   - For permission errors: `pip install --user cryptography keyring`
+   - For build errors with cryptography:
+     - Windows: Ensure Visual C++ Build Tools are installed
+     - Linux: Install `python3-dev` and `libffi-dev` packages
+
+2. **Keyring Access Issues**:
+   - If you're having trouble with the system keyring:
+     ```bash
+     pip install keyrings.alt
+     ```
+
+3. **ImportError When Running**:
+   - If you see "Security dependencies not available":
+     ```bash
+     pip install cryptography keyring
+     ```
+
+### For Developers
+
+#### Test Credentials:
+```bash
+python credentials.py
+# Choose option 5: "Setup test credentials"
+# Creates dummy credentials for development
+```
+
+#### Production Setup:
+```bash
+python credentials.py  
+# Choose option 2: "Setup/Update credentials"
+# Interactive prompts for real credentials
+```
+
+#### Status Check:
+```bash
+python credentials.py
+# Choose option 8: "Check credential status"
+# Validates encryption, checks required credentials
+```
+
+### Legacy Files Removed
+
+The following files have been **removed** and replaced by `credentials.py`:
+- `setup_security.py` (657 lines) - Complex security setup
+- `setup_credentials_interactive.py` (373 lines) - Interactive setup
+- `setup_credentials_helper.py` (550 lines) - Helper functions
+
+### Benefits of New System
+
+- **Single entry point** - No confusion about which script to use
+- **Unified interface** - All operations in one clear menu
+- **Better UX** - Helpful prompts and clear feedback
+- **Safer operations** - Confirmation prompts for dangerous actions
+- **Developer friendly** - Easy test credential setup
+- **Production ready** - Comprehensive validation and status checking
+- **Import flexibility** - Easy migration from .env files
 
 ### 3.b Key Features of Each File
 
@@ -509,6 +719,30 @@ The multi-level caching system provides exceptional performance:
 - **API Key Protection**: All AI provider keys encrypted and securely managed
 - **Access Control**: Comprehensive credential access logging and audit trails
 - **Migration Support**: Secure migration tools from legacy plain-text storage
+- **Configurable Credential Types**: Flexible credential configuration via `credential_types.json`
+- **Interactive Configuration**: GUI for managing credential types without code changes
+
+#### Credential Types Configuration
+The system now supports configurable credential types through the `credential_types.json` file. This allows adding new API keys or credential types without modifying code.
+
+```json
+{
+    "required_credentials": {
+        "ANCESTRY_USERNAME": "Ancestry.com username/email",
+        "ANCESTRY_PASSWORD": "Ancestry.com password"
+    },
+    "optional_credentials": {
+        "DEEPSEEK_API_KEY": "DeepSeek AI API key (optional)",
+        "OPENAI_API_KEY": "OpenAI API key (optional)",
+        "GOOGLE_API_KEY": "Google API key (optional)"
+    }
+}
+```
+
+To manage credential types:
+1. Run `python credentials.py`
+2. Select option 9: "Edit credential types configuration"
+3. Follow the interactive prompts to add, edit, move, or remove credential types
 
 #### Data Privacy Controls (ENHANCED ✅)
 - **Local Encryption**: Sensitive genealogical data encrypted at rest
@@ -861,1113 +1095,3 @@ The system interacts with multiple Ancestry.com internal APIs that are not offic
 - **Purpose**: Send message to existing conversation
 - **Headers**: `ancestry-clientpath: express-fe`, CSRF token
 - **Body**: Message content and metadata
-- **Response**: Message delivery confirmation
-
-#### Tree and Relationship APIs
-
-**In-Tree Status Check**
-- **Endpoint**: `/discoveryui-matches/service/client/matches/{match_id}/tree-status`
-- **Method**: GET
-- **Purpose**: Check if match is linked in user's tree
-- **Headers**: Complex headers with Origin and Referer
-- **Response**: Tree linkage status and details
-
-**Person Facts API**
-- **Endpoint**: `/trees/person/{person_id}/facts`
-- **Method**: GET
-- **Purpose**: Get detailed facts about a person in tree
-- **Headers**: `X-Requested-With: XMLHttpRequest`
-- **Response**: Person's vital records and facts
-
-**Tree Ladder API**
-- **Endpoint**: `/trees/{tree_id}/treeladder/{person_id}`
-- **Method**: GET
-- **Purpose**: Get relationship path between individuals
-- **Headers**: `X-Requested-With: XMLHttpRequest`
-- **Response**: Relationship ladder/path information
-
-#### Search and Suggestion APIs
-
-**Person Picker Suggest API**
-- **Endpoint**: `/trees/person/picker/suggest`
-- **Method**: GET
-- **Parameters**: Search criteria (name, birth year, etc.)
-- **Purpose**: Get person suggestions from tree
-- **Response**: List of matching individuals
-
-**TreesUI List API**
-- **Endpoint**: `/treesui/api/trees/{tree_id}/list`
-- **Method**: GET
-- **Parameters**: Search and filter criteria
-- **Purpose**: Search for individuals in tree
-- **Response**: Filtered list of tree members
-
-**Discovery Relationship API**
-- **Endpoint**: `/discoveryui-matches/service/client/relationship`
-- **Method**: GET
-- **Parameters**: Person IDs for relationship calculation
-- **Purpose**: Calculate relationship between individuals
-- **Response**: Relationship details and path
-
-### 7.3 API Authentication Requirements
-
-#### Essential Headers
-
-**ancestry-context-ube**
-- **Format**: Base64-encoded JSON string
-- **Content**: User behavior events context
-- **Structure**:
-  ```json
-  {
-    "eventId": "00000000-0000-0000-0000-000000000000",
-    "correlatedScreenViewedId": "uuid-v4",
-    "correlatedSessionId": "session-id-from-cookie",
-    "screenNameStandard": "screen-identifier",
-    "screenNameLegacy": "legacy-screen-id",
-    "userConsent": "necessary|preference|performance|...",
-    "vendors": "vendor-list",
-    "vendorConfigurations": "vendor-config"
-  }
-  ```
-
-**X-CSRF-Token**
-- **Source**: Retrieved from CSRF API or cookies
-- **Usage**: Required for all state-changing operations
-- **Format**: Alphanumeric token string
-
-**newrelic**
-- **Purpose**: New Relic performance monitoring
-- **Format**: Base64-encoded performance data
-- **Generation**: Synthetic data for compatibility
-
-**traceparent**
-- **Standard**: W3C Trace Context
-- **Format**: `00-{trace-id}-{span-id}-01`
-- **Purpose**: Distributed tracing support
-
-#### Session Cookies
-
-**ANCSESSIONID**
-- **Purpose**: Primary session identifier
-- **Scope**: ancestry.com domain
-- **Security**: HttpOnly, Secure flags
-- **Lifetime**: Session-based
-
-**SecureATT**
-- **Purpose**: Authentication token
-- **Scope**: ancestry.com domain
-- **Security**: HttpOnly, Secure flags
-- **Lifetime**: Extended session
-
-### 7.4 API Rate Limiting and Error Handling
-
-#### Rate Limiting Strategy
-- **Initial Delay**: 0.5 seconds between requests
-- **Backoff Factor**: 1.8x increase on rate limit
-- **Maximum Delay**: 60 seconds
-- **Decrease Factor**: 0.98x decrease on success
-- **Token Bucket**: 10 capacity, 2 tokens/second refill
-
-#### Error Response Codes
-- **401 Unauthorized**: Session expired or invalid
-- **403 Forbidden**: Access denied or CSRF failure
-- **429 Too Many Requests**: Rate limit exceeded
-- **500 Internal Server Error**: Ancestry server error
-- **502/503/504**: Gateway/service errors
-
-#### Retry Logic
-- **Automatic Retry**: For 429, 500, 502, 503, 504 status codes
-- **Maximum Retries**: 5 attempts with exponential backoff
-- **Circuit Breaker**: Temporary suspension after repeated failures
-- **Fallback Mechanisms**: Alternative endpoints or cached data
-
-### 7.5 API Response Formats
-
-#### Standard Response Structure
-Most APIs return JSON with consistent structure:
-```json
-{
-  "data": { /* actual response data */ },
-  "status": "success|error",
-  "message": "optional message",
-  "pagination": { /* for paginated responses */ },
-  "metadata": { /* additional context */ }
-}
-```
-
-#### Error Response Format
-```json
-{
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human readable error message",
-    "details": { /* additional error context */ }
-  },
-  "status": "error"
-}
-```
-
-### 7.6 API Monitoring and Maintenance
-
-#### Health Check Endpoints
-The system should regularly verify these critical endpoints:
-- CSRF token retrieval
-- Profile information access
-- Match list pagination
-- Message sending capability
-- Tree search functionality
-
-#### Change Detection
-Monitor for changes in:
-- Response schema modifications
-- New required headers
-- Authentication flow changes
-- Rate limiting adjustments
-- Endpoint URL modifications
-
-#### Maintenance Procedures
-1. **Regular Testing**: Weekly automated API health checks
-2. **Response Validation**: Verify expected response structures
-3. **Header Analysis**: Monitor for new header requirements
-4. **Error Pattern Analysis**: Track error rates and patterns
-5. **Performance Monitoring**: Track response times and success rates
-
-## 8. Appendix C: Essential Information for Developers
-
-### 8.1 Development Environment Setup
-
-#### Prerequisites
-- **Python 3.8+**: Required for modern async/await syntax and type hints
-- **Chrome Browser**: Latest stable version for Selenium automation
-- **Git**: For version control and repository management
-- **IDE**: VS Code recommended with Python extension
-
-#### Installation Steps
-1. **Clone Repository**:
-   ```bash
-   git clone <repository-url>
-   cd Ancestry
-   ```
-
-2. **Create Virtual Environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   venv\Scripts\activate     # Windows
-   ```
-
-3. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure Environment**:
-   - Copy `.env.example` to `.env`
-   - Fill in required credentials and settings
-   - Ensure GEDCOM file path is correct
-
-#### Key Dependencies
-- **Selenium & Browser Automation**:
-  - `selenium`: Web browser automation framework
-  - `undetected-chromedriver`: Stealth browser automation
-  - `webdriver-manager`: Automatic ChromeDriver management
-
-- **HTTP & API Interaction**:
-  - `requests`: HTTP library for API calls
-  - `urllib3`: Low-level HTTP client utilities
-  - `certifi`: Certificate authority bundle
-
-- **Database & ORM**:
-  - `SQLAlchemy`: Object-relational mapping framework
-  - `sqlite3`: Built-in SQLite database support
-
-- **AI & Machine Learning**:
-  - `openai`: OpenAI API client (for DeepSeek)
-  - `google-generativeai`: Google Gemini API client
-  - `pydantic`: Data validation and parsing
-
-- **Data Processing**:
-  - `pandas`: Data manipulation and analysis
-  - `numpy`: Numerical computing support
-  - `ged4py`: GEDCOM file parsing library
-
-- **Utilities & Support**:
-  - `python-dotenv`: Environment variable management
-  - `diskcache`: Persistent caching system
-  - `dateparser`: Flexible date parsing
-  - `tabulate`: Table formatting for console output
-  - `psutil`: System and process utilities
-  - `beautifulsoup4`: HTML parsing
-
-### 8.2 Configuration Management
-
-#### Environment Variables (.env file)
-```bash
-# Ancestry Credentials
-ANCESTRY_USERNAME=your_username
-ANCESTRY_PASSWORD=your_password
-
-# AI Provider Settings
-DEEPSEEK_API_KEY=your_deepseek_key
-DEEPSEEK_MODEL=deepseek-chat
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-1.5-flash
-
-# File Paths
-GEDCOM_FILE_PATH=./Data/your_tree.ged
-DATABASE_PATH=./ancestry_data.db
-
-# Selenium Configuration
-HEADLESS_MODE=True
-DEBUG_PORT=9222
-CHROME_MAX_RETRIES=3
-CHROME_RETRY_DELAY=5
-
-# API Configuration
-BASE_URL=https://www.ancestry.com
-API_RATE_LIMIT=0.5
-MAX_RETRIES=5
-
-# Microsoft Graph (Optional)
-MS_CLIENT_ID=your_client_id
-MS_TENANT_ID=your_tenant_id
-```
-
-#### Configuration Classes
-- **Config_Class**: Main configuration management
-- **SeleniumConfig**: Browser-specific settings
-- **DatabaseConfig**: Database connection settings
-- **AIConfig**: AI provider configurations
-
-### 8.3 Database Schema
-
-#### Core Tables
-
-**persons**
-- `id`: Primary key (INTEGER)
-- `profile_id`: Ancestry profile ID (TEXT)
-- `display_name`: User's display name (TEXT)
-- `first_name`: First name (TEXT)
-- `last_name`: Last name (TEXT)
-- `status`: Current status (ENUM)
-- `created_at`: Record creation timestamp
-- `updated_at`: Last update timestamp
-
-**dna_matches**
-- `id`: Primary key (INTEGER)
-- `person_id`: Foreign key to persons table
-- `shared_cm`: Shared centimorgans (REAL)
-- `shared_segments`: Number of shared segments (INTEGER)
-- `predicted_relationship`: Ancestry's prediction (TEXT)
-- `confidence`: Confidence level (TEXT)
-- `in_tree`: Whether match is linked in tree (BOOLEAN)
-
-**family_trees**
-- `id`: Primary key (INTEGER)
-- `person_id`: Foreign key to persons table
-- `tree_id`: Ancestry tree ID (TEXT)
-- `tree_name`: Tree name (TEXT)
-- `tree_size`: Number of people in tree (INTEGER)
-- `is_public`: Tree visibility (BOOLEAN)
-
-**conversation_logs**
-- `id`: Primary key (INTEGER)
-- `person_id`: Foreign key to persons table
-- `conversation_id`: Ancestry conversation ID (TEXT)
-- `message_content`: Message text (TEXT)
-- `direction`: SENT or RECEIVED (ENUM)
-- `timestamp`: Message timestamp
-- `ai_classification`: AI-determined intent (TEXT)
-
-### 8.4 Internal Self-Test Infrastructure - **STANDARDIZED FRAMEWORK** ✅
-
-Every script in this codebase implements a **fully standardized test framework** that validates functionality, ensures code quality, and provides comprehensive regression testing. This standardized infrastructure enables each module to be independently verified with consistent patterns, meaningful assertions, and detailed reporting.
-
-#### 8.4.1 **STANDARDIZATION PROGRESS - 27% COMPLETION** 🎯
-
-**MISSION IN PROGRESS**: Test framework standardization is currently **27% complete** with systematic updates continuing.
-
-**📊 CURRENT STATISTICS:**
-- **✅ Standardized files**: 13 (27% of total 48 files)
-- **🔄 Files remaining**: 35 (73% remaining for update)
-- **🎯 Target completion**: All 48 files following identical pattern
-- **🐛 Errors**: 0 (all completed files error-free)
-
-**🏆 ACHIEVEMENTS SO FAR:**
-- ✅ **Single test regimen** per file (`run_comprehensive_tests()` only)
-- ✅ **No legacy/fallback provisions** - eliminated all try/except wrappers
-- ✅ **Meaningful assertions** - all tests verify real functionality
-- ✅ **6-category test structure** (Initialization, Core, Edge Cases, Integration, Performance, Error Handling)
-- ✅ **Comprehensive type annotations** - all core modules include proper type hints
-- ✅ **Type safety validation** - tests verify proper type annotation implementation
-- ✅ **Complete function coverage** - every major function tested
-- ✅ **Standardized output format** with detailed test descriptions
-- ✅ **Test data identification** - all test data marked with "12345"
-- ✅ **suppress_logging() integration** for clean output
-
-**📋 COMPLETED FILES (13/48):**
-- ✅ error_handling.py - Error handling utility validation
-- ✅ database.py - Database operations and transaction tests  
-- ✅ utils.py - Session management and utilities tests
-- ✅ core/database_manager.py - Database management tests
-- ✅ logging_config.py - Logging configuration tests
-- ✅ api_utils.py - API wrapper and authentication tests
-- ✅ my_selectors.py - CSS selector validation tests
-- ✅ action1_login.py - Authentication system tests
-- ✅ action2_homepage.py - Homepage navigation tests
-- ✅ action3_search.py - Search functionality tests
-- ✅ action4_profile.py - Profile management tests
-- ✅ action5_tree.py - Family tree management tests
-- ✅ action6_gather.py - Data gathering and collection tests
-
-**🔧 FILES PENDING UPDATES (35/48):**
-- action7_inbox.py, action8_messaging.py, action9_process_productive.py
-- action10.py, action11.py
-- ai_interface.py, ai_prompt_utils.py
-- api_search_utils.py, api_cache.py
-- gedcom_utils.py, gedcom_search_utils.py, gedcom_cache.py
-- performance_monitor.py, relationship_utils.py
-- selenium_utils.py, security_manager.py
-- cache_manager.py, chromedriver.py, credential_manager.py
-- ms_graph_utils.py, person_search.py
-- core/ subdirectory files: session_manager.py, session_validator.py, api_manager.py, browser_manager.py, dependency_injection.py
-- config/ subdirectory files: config_manager.py, config_schema.py
-
-#### 8.4.2 **Standardized Test Pattern Implementation**
-
-Every file now follows this exact, consistent pattern:
-
-```python
-def run_comprehensive_tests() -> bool:
-    """
-    Comprehensive test suite for [module_name].py using standardized 6-category TestSuite framework.
-    Tests [module_purpose].
-
-    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
-    """
-    try:
-        from test_framework import TestSuite, suppress_logging
-        has_framework = True
-    except ImportError:
-        has_framework = False
-    
-    if not has_framework:
-        logger.info("🔧 Running basic [module] tests...")
-        try:
-            # Meaningful basic tests without dependencies
-            # Real functionality verification with assertions
-            logger.info("✅ Basic [module] tests completed")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Basic [module] tests failed: {e}")
-            return False
-
-    with suppress_logging():
-        suite = TestSuite("[Module Purpose & Description]", "[module_name].py")
-        suite.start_suite()
-        
-        # === INITIALIZATION TESTS ===
-        def test_module_initialization():
-            """Test module initialization and dependencies."""
-            # Real test implementation
-            return True
-        
-        suite.run_test(
-            "Module Initialization",
-            test_module_initialization,
-            "Expected behavior description",
-            "What is being tested",
-            "How the test is performed"
-        )
-        
-        # === CORE FUNCTIONALITY TESTS ===
-        # === EDGE CASES TESTS ===
-        # === INTEGRATION TESTS ===
-        # === PERFORMANCE TESTS ===
-        # === ERROR HANDLING TESTS ===
-        
-        return suite.finish_suite()
-```
-
-#### 8.4.3 **Test Framework Architecture**
-
-**Central Test Framework (`test_framework.py`)**
-
-The core testing infrastructure provides:
-
-- **Unified Test Execution**: Consistent test runner with standardized output formatting
-- **Visual Feedback**: Color-coded results with success/failure indicators and emoji icons
-- **Test Categorization**: Organized test suites with clear labeling and progress tracking
-- **Error Handling**: Robust exception capture with detailed error reporting
-- **Performance Metrics**: Execution time tracking for performance regression detection
-- **Logging Suppression**: Clean output through `suppress_logging()` context manager
-
-```python
-class TestSuite:
-    def start_suite(self, name: str, filename: str) -> None
-    def run_test(self, name: str, test_func: callable, expected: str, description: str, method: str) -> bool
-    def finish_suite(self) -> bool
-```
-
-#### 8.4.4 **Standardized Test Categories - 6-Category Framework**
-
-Every module implements comprehensive testing across these standardized categories:
-
-**1. Initialization Tests**
-- Module imports and dependency validation
-- Configuration loading and default value verification
-- Basic class/function instantiation
-- Required attribute and method availability
-
-**2. Core Functionality Tests**
-- Primary feature validation with valid inputs
-- API integration and response handling
-- Data processing and transformation accuracy
-- Algorithm correctness and expected outputs
-
-**3. Edge Cases Tests**
-- Boundary condition validation
-- Empty data set handling
-- Maximum/minimum value processing
-- Malformed data resilience
-- Unicode and special character handling
-
-**4. Integration Tests**
-- Cross-module interaction validation
-- Database transaction integrity
-- API authentication and session management
-- File system operations and permissions
-- Cache coordination and data consistency
-
-**5. Performance Tests**
-- Large dataset processing validation
-- Memory usage and leak detection
-- Cache effectiveness verification
-- Rate limiting compliance
-- Response time measurements
-
-**6. Error Handling Tests**
-- Invalid input handling and graceful degradation
-- Network failure simulation and recovery
-- Database connection failures and rollback
-- Authentication errors and re-authentication
-- Exception propagation and logging
-
-#### 8.4.5 **FILES PROCESSED - 27% COMPLETION**
-
-**Completed Files (13 files) ✅**
-- ✅ error_handling.py - Error handling utility validation
-- ✅ database.py - Database operations and transaction tests
-- ✅ utils.py - Session management and utilities tests  
-- ✅ core/database_manager.py - Database management tests
-- ✅ logging_config.py - Logging configuration tests
-- ✅ api_utils.py - API wrapper and authentication tests
-- ✅ my_selectors.py - CSS selector validation tests
-- ✅ action1_login.py - Authentication system tests
-- ✅ action2_homepage.py - Homepage navigation tests
-- ✅ action3_search.py - Search functionality tests
-- ✅ action4_profile.py - Profile management tests
-- ✅ action5_tree.py - Family tree management tests
-- ✅ action6_gather.py - DNA match data harvesting tests
-
-**Files Pending Updates (35 files) 🔧**
-
-**Action Modules (5 files pending):**
-- 🔧 action7_inbox.py - Intelligent inbox processing tests
-- 🔧 action8_messaging.py - Automated messaging system tests  
-- 🔧 action9_process_productive.py - AI data extraction tests
-- 🔧 action10.py - GEDCOM research functionality tests
-- 🔧 action11.py - Live API research tests
-
-**AI Interface (2 files pending):**
-- 🔧 ai_interface.py - AI model integration tests
-- 🔧 ai_prompt_utils.py - AI prompt management tests
-
-**API & Utilities (8 files pending):**
-- 🔧 api_search_utils.py - Search utility function tests
-- 🔧 api_cache.py - API caching mechanism tests
-- 🔧 cache.py - Core caching system tests
-- 🔧 cache_manager.py - Cache management tests
-- 🔧 chromedriver.py - Browser automation tests
-- 🔧 selenium_utils.py - Selenium utility tests
-- 🔧 ms_graph_utils.py - Microsoft Graph integration tests
-- 🔧 config.py - Configuration management tests
-
-**GEDCOM & Search (4 files pending):**
-- 🔧 gedcom_cache.py - GEDCOM file caching tests
-- 🔧 gedcom_search_utils.py - GEDCOM search algorithm tests
-- 🔧 gedcom_utils.py - GEDCOM parsing and processing tests
-- 🔧 person_search.py - Person matching and search tests
-
-**Core Infrastructure (7 files pending):**
-- 🔧 credential_manager.py - Credential management tests
-- 🔧 security_manager.py - Security and encryption tests
-- 🔧 performance_monitor.py - Performance monitoring tests
-- 🔧 relationship_utils.py - Family relationship calculation tests
-- 🔧 core/session_manager.py - Session management tests
-- 🔧 core/session_validator.py - Session validation tests
-- 🔧 core/api_manager.py - API management tests
-
-**Additional Utilities (9 files pending):**
-- 🔧 main.py - Main application orchestrator tests
-- 🔧 [remaining utility files need identification]
-
-#### 8.4.6 **Key Improvements Achieved in Completed Files**
-
-**1. Eliminated Duplicate Test Regimens** (In 13 completed files)
-- Removed all `run_comprehensive_tests_fallback()` functions
-- Removed all `_run_basic_fallback_tests()` functions
-- Single test entry point per file
-
-**2. Implemented Graceful Degradation** (In 13 completed files)
-- Conditional framework import with proper fallback
-- Meaningful basic tests when framework unavailable
-- No silent failures or import errors
-
-**3. Added suppress_logging() Integration** (In 13 completed files)
-- All test suites wrapped with logging suppression
-- Cleaner test output without noise
-- Consistent user experience
-
-**4. Fixed Import Issues** (In 13 completed files)
-- Proper conditional handling of test framework imports
-- Robust error handling for missing dependencies
-- No more import failures
-
-**5. Standardized Output Format** (In 13 completed files)
-- Consistent emoji usage (🔧, ✅, ❌)
-- Clear success/failure messaging
-- Standardized test descriptions and categories
-
-**REMAINING WORK:**
-- **35 files** still need the same pattern applied
-- Systematic updates continuing with proven methodology
-- Expected completion with consistent pattern application
-
-#### 8.4.7 **Benefits Achieved in Completed Files**
-
-**1. Consistency** (13 files completed)
-- All completed files follow identical test pattern
-- Predictable behavior across completed modules
-- Easy to maintain and extend pattern
-
-**2. Reliability** (13 files completed)
-- Graceful degradation when framework unavailable
-- No silent failures or exceptions in completed files
-- Robust error handling established
-
-**3. Maintainability** (13 files completed)
-- Single pattern to understand and modify
-- No duplicate code to maintain in completed files
-- Clear separation of concerns established
-
-**4. User Experience** (13 files completed)
-- Clean, suppressed logging output
-- Consistent success/failure reporting
-- Meaningful test descriptions implemented
-
-**5. Development Efficiency** (13 files completed)
-- Easy to add new tests to existing structure
-- Consistent debugging experience in completed files
-- Clear test categorization established
-
-**SCALING BENEFITS:**
-- Pattern proven successful across 13 diverse file types
-- Methodology ready for systematic application to remaining 35 files
-- Standardization benefits will scale linearly with completion
-
-#### 8.4.8 **Running Tests**
-
-**Individual Module Tests** (For completed files)
-```bash
-# Run tests for any standardized module (13 completed files)
-python error_handling.py
-python database.py
-python utils.py
-python core/database_manager.py
-python logging_config.py
-python api_utils.py
-python my_selectors.py
-python action1_login.py
-python action2_homepage.py
-python action3_search.py
-python action4_profile.py
-python action5_tree.py
-python action6_gather.py
-```
-
-**Test Output Example (Standardized Format)**
-```
-🔧 Running Configuration Management & Environment Integration comprehensive test suite...
-
-Testing: Configuration Management & Environment Integration (config.py)
-
-⚙️ Test 1: Module Imports
-Test: Test all required modules and dependencies are properly imported
-Method: Check if module is imported or available in globals
-Expected: All modules should be importable and accessible
-Outcome: ✅ All required modules (os, sys, pathlib, logging, typing) available
-Duration: 0.002s
-Conclusion: ✅ PASSED
-
-⚙️ Test 2: Config Class Initialization  
-Test: Config_Class initializes properly with all required attributes
-Method: Create Config_Class instance and verify core attributes exist
-Expected: Instance created successfully with BASE_URL, DATABASE_FILE, TREE_NAME, USER_AGENTS
-Outcome: ✅ Config_Class instance created with all required attributes
-Duration: 0.015s
-Conclusion: ✅ PASSED
-
-🎯 Test Results: 16/16 passed (100.0%) in 0.234s
-✅ Configuration Management & Environment Integration tests completed successfully!
-```
-
-**Files Pending Standardization** (35 remaining files)
-```bash
-# These files need test framework standardization updates
-python action7_inbox.py
-python action8_messaging.py
-python action9_process_productive.py
-python action10.py
-python action11.py
-python ai_interface.py
-python ai_prompt_utils.py
-# ... (and 28 more files)
-```
-
-#### 8.4.9 **Mock Data and Test Utilities**
-
-**Standardized Mock Data Creation**
-```python
-def create_mock_data(data_type: str, **kwargs):
-    """Create realistic mock data for testing."""
-    generators = {
-        'dna_match': create_mock_dna_match,
-        'message': create_mock_message,  
-        'person': create_mock_person,
-        'conversation': create_mock_conversation,
-        'gedcom_record': create_mock_gedcom_record
-    }
-    return generators.get(data_type, lambda: {})(**kwargs)
-```
-
-**Assertion Helpers**
-```python
-def assert_valid_function(func: callable, name: str) -> None:
-    """Assert that function is callable and properly defined."""
-    
-def assert_non_empty_dict(data: dict, name: str = "dictionary") -> None:
-    """Assert that dictionary is not empty."""
-```
-
-#### 8.4.10 **Test Development Guidelines**
-
-**Adding Tests to New Modules**
-
-1. **Follow the standardized pattern** exactly as shown above
-2. **Import test framework** with proper fallback handling
-3. **Implement meaningful basic tests** for when framework unavailable
-4. **Create 6-category test structure** covering all major functionality
-5. **Use suppress_logging()** wrapper around test suite
-6. **Add comprehensive error handling** for all test scenarios
-7. **Document test coverage** and any special testing considerations
-
-**Quality Requirements**
-- ✅ No dummy tests or meaningless assertions
-- ✅ Real functionality verification with meaningful assertions
-- ✅ Proper handling of timeouts (especially for GEDCOM processing)
-- ✅ Consistent error handling and graceful degradation
-- ✅ Standardized logging suppression to avoid noise
-- ✅ Comprehensive coverage across all 6 test categories
-- ✅ Complete type annotations for all functions and methods
-- ✅ Type safety validation in test functions
-
-**Test Function Best Practices**
-
-- **Descriptive Names**: Use clear, descriptive test function names
-- **Comprehensive Coverage**: Test both success and failure scenarios  
-- **Isolated Tests**: Each test should be independent and not rely on others
-- **Clear Assertions**: Use specific assertions with meaningful error messages
-- **Mock External Dependencies**: Use mocks for API calls, file I/O, and database operations
-- **Performance Awareness**: Include performance validation for critical operations
-- **Type Safety**: Include proper type annotations in test functions
-
-**Example New Module Test Implementation**
-```python
-def test_new_functionality() -> bool:
-    """Test new functionality with comprehensive validation."""
-    with suppress_logging():
-        try:
-            # Arrange: Set up test data with proper types
-            input_data: Dict[str, Any] = create_mock_data('test_input')
-            expected_result: Dict[str, Any] = {'status': 'success', 'data': []}
-            
-            # Act: Execute function under test
-            actual_result: Optional[Dict[str, Any]] = new_function(input_data)
-            
-            # Assert: Validate results with type checks
-            assert actual_result is not None, "Function must return a result"
-            assert isinstance(actual_result, dict), "Result must be a dictionary"
-            assert actual_result['status'] == expected_result['status'], \
-                   f"Expected status {expected_result['status']}, got {actual_result['status']}"
-            assert isinstance(actual_result['data'], list), \
-                   "Data field must be a list"
-                   
-            return True
-            
-        except Exception as e:
-            print(f"Test failed with error: {e}")
-            return False
-
-def test_type_annotations() -> bool:
-    """Test that functions have proper type annotations."""
-    import inspect
-    
-    # Check function signatures have proper annotations
-    sig = inspect.signature(target_function)
-    for param_name, param in sig.parameters.items():
-        assert param.annotation != inspect.Parameter.empty, \
-               f"Parameter '{param_name}' missing type annotation"
-    
-    assert sig.return_annotation != inspect.Signature.empty, \
-           "Function missing return type annotation"
-    
-    return True
-```
-
-#### 8.4.8 Benefits of Internal Test Infrastructure
-
-**Development Confidence**
-- Immediate validation of code changes
-- Regression testing prevents breaking existing functionality
-- Clear indication of module health and reliability
-
-**Code Quality Assurance**
-- Enforces consistent error handling patterns
-- Validates edge case handling
-- Ensures proper API integration practices
-
-**Maintenance Efficiency**
-- Quick identification of broken functionality
-- Standardized testing approach across all modules
-- Easy integration into CI/CD pipelines
-
-**Documentation Through Tests**
-- Tests serve as executable documentation
-- Clear examples of expected module behavior
-- Validation of module contracts and interfaces
-
-This comprehensive internal test infrastructure ensures that every component of the system can be independently validated, providing confidence during development, maintenance, and enhancement activities. The standardized approach makes it easy to add tests to new modules and maintain consistent testing practices across the entire codebase.
-
-**CURRENT STATUS:**
-- **13 files completed** with full standardization (27% of total)
-- **35 files remaining** for systematic updates (73% pending)
-- **Proven pattern** ready for continued application
-- **Zero errors** in completed files - pattern validated and reliable
-
-### 8.5 Debugging and Troubleshooting
-
-#### Common Issues
-
-**Authentication Failures**
-- Check credentials in .env file
-- Verify 2FA settings if enabled
-- Clear browser cache and cookies
-- Check for Ancestry login page changes
-
-**API Errors**
-- Monitor rate limiting and adjust delays
-- Verify header generation is working
-- Check for API endpoint changes
-- Review error logs for patterns
-
-**Database Issues**
-- Check file permissions for SQLite database
-- Verify schema migrations are applied
-- Monitor for database locks during concurrent access
-- Regular database integrity checks
-
-**Performance Problems**
-- Monitor memory usage during large operations
-- Check cache hit rates and effectiveness
-- Profile slow database queries
-- Optimize GEDCOM processing for large files
-
-#### Logging Configuration
-- **Log Levels**: DEBUG, INFO, WARNING, ERROR, CRITICAL
-- **Log Rotation**: Automatic rotation based on size/time
-- **Structured Logging**: JSON format for machine parsing
-- **Performance Metrics**: Track operation timing and success rates
-
-### 8.6 Deployment Considerations
-
-#### Production Deployment
-- **Environment Separation**: Separate dev/staging/production configs
-- **Secret Management**: Use secure credential storage
-- **Monitoring**: Implement comprehensive monitoring and alerting
-- **Backup Strategy**: Regular database and configuration backups
-- **Update Procedures**: Safe update and rollback procedures
-
-#### Scaling Considerations
-- **Database Migration**: Plan for PostgreSQL migration
-- **Horizontal Scaling**: Design for multiple instance deployment
-- **Load Balancing**: Distribute API calls across instances
-- **Cache Clustering**: Shared cache for multiple instances
-- **Message Queuing**: Async processing for heavy operations
-
-### 8.7 Security Best Practices
-
-#### Credential Security
-- **Environment Variables**: Never commit credentials to version control
-- **Encryption**: Encrypt sensitive data at rest
-- **Access Control**: Implement proper user authentication
-- **Audit Logging**: Track all security-relevant operations
-- **Regular Rotation**: Rotate API keys and passwords regularly
-
-#### Data Protection
-- **Data Minimization**: Only collect necessary data
-- **Retention Policies**: Implement data retention and deletion
-- **Anonymization**: Remove or anonymize personal data when possible
-- **Compliance**: Ensure GDPR and other privacy regulation compliance
-- **Secure Transmission**: Use HTTPS for all communications
-
-### 8.8 Maintenance and Monitoring
-
-#### Regular Maintenance Tasks
-- **Database Cleanup**: Remove old logs and temporary data
-- **Cache Management**: Clear expired cache entries
-- **Log Rotation**: Manage log file sizes and retention
-- **Dependency Updates**: Keep libraries and dependencies current
-- **Security Patches**: Apply security updates promptly
-
-#### Monitoring Metrics
-- **System Performance**: CPU, memory, disk usage
-- **API Health**: Response times, error rates, success rates
-- **Database Performance**: Query times, connection pool usage
-- **Cache Effectiveness**: Hit rates, memory usage
-- **User Activity**: Action execution frequency and success
-
-### 8.9 Future Development Guidelines
-
-#### Code Quality Standards
-- **Type Annotations**: Use comprehensive type annotations throughout codebase
-  - Import standard typing modules: `Optional`, `List`, `Dict`, `Tuple`, `Union`, `Any`
-  - Annotate function parameters and return types
-  - Use `Optional[Type]` for nullable parameters and returns
-  - Specify generic types for collections (e.g., `List[str]`, `Dict[str, Any]`)
-  - Use `Literal` for specific string/value constraints
-  - Apply proper type hints to class methods and attributes
-- **Documentation**: Maintain detailed docstrings and comments
-- **Testing**: Write tests for all new functionality
-- **Code Review**: Implement peer review processes
-- **Linting**: Use automated code quality tools
-
-#### Architecture Principles
-- **Modularity**: Keep components loosely coupled
-- **Extensibility**: Design for easy feature additions
-- **Maintainability**: Write clear, readable code
-- **Performance**: Consider performance implications of changes
-- **Security**: Security-first development approach
-
-#### Type Annotation Standards
-The project follows strict type annotation standards throughout the codebase. All functions, methods, and class attributes must include proper type hints.
-
-**Required Imports**
-```python
-from typing import Optional, Dict, Any, List, Tuple, Union, Literal
-from datetime import datetime
-```
-
-**Function Type Annotations**
-```python
-def process_match_data(
-    match: Dict[str, Any],
-    existing_person: Optional[Person],
-    config_instance: Any,
-    logger_instance: logging.Logger,
-) -> Tuple[Optional[Dict[str, Any]], Literal["new", "updated", "skipped", "error"]]:
-    """Process DNA match data with comprehensive type safety."""
-    pass
-```
-
-**Class Method Annotations**
-```python
-class APIManager:
-    def call_ancestry_api(
-        self,
-        endpoint: str,
-        params: Optional[Dict[str, Any]] = None,
-        timeout: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """Call Ancestry API with proper error handling."""
-        pass
-```
-
-**Database Operation Annotations**
-```python
-def create_or_update_person(
-    session: Session, 
-    person_data: Dict[str, Any]
-) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
-    """Database operations must specify exact return types."""
-    pass
-```
-
-**Collection Type Specifications**
-- Use `List[Type]` instead of generic `list`
-- Use `Dict[KeyType, ValueType]` instead of generic `dict`
-- Use `Optional[Type]` for nullable values
-- Use `Union[Type1, Type2]` for multiple possible types
-- Use `Any` sparingly and only when type cannot be determined
-
-#### Integration Guidelines
-- **API Versioning**: Plan for API changes and versioning
-- **Backward Compatibility**: Maintain compatibility when possible
-- **Error Handling**: Implement comprehensive error handling
-- **Logging**: Add appropriate logging for new features
-- **Configuration**: Make new features configurable
-
----
-
-## Appendix: Complete File Listing
-
-### Comprehensive Workspace Structure Table
-
-This appendix provides a complete inventory of all files and directories in the Ancestry.com Genealogy Automation System workspace.
-
-| **Location** | **File/Directory** | **Type** | **Description** |
-|--------------|-------------------|----------|------------------|
-| **ROOT LEVEL** | | | |
-| `/` | `.env` | File | Environment variables configuration |
-| `/` | `.env.env.backup` | File | Backup of environment variables |
-| `/` | `.env.template` | File | Template for environment variables setup |
-| `/` | `.git/` | Directory | Git version control repository |
-| `/` | `.gitattributes` | File | Git file attribute configuration |
-| `/` | `.gitignore` | File | Git ignore patterns |
-| `/` | `.venv/` | Directory | Python virtual environment |
-| `/` | `.vscode/` | Directory | VS Code editor settings |
-| `/` | `action10.py` | File | Action module #10 - Local GEDCOM analysis |
-| `/` | `action11.py` | File | Action module #11 - Live API research tool |
-| `/` | `action6_gather.py` | File | Action module #6 - DNA match data harvesting |
-| `/` | `action7_inbox.py` | File | Action module #7 - Intelligent inbox processing |
-| `/` | `action8_messaging.py` | File | Action module #8 - Automated messaging system |
-| `/` | `action9_process_productive.py` | File | Action module #9 - AI-powered data extraction |
-| `/` | `ai_interface.py` | File | AI integration interface for multiple providers |
-| `/` | `ai_prompts.json` | File | AI prompt library for genealogy-specific tasks |
-| `/` | `ai_prompt_utils.py` | File | AI prompt utility functions and management |
-| `/` | `ancestry.db` | File | Main SQLite database (legacy location) |
-| `/` | `api_cache.py` | File | API response caching system |
-| `/` | `api_search_utils.py` | File | API search utility functions |
-| `/` | `api_utils.py` | File | Ancestry API wrapper functions |
-| `/` | `cache.py` | File | Multi-level caching system implementation |
-| `/` | `cache_manager.py` | File | Cache management and monitoring system |
-| `/` | `check_db.py` | File | Database verification and diagnostic utilities |
-| `/` | `chromedriver.py` | File | Chrome WebDriver lifecycle management |
-| `/` | `config.py` | File | Centralized configuration management (legacy) |
-| `/` | `credential_manager.py` | File | Credential management and security system |
-| `/` | `database.py` | File | SQLAlchemy ORM models and database operations |
-| `/` | `error_handling.py` | File | Application-wide error handling utilities |
-| `/` | `gedcom_cache.py` | File | GEDCOM file caching and optimization system |
-| `/` | `gedcom_search_utils.py` | File | GEDCOM search and query utilities |
-| `/` | `gedcom_utils.py` | File | GEDCOM file processing and parsing utilities |
-| `/` | `logging_config.py` | File | Comprehensive logging configuration system |
-| `/` | `main.py` | File | Main application entry point and orchestrator |
-| `/` | `messages.json` | File | Automated message templates for communication |
-| `/` | `ms_graph_utils.py` | File | Microsoft Graph API integration utilities |
-| `/` | `my_selectors.py` | File | Custom CSS/XPath selectors for web automation |
-| `/` | `performance_monitor.py` | File | Performance monitoring and metrics utilities |
-| `/` | `person_search.py` | File | Person search and matching functionality |
-| `/` | `readme.md` | File | Comprehensive project documentation |
-| `/` | `relationship_utils.py` | File | Family relationship calculation utilities |
-| `/` | `requirements.txt` | File | Python package dependencies specification |
-| `/` | `run_all_tests.py` | File | Comprehensive test runner for all modules |
-| `/` | `security_manager.py` | File | Security management and authentication system |
-| `/` | `selenium_utils.py` | File | Selenium WebDriver helper functions |
-| `/` | `setup_credentials_helper.py` | File | Interactive credential setup helper |
-| `/` | `setup_real_credentials.py` | File | Production credential configuration utility |
-| `/` | `setup_security.py` | File | Security initialization and setup utilities |
-| `/` | `test_actions.py` | File | Comprehensive action module test suite |
-| `/` | `test_cleanup.py` | File | System cleanup verification tests |
-| `/` | `test_framework.py` | File | Testing framework utilities and helpers |
-| `/` | `utils.py` | File | Core utilities and session management system |
-| `/` | `__init__.py` | File | Python package initialization |
-| `/` | `__pycache__/` | Directory | Python bytecode cache (root level) |
-| **CORE ARCHITECTURE** | | | |
-| `/core/` | `api_manager.py` | File | Modular API management component |
-| `/core/` | `browser_manager.py` | File | Browser session lifecycle management |
-| `/core/` | `database_manager.py` | File | Database connection and transaction management |
-| `/core/` | `dependency_injection.py` | File | Dependency injection framework |
-| `/core/` | `error_handling.py` | File | Core error handling and recovery system |
-| `/core/` | `session_manager.py` | File | Session lifecycle and state management |
-| `/core/` | `session_validator.py` | File | Session validation and integrity utilities |
-| `/core/` | `__init__.py` | File | Core package initialization and exports |
-| `/core/` | `__pycache__/` | Directory | Python bytecode cache (core modules) |
-| **CONFIGURATION** | | | |
-| `/config/` | `config_manager.py` | File | Modular configuration management system |
-| `/config/` | `config_schema.py` | File | Configuration schema validation and types |
-| `/config/` | `credential_manager.py` | File | Credential management (modular architecture) |
-| `/config/` | `__init__.py` | File | Config package initialization and exports |
-| `/config/` | `__pycache__/` | Directory | Python bytecode cache (config modules) |
-| **DATA STORAGE** | | | |
-| `/Data/` | `ancestry.db` | File | Main SQLite database (current location) |
-| `/Data/` | `ancestry_backup.db` | File | Database backup and recovery file |
-| `/Data/` | `Gault Family.ged` | File | GEDCOM genealogy data file |
-| `/Data/Logs/` | *(empty)* | Directory | Log file storage directory (currently empty) |
-| **CACHING** | | | |
-| `/Cache/` | `cache.db` | File | Persistent cache database |
-| **EDITOR SETTINGS** | | | |
-| `/.vscode/` | `settings.json` | File | VS Code workspace configuration |
-| **PYTHON BYTECODE CACHE** | | | |
-| `/__pycache__/` | `*.cpython-312.pyc` | Files | Root level compiled Python bytecode |
-| `/core/__pycache__/` | `*.cpython-312.pyc` | Files | Core module compiled bytecode |
-| `/config/__pycache__/` | `*.cpython-312.pyc` | Files | Config module compiled bytecode |
-
-### Directory Structure Overview
-
-```
-Ancestry/
-├── Root Level (45 Python modules + config files)
-├── core/ (7 modular architecture components)
-├── config/ (3 configuration management modules)
-├── Data/ (databases + GEDCOM files + empty Logs/)
-├── Cache/ (1 cache database)
-├── .vscode/ (editor settings)
-├── .venv/ (virtual environment)
-├── .git/ (version control)
-└── __pycache__/ directories (regenerable bytecode)
-```
-
-### Summary Statistics
-
-- **Total Files**: 65+ individual files
-- **Total Directories**: 9 active directories (+ subdirectories)
-- **Python Modules**: 45+ `.py` files
-- **Configuration Files**: 6 files (`.env`, `.gitignore`, etc.)
-- **Database Files**: 3 files (2 SQLite + 1 GEDCOM)
-- **Cache Directories**: 4 `__pycache__` directories (regenerable)
-
-### Cleanup History
-
-✅ **Successfully Removed** (5 directories during codebase cleanup):
-- `compatibility/` - Legacy support modules (removed - no dependencies found)
-- `migration/` - Architectural migration tools (removed - migration completed)
-- `.migration/` - Empty directory (removed)
-- `.pytest_cache/` - Regenerable test cache (removed)
-- `improved_prompts/` - Outdated AI prompts (removed)
-
-### File Organization Principles
-
-The codebase follows a modular architecture pattern:
-
-1. **Root Level**: Core application logic and action modules
-2. **`core/`**: Modular architecture components for session, database, and API management
-3. **`config/`**: Configuration management and credential handling
-4. **`Data/`**: Persistent data storage (databases, GEDCOM files)
-5. **`Cache/`**: Performance optimization through caching
-6. **Support Directories**: Version control, virtual environment, and editor settings
-
-This organization ensures maintainability, modularity, and clear separation of concerns while supporting the complex requirements of genealogy automation and AI integration.
-
----
-
-*Last updated: June 7, 2025 - Post-cleanup comprehensive file inventory*

@@ -210,6 +210,7 @@ class SecurityManager:
     def migrate_env_credentials(self, env_file_path: str = ".env") -> bool:
         """
         Migrate plaintext credentials from .env file to encrypted storage.
+        Handles existing encrypted credentials gracefully.
 
         Args:
             env_file_path: Path to .env file
@@ -247,7 +248,32 @@ class SecurityManager:
                 logger.info("No sensitive credentials found in .env file")
                 return True
 
-            # Encrypt and store credentials
+            # Check if encrypted credentials already exist and can be decrypted
+            existing_creds = self.decrypt_credentials()
+            if existing_creds is not None:
+                logger.info(
+                    f"Found {len(existing_creds)} existing encrypted credentials"
+                )
+                # Merge with new credentials from .env
+                existing_creds.update(credentials)
+                credentials = existing_creds
+                logger.info(f"Merged credentials, total: {len(credentials)}")
+            elif self.credentials_file.exists():
+                # Encrypted file exists but can't be decrypted (key mismatch)
+                logger.warning(
+                    "Encrypted credentials file exists but cannot be decrypted"
+                )
+                logger.warning("This usually means a master key mismatch")
+                logger.info("Creating backup and replacing with new credentials")
+
+                # Backup the old encrypted file
+                backup_path = Path(f"{self.credentials_file}.backup")
+                if backup_path.exists():
+                    backup_path.unlink()  # Remove old backup
+                self.credentials_file.rename(backup_path)
+                logger.info(f"Backed up old encrypted file to {backup_path}")
+
+            # Encrypt and store credentials (this will create a new file)
             if not self.encrypt_credentials(credentials):
                 return False
 
