@@ -154,7 +154,7 @@ try:
 except ImportError:
     GEDCOM_UTILS_AVAILABLE = False
 
-    # Fallback functions for testing when gedcom_utils is not available
+    # Simplified fallback functions for testing when gedcom_utils is not available
     def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
         """Normalize GEDCOM ID by removing @ symbols."""
         if not xref_id:
@@ -172,57 +172,6 @@ except ImportError:
         parents1 = id_to_parents.get(id1, set())
         parents2 = id_to_parents.get(id2, set())
         return bool(parents1 and parents2 and parents1.intersection(parents2))
-
-    # def _are_spouses(id1: str, id2: str, reader: Any) -> bool:
-    #     """Fallback function for spouse detection."""
-    #     return False
-
-    def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
-        """Check if id1 is grandparent of id2."""
-        return False
-
-    def _is_grandchild(id1: str, id2: str, id_to_children: Dict[str, Set[str]]) -> bool:
-        """Check if id1 is grandchild of id2."""
-        return False
-
-    def _is_great_grandparent(
-        id1: str, id2: str, id_to_parents: Dict[str, Set[str]]
-    ) -> bool:
-        """Check if id1 is great-grandparent of id2."""
-        return False
-
-    def _is_great_grandchild(
-        id1: str, id2: str, id_to_children: Dict[str, Set[str]]
-    ) -> bool:
-        """Check if id1 is great-grandchild of id2."""
-        return False
-
-    def _is_aunt_or_uncle(
-        id1: str,
-        id2: str,
-        id_to_parents: Dict[str, Set[str]],
-        id_to_children: Dict[str, Set[str]],
-    ) -> bool:
-        """Check if id1 is aunt/uncle of id2."""
-        return False
-
-    def _is_niece_or_nephew(
-        id1: str,
-        id2: str,
-        id_to_parents: Dict[str, Set[str]],
-        id_to_children: Dict[str, Set[str]],
-    ) -> bool:
-        """Check if id1 is niece/nephew of id2."""
-        return False
-
-    def _are_cousins(
-        id1: str,
-        id2: str,
-        id_to_parents: Dict[str, Set[str]],
-        id_to_children: Dict[str, Set[str]],
-    ) -> bool:
-        """Check if id1 and id2 are cousins."""
-        return False
 
     def _get_full_name(indi: Any) -> str:
         """Get full name from GEDCOM individual."""
@@ -242,17 +191,6 @@ except ImportError:
         """Clean display date."""
         return raw_date_str or ""
 
-    def _has_direct_relationship(
-        id1: str,
-        id2: str,
-        id_to_parents: Dict[str, Set[str]],
-        id_to_children: Dict[str, Set[str]],
-    ) -> bool:
-        """Check if two individuals have a direct relationship."""
-        return id2 in id_to_parents.get(id1, set()) or id2 in id_to_children.get(
-            id1, set()
-        )
-
     # Define constants for fallback
     TAG_BIRTH = "BIRT"
     TAG_DEATH = "DEAT"
@@ -263,13 +201,6 @@ except ImportError:
     # Type aliases for fallback
     GedcomReaderType = Any
     GedcomIndividualType = Any
-    TAG_SEX = "SEX"
-    TAG_HUSBAND = "HUSB"
-    TAG_WIFE = "WIFE"
-
-    # Define type aliases for fallback
-    GedcomIndividualType = Any
-    GedcomReaderType = Any
 
 
 # --- Helper Functions for BFS ---
@@ -397,7 +328,6 @@ def fast_bidirectional_bfs(
     max_depth=25,
     node_limit=150000,
     timeout_sec=45,
-    log_progress=False,  # Parameter exists but not used in this version
 ) -> List[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
@@ -462,7 +392,7 @@ def fast_bidirectional_bfs(
             # Check if we've reached a node visited by backward search
             if current_id in visited_bwd:
                 # Found a meeting point - reconstruct the path
-                _bwd_depth, bwd_path = visited_bwd[current_id]  # _bwd_depth unused
+                _, bwd_path = visited_bwd[current_id]  # depth unused
                 # Combine paths (remove duplicate meeting point)
                 combined_path = path + bwd_path[1:]
                 all_paths.append(combined_path)
@@ -511,7 +441,7 @@ def fast_bidirectional_bfs(
             # Check if we've reached a node visited by forward search
             if current_id in visited_fwd:
                 # Found a meeting point - reconstruct the path
-                _fwd_depth, fwd_path = visited_fwd[current_id]  # _fwd_depth unused
+                _, fwd_path = visited_fwd[current_id]  # depth unused
                 # Combine paths (remove duplicate meeting point)
                 combined_path = fwd_path + path[1:]
                 all_paths.append(combined_path)
@@ -667,7 +597,6 @@ def format_api_relationship_path(
 
     html_content_raw: Optional[str] = None
     json_data: Optional[Dict] = None
-    # api_status: str = "unknown" # api_status was unused
 
     # Extract HTML content from API response
     if isinstance(api_response_data, str):
@@ -682,7 +611,6 @@ def format_api_relationship_path(
                 html_content_raw = (
                     json_data.get("html") if json_data is not None else None
                 )
-                # api_status = json_data.get("status", "unknown") # api_status unused
             except Exception as e:
                 logger.error(f"Error parsing JSONP response: {e}", exc_info=True)
                 return f"(Error parsing JSONP response: {e})"
@@ -693,7 +621,6 @@ def format_api_relationship_path(
         # Handle direct JSON/dict response
         json_data = api_response_data
         html_content_raw = json_data.get("html") if json_data is not None else None
-        # api_status = json_data.get("status", "unknown") # api_status unused
 
     # Handle Discovery API JSON format
     if json_data and "path" in json_data:
@@ -832,7 +759,6 @@ def format_api_relationship_path(
                 )  # Allow "Living"
                 lifespan = lifespan_match.group(0) if lifespan_match else ""
             except (AttributeError, TypeError):
-                # text_content = "" # text_content was unused
                 lifespan = ""
                 logger.debug(f"Error extracting lifespan: {type(item)}")
 

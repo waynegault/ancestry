@@ -65,8 +65,12 @@ class TestSuite:
         print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
 
     def run_test(
-        self, test_name: str, test_func: Callable, expected_behavior: str = "", 
-        test_description: str = "", method_description: str = ""
+        self,
+        test_name: str,
+        test_func: Callable,
+        expected_behavior: str = "",
+        test_description: str = "",
+        method_description: str = "",
     ) -> bool:
         """
         Run a single test with standardized output and error handling.
@@ -84,7 +88,9 @@ class TestSuite:
         self.tests_run += 1
         test_start = time.time()
 
-        print(f"{Colors.BLUE}{Icons.GEAR} Test {self.tests_run}: {test_name}{Colors.RESET}")
+        print(
+            f"{Colors.BLUE}{Icons.GEAR} Test {self.tests_run}: {test_name}{Colors.RESET}"
+        )
         if test_description:
             print(f"Test: {test_description}")
         if method_description:
@@ -96,12 +102,14 @@ class TestSuite:
             outcome_description = ""
             test_func()
             duration = time.time() - test_start
-            outcome_description = "Test executed successfully with all assertions passing"
+            outcome_description = (
+                "Test executed successfully with all assertions passing"
+            )
             print(f"Outcome: {outcome_description}")
             print(f"Duration: {duration:.3f}s")
             print(f"Conclusion: {Colors.GREEN}{Icons.PASS} PASSED{Colors.RESET}")
             print()  # Add blank line between tests
-            
+
             self.tests_passed += 1
             self.test_results.append(
                 {
@@ -121,7 +129,7 @@ class TestSuite:
             print(f"Duration: {duration:.3f}s")
             print(f"Conclusion: {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET}")
             print()  # Add blank line between tests
-            
+
             self.tests_failed += 1
             self.test_results.append(
                 {
@@ -142,7 +150,7 @@ class TestSuite:
             print(f"Duration: {duration:.3f}s")
             print(f"Conclusion: {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET}")
             print()  # Add blank line between tests
-            
+
             self.tests_failed += 1
             self.test_results.append(
                 {
@@ -248,6 +256,93 @@ def assert_valid_config(config: Any, required_attrs: List[str]):
     """Assert that a config object has required attributes."""
     for attr in required_attrs:
         assert hasattr(config, attr), f"Config should have attribute {attr}"
+
+
+def run_comprehensive_tests():
+    """
+    Comprehensive test suite for the test framework module.
+    Tests all core functionality including colors, icons, test suite operations, and mock data.
+    """
+    print(f"{Icons.ROCKET} Running comprehensive tests for test_framework.py...")
+
+    suite = TestSuite("Test Framework Comprehensive Tests", "test_framework.py")
+    suite.start_suite()
+
+    def test_colors():
+        """Test that all color constants are properly defined."""
+        assert Colors.RED == "\033[91m"
+        assert Colors.GREEN == "\033[92m"
+        assert Colors.YELLOW == "\033[93m"
+        assert Colors.BLUE == "\033[94m"
+        assert Colors.MAGENTA == "\033[95m"
+        assert Colors.CYAN == "\033[96m"
+        assert Colors.WHITE == "\033[97m"
+        assert Colors.GRAY == "\033[90m"
+        assert Colors.BOLD == "\033[1m"
+        assert Colors.UNDERLINE == "\033[4m"
+        assert Colors.RESET == "\033[0m"
+
+    def test_icons():
+        """Test that all icon constants are properly defined."""
+        assert Icons.PASS == "✅"
+        assert Icons.FAIL == "❌"
+        assert Icons.WARNING == "⚠️"
+        assert Icons.INFO == "ℹ️"
+        assert Icons.GEAR == "⚙️"
+        assert Icons.ROCKET == "🚀"
+        assert Icons.BUG == "🐛"
+        assert Icons.CLOCK == "⏰"
+        assert Icons.MAGNIFY == "🔍"
+
+    def test_mock_data():
+        """Test mock data creation functionality."""
+        data = create_mock_data()
+        assert isinstance(data, dict)
+        assert "mock_session_manager" in data
+        assert "sample_dna_data" in data
+        assert data["sample_dna_data"]["cM_DNA"] == 85
+        assert isinstance(data["mock_session_manager"], MagicMock)
+
+    def test_test_suite_creation():
+        """Test that TestSuite can be created and initialized properly."""
+        test_suite = TestSuite("Test Suite", "test_module.py")
+        assert test_suite.suite_name == "Test Suite"
+        assert test_suite.module_name == "test_module.py"
+        assert test_suite.start_time is None
+
+    def test_context_managers():
+        """Test that context managers work properly."""
+        with suppress_logging():
+            logging.critical("This logging should be suppressed")
+
+        # Test that it doesn't raise an exception
+        import os  # Should work fine
+
+        assert os.path.exists(".")
+
+    suite.run_test(
+        "Color constants", test_colors, "Should define all standard ANSI color codes"
+    )
+    suite.run_test(
+        "Icon constants", test_icons, "Should define all standard Unicode icons"
+    )
+    suite.run_test(
+        "Mock data creation",
+        test_mock_data,
+        "Should create valid test data structures",
+    )
+    suite.run_test(
+        "TestSuite creation",
+        test_test_suite_creation,
+        "Should create TestSuite instances properly",
+    )
+    suite.run_test(
+        "Context managers",
+        test_context_managers,
+        "Should provide working context managers",
+    )
+
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":

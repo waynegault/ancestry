@@ -3002,7 +3002,7 @@ def _fetch_combined_details(
         return None
 
     tester_profile_id_for_api = combined_data.get("tester_profile_id")
-    # my_profile_id_header = session_manager.my_profile_id # Unused variable
+    # Profile ID header available from session manager if needed
 
     combined_data["last_logged_in_dt"] = None
     combined_data["contactable"] = False

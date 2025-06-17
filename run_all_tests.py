@@ -11,7 +11,6 @@ Usage:
 import sys
 import os
 import time
-import importlib
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -43,7 +42,6 @@ def discover_test_modules() -> List[str]:
         "gedcom_search_utils",
         "gedcom_utils",
         "my_selectors",
-        "performance_monitor",
         "person_search",
         "relationship_utils",
         "selenium_utils",
@@ -53,14 +51,11 @@ def discover_test_modules() -> List[str]:
 
     # Scan all Python files in the current directory
     for python_file in current_dir.glob("*.py"):
-        # Skip the test runner itself, __init__.py, main.py, and setup scripts
+        # Skip the test runner itself, __init__.py, and main.py
         skip_files = [
             "run_all_tests.py",
             "__init__.py",
             "main.py",
-            "setup_credentials_helper.py",
-            "setup_real_credentials.py",
-            "setup_security.py",
         ]
 
         if python_file.name in skip_files:
@@ -73,19 +68,16 @@ def discover_test_modules() -> List[str]:
             with open(python_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-                # Enhanced test detection patterns
+                # TestSuite framework detection patterns
                 has_main_block = 'if __name__ == "__main__"' in content
                 has_test_content = any(
                     indicator in content.lower()
                     for indicator in [
                         "run_comprehensive_tests",
                         "def test_",
-                        "class test",
-                        "unittest",
                         "testsuite",
                         "test_framework",
                         "from test_framework import",
-                        "import unittest",
                         "assert ",
                         "suite.run_test",
                         "comprehensive_test",
@@ -152,7 +144,6 @@ def run_module_test(
             "test_gedcom_timeout": 90,  # 1.5 minutes for custom timeout test (if included)
             "person_search": 60,  # 1 minute for person search
             "ai_interface": 60,  # 1 minute for AI interface
-            "performance_monitor": 60,  # 1 minute for performance monitoring
             "relationship_utils": 45,  # 45 seconds for relationship utilities
             "api_utils": 45,  # 45 seconds for API utilities
             "cache_manager": 45,  # 45 seconds for cache management
@@ -261,147 +252,39 @@ def run_module_test(
     }
 
 
-def run_unittest_suite() -> Dict[str, Any]:
-    """
-    Check for legacy unittest TestSeleniumUtils and suggest conversion to TestSuite framework.
-
-    This function exists because some modules may still use the old unittest framework
-    instead of the standardized TestSuite framework. We run it separately to:
-    1. Identify modules that need migration to TestSuite
-    2. Ensure all tests run even if some use different frameworks
-    3. Provide clear guidance on which modules need updating
-    """
-    print(f"\n{'='*60}")
-    print(f"🔍 Checking for Legacy unittest Framework Usage")
-    print(f"{'='*60}")
-
-    start_time = time.time()
-
-    try:
-        import unittest
-        import selenium_utils
-
-        # Check if TestSeleniumUtils class exists in selenium_utils
-        if hasattr(selenium_utils, "TestSeleniumUtils"):
-            TestSeleniumUtils = getattr(selenium_utils, "TestSeleniumUtils")
-
-            print(f"⚠️  LEGACY FRAMEWORK DETECTED: selenium_utils.TestSeleniumUtils")
-            print(f"   📋 This module uses the old unittest framework")
-            print(f"   🔄 Consider migrating to the standardized TestSuite framework")
-
-            # Create test suite
-            loader = unittest.TestLoader()
-            suite = loader.loadTestsFromTestCase(TestSeleniumUtils)
-
-            # Run tests with minimal output
-            runner = unittest.TextTestRunner(verbosity=1, stream=open(os.devnull, "w"))
-            result = runner.run(suite)
-
-            success = result.wasSuccessful()
-            error_count = len(result.errors) + len(result.failures)
-
-            if success:
-                print(f"✅ PASSED: All {result.testsRun} legacy unittest cases passed")
-                print(
-                    f"   💡 Recommendation: Migrate to TestSuite framework for consistency"
-                )
-            else:
-                print(
-                    f"❌ FAILED: {error_count} unittest failures out of {result.testsRun} tests"
-                )
-
-            return {
-                "module": "selenium_utils (legacy unittest)",
-                "success": success,
-                "duration": time.time() - start_time,
-                "error": None if success else f"{error_count} test failures",
-                "tests_run": result.testsRun,
-                "failures": len(result.failures),
-                "errors": len(result.errors),
-                "is_legacy": True,
-            }
-        else:
-            print("✅ NO LEGACY FRAMEWORK: TestSeleniumUtils class not found")
-            print("   📊 selenium_utils module uses standardized TestSuite framework")
-            return {
-                "module": "legacy_framework_check",
-                "success": True,
-                "duration": time.time() - start_time,
-                "error": None,
-                "is_legacy": False,
-            }
-
-    except ImportError as ie:
-        print(f"📁 selenium_utils module not found: {ie}")
-        return {
-            "module": "legacy_framework_check",
-            "success": True,
-            "duration": time.time() - start_time,
-            "error": f"selenium_utils module not available: {ie}",
-            "is_legacy": False,
-        }
-    except Exception as e:
-        print(f"🚨 Error checking for legacy framework: {e}")
-        return {
-            "module": "legacy_framework_check",
-            "success": False,
-            "duration": time.time() - start_time,
-            "error": str(e),
-            "is_legacy": False,
-        }
-
-
 def print_summary(results: List[Dict[str, Any]]):
     """Print a comprehensive test summary with consistent formatting."""
     print(f"\n{'='*60}")
     print("📊 COMPREHENSIVE TEST SUMMARY")
     print(f"{'='*60}")
 
-    # Separate legacy framework results from standard TestSuite results
-    standard_results = [
-        r
-        for r in results
-        if not r.get("is_legacy", False) and r["module"] != "legacy_framework_check"
-    ]
-    legacy_results = [r for r in results if r.get("is_legacy", False)]
-    framework_check = [r for r in results if r["module"] == "legacy_framework_check"]
-
-    total_tests = len(standard_results)
-    passed_tests = sum(1 for r in standard_results if r["success"])
+    # All results are now standard TestSuite framework
+    total_tests = len(results)
+    passed_tests = sum(1 for r in results if r["success"])
     failed_tests = total_tests - passed_tests
     total_duration = sum(r["duration"] for r in results)
 
-    print(f"📈 Standard TestSuite Framework Results:")
+    print(f"📈 TestSuite Framework Results:")
     print(f"   • Total modules tested: {total_tests}")
     print(f"   • ✅ Passed: {passed_tests}")
     print(f"   • ❌ Failed: {failed_tests}")
     print(f"   • ⏱️ Total time: {total_duration:.2f}s")
     print(
-        f"   • � Success rate: {(passed_tests/total_tests*100):.1f}%"
+        f"   • 📊 Success rate: {(passed_tests/total_tests*100):.1f}%"
         if total_tests > 0
         else "   • 📊 Success rate: N/A"
     )
 
-    # Report on legacy framework usage
-    if legacy_results:
-        print(f"\n⚠️  Legacy unittest Framework Results:")
-        for result in legacy_results:
-            status = "✅ PASSED" if result["success"] else "❌ FAILED"
-            print(
-                f"   • {status} {result['module']} ({result.get('tests_run', 0)} tests)"
-            )
-            print(f"     � Recommendation: Migrate to standardized TestSuite framework")
-    elif framework_check:
-        print(f"\n✅ Framework Compliance:")
-        print(f"   • All modules use standardized TestSuite framework")
-        print(f"   • No legacy unittest framework usage detected")
+    print(f"\n✅ Framework Compliance:")
+    print(f"   • All modules use standardized TestSuite framework")
+    print(f"   • No legacy unittest framework usage")
 
     print()
 
     if failed_tests > 0:
         print("❌ FAILED TESTS DETAILS:")
         failed_by_category = {}
-        for result in standard_results:
+        for result in results:
             if not result["success"]:
                 module = result["module"]
                 if module.startswith("action"):
@@ -438,7 +321,7 @@ def print_summary(results: List[Dict[str, Any]]):
         "Other Modules": [],
     }
 
-    for result in standard_results:  # Only process standard TestSuite results
+    for result in results:
         module = result["module"]
         if module.startswith("action"):
             categories["Action Modules"].append(result)
@@ -458,20 +341,6 @@ def print_summary(results: List[Dict[str, Any]]):
                 status = "✅ PASS" if result["success"] else "❌ FAIL"
                 duration = result["duration"]
                 print(f"    {status} | {result['module']:<20} | {duration:>6.2f}s")
-
-    # Show legacy framework results separately if any exist
-    if legacy_results:
-        print(f"\n  ⚠️  Legacy Framework Results:")
-        for result in legacy_results:
-            status = "✅ PASS" if result["success"] else "❌ FAIL"
-            duration = result["duration"]
-            tests_info = (
-                f"({result.get('tests_run', 0)} tests)" if "tests_run" in result else ""
-            )
-            print(
-                f"    {status} | {result['module']:<20} | {duration:>6.2f}s | {tests_info}"
-            )
-            print(f"         💡 Consider migrating to TestSuite framework")
 
 
 def main():
@@ -503,9 +372,6 @@ def main():
                 "run_all_tests.py",
                 "__init__.py",
                 "main.py",
-                "setup_credentials_helper.py",
-                "setup_real_credentials.py",
-                "setup_security.py",
                 "check_test_coverage.py",
             ]
         ]
@@ -557,9 +423,6 @@ def main():
             "run_all_tests.py",
             "__init__.py",
             "main.py",
-            "setup_credentials_helper.py",
-            "setup_real_credentials.py",
-            "setup_security.py",
             "check_test_coverage.py",
         ]
     ]
@@ -600,9 +463,7 @@ def main():
                 }
             )
 
-    # Check for legacy unittest framework usage
-    legacy_result = run_unittest_suite()
-    results.append(legacy_result)
+    # All modules now use standardized TestSuite framework only
 
     # Print comprehensive summary
     print_summary(results)

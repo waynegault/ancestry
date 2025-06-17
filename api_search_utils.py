@@ -43,44 +43,41 @@ from logging_config import logger
 from config import config_instance
 from utils import SessionManager
 
-# Temporarily commented out to test for import hanging issue
-# from api_utils import (
-#     call_suggest_api,
-#     call_facts_user_api,
-#     call_getladder_api,
-#     call_treesui_list_api,
-# )
 
+# Note: api_search_utils provides search utility functions.
+# API functions are imported from api_utils where available.
 
-# Temporary stubs to replace the missing functions
-def call_suggest_api(*args, **kwargs):
-    """Temporary stub for call_suggest_api"""
-    return {"data": {"suggestions": []}}
+# Import API functions that are actually used in this module
+try:
+    from api_utils import (
+        call_suggest_api,
+        call_facts_user_api,
+        call_getladder_api,
+        call_treesui_list_api,
+    )
 
+    API_UTILS_AVAILABLE = True
+    logger.info("Successfully imported API utilities from api_utils")
+except ImportError as e:
+    logger.error(f"Could not import API utilities: {e}")
+    API_UTILS_AVAILABLE = False
+    # The module will fail if these functions are called without proper imports
 
-def call_facts_user_api(*args, **kwargs):
-    """Temporary stub for call_facts_user_api"""
-    return {"data": {}}
+# Import relationship path formatting function
+try:
+    from relationship_utils import format_api_relationship_path
 
+    RELATIONSHIP_UTILS_AVAILABLE = True
+    logger.info("Successfully imported relationship utilities")
+except ImportError as e:
+    logger.warning(f"Could not import relationship utilities: {e}")
+    RELATIONSHIP_UTILS_AVAILABLE = False
 
-def call_getladder_api(*args, **kwargs):
-    """Temporary stub for call_getladder_api"""
-    return {"data": {}}
-
-
-def call_treesui_list_api(*args, **kwargs):
-    """Temporary stub for call_treesui_list_api"""
-    return {"data": {}}
-
-
-# Temporarily commented out to test for import hanging issue
-# from relationship_utils import format_api_relationship_path
-
-
-# Temporary stub to replace the missing function
-def format_api_relationship_path(ladder_data, reference_name, person_type):
-    """Temporary stub for format_api_relationship_path"""
-    return "Relationship path (temporary stub)"
+    def format_api_relationship_path(
+        api_response_data, owner_name, target_name, relationship_type="relative"
+    ):
+        """Fallback function when relationship_utils not available"""
+        return f"Relationship path between {owner_name} and {target_name} (relationship_utils not available)"
 
 
 # Default configuration values
@@ -469,17 +466,8 @@ def search_api_for_criteria(
     # Step 5: Score and filter results
     scored_matches = []
 
-    # Ensure suggest_results is a list before slicing
-    if isinstance(suggest_results, dict):
-        # Try to extract a list from a known key, e.g., "data" or "suggestions"
-        if "data" in suggest_results and isinstance(suggest_results["data"], dict):
-            if "suggestions" in suggest_results["data"]:
-                suggest_results = suggest_results["data"]["suggestions"]
-            else:
-                suggest_results = []
-        else:
-            suggest_results = []
-    elif not isinstance(suggest_results, list):
+    # Ensure suggest_results is a list (API returns Optional[List[Dict]])
+    if not suggest_results or not isinstance(suggest_results, list):
         suggest_results = []
 
     # Process each suggestion result

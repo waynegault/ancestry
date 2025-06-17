@@ -358,9 +358,6 @@ except ImportError as e:
     logger.warning(f"GEDCOM relationship utilities not available: {e}")
     GEDCOM_RELATIONSHIP_AVAILABLE = False
 
-# Note: get_ancestry_relationship_path removed due to circular import issues
-ANCESTRY_RELATIONSHIP_AVAILABLE = False
-
 RELATIONSHIP_UTILS_AVAILABLE = GEDCOM_RELATIONSHIP_AVAILABLE
 
 # Try to import API utilities separately

@@ -24,7 +24,6 @@ import re
 import sys
 import time
 import traceback
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, cast, Union

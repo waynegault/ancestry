@@ -465,3 +465,334 @@
 19:29:15 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
 19:29:15 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
 19:29:15 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+19:42:26 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+19:42:26 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+19:42:34 INF [security decrypt_ 190 ] No encrypted credentials file found
+19:42:34 INF [security decrypt_ 190 ] No encrypted credentials file found
+19:42:34 WAR [utils    <module> 161 ] Could not import performance monitoring functions: performance_monitor module not available
+19:42:34 INF [api_util test_log 2717] Test log message
+19:42:49 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+19:42:49 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+19:42:49 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+19:42:49 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+19:42:49 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+19:42:49 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+19:42:49 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+19:42:50 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+19:42:50 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+19:42:50 INF [action9_ <module> 372 ] API utilities successfully imported.
+19:42:50 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+19:42:50 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+19:42:50 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+19:42:50 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+19:42:50 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+19:42:50 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+19:42:50 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+19:42:50 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+19:42:50 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+19:42:50 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+19:56:11 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+19:56:11 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+19:56:19 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+19:56:19 INF [api_sear <module> 70  ] Successfully imported relationship utilities
+19:56:20 INF [security decrypt_ 190 ] No encrypted credentials file found
+19:56:20 INF [security decrypt_ 190 ] No encrypted credentials file found
+19:56:20 WAR [utils    <module> 151 ] Could not import performance monitoring functions: performance_monitor module not available
+19:56:20 INF [api_util test_log 2717] Test log message
+19:56:35 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+19:56:35 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+19:56:35 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+19:56:35 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+19:56:35 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+19:56:35 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+19:56:35 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+19:56:35 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+19:56:35 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+19:56:35 INF [action9_ <module> 369 ] API utilities successfully imported.
+19:56:35 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+19:56:35 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+19:56:35 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+19:56:35 INF [api_sear <module> 70  ] Successfully imported relationship utilities
+19:56:35 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+19:56:35 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+19:56:35 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+19:56:35 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+19:56:35 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+19:56:35 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+19:56:35 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+19:56:35 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:04:08 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:04:08 INF [api_sear <module> 70  ] Successfully imported relationship utilities
+20:04:55 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:04:55 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:05:03 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:05:03 INF [api_sear <module> 70  ] Successfully imported relationship utilities
+20:05:04 INF [security decrypt_ 190 ] No encrypted credentials file found
+20:05:04 INF [security decrypt_ 190 ] No encrypted credentials file found
+20:05:04 WAR [utils    <module> 151 ] Could not import performance monitoring functions: performance_monitor module not available
+20:05:04 INF [api_util test_log 2717] Test log message
+20:05:19 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:05:19 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:05:19 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+20:05:19 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:05:19 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:05:19 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:05:19 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:05:20 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:05:20 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:05:20 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:05:20 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:05:20 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:05:20 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:05:20 INF [api_sear <module> 70  ] Successfully imported relationship utilities
+20:05:20 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:05:20 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:05:20 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:05:20 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:05:20 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:05:20 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:05:20 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:05:20 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:42:07 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:42:07 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:42:07 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:42:07 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:42:07 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:42:07 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:42:07 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:42:07 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:42:07 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:42:07 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:42:07 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:42:07 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:42:07 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:42:07 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:42:07 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:42:07 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:42:07 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:42:07 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:42:07 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:42:07 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:42:07 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:43:25 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:43:25 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:43:25 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:43:25 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:43:25 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:43:25 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:43:25 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:43:25 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:43:25 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:43:25 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:43:25 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:43:25 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:43:25 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:43:25 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:43:25 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:43:25 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:43:25 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:43:25 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:43:25 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:43:25 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:43:25 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:43:38 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:43:38 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:43:38 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:43:38 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:43:38 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:43:38 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:43:38 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:43:38 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:43:38 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:43:38 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:43:38 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:43:38 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:43:38 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:43:38 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:43:38 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:43:38 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:43:38 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:43:38 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:43:38 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:43:38 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:43:38 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:45:09 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:45:09 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:45:09 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:45:09 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:45:09 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:45:09 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:45:09 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:45:09 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:45:09 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:45:09 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:45:09 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:45:09 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:45:09 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:45:09 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:45:09 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:45:09 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:45:09 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:45:09 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:45:09 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:45:09 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:45:09 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:50:18 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:50:18 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:50:18 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:50:18 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:50:18 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:50:18 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:50:18 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:50:18 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:50:18 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:50:18 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:50:18 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:50:18 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:50:18 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:50:18 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:50:18 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:50:18 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:50:18 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:50:18 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:50:18 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:50:18 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:50:18 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:51:30 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:51:30 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:51:30 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:51:30 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:51:30 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:51:30 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:51:30 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:51:30 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:51:30 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:51:30 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:51:30 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:51:30 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:51:30 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:51:30 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:51:30 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:51:30 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:51:30 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:51:30 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:51:30 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:51:30 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:51:30 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:51:48 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:51:48 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:51:48 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:51:48 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:51:48 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:51:48 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:51:48 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:51:48 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:51:48 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:51:48 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:51:48 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:51:48 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:51:48 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:51:48 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:51:48 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:51:48 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:51:48 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:51:48 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:51:48 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:51:48 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:51:48 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:52:34 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:52:34 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:52:34 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:52:34 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:52:34 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:52:34 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:52:35 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:52:35 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:52:35 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:52:35 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:52:35 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:52:35 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:52:35 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:54:33 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:54:33 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:54:33 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:54:33 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:54:33 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:54:33 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:54:33 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:54:33 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:54:33 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:54:33 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:54:33 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:54:33 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:54:33 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:54:33 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:54:33 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:54:33 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:54:33 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:54:33 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:54:33 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:54:33 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:54:33 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:54:56 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:54:56 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:54:56 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:54:56 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:54:56 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:54:56 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:54:56 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:54:56 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:54:56 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:54:56 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:54:56 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:54:56 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:54:56 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:54:56 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:54:56 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:54:56 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:54:56 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:54:56 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:54:56 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:54:56 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:54:56 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:59:05 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:59:05 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:59:05 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:59:05 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:59:05 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:59:05 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:59:05 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:59:05 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:59:05 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:59:05 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:59:05 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:59:05 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:59:05 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+20:59:22 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+20:59:22 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+20:59:22 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+20:59:22 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+20:59:22 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+20:59:22 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+20:59:23 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+20:59:23 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+20:59:23 INF [action9_ <module> 369 ] API utilities successfully imported.
+20:59:23 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+20:59:23 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+20:59:23 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+20:59:23 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+20:59:23 INF [error_ha register 228 ] Registered recovery strategy for ancestry_session
+20:59:23 INF [error_ha register 228 ] Registered recovery strategy for ancestry_api
+20:59:23 INF [error_ha register 228 ] Registered recovery strategy for ancestry_database
+20:59:23 INF [error_ha register 233 ] Registered fallback handler for ancestry_session
+20:59:23 INF [error_ha register 233 ] Registered fallback handler for ancestry_api
+20:59:23 INF [error_ha register 233 ] Registered fallback handler for ancestry_database
+20:59:23 INF [ms_graph save_cac 117 ] Executing save_cache_on_exit via atexit...
+20:59:23 INF [ms_graph save_cac 134 ] MSAL cache unchanged since last load/save. No save needed.
+21:00:58 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+21:00:58 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+21:01:06 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+21:01:06 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+21:01:07 INF [security decrypt_ 190 ] No encrypted credentials file found
+21:01:07 INF [security decrypt_ 190 ] No encrypted credentials file found
+21:01:07 INF [api_util test_log 2717] Test log message

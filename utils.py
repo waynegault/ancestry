@@ -52,15 +52,6 @@ ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsRes
 DriverType = Optional[WebDriver]
 
 
-# This class is a placeholder for the actual SessionManager implementation
-# and is used here to satisfy type hinting for SessionManagerType.
-# The actual SessionManager class is defined further down in this file.
-class SessionManagerPlaceholder:
-    pass
-
-
-# End of SessionManagerPlaceholder
-
 SessionManagerType = Optional[
     "SessionManager"
 ]  # Use string literal for forward reference
@@ -79,7 +70,6 @@ KEY_DATA = "data"
 # --- Third-party and local imports ---
 # Keep the warning for optional dependencies, but don't define dummies.
 # If essential ones fail, other parts of the code will raise errors.
-# Remove the top-level import of api_utils to break the cycle
 try:
     import cloudscraper
     import requests
@@ -133,97 +123,68 @@ try:
 
     # Do NOT import api_utils here at the top level
 
-    # --- Performance monitoring imports ---
-    try:
-        # Performance monitoring module not available, using fallback implementations
-        # from performance_monitor import (
-        #     monitor_performance,
-        #     time_function,
-        #     Timer,
-        #     track_memory_usage,
-        #     collect_metrics,
-        #     calculate_statistics,
-        #     check_performance_thresholds,
-        #     generate_performance_report,
-        #     monitor_cpu,
-        #     monitor_memory,
-        #     monitor_disk,
-        #     monitor_network,
-        #     performance_monitor,
-        #     health_checker,
-        # )
+    # Performance monitoring not implemented
+    HAS_PERFORMANCE_MONITORING = False
 
-        # Since performance_monitor module doesn't exist, skip import and use fallbacks
-        raise ImportError("performance_monitor module not available")
+    def monitor_performance(service_name: str) -> Callable:
+        def decorator(func: Callable) -> Callable:
+            return func
 
-    except ImportError as e:
-        HAS_PERFORMANCE_MONITORING = False
-        logger.warning(f"Could not import performance monitoring functions: {e}")
+        return decorator
 
-        # Create dummy functions to prevent errors
-        def monitor_performance(service_name: str) -> Callable:
-            def decorator(func: Callable) -> Callable:
-                return func
+    def time_function(func: Callable, *args: Any, **kwargs: Any) -> Tuple[Any, float]:
+        import time
 
-            return decorator
+        start = time.time()
+        result = func(*args, **kwargs)
+        return result, time.time() - start
 
-        def time_function(
-            func: Callable, *args: Any, **kwargs: Any
-        ) -> Tuple[Any, float]:
+    class Timer:
+        def __init__(self) -> None:
+            self.start_time = 0.0
+
+        def start(self) -> None:
             import time
 
-            start = time.time()
-            result = func(*args, **kwargs)
-            duration = time.time() - start
-            return result, duration
+            self.start_time = time.time()
 
-        # Additional fallback implementations for other functions
-        class Timer:
-            def __init__(self) -> None:
-                self.start_time = 0.0
+        def stop(self) -> float:
+            import time
 
-            def start(self) -> None:
-                import time
+            return time.time() - self.start_time
 
-                self.start_time = time.time()
+    def track_memory_usage() -> Dict[str, Any]:
+        return {"memory_usage": "unavailable"}
 
-            def stop(self) -> float:
-                import time
+    def collect_metrics() -> Dict[str, Any]:
+        return {"metrics": "unavailable"}
 
-                return time.time() - self.start_time
+    def calculate_statistics(data: Any) -> Dict[str, Any]:
+        return {"statistics": "unavailable"}
 
-        def track_memory_usage() -> Dict[str, Any]:
-            return {"memory_usage": "unavailable"}
+    def check_performance_thresholds(metrics: Any) -> bool:
+        return True
 
-        def collect_metrics() -> Dict[str, Any]:
-            return {"metrics": "unavailable"}
+    def generate_performance_report(metrics: Any) -> str:
+        return "Performance monitoring unavailable"
 
-        def calculate_statistics(data: Any) -> Dict[str, Any]:
-            return {"statistics": "unavailable"}
+    def monitor_cpu() -> Dict[str, Any]:
+        return {"cpu": "unavailable"}
 
-        def check_performance_thresholds(metrics: Any) -> bool:
-            return True
+    def monitor_memory() -> Dict[str, Any]:
+        return {"memory": "unavailable"}
 
-        def generate_performance_report(metrics: Any) -> str:
-            return "Performance monitoring unavailable"
+    def monitor_disk() -> Dict[str, Any]:
+        return {"disk": "unavailable"}
 
-        def monitor_cpu() -> Dict[str, Any]:
-            return {"cpu": "unavailable"}
+    def monitor_network() -> Dict[str, Any]:
+        return {"network": "unavailable"}
 
-        def monitor_memory() -> Dict[str, Any]:
-            return {"memory": "unavailable"}
+    def performance_monitor() -> Dict[str, Any]:
+        return {"performance": "unavailable"}
 
-        def monitor_disk() -> Dict[str, Any]:
-            return {"disk": "unavailable"}
-
-        def monitor_network() -> Dict[str, Any]:
-            return {"network": "unavailable"}
-
-        def performance_monitor() -> Dict[str, Any]:
-            return {"performance": "unavailable"}
-
-        def health_checker() -> Dict[str, Any]:
-            return {"health": "unavailable"}
+    def health_checker() -> Dict[str, Any]:
+        return {"health": "unavailable"}
 
 except ImportError as import_err:
     # Log failure for other imports but don't define dummies
@@ -3012,49 +2973,6 @@ class SessionManager:
 
     # End of _verify_api_login_status
 
-    @retry_api()
-    def get_header(self) -> bool:
-        logger.warning(
-            "get_header() is likely deprecated. Use get_my_uuid() etc. instead."
-        )
-        if not self.is_sess_valid():
-            logger.error("get_header: Session invalid.")
-            return False
-        # End of if
-        # Assume config_instance and _api_req available
-        url = urljoin(config_instance.BASE_URL, API_PATH_UUID)
-        logger.debug("Attempting to fetch header/dna API data...")
-        response_data: ApiResponseType = _api_req(
-            url,
-            self.driver,
-            self,  # Pass self as SessionManager
-            method="GET",
-            use_csrf_token=False,
-            api_description="Get UUID API (via get_header)",
-        )
-
-        # Check if response is a dictionary containing the expected key
-        if (
-            response_data
-            and isinstance(response_data, dict)
-            and KEY_TEST_ID in response_data
-        ):
-            logger.debug("Header data retrieved successfully ('testId' found).")
-            return True
-        else:
-            status = "N/A"
-            if isinstance(response_data, requests.Response):  # type: ignore
-                status = str(response_data.status_code)
-            # End of if
-            logger.error(
-                f"Failed to get header/dna data or unexpected structure (Type: {type(response_data)}, Status: {status})."
-            )
-            logger.debug(f"Response: {str(response_data)}")
-            return False
-        # End of if/else
-
-    # End of get_header
-
     def _validate_sess_cookies(self, required_cookies: List[str]) -> bool:
         if not self.is_sess_valid():
             logger.warning("Cannot validate cookies: Session invalid.")
@@ -3093,14 +3011,6 @@ class SessionManager:
         # End of try/except
 
     # End of _validate_sess_cookies
-
-    def is_sess_logged_in(self) -> bool:
-        logger.warning(
-            "is_sess_logged_in is deprecated. Use login_status() or verify_sess() instead."
-        )
-        return self.verify_sess()
-
-    # End of is_sess_logged_in
 
     def is_sess_valid(self) -> bool:
         if not self.driver:
@@ -4466,8 +4376,6 @@ def make_tracestate(driver: DriverType) -> Optional[str]:
 
 # End of make_tracestate
 
-# _send_message_via_api MOVED TO api_utils.py
-# _fetch_profile_details_for_person MOVED TO api_utils.py
 
 # ----------------------------------------------------------------------------
 # Login Functions (Remain in utils.py)
