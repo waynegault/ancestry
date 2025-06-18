@@ -934,8 +934,30 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    success = run_comprehensive_tests()
-    exit(0 if success else 1)
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Security Manager CLI")
+    parser.add_argument(
+        "--import-env",
+        action="store_true",
+        help="Import credentials from .env to encrypted storage and clean .env file.",
+    )
+    args = parser.parse_args()
+
+    if args.import_env:
+        print("🔐 Importing credentials from .env to encrypted storage...")
+        manager = SecurityManager()
+        success = manager.migrate_env_credentials()
+        if success:
+            print("✅ Credentials imported and .env cleaned.")
+            sys.exit(0)
+        else:
+            print("❌ Failed to import credentials from .env.")
+            sys.exit(1)
+    else:
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
 
 
 # =============================================================================

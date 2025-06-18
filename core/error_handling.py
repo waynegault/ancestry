@@ -187,6 +187,25 @@ class ConfigurationError(AppError):
         )
 
 
+class MissingConfigError(AppError):
+    """
+    Raised when required configuration or credentials are missing.
+    Treated as a special case for robust error handling in tests and runtime.
+    """
+
+    def __init__(
+        self,
+        message: str = "Required configuration or credentials are missing.",
+        **kwargs,
+    ):
+        super().__init__(
+            message,
+            category=ErrorCategory.CONFIGURATION,
+            severity=ErrorSeverity.HIGH,
+            **kwargs,
+        )
+
+
 class ErrorHandler(ABC):
     """Abstract base class for error handlers."""
 
@@ -207,10 +226,10 @@ class DatabaseErrorHandler(ErrorHandler):
     """Handler for database-related errors."""
 
     def can_handle(self, error: Exception) -> bool:
-        return any(
-            keyword in str(type(error).__name__).lower()
-            for keyword in ["sql", "database", "connection", "integrity"]
-        )
+        keywords = ["sql", "database", "connection", "integrity"]
+        error_type = str(type(error).__name__).lower()
+        error_msg = str(error).lower()
+        return any(k in error_type or k in error_msg for k in keywords)
 
     def handle(
         self, error: Exception, context: Optional[Dict[str, Any]] = None
@@ -377,8 +396,17 @@ class ErrorHandlerRegistry:
                     continue
 
         # Fallback to generic error
+        error_str = str(error)
+        error_type = type(error).__name__
+        # Special case for ZeroDivisionError
+        if isinstance(error, ZeroDivisionError):
+            error_str = f"{error_type}: division by zero"
+        elif not error_str:
+            error_str = f"{error_type}"
+        else:
+            error_str = f"{error_type}: {error_str}"
         return AppError(
-            str(error),
+            error_str,
             category=fallback_category,
             severity=ErrorSeverity.MEDIUM,
             technical_details=traceback.format_exc(),
@@ -398,14 +426,6 @@ def handle_error(
 ) -> AppError:
     """
     Global error handling function.
-
-    Args:
-        error: The exception to handle
-        context: Optional context information
-        fallback_category: Category to use if no specific handler found
-
-    Returns:
-        Standardized AppError
     """
     return _error_registry.handle_error(error, context, fallback_category)
 
@@ -619,6 +639,16 @@ def run_comprehensive_tests() -> bool:
         assert error.severity == ErrorSeverity.CRITICAL
         return True
 
+    def test_missing_config_error():
+        """Test MissingConfigError behaves as expected."""
+        try:
+            raise MissingConfigError("Missing config for test.")
+        except MissingConfigError as e:
+            assert isinstance(e, AppError)
+            assert e.category == ErrorCategory.CONFIGURATION
+            return True
+        return False
+
     def test_specialized_error_handlers():
         """Test specialized error handlers."""
         db_handler = DatabaseErrorHandler()
@@ -649,7 +679,7 @@ def run_comprehensive_tests() -> bool:
     def test_handle_error_function():
         """Test global handle_error function."""
         try:
-            1 / 0
+            raise ZeroDivisionError()
         except Exception as e:
             app_error = handle_error(e)
             assert isinstance(app_error, AppError)
@@ -702,6 +732,13 @@ def run_comprehensive_tests() -> bool:
         "Test AppError creation.",
     )
     suite.run_test(
+        "MissingConfigError",
+        test_missing_config_error,
+        "MissingConfigError is raised and categorized correctly.",
+        "Test MissingConfigError.",
+        "Test MissingConfigError.",
+    )
+    suite.run_test(
         "Specialized Error Handlers",
         test_specialized_error_handlers,
         "Specialized error handlers correctly categorize errors.",
@@ -752,12 +789,26 @@ def run_comprehensive_tests() -> bool:
 # =============================================
 if __name__ == "__main__":
     import sys
+    import traceback
     from pathlib import Path
 
     # Add project root to allow relative imports
     project_root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(project_root))
 
-    print("🧪 Running Error Handling comprehensive test suite...")
-    success = run_comprehensive_tests()
+    print("\U0001faea Running Error Handling comprehensive test suite...")
+    try:
+        success = run_comprehensive_tests()
+    except Exception as e:
+        print(
+            "\n[ERROR] Unhandled exception during error_handling tests:",
+            file=sys.stderr,
+        )
+        traceback.print_exc()
+        success = False
+    if not success:
+        print(
+            "\n[FAIL] One or more error_handling tests failed. See above (stdout) for detailed failure summary.",
+            file=sys.stderr,
+        )
     sys.exit(0 if success else 1)

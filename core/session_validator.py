@@ -11,7 +11,13 @@ from datetime import datetime, timezone
 
 from selenium.common.exceptions import WebDriverException
 
-from config import config_instance
+try:
+    from config import config_instance
+except ModuleNotFoundError:
+    import sys, os
+
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from config import config_instance
 
 logger = logging.getLogger(__name__)
 
@@ -368,11 +374,10 @@ class SessionValidator:
         Returns:
             bool: True if all required cookies are present, False otherwise
         """
-        if not browser_manager.is_session_valid():
-            logger.error("Cannot validate cookies: Browser session invalid.")
-            return False
-
         try:
+            if not browser_manager.is_session_valid():
+                logger.error("Cannot validate cookies: Browser session invalid.")
+                return False
             return browser_manager.get_cookies(required_cookies)
         except Exception as e:
             logger.error(f"Error validating session cookies: {e}", exc_info=True)

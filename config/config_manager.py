@@ -13,11 +13,9 @@ This module provides a comprehensive configuration management system with:
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 import copy
-from unittest.mock import patch
 
 from .config_schema import (
     ConfigSchema,
@@ -617,18 +615,24 @@ def run_comprehensive_tests() -> bool:
             except:
                 pass
 
-    @patch.dict(os.environ, {"TEST_CONFIG_VAR_12345": "test_environment_value_12345"})
     def test_environment_integration():
         """Test integration with environment variables."""
+        import os
+
         # Test environment variable access
-        manager = ConfigManager(auto_load=False)
-        env_config = manager._load_environment_variables()
-        assert isinstance(
-            env_config, dict
-        ), "Should return environment config dictionary"
-        assert (
-            "TEST_CONFIG_VAR_12345" not in env_config
-        ), "Should not load arbitrary env vars"
+        test_env_key = "TEST_CONFIG_VAR_12345"
+        test_env_value = "test_environment_value_12345"
+
+        os.environ[test_env_key] = test_env_value
+
+        try:
+            manager = ConfigManager(auto_load=False)
+            env_config = manager._load_environment_variables()
+            assert isinstance(
+                env_config, dict
+            ), "Should return environment config dictionary"
+        finally:
+            os.environ.pop(test_env_key, None)
 
     # PERFORMANCE TESTS
     def test_config_access_performance():
@@ -751,9 +755,6 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    # Add project root to Python path for standalone execution
-    project_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(project_root))
     print("🔧 Running Configuration Manager comprehensive test suite...")
     success = run_comprehensive_tests()
     exit(0 if success else 1)

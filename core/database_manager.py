@@ -10,6 +10,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Generator
 import contextlib
+import sys
+import os
 
 from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
 from sqlalchemy.exc import SQLAlchemyError
@@ -18,6 +20,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from config.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
+
+# Ensure project root is in sys.path for imports
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Initialize config manager
 config_manager = ConfigManager()

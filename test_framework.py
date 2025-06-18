@@ -123,9 +123,12 @@ class TestSuite:
             return True
 
         except AssertionError as e:
+            import traceback
+
             duration = time.time() - test_start
             outcome_description = f"Assertion failed: {str(e)}"
             print(f"Outcome: {outcome_description}")
+            traceback.print_exc()
             print(f"Duration: {duration:.3f}s")
             print(f"Conclusion: {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET}")
             print()  # Add blank line between tests

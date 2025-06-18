@@ -1311,10 +1311,42 @@ def run_comprehensive_tests() -> bool:
 
 def main():
     """Main entry point."""
-    # Check if running tests explicitly
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        print("🔐 Running Unified Credential Manager comprehensive test suite...")
-        return run_comprehensive_tests()
+    # Support non-interactive .env import
+    if len(sys.argv) > 1 and sys.argv[1] == "--import-env":
+        if not SECURITY_AVAILABLE:
+            print("\n❌ Security dependencies are required for credential management.")
+            UnifiedCredentialManager.check_and_install_dependencies()
+            return False
+        try:
+            manager = UnifiedCredentialManager()
+            # Use default .env path, non-interactive
+            env_file = ".env"
+            print("\n🔐 Importing credentials from .env (non-interactive)...")
+            manager.import_from_env = manager.import_from_env.__func__.__get__(manager)
+            # Patch input to always use default .env and merge
+            import builtins
+
+            orig_input = builtins.input
+
+            def fake_input(prompt=""):
+                if "path to .env" in prompt:
+                    return ""
+                if "Choice (m/o/r/c):" in prompt:
+                    return "o"  # Overwrite existing with .env values
+                if "Are you sure you want to" in prompt:
+                    return "yes"
+                return ""
+
+            builtins.input = fake_input
+            try:
+                manager.import_from_env()
+            finally:
+                builtins.input = orig_input
+            print("\n✅ .env import complete.")
+            return True
+        except Exception as e:
+            print(f"❌ Error during .env import: {e}")
+            return False
 
     # Auto-detect if being run as part of the test harness
     if os.environ.get("RUNNING_ANCESTRY_TESTS") == "1":

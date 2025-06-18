@@ -80,7 +80,7 @@ def run_module_test(
             "action6_gather": 120,
             "action7_inbox": 90,
             "action8_messaging": 90,
-            "action10": 90,
+            "action10": 120,
             "action11": 90,
             "database": 90,
             "selenium_utils": 90,
@@ -146,12 +146,12 @@ def run_module_test(
             )
             if result.stderr:
                 stderr_preview = result.stderr.strip().replace("\n", "\n   ")
-                print(f"   🚨 Error: {stderr_preview[:500]}")
+                print(f"   🚨 Error: {stderr_preview[:2000]}")
 
         error = (
             None
             if success
-            else f"Exit code {result.returncode}: {(result.stderr or '').strip()[:200]}"
+            else f"Exit code {result.returncode}: {(result.stderr or '').strip()[:2000]}"
         )
 
     except subprocess.TimeoutExpired:

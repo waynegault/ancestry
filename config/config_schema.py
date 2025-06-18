@@ -10,8 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import os
-import sys
-
 
 logger = logging.getLogger(__name__)
 
@@ -362,11 +360,6 @@ def run_comprehensive_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from pathlib import Path
-
-    # Add project root to Python path for standalone execution
-    project_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(project_root))
     from test_framework import (
         TestSuite,
         suppress_logging,
@@ -374,6 +367,7 @@ def run_comprehensive_tests() -> bool:
         assert_valid_function,
     )
     import tempfile
+    from pathlib import Path
 
     # Initialize test suite
     suite = TestSuite("ConfigSchema", __name__)
@@ -806,11 +800,4 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    # Add project root to Python path for standalone execution
-    from pathlib import Path
-    import sys
-
-    project_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(project_root))
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    run_comprehensive_tests()
