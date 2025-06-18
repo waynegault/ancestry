@@ -773,6 +773,13 @@ def run_comprehensive_tests() -> bool:
     Tests GEDCOM searching, filtering, and relationship mapping.
     """
     from test_framework import TestSuite, suppress_logging
+    from unittest.mock import MagicMock
+    import types
+    import builtins
+    import io
+    import sys
+    import logging
+    from pathlib import Path
 
     with suppress_logging():
         suite = TestSuite(
@@ -780,28 +787,177 @@ def run_comprehensive_tests() -> bool:
         )
         suite.start_suite()
 
-        # Add actual comprehensive tests here when needed
-        # For now, just basic validation to avoid timeout issues
-        def test_basic_functionality():
-            """Test basic function availability."""
+        # --- TESTS ---
+        def test_function_existence():
             required_functions = [
-                "search_gedcom_by_name",
-                "find_person_in_gedcom",
-                "get_relationship_path",
+                "search_gedcom_for_criteria",
+                "get_gedcom_family_details",
+                "get_gedcom_relationship_path",
+                "matches_criterion",
+                "matches_year_criterion",
             ]
-
             for func_name in required_functions:
-                if func_name in globals():
-                    func = globals()[func_name]
-                    assert callable(func), f"{func_name} should be callable"
+                assert func_name in globals(), f"Function {func_name} missing"
+                assert callable(globals()[func_name]), f"{func_name} not callable"
             return True
 
+        def test_matches_criterion():
+            assert matches_criterion("first_name", {"first_name": "John"}, "John")
+            assert not matches_criterion("first_name", {"first_name": "John"}, "Jane")
+            assert matches_criterion("birth_year", {"birth_year": 1900}, 1900)
+            return True
+
+        def test_matches_year_criterion():
+            assert matches_year_criterion("birth_year", {"birth_year": 1900}, 1901, 2)
+            assert not matches_year_criterion(
+                "birth_year", {"birth_year": 1900}, 1905, 2
+            )
+            return True
+
+        def test_search_gedcom_for_criteria_mock():
+            class MockGedcom(GedcomData):
+                def __init__(self):
+                    pass
+
+                processed_data_cache = {
+                    "@I1@": {
+                        "first_name": "John",
+                        "surname": "Smith",
+                        "gender_norm": "m",
+                        "birth_year": 1850,
+                        "birth_place_disp": "NY",
+                        "death_date_obj": None,
+                    },
+                    "@I2@": {
+                        "first_name": "Jane",
+                        "surname": "Doe",
+                        "gender_norm": "f",
+                        "birth_year": 1855,
+                        "birth_place_disp": "CA",
+                        "death_date_obj": None,
+                    },
+                }
+
+            results = search_gedcom_for_criteria(
+                {"first_name": "John"}, max_results=2, gedcom_data=MockGedcom()
+            )
+            assert isinstance(results, list)
+            assert any(r["id"] == "@I1@" for r in results)
+            return True
+
+        def test_get_gedcom_family_details_mock():
+            class MockGedcom(GedcomData):
+                def __init__(self):
+                    pass
+
+                processed_data_cache = {
+                    "@I1@": {
+                        "full_name_disp": "John Smith",
+                        "first_name": "John",
+                        "surname": "Smith",
+                        "gender": "M",
+                        "birth_year": 1850,
+                        "birth_date_disp": "1850",
+                        "birth_place_disp": "NY",
+                        "death_year": 1910,
+                        "death_date_disp": "1910",
+                        "death_place_disp": "Boston",
+                    },
+                    "@I2@": {
+                        "full_name_disp": "Jane Doe",
+                        "first_name": "Jane",
+                        "surname": "Doe",
+                        "gender": "F",
+                        "birth_year": 1855,
+                        "birth_date_disp": "1855",
+                        "birth_place_disp": "CA",
+                        "death_year": 1920,
+                        "death_date_disp": "1920",
+                        "death_place_disp": "LA",
+                    },
+                }
+                id_to_parents = {"@I1@": {"@I2@"}}
+                id_to_children = {"@I2@": {"@I1@"}}
+
+            details = get_gedcom_family_details("@I1@", gedcom_data=MockGedcom())
+            assert details["id"] == "@I1@"
+            assert any(p["id"] == "@I2@" for p in details["parents"])
+            return True
+
+        def test_get_gedcom_relationship_path_mock():
+            class StubIndividual:
+                def sub_tags(self, tag):
+                    return []
+
+            class MockGedcom(GedcomData):
+                def __init__(self):
+                    pass
+
+                processed_data_cache = {
+                    "@I1@": {"full_name_disp": "John Smith"},
+                    "@I2@": {"full_name_disp": "Jane Doe"},
+                }
+                id_to_parents = {"@I1@": {"@I2@"}, "@I2@": set()}
+                id_to_children = {"@I2@": {"@I1@"}, "@I1@": set()}
+                indi_index = {"@I1@": StubIndividual(), "@I2@": StubIndividual()}  # type: ignore
+                reader = None
+
+            orig_bfs = globals()["fast_bidirectional_bfs"]
+            globals()["fast_bidirectional_bfs"] = lambda *a, **kw: ["@I1@", "@I2@"]
+            try:
+                path = get_gedcom_relationship_path(
+                    "@I1@",
+                    reference_id="@I2@",
+                    reference_name="Jane Doe",
+                    gedcom_data=MockGedcom(),
+                )
+                assert "Jane Doe" in path
+            finally:
+                globals()["fast_bidirectional_bfs"] = orig_bfs
+            return True
+
+        # Register all tests
         suite.run_test(
-            "Basic Function Availability",
-            test_basic_functionality,
-            "All required search functions should be available and callable",
-            "Basic function availability checking without data loading",
-            "Check that required GEDCOM search functions exist and are callable",
+            "Function Existence",
+            test_function_existence,
+            "All required functions exist.",
+            "Test function existence.",
+            "Test function existence.",
+        )
+        suite.run_test(
+            "Matches Criterion",
+            test_matches_criterion,
+            "Criterion matching works.",
+            "Test matches_criterion.",
+            "Test matches_criterion.",
+        )
+        suite.run_test(
+            "Matches Year Criterion",
+            test_matches_year_criterion,
+            "Year criterion matching works.",
+            "Test matches_year_criterion.",
+            "Test matches_year_criterion.",
+        )
+        suite.run_test(
+            "Search GEDCOM For Criteria (Mock)",
+            test_search_gedcom_for_criteria_mock,
+            "GEDCOM search works with mock data.",
+            "Test search_gedcom_for_criteria.",
+            "Test search_gedcom_for_criteria.",
+        )
+        suite.run_test(
+            "Get GEDCOM Family Details (Mock)",
+            test_get_gedcom_family_details_mock,
+            "Family details extraction works with mock data.",
+            "Test get_gedcom_family_details.",
+            "Test get_gedcom_family_details.",
+        )
+        suite.run_test(
+            "Get GEDCOM Relationship Path (Mock)",
+            test_get_gedcom_relationship_path_mock,
+            "Relationship path finding works with mock data.",
+            "Test get_gedcom_relationship_path.",
+            "Test get_gedcom_relationship_path.",
         )
 
         return suite.finish_suite()

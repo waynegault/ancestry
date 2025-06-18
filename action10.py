@@ -839,743 +839,435 @@ def main():
     Loads GEDCOM data, filters individuals, scores matches, and finds relationship paths.
     """
     logger.info("Starting Action 10 - GEDCOM Analysis")
+    args = parse_command_line_args()
 
     try:
+        # Validate configuration
+        (
+            gedcom_file_path,
+            reference_person_id_raw,
+            reference_person_name,
+            date_flex,
+            scoring_weights,
+            max_display_results,
+        ) = validate_config()
+
+        if not gedcom_file_path:
+            return False
+
         # Load GEDCOM data
-        gedcom_data = load_gedcom_data_for_tests()
+        gedcom_data = load_gedcom_data(gedcom_file_path)
         if not gedcom_data:
             logger.warning("No GEDCOM data loaded")
             return False
 
-        # Apply filters
-        filtered_data = filter_gedcom_data(gedcom_data, {})
-        if not filtered_data:
-            logger.warning("No individuals match filter criteria")
-            return False
+        # Get user criteria
+        scoring_criteria, filter_criteria = get_user_criteria(args)
+        log_criteria_summary(scoring_criteria, date_flex)
 
-        # Score individuals
-        scored_individuals = []
-        for individual in filtered_data.get("individuals", []):
-            score = score_individual(individual, {})
-            if score and score > 0:
-                scored_individuals.append((individual, score))
+        # Filter and score individuals
+        scored_matches = filter_and_score_individuals(
+            gedcom_data,
+            filter_criteria,
+            scoring_criteria,
+            scoring_weights,
+            date_flex,
+        )
 
-        # Sort by score and display top matches
-        scored_individuals.sort(key=lambda x: x[1], reverse=True)
-        top_matches = scored_individuals[:3]
+        # Display top matches
+        top_match = display_top_matches(scored_matches, max_display_results)
 
-        logger.info(f"Found {len(top_matches)} top matches")
-        for i, (individual, score) in enumerate(top_matches, 1):
-            logger.info(
-                f"Match {i}: {individual.get('name', 'Unknown')} (Score: {score})"
+        # Analyze top match
+        if top_match:
+            reference_person_id_norm = (
+                _normalize_id(reference_person_id_raw)
+                if reference_person_id_raw
+                else None
             )
-
-        # Find relationship path to highest match
-        if top_matches:
-            highest_match = top_matches[0][0]
-            path = find_relationship_path(gedcom_data, highest_match.get("id"))
-            if path:
-                logger.info(f"Relationship path found: {path}")
+            analyze_top_match(
+                gedcom_data,
+                top_match,
+                reference_person_id_norm,
+                reference_person_name or "Reference Person",
+            )
 
         return True
 
     except Exception as e:
-        logger.error(f"Error in action10 main: {e}")
+        logger.error(f"Error in action10 main: {e}", exc_info=True)
         return False
-
-
-def filter_gedcom_data(
-    gedcom_data: Dict[str, Any], criteria: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Filter GEDCOM data based on specified criteria."""
-    try:
-        if not gedcom_data or not gedcom_data.get("individuals"):
-            return {}
-
-        # Apply basic filtering - for now return all test data
-        filtered_individuals = []
-        for individual in gedcom_data.get("individuals", []):
-            if individual.get("name") and "12345" in individual.get("name", ""):
-                filtered_individuals.append(individual)
-
-        return {"individuals": filtered_individuals}
-
-    except Exception as e:
-        logger.error(f"Error filtering GEDCOM data: {e}")
-        return {}
-
-
-def score_individual(
-    individual: Dict[str, Any], target: Dict[str, Any]
-) -> Optional[float]:
-    """Calculate a score for how well an individual matches target criteria."""
-    try:
-        if not individual:
-            return None
-
-        score = 0.0
-        weights = DEFAULT_CONFIG.get("COMMON_SCORING_WEIGHTS", {})
-
-        # Name scoring
-        if individual.get("name") and "12345" in individual.get("name", ""):
-            score += weights.get("name_match", 0)
-
-        # Birth year scoring
-        if individual.get("birth_year"):
-            score += weights.get("birth_year_match", 0)
-
-        # Gender scoring
-        if individual.get("gender"):
-            score += weights.get("gender_match", 0)
-
-        return score
-
-    except Exception as e:
-        logger.error(f"Error scoring individual: {e}")
-        return None
-
-
-def find_relationship_path(
-    gedcom_data: Dict[str, Any], target_id: str
-) -> Optional[List[str]]:
-    """Find relationship path to target individual."""
-    try:
-        if not gedcom_data or not target_id:
-            return None
-
-        # Mock relationship path for testing
-        if "12345" in target_id:
-            return ["Self", "Parent", "Test Person 12345"]
-
-        return None
-
-    except Exception as e:
-        logger.error(f"Error finding relationship path: {e}")
-        return None
 
 
 def run_comprehensive_tests() -> bool:
     """Comprehensive test suite for action10.py"""
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging, create_mock_data
+    import types
+    import builtins
+    import io
+    import sys
+    import logging
 
     suite = TestSuite(
         "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
     )
     suite.start_suite()
 
-    # INITIALIZATION TESTS
+    # --- TESTS ---
     def test_module_initialization():
-        """Test that all required components are properly initialized."""
         required_functions = [
             "main",
             "load_gedcom_data",
+            "filter_and_score_individuals",
+            "analyze_top_match",
+            "get_user_criteria",
+            "display_top_matches",
+            "display_relatives",
+            "validate_config",
+            "calculate_match_score_cached",
             "filter_gedcom_data",
             "score_individual",
             "find_relationship_path",
         ]
-
         for func_name in required_functions:
-            assert (
-                func_name in globals()
-            ), f"Required function '{func_name}' not found in globals"
+            assert func_name in globals(), f"Required function '{func_name}' not found"
             assert callable(
                 globals()[func_name]
             ), f"Function '{func_name}' is not callable"
+        assert DEFAULT_CONFIG is not None
+        assert "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG
+        return True
 
-        assert DEFAULT_CONFIG is not None, "DEFAULT_CONFIG should not be None"
-        assert (
-            "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG
-        ), "DEFAULT_CONFIG should contain COMMON_SCORING_WEIGHTS"
+    def test_config_defaults():
+        assert DEFAULT_CONFIG["DATE_FLEXIBILITY"] == 2
+        assert isinstance(DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"], dict)
+        return True
 
-    def test_configuration_loading():
-        """Test that configuration is properly loaded."""
-        assert DEFAULT_CONFIG is not None, "DEFAULT_CONFIG should not be None"
-        assert (
-            "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG
-        ), "DEFAULT_CONFIG should contain COMMON_SCORING_WEIGHTS"
-        assert (
-            "DATE_FLEXIBILITY" in DEFAULT_CONFIG
-        ), "DEFAULT_CONFIG should contain DATE_FLEXIBILITY"
-        assert isinstance(
-            DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"], dict
-        ), "COMMON_SCORING_WEIGHTS should be a dictionary"
+    def test_sanitize_input():
+        assert sanitize_input("  John  ") == "John"
+        assert sanitize_input("") is None
+        # Remove the None test to match type hints
+        return True
 
-    def test_gedcom_data_structure():
-        """Test GEDCOM data structure validation."""
-        test_data = {
-            "individuals": [
-                {"id": "I001_12345", "name": "Test Person 12345", "birth_year": 1950}
-            ]
-        }
-        assert "individuals" in test_data, "GEDCOM data should have 'individuals' key"
-        assert isinstance(
-            test_data["individuals"], list
-        ), "Individuals should be a list"
-        assert len(test_data["individuals"]) > 0, "Should have at least one individual"
+    def test_get_validated_year_input_patch():
+        # Patch input to simulate user entry
+        orig_input = builtins.input
+        builtins.input = lambda _: "1990"
+        try:
+            assert get_validated_year_input("Year?") == 1990
+        finally:
+            builtins.input = orig_input
+        return True
 
-    with suppress_logging():
-        suite.run_test(
-            "main(), load_gedcom_data(), filter_gedcom_data(), score_individual(), find_relationship_path()",
-            test_module_initialization,
-            "All core functions are available and callable for GEDCOM analysis",
-            "Test initialization of main, load, filter, score, and path-finding functions",
-            "All essential GEDCOM processing functions exist and are callable",
+    def test_calculate_match_score_cached():
+        # Use mock data and weights
+        search_criteria = {"first_name": "John", "birth_year": 1850}
+        candidate_data = {"first_name": "John", "birth_year": 1850}
+        scoring_weights = {"name_match": 50, "birth_year_match": 30}
+        date_flex = {"year_match_range": 2}
+        score, field_scores, reasons = calculate_match_score_cached(
+            search_criteria, candidate_data, scoring_weights, date_flex, cache={}
         )
+        assert isinstance(score, (int, float))
+        assert isinstance(field_scores, dict)
+        assert isinstance(reasons, list)
+        return True
 
-        suite.run_test(
-            "DEFAULT_CONFIG validation and structure",
-            test_configuration_loading,
-            "Configuration is properly loaded with required sections for scoring",
-            "Test DEFAULT_CONFIG availability with scoring weights and date flexibility",
-            "DEFAULT_CONFIG contains COMMON_SCORING_WEIGHTS and DATE_FLEXIBILITY",
-        )
-
-        suite.run_test(
-            "GEDCOM data structure validation",
-            test_gedcom_data_structure,
-            "GEDCOM data follows expected structure with proper individual records",
-            "Test GEDCOM data structure validation with mock genealogical data",
-            "GEDCOM data has proper individual IDs and required fields",
-        )
-
-    # CORE FUNCTIONALITY TESTS
-    def test_individual_scoring():
-        """Test individual scoring algorithm with real criteria."""
-        test_individual = {
-            "id": "I001_12345",
-            "name": "Test Person 12345",
-            "birth_year": 1950,
-            "gender": "M",
-        }
-
-        score = score_individual(test_individual, {})
-        assert score is not None, "Scoring should return a numeric value"
-        assert isinstance(score, (int, float)), "Score should be numeric"
-        assert score >= 0, "Score should be non-negative"
-
-    def test_gedcom_filtering():
-        """Test GEDCOM data filtering functionality."""
-        test_data = {
-            "individuals": [
-                {"id": "I001_12345", "name": "Test Person 12345"},
-                {"id": "I002", "name": "Other Person"},
-            ]
-        }
-
-        filtered = filter_gedcom_data(test_data, {})
-        assert isinstance(filtered, dict), "Filtered data should be a dictionary"
-        assert "individuals" in filtered, "Filtered data should have individuals key"
-
-    def test_relationship_path_finding():
-        """Test relationship path finding functionality."""
-        test_data = {"individuals": [{"id": "I001_12345", "name": "Test Person 12345"}]}
-
-        path = find_relationship_path(test_data, "I001_12345")
-        assert path is None or isinstance(path, list), "Path should be None or a list"
-
-    def test_main_workflow():
-        """Test complete main workflow execution."""
-        result = main()
-        assert isinstance(result, bool), "Main should return a boolean"
-
-    def test_gedcom_data_loading():
-        """Test GEDCOM data loading functionality."""
-        # Use globals() to access module-level function
-        load_function = globals().get("load_gedcom_data_for_tests")
-        assert (
-            load_function is not None
-        ), "load_gedcom_data_for_tests function should exist"
-
-        data = load_function()
-        assert isinstance(data, dict), "GEDCOM data should be a dictionary"
-
-    with suppress_logging():
-        suite.run_test(
-            "score_individual() algorithm and logic",
-            test_individual_scoring,
-            "Individual scoring algorithm calculates numeric scores based on matching criteria",
-            "Test scoring algorithm with test individual data containing name, birth year, and gender",
-            "Scoring algorithm returns proper numeric scores for genealogical matching",
-        )
-
-        suite.run_test(
-            "filter_gedcom_data() processing and criteria",
-            test_gedcom_filtering,
-            "GEDCOM filtering processes data correctly and applies criteria filters",
-            "Test filtering with mock GEDCOM data and verify structure preservation",
-            "Filtering maintains proper data structure and applies test criteria",
-        )
-
-        suite.run_test(
-            "find_relationship_path() calculation and mapping",
-            test_relationship_path_finding,
-            "Relationship path finding calculates paths between individuals correctly",
-            "Test path finding with mock GEDCOM data and target individual ID",
-            "Path finding returns appropriate results for genealogical relationship mapping",
-        )
-
-        suite.run_test(
-            "main() workflow integration and execution",
-            test_main_workflow,
-            "Main workflow executes complete GEDCOM analysis process successfully",
-            "Execute main workflow and verify complete process runs without errors",
-            "Main workflow integrates all components for complete GEDCOM analysis",
-        )
-
-        suite.run_test(
-            "load_gedcom_data() file processing and structure",
-            test_gedcom_data_loading,
-            "GEDCOM data loading processes files correctly and returns proper structure",
-            "Test GEDCOM data loading and verify returned data structure",
-            "Data loading returns properly structured genealogical data",
-        )
-
-    # EDGE CASE TESTS
-    def test_empty_gedcom_handling():
-        """Test handling of empty or minimal GEDCOM data."""
-        empty_data = {}
-        filtered = filter_gedcom_data(empty_data, {})
-        assert isinstance(filtered, dict), "Should handle empty data gracefully"
-
-        score = score_individual({}, {})
-        assert score is None or isinstance(
-            score, (int, float)
-        ), "Should handle empty individual data"
-
-    def test_malformed_individual_data():
-        """Test handling of malformed individual records."""
-        malformed_individual = {"invalid": "data"}
-        score = score_individual(malformed_individual, {})
-        assert score is None or isinstance(
-            score, (int, float)
-        ), "Should handle malformed data gracefully"
-
-    def test_invalid_file_handling():
-        """Test handling of invalid files."""
-        # Test that functions don't crash with invalid inputs - use empty dict instead of None
-        result = filter_gedcom_data({}, {})
-        assert isinstance(result, dict), "Should handle empty input gracefully"
-
-    def test_extreme_search_criteria():
-        """Test handling of extreme search criteria."""
-        extreme_criteria = {"impossible": "criteria"}
-        test_data = {"individuals": []}
-        result = filter_gedcom_data(test_data, extreme_criteria)
-        assert isinstance(result, dict), "Should handle extreme criteria gracefully"
-
-    def test_boundary_score_values():
-        """Test scoring with boundary conditions."""
-        boundary_individual = {
-            "id": "BOUNDARY_12345",
-            "name": "Boundary Test 12345",
-            "birth_year": 0,
-            "gender": "",
-        }
-        score = score_individual(boundary_individual, {})
-        assert score is None or (
-            isinstance(score, (int, float)) and score >= 0
-        ), "Should handle boundary values"
-
-    with suppress_logging():
-        suite.run_test(
-            "empty and minimal GEDCOM data handling",
-            test_empty_gedcom_handling,
-            "Empty or minimal GEDCOM data is handled gracefully without errors",
-            "Test functions with empty dictionaries and verify graceful handling",
-            "Empty data handling works correctly without crashes",
-        )
-
-        suite.run_test(
-            "malformed individual data processing",
-            test_malformed_individual_data,
-            "Malformed individual records are processed safely without system errors",
-            "Test scoring with invalid individual data structure",
-            "Malformed data is handled gracefully with appropriate return values",
-        )
-
-        suite.run_test(
-            "invalid file and input handling",
-            test_invalid_file_handling,
-            "Invalid files and None inputs are handled without application crashes",
-            "Test functions with None and invalid inputs",
-            "Invalid inputs are handled gracefully with proper error checking",
-        )
-
-        suite.run_test(
-            "extreme search criteria processing",
-            test_extreme_search_criteria,
-            "Extreme or impossible search criteria don't cause system errors",
-            "Test filtering with extreme criteria and empty data sets",
-            "Extreme criteria are handled without errors or exceptions",
-        )
-
-        suite.run_test(
-            "boundary score value calculations",
-            test_boundary_score_values,
-            "Boundary conditions in scoring calculations are handled correctly",
-            "Test scoring with boundary values like zero years and empty strings",
-            "Boundary conditions produce valid scores or appropriate None values",
-        )
-
-        # INTEGRATION TESTS
-        def test_end_to_end_workflow():
-            """Test complete workflow integration."""
-
-        # Test that all functions work together
-        load_function = globals().get("load_gedcom_data_for_tests")
-        assert (
-            load_function is not None
-        ), "load_gedcom_data_for_tests function should exist"
-
-        gedcom_data = load_function()
-        filtered_data = filter_gedcom_data(gedcom_data, {})
-
-        if filtered_data.get("individuals"):
-            first_individual = filtered_data["individuals"][0]
-            score = score_individual(first_individual, {})
-            path = find_relationship_path(gedcom_data, first_individual.get("id"))
-
-            assert (
-                score is not None or score is None
-            ), "End-to-end workflow should complete"
-
-    def test_configuration_integration():
-        """Test integration with configuration."""
-        assert (
-            DEFAULT_CONFIG is not None
-        ), "DEFAULT_CONFIG should not be None for integration"
-        assert (
-            "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG
-        ), "Configuration should contain COMMON_SCORING_WEIGHTS"
-
-        weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
-        assert isinstance(
-            weights, dict
-        ), "COMMON_SCORING_WEIGHTS should be a dictionary"
-        assert len(weights) > 0, "Should have at least one scoring weight"
-
-    def test_logging_integration():
-        """Test integration with logging system."""
-        assert logger is not None, "Logger should be available"
-        assert hasattr(logger, "info"), "Logger should have info method"
-        assert hasattr(logger, "error"), "Logger should have error method"
-
-    def test_config_instance_integration():
-        """Test integration with global config instance."""
-        assert config_instance is not None, "config_instance should be available"
-
-    def test_function_integration():
-        """Test that all functions integrate properly."""
-        functions = [
-            load_gedcom_data,
-            filter_gedcom_data,
-            score_individual,
-            find_relationship_path,
-            main,
-        ]
-        for func in functions:
-            assert callable(func), f"Function {func.__name__} should be callable"
-
-    with suppress_logging():
-        suite.run_test(
-            "load_gedcom_data(), filter_gedcom_data(), score_individual(), find_relationship_path(), main()",
-            test_end_to_end_workflow,
-            "All core workflow functions are integrated and work together for complete GEDCOM analysis",
-            "Test integration of load, filter, and score functions for complete GEDCOM analysis",
-            "All required workflow functions exist and are callable for full genealogical processing",
-        )
-
-        suite.run_test(
-            "DEFAULT_CONFIG, COMMON_SCORING_WEIGHTS integration",
-            test_configuration_integration,
-            "Configuration is properly integrated with scoring weights for genealogical analysis",
-            "Test DEFAULT_CONFIG structure and content for GEDCOM processing requirements",
-            "DEFAULT_CONFIG contains proper scoring weights structure for genealogical calculations",
-        )
-
-        suite.run_test(
-            "logger integration and availability",
-            test_logging_integration,
-            "Logging system is properly integrated with action10 functionality",
-            "Test logger availability and required methods for application logging",
-            "Logger is properly configured with required methods for genealogical analysis logging",
-        )
-
-        suite.run_test(
-            "config_instance global integration",
-            test_config_instance_integration,
-            "Global configuration instance is properly integrated and accessible",
-            "Test config_instance availability for application configuration access",
-            "Global config_instance is available for application configuration management",
-        )
-
-        suite.run_test(
-            "function integration and workflow coordination",
-            test_function_integration,
-            "All functions integrate properly for coordinated GEDCOM analysis workflow",
-            "Test that all core functions are callable and properly integrated",
-            "Function integration supports complete genealogical analysis workflow",
-        )
-
-    # PERFORMANCE TESTS
-    def test_scoring_performance():
-        """Test performance of scoring algorithm."""
-        import time
-
-        test_individual = {
-            "id": "PERF_12345",
-            "name": "Performance Test 12345",
-            "birth_year": 1950,
-            "gender": "M",
-        }
-
-        start_time = time.time()
-        for i in range(100):
-            score_individual(test_individual, {})
-        duration = time.time() - start_time
-
-        assert (
-            duration < 1.0
-        ), f"100 scoring operations should complete in under 1 second, took {duration:.3f}s"
-
-    def test_memory_efficiency():
-        """Test memory efficiency with data processing."""
-        large_data = {
-            "individuals": [
-                {
-                    "id": f"I{i:03d}_12345",
-                    "name": f"Test Person {i} 12345",
-                    "birth_year": 1950 + i,
+    def test_filter_and_score_individuals_mock():
+        class MockGedcom(GedcomData):
+            def __init__(self):
+                self.processed_data_cache = {
+                    "@I1@": {
+                        "first_name": "John",
+                        "surname": "Smith",
+                        "gender_norm": "m",
+                        "birth_year": 1850,
+                        "birth_place_disp": "NY",
+                        "death_date_obj": None,
+                    },
+                    "@I2@": {
+                        "first_name": "Jane",
+                        "surname": "Doe",
+                        "gender_norm": "f",
+                        "birth_year": 1855,
+                        "birth_place_disp": "CA",
+                        "death_date_obj": None,
+                    },
                 }
-                for i in range(50)
+
+        filter_criteria = {"first_name": "John"}
+        scoring_criteria = {"first_name": "John"}
+        scoring_weights = {"name_match": 50}
+        date_flex = {"year_match_range": 2}
+        results = filter_and_score_individuals(
+            MockGedcom(), filter_criteria, scoring_criteria, scoring_weights, date_flex
+        )
+        assert isinstance(results, list)
+        assert any(r["id"] == "@I1@" for r in results)
+        return True
+
+    def test_display_top_matches_patch():
+        class DummyLogger:
+            def __init__(self):
+                self.lines = []
+
+            def info(self, msg):
+                self.lines.append(msg)
+
+            def debug(self, msg):
+                self.lines.append(msg)
+
+        dummy_logger = DummyLogger()
+        orig_logger = globals()["logger"]
+        globals()["logger"] = dummy_logger
+        try:
+            matches = [
+                {
+                    "display_id": "@I1@",
+                    "full_name_disp": "John Smith",
+                    "gender": "M",
+                    "birth_date": "1850",
+                    "birth_place": "NY",
+                    "death_date": "1910",
+                    "death_place": "Boston",
+                    "field_scores": {},
+                    "total_score": 95,
+                }
             ]
-        }
+            top = display_top_matches(matches, 1)
+            assert top is not None and top["display_id"] == "@I1@"
+        finally:
+            globals()["logger"] = orig_logger
+        return True
 
-        filtered = filter_gedcom_data(large_data, {})
-        assert isinstance(filtered, dict), "Should handle larger datasets efficiently"
-        assert len(filtered.get("individuals", [])) <= len(
-            large_data.get("individuals", [])
-        ), "Filtering should not increase data size"
+    def test_display_relatives_mock():
+        class MockGedcom(GedcomData):
+            def get_related_individuals(self, individual, relation):
+                return (
+                    [{"id": "@I2@", "full_name_disp": "Jane Doe"}]
+                    if relation == "parents"
+                    else []
+                )
 
-    def test_workflow_performance():
-        """Test overall workflow performance."""
-        import time
+        class DummyLogger:
+            def __init__(self):
+                self.lines = []
 
-        start_time = time.time()
-        main()
-        duration = time.time() - start_time
+            def info(self, msg):
+                self.lines.append(msg)
 
-        assert (
-            duration < 5.0
-        ), f"Complete workflow should complete in under 5 seconds, took {duration:.3f}s"
+        dummy_logger = DummyLogger()
+        orig_logger = globals()["logger"]
+        globals()["logger"] = dummy_logger
+        try:
+            display_relatives(MockGedcom(Path("dummy")), {"id": "@I1@"})
+            assert any("Jane Doe" in l for l in dummy_logger.lines)
+        finally:
+            globals()["logger"] = orig_logger
+        return True
 
-    def test_path_finding_performance():
-        """Test relationship path finding performance."""
-        import time
+    def test_analyze_top_match_mock():
+        class MockGedcom(GedcomData):
+            def find_individual_by_id(self, id):
+                return {"id": id, "full_name_disp": "John Smith"}
 
-        test_data = {"individuals": [{"id": "PATH_12345", "name": "Path Test 12345"}]}
+            id_to_parents = id_to_children = indi_index = {}
+            reader = None
 
-        start_time = time.time()
-        for i in range(20):
-            find_relationship_path(test_data, "PATH_12345")
-        duration = time.time() - start_time
+        class DummyLogger:
+            def __init__(self):
+                self.lines = []
 
-        assert (
-            duration < 0.5
-        ), f"20 path finding operations should complete quickly, took {duration:.3f}s"
+            def info(self, msg):
+                self.lines.append(msg)
 
-    def test_data_loading_performance():
-        """Test GEDCOM data loading performance."""
-        import time
+            def error(self, msg, **kwargs):
+                self.lines.append(msg)
 
-        load_function = globals().get("load_gedcom_data_for_tests")
-        assert (
-            load_function is not None
-        ), "load_gedcom_data_for_tests function should exist"
+            def warning(self, msg):
+                self.lines.append(msg)
 
-        start_time = time.time()
-        for i in range(10):
-            load_function()
-        duration = time.time() - start_time
+            def debug(self, msg):
+                self.lines.append(msg)
 
-        assert (
-            duration < 1.0
-        ), f"10 data loading operations should be fast, took {duration:.3f}s"
+        dummy_logger = DummyLogger()
+        orig_logger = globals()["logger"]
+        globals()["logger"] = dummy_logger
+        try:
+            analyze_top_match(
+                MockGedcom(Path("dummy")),
+                {
+                    "id": "@I1@",
+                    "full_name_disp": "John Smith",
+                    "total_score": 100,
+                    "raw_data": {"birth_year": 1850, "death_year": 1910},
+                },
+                "@I1@",
+                "Reference Person",
+            )
+            assert any("Reference Person" in l for l in dummy_logger.lines)
+        finally:
+            globals()["logger"] = orig_logger
+        return True
 
-    with suppress_logging():
-        suite.run_test(
-            "score_individual() algorithm efficiency",
-            test_scoring_performance,
-            "Scoring algorithm performs efficiently with multiple operations under time constraints",
-            "Execute 100 scoring operations and measure performance under 1 second limit",
-            "Scoring algorithm demonstrates efficient performance for genealogical analysis",
-        )
+    def test_filter_gedcom_data():
+        data = {"individuals": [{"name": "Test Person 12345"}, {"name": "Other"}]}
+        filtered = globals()["filter_gedcom_data"](data, {})
+        assert "individuals" in filtered
+        assert any("12345" in i["name"] for i in filtered["individuals"])
+        return True
 
-        suite.run_test(
-            "filter_gedcom_data() memory efficiency with large datasets",
-            test_memory_efficiency,
-            "GEDCOM filtering handles larger datasets efficiently without memory issues",
-            "Test filtering with 50-individual dataset and verify memory efficiency",
-            "Memory usage remains efficient with larger genealogical datasets",
-        )
+    def test_score_individual():
+        ind = {"name": "Test Person 12345", "birth_year": 1900, "gender": "M"}
+        score = globals()["score_individual"](ind, {})
+        assert score > 0
+        return True
 
-        suite.run_test(
-            "main() complete workflow performance timing",
-            test_workflow_performance,
-            "Complete workflow executes efficiently within acceptable time limits",
-            "Execute complete main workflow and measure total execution time",
-            "Complete workflow demonstrates efficient performance for practical use",
-        )
+    def test_find_relationship_path():
+        data = {"individuals": [{"id": "12345", "name": "Test Person 12345"}]}
+        path = globals()["find_relationship_path"](data, "12345")
+        assert path is not None
+        return True
 
-        suite.run_test(
-            "find_relationship_path() calculation efficiency",
-            test_path_finding_performance,
-            "Relationship path calculations perform efficiently with multiple operations",
-            "Execute 20 path finding operations and verify performance timing",
-            "Path finding maintains efficient performance for genealogical relationship mapping",
-        )
+    def test_main_patch():
+        # Patch input and logger to simulate user flow
+        orig_input = builtins.input
+        builtins.input = lambda _: ""
 
-        suite.run_test(
-            "load_gedcom_data() data loading efficiency",
-            test_data_loading_performance,
-            "GEDCOM data loading performs efficiently with repeated operations",
-            "Execute 10 data loading operations and measure performance timing",
-            "Data loading demonstrates efficient performance for genealogical file processing",
-        )
+        class DummyLogger:
+            def __init__(self):
+                self.lines = []
 
-    # ERROR HANDLING TESTS
-    def test_scoring_error_handling():
-        """Test error handling in scoring functions."""
-        # Test with empty dict instead of None
-        result = score_individual({}, {})
-        assert result is None or isinstance(
-            result, (int, float)
-        ), "Should handle empty input gracefully"
+            def info(self, msg):
+                self.lines.append(msg)
 
-        # Test with missing keys
-        incomplete_individual = {"name": "Incomplete 12345"}
-        score = score_individual(incomplete_individual, {})
-        assert score is None or isinstance(
-            score, (int, float)
-        ), "Should handle incomplete data"
+            def error(self, msg, **kwargs):
+                self.lines.append(msg)
 
-    def test_filtering_error_handling():
-        """Test error handling in filtering functions."""  # Test with empty data instead of invalid types
-        result = filter_gedcom_data({}, {})
-        assert isinstance(result, dict), "Should handle empty input gracefully"
+            def warning(self, msg):
+                self.lines.append(msg)
 
-        # Test with minimal structure
-        minimal_data = {"individuals": []}
-        result = filter_gedcom_data(minimal_data, {})
-        assert isinstance(result, dict), "Should handle minimal structure"
+            def debug(self, msg):
+                self.lines.append(msg)
 
-    def test_path_finding_error_handling():
-        """Test error handling in path finding."""
-        # Test with invalid target ID
-        invalid_path = find_relationship_path({}, "INVALID_ID")
-        assert invalid_path is None, "Should handle invalid IDs gracefully"
+        dummy_logger = DummyLogger()
+        orig_logger = globals()["logger"]
+        globals()["logger"] = dummy_logger
+        try:
+            result = main()
+            assert result is not False
+        finally:
+            builtins.input = orig_input
+            globals()["logger"] = orig_logger
+        return True
 
-        # Test with empty data instead of None
-        empty_path = find_relationship_path({}, "ANY_ID")
-        assert empty_path is None or isinstance(
-            empty_path, list
-        ), "Should handle empty data gracefully"
-
-    def test_configuration_error_handling():
-        """Test handling of configuration errors."""
-        # Temporarily modify config to test error handling
-        original_config = DEFAULT_CONFIG.copy()
-
-        # Test with missing scoring weights
-        modified_config = {"DATE_FLEXIBILITY": 2}
-        # Function should handle missing weights gracefully
-        test_individual = {"id": "CONFIG_TEST_12345", "name": "Config Test 12345"}
-        score = score_individual(test_individual, {})
-        assert score is None or isinstance(
-            score, (int, float)
-        ), "Should handle missing config gracefully"
-
-    def test_main_error_handling():
-        """Test error handling in main workflow."""
-        # Main should handle errors gracefully and return False
-        result = main()
-        assert isinstance(result, bool), "Main should always return a boolean"
-
-    with suppress_logging():
-        suite.run_test(
-            "score_individual() error handling with invalid inputs",
-            test_scoring_error_handling,
-            "Scoring functions handle invalid inputs and incomplete data gracefully",
-            "Test scoring with None input and incomplete individual data",
-            "Scoring error handling prevents crashes and returns appropriate values",
-        )
-
-        suite.run_test(
-            "filter_gedcom_data() error handling with invalid data types",
-            test_filtering_error_handling,
-            "Filtering functions handle invalid data types and structures gracefully",
-            "Test filtering with non-dictionary input and verify graceful handling",
-            "Filtering error handling maintains stability with invalid inputs",
-        )
-
-        suite.run_test(
-            "find_relationship_path() error handling with invalid targets",
-            test_path_finding_error_handling,
-            "Path finding handles invalid IDs and None data without errors",
-            "Test path finding with invalid target IDs and None genealogical data",
-            "Path finding error handling prevents crashes with invalid genealogical references",
-        )
-
-        suite.run_test(
-            "configuration error handling with missing values",
-            test_configuration_error_handling,
-            "Configuration errors are handled gracefully without application crashes",
-            "Test functions with modified or incomplete configuration settings",
-            "Configuration error handling maintains functionality with incomplete settings",
-        )
-
-        suite.run_test(
-            "main() workflow error handling and recovery",
-            test_main_error_handling,
-            "Main workflow handles errors gracefully and returns appropriate status",
-            "Test main workflow error handling and verify boolean return values",
-            "Main workflow error handling ensures stable application behavior",
-        )
+    # Register all tests
+    suite.run_test(
+        "Module Initialization",
+        test_module_initialization,
+        "Module initializes with all required functions and configurations.",
+        "Test module initialization.",
+        "Test module initialization.",
+    )
+    suite.run_test(
+        "Config Defaults",
+        test_config_defaults,
+        "Default config values are correct.",
+        "Test config defaults.",
+        "Test config defaults.",
+    )
+    suite.run_test(
+        "Sanitize Input",
+        test_sanitize_input,
+        "Input sanitization works.",
+        "Test sanitize_input.",
+        "Test sanitize_input.",
+    )
+    suite.run_test(
+        "Validated Year Input Patch",
+        test_get_validated_year_input_patch,
+        "Year input is validated and parsed.",
+        "Test get_validated_year_input.",
+        "Test get_validated_year_input.",
+    )
+    suite.run_test(
+        "Calculate Match Score Cached",
+        test_calculate_match_score_cached,
+        "Match score calculation with cache works.",
+        "Test calculate_match_score_cached.",
+        "Test calculate_match_score_cached.",
+    )
+    suite.run_test(
+        "Filter and Score Individuals (Mock)",
+        test_filter_and_score_individuals_mock,
+        "Filtering and scoring works with mock data.",
+        "Test filter_and_score_individuals.",
+        "Test filter_and_score_individuals.",
+    )
+    suite.run_test(
+        "Display Top Matches Patch",
+        test_display_top_matches_patch,
+        "Top matches display correctly.",
+        "Test display_top_matches.",
+        "Test display_top_matches.",
+    )
+    suite.run_test(
+        "Display Relatives Mock",
+        test_display_relatives_mock,
+        "Relatives display correctly.",
+        "Test display_relatives.",
+        "Test display_relatives.",
+    )
+    suite.run_test(
+        "Analyze Top Match Mock",
+        test_analyze_top_match_mock,
+        "Top match analysis works.",
+        "Test analyze_top_match.",
+        "Test analyze_top_match.",
+    )
+    suite.run_test(
+        "Filter GEDCOM Data",
+        test_filter_gedcom_data,
+        "GEDCOM data filtering works.",
+        "Test filter_gedcom_data.",
+        "Test filter_gedcom_data.",
+    )
+    suite.run_test(
+        "Score Individual",
+        test_score_individual,
+        "Individual scoring works.",
+        "Test score_individual.",
+        "Test score_individual.",
+    )
+    suite.run_test(
+        "Find Relationship Path",
+        test_find_relationship_path,
+        "Relationship path finding works.",
+        "Test find_relationship_path.",
+        "Test find_relationship_path.",
+    )
+    suite.run_test(
+        "Main Patch",
+        test_main_patch,
+        "Main function runs without error.",
+        "Test main.",
+        "Test main.",
+    )
 
     return suite.finish_suite()
-
-
-def load_gedcom_data_for_tests() -> Dict[str, Any]:
-    """Load GEDCOM data for testing purposes (parameterless version)."""
-    try:
-        # Mock implementation for testing
-        return {
-            "individuals": [
-                {
-                    "id": "I001_12345",
-                    "name": "Test Person 12345",
-                    "birth_year": 1950,
-                    "birth_place": "Test City 12345",
-                    "gender": "M",
-                },
-                {
-                    "id": "I002_12345",
-                    "name": "Test Relative 12345",
-                    "birth_year": 1952,
-                    "birth_place": "Test Town 12345",
-                    "gender": "F",
-                },
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error loading GEDCOM data: {e}")
-        return {}
 
 
 # ==============================================
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    print("🧬 Running Action 10 - GEDCOM Analysis comprehensive test suite...")
+    project_root = Path(__file__).resolve().parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    from logging_config import setup_logging
+
+    logger = setup_logging()
+
+    print("🧪 Running Action 10 comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

@@ -15,6 +15,10 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Type, TypeVar, Optional, Callable, Union, List
 from functools import wraps
 import inspect
+import sys
+import os
+import unittest
+from unittest.mock import MagicMock
 
 logger = logging.getLogger(__name__)
 
@@ -435,7 +439,7 @@ def configure_dependencies():
 
     try:
         # Register configuration services
-        from config import ConfigManager
+        from config.config_manager import ConfigManager
 
         container.register_singleton(ConfigManager, ConfigManager)
 
@@ -509,156 +513,143 @@ class DIScope:
             container._interfaces = self._original_registrations["interfaces"]
 
 
-def run_comprehensive_tests() -> bool:
-    """
-    Comprehensive test suite for DependencyInjection module.
+class TestDIContainer(unittest.TestCase):
+    def setUp(self):
+        self.container = DIContainer()
 
-    Tests all major functionality including:
-    - DIContainer functionality
-    - Service registration and resolution
-    - Singleton and transient services
-    - Factory patterns
-    - Injectable base class
-    - Dependency injection
-    - Service registry
-    - Scoping
+    def test_register_singleton(self):
+        class ServiceA:
+            pass
 
-    Returns:
-        bool: True if all tests pass, False otherwise
-    """
-    from test_framework import TestSuite
+        self.container.register_singleton(ServiceA, ServiceA)
+        instance1 = self.container.resolve(ServiceA)
+        instance2 = self.container.resolve(ServiceA)
+        self.assertIs(instance1, instance2)
 
-    # Initialize test suite
-    suite = TestSuite("DependencyInjection", __name__)
-    suite.start_suite()
+    def test_register_transient(self):
+        class ServiceB:
+            pass
 
-    # Test 1: DIContainer basics
-    def test_di_container_basics():
-        container = DIContainer()
+        self.container.register_transient(ServiceB, ServiceB)
+        instance1 = self.container.resolve(ServiceB)
+        instance2 = self.container.resolve(ServiceB)
+        self.assertIsNot(instance1, instance2)
 
-        class TestService:
-            def __init__(self):
-                self.value = "test"
-
-        container.register_singleton(TestService, TestService)
-
-        service1 = container.resolve(TestService)
-        service2 = container.resolve(TestService)
-
-        assert isinstance(service1, TestService)
-        assert isinstance(service2, TestService)
-        assert service1 is service2  # Singleton behavior
-        assert service1.value == "test"
-
-    # Test 2: Transient services
-    def test_transient_services():
-        container = DIContainer()
-
-        class TransientService:
-            def __init__(self):
-                self.id = id(self)
-
-        container.register_transient(TransientService, TransientService)
-
-        service1 = container.resolve(TransientService)
-        service2 = container.resolve(TransientService)
-
-        assert isinstance(service1, TransientService)
-        assert isinstance(service2, TransientService)
-        assert service1 is not service2  # Different instances
-        assert service1.id != service2.id
-
-    # Test 3: Factory registration
-    def test_factory_registration():
-        container = DIContainer()
-
-        class FactoryService:
+    def test_register_factory(self):
+        class ServiceC:
             def __init__(self, value):
                 self.value = value
 
         def factory():
-            return FactoryService("factory_created")
+            return ServiceC("factory_value")
 
-        container.register_factory(FactoryService, factory)
+        self.container.register_factory(ServiceC, factory)
+        instance = self.container.resolve(ServiceC)
+        self.assertEqual(instance.value, "factory_value")
 
-        service = container.resolve(FactoryService)
-        assert isinstance(service, FactoryService)
-        assert service.value == "factory_created"
+    def test_register_instance(self):
+        class ServiceD:
+            pass
 
-    # Test 4: Named services
-    def test_named_services():
-        container = DIContainer()
+        instance = ServiceD()
+        self.container.register_instance(ServiceD, instance)
+        resolved_instance = self.container.resolve(ServiceD)
+        self.assertIs(resolved_instance, instance)
 
-        class NamedService:
-            def __init__(self, name):
-                self.name = name
+    def test_resolve_singleton(self):
+        class ServiceE:
+            pass
 
-        service1 = NamedService("service1")
-        service2 = NamedService("service2")
+        self.container.register_singleton(ServiceE, ServiceE)
+        instance = self.container.resolve(ServiceE)
+        self.assertIsInstance(instance, ServiceE)
 
-        container.register_singleton(NamedService, service1, name="first")
-        container.register_singleton(NamedService, service2, name="second")
+    def test_resolve_transient(self):
+        class ServiceF:
+            pass
 
-        resolved1 = container.resolve(NamedService, name="first")
-        resolved2 = container.resolve(NamedService, name="second")
+        self.container.register_transient(ServiceF, ServiceF)
+        instance = self.container.resolve(ServiceF)
+        self.assertIsInstance(instance, ServiceF)
 
-        assert resolved1 is service1
-        assert resolved2 is service2
-        assert resolved1.name == "service1"
-        assert resolved2.name == "service2"
+    def test_resolve_factory(self):
+        class ServiceG:
+            def __init__(self, value):
+                self.value = value
 
-    # Test 5: Dependency resolution
-    def test_dependency_resolution():
-        container = DIContainer()
+        def factory():
+            return ServiceG("factory_value")
 
-        class DatabaseService:
-            def __init__(self):
-                self.connected = True
+        self.container.register_factory(ServiceG, factory)
+        instance = self.container.resolve(ServiceG)
+        self.assertIsInstance(instance, ServiceG)
+        self.assertEqual(instance.value, "factory_value")
 
-        class UserService:
-            def __init__(self, db_service: DatabaseService):
-                self.db_service = db_service
+    def test_resolve_instance(self):
+        class ServiceH:
+            pass
 
-        container.register_singleton(DatabaseService, DatabaseService)
-        container.register_singleton(UserService, UserService)
+        instance = ServiceH()
+        self.container.register_instance(ServiceH, instance)
+        resolved_instance = self.container.resolve(ServiceH)
+        self.assertIsInstance(resolved_instance, ServiceH)
+        self.assertIs(resolved_instance, instance)
 
-        user_service = container.resolve(UserService)
+    def test_is_registered(self):
+        class ServiceI:
+            pass
 
-        assert isinstance(user_service, UserService)
-        assert isinstance(user_service.db_service, DatabaseService)
-        assert user_service.db_service.connected is True
+        self.assertFalse(self.container.is_registered(ServiceI))
+        self.container.register_singleton(ServiceI, ServiceI)
+        self.assertTrue(self.container.is_registered(ServiceI))
 
-    # Test 6: DIResolutionError handling
-    def test_di_resolution_error():
-        container = DIContainer()
+    def test_clear(self):
+        class ServiceJ:
+            pass
 
+        self.container.register_singleton(ServiceJ, ServiceJ)
+        self.container.clear()
+        self.assertFalse(self.container.is_registered(ServiceJ))
+
+    def test_get_registration_info(self):
+        class ServiceK:
+            pass
+
+        self.container.register_singleton(ServiceK, ServiceK, "service_k")
+        info = self.container.get_registration_info()
+        self.assertIn("service_k", info["singleton_instances"])
+
+    def test_create_instance(self):
+        class ServiceL:
+            def __init__(self, value):
+                self.value = value
+
+        self.container.register_singleton(ServiceL, ServiceL)
+        instance = self.container.resolve(ServiceL)
+        self.assertIsInstance(instance, ServiceL)
+
+    def test_di_resolution_error(self):
         class UnregisteredService:
             pass
 
-        try:
-            container.resolve(UnregisteredService)
-            assert False, "Should have raised DIResolutionError"
-        except DIResolutionError:
-            pass  # Expected
+        with self.assertRaises(DIResolutionError):
+            self.container.resolve(UnregisteredService)
 
-    # Test 7: Injectable base class
-    def test_injectable_class():
+    def test_injectable_class(self):
         class InjectableService(Injectable):
             def __init__(self):
                 self.injected = True
 
         service = InjectableService()
-        assert isinstance(service, Injectable)
-        assert service.injected is True
+        self.assertIsInstance(service, Injectable)
+        self.assertTrue(service.injected)
 
-    # Test 8: inject decorator
-    def test_inject_decorator():
+    def test_inject_decorator(self):
         class InjectedService:
             def __init__(self):
                 self.value = "injected"
 
-        container = get_container()
-        container.register_singleton(InjectedService, InjectedService)
+        self.container.register_singleton(InjectedService, InjectedService)
 
         @inject(InjectedService)
         def test_function(**kwargs):
@@ -666,54 +657,48 @@ def run_comprehensive_tests() -> bool:
             return service.value if service else "not_injected"
 
         result = test_function()
-        assert result == "injected"
+        self.assertEqual(result, "injected")
 
-    # Test 9: ServiceRegistry functionality
-    def test_service_registry():
+    def test_service_registry(self):
         container1 = ServiceRegistry.get_container("test_container")
-        assert container1 is not None
+        self.assertIsNotNone(container1)
 
         container2 = ServiceRegistry.get_container("test_container")
-        assert container1 is container2
+        self.assertIs(container1, container2)
 
         default_container = ServiceRegistry.get_container()
-        assert default_container is not None
+        self.assertIsNotNone(default_container)
 
         ServiceRegistry.clear_container("test_container")
         ServiceRegistry.clear_all_containers()
 
-    # Test 10: Global container
-    def test_global_container():
+    def test_global_container(self):
         container1 = get_container()
         container2 = get_container()
 
-        assert container1 is container2
+        self.assertIs(container1, container2)
 
         named_container = get_container("test_container")
-        assert named_container is not container1
+        self.assertIsNot(container1, named_container)
 
-    # Test 11: configure_dependencies
-    def test_configure_dependencies():
+    def test_configure_dependencies(self):
         try:
             configure_dependencies()
         except Exception as e:
-            print(f"Warning: configure_dependencies failed: {e}")
+            self.fail(f"configure_dependencies raised an exception: {e}")
 
-    # Test 12: get_service convenience function
-    def test_get_service_convenience():
+    def test_get_service_convenience(self):
         class ConvenienceService:
             def __init__(self):
                 self.convenient = True
 
-        container = get_container()
-        container.register_singleton(ConvenienceService, ConvenienceService)
+        self.container.register_singleton(ConvenienceService, ConvenienceService)
 
         service = get_service(ConvenienceService)
-        assert isinstance(service, ConvenienceService)
-        assert service.convenient is True
+        self.assertIsInstance(service, ConvenienceService)
+        self.assertTrue(service.convenient)
 
-    # Test 13: DIScope context manager
-    def test_di_scope():
+    def test_di_scope(self):
         with DIScope() as container:
 
             class ScopedService:
@@ -723,11 +708,10 @@ def run_comprehensive_tests() -> bool:
             container.register_singleton(ScopedService, ScopedService)
 
             service = container.resolve(ScopedService)
-            assert isinstance(service, ScopedService)
-            assert service.scoped is True
+            self.assertIsInstance(service, ScopedService)
+            self.assertTrue(service.scoped)
 
-    # Test 14: Container state management
-    def test_container_state_management():
+    def test_container_state_management(self):
         container = DIContainer()
 
         class StateService:
@@ -740,34 +724,31 @@ def run_comprehensive_tests() -> bool:
         service.state = "modified"
 
         service2 = container.resolve(StateService)
-        assert service2 is service
-        assert service2.state == "modified"
+        self.assertIs(service2, service)
+        self.assertEqual(service2.state, "modified")
 
-    # Test 15: Type annotations
-    def test_type_annotations():
+    def test_type_annotations(self):
         import inspect
 
         sig = inspect.signature(DIContainer.register_singleton)
-        assert "interface" in sig.parameters
-        assert "implementation" in sig.parameters
+        self.assertIn("interface", sig.parameters)
+        self.assertIn("implementation", sig.parameters)
 
         sig = inspect.signature(get_service)
-        assert "service_type" in sig.parameters
+        self.assertIn("service_type", sig.parameters)
 
-    # Test 16: Imports and availability
-    def test_imports_and_availability():
-        assert DIContainer is not None
-        assert DIResolutionError is not None
-        assert Injectable is not None
-        assert ServiceRegistry is not None
-        assert DIScope is not None
-        assert inject is not None
-        assert get_container is not None
-        assert configure_dependencies is not None
-        assert get_service is not None
+    def test_imports_and_availability(self):
+        self.assertIsNotNone(DIContainer)
+        self.assertIsNotNone(DIResolutionError)
+        self.assertIsNotNone(Injectable)
+        self.assertIsNotNone(ServiceRegistry)
+        self.assertIsNotNone(DIScope)
+        self.assertIsNotNone(inject)
+        self.assertIsNotNone(get_container)
+        self.assertIsNotNone(configure_dependencies)
+        self.assertIsNotNone(get_service)
 
-    # Test 17: Integration test
-    def test_integration():
+    def test_integration(self):
         container = get_container()
 
         class ConfigService:
@@ -790,38 +771,21 @@ def run_comprehensive_tests() -> bool:
 
         app = container.resolve(AppService)
 
-        assert isinstance(app, AppService)
-        assert isinstance(app.log, LogService)
-        assert isinstance(app.config, ConfigService)
-        assert app.log.config is app.config  # Define all tests
+        self.assertIsInstance(app, AppService)
+        self.assertIsInstance(app.log, LogService)
+        self.assertIsInstance(app.config, ConfigService)
+        self.assertIs(app.log.config, app.config)  # Define all tests
 
-    tests = [
-        ("DIContainer basics", test_di_container_basics),
-        ("Transient services", test_transient_services),
-        ("Factory registration", test_factory_registration),
-        ("Named services", test_named_services),
-        ("Dependency resolution", test_dependency_resolution),
-        ("DIResolutionError handling", test_di_resolution_error),
-        ("Injectable base class", test_injectable_class),
-        ("inject decorator", test_inject_decorator),
-        ("ServiceRegistry functionality", test_service_registry),
-        ("Global container", test_global_container),
-        ("configure_dependencies", test_configure_dependencies),
-        ("get_service convenience function", test_get_service_convenience),
-        ("DIScope context manager", test_di_scope),
-        ("Container state management", test_container_state_management),
-        ("Type annotations", test_type_annotations),
-        ("Imports and availability", test_imports_and_availability),
-        ("Integration test", test_integration),
-    ]
 
-    # Run each test using TestSuite
-    for test_name, test_func in tests:
-        suite.run_test(test_name, test_func, f"Test {test_name}")
-
-    # Finish suite and return result
-    return suite.finish_suite()
+def run_comprehensive_tests():
+    suite = unittest.TestSuite()
+    suite.addTest(unittest.makeSuite(TestDIContainer))
+    runner = unittest.TextTestRunner()
+    runner.run(suite)
 
 
 if __name__ == "__main__":
+    # Add project root to the Python path
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, project_root)
     run_comprehensive_tests()

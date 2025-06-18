@@ -80,15 +80,16 @@ def run_comprehensive_tests() -> bool:
 
     def test_config_class_initialization():
         """Test Config_Class initializes properly with all required attributes."""
-        config = Config_Class()
-        assert config is not None, "Config_Class instance should not be None"
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
+            assert config is not None, "Config_Class instance should not be None"
 
-        # Test core attributes exist
-        required_attrs = ["BASE_URL", "DATABASE_FILE", "TREE_NAME", "USER_AGENTS"]
-        for attr in required_attrs:
-            assert hasattr(
-                config, attr
-            ), f"Config_Class missing required attribute: {attr}"
+            # Test core attributes exist
+            required_attrs = ["BASE_URL", "DATABASE_FILE", "TREE_NAME", "USER_AGENTS"]
+            for attr in required_attrs:
+                assert hasattr(
+                    config, attr
+                ), f"Config_Class missing required attribute: {attr}"
 
     def test_environment_setup():
         """Test environment variables and .env file loading."""
@@ -96,95 +97,108 @@ def run_comprehensive_tests() -> bool:
         assert "dotenv" in sys.modules, "dotenv module should be imported"
 
         # Test environment variable access
-        test_config = Config_Class()
-        assert hasattr(
-            test_config, "_get_env_var"
-        ), "Config should have _get_env_var method"
+        with patch("config.Config_Class._validate_critical_configs"):
+            test_config = Config_Class()
+            assert hasattr(
+                test_config, "_get_env_var"
+            ), "Config should have _get_env_var method"
 
     # === CORE FUNCTIONALITY TESTS ===
     def test_environment_variable_methods():
         """Test all environment variable getter methods work correctly."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test string environment variable with default
-        test_string = config._get_string_env("NONEXISTENT_VAR", "default_value")
-        assert test_string == "default_value", "String env var should return default"
+            # Test string environment variable with default
+            test_string = config._get_string_env("NONEXISTENT_VAR", "default_value")
+            assert (
+                test_string == "default_value"
+            ), "String env var should return default"
 
-        # Test integer environment variable with default
-        test_int = config._get_int_env("NONEXISTENT_INT", 42)
-        assert test_int == 42, "Int env var should return default"
-        assert isinstance(test_int, int), "Int env var should return integer type"
+            # Test integer environment variable with default
+            test_int = config._get_int_env("NONEXISTENT_INT", 42)
+            assert test_int == 42, "Int env var should return default"
+            assert isinstance(test_int, int), "Int env var should return integer type"
 
-        # Test boolean environment variable with default
-        test_bool = config._get_bool_env("NONEXISTENT_BOOL", True)
-        assert test_bool is True, "Bool env var should return default"
-        assert isinstance(test_bool, bool), "Bool env var should return boolean type"
+            # Test boolean environment variable with default
+            test_bool = config._get_bool_env("NONEXISTENT_BOOL", True)
+            assert test_bool is True, "Bool env var should return default"
+            assert isinstance(
+                test_bool, bool
+            ), "Bool env var should return boolean type"
 
     def test_data_type_conversions():
         """Test data type conversion methods handle various inputs correctly."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test path conversion
-        if hasattr(config, "_get_path_env"):
-            test_path = config._get_path_env("NONEXISTENT_PATH", ".")
-            assert test_path is not None, "Path env var should not be None"
+            # Test path conversion
+            if hasattr(config, "_get_path_env"):
+                test_path = config._get_path_env("NONEXISTENT_PATH", ".")
+                assert test_path is not None, "Path env var should not be None"
 
-        # Test float conversion
-        if hasattr(config, "_get_float_env"):
-            test_float = config._get_float_env("NONEXISTENT_FLOAT", 1.5)
-            assert test_float == 1.5, "Float env var should return default"
-            assert isinstance(
-                test_float, float
-            ), "Float env var should return float type"
+            # Test float conversion
+            if hasattr(config, "_get_float_env"):
+                test_float = config._get_float_env("NONEXISTENT_FLOAT", 1.5)
+                assert test_float == 1.5, "Float env var should return default"
+                assert isinstance(
+                    test_float, float
+                ), "Float env var should return float type"
 
     def test_configuration_defaults():
         """Test that all required configuration defaults are properly set."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test timing defaults
-        timing_attrs = ["INITIAL_DELAY", "MAX_DELAY", "BACKOFF_FACTOR"]
-        for attr in timing_attrs:
-            if hasattr(config, attr):
-                value = getattr(config, attr)
-                assert value is not None, f"{attr} should have a default value"
+            # Test timing defaults
+            timing_attrs = ["INITIAL_DELAY", "MAX_DELAY", "BACKOFF_FACTOR"]
+            for attr in timing_attrs:
+                if hasattr(config, attr):
+                    value = getattr(config, attr)
+                    assert value is not None, f"{attr} should have a default value"
 
-        # Test user agents list
-        if hasattr(config, "USER_AGENTS"):
-            assert isinstance(config.USER_AGENTS, list), "USER_AGENTS should be a list"
-            assert len(config.USER_AGENTS) > 0, "USER_AGENTS should not be empty"
+            # Test user agents list
+            if hasattr(config, "USER_AGENTS"):
+                assert isinstance(
+                    config.USER_AGENTS, list
+                ), "USER_AGENTS should be a list"
+                assert len(config.USER_AGENTS) > 0, "USER_AGENTS should not be empty"
 
     # === EDGE CASE TESTS ===
     def test_invalid_environment_variables():
         """Test handling of invalid environment variable values."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test invalid integer conversion - should return default
-        with patch.dict(os.environ, {"TEST_INVALID_INT": "not_a_number"}):
-            result = config._get_int_env("TEST_INVALID_INT", 100)
-            assert result == 100, "Invalid int should return default"
+            # Test invalid integer conversion - should return default
+            with patch.dict(os.environ, {"TEST_INVALID_INT": "not_a_number"}):
+                result = config._get_int_env("TEST_INVALID_INT", 100)
+                assert result == 100, "Invalid int should return default"
 
-        # Test invalid boolean conversion - should return default
-        with patch.dict(os.environ, {"TEST_INVALID_BOOL": "not_a_bool"}):
-            result = config._get_bool_env("TEST_INVALID_BOOL", False)
-            assert result is False, "Invalid bool should return default"
+            # Test invalid boolean conversion - should return default
+            with patch.dict(os.environ, {"TEST_INVALID_BOOL": "not_a_bool"}):
+                result = config._get_bool_env("TEST_INVALID_BOOL", False)
+                assert result is False, "Invalid bool should return default"
 
     def test_empty_environment_variables():
         """Test handling of empty environment variable values."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test empty string handling
-        with patch.dict(os.environ, {"TEST_EMPTY": ""}):
-            result = config._get_string_env("TEST_EMPTY", "default")
-            # Empty string should either return empty string or default based on implementation
-            assert isinstance(result, str), "Result should be string type"
+            # Test empty string handling
+            with patch.dict(os.environ, {"TEST_EMPTY": ""}):
+                result = config._get_string_env("TEST_EMPTY", "default")
+                # Empty string should either return empty string or default based on implementation
+                assert isinstance(result, str), "Result should be string type"
 
     def test_none_values():
         """Test handling of None values in configuration."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test that _get_env_var returns None for non-existent variables
-        result = config._get_env_var("DEFINITELY_NONEXISTENT_VAR_12345")
-        assert result is None, "Non-existent env var should return None"
+            # Test that _get_env_var returns None for non-existent variables
+            result = config._get_env_var("DEFINITELY_NONEXISTENT_VAR_12345")
+            assert result is None, "Non-existent env var should return None"
 
     # === INTEGRATION TESTS ===
     def test_global_config_instances():
@@ -203,11 +217,12 @@ def run_comprehensive_tests() -> bool:
             ), "config_instance should be Config_Class instance when not None"
 
         # Test that the Config_Class can be instantiated directly
-        test_config = Config_Class()
-        assert test_config is not None, "Config_Class should be instantiable"
-        assert isinstance(
-            test_config, Config_Class
-        ), "Test config should be Config_Class instance"
+        with patch("config.Config_Class._validate_critical_configs"):
+            test_config = Config_Class()
+            assert test_config is not None, "Config_Class should be instantiable"
+            assert isinstance(
+                test_config, Config_Class
+            ), "Test config should be Config_Class instance"
 
         # Test selenium config instance
         from config import selenium_config
@@ -233,102 +248,119 @@ def run_comprehensive_tests() -> bool:
 
     def test_url_configuration():
         """Test URL configuration and validation."""
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        # Test BASE_URL format if set
-        if hasattr(config, "BASE_URL") and config.BASE_URL:
-            assert config.BASE_URL.startswith(
-                ("http://", "https://")
-            ), "BASE_URL should be properly formatted"
+            # Test BASE_URL format if set
+            if hasattr(config, "BASE_URL") and config.BASE_URL:
+                assert config.BASE_URL.startswith(
+                    ("http://", "https://")
+                ), "BASE_URL should be properly formatted"
 
-        # Test API URL configuration if available
-        if hasattr(config, "API_BASE_URL") and config.API_BASE_URL:
-            assert isinstance(config.API_BASE_URL, str), "API_BASE_URL should be string"
+            # Test API URL configuration if available
+            if hasattr(config, "API_BASE_URL") and config.API_BASE_URL:
+                assert isinstance(
+                    config.API_BASE_URL, str
+                ), "API_BASE_URL should be string"
 
     # === PERFORMANCE TESTS ===
     def test_config_initialization_performance():
         """Test that configuration initialization is performant."""
         import time
 
-        start_time = time.time()
-        config = Config_Class()
-        end_time = time.time()
+        with patch("config.Config_Class._validate_critical_configs"):
+            start_time = time.time()
+            config = Config_Class()
+            end_time = time.time()
 
-        initialization_time = end_time - start_time
-        assert (
-            initialization_time < 1.0
-        ), f"Config initialization took {initialization_time:.3f}s, should be < 1.0s"
+            initialization_time = end_time - start_time
+            assert (
+                initialization_time < 1.0
+            ), f"Config initialization took {initialization_time:.3f}s, should be < 1.0s"
 
     def test_environment_variable_access_performance():
         """Test that environment variable access is efficient."""
         import time
 
-        config = Config_Class()
+        with patch("config.Config_Class._validate_critical_configs"):
+            config = Config_Class()
 
-        start_time = time.time()
-        for i in range(100):
-            config._get_string_env(f"TEST_VAR_{i}", "default")
-        end_time = time.time()
+            start_time = time.time()
+            for i in range(100):
+                config._get_string_env(f"TEST_VAR_{i}", "default")
+            end_time = time.time()
 
-        total_time = end_time - start_time
-        assert (
-            total_time < 0.1
-        ), f"100 env var accesses took {total_time:.3f}s, should be < 0.1s"
+            total_time = end_time - start_time
+            assert (
+                total_time < 0.1
+            ), f"100 env var accesses took {total_time:.3f}s, should be < 0.1s"
 
     def test_multiple_config_instances():
         """Test that creating multiple config instances is efficient."""
         import time
 
-        start_time = time.time()
-        configs = [Config_Class() for _ in range(10)]
-        end_time = time.time()
+        with patch("config.Config_Class._validate_critical_configs"):
+            start_time = time.time()
+            configs = [Config_Class() for _ in range(10)]
+            end_time = time.time()
 
-        creation_time = end_time - start_time
-        assert (
-            creation_time < 0.5
-        ), f"Creating 10 configs took {creation_time:.3f}s, should be < 0.5s"
-        assert len(configs) == 10, "Should create exactly 10 config instances"
+            creation_time = end_time - start_time
+            assert (
+                creation_time < 0.5
+            ), f"Creating 10 configs took {creation_time:.3f}s, should be < 0.5s"
+            assert len(configs) == 10, "Should create exactly 10 config instances"
 
     # === ERROR HANDLING TESTS ===
     def test_missing_critical_configuration():
         """Test handling of missing critical configuration values."""
-        config = Config_Class()
-
-        # Test that missing values don't cause crashes
-        try:
-            # Try to access a method that might validate critical configs
-            if hasattr(config, "_validate_critical_configs"):
-                # This might fail in test environment, which is expected
-                config._validate_critical_configs()
-        except Exception:
-            # Expected to fail in test environment without real credentials
-            pass
+        # This test ensures that if critical credentials are missing,
+        # the configuration process fails as expected.
+        with patch("config.Config_Class._load_secure_credentials"), patch.dict(
+            os.environ,
+            {
+                "ANCESTRY_USERNAME": "",
+                "ANCESTRY_PASSWORD": "",
+                "DEEPSEEK_API_KEY": "",
+                "GOOGLE_API_KEY": "",
+            },
+        ):
+            try:
+                Config_Class()
+                assert (
+                    False
+                ), "ValueError was expected due to missing credentials but not raised."
+            except ValueError as e:
+                assert (
+                    "missing" in str(e).lower()
+                ), f"Error message should indicate missing config, but was: {e}"
 
     def test_configuration_error_recovery():
         """Test that configuration errors are handled gracefully."""
         # Test that invalid JSON environment variables don't crash the system
-        if hasattr(Config_Class(), "_get_json_env"):
-            config = Config_Class()
-            with patch.dict(os.environ, {"TEST_INVALID_JSON": "invalid json"}):
-                try:
-                    result = config._get_json_env("TEST_INVALID_JSON", {})
-                    assert isinstance(
-                        result, dict
-                    ), "Should return default dict on invalid JSON"
-                except AttributeError:
-                    pass  # Method might not exist
+        with patch("config.Config_Class._validate_critical_configs"):
+            if hasattr(Config_Class(), "_get_json_env"):
+                config = Config_Class()
+                with patch.dict(os.environ, {"TEST_INVALID_JSON": "invalid json"}):
+                    try:
+                        result = config._get_json_env("TEST_INVALID_JSON", {})
+                        assert isinstance(
+                            result, dict
+                        ), "Should return default dict on invalid JSON"
+                    except AttributeError:
+                        pass  # Method might not exist
 
     def test_import_error_handling():
         """Test that import errors are handled gracefully."""
         # Test that the module handles missing optional dependencies
-        try:
-            # This should not crash even if some imports fail
-            config = Config_Class()
-            assert (
-                config is not None
-            ), "Config should initialize even with missing dependencies"
-        except ImportError as e:
-            assert False, f"Config initialization should handle import errors: {e}"
+        with patch("config.Config_Class._validate_critical_configs"):
+            try:
+                # This should not crash even if some imports fail
+                config = Config_Class()
+                assert (
+                    config is not None
+                ), "Config should initialize even with missing dependencies"
+            except ImportError as e:
+                assert False, f"Config initialization should handle import errors: {e}"
 
     # === RUN ALL TESTS ===
     with suppress_logging():

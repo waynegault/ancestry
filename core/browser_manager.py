@@ -18,12 +18,15 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
-from config import config_instance, selenium_config
+from config.config_manager import ConfigManager
 from chromedriver import init_webdvr
 from selenium_utils import export_cookies
 from utils import nav_to_page
 
 logger = logging.getLogger(__name__)
+
+# Initialize config manager
+config_manager = ConfigManager()
 
 # Type alias
 DriverType = Optional[WebDriver]
@@ -71,12 +74,12 @@ class BrowserManager:
 
             # Navigate to base URL to stabilize
             logger.debug(
-                f"Navigating to Base URL ({config_instance.BASE_URL}) to stabilize..."
+                f"Navigating to Base URL ({config_manager.get_api_config().base_url}) to stabilize..."
             )
 
-            if not nav_to_page(self.driver, config_instance.BASE_URL):
+            if not nav_to_page(self.driver, config_manager.get_api_config().base_url):
                 logger.error(
-                    f"Failed to navigate to base URL: {config_instance.BASE_URL}"
+                    f"Failed to navigate to base URL: {config_manager.get_api_config().base_url}"
                 )
                 self.close_browser()
                 return False
@@ -396,8 +399,7 @@ def run_comprehensive_tests() -> bool:
         def test_configuration_access():
             """Test access to required configuration objects."""
             # These imports should be available
-            assert config_instance is not None, "config_instance should be available"
-            assert selenium_config is not None, "selenium_config should be available"
+            assert config_manager is not None, "config_manager should be available"
             assert logger is not None, "Logger should be initialized"
             return True
 
@@ -461,4 +463,11 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    # Add project root to allow relative imports
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
+
     run_comprehensive_tests()

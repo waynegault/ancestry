@@ -10,10 +10,10 @@ import logging
 import time
 from typing import Optional
 
-from .database_manager import DatabaseManager
-from .browser_manager import BrowserManager
-from .api_manager import APIManager
-from .session_validator import SessionValidator
+from core.database_manager import DatabaseManager
+from core.browser_manager import BrowserManager
+from core.api_manager import APIManager
+from core.session_validator import SessionValidator
 
 from config import config_instance
 

@@ -15,9 +15,12 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
-from config import config_instance
+from config.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
+
+# Initialize config manager
+config_manager = ConfigManager()
 
 # Type aliases
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
@@ -219,7 +222,7 @@ class APIManager:
         """
         logger.debug("Retrieving CSRF token...")
 
-        url = urljoin(config_instance.BASE_URL, API_PATH_CSRF_TOKEN)
+        url = urljoin(config_manager.get_api_config().base_url, API_PATH_CSRF_TOKEN)
         response_data = self.make_api_request(
             url=url,
             method="GET",
@@ -249,7 +252,7 @@ class APIManager:
         """
         logger.debug("Retrieving profile ID (ucdmid)...")
 
-        url = urljoin(config_instance.BASE_URL, API_PATH_PROFILE_ID)
+        url = urljoin(config_manager.get_api_config().base_url, API_PATH_PROFILE_ID)
         response_data = self.make_api_request(
             url=url,
             method="GET",
@@ -281,7 +284,7 @@ class APIManager:
         """
         logger.debug("Retrieving UUID...")
 
-        url = urljoin(config_instance.BASE_URL, API_PATH_UUID)
+        url = urljoin(config_manager.get_api_config().base_url, API_PATH_UUID)
         response_data = self.make_api_request(
             url=url, method="GET", use_csrf_token=False, api_description="Get UUID"
         )
@@ -550,7 +553,7 @@ def run_comprehensive_tests() -> bool:
         """Test integration with configuration system."""
         try:
             # Test config integration
-            assert config_instance is not None, "Config instance should be available"
+            assert config_manager is not None, "Config manager should be available"
 
             # Test that API constants are defined
             api_constants = [
@@ -660,6 +663,11 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 if __name__ == "__main__":
     import sys
+    from pathlib import Path
+
+    # Add project root to allow relative imports
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
 
     print("🔗 Running API Manager & HTTP Request Handling comprehensive test suite...")
     success = run_comprehensive_tests()

@@ -24,3 +24,4 @@
 /Logs/action10.log
 /.env.env.backup
 /credentials.enc
+/.env-back

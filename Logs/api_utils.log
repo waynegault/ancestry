@@ -796,3 +796,63 @@
 21:01:07 INF [security decrypt_ 190 ] No encrypted credentials file found
 21:01:07 INF [security decrypt_ 190 ] No encrypted credentials file found
 21:01:07 INF [api_util test_log 2717] Test log message
+00:45:17 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+00:45:17 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+00:45:27 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+00:45:27 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+00:45:29 INF [security decrypt_ 190 ] No encrypted credentials file found
+00:45:29 INF [security decrypt_ 190 ] No encrypted credentials file found
+00:45:29 INF [api_util test_log 2717] Test log message
+00:53:44 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+00:53:44 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+00:53:44 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+00:53:44 INF [ms_graph <module> 62  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+00:53:44 INF [ms_graph <module> 63  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+00:53:44 INF [ms_graph <module> 81  ] MSAL token cache path set to: C:\Users\wayne\GitHub\Python\Projects\Ancestry\Data\ms_graph_cache.bin
+00:53:44 INF [ms_graph <module> 100 ] MSAL token cache loaded successfully.
+00:53:44 INF [ms_graph <module> 156 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+00:53:44 INF [action9_ <module> 347 ] GEDCOM utilities successfully imported.
+00:53:44 INF [action9_ <module> 369 ] API utilities successfully imported.
+00:53:44 INF [action10 <module> 94  ] Logging configured via setup_logging (Level: INFO).
+00:53:44 INF [cache_ma _registe 1084] Enhanced cache manager registered 2 cache modules
+14:15:44 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+14:15:44 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+14:15:52 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+14:15:52 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+14:15:52 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:15:52 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:15:53 INF [api_util test_log 2717] Test log message
+14:16:15 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+14:16:15 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+14:16:15 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+14:16:25 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+14:16:25 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+14:16:33 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+14:16:33 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+14:16:34 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:16:34 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:16:34 INF [api_util test_log 2717] Test log message
+14:35:58 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+14:35:58 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+14:35:58 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+14:36:06 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+14:36:06 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+14:36:07 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:36:07 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:36:07 INF [api_util test_log 2717] Test log message
+14:58:19 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+14:58:19 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+14:58:19 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+14:58:26 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+14:58:26 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+14:58:27 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:58:27 INF [security decrypt_ 190 ] No encrypted credentials file found
+14:58:28 INF [api_util test_log 2717] Test log message
+17:33:30 INF [action8_ <module> 149 ] Action 8 Initializing: APP_MODE is testing
+17:33:30 INF [action8_ <module> 160 ] Action 8 Using minimum message interval: 0:00:10
+17:33:30 INF [action8_ load_mes 227 ] Message templates loaded and validated successfully (12 total templates).
+17:33:37 INF [api_sear <module> 60  ] Successfully imported API utilities from api_utils
+17:33:37 INF [api_sear <module> 71  ] Successfully imported relationship utilities
+17:33:38 INF [security decrypt_ 190 ] No encrypted credentials file found
+17:33:38 INF [security decrypt_ 190 ] No encrypted credentials file found
+17:33:39 INF [api_util test_log 2717] Test log message

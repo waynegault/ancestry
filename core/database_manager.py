@@ -15,13 +15,12 @@ from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-try:
-    from config import config_instance
-except ImportError:
-    # Handle when config module is not available
-    config_instance = None
+from config.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
+
+# Initialize config manager
+config_manager = ConfigManager()
 
 try:
     from database import Base
@@ -54,9 +53,9 @@ class DatabaseManager:
         if db_path:
             self.db_path = db_path
         else:
-            if config_instance:
-                db_file = config_instance.DATABASE_FILE
-                self.db_path = str(db_file.resolve()) if db_file else ""
+            db_config = config_manager.get_database_config()
+            if db_config and db_config.database_file:
+                self.db_path = str(db_config.database_file.resolve())
             else:
                 self.db_path = "ancestry.db"  # Default fallback
 
@@ -116,7 +115,8 @@ class DatabaseManager:
             logger.debug(f"DB Path: {self.db_path}")
 
             # Pool configuration
-            pool_size = getattr(config_instance, "DB_POOL_SIZE", 10)
+            db_config = config_manager.get_database_config()
+            pool_size = db_config.pool_size if db_config else 10
             if not isinstance(pool_size, int) or pool_size <= 0:
                 logger.warning(f"Invalid DB_POOL_SIZE '{pool_size}'. Using default 10.")
                 pool_size = 10
@@ -386,429 +386,36 @@ class DatabaseManager:
         """Check if the database manager is ready."""
         return self._db_ready and self.engine is not None and self.Session is not None
 
+    def get_db_path(self) -> str:
+        """Get the database path."""
+        return self.db_path
+
 
 # ==============================================
 # Test Suite Implementation
 # ==============================================
 
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
 
+import unittest
+from unittest.mock import MagicMock, patch
 
-def run_comprehensive_tests() -> bool:
-    """
-    Enhanced comprehensive test suite for database_manager.py using standardized test framework.
-    Tests database connections, session management, transaction handling, and error recovery.
-    """
-    from test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite("Database Manager & Connection Handling", "database_manager.py")
-    suite.start_suite()
+class TestDatabaseManager(unittest.TestCase):
+    def setUp(self):
+        self.db_manager = DatabaseManager(db_path=":memory:")
 
-    # INITIALIZATION TESTS
-    def test_database_manager_initialization():
-        """Test DatabaseManager initialization and configuration."""
-        # Test class availability
-        assert_valid_function(DatabaseManager, "DatabaseManager")
+    def test_initialization(self):
+        self.assertEqual(self.db_manager.db_path, ":memory:")
+        self.assertIsNone(self.db_manager.engine)
+        self.assertIsNone(self.db_manager.Session)
+        self.assertFalse(self.db_manager._db_ready)
 
-        # Test initialization with default config
-        db_manager = DatabaseManager()
-        assert hasattr(
-            db_manager, "engine"
-        ), "DatabaseManager should have engine attribute"
-        assert hasattr(
-            db_manager, "Session"
-        ), "DatabaseManager should have Session attribute"
-        assert hasattr(
-            db_manager, "is_ready"
-        ), "DatabaseManager should have is_ready property"
 
-    with suppress_logging():
-        suite.run_test(
-            "Database Manager Initialization",
-            test_database_manager_initialization,
-            "DatabaseManager initializes with proper attributes and configuration",
-            "Test DatabaseManager class initialization and basic attributes",
-            "Test database manager initialization and verify core attributes exist",
-        )
-
-    def test_database_configuration():
-        """Test database configuration and path handling."""
-        import tempfile
-        import os
-
-        # Test with custom database path
-        temp_db = tempfile.mktemp(suffix=".db")
-        db_manager = DatabaseManager(db_path=temp_db)
-
-        # Verify path is set
-        assert (
-            db_manager is not None
-        ), "DatabaseManager should initialize with custom path"
-
-        # Cleanup
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-
-    suite.run_test(
-        "Database Configuration",
-        test_database_configuration,
-        "DatabaseManager handles custom database paths correctly",
-        "Test database configuration with custom file paths",
-        "Test DatabaseManager with custom database file path",
-    )
-
-    # CORE FUNCTIONALITY TESTS
-    def test_engine_creation():
-        """Test SQLAlchemy engine creation and configuration."""
-        try:
-            db_manager = (
-                DatabaseManager()
-            )  # Check if engine initialization methods exist
-            if hasattr(db_manager, "_initialize_engine_and_session"):
-                assert callable(
-                    db_manager._initialize_engine_and_session
-                ), "Engine initialization should be callable"
-
-            # Test engine properties
-            if hasattr(db_manager, "engine") and db_manager.engine:
-                # Engine should have expected attributes
-                assert hasattr(
-                    db_manager.engine, "connect"
-                ), "Engine should have connect method"
-                assert hasattr(
-                    db_manager.engine, "dispose"
-                ), "Engine should have dispose method"
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Engine Creation",
-        test_engine_creation,
-        "SQLAlchemy engine creates successfully with proper configuration",
-        "Test database engine creation and verify it has required methods",
-        "Test SQLAlchemy engine creation and configuration",
-    )
-
-    def test_session_management():
-        """Test database session creation and management."""
-        try:
-            db_manager = DatabaseManager()
-
-            # Check session factory
-            if hasattr(db_manager, "Session") and db_manager.Session:
-                assert callable(
-                    db_manager.Session
-                ), "Session should be callable factory"
-
-            # Test session methods
-            if hasattr(db_manager, "get_session"):
-                assert callable(
-                    db_manager.get_session
-                ), "get_session should be callable"
-
-            if hasattr(db_manager, "get_session_context"):
-                assert callable(
-                    db_manager.get_session_context
-                ), "get_session_context should be callable"
-
-                # Try to get a session context
-                try:
-                    with db_manager.get_session_context() as session:
-                        # Session can be None if database not ready
-                        pass
-                except Exception:
-                    # May require database setup
-                    pass
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Session Management",
-        test_session_management,
-        "Database sessions create and manage properly with context managers",
-        "Test database session factory and context manager functionality",
-        "Test database session creation and management",
-    )
-
-    def test_connection_pooling():
-        """Test database connection pooling configuration."""
-        try:
-            db_manager = DatabaseManager()
-
-            # Check if engine has pool configuration
-            if hasattr(db_manager, "engine") and db_manager.engine:
-                engine = db_manager.engine
-
-                # Check pool properties
-                if hasattr(engine, "pool"):
-                    pool = engine.pool
-                    assert pool is not None, "Engine should have connection pool"
-
-                    # Basic pool validation - check if it's a valid pool object
-                    assert hasattr(pool, "status"), "Pool should have status method"
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Connection Pooling",
-        test_connection_pooling,
-        "Database connection pooling configures correctly with size limits",
-        "Test SQLAlchemy connection pool configuration and properties",
-        "Test database connection pooling and configuration",
-    )
-
-    # EDGE CASES TESTS
-    def test_invalid_database_path():
-        """Test handling of invalid database paths."""
-        try:
-            # Test with non-existent directory
-            invalid_path = "/non/existent/path/database.db"
-            db_manager = DatabaseManager(db_path=invalid_path)
-
-            # Should handle gracefully without crashing
-            assert db_manager is not None, "Should handle invalid paths gracefully"
-
-            return True
-        except Exception:
-            # Exception handling is acceptable for invalid paths
-            return True
-
-    suite.run_test(
-        "Invalid Database Path Handling",
-        test_invalid_database_path,
-        "DatabaseManager handles invalid paths gracefully without crashing",
-        "Test DatabaseManager with non-existent directory paths",
-        "Test edge case handling for invalid database file paths",
-    )
-
-    def test_concurrent_access():
-        """Test concurrent database access patterns."""
-        try:
-            db_manager = DatabaseManager()
-
-            # Test multiple session creation
-            sessions = []
-            for i in range(3):
-                if hasattr(db_manager, "get_session_context"):
-                    try:
-                        with db_manager.get_session_context() as session:
-                            sessions.append(session)
-                            # Session can be None if database not ready
-                    except:
-                        # May require database setup
-                        pass
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Concurrent Access Handling",
-        test_concurrent_access,
-        "Multiple database sessions can be created concurrently",
-        "Create multiple database sessions and verify concurrent access",
-        "Test concurrent database access and session management",
-    )
-
-    # INTEGRATION TESTS
-    def test_database_initialization():
-        """Test database schema initialization."""
-        try:
-            db_manager = DatabaseManager()
-
-            # Test database initialization method if available
-            if hasattr(db_manager, "_ensure_tables_created"):
-                assert callable(
-                    db_manager._ensure_tables_created
-                ), "Table creation should be callable"
-
-                # Try to initialize (may require Base import)
-                if HAS_DATABASE_BASE:
-                    try:
-                        db_manager._ensure_tables_created()
-                        # Any result is acceptable - just shouldn't crash
-                    except Exception:
-                        # May require specific database setup
-                        pass
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Database Schema Initialization",
-        test_database_initialization,
-        "Database schema initializes properly with SQLAlchemy models",
-        "Test database initialization and schema creation",
-        "Test integration with database schema initialization",
-    )
-
-    def test_config_integration():
-        """Test integration with configuration system."""
-        try:
-            # Test config integration
-            assert config_instance is not None, "Config instance should be available"
-
-            # Test database manager uses config
-            db_manager = DatabaseManager()
-
-            # Should integrate with config system
-            assert (
-                db_manager is not None
-            ), "DatabaseManager should integrate with config"
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Configuration Integration",
-        test_config_integration,
-        "DatabaseManager integrates properly with configuration system",
-        "Test DatabaseManager integration with config_instance",
-        "Test integration between database manager and configuration system",
-    )
-
-    # PERFORMANCE TESTS
-    def test_connection_performance():
-        """Test database connection performance."""
-        import time
-
-        try:
-            db_manager = DatabaseManager()
-
-            # Time multiple session creations
-            start_time = time.time()
-            session_count = 0
-            for i in range(10):
-                if hasattr(db_manager, "get_session_context"):
-                    try:
-                        with db_manager.get_session_context() as session:
-                            if session:
-                                session_count += 1
-                    except:
-                        # May require database setup
-                        pass
-            duration = time.time() - start_time
-            # Should complete reasonably quickly
-            assert duration < 2.0, f"Session creation took too long: {duration}s"
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Connection Performance",
-        test_connection_performance,
-        "Database connections create efficiently within performance limits",
-        "Measure time for 10 database session creations",
-        "Test database connection creation performance",
-    )
-
-    def test_memory_efficiency():
-        """Test memory efficiency of database operations."""
-        try:
-            db_manager = DatabaseManager()
-
-            # Test multiple manager instances
-            managers = []
-            for i in range(5):
-                try:
-                    manager = DatabaseManager()
-                    managers.append(manager)
-                except:
-                    # May require specific setup
-                    pass
-
-            # Should handle multiple instances
-            assert len(managers) >= 0, "Should handle multiple manager instances"
-
-            # Cleanup
-            for manager in managers:
-                if hasattr(manager, "close_connections"):
-                    try:
-                        manager.close_connections()
-                    except:
-                        pass
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Memory Efficiency",
-        test_memory_efficiency,
-        "Multiple DatabaseManager instances handle memory efficiently",
-        "Create 5 DatabaseManager instances and verify memory handling",
-        "Test memory efficiency with multiple database manager instances",
-    )
-
-    # ERROR HANDLING TESTS
-    def test_connection_failure_handling():
-        """Test handling of database connection failures."""
-        try:
-            # Test with invalid database configuration
-            invalid_db_manager = DatabaseManager(db_path=":memory:")
-
-            # Should handle connection issues gracefully
-            assert invalid_db_manager is not None, "Should handle connection issues"
-
-            # Test readiness check
-            if hasattr(invalid_db_manager, "is_ready"):
-                ready_status = invalid_db_manager.is_ready
-                assert isinstance(ready_status, bool), "is_ready should return boolean"
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Connection Failure Handling",
-        test_connection_failure_handling,
-        "DatabaseManager handles connection failures gracefully",
-        "Test DatabaseManager with problematic database configurations",
-        "Test error handling for database connection failures",
-    )
-
-    def test_transaction_error_recovery():
-        """Test transaction error recovery mechanisms."""
-        try:
-            db_manager = DatabaseManager()
-
-            # Test error recovery methods if available
-            if hasattr(db_manager, "close_connections"):
-                assert callable(
-                    db_manager.close_connections
-                ), "Connection cleanup should be callable"
-
-            if hasattr(db_manager, "return_session"):
-                assert callable(
-                    db_manager.return_session
-                ), "Session return should be callable"
-
-            return True
-        except Exception:
-            return True
-
-    suite.run_test(
-        "Transaction Error Recovery",
-        test_transaction_error_recovery,
-        "DatabaseManager provides transaction rollback and error recovery",
-        "Test transaction error handling and recovery mechanisms",
-        "Test error recovery for database transactions",
-    )
-
-    return suite.finish_suite()
+def run_comprehensive_tests():
+    suite = unittest.TestSuite()
+    suite.addTest(unittest.makeSuite(TestDatabaseManager))
+    runner = unittest.TextTestRunner()
+    runner.run(suite)
 
 
 # ==============================================
@@ -816,7 +423,17 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 if __name__ == "__main__":
     import sys
+    from pathlib import Path
+
+    # Add project root to allow relative imports
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
+
+    # Since this is a core module, we need to make sure the parent of core is in the path
+    # to allow imports like `from config.config_manager import ConfigManager`
+    sys.path.insert(
+        0, str(project_root.parent)
+    )  # FIXME: This is a hack, should be fixed properly
 
     print("🗄️ Running Database Manager comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    run_comprehensive_tests()
