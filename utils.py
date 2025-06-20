@@ -103,16 +103,10 @@ try:
     # --- Local application imports ---
     # Assume these are essential or handled elsewhere if missing
     from chromedriver import init_webdvr
-    from config import config_instance, selenium_config
+    from config import config_manager, config_schema
     from logging_config import logger
 
-    try:
-        from database import Base  # Import Base for table creation
-
-        HAS_DATABASE_BASE = True
-    except ImportError:
-        HAS_DATABASE_BASE = False
-        logger.warning("Could not import Base from database module")
+    from database import Base  # Import Base for table creation
     from my_selectors import *
 
     from selenium_utils import (
@@ -123,69 +117,6 @@ try:
 
     # Do NOT import api_utils here at the top level
 
-    # Performance monitoring not implemented
-    HAS_PERFORMANCE_MONITORING = False
-
-    def monitor_performance(service_name: str) -> Callable:
-        def decorator(func: Callable) -> Callable:
-            return func
-
-        return decorator
-
-    def time_function(func: Callable, *args: Any, **kwargs: Any) -> Tuple[Any, float]:
-        import time
-
-        start = time.time()
-        result = func(*args, **kwargs)
-        return result, time.time() - start
-
-    class Timer:
-        def __init__(self) -> None:
-            self.start_time = 0.0
-
-        def start(self) -> None:
-            import time
-
-            self.start_time = time.time()
-
-        def stop(self) -> float:
-            import time
-
-            return time.time() - self.start_time
-
-    def track_memory_usage() -> Dict[str, Any]:
-        return {"memory_usage": "unavailable"}
-
-    def collect_metrics() -> Dict[str, Any]:
-        return {"metrics": "unavailable"}
-
-    def calculate_statistics(data: Any) -> Dict[str, Any]:
-        return {"statistics": "unavailable"}
-
-    def check_performance_thresholds(metrics: Any) -> bool:
-        return True
-
-    def generate_performance_report(metrics: Any) -> str:
-        return "Performance monitoring unavailable"
-
-    def monitor_cpu() -> Dict[str, Any]:
-        return {"cpu": "unavailable"}
-
-    def monitor_memory() -> Dict[str, Any]:
-        return {"memory": "unavailable"}
-
-    def monitor_disk() -> Dict[str, Any]:
-        return {"disk": "unavailable"}
-
-    def monitor_network() -> Dict[str, Any]:
-        return {"network": "unavailable"}
-
-    def performance_monitor() -> Dict[str, Any]:
-        return {"performance": "unavailable"}
-
-    def health_checker() -> Dict[str, Any]:
-        return {"health": "unavailable"}
-
 except ImportError as import_err:
     # Log failure for other imports but don't define dummies
     logging.critical(
@@ -194,7 +125,6 @@ except ImportError as import_err:
     )
     # Re-raise the error to stop execution
     raise import_err
-# End of try/except
 
 # --- Test framework imports ---
 from test_framework import (
@@ -461,7 +391,7 @@ def retry(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            cfg = config_instance  # Assume config_instance is available
+            cfg = config_schema  # Use new config system
             attempts = (
                 MAX_RETRIES
                 if MAX_RETRIES is not None
@@ -527,7 +457,7 @@ def retry_api(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            cfg = config_instance  # Assume config_instance is available
+            cfg = config_schema  # Use new config system
             _max_retries = (
                 max_retries
                 if max_retries is not None
@@ -757,7 +687,7 @@ class DynamicRateLimiter:
         token_capacity: Optional[float] = None,
         token_fill_rate: Optional[float] = None,
     ):
-        cfg = config_instance  # Assume available
+        cfg = config_schema  # Use new config system
         self.initial_delay = (
             initial_delay
             if initial_delay is not None
@@ -928,31 +858,30 @@ class SessionManager:
         self.session_ready: bool = False
         self.browser_needed: bool = False  # Flag to track if browser is needed
 
-        # Assume config instances are available due to strict imports at top
-        db_file = config_instance.DATABASE_FILE
+        # Use new config system
+        db_file = config_schema.database.database_file
         self.db_path: str = str(db_file.resolve()) if db_file else ""
-        self.selenium_config = selenium_config
-        self.ancestry_username: str = config_instance.ANCESTRY_USERNAME
-        self.ancestry_password: str = config_instance.ANCESTRY_PASSWORD
-        self.debug_port: int = self.selenium_config.DEBUG_PORT
+        self.ancestry_username: str = config_schema.api.username
+        self.ancestry_password: str = config_schema.api.password
+        self.debug_port: int = config_schema.selenium.debug_port
         self.chrome_user_data_dir: Optional[Path] = (
-            self.selenium_config.CHROME_USER_DATA_DIR
+            config_schema.selenium.chrome_user_data_dir
         )
-        self.profile_dir: str = self.selenium_config.PROFILE_DIR
+        self.profile_dir: str = config_schema.selenium.profile_dir
         self.chrome_driver_path: Optional[Path] = (
-            self.selenium_config.CHROME_DRIVER_PATH
+            config_schema.selenium.chrome_driver_path
         )
         self.chrome_browser_path: Optional[Path] = (
-            self.selenium_config.CHROME_BROWSER_PATH
+            config_schema.selenium.chrome_browser_path
         )
-        self.chrome_max_retries: int = self.selenium_config.CHROME_MAX_RETRIES
-        self.chrome_retry_delay: int = self.selenium_config.CHROME_RETRY_DELAY
-        self.headless_mode: bool = self.selenium_config.HEADLESS_MODE
+        self.chrome_max_retries: int = config_schema.selenium.chrome_max_retries
+        self.chrome_retry_delay: int = config_schema.selenium.chrome_retry_delay
+        self.headless_mode: bool = config_schema.selenium.headless_mode
         self.engine = None
         self.Session: Optional[sessionmaker] = None  # type: ignore # Assume imported
         self._db_init_attempted: bool = False
         self._db_ready: bool = False  # Flag to track if database is ready
-        cache_dir = config_instance.CACHE_DIR
+        cache_dir = config_schema.cache.cache_dir
         self.cache_dir: Optional[Path] = cache_dir
         self.csrf_token: Optional[str] = None
         self.my_profile_id: Optional[str] = None
@@ -1089,12 +1018,12 @@ class SessionManager:
             # End of if
             logger.debug("WebDriver initialization successful.")
             logger.debug(
-                f"Navigating to Base URL ({config_instance.BASE_URL}) to stabilize..."
+                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
             )
             # Assume nav_to_page is available
             base_url_nav_ok = nav_to_page(
                 self.driver,
-                config_instance.BASE_URL,
+                config_schema.api.base_url,
                 selector="body",
                 session_manager=self,
             )
@@ -1158,7 +1087,6 @@ class SessionManager:
 
     def start_sess(self, action_name: Optional[str] = None) -> bool:
         """
-        Legacy method for backward compatibility.
         Starts both database and browser sessions.
 
         Args:
@@ -1231,9 +1159,6 @@ class SessionManager:
         Returns:
             bool: True if session is ready, False otherwise
         """
-        logger.debug(
-            f"TRACE: Entered ensure_session_ready (Action: {action_name or 'Default'})"
-        )
 
         # First ensure database is ready
         if not self.ensure_db_ready():
@@ -1255,19 +1180,17 @@ class SessionManager:
                 f"Cannot ensure session ready for '{action_name}': Driver start failed."
             )
             self.session_ready = False
-            logger.debug("TRACE: ensure_session_ready - ensure_driver_live failed")
+
             return False
         # End of if
 
         ready_checks_ok = False
         try:
-            logger.debug("TRACE: Calling _perform_readiness_checks")
+
             ready_checks_ok = self._perform_readiness_checks(
                 action_name=f"{action_name} - Readiness Checks"
             )
-            logger.debug(
-                f"TRACE: _perform_readiness_checks returned: {ready_checks_ok}"
-            )
+
         except Exception as e:
             logger.critical(
                 f"Exception in _perform_readiness_checks: {e}", exc_info=True
@@ -1285,7 +1208,7 @@ class SessionManager:
 
         identifiers_ok = self._retrieve_identifiers()
         # Only retrieve owner if TREE_NAME is configured
-        owner_ok = self._retrieve_tree_owner() if config_instance.TREE_NAME else True
+        owner_ok = self._retrieve_tree_owner() if config_schema.api.tree_name else True
 
         logger.debug(
             f"Identifiers after fetch: profile_id={self.my_profile_id}, uuid={self.my_uuid}, tree_id={self.my_tree_id}"
@@ -1295,17 +1218,12 @@ class SessionManager:
         if not identifiers_ok:
             logger.warning("One or more essential identifiers could not be retrieved.")
         # End of if
-        if config_instance.TREE_NAME and not owner_ok:
+        if config_schema.api.tree_name and not owner_ok:
             logger.warning("Tree owner name could not be retrieved (Tree configured).")
         # End of if
 
         self.session_ready = ready_checks_ok and identifiers_ok and owner_ok
-        logger.debug(
-            f"TRACE: Set self.session_ready to: {self.session_ready} (ChecksOK: {ready_checks_ok}, IDsOK: {identifiers_ok}, OwnerOK: {owner_ok})"
-        )
-        logger.debug(
-            f"TRACE: Exiting ensure_session_ready (returning {self.session_ready})"
-        )
+
         return self.session_ready
 
     # End of ensure_session_ready
@@ -1544,9 +1462,9 @@ class SessionManager:
 
             # --- Wait before next attempt if needed ---
             logger.info(
-                f"Waiting {self.selenium_config.CHROME_RETRY_DELAY}s before next readiness attempt (Last Error: {last_check_error})..."
+                f"Waiting {config_schema.selenium.chrome_retry_delay}s before next readiness attempt (Last Error: {last_check_error})..."
             )
-            time.sleep(self.selenium_config.CHROME_RETRY_DELAY)
+            time.sleep(config_schema.selenium.chrome_retry_delay)
         # End of while loop
 
         logger.error(
@@ -1608,7 +1526,7 @@ class SessionManager:
         try:
             logger.debug(f"DB Path: {self.db_path}")
             # Pool configuration
-            pool_size = getattr(config_instance, "DB_POOL_SIZE", 10)
+            pool_size = config_schema.database.pool_size
             if not isinstance(pool_size, int) or pool_size <= 0:
                 logger.warning(f"Invalid DB_POOL_SIZE '{pool_size}'. Using default 10.")
                 pool_size = 10
@@ -1674,13 +1592,8 @@ class SessionManager:
                     logger.debug("Skipping table creation for existing database.")
                 else:
                     # Create tables only if the database is empty
-                    if HAS_DATABASE_BASE:
-                        Base.metadata.create_all(self.engine)  # type: ignore
-                        logger.debug("DB tables created successfully.")
-                    else:
-                        logger.warning(
-                            "Cannot create tables - Base not available from database module"
-                        )
+                    Base.metadata.create_all(self.engine)  # type: ignore
+                    logger.debug("DB tables created successfully.")
             except SQLAlchemyError as table_create_e:  # type: ignore
                 logger.warning(
                     f"Non-critical error during DB table check/creation: {table_create_e}"
@@ -1733,8 +1646,8 @@ class SessionManager:
             return False
         # End of try/except
 
-        # Assume config_instance available
-        base_url_parsed = urlparse(config_instance.BASE_URL)
+        # Use new config system
+        base_url_parsed = urlparse(config_schema.api.base_url)
         base_url_norm = urlunparse(
             (
                 base_url_parsed.scheme,
@@ -1745,13 +1658,13 @@ class SessionManager:
                 "",
             )
         ).rstrip("/")
-        signin_url_base = urljoin(config_instance.BASE_URL, "account/signin").rstrip(
+        signin_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip(
             "/"
         )
-        logout_url_base = urljoin(config_instance.BASE_URL, "c/logout").rstrip("/")
-        mfa_url_base = urljoin(config_instance.BASE_URL, "account/signin/mfa/").rstrip(
-            "/"
-        )
+        logout_url_base = urljoin(config_schema.api.base_url, "c/logout").rstrip("/")
+        mfa_url_base = urljoin(
+            config_schema.api.base_url, "account/signin/mfa/"
+        ).rstrip("/")
 
         # Define disallowed paths based on their base URL component
         disallowed_starts = (
@@ -1794,12 +1707,12 @@ class SessionManager:
         # Perform navigation if needed
         if needs_navigation:
             logger.info(
-                f"Current URL unsuitable ({reason}). Navigating to base URL: {config_instance.BASE_URL}"
+                f"Current URL unsuitable ({reason}). Navigating to base URL: {config_schema.api.base_url}"
             )
-            # Assume nav_to_page available
+            # Use new config system
             if not nav_to_page(
                 self.driver,
-                config_instance.BASE_URL,
+                config_schema.api.base_url,
                 selector="body",
                 session_manager=self,
             ):
@@ -1816,7 +1729,7 @@ class SessionManager:
     # End of _check_and_handle_url
 
     def _retrieve_identifiers(self) -> bool:
-        logger.debug("TRACE: Entered _retrieve_identifiers")
+
         if not self.is_sess_valid():
             logger.error("_retrieve_identifiers: Session is invalid.")
             return False
@@ -1856,9 +1769,9 @@ class SessionManager:
         # End of if/elif
 
         # Get Tree ID (only if TREE_NAME is configured)
-        if config_instance.TREE_NAME and not self.my_tree_id:
+        if config_schema.api.tree_name and not self.my_tree_id:
             logger.debug(
-                f"Retrieving tree ID for tree name: '{config_instance.TREE_NAME}'..."
+                f"Retrieving tree ID for tree name: '{config_schema.api.tree_name}'..."
             )
             try:
                 self.my_tree_id = self.get_my_tree_id()  # Calls the method below
@@ -1874,7 +1787,7 @@ class SessionManager:
                 all_ok and not self.my_tree_id
             ):  # Check if retrieval failed after import success
                 logger.error(
-                    f"TREE_NAME '{config_instance.TREE_NAME}' configured, but failed to get corresponding tree ID."
+                    f"TREE_NAME '{config_schema.api.tree_name}' configured, but failed to get corresponding tree ID."
                 )
                 all_ok = False
             elif all_ok and self.my_tree_id and not self._tree_id_logged:
@@ -1884,19 +1797,16 @@ class SessionManager:
         elif self.my_tree_id and not self._tree_id_logged:  # Log if already present
             logger.info(f"My tree id: {self.my_tree_id}")
             self._tree_id_logged = True
-        elif not config_instance.TREE_NAME:
+        elif not config_schema.api.tree_name:
             logger.debug("No TREE_NAME configured, skipping tree ID retrieval.")
         # End of if/elif chain for Tree ID
 
-        logger.debug(
-            f"TRACE: Exiting _retrieve_identifiers (Overall success: {all_ok})"
-        )
         return all_ok
 
     # End of _retrieve_identifiers
 
     def _retrieve_tree_owner(self) -> bool:
-        logger.debug("TRACE: Entered _retrieve_tree_owner")
+
         if not self.is_sess_valid():
             logger.error("_retrieve_tree_owner: Session is invalid.")
             return False
@@ -1904,13 +1814,13 @@ class SessionManager:
         if not self.my_tree_id:
             # This is expected if TREE_NAME wasn't set or tree ID retrieval failed
             logger.debug("Cannot retrieve tree owner name: my_tree_id is not set.")
-            logger.debug("TRACE: Exiting _retrieve_tree_owner (no tree id)")
+
             return False  # Indicate failure if tree_id expected but missing
         # End of if
 
         # Only retrieve if not already present
         if self.tree_owner_name and self._owner_logged:
-            logger.debug("TRACE: Exiting _retrieve_tree_owner (already set and logged)")
+
             return True
         # End of if
 
@@ -1930,7 +1840,7 @@ class SessionManager:
 
         if not owner_name_retrieved:
             logger.error("Failed to retrieve tree owner name.")
-            logger.debug("TRACE: Exiting _retrieve_tree_owner (failed)")
+
             return False
         # End of if
 
@@ -1939,7 +1849,7 @@ class SessionManager:
             logger.info(f"Tree owner name: {self.tree_owner_name}")
             self._owner_logged = True
         # End of if
-        logger.debug("TRACE: Exiting _retrieve_tree_owner (success)")
+
         return True
 
     # End of _retrieve_tree_owner
@@ -1950,8 +1860,8 @@ class SessionManager:
             logger.error("get_csrf: Session invalid.")
             return None
         # End of if
-        # Assume config_instance and _api_req are available
-        csrf_token_url = urljoin(config_instance.BASE_URL, API_PATH_CSRF_TOKEN)
+        # Use new config system
+        csrf_token_url = urljoin(config_schema.api.base_url, API_PATH_CSRF_TOKEN)
         logger.debug(f"Attempting to fetch fresh CSRF token from: {csrf_token_url}")
 
         # Check essential cookies (optional but good practice)
@@ -2406,8 +2316,8 @@ class SessionManager:
             logger.error("get_my_profileId: Session invalid.")
             return None
         # End of if
-        # Assume config_instance and _api_req available
-        url = urljoin(config_instance.BASE_URL, API_PATH_PROFILE_ID)
+        # Use new config system
+        url = urljoin(config_schema.api.base_url, API_PATH_PROFILE_ID)
         logger.debug("Attempting to fetch own profile ID (ucdmid)...")
         try:
             response_data: ApiResponseType = _api_req(
@@ -2466,8 +2376,8 @@ class SessionManager:
             logger.error("get_my_uuid: Session invalid.")
             return None
         # End of if
-        # Assume config_instance and _api_req available
-        url = urljoin(config_instance.BASE_URL, API_PATH_UUID)
+        # Use new config system
+        url = urljoin(config_schema.api.base_url, API_PATH_UUID)
         logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
         response_data: ApiResponseType = _api_req(
             url=url,
@@ -2523,7 +2433,7 @@ class SessionManager:
             )
         # End of try/except
 
-        tree_name_config = config_instance.TREE_NAME
+        tree_name_config = config_schema.api.tree_name
         if not tree_name_config:
             logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
             return None
@@ -2648,7 +2558,7 @@ class SessionManager:
             True if definitely logged in, False if definitely not logged in,
             None only if the check is truly ambiguous.
         """
-        api_url = urljoin(config_instance.BASE_URL, API_PATH_UUID)
+        api_url = urljoin(config_schema.api.base_url, API_PATH_UUID)
         api_description = "API Login Verification (header/dna)"
         logger.debug(f"Verifying login status via API endpoint: {api_url}...")
 
@@ -2700,7 +2610,9 @@ class SessionManager:
                     logger.debug(
                         "Primary API check failed. Trying profile ID endpoint as fallback..."
                     )
-                    profile_url = urljoin(config_instance.BASE_URL, API_PATH_PROFILE_ID)
+                    profile_url = urljoin(
+                        config_schema.api.base_url, API_PATH_PROFILE_ID
+                    )
                     profile_response = _api_req(
                         url=profile_url,
                         driver=self.driver,
@@ -3167,7 +3079,9 @@ class SessionManager:
             logger.debug("Executed new_window('tab') command.")
 
             # Wait for the new handle to appear
-            WebDriverWait(driver, selenium_config.NEW_TAB_TIMEOUT).until(  # type: ignore
+            WebDriverWait(
+                driver, config_schema.selenium.explicit_wait
+            ).until(  # Use new config
                 lambda d: len(d.window_handles) > len(tab_list_before)
             )
 
@@ -3339,19 +3253,21 @@ def _prepare_base_headers(
     Returns:
         Dictionary of base headers
     """
-    cfg = config_instance  # Assume available
+    cfg = config_schema  # Use new config system
 
     # Create base headers
     base_headers: Dict[str, str] = {
         "Accept": "application/json, text/plain, */*",
-        "Referer": referer_url or cfg.BASE_URL,
+        "Referer": referer_url or cfg.api.base_url,
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
         "_method": method.upper(),  # Internal key for _prepare_api_headers
     }
 
     # Apply contextual headers from config
-    contextual_headers = cfg.API_CONTEXTUAL_HEADERS.get(api_description, {})
+    contextual_headers = getattr(cfg.api, "contextual_headers", {}).get(
+        api_description, {}
+    )
     if isinstance(contextual_headers, dict):
         base_headers.update(
             {k: v for k, v in contextual_headers.items() if v is not None}
@@ -3388,7 +3304,7 @@ def _prepare_api_headers(
 ) -> Dict[str, str]:
     """Generates the final headers for an API request."""
     final_headers = base_headers.copy()
-    cfg = config_instance  # Assume available
+    cfg = config_schema  # Use new config system
     ua_set = False
 
     # Get User-Agent from browser if possible
@@ -3412,7 +3328,7 @@ def _prepare_api_headers(
 
     # Fallback User-Agent if driver failed or wasn't available/valid
     if not ua_set:
-        final_headers["User-Agent"] = random.choice(cfg.USER_AGENTS)
+        final_headers["User-Agent"] = random.choice(cfg.api.user_agents)
         logger.debug(
             f"[{api_description}] Using default User-Agent: {final_headers['User-Agent']}"
         )
@@ -3422,7 +3338,7 @@ def _prepare_api_headers(
     http_method = base_headers.get("_method", "GET").upper()
     if add_default_origin and http_method not in ["GET", "HEAD", "OPTIONS"]:
         try:
-            parsed_base_url = urlparse(cfg.BASE_URL)
+            parsed_base_url = urlparse(cfg.api.base_url)
             origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
             final_headers["Origin"] = origin_header_value
         except Exception as parse_err:
@@ -3668,7 +3584,7 @@ def _prepare_api_request(
     allow_redirects: bool = True,
     data: Optional[Dict] = None,
     json_data: Optional[Dict] = None,
-    json: Optional[Dict] = None,  # Added for backward compatibility
+    json: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """
     Prepares all aspects of an API request including headers, cookies, and rate limiting.
@@ -3693,7 +3609,7 @@ def _prepare_api_request(
     Returns:
         Dictionary containing all prepared request parameters
     """
-    sel_cfg = selenium_config  # Assume available
+    sel_cfg = config_schema.selenium  # Use new config system
 
     # Prepare base headers
     base_headers = _prepare_base_headers(
@@ -3704,7 +3620,7 @@ def _prepare_api_request(
     )
 
     # Prepare request details
-    request_timeout = timeout if timeout is not None else sel_cfg.API_TIMEOUT
+    request_timeout = timeout if timeout is not None else sel_cfg.api_timeout
     req_session = session_manager._requests_session
     effective_cookie_jar = cookie_jar if cookie_jar is not None else req_session.cookies
     http_method = method.upper()
@@ -3921,7 +3837,7 @@ def _api_req(
     method: str = "GET",
     data: Optional[Dict] = None,
     json_data: Optional[Dict] = None,
-    json: Optional[Dict] = None,  # Added for backward compatibility
+    json: Optional[Dict] = None,
     use_csrf_token: bool = True,
     headers: Optional[Dict[str, str]] = None,
     referer_url: Optional[str] = None,
@@ -3950,20 +3866,20 @@ def _api_req(
         )
         return None
     # End of if
-    if not config_instance or not selenium_config:
-        logger.error(f"{api_description}: Aborting - Config instances not loaded.")
+    if not config_schema:
+        logger.error(f"{api_description}: Aborting - Config schema not loaded.")
         return None
     # End of if
 
-    cfg = config_instance
-    sel_cfg = selenium_config
+    cfg = config_schema.api
+    sel_cfg = config_schema.selenium
 
     # --- Step 2: Get Retry Configuration ---
-    max_retries = cfg.MAX_RETRIES
-    initial_delay = cfg.INITIAL_DELAY
-    backoff_factor = cfg.BACKOFF_FACTOR
-    max_delay = cfg.MAX_DELAY
-    retry_status_codes = set(cfg.RETRY_STATUS_CODES)
+    max_retries = cfg.max_retries
+    initial_delay = cfg.initial_delay
+    backoff_factor = cfg.retry_backoff_factor
+    max_delay = cfg.max_delay
+    retry_status_codes = set(cfg.retry_status_codes)
 
     # --- Diagnostic Log: Retry Params ---
     logger.debug(
@@ -4390,9 +4306,9 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
         return False
     # End of if
     driver = session_manager.driver
-    element_wait = selenium_config.element_wait(driver)
-    page_wait = selenium_config.page_wait(driver)
-    short_wait = selenium_config.short_wait(driver)
+    element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
+    page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)
+    short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
     try:
         print(
             "Two-factor authentication required. Please check your email or phone for a verification code."
@@ -4493,7 +4409,7 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
         # End of try/except block for clicking SMS button
 
         # Wait for user action (manual code entry and submission)
-        code_entry_timeout = selenium_config.TWO_FA_CODE_ENTRY_TIMEOUT
+        code_entry_timeout = config_schema.selenium.two_fa_code_entry_timeout
         logger.warning(
             f"Waiting up to {code_entry_timeout}s for user to manually enter 2FA code and submit..."
         )
@@ -4579,8 +4495,8 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
 
 
 def enter_creds(driver: WebDriver) -> bool:  # type: ignore
-    element_wait = selenium_config.element_wait(driver)
-    short_wait = selenium_config.short_wait(driver)
+    element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
+    short_wait = WebDriverWait(driver, 5)  # Short wait for quick checks
     time.sleep(random.uniform(0.5, 1.0))  # Small random wait
     try:
         logger.debug("Entering Credentials and Signing In...")
@@ -4612,7 +4528,7 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
         # End of try/except
 
         # Check config value exists
-        ancestry_username = config_instance.ANCESTRY_USERNAME
+        ancestry_username = config_schema.api.username
         if not ancestry_username:
             raise ValueError("ANCESTRY_USERNAME configuration is missing.")
         # End of if
@@ -4647,7 +4563,7 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
         # End of try/except
 
         # Check config value exists
-        ancestry_password = config_instance.ANCESTRY_PASSWORD
+        ancestry_password = config_schema.api.password
         if not ancestry_password:
             raise ValueError("ANCESTRY_PASSWORD configuration is missing.")
         # End of if
@@ -4941,7 +4857,7 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
         return "LOGIN_SUCCEEDED"
     # End of if
 
-    signin_url = urljoin(config_instance.BASE_URL, "account/signin")
+    signin_url = urljoin(config_schema.api.base_url, "account/signin")
 
     try:
         # --- Step 1: Navigate to Sign-in Page ---
@@ -5281,7 +5197,7 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
             )
             try:
                 current_url = driver.current_url
-                base_url = config_instance.BASE_URL
+                base_url = config_schema.api.base_url
 
                 # Only navigate if not already on base URL
                 if not current_url.startswith(base_url):
@@ -5369,9 +5285,9 @@ def nav_to_page(
         return False
     # End of if
 
-    max_attempts = getattr(config_instance, "MAX_RETRIES", 3)
-    page_timeout = getattr(selenium_config, "PAGE_TIMEOUT", 40)
-    element_timeout = getattr(selenium_config, "ELEMENT_TIMEOUT", 20)
+    max_attempts = config_schema.api.max_retries
+    page_timeout = config_schema.selenium.page_load_timeout
+    element_timeout = config_schema.selenium.explicit_wait
 
     # Normalize target URL base (scheme, netloc, path) for comparison
     try:
@@ -5392,12 +5308,12 @@ def nav_to_page(
     # End of try/except
 
     # Define common problematic URLs/selectors
-    signin_page_url_base = urljoin(config_instance.BASE_URL, "account/signin").rstrip(
+    signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip(
         "/"
     )
-    mfa_page_url_base = urljoin(config_instance.BASE_URL, "account/signin/mfa/").rstrip(
-        "/"
-    )
+    mfa_page_url_base = urljoin(
+        config_schema.api.base_url, "account/signin/mfa/"
+    ).rstrip("/")
     # Selectors for known 'unavailable' pages
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),  # type: ignore # Selector : (action, wait_seconds)
@@ -5570,7 +5486,7 @@ def nav_to_page(
                 is_signin_to_base_redirect = (
                     target_url_base == signin_page_url_base
                     and landed_url_base
-                    == urlparse(config_instance.BASE_URL).path.rstrip("/")
+                    == urlparse(config_schema.api.base_url).path.rstrip("/")
                 )
                 if is_signin_to_base_redirect:
                     logger.debug(
@@ -5785,7 +5701,10 @@ def main() -> None:
     # --- Local imports needed for main ---
     # Imports are assumed successful due to strict checks at top level
     from logging_config import setup_logging
-    from config import config_instance, selenium_config
+    from config.config_manager import ConfigManager
+
+    config_manager = ConfigManager()
+    config = config_manager.get_config()
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.common.exceptions import WebDriverException
 
@@ -5794,8 +5713,8 @@ def main() -> None:
     global logger
     # Setup logging for the test run
     try:
-        if config_instance:
-            db_file_path = config_instance.DATABASE_FILE
+        if config_schema:
+            db_file_path = config_schema.database.database_file
             if db_file_path:
                 # Use Path object methods for robustness
                 log_filename_only = db_file_path.with_suffix(".log").name
@@ -5811,7 +5730,7 @@ def main() -> None:
                 log_dir.mkdir(exist_ok=True)
                 full_log_path = log_dir / log_filename_only
         else:
-            # Fallback if config_instance is None
+            # Fallback if config_schema is None
             log_filename_only = "ancestry.log"
             log_dir = Path("Logs")
             log_dir.mkdir(exist_ok=True)
@@ -6028,7 +5947,7 @@ def main() -> None:
                 from unittest.mock import MagicMock
 
                 session_manager.driver = MagicMock()
-                session_manager.driver.current_url = config_instance.BASE_URL
+                session_manager.driver.current_url = config_schema.api.base_url
                 session_manager.driver.window_handles = ["mock_handle"]
                 session_manager.driver.get_cookies.return_value = [
                     {"name": "ANCSESSIONID", "value": "mock_session_id"},
@@ -6073,16 +5992,16 @@ def main() -> None:
                 session_manager.session_ready = True
                 session_manager.csrf_token = "mock_csrf_token"
                 session_manager.my_profile_id = getattr(
-                    config_instance, "TEST_PROFILE_ID", "mock_profile_id"
+                    config_schema.test, "test_profile_id", "mock_profile_id"
                 )
                 session_manager.my_uuid = getattr(
-                    config_instance, "TEST_UUID", "mock_uuid"
+                    config_schema.test, "test_uuid", "mock_uuid"
                 )
                 session_manager.my_tree_id = getattr(
-                    config_instance, "TEST_TREE_ID", "mock_tree_id"
+                    config_schema.test, "test_tree_id", "mock_tree_id"
                 )
                 session_manager.tree_owner_name = getattr(
-                    config_instance, "TEST_OWNER_NAME", "Mock Owner"
+                    config_schema.test, "test_owner_name", "Mock Owner"
                 )
                 return True
 
@@ -6191,8 +6110,8 @@ def main() -> None:
             def mock_api_req():
                 # Simulate successful API request returning a CSRF token
                 return getattr(
-                    config_instance,
-                    "TEST_CSRF_TOKEN",
+                    config_schema.test,
+                    "test_csrf_token",
                     "mock_csrf_token_12345678901234567890",
                 )
 
@@ -6207,18 +6126,16 @@ def main() -> None:
         if session_ready_for_section_3:
             # For testing purposes, we'll mock the identifier methods
             def mock_get_profile_id():
-                return getattr(
-                    config_instance, "TEST_PROFILE_ID", "mock_profile_id_12345"
-                )
+                return config_schema.test.test_profile_id
 
             def mock_get_uuid():
-                return getattr(config_instance, "TEST_UUID", "mock_uuid_12345")
+                return config_schema.test.test_uuid
 
             def mock_get_tree_id():
-                return getattr(config_instance, "TEST_TREE_ID", "mock_tree_id_12345")
+                return config_schema.test.test_tree_id
 
             def mock_get_tree_owner():
-                return getattr(config_instance, "TEST_OWNER_NAME", "Mock Tree Owner")
+                return config_schema.test.test_owner_name
 
             # Test by calling the mock methods
             _run_test(
@@ -6254,7 +6171,7 @@ def main() -> None:
                 # Simulate successful tab creation
                 # Return a mock handle string
                 return getattr(
-                    config_instance, "TEST_TAB_HANDLE", "mock_tab_handle_12345"
+                    config_schema.test, "test_tab_handle", "mock_tab_handle_12345"
                 )
 
             def mock_close_tabs():
@@ -6389,10 +6306,10 @@ def run_comprehensive_tests() -> bool:
 
     def test_config_loading():
         """Test configuration loading and validation."""
-        if "config_instance" in globals():
-            config = globals()["config_instance"]
+        if "config_schema" in globals():
+            config = globals()["config_schema"]
             # Test that config has basic required attributes
-            required_attrs = ["BASE_URL"]
+            required_attrs = ["api"]
             for attr in required_attrs:
                 assert hasattr(
                     config, attr
@@ -6402,7 +6319,7 @@ def run_comprehensive_tests() -> bool:
         "Configuration Loading",
         test_config_loading,
         "Configuration object loads successfully with required attributes",
-        "Verify config_instance has required attributes like BASE_URL",
+        "Verify config_schema has required attributes like api.base_url",
         "Test configuration loading and validation of basic required attributes",
     )
 

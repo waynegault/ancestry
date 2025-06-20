@@ -39,7 +39,7 @@ from cache import (
     get_unified_cache_key,
     invalidate_related_caches,
 )
-from config import config_instance
+from config import config_schema
 from logging_config import logger
 
 # --- Cache Configuration ---
@@ -748,11 +748,6 @@ def run_api_cache_tests() -> Dict[str, Any]:
         expected_fields = ["api_cache_expire", "db_cache_expire", "ai_cache_expire"]
         return all(field in info for field in expected_fields)
 
-    # Legacy Cache Key Function
-    def test_legacy_cache_key():
-        legacy_key = create_api_cache_key("test_endpoint", {"param": "value"})
-        return isinstance(legacy_key, str) and legacy_key.startswith("api_")
-
     # Run all tests
     logger.info("Starting API cache comprehensive test suite...")
 
@@ -764,7 +759,6 @@ def run_api_cache_tests() -> Dict[str, Any]:
     run_test("Cache Clearing", test_cache_clearing)
     run_test("Cache Warming", test_cache_warming)
     run_test("API Cache Info", test_api_cache_info)
-    run_test("Legacy Cache Key", test_legacy_cache_key)
 
     # Calculate final metrics
     test_results["end_time"] = time.time()

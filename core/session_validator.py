@@ -11,13 +11,11 @@ from datetime import datetime, timezone
 
 from selenium.common.exceptions import WebDriverException
 
-try:
-    from config import config_instance
-except ModuleNotFoundError:
-    import sys, os
+from config.config_manager import ConfigManager
 
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    from config import config_instance
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +245,8 @@ class SessionValidator:
             logger.debug(f"Current URL: {current_url}")
 
             # Check if we're on a valid Ancestry page
-            if not current_url or not current_url.startswith(config_instance.BASE_URL):
+            base_url = config_schema.api.base_url or "https://www.ancestry.com"
+            if not current_url or not current_url.startswith(base_url):
                 logger.warning(f"Not on Ancestry domain. Navigating to base URL...")
 
                 # Import nav_to_page here to avoid circular imports
@@ -255,7 +254,7 @@ class SessionValidator:
 
                 nav_success = nav_to_page(
                     browser_manager.driver,
-                    config_instance.BASE_URL,
+                    base_url,
                     selector="body",
                     session_manager=getattr(browser_manager, "session_manager", None),
                 )

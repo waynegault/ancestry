@@ -30,7 +30,7 @@ from action10 import main as run_action10
 from action11 import run_action11
 
 # Core modules
-from config import config_instance
+from config.config_manager import ConfigManager
 from database import (
     backup_database,
     Base,
@@ -52,6 +52,10 @@ from utils import (
 # Cache management
 from cache_manager import initialize_aggressive_caching, log_cache_status
 
+# Initialize config manager
+config_manager = ConfigManager()
+config = config_manager.get_config()
+
 
 def menu():
     """Display the main menu and return the user's choice."""
@@ -60,24 +64,20 @@ def menu():
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
-        try:
-            console_handler = None
-            for handler in logger.handlers:
-                if (
-                    isinstance(handler, logging.StreamHandler)
-                    and handler.stream == sys.stderr
-                ):
-                    console_handler = handler
-                    break
-            if console_handler:
-                level_name = logging.getLevelName(console_handler.level)
-            else:
-                level_name = logging.getLevelName(logger.getEffectiveLevel())
-        except Exception as e:
-            print(f"DEBUG: Error getting console handler level: {e}", file=sys.stderr)
-            level_name = "ERROR"
-    elif "config_instance" in globals() and hasattr(config_instance, "LOG_LEVEL"):
-        level_name = config_instance.LOG_LEVEL.upper()
+        console_handler = None
+        for handler in logger.handlers:
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and handler.stream == sys.stderr
+            ):
+                console_handler = handler
+                break
+        if console_handler:
+            level_name = logging.getLevelName(console_handler.level)
+        else:
+            level_name = logging.getLevelName(logger.getEffectiveLevel())
+    elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
+        level_name = config.logging.log_level.upper()
 
     print(f"(Log Level: {level_name})\n")
     print("0. Delete all rows except the first")
@@ -253,14 +253,11 @@ def exec_actn(
         # --- Execute Action ---
         # Prepare arguments for action function call
         func_sig = inspect.signature(action_func)
-        pass_config = "config_instance" in func_sig.parameters
         pass_session_manager = "session_manager" in func_sig.parameters
 
         final_args = []
         if pass_session_manager:
             final_args.append(session_manager)
-        if pass_config:
-            final_args.append(config_instance)
         final_args.extend(args)
 
         # Handle keyword args specifically for coord function
@@ -274,8 +271,6 @@ def exec_actn(
             coord_args = []
             if pass_session_manager:
                 coord_args.append(session_manager)
-            if pass_config:
-                coord_args.append(config_instance)
             # Call with prepared positional args and keyword args
             action_result = action_func(*coord_args, **kwargs_for_action)
         else:
@@ -378,7 +373,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
     Creates a temporary SessionManager for the delete operation.
     """
     # Define the specific profile ID to keep from config (ensure it's uppercase for comparison)
-    profile_id_to_keep = getattr(config_instance, "TESTING_PROFILE_ID", None)
+    profile_id_to_keep = config.test.test_profile_id
     if not profile_id_to_keep:
         logger.error(
             "TESTING_PROFILE_ID is not configured. Cannot determine which profile to keep."
@@ -532,12 +527,12 @@ def run_core_workflow_action(session_manager, *_):
     try:
         # --- Action 6 (Optional) ---
         # Check if Action 6 should be included in the workflow
-        run_action6 = config_instance.INCLUDE_ACTION6_IN_WORKFLOW
+        run_action6 = config.include_action6_in_workflow
         if run_action6:
             logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
             print("Starting DNA match gathering from page 1...")
             # Call the coord_action function which wraps the coord function
-            gather_result = coord_action(session_manager, config_instance, start=1)
+            gather_result = coord_action(session_manager, config, start=1)
             if gather_result is False:
                 logger.error("Action 6 FAILED.")
                 print("ERROR: Match gathering failed. Check logs for details.")
@@ -548,7 +543,7 @@ def run_core_workflow_action(session_manager, *_):
 
         # --- Action 7 ---
         logger.info("--- Running Action 7: Search Inbox ---")
-        inbox_url = urljoin(config_instance.BASE_URL, "/messaging/")
+        inbox_url = urljoin(config.api.base_url, "/messaging/")
         logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
 
         # Use a more reliable selector that exists on the messaging page
@@ -597,7 +592,7 @@ def run_core_workflow_action(session_manager, *_):
         try:
             if not nav_to_page(
                 session_manager.driver,
-                config_instance.BASE_URL,
+                config.api.base_url,
                 WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
                 session_manager,
             ):
@@ -642,7 +637,7 @@ def run_core_workflow_action(session_manager, *_):
         try:
             if not nav_to_page(
                 session_manager.driver,
-                config_instance.BASE_URL,
+                config.api.base_url,
                 WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
                 session_manager,
             ):
@@ -706,7 +701,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
     - Recreates schema from scratch.
     - Seeds the MessageType table.
     """
-    db_path = config_instance.DATABASE_FILE
+    db_path = config.database.database_file
     reset_successful = False
     temp_manager = None  # For recreation/seeding
     recreation_session = None  # Session for seeding
@@ -890,8 +885,8 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.
     """
-    backup_dir = config_instance.DATA_DIR
-    db_path = config_instance.DATABASE_FILE
+    backup_dir = config.database.data_dir
+    db_path = config.database.database_file
     success = False
 
     # Validate paths
@@ -1005,14 +1000,14 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_instance, start=1):
+def coord_action(session_manager, config_schema, start=1):
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
 
     Args:
         session_manager: The SessionManager instance.
-        config_instance: The configuration instance.
+        config_schema: The configuration schema.
         start: The page number to start gathering from (default is 1).
         *args: Additional arguments that might be passed by exec_actn (ignored).
         **kwargs: Additional keyword arguments that might be passed by exec_actn (ignored).
@@ -1026,7 +1021,7 @@ def coord_action(session_manager, config_instance, start=1):
     print(f"Gathering DNA Matches from page {start}...")
     try:
         # Call the imported function from action6
-        result = coord(session_manager, config_instance, start=start)
+        result = coord(session_manager, config, start=start)
         if result is False:
             logger.error("Match gathering reported failure.")
             print("ERROR: Match gathering failed. Check logs for details.")
@@ -1126,7 +1121,7 @@ def send_messages_action(session_manager, *_):
         logger.debug("Navigating to Base URL before sending...")
         if not nav_to_page(
             session_manager.driver,
-            config_instance.BASE_URL,
+            config.api.base_url,
             WAIT_FOR_PAGE_SELECTOR,
             session_manager,
         ):
@@ -1230,7 +1225,7 @@ def main():
 
         # --- Configuration Validation ---
 
-        if config_instance is None:
+        if config is None:
             logger.critical("Configuration validation failed - unable to proceed")
             print("\n❌ CONFIGURATION ERROR:")
             print("   Critical configuration validation failed.")
@@ -1350,7 +1345,7 @@ def main():
                     session_manager,
                     "6",
                     False,  # don't close session after
-                    config_instance,
+                    config,
                     start_val,
                 )  # Keep open
             elif choice == "7":
@@ -1577,7 +1572,7 @@ def run_comprehensive_tests() -> bool:
 
     def test_configuration_availability():
         """Test configuration and database availability"""
-        assert config_instance is not None, "config_instance should be available"
+        assert config is not None, "config should be available"
         assert logger is not None, "logger should be available"
         assert SessionManager is not None, "SessionManager should be available"
 
@@ -1677,7 +1672,7 @@ def run_comprehensive_tests() -> bool:
     def test_edge_case_handling():
         """Test edge cases and error conditions"""
         # Test with None config
-        original_config = config_instance
+        original_config = config
 
         # Test imports are properly structured
         import sys
@@ -1707,7 +1702,7 @@ def run_comprehensive_tests() -> bool:
             "process_productive_messages",
             "run_action10",
             "run_action11",
-            "config_instance",
+            "config",
             "logger",
             "SessionManager",
         ]
@@ -1743,13 +1738,13 @@ def run_comprehensive_tests() -> bool:
 
     def test_configuration_integration():
         """Test configuration system integration"""
-        assert config_instance is not None, "config_instance should be available"
+        assert config is not None, "config should be available"
 
         # Test config has basic attributes (may vary by implementation)
         # This tests that the config object is properly initialized
-        assert hasattr(config_instance, "__dict__") or hasattr(
-            config_instance, "__getattribute__"
-        ), "config_instance should be a proper object"
+        assert hasattr(config, "__dict__") or hasattr(
+            config, "__getattribute__"
+        ), "config should be a proper object"
 
     def test_database_integration():
         """Test database system integration"""
@@ -1883,7 +1878,7 @@ def run_comprehensive_tests() -> bool:
         )
 
         suite.run_test(
-            test_name="config_instance, logger, SessionManager, database models",
+            test_name="config, logger, SessionManager, database models",
             test_func=test_configuration_availability,
             test_description="Configuration and database component availability",
             method_description="Testing configuration instance and database model imports",
@@ -1969,7 +1964,7 @@ def run_comprehensive_tests() -> bool:
             test_name="Configuration system integration and object access",
             test_func=test_configuration_integration,
             test_description="Configuration system integration with main application",
-            method_description="Testing config_instance availability and object structure",
+            method_description="Testing config availability and object structure",
             expected_behavior="Configuration system is properly integrated and accessible",
         )
 

@@ -56,7 +56,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 # --- Local application imports ---
 from ai_interface import classify_message_intent
-from config import config_instance
+from config import config_schema
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -163,12 +163,12 @@ class InboxProcessor:
         )  # Use manager's limiter
 
         # Step 2: Load Configuration Settings
-        self.max_inbox_limit = (
-            config_instance.MAX_INBOX
+        self.max_inbox_limit = getattr(
+            config_schema, "max_inbox", 0
         )  # Max conversations to process (0=unlimited)
         # Determine batch size, ensuring it doesn't exceed the overall limit if one is set
         default_batch = min(
-            config_instance.BATCH_SIZE, 50
+            getattr(config_schema, "batch_size", 50), 50
         )  # Default batch size, capped at 50
         self.api_batch_size = (
             min(default_batch, self.max_inbox_limit)
@@ -176,9 +176,11 @@ class InboxProcessor:
             else default_batch
         )
         # AI Context settings
-        self.ai_context_msg_count = config_instance.AI_CONTEXT_MESSAGES_COUNT
-        self.ai_context_max_words = (
-            config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS
+        self.ai_context_msg_count = getattr(
+            config_schema, "ai_context_messages_count", 5
+        )
+        self.ai_context_max_words = getattr(
+            config_schema, "ai_context_message_max_words", 100
         )  # Correct assignment
 
         # Add input validation
@@ -248,7 +250,9 @@ class InboxProcessor:
 
         # Step 2: Construct API URL with limit and optional cursor
         my_profile_id = session_manager.my_profile_id
-        api_base = urljoin(config_instance.BASE_URL, "/app-api/express/v2/")
+        api_base = urljoin(
+            getattr(config_schema.api, "base_url", ""), "/app-api/express/v2/"
+        )
         # Note: API uses 'limit', not 'batch_size' parameter name
         url = f"{api_base}conversations?q=user:{my_profile_id}&limit={limit}"
         if cursor:
@@ -456,11 +460,13 @@ class InboxProcessor:
 
         # Step 2: Construct API URL and Headers
         context_messages: List[Dict[str, Any]] = []
-        api_base = urljoin(config_instance.BASE_URL, "/app-api/express/v2/")
+        api_base = urljoin(
+            getattr(config_schema.api, "base_url", ""), "/app-api/express/v2/"
+        )
         limit = self.ai_context_msg_count  # Get limit from config
         api_description = "Fetch Conversation Context"
         # Prepare headers (using contextual headers where possible)
-        contextual_headers = config_instance.API_CONTEXTUAL_HEADERS.get(
+        contextual_headers = getattr(config_schema.api, "contextual_headers", {}).get(
             api_description, {}
         )
         if isinstance(contextual_headers, dict):
@@ -671,7 +677,8 @@ class InboxProcessor:
                 updated = True
             # Update message link if missing or different
             correct_message_link = urljoin(
-                config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
+                getattr(config_schema.api, "base_url", ""),
+                f"/messaging/?p={profile_id.upper()}",
             )
             current_message_link = safe_column_value(person, "message_link", None)
             if current_message_link != correct_message_link:
@@ -712,7 +719,8 @@ class InboxProcessor:
                 "profile_id": profile_id.upper(),
                 "username": format_name(username_to_use),  # Use formatted username
                 "message_link": urljoin(
-                    config_instance.BASE_URL, f"/messaging/?p={profile_id.upper()}"
+                    getattr(config_schema.api, "base_url", ""),
+                    f"/messaging/?p={profile_id.upper()}",
                 ),
                 "status": PersonStatusEnum.ACTIVE,  # Default status
                 # Initialize other fields to defaults or None
@@ -1377,7 +1385,11 @@ class InboxProcessor:
                                 "people_id": people_id,
                                 "latest_message_content": latest_ctx_in.get(
                                     "content", ""
-                                )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
+                                )[
+                                    : getattr(
+                                        config_schema, "message_truncation_length", 1000
+                                    )
+                                ],
                                 "latest_timestamp": ctx_ts_in_aware,  # Already aware UTC
                                 "ai_sentiment": ai_sentiment_result,  # Store AI result
                                 "message_type_id": None,
@@ -1428,7 +1440,11 @@ class InboxProcessor:
                                 "people_id": people_id,
                                 "latest_message_content": latest_ctx_out.get(
                                     "content", ""
-                                )[: config_instance.MESSAGE_TRUNCATION_LENGTH],
+                                )[
+                                    : getattr(
+                                        config_schema, "message_truncation_length", 1000
+                                    )
+                                ],
                                 "latest_timestamp": ctx_ts_out_aware,  # Already aware UTC
                                 "ai_sentiment": None,
                                 "message_type_id": None,  # Should be updated by Action 8 if script sent last

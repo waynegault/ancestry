@@ -43,44 +43,50 @@ logger = setup_logging(log_file="action11.log", log_level="INFO")
 # All testing is now self-contained within this script
 
 # --- Load Config (Mandatory - Direct Import) ---
-config_instance = None
-selenium_config = None
 try:
-    from config import config_instance, selenium_config
+    from config import config_schema
 
-    logger.debug("Successfully imported config_instance and selenium_config.")
-    if not config_instance or not selenium_config:
-        raise ImportError("Config instances are None.")
+    logger.debug("Successfully imported configuration schema.")
+    if not config_schema:
+        raise ImportError("Configuration schema is None.")
 
     required_config_attrs = [
-        "COMMON_SCORING_WEIGHTS",
-        "NAME_FLEXIBILITY",
-        "DATE_FLEXIBILITY",
-        "MAX_SUGGESTIONS_TO_SCORE",
-        "MAX_CANDIDATES_TO_DISPLAY",
-        "BASE_URL",
+        "common_scoring_weights",
+        "name_flexibility",
+        "date_flexibility",
+        "max_suggestions_to_score",
+        "max_candidates_to_display",
+        "api",
     ]
     for attr in required_config_attrs:
-        if not hasattr(config_instance, attr):
-            raise TypeError(f"config_instance.{attr} missing.")
-        value = getattr(config_instance, attr)
-        if value is None:
-            raise TypeError(f"config_instance.{attr} is None.")
-        # Check weights specifically
-        if attr == "COMMON_SCORING_WEIGHTS" and isinstance(value, dict):
-            if "gender_match" not in value:
-                logger.warning(
-                    "Config COMMON_SCORING_WEIGHTS is missing 'gender_match' key."
-                )
-            elif value.get("gender_match", -1) == 0:
-                logger.warning(
-                    "Config COMMON_SCORING_WEIGHTS has 'gender_match' set to 0."
-                )
-        elif isinstance(value, (dict, list, tuple)) and not value:
-            logger.warning(f"config_instance.{attr} is empty.")
+        if attr == "api":
+            # Check if api sub-config exists
+            if not hasattr(config_schema, attr):
+                raise TypeError(f"config_schema.{attr} missing.")
+            api_config = getattr(config_schema, attr)
+            if not hasattr(api_config, "base_url"):
+                raise TypeError(f"config_schema.api.base_url missing.")
+        else:
+            if not hasattr(config_schema, attr):
+                raise TypeError(f"config_schema.{attr} missing.")
+            value = getattr(config_schema, attr)
+            if value is None:
+                raise TypeError(f"config_schema.{attr} is None.")
+            # Check weights specifically
+            if attr == "common_scoring_weights" and isinstance(value, dict):
+                if "gender_match" not in value:
+                    logger.warning(
+                        "Config common_scoring_weights is missing 'gender_match' key."
+                    )
+                elif value.get("gender_match", -1) == 0:
+                    logger.warning(
+                        "Config common_scoring_weights has 'gender_match' set to 0."
+                    )
+            elif isinstance(value, (dict, list, tuple)) and not value:
+                logger.warning(f"config_schema.{attr} is empty.")
 
-    if not hasattr(selenium_config, "API_TIMEOUT"):
-        raise TypeError(f"selenium_config.API_TIMEOUT missing.")
+    if not hasattr(config_schema.selenium, "api_timeout"):
+        raise TypeError(f"config_schema.selenium.api_timeout missing.")
 
 except ImportError as e:
     logger.critical(
@@ -99,10 +105,10 @@ except Exception as e:
 
 # Double check critical configs
 if (
-    config_instance is None
-    or not hasattr(config_instance, "COMMON_SCORING_WEIGHTS")
-    or selenium_config is None
-    or not hasattr(selenium_config, "API_TIMEOUT")
+    config_schema is None
+    or not hasattr(config_schema, "common_scoring_weights")
+    or not hasattr(config_schema, "selenium")
+    or not hasattr(config_schema.selenium, "api_timeout")
 ):
     logger.critical("One or more critical configuration components failed to load.")
     print("\nFATAL ERROR: Configuration load failed.")
@@ -512,7 +518,7 @@ def _run_simple_suggestion_scoring(
 
 # Suggestion processing and scoring (Uses 'gender_match' key)
 def _process_and_score_suggestions(
-    suggestions: List[Dict], search_criteria: Dict[str, Any], config_instance_local: Any
+    suggestions: List[Dict], search_criteria: Dict[str, Any]
 ) -> List[Dict]:
     """
     Processes raw API suggestions, calculates match scores, and returns sorted list.
@@ -523,9 +529,9 @@ def _process_and_score_suggestions(
     parse_date_func = _parse_date if callable(_parse_date) else None
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None
 
-    scoring_weights = getattr(config_instance_local, "COMMON_SCORING_WEIGHTS", {})
-    name_flex = getattr(config_instance_local, "NAME_FLEXIBILITY", 2)
-    date_flex = getattr(config_instance_local, "DATE_FLEXIBILITY", 2)
+    scoring_weights = getattr(config_schema, "common_scoring_weights", {})
+    name_flex = getattr(config_schema, "name_flexibility", 2)
+    date_flex = getattr(config_schema, "date_flexibility", 2)
     # Log the gender weight using the 'gender_match' key
     gender_weight = scoring_weights.get("gender_match", 0)
 
@@ -1335,7 +1341,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
 
 # Detailed scoring (Uses 'gender_match' key via fallback scorer)
 def _score_detailed_match(
-    extracted_info: Dict, search_criteria: Dict[str, Any], config_instance_local: Any
+    extracted_info: Dict, search_criteria: Dict[str, Any]
 ) -> Tuple[float, Dict, List[str]]:
     """Calculates final match score based on detailed info. Uses fallback scorer if gedcom_utils unavailable."""
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None
@@ -1343,9 +1349,9 @@ def _score_detailed_match(
         logger.warning(
             "Gedcom scoring unavailable for detailed match. Using simple fallback."
         )
-    scoring_weights = getattr(config_instance_local, "COMMON_SCORING_WEIGHTS", {})
-    name_flex = getattr(config_instance_local, "NAME_FLEXIBILITY", 2)
-    date_flex = getattr(config_instance_local, "DATE_FLEXIBILITY", 2)
+    scoring_weights = getattr(config_schema, "common_scoring_weights", {})
+    name_flex = getattr(config_schema, "name_flexibility", 2)
+    date_flex = getattr(config_schema, "date_flexibility", 2)
     clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
     # Prepare data for scoring function
     candidate_processed_data = {
@@ -1859,11 +1865,10 @@ def _call_direct_treesui_list_api(
 def _handle_search_phase(
     session_manager_local: SessionManager,
     search_criteria: Dict[str, Any],
-    config_instance_local: Any,
 ) -> Optional[List[Dict]]:
     """Handles the API search phase using the direct TreesUI List API."""
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
-    base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
+    base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
 
     # Check if owner_tree_id is missing and try to get it from environment variables or config
     if not owner_tree_id:
@@ -1878,7 +1883,7 @@ def _handle_search_phase(
             logger.info(f"Using tree ID from environment variables: {owner_tree_id}")
         else:
             # Try to get tree ID from config
-            tree_name = getattr(config_instance_local, "TREE_NAME", None)
+            tree_name = config_schema.api.tree_name
             if tree_name:
                 logger.info(
                     f"Attempting to retrieve tree ID for tree name: {tree_name}"
@@ -1937,7 +1942,7 @@ def _handle_search_phase(
         logger.error("Failed to parse API response. Error processing data.")
         return None
     # Limit suggestions based on config
-    max_score_limit = getattr(config_instance_local, "MAX_SUGGESTIONS_TO_SCORE", 100)
+    max_score_limit = getattr(config_schema, "max_suggestions_to_score", 100)
     if (
         isinstance(max_score_limit, int)
         and max_score_limit > 0
@@ -2210,21 +2215,20 @@ def _parse_treesui_list_response(
 def _handle_selection_phase(
     suggestions_to_score: List[Dict],
     search_criteria: Dict[str, Any],
-    config_instance_local: Any,
 ) -> Optional[Tuple[Dict, Dict]]:
     """
     Handles scoring, display table, selection of the top candidate,
     AND calls the initial comparison display.
     """
     scored_candidates = _process_and_score_suggestions(
-        suggestions_to_score, search_criteria, config_instance_local
+        suggestions_to_score, search_criteria
     )
     if not scored_candidates:
         # Log info and display to user
         logger.info("No candidates after scoring.")
         print("\nNo suitable candidates found after scoring.")
         return None
-    max_display_limit = getattr(config_instance_local, "MAX_CANDIDATES_TO_DISPLAY", 5)
+    max_display_limit = getattr(config_schema, "max_candidates_to_display", 5)
     _display_search_results(scored_candidates, max_display_limit)
     selection = _select_top_candidate(
         scored_candidates, suggestions_to_score
@@ -2247,11 +2251,10 @@ def _handle_selection_phase(
 def _handle_details_phase(
     selected_candidate_raw: Dict,
     session_manager_local: SessionManager,
-    config_instance_local: Any,
 ) -> Optional[Dict]:
     """Handles fetching detailed person information using the Facts API."""
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
-    base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
+    base_url = config_schema.api.base_url.rstrip("/")
     api_person_id = selected_candidate_raw.get("PersonId")
     api_tree_id = selected_candidate_raw.get("TreeId")
 
@@ -2306,14 +2309,13 @@ def _handle_supplementary_info_phase(
     person_research_data: Optional[Dict],
     selected_candidate_processed: Dict,
     session_manager_local: SessionManager,
-    config_instance_local: Any,
 ):
     """
     Handles displaying family info and calculating/displaying the relationship path.
     Streamlined to directly call API helpers and format output.
     """
     # --- Get Base Info ---
-    base_url = getattr(config_instance_local, "BASE_URL", "").rstrip("/")
+    base_url = config_schema.api.base_url.rstrip("/")
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     owner_name = getattr(session_manager_local, "tree_owner_name", "the Tree Owner")
@@ -2358,7 +2360,7 @@ def _handle_supplementary_info_phase(
             if owner_profile_id:
                 # Try to get from config first, then use generic default
                 config_owner_name = getattr(
-                    config_instance_local, "REFERENCE_PERSON_NAME", None
+                    config_schema.api, "reference_person_name", None
                 )
                 owner_name = config_owner_name if config_owner_name else "Tree Owner"
                 session_manager_local.tree_owner_name = owner_name
@@ -2994,8 +2996,7 @@ def handle_api_report():
             CORE_UTILS_AVAILABLE,
             API_UTILS_AVAILABLE,
             GEDCOM_UTILS_AVAILABLE,
-            config_instance,
-            selenium_config,
+            config_schema,  # Use config_schema instead of undefined config_instance
             session_manager,
         ]
     ):
@@ -3005,7 +3006,10 @@ def handle_api_report():
                 ("Core Utils", CORE_UTILS_AVAILABLE),
                 ("API Utils", API_UTILS_AVAILABLE),
                 ("Gedcom Utils", GEDCOM_UTILS_AVAILABLE),
-                ("Config", config_instance and selenium_config),
+                (
+                    "Config",
+                    config_schema,
+                ),  # Use config_schema instead of config_instance and selenium_config
                 ("Session Manager", session_manager),
             ]
             if not v
@@ -3162,9 +3166,7 @@ def handle_api_report():
     if not search_criteria:
         logger.info("Search cancelled.")
         return True
-    suggestions_to_score = _handle_search_phase(
-        session_manager, search_criteria, config_instance
-    )
+    suggestions_to_score = _handle_search_phase(session_manager, search_criteria)
     if suggestions_to_score is None:
         return False  # Critical API failure
     if not suggestions_to_score:
@@ -3172,7 +3174,7 @@ def handle_api_report():
 
     # Phase 2: Score, Select & Display Initial Comparison...
     selection = _handle_selection_phase(
-        suggestions_to_score, search_criteria, config_instance
+        suggestions_to_score, search_criteria
     )  # Includes initial comparison display
     if not selection:
         return True  # No candidate selected or comparison failed gracefully
@@ -3181,7 +3183,7 @@ def handle_api_report():
     # Phase 3: Fetch Detailed Data (for supplementary info)...
 
     person_research_data = _handle_details_phase(
-        selected_candidate_raw, session_manager, config_instance
+        selected_candidate_raw, session_manager
     )
     # Phase 4: Display Supplementary Info (Family/Relationships)...
 
@@ -3189,7 +3191,6 @@ def handle_api_report():
         person_research_data,
         selected_candidate_processed,
         session_manager,
-        config_instance,
     )  # Use the renamed function
     # Finish...
 
@@ -3269,9 +3270,7 @@ def search_ancestry_api_for_person(
         search_criteria_copy["surname_raw"] = search_criteria_copy["surname"]
 
     # Step 3: Call the search API
-    suggestions_to_score = _handle_search_phase(
-        session_manager, search_criteria_copy, config_instance
-    )
+    suggestions_to_score = _handle_search_phase(session_manager, search_criteria_copy)
 
     if suggestions_to_score is None or not suggestions_to_score:
         logger.debug("No results found in Ancestry API search")
@@ -3279,7 +3278,7 @@ def search_ancestry_api_for_person(
 
     # Step 4: Score the suggestions
     scored_candidates = _process_and_score_suggestions(
-        suggestions_to_score, search_criteria_copy, config_instance
+        suggestions_to_score, search_criteria_copy
     )
 
     if not scored_candidates:
@@ -3318,9 +3317,7 @@ def get_ancestry_person_details(
     }
 
     # Step 3: Call the details API
-    person_research_data = _handle_details_phase(
-        candidate_raw, session_manager, config_instance
-    )
+    person_research_data = _handle_details_phase(candidate_raw, session_manager)
 
     if person_research_data is None:
         logger.warning(f"Failed to retrieve detailed info for person {person_id}")
@@ -3442,7 +3439,7 @@ def get_ancestry_relationship_path(
         return "(Invalid session for relationship path lookup)"
 
     # Step 2: Get base information
-    base_url = getattr(config_instance, "BASE_URL", "").rstrip("/")
+    base_url = config_schema.api.base_url.rstrip("/")
     owner_tree_id = getattr(session_manager, "my_tree_id", None)
     owner_profile_id = getattr(session_manager, "my_profile_id", None)
     owner_name = getattr(session_manager, "tree_owner_name", reference_name)

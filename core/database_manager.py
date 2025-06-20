@@ -19,15 +19,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from config.config_manager import ConfigManager
 
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
+
 logger = logging.getLogger(__name__)
 
 # Ensure project root is in sys.path for imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-# Initialize config manager
-config_manager = ConfigManager()
 
 try:
     from database import Base
@@ -55,14 +56,12 @@ class DatabaseManager:
         Initialize the DatabaseManager.
 
         Args:
-            db_path: Path to the database file. If None, uses config default."""
-        # Database configuration
+            db_path: Path to the database file. If None, uses config default."""  # Database configuration
         if db_path:
             self.db_path = db_path
         else:
-            db_config = config_manager.get_database_config()
-            if db_config and db_config.database_file:
-                self.db_path = str(db_config.database_file.resolve())
+            if config_schema and config_schema.database.database_file:
+                self.db_path = str(config_schema.database.database_file.resolve())
             else:
                 self.db_path = "ancestry.db"  # Default fallback
 
@@ -119,11 +118,12 @@ class DatabaseManager:
             self.Session = None
 
         try:
-            logger.debug(f"DB Path: {self.db_path}")
-
-            # Pool configuration
-            db_config = config_manager.get_database_config()
-            pool_size = db_config.pool_size if db_config else 10
+            logger.debug(f"DB Path: {self.db_path}")  # Pool configuration
+            pool_size = (
+                config_schema.database.pool_size
+                if config_schema and config_schema.database
+                else 10
+            )
             if not isinstance(pool_size, int) or pool_size <= 0:
                 logger.warning(f"Invalid DB_POOL_SIZE '{pool_size}'. Using default 10.")
                 pool_size = 10

@@ -15,12 +15,9 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
-from config.config_manager import ConfigManager
+from config import config_schema
 
 logger = logging.getLogger(__name__)
-
-# Initialize config manager
-config_manager = ConfigManager()
 
 # Type aliases
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
@@ -222,7 +219,7 @@ class APIManager:
         """
         logger.debug("Retrieving CSRF token...")
 
-        url = urljoin(config_manager.get_api_config().base_url, API_PATH_CSRF_TOKEN)
+        url = urljoin(config_schema.api.base_url, API_PATH_CSRF_TOKEN)
         response_data = self.make_api_request(
             url=url,
             method="GET",
@@ -252,7 +249,7 @@ class APIManager:
         """
         logger.debug("Retrieving profile ID (ucdmid)...")
 
-        url = urljoin(config_manager.get_api_config().base_url, API_PATH_PROFILE_ID)
+        url = urljoin(config_schema.api.base_url, API_PATH_PROFILE_ID)
         response_data = self.make_api_request(
             url=url,
             method="GET",
@@ -284,7 +281,7 @@ class APIManager:
         """
         logger.debug("Retrieving UUID...")
 
-        url = urljoin(config_manager.get_api_config().base_url, API_PATH_UUID)
+        url = urljoin(config_schema.api.base_url, API_PATH_UUID)
         response_data = self.make_api_request(
             url=url, method="GET", use_csrf_token=False, api_description="Get UUID"
         )
@@ -553,7 +550,7 @@ def run_comprehensive_tests() -> bool:
         """Test integration with configuration system."""
         try:
             # Test config integration
-            assert config_manager is not None, "Config manager should be available"
+            assert config_schema is not None, "Config schema should be available"
 
             # Test that API constants are defined
             api_constants = [
@@ -579,7 +576,7 @@ def run_comprehensive_tests() -> bool:
         "Configuration Integration",
         test_config_integration,
         "API manager integrates properly with configuration system and API constants",
-        "Test integration with config_instance and API path constants",
+        "Test integration with configuration system and API path constants",
         "Test integration between API manager and configuration system",
     )
 

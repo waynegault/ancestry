@@ -23,10 +23,11 @@ from chromedriver import init_webdvr
 from selenium_utils import export_cookies
 from utils import nav_to_page
 
-logger = logging.getLogger(__name__)
-
-# Initialize config manager
+# Initialize config
 config_manager = ConfigManager()
+config_schema = config_manager.get_config()
+
+logger = logging.getLogger(__name__)
 
 # Type alias
 DriverType = Optional[WebDriver]
@@ -74,12 +75,12 @@ class BrowserManager:
 
             # Navigate to base URL to stabilize
             logger.debug(
-                f"Navigating to Base URL ({config_manager.get_api_config().base_url}) to stabilize..."
+                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
             )
 
-            if not nav_to_page(self.driver, config_manager.get_api_config().base_url):
+            if not nav_to_page(self.driver, config_schema.api.base_url):
                 logger.error(
-                    f"Failed to navigate to base URL: {config_manager.get_api_config().base_url}"
+                    f"Failed to navigate to base URL: {config_schema.api.base_url}"
                 )
                 self.close_browser()
                 return False
@@ -399,15 +400,15 @@ def run_comprehensive_tests() -> bool:
         def test_configuration_access():
             """Test access to required configuration objects."""
             # These imports should be available
-            assert config_manager is not None, "config_manager should be available"
+            assert config_schema is not None, "config_schema should be available"
             assert logger is not None, "Logger should be initialized"
             return True
 
         suite.run_test(
             "Configuration Access",
             test_configuration_access,
-            "Required configuration objects (config_instance, selenium_config) are accessible",
-            "Verify that config_instance, selenium_config, and logger are properly imported and available",
+            "Required configuration objects are accessible",
+            "Verify that configuration objects and logger are properly imported and available",
             "Test configuration and dependency access for browser management",
         )
 

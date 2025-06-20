@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DatabaseConfig:
-    """Database configuration schema."""
+    """Database configuration schema."""  # Database file path
 
-    # Database file path
     database_file: Optional[Path] = None
+    gedcom_file_path: Optional[Path] = None  # GEDCOM file path (loaded from .env)
 
     # Connection pool settings
     pool_size: int = 10
@@ -35,6 +35,11 @@ class DatabaseConfig:
     backup_enabled: bool = True
     backup_interval_hours: int = 24
     max_backups: int = 7
+
+    # Field with default_factory must come last
+    data_dir: Optional[Path] = field(
+        default_factory=lambda: Path("Data")
+    )  # General data directory
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -67,13 +72,13 @@ class SeleniumConfig:
 
     # Retry settings
     chrome_max_retries: int = 3
-    chrome_retry_delay: int = 5
-
-    # Timeouts
+    chrome_retry_delay: int = 5  # Timeouts
     page_load_timeout: int = 30
     implicit_wait: int = 10
     explicit_wait: int = 20
     api_timeout: int = 30  # Add API timeout for requests
+    two_fa_code_entry_timeout: int = 300  # 5 minutes for 2FA code entry
+    two_fa_code_entry_timeout: int = 180  # Timeout for 2FA code entry
 
     # Features
     disable_images: bool = False
@@ -105,6 +110,13 @@ class APIConfig:
     username: str = ""
     password: str = ""
 
+    # AI API Keys
+    deepseek_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    deepseek_ai_model: str = "deepseek-chat"
+    deepseek_ai_base_url: str = "https://api.deepseek.com"
+    google_ai_model: str = "gemini-1.5-flash-latest"
+
     # Request settings
     request_timeout: int = 30
     max_retries: int = 3
@@ -113,15 +125,39 @@ class APIConfig:
     # Rate limiting
     rate_limit_enabled: bool = True
     requests_per_second: float = 2.0
-    burst_limit: int = 10
-
-    # Headers
+    burst_limit: int = 10  # Headers
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
+
+    # Pagination settings
+    max_pages: int = 0  # 0 means no limit    # Timing settings
+    initial_delay: float = 0.5  # Initial delay between requests
+    max_delay: float = 60.0  # Maximum delay for exponential backoff
 
     # Tree settings
     tree_name: Optional[str] = None
     tree_id: Optional[str] = None
+
+    # Fields with default_factory must come last
+    # User agents list for rotation
+    user_agents: List[str] = field(
+        default_factory=lambda: [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+        ]
+    )
+
+    # Retry settings
+    retry_status_codes: List[int] = field(
+        default_factory=lambda: [429, 500, 502, 503, 504]
+    )
+
+    # API Headers
+    api_contextual_headers: Dict[str, Dict[str, Optional[str]]] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -188,9 +224,7 @@ class CacheConfig:
 
     # Memory cache settings
     memory_cache_size: int = 1000
-    memory_cache_ttl: int = 3600  # seconds
-
-    # Disk cache settings
+    memory_cache_ttl: int = 3600  # seconds    # Disk cache settings
     disk_cache_enabled: bool = True
     disk_cache_size_mb: int = 100
     disk_cache_ttl: int = 86400  # seconds (24 hours)
@@ -228,8 +262,7 @@ class SecurityConfig:
     session_timeout_minutes: int = 120
     auto_logout_enabled: bool = True
 
-    # Request security
-    verify_ssl: bool = True
+    # Request security    verify_ssl: bool = True
     allow_redirects: bool = True
     max_redirects: int = 10
 
@@ -242,16 +275,20 @@ class SecurityConfig:
 
 
 @dataclass
+class TestConfig:
+    """Test configuration schema."""  # Test identifiers
+
+    test_profile_id: str = "mock_profile_id"
+    test_uuid: str = "mock_uuid"
+    test_tree_id: str = "mock_tree_id"
+    test_owner_name: str = "Mock Owner"
+    test_tab_handle: str = "mock_tab_handle"
+    test_csrf_token: str = "mock_csrf_token_12345678901234567890"
+
+
+@dataclass
 class ConfigSchema:
     """Main configuration schema that combines all sub-schemas."""
-
-    # Sub-configurations
-    database: DatabaseConfig = field(default_factory=DatabaseConfig)
-    selenium: SeleniumConfig = field(default_factory=SeleniumConfig)
-    api: APIConfig = field(default_factory=APIConfig)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
-    cache: CacheConfig = field(default_factory=CacheConfig)
-    security: SecurityConfig = field(default_factory=SecurityConfig)
 
     # Environment
     environment: str = "development"
@@ -260,6 +297,90 @@ class ConfigSchema:
     # Application settings
     app_name: str = "Ancestry Automation"
     app_version: str = "1.0.0"
+
+    # Workflow settings
+    include_action6_in_workflow: bool = True
+
+    # Action 11 (API Report) settings
+    name_flexibility: float = 0.8
+    date_flexibility: float = 5.0  # years
+    max_suggestions_to_score: int = 50
+    max_candidates_to_display: int = 20
+
+    # Messaging settings
+    message_truncation_length: int = 1000
+    app_mode: str = "development"
+    custom_response_enabled: bool = True
+
+    # AI settings
+    ai_provider: str = ""  # "deepseek", "gemini", or ""
+    ai_context_messages_count: int = 5
+    ai_context_message_max_words: int = 100
+
+    # User settings
+    user_name: str = "Tree Owner"
+    user_location: str = ""
+
+    # Batch processing settings
+    batch_size: int = 100
+    max_productive_to_process: int = 50
+    max_inbox: int = 100
+
+    # Tree search settings
+    tree_search_method: str = "api"
+    reference_person_name: str = "Reference Person"
+
+    # Microsoft To-Do integration
+    ms_todo_list_name: str = "Ancestry Tasks"
+
+    # Scoring weights for action9
+    score_weight_first_name: int = 25
+    score_weight_surname: int = 25
+    score_weight_gender: int = 10
+    score_weight_birth_year: int = 20
+    score_weight_birth_place: int = 15
+    score_weight_death_year: int = 15
+    score_weight_death_place: int = 10
+    year_flexibility: int = 2
+    exact_date_bonus: int = 25
+
+    # Optional fields (must come after fields with default values)
+    testing_profile_id: Optional[str] = None
+    reference_person_id: Optional[str] = (
+        None  # Fields with complex defaults (must come last)
+    )
+    common_scoring_weights: Dict[str, float] = field(
+        default_factory=lambda: {
+            # --- Name Weights ---
+            "contains_first_name": 25.0,  # if the input first name is in the candidate first name
+            "contains_surname": 25.0,  # if the input surname is in the candidate surname
+            "bonus_both_names_contain": 25.0,  # additional bonus if both first and last name achieved a score
+            # --- Existing Date Weights ---
+            "exact_birth_date": 25.0,  # if input date of birth is exact with candidate date of birth
+            "exact_death_date": 25.0,  # if input date of death is exact with candidate date of death
+            "birth_year_match": 20.0,  # if input birth year matches candidate birth year
+            "death_year_match": 20.0,  # if input death year matches candidate death year
+            "birth_year_close": 10.0,  # if input birth year is within range of candidate birth year
+            "death_year_close": 10.0,  # if input death year is within range of candidate death year
+            # --- Place Weights ---
+            "birth_place_match": 20.0,  # if input birth place matches candidate birth place
+            "death_place_match": 20.0,  # if input death place matches candidate death place
+            # --- Gender Weight ---
+            "gender_match": 15.0,  # if input gender matches candidate gender
+            # --- Bonus Weights ---
+            "bonus_birth_date_and_place": 15.0,  # bonus if both birth date and place match
+            "bonus_death_date_and_place": 15.0,  # bonus if both death date and place match
+        }
+    )
+
+    # Sub-configurations (must come last due to default_factory)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    selenium: SeleniumConfig = field(default_factory=SeleniumConfig)
+    api: APIConfig = field(default_factory=APIConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    cache: CacheConfig = field(default_factory=CacheConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
+    test: TestConfig = field(default_factory=TestConfig)
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -287,28 +408,36 @@ class ConfigSchema:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ConfigSchema":
-        """Create configuration from dictionary."""
-        # Extract sub-config data
+        """Create configuration from dictionary."""  # Extract sub-config data
         database_data = data.get("database", {})
         selenium_data = data.get("selenium", {})
         api_data = data.get("api", {})
         logging_data = data.get("logging", {})
         cache_data = data.get("cache", {})
         security_data = data.get("security", {})
-
-        # Create sub-configs
+        test_data = data.get("test", {})  # Create sub-configs
         database_config = DatabaseConfig(**database_data)
         selenium_config = SeleniumConfig(**selenium_data)
         api_config = APIConfig(**api_data)
         logging_config = LoggingConfig(**logging_data)
         cache_config = CacheConfig(**cache_data)
         security_config = SecurityConfig(**security_data)
+        test_config = TestConfig(**test_data)
 
         # Extract main config data
         main_data = {
             k: v
             for k, v in data.items()
-            if k not in ["database", "selenium", "api", "logging", "cache", "security"]
+            if k
+            not in [
+                "database",
+                "selenium",
+                "api",
+                "logging",
+                "cache",
+                "security",
+                "test",
+            ]
         }
 
         return cls(
@@ -318,6 +447,7 @@ class ConfigSchema:
             logging=logging_config,
             cache=cache_config,
             security=security_config,
+            test=test_config,
             **main_data,
         )
 
@@ -532,11 +662,9 @@ def run_comprehensive_tests() -> bool:
             security_config = SecurityConfig()
             assert security_config.encryption_enabled is True
             assert security_config.use_system_keyring is True
-            assert security_config.session_timeout_minutes == 120
-
-            # Test custom values
+            assert security_config.session_timeout_minutes == 120  # Test custom values
             custom_config = SecurityConfig(
-                encryption_enabled=False, session_timeout_minutes=60, verify_ssl=False
+                encryption_enabled=False, session_timeout_minutes=60
             )
             assert custom_config.encryption_enabled is False
             assert custom_config.session_timeout_minutes == 60

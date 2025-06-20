@@ -41,13 +41,9 @@ logging.basicConfig(
 logger = logging.getLogger("relationship_utils")
 
 # --- Try to import BeautifulSoup ---
-try:
-    from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup
 
-    BS4_AVAILABLE = True
-except ImportError:
-    BeautifulSoup = None  # type: ignore
-    BS4_AVAILABLE = False
+BS4_AVAILABLE = True
 
 # --- Local imports ---
 # Avoid importing from utils to prevent config dependency during testing
@@ -62,18 +58,12 @@ from test_framework import (
 )
 
 # Import specific functions from gedcom_utils
-try:
-    from gedcom_utils import _are_spouses as _are_spouses_orig
+from gedcom_utils import _are_spouses as _are_spouses_orig
 
-    def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
-        """Wrapper to match expected parameter names."""
-        return _are_spouses_orig(person1_id, person2_id, reader)
 
-except ImportError:
-    # Define a fallback if import fails
-    def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
-        """Fallback implementation of _are_spouses function."""
-        return False
+def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
+    """Wrapper to match expected parameter names."""
+    return _are_spouses_orig(person1_id, person2_id, reader)
 
 
 def format_name(name: Optional[str]) -> str:
@@ -124,83 +114,31 @@ def format_name(name: Optional[str]) -> str:
 
 
 # Import GEDCOM specific helpers and types from gedcom_utils - avoid config dependency
-# Try to import actual functions from gedcom_utils, fall back to minimal versions for testing
-try:
-    from gedcom_utils import (
-        _normalize_id,
-        _is_record,
-        _are_siblings,
-        _is_grandparent,
-        _is_grandchild,
-        _is_great_grandparent,
-        _is_great_grandchild,
-        _is_aunt_or_uncle,
-        _is_niece_or_nephew,
-        _are_cousins,
-        _get_event_info,
-        _get_full_name,
-        _parse_date,
-        _clean_display_date,
-        TAG_BIRTH,
-        TAG_DEATH,
-        TAG_SEX,
-        TAG_HUSBAND,
-        TAG_WIFE,
-        GedcomReaderType,
-        GedcomIndividualType,
-    )
+from gedcom_utils import (
+    _normalize_id,
+    _is_record,
+    _are_siblings,
+    _is_grandparent,
+    _is_grandchild,
+    _is_great_grandparent,
+    _is_great_grandchild,
+    _is_aunt_or_uncle,
+    _is_niece_or_nephew,
+    _are_cousins,
+    _get_event_info,
+    _get_full_name,
+    _parse_date,
+    _clean_display_date,
+    TAG_BIRTH,
+    TAG_DEATH,
+    TAG_SEX,
+    TAG_HUSBAND,
+    TAG_WIFE,
+    GedcomReaderType,
+    GedcomIndividualType,
+)
 
-    GEDCOM_UTILS_AVAILABLE = True
-except ImportError:
-    GEDCOM_UTILS_AVAILABLE = False
-
-    # Simplified fallback functions for testing when gedcom_utils is not available
-    def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
-        """Normalize GEDCOM ID by removing @ symbols."""
-        if not xref_id:
-            return None
-        return xref_id.strip("@")
-
-    def _is_record(obj: Any) -> bool:
-        """Check if object is a GEDCOM record."""
-        return obj is not None and hasattr(obj, "tag")
-
-    def _are_siblings(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
-        """Check if two individuals are siblings."""
-        if not id1 or not id2 or id1 == id2:
-            return False
-        parents1 = id_to_parents.get(id1, set())
-        parents2 = id_to_parents.get(id2, set())
-        return bool(parents1 and parents2 and parents1.intersection(parents2))
-
-    def _get_full_name(indi: Any) -> str:
-        """Get full name from GEDCOM individual."""
-        return "Unknown"
-
-    def _get_event_info(
-        individual: Any, event_tag: str
-    ) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
-        """Get event information from GEDCOM individual."""
-        return None, None, None
-
-    def _parse_date(date_str: str) -> Optional[Any]:
-        """Parse a date string."""
-        return None
-
-    def _clean_display_date(raw_date_str: Optional[str]) -> str:
-        """Clean display date."""
-        return raw_date_str or ""
-
-    # Define constants for fallback
-    TAG_BIRTH = "BIRT"
-    TAG_DEATH = "DEAT"
-    TAG_SEX = "SEX"
-    TAG_HUSBAND = "HUSB"
-    TAG_WIFE = "WIFE"
-
-    # Type aliases for fallback
-    GedcomReaderType = Any
-    GedcomIndividualType = Any
+GEDCOM_UTILS_AVAILABLE = True
 
 
 # --- Helper Functions for BFS ---

@@ -13,11 +13,11 @@ using the cached GEDCOM data.
 
 # --- Standard library imports ---
 import sys
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
 from pathlib import Path
 
 # --- Local application imports ---
-from config import config_instance
+from config import config_manager, config_schema
 from logging_config import logger
 
 """
@@ -71,23 +71,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("action10_initial")
 
-# Default configuration for GEDCOM analysis
-DEFAULT_CONFIG = {
-    "COMMON_SCORING_WEIGHTS": {
-        "name_match": 50,
-        "birth_year_match": 30,
-        "birth_place_match": 20,
-        "gender_match": 10,
-        "death_year_match": 25,
-        "death_place_match": 15,
-    },
-    "DATE_FLEXIBILITY": 2,
-    "NAME_FLEXIBILITY": "moderate",
-}
-
-
 # --- Local application imports ---
-from config import config_instance
 from logging_config import setup_logging
 from core.error_handling import MissingConfigError
 
@@ -150,13 +134,6 @@ def parse_command_line_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_config_value(key: str, default_value: Any = None) -> Any:
-    """Safely retrieve a configuration value with fallback."""
-    if not config_instance:
-        return default_value
-    return getattr(config_instance, key, default_value)
-
-
 def validate_config() -> Tuple[
     Optional[Path],
     Optional[str],
@@ -167,7 +144,9 @@ def validate_config() -> Tuple[
 ]:
     """Validate configuration and return essential values."""
     # Get and validate GEDCOM file path
-    gedcom_file_path_config = get_config_value("GEDCOM_FILE_PATH")
+    gedcom_file_path_config = (
+        config_schema.database.gedcom_file_path if config_schema else None
+    )
 
     if (
         not gedcom_file_path_config
@@ -182,21 +161,39 @@ def validate_config() -> Tuple[
         )
 
     # Get reference person info
-    reference_person_id_raw = get_config_value("REFERENCE_PERSON_ID")
-    reference_person_name = get_config_value(
-        "REFERENCE_PERSON_NAME", "Reference Person"
+    reference_person_id_raw = (
+        config_schema.reference_person_id if config_schema else None
+    )
+    reference_person_name = (
+        config_schema.reference_person_name if config_schema else "Reference Person"
     )
 
-    # Get scoring and date flexibility settings
-    date_flex = get_config_value("DATE_FLEXIBILITY", DEFAULT_CONFIG["DATE_FLEXIBILITY"])
-    scoring_weights = get_config_value(
-        "COMMON_SCORING_WEIGHTS", DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+    # Get scoring and date flexibility settings with defaults
+    date_flexibility_value = (
+        config_schema.date_flexibility if config_schema else 2
+    )  # Default flexibility
+    date_flex = {
+        "year_match_range": int(date_flexibility_value)
+    }  # Convert to expected dictionary structure
+    scoring_weights = (
+        dict(config_schema.common_scoring_weights)
+        if config_schema
+        else {
+            "name_match": 50,
+            "birth_year_match": 30,
+            "birth_place_match": 20,
+            "gender_match": 10,
+            "death_year_match": 25,
+            "death_place_match": 15,
+        }
     )
-    max_display_results = get_config_value("MAX_DISPLAY_RESULTS")
+    max_display_results = (
+        config_schema.max_candidates_to_display if config_schema else 10
+    )
 
     # Log configuration
     logger.info(
-        f"Configured TREE_OWNER_NAME: {get_config_value('TREE_OWNER_NAME', 'Not Set')}"
+        f"Configured TREE_OWNER_NAME: {config_schema.user_name if config_schema else 'Not Set'}"
     )
     logger.info(f"Configured REFERENCE_PERSON_ID: {reference_person_id_raw}")
     logger.info(f"Configured REFERENCE_PERSON_NAME: {reference_person_name}")
@@ -384,7 +381,7 @@ def matches_year_criterion(
 def calculate_match_score_cached(
     search_criteria: Dict[str, Any],
     candidate_data: Dict[str, Any],
-    scoring_weights: Dict[str, int],
+    scoring_weights: Mapping[str, Union[int, float]],
     date_flex: Dict[str, Any],
     cache: Dict[Tuple, Any] = {},
 ) -> Tuple[float, Dict[str, int], List[str]]:
@@ -788,8 +785,8 @@ def analyze_top_match(
     elif reference_person_id_norm:
         # Log the API URL for debugging purposes
         tree_id = (
-            getattr(config_instance, "TESTING_PERSON_TREE_ID", "unknown_tree_id")
-            if config_instance
+            getattr(config_schema, "TESTING_PERSON_TREE_ID", "unknown_tree_id")
+            if config_schema
             else "unknown_tree_id"
         )
         api_url = f"/family-tree/person/tree/{tree_id}/person/{top_match_norm_id}/getladder?callback=no"
@@ -856,13 +853,13 @@ def main():
         ) = validate_config()
 
         if not gedcom_file_path:
-            print("[DEBUG] main(): gedcom_file_path is missing or invalid")
+
             return False
 
         # Load GEDCOM data
         gedcom_data = load_gedcom_data(gedcom_file_path)
         if not gedcom_data:
-            print("[DEBUG] main(): gedcom_data failed to load")
+
             logger.warning("No GEDCOM data loaded")
             return False
 
@@ -880,7 +877,7 @@ def main():
         )
 
         if not scored_matches:
-            print("[DEBUG] main(): No scored matches found")
+
             return False
 
         # Display top matches
@@ -900,14 +897,14 @@ def main():
                 reference_person_name or "Reference Person",
             )
         else:
-            print("[DEBUG] main(): No top match found")
+
             return False
 
         return True
 
     except Exception as e:
         logger.error(f"Error in action10 main: {e}", exc_info=True)
-        print(f"[DEBUG] main(): Exception: {e}")
+
         return False
 
 
@@ -929,7 +926,7 @@ def run_comprehensive_tests() -> bool:
     # --- TESTS ---
     def debug_wrapper(test_func, name):
         def wrapped():
-            print(f"[DEBUG] Starting test: {name}", flush=True)
+
             start = time.time()
             result = test_func()
             print(
@@ -962,15 +959,23 @@ def run_comprehensive_tests() -> bool:
                 assert callable(
                     globals()[func_name]
                 ), f"Function '{func_name}' is not callable"
-            assert DEFAULT_CONFIG is not None
-            assert "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG
+            # Test that configuration is loaded
+            assert config_schema is not None
+            assert hasattr(config_schema, "api")
             return True
         except MissingConfigError:
             return True  # Skip if config is missing in test env
 
     def test_config_defaults():
-        assert DEFAULT_CONFIG["DATE_FLEXIBILITY"] == 2
-        assert isinstance(DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"], dict)
+        # Test default configuration values
+        date_flexibility_value = config_schema.date_flexibility if config_schema else 2
+        scoring_weights = (
+            dict(config_schema.common_scoring_weights) if config_schema else {}
+        )
+        assert (
+            date_flexibility_value == 5.0
+        )  # Updated to match new config schema default
+        assert isinstance(scoring_weights, dict)
         return True
 
     def test_sanitize_input():
@@ -1071,19 +1076,18 @@ def run_comprehensive_tests() -> bool:
         return True
 
     def test_display_relatives_mock():
-        from config import config_instance
         import os
 
-        gedcom_path = getattr(config_instance, "GEDCOM_FILE_PATH", None)
+        gedcom_path = config_schema.database.gedcom_file_path
         if not gedcom_path:
             raise RuntimeError(
                 "GEDCOM_FILE_PATH is not set in config or .env; cannot run test_display_relatives_mock."
             )
         gedcom = GedcomData(gedcom_path)
         test_id = (
-            getattr(config_instance, "TESTING_PERSON_TREE_ID", None)
+            getattr(config_schema, "TESTING_PERSON_TREE_ID", None)
             or os.environ.get("TESTING_PERSON_TREE_ID")
-            or getattr(config_instance, "REFERENCE_PERSON_ID", None)
+            or getattr(config_schema, "REFERENCE_PERSON_ID", None)
             or os.environ.get("REFERENCE_PERSON_ID")
         )
         # Try to get a real individual object (not dict)
@@ -1122,9 +1126,7 @@ def run_comprehensive_tests() -> bool:
         return True
 
     def test_analyze_top_match_mock():
-        from config import config_instance
-
-        gedcom_path = getattr(config_instance, "GEDCOM_FILE_PATH", None)
+        gedcom_path = config_schema.database.gedcom_file_path or "mock_path.ged"
 
         class MockGedcom(GedcomData):
             def __init__(self, path):
@@ -1209,6 +1211,9 @@ def run_comprehensive_tests() -> bool:
             def warning(self, msg):
                 self.lines.append(msg)
 
+            def critical(self, msg):
+                self.lines.append(msg)
+
             def debug(self, msg):
                 self.lines.append(msg)
 
@@ -1217,7 +1222,7 @@ def run_comprehensive_tests() -> bool:
         globals()["logger"] = dummy_logger
         try:
             result = main()
-            print(f"[DEBUG] main() returned: {result}")
+
             assert result is not False
         finally:
             builtins.input = orig_input

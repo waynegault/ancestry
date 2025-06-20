@@ -47,7 +47,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webdriver import WebDriver
 from typing import Optional
 import subprocess
-from config import config_instance, selenium_config
+from config import config_schema
 from logging_config import setup_logging, logger
 
 # --- Test framework imports ---
@@ -61,7 +61,9 @@ logger = logging.getLogger("logger")
 
 # Define constants dependent on the CHROME_CONFIG values
 # Handle the case where selenium_config might be None
-CHROME_USER_DATA_DIR = selenium_config.CHROME_USER_DATA_DIR if selenium_config else None
+CHROME_USER_DATA_DIR = (
+    config_schema.selenium.chrome_user_data_dir if config_schema.selenium else None
+)
 # Handle the case where CHROME_USER_DATA_DIR might be None
 if CHROME_USER_DATA_DIR is not None:
     DEFAULT_PROFILE_PATH = os.path.join(str(CHROME_USER_DATA_DIR), "Default")
@@ -179,15 +181,13 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
     V1.3 REVISED: Added specific TypeError handling around uc.Chrome call.
     Initializes undetected_chromedriver and minimizes the window if not headless.
     """
-    config = selenium_config  # Use selenium_config instance
+    config = config_schema.selenium  # Use selenium config instance
 
     # --- 1. Pre-Initialization Cleanup ---
     cleanup_webdrv()  # Kill existing processes
-    reset_preferences_file()  # Reset Chrome preferences
-
-    # --- Retry Loop ---
-    max_init_retries = config.CHROME_MAX_RETRIES
-    retry_delay = config.CHROME_RETRY_DELAY
+    reset_preferences_file()  # Reset Chrome preferences    # --- Retry Loop ---
+    max_init_retries = config.chrome_max_retries
+    retry_delay = config.chrome_retry_delay
     driver = None
 
     for attempt_num in range(1, max_init_retries + 1):
@@ -199,12 +199,12 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         options = uc.ChromeOptions()
 
         # --- Configure Options ---
-        if config.HEADLESS_MODE:
+        if config.headless_mode:
             logger.debug("Configuring headless mode.")
             options.add_argument("--headless=new")
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
-        user_data_dir_path = config.CHROME_USER_DATA_DIR
+        user_data_dir_path = config.chrome_user_data_dir
         if user_data_dir_path:
             user_data_dir_str = str(user_data_dir_path.resolve())
             options.add_argument(f"--user-data-dir={user_data_dir_str}")
@@ -216,7 +216,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         # if profile_dir_str:
         #     options.add_argument(f"--profile-directory={profile_dir_str}")
         #     logger.debug(f"Using profile directory: {profile_dir_str}")
-        browser_path_obj = config.CHROME_BROWSER_PATH
+        browser_path_obj = config.chrome_browser_path
         if browser_path_obj:
             browser_path_str = str(browser_path_obj.resolve())
             if os.path.exists(browser_path_str):
@@ -234,9 +234,15 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-infobars")
-        if not config.HEADLESS_MODE:
+        if not config.headless_mode:
             options.add_argument("--start-maximized")
-        user_agent = random.choice(config_instance.USER_AGENTS)
+        user_agent = random.choice(
+            getattr(
+                config_schema,
+                "USER_AGENTS",
+                ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"],
+            )
+        )
         options.add_argument(f"--user-agent={user_agent}")
         logger.debug(f"Setting User-Agent:\n{user_agent}")
         options.add_argument("--disable-popup-blocking")
@@ -276,7 +282,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                         "[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary."
                     )
                 # Fallback: Try manual path if available
-                driver_path_obj = config.CHROME_DRIVER_PATH
+                driver_path_obj = config.chrome_driver_path
                 if driver_path_obj:
                     driver_path_str = str(driver_path_obj.resolve())
                     if os.path.exists(driver_path_str):
@@ -333,7 +339,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 except Exception as cdp_exc:
                     logger.warning(f"CDP command failed: {cdp_exc}")
 
-                if not config.HEADLESS_MODE:
+                if not config.headless_mode:
                     logger.debug("Attempting to minimize window (non-headless mode)...")
                     try:
                         driver.minimize_window()
@@ -345,9 +351,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                             f"Unexpected error minimizing window: {min_e}",
                             exc_info=True,
                         )
-
-                driver.set_page_load_timeout(config.PAGE_TIMEOUT)
-                driver.set_script_timeout(config.ASYNC_SCRIPT_TIMEOUT)
+                driver.set_page_load_timeout(config.page_load_timeout)
+                driver.set_script_timeout(getattr(config, "script_timeout", 30))
 
                 # Check for extra tabs immediately after init
                 try:
@@ -550,11 +555,8 @@ def test_driver_initialization(headless=True):
     """Test the init_webdvr function."""
     print("\n=== Testing WebDriver Initialization ===")
     driver = None
-    try:  # Temporarily set headless mode for testing
-        original_headless = getattr(selenium_config, "HEADLESS_MODE", False)
-        if hasattr(selenium_config, "HEADLESS_MODE"):
-            setattr(selenium_config, "HEADLESS_MODE", headless)
-
+    try:
+        # Note: Cannot modify config_schema directly as it's immutable
         print(f"  Initializing WebDriver (headless={headless})...")
         start_time = time.time()
         driver = init_webdvr()
@@ -562,12 +564,11 @@ def test_driver_initialization(headless=True):
 
         if driver:
             print(f"✓ WebDriver initialized successfully in {init_time:.2f} seconds")
-
             # Test navigation
             try:
                 print("  Testing navigation to BASE_URL...")
-                driver.get(config_instance.BASE_URL)
-                print(f"✓ Successfully navigated to {config_instance.BASE_URL}")
+                driver.get(config_schema.api.base_url)
+                print(f"✓ Successfully navigated to {config_schema.api.base_url}")
                 print(f"  Page title: {driver.title}")
             except Exception as nav_e:
                 print(f"✗ Navigation failed: {nav_e}")
@@ -607,17 +608,12 @@ def test_driver_initialization(headless=True):
             # Clean up
             print("  Closing WebDriver...")
             driver.quit()
-            print(
-                "✓ WebDriver closed successfully"
-            )  # Restore original headless setting
-            if hasattr(selenium_config, "HEADLESS_MODE"):
-                setattr(selenium_config, "HEADLESS_MODE", original_headless)
+            print("✓ WebDriver closed successfully")
+            # Note: Cannot restore original headless mode as config is immutable
             return True
         else:
             print("✗ WebDriver initialization failed")
-            # Restore original headless setting
-            if hasattr(selenium_config, "HEADLESS_MODE"):
-                setattr(selenium_config, "HEADLESS_MODE", original_headless)
+            # Note: Cannot restore original headless mode as config is immutable
             return False
     except Exception as e:
         print(f"✗ Error in test_driver_initialization: {e}")
@@ -627,12 +623,7 @@ def test_driver_initialization(headless=True):
                 print("  WebDriver closed after error")
             except:
                 pass
-        # Restore original headless setting if needed
-        try:
-            if hasattr(selenium_config, "HEADLESS_MODE"):
-                setattr(selenium_config, "HEADLESS_MODE", original_headless)
-        except:
-            pass
+        # Note: Cannot restore original headless mode as config is immutable
         return False
 
 
@@ -641,16 +632,14 @@ def run_all_tests(interactive=False):
     print("\n===== ChromeDriver Self-Test Suite =====")
     print(f"Date/Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Python Version: {sys.version.split()[0]}")
-    print(f"OS: {os.name.upper()}")
-
-    # Configuration info
+    print(f"OS: {os.name.upper()}")  # Configuration info
     print("\n=== Configuration ===")
     print(f"CHROME_USER_DATA_DIR: {CHROME_USER_DATA_DIR}")
     print(f"DEFAULT_PROFILE_PATH: {DEFAULT_PROFILE_PATH}")
-    print(f"HEADLESS_MODE: {selenium_config.HEADLESS_MODE}")
-    print(f"CHROME_MAX_RETRIES: {selenium_config.CHROME_MAX_RETRIES}")
-    print(f"CHROME_BROWSER_PATH: {selenium_config.CHROME_BROWSER_PATH}")
-    print(f"CHROME_DRIVER_PATH: {selenium_config.CHROME_DRIVER_PATH}")
+    print(f"HEADLESS_MODE: {config_schema.selenium.headless_mode}")
+    print(f"CHROME_MAX_RETRIES: {config_schema.selenium.chrome_max_retries}")
+    print(f"CHROME_BROWSER_PATH: {config_schema.selenium.chrome_browser_path}")
+    print(f"CHROME_DRIVER_PATH: {config_schema.selenium.chrome_driver_path}")
 
     # Run tests
     test_results = {}

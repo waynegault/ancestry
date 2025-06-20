@@ -60,9 +60,13 @@ except ImportError:
     )
 
 # --- Local Application Imports ---
-from config import config_instance
+from config.config_manager import ConfigManager
 from utils import SessionManager
 from logging_config import logger
+
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
 
 # --- Test framework imports ---
 from test_framework import (
@@ -115,7 +119,7 @@ CRITICAL: Your entire response must be only one of the category words.
 # Function to generate fallback extraction prompt with configurable user details
 def get_fallback_extraction_prompt() -> str:
     """Generate the fallback extraction prompt using configured user name."""
-    user_name = getattr(config_instance, "USER_NAME", "Tree Owner")
+    user_name = config_schema.user_name
 
     return f"""You are an AI assistant analyzing conversation histories from a genealogy website messaging system. The history alternates between 'SCRIPT' (automated messages from me) and 'USER' (replies from the DNA match).
 
@@ -145,8 +149,8 @@ Format your response STRICTLY as a JSON object, starting with `{{` and ending wi
 # Function to generate fallback system prompt with configurable user details
 def get_fallback_reply_prompt() -> str:
     """Generate the fallback reply prompt using configured user name and location."""
-    user_name = getattr(config_instance, "USER_NAME", "Tree Owner")
-    user_location = getattr(config_instance, "USER_LOCATION", "")
+    user_name = config_schema.user_name
+    user_location = config_schema.user_location
     location_part = f" from {user_location}" if user_location else ""
 
     return f"""You are a helpful genealogical assistant named {user_name} responding to messages on behalf of a family history researcher{location_part}.
@@ -219,9 +223,9 @@ def _call_ai_model(
                     "_call_ai_model: OpenAI library not available for DeepSeek."
                 )
                 return None
-            api_key = config_instance.DEEPSEEK_API_KEY
-            model_name = config_instance.DEEPSEEK_AI_MODEL
-            base_url = config_instance.DEEPSEEK_AI_BASE_URL
+            api_key = config_schema.api.deepseek_api_key
+            model_name = config_schema.api.deepseek_ai_model
+            base_url = config_schema.api.deepseek_ai_base_url
             if not all([api_key, model_name, base_url]):
                 logger.error("_call_ai_model: DeepSeek configuration incomplete.")
                 return None
@@ -259,8 +263,8 @@ def _call_ai_model(
                     "_call_ai_model: Google GenerativeAI library not available for Gemini."
                 )
                 return None
-            api_key = config_instance.GOOGLE_API_KEY
-            model_name = config_instance.GOOGLE_AI_MODEL
+            api_key = config_schema.api.google_api_key
+            model_name = config_schema.api.google_ai_model
             if not api_key or not model_name:
                 logger.error("_call_ai_model: Gemini configuration incomplete.")
                 return None
@@ -354,7 +358,7 @@ def classify_message_intent(
     """
     Classifies the intent of the LAST USER message within the provided context history.
     """
-    ai_provider = config_instance.AI_PROVIDER.lower()
+    ai_provider = config_schema.ai_provider.lower()
     if not ai_provider:
         logger.error("classify_message_intent: AI_PROVIDER not configured.")
         return None
@@ -417,7 +421,7 @@ def extract_genealogical_entities(
     Extracts genealogical entities and suggests follow-up tasks.
     Expects AI to return JSON: {"extracted_data": {...}, "suggested_tasks": [...]}.
     """
-    ai_provider = config_instance.AI_PROVIDER.lower()
+    ai_provider = config_schema.ai_provider.lower()
     default_empty_result = {"extracted_data": {}, "suggested_tasks": []}
 
     if not ai_provider:
@@ -559,7 +563,7 @@ def generate_genealogical_reply(
     """
     Generates a personalized genealogical reply.
     """
-    ai_provider = config_instance.AI_PROVIDER.lower()
+    ai_provider = config_schema.ai_provider.lower()
     if not ai_provider:
         logger.error("generate_genealogical_reply: AI_PROVIDER not configured.")
         return None
@@ -632,7 +636,7 @@ def extract_with_custom_prompt(
     """
     Extracts data using a custom prompt. Attempts JSON parsing, falls back to text.
     """
-    ai_provider = config_instance.AI_PROVIDER.lower()
+    ai_provider = config_schema.ai_provider.lower()
     if not ai_provider:
         logger.error("extract_with_custom_prompt: AI_PROVIDER not configured.")
         return None
@@ -693,7 +697,7 @@ def generate_with_custom_prompt(
     """
     Generates a reply using a custom prompt, formatting the custom prompt with provided data.
     """
-    ai_provider = config_instance.AI_PROVIDER.lower()
+    ai_provider = config_schema.ai_provider.lower()
     if not ai_provider:
         logger.error("generate_with_custom_prompt: AI_PROVIDER not configured.")
         return None
@@ -753,9 +757,7 @@ def test_configuration() -> bool:
     config_valid = True
 
     # Test AI provider setting
-    ai_provider = (
-        config_instance.AI_PROVIDER.lower() if config_instance.AI_PROVIDER else ""
-    )
+    ai_provider = config_schema.ai_provider.lower()
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         config_valid = False
@@ -775,9 +777,9 @@ def test_configuration() -> bool:
         else:
             logger.info("✅ OpenAI library available")
 
-        api_key = config_instance.DEEPSEEK_API_KEY
-        model_name = config_instance.DEEPSEEK_AI_MODEL
-        base_url = config_instance.DEEPSEEK_AI_BASE_URL
+        api_key = config_schema.api.deepseek_api_key
+        model_name = config_schema.api.deepseek_ai_model
+        base_url = config_schema.api.deepseek_ai_base_url
 
         if not api_key:
             logger.error("❌ DEEPSEEK_API_KEY not configured")
@@ -804,8 +806,8 @@ def test_configuration() -> bool:
         else:
             logger.info("✅ Google GenerativeAI library available")
 
-        api_key = config_instance.GOOGLE_API_KEY
-        model_name = config_instance.GOOGLE_AI_MODEL
+        api_key = config_schema.api.google_api_key
+        model_name = config_schema.api.google_ai_model
 
         if not api_key:
             logger.error("❌ GOOGLE_API_KEY not configured")
@@ -929,8 +931,10 @@ def test_pydantic_compatibility() -> bool:
 
         # Test accessing nested fields
         extracted = ai_response.extracted_data
+        all_names = extracted.get_all_names()
+        all_locations = extracted.get_all_locations()
         logger.info(
-            f"✅ Nested fields accessible: mentioned_names={len(extracted.mentioned_names)}, mentioned_locations={len(extracted.mentioned_locations)}"
+            f"✅ Nested fields accessible: names={len(all_names)}, locations={len(all_locations)}"
         )
 
         return True
@@ -950,9 +954,7 @@ def test_ai_functionality(session_manager: SessionManager) -> bool:
     """
     logger.info("=== Testing AI Functionality ===")
 
-    ai_provider = (
-        config_instance.AI_PROVIDER.lower() if config_instance.AI_PROVIDER else ""
-    )
+    ai_provider = config_schema.ai_provider.lower()
 
     if not ai_provider:
         logger.info("⚠️ AI provider not configured - testing fallback behavior")
@@ -1072,7 +1074,7 @@ def run_comprehensive_tests() -> bool:
         assert_valid_function(
             test_ai_functionality, "test_ai_functionality"
         )  # Check AI provider configuration
-        ai_provider = getattr(config_instance, "AI_PROVIDER", None)
+        ai_provider = config_schema.ai_provider
         assert (
             ai_provider is not None or ai_provider == ""
         ), "AI_PROVIDER should be configured"
@@ -1312,7 +1314,7 @@ def quick_health_check(session_manager: SessionManager) -> Dict[str, Any]:
     """
     health_status = {
         "overall_health": "unknown",
-        "ai_provider": config_instance.AI_PROVIDER,
+        "ai_provider": config_schema.ai_provider,
         "api_key_configured": False,
         "prompts_loaded": False,
         "dependencies_available": False,
@@ -1322,14 +1324,14 @@ def quick_health_check(session_manager: SessionManager) -> Dict[str, Any]:
 
     try:
         # Check API key
-        ai_provider = (
-            config_instance.AI_PROVIDER.lower() if config_instance.AI_PROVIDER else ""
-        )
+        ai_provider = config_schema.ai_provider.lower()
         if ai_provider == "deepseek":
-            health_status["api_key_configured"] = bool(config_instance.DEEPSEEK_API_KEY)
+            health_status["api_key_configured"] = bool(
+                config_schema.api.deepseek_api_key
+            )
             health_status["dependencies_available"] = openai_available
         elif ai_provider == "gemini":
-            health_status["api_key_configured"] = bool(config_instance.GOOGLE_API_KEY)
+            health_status["api_key_configured"] = bool(config_schema.api.google_api_key)
             health_status["dependencies_available"] = genai_available
 
         # Check prompts

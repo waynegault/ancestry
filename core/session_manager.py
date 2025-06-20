@@ -15,7 +15,11 @@ from core.browser_manager import BrowserManager
 from core.api_manager import APIManager
 from core.session_validator import SessionValidator
 
-from config import config_instance
+from config.config_manager import ConfigManager
+
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +58,8 @@ class SessionManager:
         self.session_start_time: Optional[float] = None
 
         # Configuration
-        self.ancestry_username: str = config_instance.ANCESTRY_USERNAME
-        self.ancestry_password: str = config_instance.ANCESTRY_PASSWORD
+        self.ancestry_username: str = config_schema.api.username
+        self.ancestry_password: str = config_schema.api.password
 
         # Initialize database connection on creation
         self.db_manager.ensure_ready()
@@ -158,7 +162,7 @@ class SessionManager:
 
         # Retrieve tree owner if configured
         owner_ok = True
-        if config_instance.TREE_NAME:
+        if config_schema.api.tree_name:
             owner_ok = self._retrieve_tree_owner()
             if not owner_ok:
                 logger.warning("Tree owner name could not be retrieved.")
@@ -324,19 +328,7 @@ class SessionManager:
         """Get the CSRF token."""
         return self.api_manager.csrf_token
 
-    def get_my_profileId(self):
-        """Get profile ID (legacy method name)."""
-        return self.api_manager.get_profile_id()
-
-    def get_my_uuid(self):
-        """Get UUID (legacy method name)."""
-        return self.api_manager.get_uuid()
-
-    def get_csrf(self):
-        """Get CSRF token (legacy method name)."""
-        return self.api_manager.get_csrf_token()
-
-    # Compatibility properties for legacy code
+    # Public properties
     @property
     def tree_owner_name(self):
         """Get the tree owner name."""

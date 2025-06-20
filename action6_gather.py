@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config import Config_Class
+    from config.config_schema import ConfigSchema
 from urllib.parse import urljoin, urlparse, urlencode, unquote
 
 # --- Third-party imports ---
@@ -46,7 +46,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging throu
 
 # --- Local application imports ---
 from cache import cache as global_cache  # Use the initialized global cache instance
-from config import config_instance, selenium_config
+from config import config_schema
 from selenium_utils import get_driver_cookies
 from database import (
     DnaMatch,
@@ -81,13 +81,9 @@ CRITICAL_API_FAILURE_THRESHOLD: int = (
     3  # Threshold for _fetch_combined_details failures
 )
 
-# Configurable settings from config_instance
-DB_ERROR_PAGE_THRESHOLD: int = (
-    getattr(config_instance, "DB_ERROR_PAGE_THRESHOLD", 10) if config_instance else 10
-)  # Max consecutive DB errors allowed
-THREAD_POOL_WORKERS: int = (
-    getattr(config_instance, "GATHER_THREAD_POOL_WORKERS", 5) if config_instance else 5
-)  # Concurrent API workers
+# Configurable settings from config_schema
+DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
+THREAD_POOL_WORKERS: int = 5  # Concurrent API workers
 
 
 # --- Custom Exceptions ---
@@ -151,7 +147,7 @@ def _navigate_and_get_initial_page_data(
     driver = session_manager.driver
     my_uuid = session_manager.my_uuid
     target_matches_url_base = urljoin(
-        config_instance.BASE_URL, f"discoveryui-matches/list/{my_uuid}"
+        config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
     )
 
     logger.debug("Ensuring browser is on the DNA matches list page...")
@@ -233,7 +229,7 @@ def _determine_page_processing_range(
     total_pages_from_api: int, start_page: int
 ) -> Tuple[int, int]:
     """Determines the last page to process and total pages in the run."""
-    max_pages_config = config_instance.MAX_PAGES
+    max_pages_config = config_schema.api.max_pages
     pages_to_process_config = (
         min(max_pages_config, total_pages_from_api)
         if max_pages_config > 0
@@ -467,8 +463,8 @@ def _main_page_processing_loop(
 
 
 def coord(
-    session_manager: SessionManager, _config_instance_arg, start: int = 1
-) -> bool:  # Renamed config_instance
+    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
+) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
     Handles pagination, fetches match data, compares with database, and processes.
@@ -1120,7 +1116,7 @@ def _prepare_bulk_db_data(
                     existing_person,  # Pass existing_person_arg correctly
                     prefetched_combined,  # Pass prefetched_combined_details correctly
                     prefetched_tree,  # Pass prefetched_tree_data correctly
-                    config_instance,
+                    config_schema,
                     logger,  # Pass logger_instance correctly
                 )
 
@@ -1808,7 +1804,7 @@ def _prepare_person_operation_data(
     existing_person: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_instance_arg: Any,  # Config instance argument
+    config_schema_arg: "ConfigSchema",  # Config schema argument
     match_uuid: str,
     formatted_match_username: str,
     match_in_my_tree: bool,
@@ -1823,7 +1819,7 @@ def _prepare_person_operation_data(
         existing_person: The existing Person object from the database, or None if this is a new person.
         prefetched_combined_details: Prefetched data from '/details' & '/profiles/details' APIs.
         prefetched_tree_data: Prefetched data from 'badgedetails' & 'getladder' APIs.
-        config_instance_arg: The application configuration instance.
+        config_schema_arg: The application configuration schema.
         match_uuid: The UUID (Sample ID) of the match.
         formatted_match_username: The formatted username of the match.
         match_in_my_tree: Boolean indicating if the match is in the user's family tree.
@@ -1886,7 +1882,7 @@ def _prepare_person_operation_data(
 
     message_target_id = person_profile_id_to_save or person_admin_id_to_save
     constructed_message_link = (
-        urljoin(config_instance_arg.BASE_URL, f"/messaging/?p={message_target_id.upper()}")  # type: ignore
+        urljoin(config_schema_arg.api.base_url, f"/messaging/?p={message_target_id.upper()}")  # type: ignore
         if message_target_id
         else None
     )
@@ -2200,7 +2196,7 @@ def _prepare_family_tree_operation_data(
     match_uuid: str,
     match_in_my_tree: bool,
     session_manager: SessionManager,
-    config_instance_arg: Any,  # Renamed
+    config_schema_arg: "ConfigSchema",  # Config schema argument
     log_ref_short: str,
     logger_instance: logging.Logger,
 ) -> Tuple[Optional[Dict[str, Any]], Literal["create", "update", "none"]]:
@@ -2213,7 +2209,7 @@ def _prepare_family_tree_operation_data(
         match_uuid: The UUID (Sample ID) of the match.
         match_in_my_tree: Boolean indicating if the match is in the user's family tree.
         session_manager: The active SessionManager instance containing session and tree information.
-        config_instance_arg: The application configuration instance.
+        config_schema_arg: The application configuration schema.
         log_ref_short: Short reference string for logging.
         logger_instance: The logger instance.
 
@@ -2232,14 +2228,14 @@ def _prepare_family_tree_operation_data(
         their_cfpid_final = prefetched_tree_data.get("their_cfpid")
         if their_cfpid_final and session_manager.my_tree_id:
             base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}"
-            facts_link = urljoin(config_instance.BASE_URL, f"{base_person_path}/facts")  # type: ignore
+            facts_link = urljoin(config_schema_arg.api.base_url, f"{base_person_path}/facts")  # type: ignore
             view_params = {
                 "cfpid": their_cfpid_final,
                 "showMatches": "true",
                 "sid": session_manager.my_uuid,
             }
             base_view_url = urljoin(
-                config_instance.BASE_URL,  # type: ignore
+                config_schema_arg.api.base_url,  # type: ignore
                 f"/family-tree/tree/{session_manager.my_tree_id}/family",
             )
             view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
@@ -2326,7 +2322,7 @@ def _do_match(
     existing_person_arg: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_instance_arg: Any,  # Renamed
+    config_schema_arg: "ConfigSchema",  # Config schema argument
     logger_instance: logging.Logger,
 ) -> Tuple[
     Optional[Dict[str, Any]],
@@ -2351,7 +2347,7 @@ def _do_match(
         existing_person_arg: The existing Person object from the database, or None if this is a new person.
         prefetched_combined_details: Prefetched data from '/details' & '/profiles/details' APIs.
         prefetched_tree_data: Prefetched data from 'badgedetails' & 'getladder' APIs.
-        config_instance_arg: The application configuration instance.
+        config_schema_arg: The application configuration schema.
         logger_instance: The logger instance for recording debug/error information.
 
     Returns:
@@ -2408,7 +2404,7 @@ def _do_match(
                 existing_person=existing_person,
                 prefetched_combined_details=prefetched_combined_details,
                 prefetched_tree_data=prefetched_tree_data,
-                config_instance_arg=config_instance_arg,  # Pass renamed arg
+                config_schema_arg=config_schema,  # Pass config schema
                 match_uuid=match_uuid,
                 formatted_match_username=match_username,
                 match_in_my_tree=match_in_my_tree,
@@ -2450,7 +2446,7 @@ def _do_match(
                 match_uuid=match_uuid,
                 match_in_my_tree=match_in_my_tree,
                 session_manager=session_manager,
-                config_instance_arg=config_instance_arg,  # Pass renamed arg
+                config_schema_arg=config_schema,  # Pass config schema
                 log_ref_short=log_ref_short,
                 logger_instance=logger_instance,
             )
@@ -2629,13 +2625,13 @@ def get_matches(
         return None
 
     match_list_url = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
     )
     match_list_headers = {
         "x-csrf-token": specific_csrf_token,
         "Accept": "application/json",
-        "Referer": urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/"),
+        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
@@ -2745,10 +2741,10 @@ def get_matches(
             )
         else:
             in_tree_url = urljoin(
-                config_instance.BASE_URL,
+                config_schema.api.base_url,
                 f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
             )
-            parsed_base_url = urlparse(config_instance.BASE_URL)
+            parsed_base_url = urlparse(config_schema.api.base_url)
             origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
             ua_in_tree = None
             if driver and session_manager.is_sess_valid():
@@ -2756,11 +2752,11 @@ def get_matches(
                     ua_in_tree = driver.execute_script("return navigator.userAgent;")
                 except Exception:
                     pass
-            ua_in_tree = ua_in_tree or random.choice(config_instance.USER_AGENTS)
+            ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
             in_tree_headers = {
                 "X-CSRF-Token": specific_csrf_token,
                 "Referer": urljoin(
-                    config_instance.BASE_URL, "/discoveryui-matches/list/"
+                    config_schema.api.base_url, "/discoveryui-matches/list/"
                 ),
                 "Origin": origin_header_value,
                 "Accept": "application/json",
@@ -2799,7 +2795,7 @@ def get_matches(
                         global_cache.set(
                             cache_key_tree,
                             in_tree_ids,
-                            expire=config_instance.CACHE_TIMEOUT,
+                            expire=config_schema.cache.memory_cache_ttl,
                             retry=True,
                         )
                     logger.debug(
@@ -2855,7 +2851,7 @@ def get_matches(
             created_date_raw = match_api_data.get("createdDate")
 
             compare_link = urljoin(
-                config_instance.BASE_URL,
+                config_schema.api.base_url,
                 f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
             )
             is_in_tree = sample_id_upper in in_tree_ids
@@ -2938,11 +2934,11 @@ def _fetch_combined_details(
 
     combined_data: Dict[str, Any] = {}
     details_url = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
     )
     details_referer = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
     )
     logger.debug(f"Fetching /details API for UUID {match_uuid}...")
@@ -3022,7 +3018,7 @@ def _fetch_combined_details(
         )
     else:
         profile_url = urljoin(
-            config_instance.BASE_URL,
+            config_schema.api.base_url,
             f"/app-api/express/v1/profiles/details?userId={tester_profile_id_for_api.upper()}",
         )
         logger.debug(
@@ -3124,10 +3120,10 @@ def _fetch_batch_badge_details(
         )
 
     badge_url = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/badgedetails",
     )
-    badge_referer = urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/")
+    badge_referer = urljoin(config_schema.api.base_url, "/discoveryui-matches/list/")
     logger.debug(f"Fetching /badgedetails API for UUID {match_uuid}...")
 
     try:
@@ -3228,11 +3224,11 @@ def _fetch_batch_ladder(
         )
 
     ladder_api_url = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"family-tree/person/tree/{tree_id}/person/{cfpid}/getladder?callback=jQuery",
     )
     dynamic_referer = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"family-tree/person/tree/{tree_id}/person/{cfpid}/facts",
     )
     logger.debug(f"Fetching /getladder API for CFPID {cfpid} in Tree {tree_id}...")
@@ -3444,16 +3440,16 @@ def _fetch_batch_relationship_prob(
     my_uuid_upper = my_uuid.upper()
     sample_id_upper = match_uuid.upper()
     rel_url = urljoin(
-        config_instance.BASE_URL,
+        config_schema.api.base_url,
         f"discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}",
     )
-    referer_url = urljoin(config_instance.BASE_URL, "/discoveryui-matches/list/")
+    referer_url = urljoin(config_schema.api.base_url, "/discoveryui-matches/list/")
     api_description = "Match Probability API (Cloudscraper)"
     rel_headers = {
         "Accept": "application/json",
         "Referer": referer_url,
-        "Origin": config_instance.BASE_URL.rstrip("/"),
-        "User-Agent": random.choice(config_instance.USER_AGENTS),
+        "Origin": config_schema.api.base_url.rstrip("/"),
+        "User-Agent": random.choice(config_schema.api.user_agents),
     }
 
     csrf_token_val: Optional[str] = None
@@ -3528,7 +3524,7 @@ def _fetch_batch_relationship_prob(
             headers=rel_headers,
             json={},
             allow_redirects=False,
-            timeout=selenium_config.API_TIMEOUT,
+            timeout=config_schema.selenium.api_timeout,
         )
         logger.debug(
             f"<-- {api_description} Response Status: {response_rel.status_code} {response_rel.reason}"
@@ -3699,7 +3695,8 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
         new_delay = session_manager.dynamic_rate_limiter.current_delay
         if (
             abs(previous_delay - new_delay) > 0.01
-            and new_delay > config_instance.INITIAL_DELAY  # Check against initial_delay
+            and new_delay
+            > config_schema.api.initial_delay  # Check against initial_delay
         ):
             logger.debug(
                 f"Decreased rate limit base delay to {new_delay:.2f}s after page {current_page}."
@@ -3731,7 +3728,7 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 
     my_uuid = session_manager.my_uuid
     target_url = urljoin(
-        config_instance.BASE_URL, f"discoveryui-matches/list/{my_uuid}"
+        config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
     )
     logger.debug(f"Navigating to specific match list URL: {target_url}")
 

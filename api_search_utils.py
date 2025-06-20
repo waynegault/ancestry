@@ -26,7 +26,7 @@ All tests pass with 100% success rate.
 """
 
 import re
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Union
 import os  # Used for path operations
 
 # --- Test framework imports ---
@@ -40,7 +40,7 @@ from test_framework import (
 
 # Import from local modules
 from logging_config import logger
-from config import config_instance
+from config import config_schema
 from utils import SessionManager
 
 
@@ -48,80 +48,19 @@ from utils import SessionManager
 # API functions are imported from api_utils where available.
 
 # Import API functions that are actually used in this module
-try:
-    from api_utils import (
-        call_suggest_api,
-        call_facts_user_api,
-        call_getladder_api,
-        call_treesui_list_api,
-    )
+from api_utils import (
+    call_suggest_api,
+    call_facts_user_api,
+    call_getladder_api,
+    call_treesui_list_api,
+)
 
-    API_UTILS_AVAILABLE = True
-    logger.info("Successfully imported API utilities from api_utils")
-except ImportError as e:
-    logger.error(f"Could not import API utilities: {e}")
-    API_UTILS_AVAILABLE = False
-    # The module will fail if these functions are called without proper imports
+API_UTILS_AVAILABLE = True
 
 # Import relationship path formatting function
-try:
-    from relationship_utils import format_api_relationship_path
+from relationship_utils import format_api_relationship_path
 
-    RELATIONSHIP_UTILS_AVAILABLE = True
-    logger.info("Successfully imported relationship utilities")
-except ImportError as e:
-    logger.warning(f"Could not import relationship utilities: {e}")
-    RELATIONSHIP_UTILS_AVAILABLE = False
-
-    def format_api_relationship_path(
-        api_response_data, owner_name, target_name, relationship_type="relative"
-    ):
-        """Fallback function when relationship_utils not available"""
-        return f"Relationship path between {owner_name} and {target_name} (relationship_utils not available)"
-
-
-# Default configuration values
-DEFAULT_CONFIG = {
-    "DATE_FLEXIBILITY": {"year_match_range": 10},
-    "COMMON_SCORING_WEIGHTS": {
-        # --- Name Weights ---
-        "contains_first_name": 25,  # if the input first name is in the candidate first name
-        "contains_surname": 25,  # if the input surname is in the candidate surname
-        "bonus_both_names_contain": 25,  # additional bonus if both first and last name achieved a score
-        # --- Existing Date Weights ---
-        "exact_birth_date": 25,  # if input date of birth is exact with candidate date of birth
-        "exact_death_date": 25,  # if input date of death is exact with candidate death date
-        "birth_year_match": 20,  # if input birth year matches candidate birth year
-        "death_year_match": 20,  # if input death year matches candidate death year
-        "birth_year_close": 10,  # if input birth year is within range of candidate birth year
-        "death_year_close": 10,  # if input death year is within range of candidate death year
-        # --- Place Weights ---
-        "birth_place_match": 20,  # if input birth place matches candidate birth place
-        "death_place_match": 20,  # if input death place matches candidate death place
-        # --- Gender Weight ---
-        "gender_match": 15,  # if input gender matches candidate gender
-        # --- Bonus Weights ---
-        "bonus_birth_date_and_place": 15,  # bonus if both birth date and place match
-        "bonus_death_date_and_place": 15,  # bonus if both death date and place match
-    },
-    "MAX_SUGGESTIONS_TO_SCORE": 10,
-}
-
-
-def get_config_value(key: str, default_value: Any = None) -> Any:
-    """Safely retrieve a configuration value with fallback."""
-    try:
-        if not config_instance:
-            return default_value
-
-        # Use hasattr to check if the attribute exists to avoid recursion
-        if hasattr(config_instance, key):
-            return getattr(config_instance, key)
-        else:
-            return default_value
-    except (AttributeError, RecursionError):
-        # Fallback to default value if there's any attribute access issue
-        return default_value
+RELATIONSHIP_UTILS_AVAILABLE = True
 
 
 def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
@@ -143,7 +82,7 @@ def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
 def _run_simple_suggestion_scoring(
     search_criteria: Dict[str, Any],
     candidate: Dict[str, Any],
-    weights: Optional[Dict[str, int]] = None,
+    weights: Optional[Dict[str, Union[int, float]]] = None,
     date_flex: Optional[Dict[str, Any]] = None,
 ) -> Tuple[int, Dict[str, int], List[str]]:
     """
@@ -160,11 +99,11 @@ def _run_simple_suggestion_scoring(
     """
     # Use default weights if none provided
     if weights is None:
-        weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"].copy()
+        weights = dict(config_schema.common_scoring_weights)
 
     # Use default date flexibility if none provided
     if date_flex is None:
-        date_flex = DEFAULT_CONFIG["DATE_FLEXIBILITY"].copy()
+        date_flex = {"year_match_range": config_schema.date_flexibility}
 
     # Get year range for flexible matching
     year_range = 10
@@ -367,7 +306,7 @@ def _run_simple_suggestion_scoring(
         field_scores["death_bonus"] = score
         reasons.append("Both death year and place matched")
 
-    return total_score, field_scores, reasons
+    return int(total_score), field_scores, reasons
 
 
 def search_api_for_criteria(
@@ -421,18 +360,18 @@ def search_api_for_criteria(
     # Get tree ID from session manager or config
     tree_id = session_manager.my_tree_id
     if not tree_id:
-        tree_id = get_config_value("MY_TREE_ID", "")
+        tree_id = getattr(config_schema.test, "test_tree_id", "")
         if not tree_id:
             logger.error("No tree ID available for API search")
             return []
 
     # Get base URL from config
-    base_url = get_config_value("BASE_URL", "https://www.ancestry.co.uk/")
+    base_url = config_schema.api.base_url
 
     # Get owner profile ID from session manager or config
     owner_profile_id = session_manager.my_profile_id
     if not owner_profile_id:
-        owner_profile_id = get_config_value("MY_PROFILE_ID", "")
+        owner_profile_id = getattr(config_schema.test, "test_profile_id", "")
 
     # Prepare search criteria for API
     api_search_criteria = {
@@ -455,13 +394,9 @@ def search_api_for_criteria(
         return []
 
     # Step 4: Get configuration values
-    scoring_weights = get_config_value(
-        "COMMON_SCORING_WEIGHTS", DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
-    )
-    date_flex = get_config_value("DATE_FLEXIBILITY", DEFAULT_CONFIG["DATE_FLEXIBILITY"])
-    max_suggestions = get_config_value(
-        "MAX_SUGGESTIONS_TO_SCORE", DEFAULT_CONFIG["MAX_SUGGESTIONS_TO_SCORE"]
-    )
+    scoring_weights = config_schema.common_scoring_weights
+    date_flex = {"year_match_range": config_schema.date_flexibility}
+    max_suggestions = config_schema.max_suggestions_to_score
 
     # Step 5: Score and filter results
     scored_matches = []
@@ -587,18 +522,20 @@ def search_api_for_criteria(
                 # Get tree ID from session manager or config (reuse from earlier)
                 tree_id = session_manager.my_tree_id
                 if not tree_id:
-                    tree_id = get_config_value("MY_TREE_ID", "")
+                    tree_id = getattr(config_schema.test, "test_tree_id", "")
                     if not tree_id:
                         logger.error("No tree ID available for treesui-list API search")
                         return scored_matches
 
                 # Get base URL from config (reuse from earlier)
-                base_url = get_config_value("BASE_URL", "https://www.ancestry.co.uk/")
+                base_url = config_schema.api.base_url
 
                 # Get owner profile ID from session manager or config (reuse from earlier)
                 owner_profile_id = session_manager.my_profile_id
                 if not owner_profile_id:
-                    owner_profile_id = get_config_value("MY_PROFILE_ID", "")
+                    owner_profile_id = getattr(
+                        config_schema.test, "test_profile_id", ""
+                    )
 
                 # Call the treesui-list API
                 treesui_results = call_treesui_list_api(
@@ -736,7 +673,7 @@ def get_api_family_details(
     if not tree_id:
         tree_id = session_manager.my_tree_id
         if not tree_id:
-            tree_id = get_config_value("MY_TREE_ID", "")
+            tree_id = getattr(config_schema.test, "test_tree_id", "")
             if not tree_id:
                 logger.error("No tree ID available for API family details")
                 return {}
@@ -744,12 +681,12 @@ def get_api_family_details(
     # Step 3: Get owner profile ID
     owner_profile_id = session_manager.my_profile_id
     if not owner_profile_id:
-        owner_profile_id = get_config_value("MY_PROFILE_ID", "")
+        owner_profile_id = getattr(config_schema.test, "test_profile_id", "")
         if not owner_profile_id:
             logger.warning("No owner profile ID available for API family details")
 
     # Step 4: Get base URL
-    base_url = get_config_value("BASE_URL", "https://www.ancestry.co.uk/")
+    base_url = config_schema.api.base_url
 
     # Step 5: Call the facts API to get person details
     logger.info(f"Getting facts for person {person_id} in tree {tree_id}")
@@ -1038,20 +975,20 @@ def get_api_relationship_path(
     if not tree_id:
         tree_id = session_manager.my_tree_id
         if not tree_id:
-            tree_id = get_config_value("MY_TREE_ID", "")
+            tree_id = getattr(config_schema.test, "test_tree_id", "")
             if not tree_id:
                 logger.error("No tree ID available for API relationship path")
                 return "(Tree ID not available)"
 
     # Step 3: Get reference ID if not provided
     if not reference_id:
-        reference_id = get_config_value("REFERENCE_PERSON_ID", None)
+        reference_id = config_schema.reference_person_id
         if not reference_id:
             logger.error("Reference person ID not provided and not found in config")
             return "(Reference person ID not available)"
 
     # Step 4: Get base URL
-    base_url = get_config_value("BASE_URL", "https://www.ancestry.co.uk/")
+    base_url = config_schema.api.base_url
 
     # Step 5: Call the getladder API to get relationship path
     logger.info(
@@ -1089,17 +1026,21 @@ def run_comprehensive_tests() -> bool:
     # INITIALIZATION TESTS
     def test_module_initialization():
         """Test module initialization and configuration"""
-        # Test get_config_value function
-        result = get_config_value("TEST_KEY_12345", "default_value")
+        # Test configuration access
+        result = getattr(config_schema, "TEST_KEY_12345", "default_value")
         assert isinstance(result, str), "Should return string value"
         assert result == "default_value", "Should return default value for missing keys"
 
-        # Test DEFAULT_CONFIG structure
-        assert isinstance(DEFAULT_CONFIG, dict), "DEFAULT_CONFIG should be a dictionary"
+        # Test configuration structure
+        assert isinstance(
+            config_schema.common_scoring_weights, dict
+        ), "common_scoring_weights should be a dictionary"
         assert (
-            "COMMON_SCORING_WEIGHTS" in DEFAULT_CONFIG
-        ), "Should have COMMON_SCORING_WEIGHTS"
-        assert "DATE_FLEXIBILITY" in DEFAULT_CONFIG, "Should have DATE_FLEXIBILITY"
+            "contains_first_name" in config_schema.common_scoring_weights
+        ), "Should have contains_first_name weight"
+        assert isinstance(
+            config_schema.date_flexibility, (int, float)
+        ), "Should have date_flexibility as number"
 
     # CORE FUNCTIONALITY TESTS
     def test_core_functionality():
@@ -1193,8 +1134,8 @@ def run_comprehensive_tests() -> bool:
         """Test error handling scenarios"""
         from unittest.mock import MagicMock
 
-        # Test get_config_value with error
-        result = get_config_value("NONEXISTENT_KEY_12345", "fallback")
+        # Test configuration access with error
+        result = getattr(config_schema, "NONEXISTENT_KEY_12345", "fallback")
         assert result == "fallback", "Should return fallback value"
 
         # Test search_api_for_criteria with invalid session
@@ -1208,11 +1149,11 @@ def run_comprehensive_tests() -> bool:
     with suppress_logging():
         # INITIALIZATION TESTS
         suite.run_test(
-            test_name="get_config_value(), DEFAULT_CONFIG initialization",
+            test_name="Module initialization and DEFAULT_CONFIG",
             test_func=test_module_initialization,
             expected_behavior="Module initializes correctly with proper configuration access and valid DEFAULT_CONFIG structure",
             test_description="Module initialization and configuration setup processes",
-            method_description="Testing configuration value retrieval and DEFAULT_CONFIG structure validation",
+            method_description="Testing configuration access and DEFAULT_CONFIG structure validation",
         )
 
         # CORE FUNCTIONALITY TESTS
@@ -1253,7 +1194,7 @@ def run_comprehensive_tests() -> bool:
 
         # ERROR HANDLING TESTS
         suite.run_test(
-            test_name="get_config_value(), search_api_for_criteria() error handling",
+            test_name="search_api_for_criteria() error handling",
             test_func=test_error_handling,
             expected_behavior="All error conditions handled gracefully with appropriate fallback responses",
             test_description="Error handling and recovery functionality",

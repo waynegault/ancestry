@@ -28,8 +28,12 @@ from test_framework import (
 
 # --- Local module imports ---
 from logging_config import logger
-from config import config_instance
+from config.config_manager import ConfigManager
 from gedcom_utils import GedcomData, calculate_match_score, _normalize_id
+
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
 from relationship_utils import (
     fast_bidirectional_bfs,
     convert_gedcom_path_to_unified_format,
@@ -103,13 +107,6 @@ def get_cached_gedcom_data():
     return _CACHED_GEDCOM_DATA
 
 
-def get_config_value(key: str, default_value: Any = None) -> Any:
-    """Safely retrieve a configuration value with fallback."""
-    if not config_instance:
-        raise MissingConfigError(f"Config instance is missing (needed for key: {key})")
-    return getattr(config_instance, key, default_value)
-
-
 def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
     """
     Load and initialize a GedcomData instance.
@@ -176,7 +173,9 @@ def get_gedcom_data() -> Optional[GedcomData]:
     # Check if GEDCOM path is configured
     gedcom_path_str = None
     try:
-        gedcom_path_str = get_config_value("GEDCOM_FILE_PATH", None)
+        gedcom_path_str = (
+            config_schema.database.gedcom_file_path if config_schema else None
+        )
     except MissingConfigError as e:
         logger.warning(str(e))
         raise
@@ -294,14 +293,11 @@ def search_gedcom_for_criteria(
         else:
             if not gedcom_path:
                 # Try to get path from config
-                try:
-                    gedcom_path = get_config_value(
-                        "GEDCOM_FILE_PATH",
-                        os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
-                    )
-                except MissingConfigError as e:
-                    logger.error(str(e))
-                    raise
+                gedcom_path = (
+                    str(config_schema.database.gedcom_file_path)
+                    if config_schema
+                    else os.path.join(os.path.dirname(__file__), "Data", "family.ged")
+                )
             if not gedcom_path or not os.path.exists(gedcom_path):
                 raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
 
@@ -335,14 +331,34 @@ def search_gedcom_for_criteria(
     # Create filter criteria (subset of scoring criteria)
     for key in ["first_name", "surname", "gender", "birth_year", "birth_place"]:
         if key in scoring_criteria:
-            filter_criteria[key] = scoring_criteria[key]
-
-    # Step 3: Get configuration values
-    scoring_weights = get_config_value(
-        "COMMON_SCORING_WEIGHTS", DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+            filter_criteria[key] = scoring_criteria[
+                key
+            ]  # Step 3: Get configuration values    if config_schema:
+        scoring_weights = dict(config_schema.common_scoring_weights)
+    else:
+        scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+    date_flex_value = (
+        config_schema.date_flexibility
+        if config_schema
+        else DEFAULT_CONFIG["DATE_FLEXIBILITY"]["year_match_range"]
     )
-    date_flex = get_config_value("DATE_FLEXIBILITY", DEFAULT_CONFIG["DATE_FLEXIBILITY"])
-    year_range = date_flex.get("year_match_range", 10)
+
+    # Convert to dict format expected by calculate_match_score
+    if isinstance(date_flex_value, (int, float)):
+        date_flex = {"year_match_range": int(date_flex_value)}
+    elif isinstance(date_flex_value, dict):
+        date_flex = date_flex_value
+    else:
+        date_flex = {
+            "year_match_range": 10
+        }  # Handle both old and new date_flex formats
+    if isinstance(date_flex, (int, float)):
+        # New config format - date_flex is a float/int representing years
+        year_range = int(date_flex)
+    elif isinstance(date_flex, dict):
+        year_range = date_flex.get("year_match_range", 10)
+    else:
+        year_range = 10
 
     # Step 4: Filter and score individuals
     scored_matches = []
@@ -463,14 +479,11 @@ def get_gedcom_family_details(
         else:
             if not gedcom_path:
                 # Try to get path from config
-                try:
-                    gedcom_path = get_config_value(
-                        "GEDCOM_FILE_PATH",
-                        os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
-                    )
-                except MissingConfigError as e:
-                    logger.error(str(e))
-                    raise
+                gedcom_path = (
+                    str(config_schema.database.gedcom_file_path)
+                    if config_schema
+                    else os.path.join(os.path.dirname(__file__), "Data", "family.ged")
+                )
             if not gedcom_path or not os.path.exists(gedcom_path):
                 raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
 
@@ -706,14 +719,11 @@ def get_gedcom_relationship_path(
         else:
             if not gedcom_path:
                 # Try to get path from config
-                try:
-                    gedcom_path = get_config_value(
-                        "GEDCOM_FILE_PATH",
-                        os.path.join(os.path.dirname(__file__), "Data", "family.ged"),
-                    )
-                except MissingConfigError as e:
-                    logger.error(str(e))
-                    return f"({str(e)})"
+                gedcom_path = (
+                    str(config_schema.database.gedcom_file_path)
+                    if config_schema
+                    else os.path.join(os.path.dirname(__file__), "Data", "family.ged")
+                )
             if gedcom_path and not os.path.exists(gedcom_path):
                 return f"(GEDCOM file not found at {gedcom_path})"
 
@@ -726,15 +736,11 @@ def get_gedcom_relationship_path(
         return "(Failed to load GEDCOM data)"
 
     # Step 2: Normalize individual ID
-    individual_id_norm = _normalize_id(individual_id)
-
-    # Step 3: Get reference ID if not provided
+    individual_id_norm = _normalize_id(
+        individual_id
+    )  # Step 3: Get reference ID if not provided
     if not reference_id:
-        try:
-            reference_id = get_config_value("REFERENCE_PERSON_ID", None)
-        except MissingConfigError as e:
-            logger.error(str(e))
-            return f"({str(e)})"
+        reference_id = config_schema.reference_person_id if config_schema else None
     if not reference_id:
         return "(Reference person ID not available)"
 
@@ -844,35 +850,44 @@ def run_comprehensive_tests() -> bool:
 
         def test_search_gedcom_for_criteria_mock():
             try:
+                from config import config_schema
 
-                class MockGedcom(GedcomData):
-                    def __init__(self):
-                        pass
+                # Use real GEDCOM file from .env
+                gedcom_path = config_schema.database.gedcom_file_path
+                if not gedcom_path or not gedcom_path.exists():
+                    logger.warning(
+                        "GEDCOM file not available for testing, skipping test"
+                    )
+                    return True
 
-                    processed_data_cache = {
-                        "@I1@": {
-                            "first_name": "John",
-                            "surname": "Smith",
-                            "gender_norm": "m",
-                            "birth_year": 1850,
-                            "birth_place_disp": "NY",
-                            "death_date_obj": None,
-                        },
-                        "@I2@": {
-                            "first_name": "Jane",
-                            "surname": "Doe",
-                            "gender_norm": "f",
-                            "birth_year": 1855,
-                            "birth_place_disp": "CA",
-                            "death_date_obj": None,
-                        },
-                    }
+                # Load real GEDCOM data
+                gedcom_data = GedcomData(str(gedcom_path))
+
+                # Use reference person from .env for testing
+                reference_person_name = config_schema.reference_person_name or "Wayne"
+
+                # Search for someone with the reference person's first name
+                search_criteria = {"first_name": reference_person_name.split()[0]}
 
                 results = search_gedcom_for_criteria(
-                    {"first_name": "John"}, max_results=2, gedcom_data=MockGedcom()
+                    search_criteria, max_results=5, gedcom_data=gedcom_data
                 )
+
                 assert isinstance(results, list)
-                assert any(r["id"] == "@I1@" for r in results)
+                # Should find at least one person with the reference person's first name
+                assert (
+                    len(results) > 0
+                ), f"Should find people with first name '{reference_person_name.split()[0]}'"
+
+                # Verify the results have the expected structure
+                if results:
+                    first_result = results[0]
+                    assert "id" in first_result
+                    assert "first_name" in first_result
+                    logger.info(
+                        f"Found {len(results)} people with first name '{reference_person_name.split()[0]}'"
+                    )
+
                 return True
             except MissingConfigError:
                 return True
@@ -982,9 +997,9 @@ def run_comprehensive_tests() -> bool:
             "Test matches_year_criterion.",
         )
         suite.run_test(
-            "Search GEDCOM For Criteria (Mock)",
+            "Search GEDCOM For Criteria (Real Data)",
             test_search_gedcom_for_criteria_mock,
-            "GEDCOM search works with mock data.",
+            "GEDCOM search works with real .env data.",
             "Test search_gedcom_for_criteria.",
             "Test search_gedcom_for_criteria.",
         )

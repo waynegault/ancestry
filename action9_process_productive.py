@@ -23,7 +23,8 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 # --- Local application imports ---
-from config import config_instance
+from config import config_schema
+
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -191,13 +192,6 @@ class Occupation(BaseModel):
 class ExtractedData(BaseModel):
     """Enhanced Pydantic model for validating the extracted_data structure in AI responses."""
 
-    # Legacy fields for backward compatibility
-    mentioned_names: List[str] = Field(default_factory=list)
-    mentioned_locations: List[str] = Field(default_factory=list)
-    mentioned_dates: List[str] = Field(default_factory=list)
-    potential_relationships: List[str] = Field(default_factory=list)
-    key_facts: List[str] = Field(default_factory=list)
-
     # Enhanced structured fields
     structured_names: List[NameData] = Field(default_factory=list)
     vital_records: List[VitalRecord] = Field(default_factory=list)
@@ -210,11 +204,6 @@ class ExtractedData(BaseModel):
     suggested_tasks: List[str] = Field(default_factory=list)
 
     @field_validator(
-        "mentioned_names",
-        "mentioned_locations",
-        "mentioned_dates",
-        "potential_relationships",
-        "key_facts",
         "research_questions",
         "documents_mentioned",
         "dna_information",
@@ -231,18 +220,19 @@ class ExtractedData(BaseModel):
         return [str(item) for item in v if item is not None]
 
     def get_all_names(self) -> List[str]:
-        """Get all names from both legacy and structured fields."""
-        names = list(self.mentioned_names)
+        """Get all names from structured fields."""
+        names = []
         for name_data in self.structured_names:
             names.append(name_data.full_name)
             names.extend(name_data.nicknames)
         return list(set(names))
 
     def get_all_locations(self) -> List[str]:
-        """Get all locations from both legacy and structured fields."""
-        locations = list(self.mentioned_locations)
-        for location in self.locations:
-            locations.append(location.place)
+        """Get all locations from structured fields."""
+        locations = []
+        for vital_record in self.vital_records:
+            if vital_record.place:
+                locations.append(vital_record.place)
         return list(set(locations))
 
 
@@ -262,11 +252,6 @@ class AIResponse(BaseModel):
             return []
         return [str(item) for item in v if item is not None]
 
-
-# Flags to control utilities availability
-GEDCOM_UTILS_AVAILABLE = False
-API_UTILS_AVAILABLE = False
-RELATIONSHIP_UTILS_AVAILABLE = False
 
 # Global variable to cache the GEDCOM data
 _CACHED_GEDCOM_DATA = None
@@ -288,13 +273,8 @@ def get_gedcom_data():
     if _CACHED_GEDCOM_DATA is not None:
         return _CACHED_GEDCOM_DATA
 
-    # Check if GEDCOM utilities are available
-    if not GEDCOM_UTILS_AVAILABLE:
-        logger.warning("GEDCOM utilities not available. Cannot load GEDCOM file.")
-        return None
-
     # Check if GEDCOM path is configured
-    gedcom_path = config_instance.GEDCOM_FILE_PATH
+    gedcom_path = config_schema.database.gedcom_file_path
     if not gedcom_path:
         logger.warning("GEDCOM_FILE_PATH not configured. Cannot load GEDCOM file.")
         return None
@@ -328,48 +308,23 @@ def get_gedcom_data():
 
 
 # Import required modules and functions
-try:
-    # Import from gedcom_utils
-    from gedcom_utils import (
-        calculate_match_score,
-        _normalize_id,
-        GedcomData,
-    )
+from gedcom_utils import (
+    calculate_match_score,
+    _normalize_id,
+    GedcomData,
+)
 
-    # Import from relationship_utils
-    from relationship_utils import (
-        fast_bidirectional_bfs,
-        convert_gedcom_path_to_unified_format,
-        format_relationship_path_unified,
-    )
+# Import from relationship_utils
+from relationship_utils import (
+    fast_bidirectional_bfs,
+    convert_gedcom_path_to_unified_format,
+    format_relationship_path_unified,
+)
 
-    GEDCOM_UTILS_AVAILABLE = True
-    logger.info("GEDCOM utilities successfully imported.")
-except ImportError as e:
-    logger.warning(f"GEDCOM utilities not available: {e}")
-    GEDCOM_UTILS_AVAILABLE = False
+from gedcom_search_utils import get_gedcom_relationship_path
 
-# Try to import relationship utilities
-try:
-    from gedcom_search_utils import get_gedcom_relationship_path
-
-    GEDCOM_RELATIONSHIP_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"GEDCOM relationship utilities not available: {e}")
-    GEDCOM_RELATIONSHIP_AVAILABLE = False
-
-RELATIONSHIP_UTILS_AVAILABLE = GEDCOM_RELATIONSHIP_AVAILABLE
-
-# Try to import API utilities separately
-try:
-    # Import from action11 - Only import what actually exists
-    from action11 import _process_and_score_suggestions
-
-    API_UTILS_AVAILABLE = True
-    logger.info("API utilities successfully imported.")
-except ImportError as e:
-    logger.warning(f"API utilities not available: {e}")
-    API_UTILS_AVAILABLE = False
+# Import from action11
+from action11 import _process_and_score_suggestions
 
 
 def _search_gedcom_for_names(
@@ -389,12 +344,6 @@ def _search_gedcom_for_names(
     Raises:
         RuntimeError: If GEDCOM utilities are not available or if the GEDCOM file is not found
     """
-    # Check if GEDCOM utilities are available
-    if not GEDCOM_UTILS_AVAILABLE:
-        error_msg = "GEDCOM utilities not available. Cannot search GEDCOM file."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
     # Get the GEDCOM data (either from parameter or from cache)
     if gedcom_data is None:
         gedcom_data = get_gedcom_data()
@@ -429,20 +378,12 @@ def _search_gedcom_for_names(
             scoring_criteria = filter_criteria.copy()
 
             # Get scoring weights from config or use defaults
-            scoring_weights = {
-                "first_name": getattr(config_instance, "SCORE_WEIGHT_FIRST_NAME", 25),
-                "surname": getattr(config_instance, "SCORE_WEIGHT_SURNAME", 25),
-                "gender": getattr(config_instance, "SCORE_WEIGHT_GENDER", 10),
-                "birth_year": getattr(config_instance, "SCORE_WEIGHT_BIRTH_YEAR", 20),
-                "birth_place": getattr(config_instance, "SCORE_WEIGHT_BIRTH_PLACE", 15),
-                "death_year": getattr(config_instance, "SCORE_WEIGHT_DEATH_YEAR", 15),
-                "death_place": getattr(config_instance, "SCORE_WEIGHT_DEATH_PLACE", 10),
-            }
+            scoring_weights = config_schema.common_scoring_weights
 
             # Date flexibility settings with defaults
             date_flex = {
-                "year_flex": getattr(config_instance, "YEAR_FLEXIBILITY", 2),
-                "exact_bonus": getattr(config_instance, "EXACT_DATE_BONUS", 25),
+                "year_flex": getattr(config_schema, "year_flexibility", 2),
+                "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
             }
 
             # Filter and score individuals
@@ -542,12 +483,6 @@ def _search_api_for_names(
     Raises:
         RuntimeError: If API utilities are not available or if required parameters are missing
     """
-    # Check if API utilities are available
-    if not API_UTILS_AVAILABLE:
-        error_msg = "API utilities not available. Cannot search Ancestry API."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
     # Check if session manager is provided
     if not session_manager:
         error_msg = "Session manager not provided. Cannot search Ancestry API."
@@ -572,7 +507,7 @@ def _search_api_for_names(
             raise RuntimeError(error_msg)
 
         # Get base URL from config
-        base_url = getattr(config_instance, "BASE_URL", "").rstrip("/")
+        base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
         if not base_url:
             error_msg = "Ancestry URL not configured. Base URL missing."
             logger.error(error_msg)
@@ -616,20 +551,19 @@ def _search_api_for_names(
                 continue
 
             # Process and score the API results if they exist
-            if API_UTILS_AVAILABLE:
-                scored_suggestions = _process_and_score_suggestions(
-                    api_results, search_criteria, config_instance
-                )
+            scored_suggestions = _process_and_score_suggestions(
+                api_results, search_criteria
+            )
 
-                # Take top 3 results
-                top_matches = scored_suggestions[:3] if scored_suggestions else []
+            # Take top 3 results
+            top_matches = scored_suggestions[:3] if scored_suggestions else []
 
-                # Add source information
-                for match in top_matches:
-                    match["source"] = "API"
+            # Add source information
+            for match in top_matches:
+                match["source"] = "API"
 
-                # Add to overall results
-                search_results.extend(top_matches)  # Return the combined results
+            # Add to overall results
+            search_results.extend(top_matches)  # Return the combined results
         return search_results
 
     except Exception as e:
@@ -907,7 +841,7 @@ class PersonProcessor:
             return
 
         # Create tasks
-        app_mode = config_instance.APP_MODE
+        app_mode = config_schema.app_mode
         if app_mode == "dry_run":
             logger.info(
                 f"{log_prefix}: DRY RUN - Skipping MS To-Do task creation for {len(suggested_tasks)} tasks."
@@ -1046,7 +980,7 @@ class PersonProcessor:
             return None
 
         # Check if custom responses are enabled
-        if not config_instance.CUSTOM_RESPONSE_ENABLED:
+        if not config_schema.custom_response_enabled:
             logger.info(
                 f"{log_prefix}: Custom replies disabled via config. Using standard."
             )
@@ -1100,8 +1034,8 @@ class PersonProcessor:
         try:
             if custom_reply:
                 # Add signature to custom reply
-                user_name = getattr(config_instance, "USER_NAME", "Tree Owner")
-                user_location = getattr(config_instance, "USER_LOCATION", "")
+                user_name = getattr(config_schema, "user_name", "Tree Owner")
+                user_location = getattr(config_schema, "user_location", "")
                 location_part = f"\n{user_location}" if user_location else ""
                 signature = f"\n\nBest regards,\n{user_name}{location_part}"
                 message_text = custom_reply + signature
@@ -1127,7 +1061,7 @@ class PersonProcessor:
                         ACKNOWLEDGEMENT_MESSAGE_TYPE
                     ].format(name=name_to_use, summary=summary_for_ack)
                 else:
-                    user_name = getattr(config_instance, "USER_NAME", "Tree Owner")
+                    user_name = getattr(config_schema, "user_name", "Tree Owner")
                     message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
                 message_type_id = self.msg_config.ack_msg_type_id
                 logger.info(f"{log_prefix}: Using standard acknowledgement template.")
@@ -1139,7 +1073,7 @@ class PersonProcessor:
                 f"{log_prefix}: Message formatting error: {e}. Using fallback."
             )  # Simple fallback
             safe_username = safe_column_value(person, "username", "User")
-            user_name = getattr(config_instance, "USER_NAME", "Tree Owner")
+            user_name = getattr(config_schema, "user_name", "Tree Owner")
             message_text = f"Dear {format_name(safe_username)},\n\nThank you for your message!\n\n{user_name}"
             message_type_id = self.msg_config.ack_msg_type_id or 1  # Provide default
             return message_text, message_type_id
@@ -1205,8 +1139,8 @@ class PersonProcessor:
     def _should_send_message(self, person: Person, log_prefix: str) -> Tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
-        app_mode = config_instance.APP_MODE
-        testing_profile_id = config_instance.TESTING_PROFILE_ID
+        app_mode = config_schema.app_mode
+        testing_profile_id = config_schema.testing_profile_id
         # Get current profile ID safely
         current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
 
@@ -1280,7 +1214,7 @@ class PersonProcessor:
                     "direction": MessageDirectionEnum.OUT,
                     "people_id": person_id_int,
                     "latest_message_content": message_text[
-                        : config_instance.MESSAGE_TRUNCATION_LENGTH
+                        : config_schema.message_truncation_length
                     ],
                     "latest_timestamp": datetime.now(timezone.utc),
                     "message_type_id": message_type_id,
@@ -1419,10 +1353,10 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
     # Initialize state objects
     state = ProcessingState()
-    ms_state = MSGraphState(list_name=config_instance.MS_TODO_LIST_NAME)
+    ms_state = MSGraphState(list_name=config_schema.ms_todo_list_name)
     db_state = DatabaseState(
-        batch_size=max(1, config_instance.BATCH_SIZE),
-        commit_threshold=max(1, config_instance.BATCH_SIZE),
+        batch_size=max(1, config_schema.batch_size),
+        commit_threshold=max(1, config_schema.batch_size),
     )
     msg_config = MessageConfig()
 
@@ -1438,7 +1372,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
         # Step 2: Query candidates
         candidates = _query_candidates(
-            db_state, msg_config, config_instance.MAX_PRODUCTIVE_TO_PROCESS
+            db_state, msg_config, config_schema.max_productive_to_process
         )
         if not candidates:
             logger.info("Action 9: No eligible candidates found.")
@@ -1872,7 +1806,7 @@ def _format_context_for_ai_extraction(
     # Step 1: Initialize list for formatted lines
     context_lines = []
     # Step 2: Get truncation limit from config
-    max_words = config_instance.AI_CONTEXT_MESSAGE_MAX_WORDS
+    max_words = config_schema.ai_context_message_max_words
 
     # Step 3: Iterate through sorted logs (oldest first)
     for log in context_logs:
@@ -1928,7 +1862,7 @@ def _format_context_for_ai_extraction(
 def _get_message_context(
     db_session: DbSession,
     person_id: Union[int, Any],  # Accept SQLAlchemy Column type or int
-    limit: int = config_instance.AI_CONTEXT_MESSAGES_COUNT,
+    limit: int = config_schema.ai_context_messages_count,
 ) -> List[ConversationLog]:
     """
     Fetches the last 'limit' ConversationLog entries for a given person_id,
@@ -2041,7 +1975,7 @@ def _search_ancestry_tree(
         return {"results": [], "relationship_paths": {}}
 
     # Step 2: Get search method from config
-    search_method = config_instance.TREE_SEARCH_METHOD
+    search_method = config_schema.tree_search_method
     logger.info(
         f"Action 9 Tree Search: Method configured as '{search_method}'. Found {len(names)} names to search."
     )

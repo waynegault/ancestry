@@ -107,7 +107,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
 
 # --- Local application imports ---
 from cache import cache_result  # Caching utility
-from config import config_instance, selenium_config  # Configuration singletons
+from config import config_schema  # Configuration singletons
 from database import (  # Database models and utilities
     ConversationLog,
     DnaMatch,
@@ -146,7 +146,7 @@ from test_framework import (
 )
 
 # --- Initialization & Template Loading ---
-logger.info(f"Action 8 Initializing: APP_MODE is {config_instance.APP_MODE}")
+logger.info(f"Action 8 Initializing: APP_MODE is {config_schema.environment}")
 
 # Define message intervals based on app mode (controls time between follow-ups)
 MESSAGE_INTERVALS = {
@@ -155,7 +155,7 @@ MESSAGE_INTERVALS = {
     "dry_run": timedelta(seconds=10),  # Short interval for dry runs
 }
 MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
-    config_instance.APP_MODE, timedelta(weeks=8)
+    config_schema.environment, timedelta(weeks=8)
 )
 logger.info(f"Action 8 Using minimum message interval: {MIN_MESSAGE_INTERVAL}")
 
@@ -1148,8 +1148,8 @@ def _process_single_person(
             raise StopIteration("error (template_format)")
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
-        app_mode = config_instance.APP_MODE
-        testing_profile_id_config = config_instance.TESTING_PROFILE_ID
+        app_mode = config_schema.environment
+        testing_profile_id_config = config_schema.testing_profile_id
         # Use profile_id for filtering (should exist for contactable ACTIVE/DESIST persons)
         current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
         send_message_flag = True  # Default to sending
@@ -1261,7 +1261,7 @@ def _process_single_person(
                 if not send_message_flag
                 else message_text
             )[
-                : config_instance.MESSAGE_TRUNCATION_LENGTH
+                : config_schema.message_truncation_length
             ]  # Truncate
             current_time_for_db = datetime.now(timezone.utc)
             logger.debug(
@@ -1381,10 +1381,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     critical_db_error_occurred = False  # Track if a commit fails critically
     batch_num = 0
     db_commit_batch_size = max(
-        1, config_instance.BATCH_SIZE
+        1, config_schema.batch_size
     )  # Ensure positive batch size
     # Limit number of messages *successfully sent* (sent + acked) in one run (0 = unlimited)
-    max_messages_to_send_this_run = config_instance.MAX_INBOX  # Reuse MAX_INBOX setting
+    max_messages_to_send_this_run = config_schema.max_inbox  # Reuse MAX_INBOX setting
     overall_success = True  # Track overall process success
 
     # --- Step 2: Get DB Session and Pre-fetch Data ---

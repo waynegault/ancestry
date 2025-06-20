@@ -36,7 +36,7 @@ from cache import (
     invalidate_related_caches,
     get_cache_coordination_stats,
 )
-from config import config_instance
+from config import config_schema
 from logging_config import logger
 
 
@@ -48,9 +48,7 @@ def run_comprehensive_tests() -> bool:
     """
     from test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite(
-        "Cache Management & Performance Optimization", "cache_manager.py"
-    )
+    suite = TestSuite("Cache Management & Performance Optimization", "cache_manager.py")
     suite.start_suite()
 
     # INITIALIZATION TESTS
@@ -64,7 +62,7 @@ def run_comprehensive_tests() -> bool:
             assert hasattr(cache_manager, "max_size")
         return True
 
-    # CORE FUNCTIONALITY TESTS  
+    # CORE FUNCTIONALITY TESTS
     def test_cache_operations():
         """Test basic cache operations."""
         if "CacheManager" in globals():
@@ -95,7 +93,9 @@ def run_comprehensive_tests() -> bool:
         """Test cache eviction policies."""
         if "CacheManager" in globals():
             cache_manager = globals()["CacheManager"](max_size=2)
-            if hasattr(cache_manager, "set") and hasattr(cache_manager, "_access_order"):
+            if hasattr(cache_manager, "set") and hasattr(
+                cache_manager, "_access_order"
+            ):
                 cache_manager.set("key1", "value1")
                 cache_manager.set("key2", "value2")
                 cache_manager.set("key3", "value3")  # Should evict key1
@@ -118,6 +118,7 @@ def run_comprehensive_tests() -> bool:
             cache_manager = globals()["CacheManager"]()
             if hasattr(cache_manager, "set") and hasattr(cache_manager, "get"):
                 import time
+
                 start_time = time.time()
                 for i in range(100):
                     cache_manager.set(f"perf_key_{i}", f"value_{i}")
@@ -133,7 +134,9 @@ def run_comprehensive_tests() -> bool:
             cache_manager = globals()["CacheManager"]()
             # Test getting non-existent key
             result = cache_manager.get("non_existent_key")
-            assert result is None or result == cache_manager.get("non_existent_key", None)
+            assert result is None or result == cache_manager.get(
+                "non_existent_key", None
+            )
         return True
 
     # Run all tests using TestSuite

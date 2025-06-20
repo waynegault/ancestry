@@ -32,8 +32,12 @@ from cache import (
     get_unified_cache_key,
     invalidate_related_caches,
 )
-from config import config_instance
+from config.config_manager import ConfigManager
 from logging_config import logger
+
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
 
 # --- Test framework imports ---
 from test_framework import (
@@ -89,14 +93,13 @@ class GedcomCacheModule(BaseCacheModule):
         }
 
         # Add GEDCOM file information if available
-        if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
-            gedcom_path = config_instance.GEDCOM_FILE_PATH
-            if gedcom_path and Path(gedcom_path).exists():
-                gedcom_stats["gedcom_file_path"] = str(gedcom_path)
-                gedcom_stats["gedcom_file_size_mb"] = Path(
-                    gedcom_path
-                ).stat().st_size / (1024 * 1024)
-                gedcom_stats["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
+        gedcom_path = config_schema.database.gedcom_file_path
+        if gedcom_path and Path(gedcom_path).exists():
+            gedcom_stats["gedcom_file_path"] = str(gedcom_path)
+            gedcom_stats["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (
+                1024 * 1024
+            )
+            gedcom_stats["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
 
         # Merge with base statistics
         return {**base_stats, **gedcom_stats}
@@ -127,11 +130,13 @@ class GedcomCacheModule(BaseCacheModule):
         """Warm up GEDCOM cache with frequently accessed data."""
         try:
             # Check if GEDCOM file is available
-            if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
+            if not (
+                config_schema and hasattr(config_schema.database, "gedcom_file_path")
+            ):
                 logger.warning("No GEDCOM file path configured for cache warming")
                 return False
 
-            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            gedcom_path = config_schema.database.gedcom_file_path
             if not gedcom_path or not Path(gedcom_path).exists():
                 logger.warning(f"GEDCOM file not found: {gedcom_path}")
                 return False
@@ -176,8 +181,8 @@ class GedcomCacheModule(BaseCacheModule):
             gedcom_health = "healthy"
             gedcom_issues = []
 
-            if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
-                gedcom_path = config_instance.GEDCOM_FILE_PATH
+            if config_schema and hasattr(config_schema.database, "gedcom_file_path"):
+                gedcom_path = config_schema.database.gedcom_file_path
                 if not gedcom_path:
                     gedcom_health = "warning"
                     gedcom_issues.append("No GEDCOM file path configured")
@@ -490,11 +495,11 @@ def preload_gedcom_cache() -> bool:
     Returns:
         True if preloading successful, False otherwise
     """
-    if not config_instance or not hasattr(config_instance, "GEDCOM_FILE_PATH"):
+    if not config_schema or not hasattr(config_schema.database, "gedcom_file_path"):
         logger.debug("No GEDCOM file configured for preloading")
         return False
 
-    gedcom_path = config_instance.GEDCOM_FILE_PATH
+    gedcom_path = config_schema.database.gedcom_file_path
     if not gedcom_path or not Path(gedcom_path).exists():
         logger.debug(f"GEDCOM file not found for preloading: {gedcom_path}")
         return False
@@ -534,8 +539,8 @@ def get_gedcom_cache_info() -> Dict[str, Any]:
     }
 
     # Add GEDCOM-specific information if available
-    if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
-        gedcom_path = config_instance.GEDCOM_FILE_PATH
+    if config_schema and hasattr(config_schema.database, "gedcom_file_path"):
+        gedcom_path = config_schema.database.gedcom_file_path
         if gedcom_path and Path(gedcom_path).exists():
             info["gedcom_file"] = str(gedcom_path)
             info["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (
@@ -567,9 +572,6 @@ def warm_gedcom_cache() -> bool:
 def get_gedcom_cache_health() -> Dict[str, Any]:
     """Get GEDCOM cache health status."""
     return _gedcom_cache_module.get_health_status()
-
-
-# --- GEDCOM Cache Testing Suite ---
 
 
 def run_gedcom_cache_tests() -> Dict[str, Any]:
@@ -646,10 +648,10 @@ def run_gedcom_cache_tests() -> Dict[str, Any]:
 
     # Cache Key Generation
     def test_cache_key_generation():
-        if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
+        if not (config_schema and hasattr(config_schema.database, "gedcom_file_path")):
             return True  # Skip if no GEDCOM configured
 
-        gedcom_path = config_instance.GEDCOM_FILE_PATH
+        gedcom_path = config_schema.database.gedcom_file_path
         if not gedcom_path or not Path(gedcom_path).exists():
             return True  # Skip if file doesn't exist
 
@@ -795,8 +797,8 @@ def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
         )
 
         # Demo 3: Memory Cache Operations
-        if config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH"):
-            gedcom_path = config_instance.GEDCOM_FILE_PATH
+        if config_schema and hasattr(config_schema.database, "gedcom_file_path"):
+            gedcom_path = config_schema.database.gedcom_file_path
             if gedcom_path and Path(gedcom_path).exists():
                 # Demonstrate file-based caching
                 cache_key = _get_memory_cache_key(str(gedcom_path), "demo_operation")
@@ -1007,10 +1009,12 @@ def run_comprehensive_tests() -> bool:
     def test_cache_key_generation():
         """Test cache key generation consistency."""
         try:
-            if not (config_instance and hasattr(config_instance, "GEDCOM_FILE_PATH")):
+            if not (
+                config_schema and hasattr(config_schema.database, "gedcom_file_path")
+            ):
                 return True  # Skip if no GEDCOM configured
 
-            gedcom_path = config_instance.GEDCOM_FILE_PATH
+            gedcom_path = config_schema.database.gedcom_file_path
             if not gedcom_path or not Path(gedcom_path).exists():
                 return True  # Skip if file doesn't exist
 

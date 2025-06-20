@@ -26,7 +26,10 @@ import requests  # For making Graph API calls
 from dotenv import load_dotenv  # To load .env file
 
 # --- Local application imports ---
-from config import config_instance  # Required for DATA_DIR to store cache
+from config.config_manager import ConfigManager
+
+config_manager = ConfigManager()
+config = config_manager.get_config()
 from logging_config import logger  # Use configured application logger
 
 # --- Test framework imports ---
@@ -75,12 +78,12 @@ logger.debug("Setting up persistent MSAL token cache...")
 CACHE_FILENAME = "ms_graph_cache.bin"  # Name of the cache file
 # Ensure DATA_DIR exists before constructing path
 try:
-    if config_instance.DATA_DIR is not None:
-        config_instance.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        CACHE_FILEPATH = config_instance.DATA_DIR / CACHE_FILENAME
+    if config.database.data_dir is not None:
+        config.database.data_dir.mkdir(parents=True, exist_ok=True)
+        CACHE_FILEPATH = config.database.data_dir / CACHE_FILENAME
         logger.info(f"MSAL token cache path set to: {CACHE_FILEPATH}")
     else:
-        logger.error("config_instance.DATA_DIR is None. Cache will be in-memory only.")
+        logger.error("config.database.data_dir is None. Cache will be in-memory only.")
         CACHE_FILEPATH = None
 except Exception as dir_err:
     logger.error(
@@ -466,20 +469,11 @@ def run_comprehensive_tests() -> bool:
 
     # Initialization Tests
     def test_initialization():
-        """Test that authentication and configuration setup works."""
-        # Test that required configuration is accessible
-        assert hasattr(config_instance, "data_dir") or hasattr(
-            config_instance, "DATA_DIR"
-        ), "Config should have data directory"
-
-        # Test token cache directory creation capability
-        cache_dir = Path(
-            getattr(
-                config_instance,
-                "data_dir",
-                getattr(config_instance, "DATA_DIR", "."),
-            )
-        )
+        """Test that authentication and configuration setup works."""  # Test that required configuration is accessible
+        assert hasattr(
+            config.database, "data_dir"
+        ), "Config should have database.data_dir"  # Test token cache directory creation capability
+        cache_dir = config.database.data_dir or Path(".")
         assert (
             cache_dir.exists() or cache_dir.parent.exists()
         ), "Cache directory or parent should be accessible"

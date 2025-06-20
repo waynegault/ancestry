@@ -212,7 +212,6 @@ class ErrorRecoveryManager:
     def __init__(self):
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.recovery_strategies: Dict[str, Callable] = {}
-        self.fallback_handlers: Dict[str, Callable] = {}
 
     def get_circuit_breaker(
         self, name: str, config: Optional[CircuitBreakerConfig] = None
@@ -227,11 +226,6 @@ class ErrorRecoveryManager:
         self.recovery_strategies[service_name] = strategy
         logger.info(f"Registered recovery strategy for {service_name}")
 
-    def register_fallback_handler(self, service_name: str, handler: Callable):
-        """Register a fallback handler for a service."""
-        self.fallback_handlers[service_name] = handler
-        logger.info(f"Registered fallback handler for {service_name}")
-
     def execute_with_recovery(
         self, service_name: str, operation: Callable, *args, **kwargs
     ) -> Any:
@@ -243,28 +237,13 @@ class ErrorRecoveryManager:
         try:
             return circuit_breaker.call(operation, *args, **kwargs)
         except CircuitBreakerOpenError:
-            logger.warning(
-                f"Circuit breaker open for {service_name}, attempting fallback"
+            logger.error(
+                f"Circuit breaker open for {service_name}, operation unavailable"
             )
-            return self._attempt_fallback(service_name, *args, **kwargs)
+            raise
         except Exception as e:
             logger.error(f"Operation failed for {service_name}: {e}")
             return self._attempt_recovery(service_name, operation, e, *args, **kwargs)
-
-    def _attempt_fallback(self, service_name: str, *args, **kwargs) -> Any:
-        """Attempt fallback operation when circuit breaker is open."""
-        if service_name in self.fallback_handlers:
-            try:
-                logger.info(f"Executing fallback for {service_name}")
-                return self.fallback_handlers[service_name](*args, **kwargs)
-            except Exception as e:
-                logger.error(f"Fallback failed for {service_name}: {e}")
-                raise
-        else:
-            logger.error(f"No fallback handler registered for {service_name}")
-            raise CircuitBreakerOpenError(
-                f"Service {service_name} unavailable and no fallback"
-            )
 
     def _attempt_recovery(
         self, service_name: str, operation: Callable, error: Exception, *args, **kwargs
@@ -352,40 +331,13 @@ def ancestry_database_recovery(error: Exception):
     time.sleep(2)
 
 
-# Fallback handlers
-def ancestry_session_fallback(*args, **kwargs):
-    """Fallback when Ancestry session is unavailable."""
-    logger.warning("Using session fallback - some features may be limited")
-    return None  # Return None or minimal functionality
-
-
-def ancestry_api_fallback(*args, **kwargs):
-    """Fallback when Ancestry API is unavailable."""
-    logger.warning("Using API fallback - returning cached data or minimal response")
-    return {"status": "fallback", "data": None}
-
-
-def ancestry_database_fallback(*args, **kwargs):
-    """Fallback when database is unavailable."""
-    logger.warning("Using database fallback - data may not be persisted")
-    return True  # Pretend operation succeeded
-
-
-# Register recovery strategies and fallback handlers
+# Register recovery strategies
 error_recovery_manager.register_recovery_strategy(
     "ancestry_session", ancestry_session_recovery
 )
 error_recovery_manager.register_recovery_strategy("ancestry_api", ancestry_api_recovery)
 error_recovery_manager.register_recovery_strategy(
     "ancestry_database", ancestry_database_recovery
-)
-
-error_recovery_manager.register_fallback_handler(
-    "ancestry_session", ancestry_session_fallback
-)
-error_recovery_manager.register_fallback_handler("ancestry_api", ancestry_api_fallback)
-error_recovery_manager.register_fallback_handler(
-    "ancestry_database", ancestry_database_fallback
 )
 
 # Circuit breaker configurations for different services
@@ -560,34 +512,6 @@ def run_comprehensive_tests() -> bool:
             "Recovery strategies are available for ancestry services",
             "Verify recovery strategy functions exist for ancestry_session, ancestry_api, ancestry_database",
             "Test recovery strategy function availability for system components",
-        )
-
-        def test_fallback_handlers():
-            """Test fallback handler registration."""
-            # Test fallback handlers exist
-            handlers = [
-                "ancestry_session_fallback",
-                "ancestry_api_fallback",
-                "ancestry_database_fallback",
-            ]
-
-            handlers_found = 0
-            for handler_name in handlers:
-                if handler_name in globals():
-                    handler = globals()[handler_name]
-                    if callable(handler):
-                        handlers_found += 1
-
-            assert (
-                handlers_found >= 2
-            ), f"Expected at least 2 fallback handlers, found {handlers_found}"
-
-        suite.run_test(
-            "Fallback Handler Availability",
-            test_fallback_handlers,
-            "Fallback handlers are available for system components",
-            "Test fallback handler function availability and callability",
-            "Verify fallback handler functions exist for ancestry services",
         )
 
         # INTEGRATION TESTS

@@ -16,7 +16,6 @@ KEY FEATURES:
 - Secure file permissions (0o600 on Unix systems)
 - Comprehensive validation and error handling
 - Multiple instance support with shared credential files
-- Graceful fallback when keyring is unavailable
 
 TESTING INFORMATION:
 ====================

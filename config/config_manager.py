@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 import copy
 
+try:
+    from dotenv import load_dotenv
+
+    DOTENV_AVAILABLE = True
+except ImportError:
+    DOTENV_AVAILABLE = False
+
 from .config_schema import (
     ConfigSchema,
     DatabaseConfig,
@@ -63,6 +70,10 @@ class ConfigManager:
             environment: Environment name (development, testing, production)
             auto_load: Whether to automatically load configuration
         """
+        # Load .env file if available
+        if DOTENV_AVAILABLE:
+            load_dotenv()
+
         self.config_file = Path(config_file) if config_file else None
         self.environment = environment or os.getenv("ENVIRONMENT", "development")
         self._config_cache: Optional[ConfigSchema] = None
@@ -274,9 +285,7 @@ class ConfigManager:
 
     def _load_environment_variables(self) -> Dict[str, Any]:
         """Load configuration from environment variables."""
-        config = {}
-
-        # Load main configuration
+        config = {}  # Load main configuration
         env_value = os.getenv("ENVIRONMENT")
         if env_value:
             config["environment"] = env_value
@@ -291,11 +300,43 @@ class ConfigManager:
 
         app_name_value = os.getenv("APP_NAME")
         if app_name_value:
-            config["app_name"] = app_name_value  # Load database configuration
+            config["app_name"] = app_name_value  # Load reference person configuration
+        reference_person_id_value = os.getenv("REFERENCE_PERSON_ID")
+        if reference_person_id_value:
+            config["reference_person_id"] = reference_person_id_value
+
+        reference_person_name_value = os.getenv("REFERENCE_PERSON_NAME")
+        if reference_person_name_value:
+            config["reference_person_name"] = reference_person_name_value
+
+        # Load user configuration
+        user_name_value = os.getenv("USER_NAME")
+        if user_name_value:
+            config["user_name"] = user_name_value
+
+        user_location_value = os.getenv("USER_LOCATION")
+        if user_location_value:
+            config["user_location"] = user_location_value
+
+        # Load testing configuration
+        testing_profile_id_value = os.getenv("TESTING_PROFILE_ID")
+        if testing_profile_id_value:
+            config["testing_profile_id"] = testing_profile_id_value
+
+        # Load application mode
+        app_mode_value = os.getenv("APP_MODE")
+        if app_mode_value:
+            config["app_mode"] = app_mode_value
+
+        # Load database configuration
         db_config = {}
         database_file_value = os.getenv("DATABASE_FILE")
         if database_file_value:
             db_config["database_file"] = Path(database_file_value)
+
+        gedcom_file_path_value = os.getenv("GEDCOM_FILE_PATH")
+        if gedcom_file_path_value:
+            db_config["gedcom_file_path"] = Path(gedcom_file_path_value)
 
         db_pool_size_value = os.getenv("DB_POOL_SIZE")
         if db_pool_size_value:

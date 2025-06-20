@@ -27,10 +27,9 @@ from selenium.common.exceptions import (
 import undetected_chromedriver as uc  # Added import for uc.Chrome
 
 # --- Local application imports ---
-from config import config_instance, selenium_config
-from logging_config import logger
+from config import config_schema
 
-# Note: Removed urllib3 and psutil imports as they weren't used here
+from logging_config import logger
 
 # --- Test framework imports ---
 from test_framework import (
@@ -110,7 +109,7 @@ def extract_attribute(element, selector: str, attribute: str) -> str:
             from urllib.parse import urljoin  # Local import for utility
 
             if value.startswith("/"):
-                return urljoin(config_instance.BASE_URL, value)
+                return urljoin(config_schema.api.base_url, value)
             # Keep absolute and other protocols as is
             elif (
                 value.startswith("http://")
@@ -121,7 +120,7 @@ def extract_attribute(element, selector: str, attribute: str) -> str:
             else:  # Assume relative path without leading slash (less common)
                 # This might need context (current URL) for perfect resolution,
                 # but joining with base is a reasonable default.
-                return urljoin(config_instance.BASE_URL, value)
+                return urljoin(config_schema.api.base_url, value)
         return value if value else ""
     except NoSuchElementException:
         logger.debug(f"Element '{selector}' not found for attribute '{attribute}'.")
@@ -146,7 +145,7 @@ def is_elem_there(
     if driver is None:
         logger.warning("is_elem_there: WebDriver is None.")
         return False
-    effective_wait = wait if wait is not None else selenium_config.ELEMENT_TIMEOUT
+    effective_wait = wait if wait is not None else config_schema.selenium.explicit_wait
     try:
         WebDriverWait(driver, effective_wait).until(
             EC.presence_of_element_located((by, value))

@@ -70,7 +70,7 @@ except ImportError:
 # --- Local application imports ---
 from utils import SessionManager, _api_req, format_name
 from gedcom_utils import _parse_date, _clean_display_date
-from config import config_instance, selenium_config
+from config import config_schema
 from database import Person  # Required for call_send_message_api
 
 # Note: format_api_relationship_path has been moved to relationship_utils.py
@@ -854,8 +854,8 @@ def parse_ancestry_person_details(
         details["death_date"] = str(details["api_death_obj"].year)
     # End of if
 
-    base_url_for_link = getattr(
-        config_instance, "BASE_URL", "https://www.ancestry.com"
+    base_url_for_link = (
+        config_schema.api.base_url or "https://www.ancestry.com"
     ).rstrip("/")
 
     link_id = details["user_id"] or details["person_id"]
@@ -907,8 +907,8 @@ def _get_api_timeout(default: int = 60) -> int:
         the default value is used and a warning is logged.
     """
     timeout_value = default
-    if selenium_config and hasattr(selenium_config, "API_TIMEOUT"):
-        config_timeout = getattr(selenium_config, "API_TIMEOUT")
+    if config_schema.selenium and hasattr(config_schema.selenium, "api_timeout"):
+        config_timeout = config_schema.selenium.api_timeout
         if isinstance(config_timeout, (int, float)) and config_timeout > 0:
             timeout_value = int(config_timeout)
         else:
@@ -1792,7 +1792,7 @@ def call_send_message_api(
         return SEND_ERROR_API_PREP_FAILED, None
     # End of if
 
-    app_mode = getattr(config_instance, "APP_MODE", "unknown")
+    app_mode = config_schema.app_mode
     if app_mode == "dry_run":
         message_status = SEND_SUCCESS_DRY_RUN
         effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
@@ -1818,7 +1818,7 @@ def call_send_message_api(
     api_headers: Dict[str, Any] = {}
 
     try:
-        base_url_cfg = getattr(config_instance, "BASE_URL", "https://www.ancestry.com")
+        base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
         if is_initial:
             send_api_url = urljoin(
                 base_url_cfg.rstrip("/") + "/", API_PATH_SEND_MESSAGE_NEW
@@ -1854,9 +1854,7 @@ def call_send_message_api(
             return SEND_ERROR_API_PREP_FAILED, None
         # End of if/elif/else
 
-        ctx_headers = getattr(config_instance, "API_CONTEXTUAL_HEADERS", {}).get(
-            send_api_desc, {}
-        )
+        ctx_headers = config_schema.api.api_contextual_headers.get(send_api_desc, {})
         api_headers = ctx_headers.copy()
 
     except Exception as prep_err:
@@ -2001,7 +1999,7 @@ def call_profile_details_api(
             time.sleep(wait_time)
         api_rate_limiter.record_request()
 
-    base_url_cfg = getattr(config_instance, "BASE_URL", "https://www.ancestry.com")
+    base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
     profile_url = urljoin(
         base_url_cfg,
         f"{API_PATH_PROFILE_DETAILS}?userId={profile_id.upper()}",
@@ -2142,7 +2140,7 @@ def call_header_trees_api_for_tree_id(
         raise ImportError("_api_req function not available from utils")
     # End of if
 
-    base_url_cfg = getattr(config_instance, "BASE_URL", "https://www.ancestry.com")
+    base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
     url = urljoin(base_url_cfg.rstrip("/") + "/", API_PATH_HEADER_TREES)
     api_description = "Header Trees API (Nav Data)"
 
@@ -2271,7 +2269,7 @@ def call_tree_owner_api(
         raise ImportError("_api_req function not available from utils")
     # End of if
 
-    base_url_cfg = getattr(config_instance, "BASE_URL", "https://www.ancestry.com")
+    base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
     url = urljoin(
         base_url_cfg.rstrip("/") + "/", f"{API_PATH_TREE_OWNER_INFO}?tree_id={tree_id}"
     )
@@ -2700,9 +2698,9 @@ def run_comprehensive_tests() -> bool:
     def test_config_integration():
         """Test integration with configuration management."""
         try:
-            from config import config_instance
+            from config import config_schema
 
-            assert config_instance is not None, "Config instance should be available"
+            assert config_schema is not None, "Config schema should be available"
         except ImportError:
             pass  # Config integration may not be available in test environment
 
@@ -2920,7 +2918,7 @@ def run_comprehensive_tests() -> bool:
         test_config_integration,
         "Configuration integration should work seamlessly",
         "Integration with configuration management works correctly",
-        "Test accessing config_instance and BASE_URL configuration",
+        "Test accessing config_schema and base_url configuration",
     )
 
     suite.run_test(

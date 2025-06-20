@@ -55,8 +55,12 @@ from sqlalchemy.orm import (
 )
 
 # --- Local application imports ---
-from config import config_instance
+from config.config_manager import ConfigManager
 from logging_config import logger
+
+# Initialize config
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
 
 # Note: SessionManager imported locally when needed to avoid circular imports
 
@@ -2321,8 +2325,8 @@ def backup_database(_session_manager=None):
         True if backup was successful, False otherwise.
     """
     # Step 1: Get paths from config
-    db_path = config_instance.DATABASE_FILE
-    backup_dir = config_instance.DATA_DIR
+    db_path = config_schema.database.database_file
+    backup_dir = config_schema.database.data_dir
 
     # Step 2: Validate paths
     if db_path is None:
@@ -2771,7 +2775,7 @@ if __name__ == "__main__":
     try:
         from logging_config import setup_logging  # Local import
 
-        db_file_path = config_instance.DATABASE_FILE
+        db_file_path = config_schema.database.database_file
         if db_file_path is not None:
             log_filename_only = db_file_path.with_suffix(".log").name
             standalone_logger = setup_logging(
@@ -2803,8 +2807,8 @@ if __name__ == "__main__":
 
     try:
         # Step 2: Get database path and create engine
-        if config_instance:
-            db_path_obj = config_instance.DATABASE_FILE
+        if config_schema:
+            db_path_obj = config_schema.database.database_file
             if db_path_obj is None:
                 standalone_logger.error(
                     "DATABASE_FILE is not configured. Using in-memory database."
@@ -3296,8 +3300,8 @@ def run_comprehensive_tests() -> bool:
 
         def test_configuration_error_handling():
             """Test handling of configuration-related errors."""
-            # Test that config_instance is available
-            assert config_instance is not None, "config_instance should be imported"
+            # Test that config_schema is available
+            assert config_schema is not None, "config_schema should be imported"
 
             # Test that logger is available
             assert logger is not None, "logger should be imported"
