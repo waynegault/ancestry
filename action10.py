@@ -16,6 +16,11 @@ import sys
 from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
 from pathlib import Path
 
+# --- Path management and optimization imports ---
+from path_manager import standardize_module_imports, function_registry, safe_execute
+
+standardize_module_imports()
+
 # --- Local application imports ---
 from config import config_manager, config_schema
 from logging_config import logger
@@ -1332,32 +1337,37 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
-# --- Provide missing functions for test compatibility ---
-def filter_gedcom_data(data, criteria):
-    # Placeholder: return data unchanged or filter as needed
-    return data
+# Register module functions for optimized access via Function Registry
+def _register_action10_functions():
+    """Register this module's key functions with the Function Registry for optimized access."""
+    try:
+        # Register key functions that are commonly accessed
+        function_registry.register("main", main)
+        function_registry.register("load_gedcom_data", load_gedcom_data)
+        function_registry.register("get_user_criteria", get_user_criteria)
+        function_registry.register(
+            "filter_and_score_individuals", filter_and_score_individuals
+        )
+        function_registry.register("display_top_matches", display_top_matches)
+        function_registry.register("analyze_top_match", analyze_top_match)
+        function_registry.register("run_comprehensive_tests", run_comprehensive_tests)
+
+        logger.debug(
+            f"✅ Registered {len(function_registry.get_available_functions())} functions in Action 10"
+        )
+    except Exception as e:
+        logger.debug(f"⚠️ Function registration failed: {e}")
 
 
-def score_individual(ind, weights):
-    # Placeholder: return a positive score for test
-    return 1
-
-
-def find_relationship_path(data, individual_id):
-    # Placeholder: return a dummy path for test
-    return [individual_id]
+# Register functions when module loads
+_register_action10_functions()
 
 
 # ==============================================
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    import traceback
-
-    project_root = Path(__file__).resolve().parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
+    import traceback  # Use centralized path management - already handled at module level
     from logging_config import setup_logging
 
     logger = setup_logging()

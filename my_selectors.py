@@ -1,3 +1,5 @@
+from path_manager import function_registry, standardize_module_imports
+standardize_module_imports()
 #!/usr/bin/env python3
 
 # my_selectors.py
@@ -131,8 +133,8 @@ def run_comprehensive_tests() -> bool:
         ]
 
         for selector_name in basic_selectors_12345:
-            if selector_name in globals():
-                selector_value = globals()[selector_name]
+            if selector_name in function_registry.registry:
+                selector_value = function_registry.registry[selector_name]
                 assert isinstance(
                     selector_value, str
                 ), f"{selector_name} should be a string"
@@ -176,7 +178,7 @@ def run_comprehensive_tests() -> bool:
         """Test edge cases and special selector formats."""
         # Test selectors with placeholders
         placeholder_selectors_12345 = []
-        for name, value in globals().items():
+        for name, value in function_registry.registry.items():
             if isinstance(value, str) and "{" in value and "}" in value:
                 placeholder_selectors_12345.append((name, value))
 
@@ -205,16 +207,16 @@ def run_comprehensive_tests() -> bool:
         """Test selector organization and completeness."""
         # Count selectors by category
         login_selectors = [
-            name for name in globals() if "LOGIN" in name and name.endswith("_SELECTOR")
+            name for name in function_registry.registry if "LOGIN" in name and name.endswith("_SELECTOR")
         ]
         message_selectors = [
             name
-            for name in globals()
+            for name in function_registry.registry
             if ("MESSAGE" in name or "INBOX" in name) and name.endswith("_SELECTOR")
         ]
         error_selectors = [
             name
-            for name in globals()
+            for name in function_registry.registry
             if ("ERROR" in name or "UNAVAILABLE" in name) and name.endswith("_SELECTOR")
         ]
 
@@ -226,7 +228,7 @@ def run_comprehensive_tests() -> bool:
         assert len(error_selectors) >= 3, "Should have error-related selectors defined"
 
         # Test that all selector constants follow naming convention
-        all_selectors = [name for name in globals() if name.endswith("_SELECTOR")]
+        all_selectors = [name for name in function_registry.registry if name.endswith("_SELECTOR")]
         for selector_name in all_selectors:
             assert (
                 selector_name.isupper()
@@ -240,7 +242,7 @@ def run_comprehensive_tests() -> bool:
         """Test selector efficiency and structure."""
         # Test selector complexity (avoid overly complex selectors)
         complex_selectors = []
-        for name, value in globals().items():
+        for name, value in function_registry.registry.items():
             if isinstance(value, str) and name.endswith("_SELECTOR"):
                 # Count selector complexity indicators
                 complexity_score = (
@@ -258,7 +260,7 @@ def run_comprehensive_tests() -> bool:
 
         # Test for duplicate selectors (same value)
         selector_values = {}
-        for name, value in globals().items():
+        for name, value in function_registry.registry.items():
             if isinstance(value, str) and name.endswith("_SELECTOR"):
                 if value in selector_values:
                     print(
@@ -277,7 +279,7 @@ def run_comprehensive_tests() -> bool:
         for error_type in error_types:
             matching_selectors = [
                 name
-                for name in globals()
+                for name in function_registry.registry
                 if error_type in name and name.endswith("_SELECTOR")
             ]
             error_selectors.extend(matching_selectors)
@@ -288,8 +290,8 @@ def run_comprehensive_tests() -> bool:
 
         # Test that error selectors target appropriate elements
         for name in error_selectors:
-            if name in globals():
-                selector = globals()[name]
+            if name in function_registry.registry:
+                selector = function_registry.registry[name]
                 # Error selectors should typically target headers, divs, or spans
                 assert any(
                     tag in selector.lower()

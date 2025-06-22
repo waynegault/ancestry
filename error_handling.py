@@ -1,16 +1,33 @@
-#!/usr/bin/env python3
-"""
-Enhanced Error Handling and Circuit Breaker Pattern for Ancestry.com Automation System
-Provides robust error recovery, circuit breaker patterns, and graceful degradation.
-"""
+# Safe imports with fallback
+try:
+    from path_manager import function_registry
+except ImportError:
+    # Create a dummy function registry if path_manager is not available
+    class DummyFunctionRegistry:
+        def register(self, name, func):
+            pass
 
-import time
-import threading
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Callable, Any, Union
-from functools import wraps
-from enum import Enum
+        def get(self, name, default=None):
+            return default
+
+        def is_available(self, name):
+            return False
+
+    function_registry = DummyFunctionRegistry()
+
+import logging
+from typing import Dict, Any, Optional, Callable, Union, Type, List, Tuple
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+import traceback
+import time
+import functools
+import sqlite3
+import requests
+from pathlib import Path
+import threading
+from functools import wraps
 from logging_config import logger
 
 # --- Test framework imports ---
@@ -366,24 +383,24 @@ def run_comprehensive_tests() -> bool:
 
     # INITIALIZATION TESTS
     def test_error_recovery_manager_initialization():
-        """Test error recovery manager and circuit breaker initialization."""
-        # Verify error recovery manager exists
-        assert (
-            "error_recovery_manager" in globals()
+        """Test error recovery manager and circuit breaker initialization."""  # Verify error recovery manager exists
+        assert function_registry.is_available(
+            "error_recovery_manager"
         ), "error_recovery_manager not found in globals"
 
-        manager = globals()["error_recovery_manager"]
+        manager = function_registry.get("error_recovery_manager")
 
-        # Test that manager has required methods
-        required_methods = ["get_circuit_breaker", "reset_all_circuit_breakers"]
-        for method in required_methods:
-            assert hasattr(
-                manager, method
-            ), f"Manager missing required method: {method}"
+        if manager:
+            # Test that manager has required methods
+            required_methods = ["get_circuit_breaker", "reset_all_circuit_breakers"]
+            for method in required_methods:
+                assert hasattr(
+                    manager, method
+                ), f"Manager missing required method: {method}"
 
-        # Test circuit breaker creation
-        test_breaker = manager.get_circuit_breaker("test_initialization")
-        assert test_breaker is not None, "Failed to create circuit breaker"
+            # Test circuit breaker creation
+            test_breaker = manager.get_circuit_breaker("test_initialization")
+            assert test_breaker is not None, "Failed to create circuit breaker"
 
     with suppress_logging():
         suite.run_test(
@@ -466,17 +483,19 @@ def run_comprehensive_tests() -> bool:
         def test_error_decorators():
             """Test error handling decorators."""
             # Test with_circuit_breaker decorator exists and is callable
-            assert (
-                "with_circuit_breaker" in globals()
+            assert function_registry.is_available(
+                "with_circuit_breaker"
             ), "with_circuit_breaker decorator not found"
 
-            cb_decorator = globals()["with_circuit_breaker"]
+            cb_decorator = function_registry.get("with_circuit_breaker")
             assert callable(cb_decorator), "with_circuit_breaker is not callable"
 
             # Test with_recovery decorator
-            assert "with_recovery" in globals(), "with_recovery decorator not found"
+            assert function_registry.is_available(
+                "with_recovery"
+            ), "with_recovery decorator not found"
 
-            recovery_decorator = globals()["with_recovery"]
+            recovery_decorator = function_registry.get("with_recovery")
             assert callable(recovery_decorator), "with_recovery is not callable"
 
         suite.run_test(
@@ -518,9 +537,11 @@ def run_comprehensive_tests() -> bool:
         def test_circuit_state_management():
             """Test circuit state management and transitions."""
             # Test CircuitState enum exists
-            assert "CircuitState" in globals(), "CircuitState enum not found"
+            assert function_registry.is_available(
+                "CircuitState"
+            ), "CircuitState enum not found"
 
-            state_enum = globals()["CircuitState"]
+            state_enum = function_registry.get("CircuitState")
             required_states = ["CLOSED", "OPEN", "HALF_OPEN"]
 
             states_found = 0

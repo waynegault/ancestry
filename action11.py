@@ -1,3 +1,5 @@
+from path_manager import function_registry, standardize_module_imports
+standardize_module_imports()
 #!/usr/bin/env python3
 # --- START OF FILE action11.py ---
 # action11.py
@@ -3572,7 +3574,7 @@ def run_comprehensive_tests() -> bool:
     def test_search_functions():
         """Test that search-related functions exist"""
         assert (
-            "_get_search_criteria" in globals()
+            function_registry.is_available("_get_search_criteria")
         ), "Search criteria function should exist in globals"
 
         # Test with test data containing the required identifier
@@ -3592,10 +3594,10 @@ def run_comprehensive_tests() -> bool:
     def test_scoring_functions():
         """Test scoring and ranking functions"""
         assert (
-            "_process_and_score_suggestions" in globals()
+            function_registry.is_available("_process_and_score_suggestions")
         ), "Scoring function should exist"
         assert (
-            "_run_simple_suggestion_scoring" in globals()
+            function_registry.is_available("_run_simple_suggestion_scoring")
         ), "Simple scoring function should exist"
 
         # Test data for scoring validation
@@ -3611,10 +3613,10 @@ def run_comprehensive_tests() -> bool:
     def test_display_functions():
         """Test result display functions"""
         assert (
-            "_display_search_results" in globals()
+            function_registry.is_available("_display_search_results")
         ), "Display results function should exist"
         assert (
-            "_display_initial_comparison" in globals()
+            function_registry.is_available("_display_initial_comparison")
         ), "Display comparison function should exist"
 
         # Test data for display validation
@@ -3629,16 +3631,16 @@ def run_comprehensive_tests() -> bool:
 
     def test_api_integration_functions():
         """Test API integration handlers"""
-        assert "_handle_search_phase" in globals(), "Search phase handler should exist"
+        assert function_registry.is_available("_handle_search_phase"), "Search phase handler should exist"
         assert (
-            "_handle_selection_phase" in globals()
+            function_registry.is_available("_handle_selection_phase")
         ), "Selection phase handler should exist"
 
     # === EDGE CASE TESTS ===
     def test_empty_globals_handling():
         """Test handling of missing functions gracefully"""
         # This should not crash even if some functions are missing
-        result = "_nonexistent_function" in globals()
+        result = function_registry.is_available("_nonexistent_function")
         assert result == False, "Non-existent function check should return False"
 
     def test_function_callable_check():
@@ -3650,28 +3652,28 @@ def run_comprehensive_tests() -> bool:
     def test_family_functions():
         """Test family data processing functions"""
         assert (
-            "_display_family_info" in globals()
+            function_registry.is_available("_display_family_info")
         ), "Family info display function should exist"
         assert (
-            "_display_tree_relationship" in globals()
+            function_registry.is_available("_display_tree_relationship")
         ), "Tree relationship display function should exist"
 
     def test_data_extraction_functions():
         """Test data extraction functions"""
         assert (
-            "_extract_fact_data" in globals()
+            function_registry.is_available("_extract_fact_data")
         ), "Fact data extraction function should exist"
         assert (
-            "_extract_detailed_info" in globals()
+            function_registry.is_available("_extract_detailed_info")
         ), "Detailed info extraction function should exist"
 
     def test_utility_functions():
         """Test utility and helper functions"""
         assert (
-            "_parse_treesui_list_response" in globals()
+            function_registry.is_available("_parse_treesui_list_response")
         ), "Tree UI list parser should exist"
         assert (
-            "_flatten_children_list" in globals()
+            function_registry.is_available("_flatten_children_list")
         ), "Children list flattener should exist"
 
     # === PERFORMANCE TESTS ===
@@ -3730,8 +3732,8 @@ def run_comprehensive_tests() -> bool:
 
         try:
             return (
-                "run_standalone_fraser_test" in globals()
-                and "load_test_person_from_env" in globals()
+                function_registry.is_available("run_standalone_fraser_test")
+                and function_registry.is_available("load_test_person_from_env")
             )
         except Exception:
             return True  # Exception is acceptable

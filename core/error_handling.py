@@ -790,11 +790,18 @@ def run_comprehensive_tests() -> bool:
 if __name__ == "__main__":
     import sys
     import traceback
-    from pathlib import Path
+    from pathlib import Path  # Use centralized path management
 
-    # Add project root to allow relative imports
     project_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(project_root))
+    try:
+        # Replaced with standardize_module_imports()
+        from path_manager import ensure_imports
+
+        ensure_imports()
+    except ImportError:
+        # Fallback for testing environment
+        # Replaced with standardize_module_imports()
+        pass
 
     print("\U0001faea Running Error Handling comprehensive test suite...")
     try:

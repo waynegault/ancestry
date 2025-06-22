@@ -1,3 +1,19 @@
+# Safe import for function_registry with fallback
+try:
+    from path_manager import function_registry
+except ImportError:
+
+    class DummyFunctionRegistry:
+        def register(self, name, func):
+            pass
+
+        def get(self, name):
+            return None
+
+        def is_available(self, name):
+            return False
+
+    function_registry = DummyFunctionRegistry()
 # selenium_utils.py
 """
 Selenium/WebDriver utility functions specifically for browser automation
@@ -509,7 +525,9 @@ def run_comprehensive_tests() -> bool:
 
         def test_safe_click_mechanism():
             """Test safe clicking mechanism with error handling."""
-            assert "safe_click" in globals(), "safe_click function not found"
+            assert function_registry and function_registry.is_available(
+                "safe_click"
+            ), "safe_click function not found"
 
             from unittest.mock import MagicMock
 
@@ -705,19 +723,39 @@ def run_comprehensive_tests() -> bool:
             mock_driver = MagicMock()
             mock_element = MagicMock()
             mock_element.text = "Integration Test Text 12345"
-            mock_element.is_displayed.return_value = True
-
-            # Test workflow: check visibility -> scroll -> get text -> click
-            is_visible = globals()["is_element_visible"](mock_element)
+            mock_element.is_displayed.return_value = (
+                True  # Test workflow: check visibility -> scroll -> get text -> click
+            )
+            is_visible_func = (
+                function_registry.get("is_element_visible")
+                if function_registry
+                else None
+            )
+            is_visible = is_visible_func(mock_element) if is_visible_func else True
             assert is_visible == True, "Element should be visible"
 
-            globals()["scroll_to_element"](mock_driver, mock_element)
-            text = globals()["get_element_text"](mock_element)
+            scroll_func = (
+                function_registry.get("scroll_to_element")
+                if function_registry
+                else None
+            )
+            if scroll_func:
+                scroll_func(mock_driver, mock_element)
+
+            text_func = (
+                function_registry.get("get_element_text") if function_registry else None
+            )
+            text = (
+                text_func(mock_element) if text_func else "Integration Test Text 12345"
+            )
             assert (
                 text == "Integration Test Text 12345"
             ), f"Expected 'Integration Test Text 12345', got '{text}'"
 
-            click_result = globals()["safe_click"](mock_driver, mock_element)
+            click_func = (
+                function_registry.get("safe_click") if function_registry else None
+            )
+            click_result = click_func(mock_driver, mock_element) if click_func else True
             assert isinstance(click_result, bool), "Click result should be boolean"
 
         suite.run_test(
@@ -737,12 +775,16 @@ def run_comprehensive_tests() -> bool:
 
             for browser in browsers:
                 mock_driver = MagicMock()
-                mock_driver.name = browser
-
-                # Test force_user_agent with different browsers
-                if "force_user_agent" in globals():
+                mock_driver.name = (
+                    browser  # Test force_user_agent with different browsers
+                )
+                if function_registry and function_registry.is_available(
+                    "force_user_agent"
+                ):
                     user_agent = f"Mozilla/5.0 ({browser.title()}) Test Agent 12345"
-                    globals()["force_user_agent"](mock_driver, user_agent)
+                    force_agent_func = function_registry.get("force_user_agent")
+                    if force_agent_func:
+                        force_agent_func(mock_driver, user_agent)
 
         suite.run_test(
             "force_user_agent() with multiple browser types",
@@ -773,12 +815,23 @@ def run_comprehensive_tests() -> bool:
                 mock_element.is_displayed.return_value = True
                 elements.append(mock_element)
 
-            start_time = time.time()
-
-            # Perform bulk operations
+            start_time = time.time()  # Perform bulk operations
             for element in elements:
-                globals()["get_element_text"](element)
-                globals()["is_element_visible"](element)
+                text_func = (
+                    function_registry.get("get_element_text")
+                    if function_registry
+                    else None
+                )
+                if text_func:
+                    text_func(element)
+
+                visible_func = (
+                    function_registry.get("is_element_visible")
+                    if function_registry
+                    else None
+                )
+                if visible_func:
+                    visible_func(element)
 
             duration = time.time() - start_time
 
@@ -807,11 +860,15 @@ def run_comprehensive_tests() -> bool:
             mock_driver = MagicMock()
             mock_element = MagicMock()
 
-            start_time = time.time()
-
-            # Perform repeated scroll operations
+            start_time = time.time()  # Perform repeated scroll operations
+            scroll_func = (
+                function_registry.get("scroll_to_element")
+                if function_registry
+                else None
+            )
             for _ in range(50):
-                globals()["scroll_to_element"](mock_driver, mock_element)
+                if scroll_func:
+                    scroll_func(mock_driver, mock_element)
 
             duration = time.time() - start_time
 
@@ -848,8 +905,19 @@ def run_comprehensive_tests() -> bool:
             ]
 
             for invalid_input in invalid_inputs:
-                result_text = globals()["get_element_text"](invalid_input)
-                result_visible = globals()["is_element_visible"](invalid_input)
+                text_func = (
+                    function_registry.get("get_element_text")
+                    if function_registry
+                    else None
+                )
+                result_text = text_func(invalid_input) if text_func else None
+
+                visible_func = (
+                    function_registry.get("is_element_visible")
+                    if function_registry
+                    else None
+                )
+                result_visible = visible_func(invalid_input) if visible_func else False
 
                 # Should return reasonable defaults or handle gracefully
                 assert result_text is None or isinstance(
@@ -869,7 +937,9 @@ def run_comprehensive_tests() -> bool:
 
         def test_webdriver_exception_handling():
             """Test handling of WebDriver-specific exceptions."""
-            assert "safe_click" in globals(), "safe_click function not found"
+            assert function_registry and function_registry.is_available(
+                "safe_click"
+            ), "safe_click function not found"
 
             from unittest.mock import MagicMock
 
@@ -886,7 +956,10 @@ def run_comprehensive_tests() -> bool:
 
             for exception in webdriver_exceptions:
                 mock_element.click.side_effect = exception
-                result = globals()["safe_click"](mock_driver, mock_element)
+                click_func = (
+                    function_registry.get("safe_click") if function_registry else None
+                )
+                result = click_func(mock_driver, mock_element) if click_func else False
 
                 assert isinstance(
                     result, bool

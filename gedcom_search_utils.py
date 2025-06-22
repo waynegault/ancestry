@@ -1,3 +1,152 @@
+from path_manager import function_registry, standardize_module_imports
+
+# Auto-register functions for optimized access
+# Auto-register functions for optimized access
+try:
+    _current_module = globals()
+    if "set_cached_gedcom_data" in _current_module and callable(
+        _current_module["set_cached_gedcom_data"]
+    ):
+        function_registry.register(
+            "set_cached_gedcom_data", _current_module["set_cached_gedcom_data"]
+        )
+    if "get_cached_gedcom_data" in _current_module and callable(
+        _current_module["get_cached_gedcom_data"]
+    ):
+        function_registry.register(
+            "get_cached_gedcom_data", _current_module["get_cached_gedcom_data"]
+        )
+    if "load_gedcom_data" in _current_module and callable(
+        _current_module["load_gedcom_data"]
+    ):
+        function_registry.register(
+            "load_gedcom_data", _current_module["load_gedcom_data"]
+        )
+    if "get_gedcom_data" in _current_module and callable(
+        _current_module["get_gedcom_data"]
+    ):
+        function_registry.register(
+            "get_gedcom_data", _current_module["get_gedcom_data"]
+        )
+    if "matches_criterion" in _current_module and callable(
+        _current_module["matches_criterion"]
+    ):
+        function_registry.register(
+            "matches_criterion", _current_module["matches_criterion"]
+        )
+    if "matches_year_criterion" in _current_module and callable(
+        _current_module["matches_year_criterion"]
+    ):
+        function_registry.register(
+            "matches_year_criterion", _current_module["matches_year_criterion"]
+        )
+    if "search_gedcom_for_criteria" in _current_module and callable(
+        _current_module["search_gedcom_for_criteria"]
+    ):
+        function_registry.register(
+            "search_gedcom_for_criteria", _current_module["search_gedcom_for_criteria"]
+        )
+    if "get_gedcom_family_details" in _current_module and callable(
+        _current_module["get_gedcom_family_details"]
+    ):
+        function_registry.register(
+            "get_gedcom_family_details", _current_module["get_gedcom_family_details"]
+        )
+    if "get_gedcom_relationship_path" in _current_module and callable(
+        _current_module["get_gedcom_relationship_path"]
+    ):
+        function_registry.register(
+            "get_gedcom_relationship_path",
+            _current_module["get_gedcom_relationship_path"],
+        )
+    if "run_comprehensive_tests" in _current_module and callable(
+        _current_module["run_comprehensive_tests"]
+    ):
+        function_registry.register(
+            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
+        )
+    if "search_frances_milne_demo" in _current_module and callable(
+        _current_module["search_frances_milne_demo"]
+    ):
+        function_registry.register(
+            "search_frances_milne_demo", _current_module["search_frances_milne_demo"]
+        )
+except Exception:
+    pass  # Silent registration - don't break module loading
+
+try:
+    _current_module = globals()
+    if "set_cached_gedcom_data" in _current_module and callable(
+        _current_module["set_cached_gedcom_data"]
+    ):
+        function_registry.register(
+            "set_cached_gedcom_data", _current_module["set_cached_gedcom_data"]
+        )
+    if "get_cached_gedcom_data" in _current_module and callable(
+        _current_module["get_cached_gedcom_data"]
+    ):
+        function_registry.register(
+            "get_cached_gedcom_data", _current_module["get_cached_gedcom_data"]
+        )
+    if "load_gedcom_data" in _current_module and callable(
+        _current_module["load_gedcom_data"]
+    ):
+        function_registry.register(
+            "load_gedcom_data", _current_module["load_gedcom_data"]
+        )
+    if "get_gedcom_data" in _current_module and callable(
+        _current_module["get_gedcom_data"]
+    ):
+        function_registry.register(
+            "get_gedcom_data", _current_module["get_gedcom_data"]
+        )
+    if "matches_criterion" in _current_module and callable(
+        _current_module["matches_criterion"]
+    ):
+        function_registry.register(
+            "matches_criterion", _current_module["matches_criterion"]
+        )
+    if "matches_year_criterion" in _current_module and callable(
+        _current_module["matches_year_criterion"]
+    ):
+        function_registry.register(
+            "matches_year_criterion", _current_module["matches_year_criterion"]
+        )
+    if "search_gedcom_for_criteria" in _current_module and callable(
+        _current_module["search_gedcom_for_criteria"]
+    ):
+        function_registry.register(
+            "search_gedcom_for_criteria", _current_module["search_gedcom_for_criteria"]
+        )
+    if "get_gedcom_family_details" in _current_module and callable(
+        _current_module["get_gedcom_family_details"]
+    ):
+        function_registry.register(
+            "get_gedcom_family_details", _current_module["get_gedcom_family_details"]
+        )
+    if "get_gedcom_relationship_path" in _current_module and callable(
+        _current_module["get_gedcom_relationship_path"]
+    ):
+        function_registry.register(
+            "get_gedcom_relationship_path",
+            _current_module["get_gedcom_relationship_path"],
+        )
+    if "run_comprehensive_tests" in _current_module and callable(
+        _current_module["run_comprehensive_tests"]
+    ):
+        function_registry.register(
+            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
+        )
+    if "search_frances_milne_demo" in _current_module and callable(
+        _current_module["search_frances_milne_demo"]
+    ):
+        function_registry.register(
+            "search_frances_milne_demo", _current_module["search_frances_milne_demo"]
+        )
+except Exception:
+    pass  # Silent registration - don't break module loading
+
+standardize_module_imports()
 #!/usr/bin/env python3
 
 # gedcom_search_utils.py
@@ -955,8 +1104,7 @@ def run_comprehensive_tests() -> bool:
                     }
                     id_to_parents = {"@I1@": {"@I2@"}, "@I2@": set()}
                     id_to_children = {"@I2@": {"@I1@"}, "@I1@": set()}
-                    indi_index = {"@I1@": StubIndividual(), "@I2@": StubIndividual()}  # type: ignore
-                    reader = None
+                    indi_index = {"@I1@": StubIndividual(), "@I2@": StubIndividual()}  # type: ignore                    reader = None
 
                 orig_bfs = globals()["fast_bidirectional_bfs"]
                 globals()["fast_bidirectional_bfs"] = lambda *a, **kw: ["@I1@", "@I2@"]

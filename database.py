@@ -1,3 +1,137 @@
+from path_manager import function_registry, standardize_module_imports
+# Auto-register functions for optimized access
+# Auto-register functions for optimized access
+try:
+    _current_module = globals()
+    if "db_transn" in _current_module and callable(_current_module["db_transn"]):
+        function_registry.register("db_transn", _current_module["db_transn"])
+    if "create_person" in _current_module and callable(_current_module["create_person"]):
+        function_registry.register("create_person", _current_module["create_person"])
+    if "create_or_update_dna_match" in _current_module and callable(_current_module["create_or_update_dna_match"]):
+        function_registry.register("create_or_update_dna_match", _current_module["create_or_update_dna_match"])
+    if "create_or_update_family_tree" in _current_module and callable(_current_module["create_or_update_family_tree"]):
+        function_registry.register("create_or_update_family_tree", _current_module["create_or_update_family_tree"])
+    if "create_or_update_person" in _current_module and callable(_current_module["create_or_update_person"]):
+        function_registry.register("create_or_update_person", _current_module["create_or_update_person"])
+    if "get_person_by_profile_id_and_username" in _current_module and callable(_current_module["get_person_by_profile_id_and_username"]):
+        function_registry.register("get_person_by_profile_id_and_username", _current_module["get_person_by_profile_id_and_username"])
+    if "get_person_by_profile_id" in _current_module and callable(_current_module["get_person_by_profile_id"]):
+        function_registry.register("get_person_by_profile_id", _current_module["get_person_by_profile_id"])
+    if "get_person_and_dna_match" in _current_module and callable(_current_module["get_person_and_dna_match"]):
+        function_registry.register("get_person_and_dna_match", _current_module["get_person_and_dna_match"])
+    if "exclude_deleted_persons" in _current_module and callable(_current_module["exclude_deleted_persons"]):
+        function_registry.register("exclude_deleted_persons", _current_module["exclude_deleted_persons"])
+    if "find_existing_person" in _current_module and callable(_current_module["find_existing_person"]):
+        function_registry.register("find_existing_person", _current_module["find_existing_person"])
+    if "get_person_by_uuid" in _current_module and callable(_current_module["get_person_by_uuid"]):
+        function_registry.register("get_person_by_uuid", _current_module["get_person_by_uuid"])
+    if "commit_bulk_data" in _current_module and callable(_current_module["commit_bulk_data"]):
+        function_registry.register("commit_bulk_data", _current_module["commit_bulk_data"])
+    if "soft_delete_person" in _current_module and callable(_current_module["soft_delete_person"]):
+        function_registry.register("soft_delete_person", _current_module["soft_delete_person"])
+    if "hard_delete_person" in _current_module and callable(_current_module["hard_delete_person"]):
+        function_registry.register("hard_delete_person", _current_module["hard_delete_person"])
+    if "delete_person" in _current_module and callable(_current_module["delete_person"]):
+        function_registry.register("delete_person", _current_module["delete_person"])
+    if "delete_database" in _current_module and callable(_current_module["delete_database"]):
+        function_registry.register("delete_database", _current_module["delete_database"])
+    if "backup_database" in _current_module and callable(_current_module["backup_database"]):
+        function_registry.register("backup_database", _current_module["backup_database"])
+    if "cleanup_soft_deleted_records" in _current_module and callable(_current_module["cleanup_soft_deleted_records"]):
+        function_registry.register("cleanup_soft_deleted_records", _current_module["cleanup_soft_deleted_records"])
+    if "test_soft_delete_functionality" in _current_module and callable(_current_module["test_soft_delete_functionality"]):
+        function_registry.register("test_soft_delete_functionality", _current_module["test_soft_delete_functionality"])
+    if "test_cleanup_soft_deleted_records" in _current_module and callable(_current_module["test_cleanup_soft_deleted_records"]):
+        function_registry.register("test_cleanup_soft_deleted_records", _current_module["test_cleanup_soft_deleted_records"])
+    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
+        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
+    if "MessageDirectionEnum" in _current_module and callable(_current_module["MessageDirectionEnum"]):
+        function_registry.register("MessageDirectionEnum", _current_module["MessageDirectionEnum"])
+    if "RoleType" in _current_module and callable(_current_module["RoleType"]):
+        function_registry.register("RoleType", _current_module["RoleType"])
+    if "PersonStatusEnum" in _current_module and callable(_current_module["PersonStatusEnum"]):
+        function_registry.register("PersonStatusEnum", _current_module["PersonStatusEnum"])
+    if "ConversationLog" in _current_module and callable(_current_module["ConversationLog"]):
+        function_registry.register("ConversationLog", _current_module["ConversationLog"])
+    if "MessageType" in _current_module and callable(_current_module["MessageType"]):
+        function_registry.register("MessageType", _current_module["MessageType"])
+    if "DnaMatch" in _current_module and callable(_current_module["DnaMatch"]):
+        function_registry.register("DnaMatch", _current_module["DnaMatch"])
+    if "FamilyTree" in _current_module and callable(_current_module["FamilyTree"]):
+        function_registry.register("FamilyTree", _current_module["FamilyTree"])
+    if "Person" in _current_module and callable(_current_module["Person"]):
+        function_registry.register("Person", _current_module["Person"])
+except Exception:
+    pass  # Silent registration - don't break module loading
+
+try:
+    import inspect
+
+    frame = inspect.currentframe()
+
+    _current_module = frame.f_globals if frame else {}
+    if "db_transn" in _current_module and callable(_current_module["db_transn"]):
+        function_registry.register("db_transn", _current_module["db_transn"])
+    if "create_person" in _current_module and callable(_current_module["create_person"]):
+        function_registry.register("create_person", _current_module["create_person"])
+    if "create_or_update_dna_match" in _current_module and callable(_current_module["create_or_update_dna_match"]):
+        function_registry.register("create_or_update_dna_match", _current_module["create_or_update_dna_match"])
+    if "create_or_update_family_tree" in _current_module and callable(_current_module["create_or_update_family_tree"]):
+        function_registry.register("create_or_update_family_tree", _current_module["create_or_update_family_tree"])
+    if "create_or_update_person" in _current_module and callable(_current_module["create_or_update_person"]):
+        function_registry.register("create_or_update_person", _current_module["create_or_update_person"])
+    if "get_person_by_profile_id_and_username" in _current_module and callable(_current_module["get_person_by_profile_id_and_username"]):
+        function_registry.register("get_person_by_profile_id_and_username", _current_module["get_person_by_profile_id_and_username"])
+    if "get_person_by_profile_id" in _current_module and callable(_current_module["get_person_by_profile_id"]):
+        function_registry.register("get_person_by_profile_id", _current_module["get_person_by_profile_id"])
+    if "get_person_and_dna_match" in _current_module and callable(_current_module["get_person_and_dna_match"]):
+        function_registry.register("get_person_and_dna_match", _current_module["get_person_and_dna_match"])
+    if "exclude_deleted_persons" in _current_module and callable(_current_module["exclude_deleted_persons"]):
+        function_registry.register("exclude_deleted_persons", _current_module["exclude_deleted_persons"])
+    if "find_existing_person" in _current_module and callable(_current_module["find_existing_person"]):
+        function_registry.register("find_existing_person", _current_module["find_existing_person"])
+    if "get_person_by_uuid" in _current_module and callable(_current_module["get_person_by_uuid"]):
+        function_registry.register("get_person_by_uuid", _current_module["get_person_by_uuid"])
+    if "commit_bulk_data" in _current_module and callable(_current_module["commit_bulk_data"]):
+        function_registry.register("commit_bulk_data", _current_module["commit_bulk_data"])
+    if "soft_delete_person" in _current_module and callable(_current_module["soft_delete_person"]):
+        function_registry.register("soft_delete_person", _current_module["soft_delete_person"])
+    if "hard_delete_person" in _current_module and callable(_current_module["hard_delete_person"]):
+        function_registry.register("hard_delete_person", _current_module["hard_delete_person"])
+    if "delete_person" in _current_module and callable(_current_module["delete_person"]):
+        function_registry.register("delete_person", _current_module["delete_person"])
+    if "delete_database" in _current_module and callable(_current_module["delete_database"]):
+        function_registry.register("delete_database", _current_module["delete_database"])
+    if "backup_database" in _current_module and callable(_current_module["backup_database"]):
+        function_registry.register("backup_database", _current_module["backup_database"])
+    if "cleanup_soft_deleted_records" in _current_module and callable(_current_module["cleanup_soft_deleted_records"]):
+        function_registry.register("cleanup_soft_deleted_records", _current_module["cleanup_soft_deleted_records"])
+    if "test_soft_delete_functionality" in _current_module and callable(_current_module["test_soft_delete_functionality"]):
+        function_registry.register("test_soft_delete_functionality", _current_module["test_soft_delete_functionality"])
+    if "test_cleanup_soft_deleted_records" in _current_module and callable(_current_module["test_cleanup_soft_deleted_records"]):
+        function_registry.register("test_cleanup_soft_deleted_records", _current_module["test_cleanup_soft_deleted_records"])
+    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
+        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
+    if "MessageDirectionEnum" in _current_module and callable(_current_module["MessageDirectionEnum"]):
+        function_registry.register("MessageDirectionEnum", _current_module["MessageDirectionEnum"])
+    if "RoleType" in _current_module and callable(_current_module["RoleType"]):
+        function_registry.register("RoleType", _current_module["RoleType"])
+    if "PersonStatusEnum" in _current_module and callable(_current_module["PersonStatusEnum"]):
+        function_registry.register("PersonStatusEnum", _current_module["PersonStatusEnum"])
+    if "ConversationLog" in _current_module and callable(_current_module["ConversationLog"]):
+        function_registry.register("ConversationLog", _current_module["ConversationLog"])
+    if "MessageType" in _current_module and callable(_current_module["MessageType"]):
+        function_registry.register("MessageType", _current_module["MessageType"])
+    if "DnaMatch" in _current_module and callable(_current_module["DnaMatch"]):
+        function_registry.register("DnaMatch", _current_module["DnaMatch"])
+    if "FamilyTree" in _current_module and callable(_current_module["FamilyTree"]):
+        function_registry.register("FamilyTree", _current_module["FamilyTree"])
+    if "Person" in _current_module and callable(_current_module["Person"]):
+        function_registry.register("Person", _current_module["Person"])
+except Exception:
+    pass  # Silent registration - don't break module loading
+
+standardize_module_imports()
 #!/usr/bin/env python3
 
 # database.py

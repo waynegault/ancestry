@@ -1,3 +1,20 @@
+# Safe import for function_registry with fallback
+try:
+    from path_manager import function_registry
+except ImportError:
+
+    class DummyFunctionRegistry:
+        def register(self, name, func):
+            pass
+
+        def get(self, name):
+            return None
+
+        def is_available(self, name):
+            return False
+
+    function_registry = DummyFunctionRegistry()
+
 #!/usr/bin/env python3
 
 # chromedriver.py
@@ -726,8 +743,8 @@ def run_comprehensive_tests() -> bool:
 
     def test_chromedriver_initialization():
         """Test ChromeDriver initialization functionality."""
-        if "initialize_chrome_driver" in globals():
-            init_func = globals()["initialize_chrome_driver"]
+        if function_registry.is_available("initialize_chrome_driver"):
+            init_func = function_registry.get("initialize_chrome_driver")
             # Test that function exists and is callable
             assert callable(init_func)
 
@@ -740,7 +757,7 @@ def run_comprehensive_tests() -> bool:
             "cleanup_chrome_processes",
         ]
         for func_name in required_funcs:
-            if func_name in globals():
+            if function_registry.is_available(func_name):
                 func = globals()[func_name]
                 assert callable(func), f"{func_name} should be callable"
 
@@ -749,7 +766,7 @@ def run_comprehensive_tests() -> bool:
         # Test that cleanup functions exist and are properly structured
         cleanup_functions = ["cleanup_chrome_processes", "safe_close_chrome"]
         for func_name in cleanup_functions:
-            if func_name in globals():
+            if function_registry.is_available(func_name):
                 func = globals()[func_name]
                 assert callable(func), f"{func_name} should be callable"
                 # Test function signature
@@ -762,8 +779,8 @@ def run_comprehensive_tests() -> bool:
 
     def test_webdriver_initialization():
         """Test WebDriver initialization with various configurations."""
-        if "initialize_chrome_driver" in globals():
-            init_func = globals()["initialize_chrome_driver"]
+        if function_registry.is_available("initialize_chrome_driver"):
+            init_func = function_registry.get("initialize_chrome_driver")
             assert callable(init_func)
 
     # Run all tests using the suite

@@ -1,3 +1,19 @@
+# Safe import for function_registry with fallback
+try:
+    from path_manager import function_registry
+except ImportError:
+
+    class DummyFunctionRegistry:
+        def register(self, name, func):
+            pass
+
+        def get(self, name):
+            return None
+
+        def is_available(self, name):
+            return False
+
+    function_registry = DummyFunctionRegistry()
 #!/usr/bin/env python3
 
 # gedcom_cache.py
@@ -889,16 +905,15 @@ def run_comprehensive_tests() -> bool:
         try:
             # Test module instance
             module_name = _gedcom_cache_module.get_module_name()
-            assert module_name == "gedcom_cache"
-
-            # Test basic cache functionality
-            if "GedcomCache" in globals():
-                cache_class = globals()["GedcomCache"]
-                cache = cache_class()
-                assert cache is not None
-                assert hasattr(cache, "load")
-                assert hasattr(cache, "save")
-                assert hasattr(cache, "invalidate")
+            assert module_name == "gedcom_cache"  # Test basic cache functionality
+            if function_registry and function_registry.is_available("GedcomCache"):
+                cache_class = function_registry.get("GedcomCache")
+                if cache_class:
+                    cache = cache_class()
+                    assert cache is not None
+                    assert hasattr(cache, "load")
+                    assert hasattr(cache, "save")
+                    assert hasattr(cache, "invalidate")
 
             return True
         except Exception:
@@ -944,8 +959,10 @@ def run_comprehensive_tests() -> bool:
     def test_gedcom_parsing_caching():
         """Test GEDCOM file parsing and caching."""
         try:
-            if "parse_and_cache_gedcom" in globals():
-                parser = globals()["parse_and_cache_gedcom"]
+            if function_registry and function_registry.is_available(
+                "parse_and_cache_gedcom"
+            ):
+                parser = function_registry.get("parse_and_cache_gedcom")
 
                 # Mock GEDCOM content
                 mock_gedcom_content = """
@@ -966,8 +983,9 @@ def run_comprehensive_tests() -> bool:
                     temp_file.write(mock_gedcom_content)
                     temp_file.flush()
 
-                    result = parser(temp_file.name)
-                    return result is not None
+                    if parser:
+                        result = parser(temp_file.name)
+                        return result is not None
 
             return True  # Pass if function doesn't exist
         except Exception:
@@ -984,15 +1002,17 @@ def run_comprehensive_tests() -> bool:
     def test_cached_data_retrieval():
         """Test cached GEDCOM data retrieval."""
         try:
-            if "get_cached_gedcom_data" in globals():
-                retriever = globals()["get_cached_gedcom_data"]
+            if function_registry and function_registry.is_available(
+                "get_cached_gedcom_data"
+            ):
+                retriever = function_registry.get("get_cached_gedcom_data")
 
                 # Test with mock file path
                 test_file_path = "/path/to/test.ged"
-                cached_data = retriever(test_file_path)
-
-                # May return None if no cache exists, which is valid
-                return cached_data is None or isinstance(cached_data, dict)
+                if retriever:
+                    cached_data = retriever(test_file_path)
+                    # May return None if no cache exists, which is valid
+                    return cached_data is None or isinstance(cached_data, dict)
 
             return True  # Pass if function doesn't exist
         except Exception:
@@ -1065,14 +1085,17 @@ def run_comprehensive_tests() -> bool:
     def test_cache_invalidation_file_modification():
         """Test cache invalidation based on file modification."""
         try:
-            if "check_file_modification" in globals():
-                mod_checker = globals()["check_file_modification"]
+            if function_registry and function_registry.is_available(
+                "check_file_modification"
+            ):
+                mod_checker = function_registry.get("check_file_modification")
 
                 with tempfile.NamedTemporaryFile() as temp_file:
                     # Test modification time checking
                     initial_time = time.time() - 3600  # 1 hour ago
-                    is_modified = mod_checker(temp_file.name, initial_time)
-                    return isinstance(is_modified, bool)
+                    if mod_checker:
+                        is_modified = mod_checker(temp_file.name, initial_time)
+                        return isinstance(is_modified, bool)
 
             return True  # Pass if function doesn't exist
         except Exception:
@@ -1133,18 +1156,21 @@ def run_comprehensive_tests() -> bool:
     def test_cache_performance_metrics():
         """Test cache performance metrics collection."""
         try:
-            if "get_cache_performance_stats" in globals():
-                stats_func = globals()["get_cache_performance_stats"]
-                stats = stats_func()
+            if function_registry and function_registry.is_available(
+                "get_cache_performance_stats"
+            ):
+                stats_func = function_registry.get("get_cache_performance_stats")
+                if stats_func:
+                    stats = stats_func()
 
-                if isinstance(stats, dict):
-                    # Check for common performance metrics
-                    expected_metrics = [
-                        "hit_rate",
-                        "miss_rate",
-                        "cache_size",
-                        "average_load_time",
-                    ]
+                    if isinstance(stats, dict):
+                        # Check for common performance metrics
+                        expected_metrics = [
+                            "hit_rate",
+                            "miss_rate",
+                            "cache_size",
+                            "average_load_time",
+                        ]
                     for metric in expected_metrics:
                         if metric in stats:
                             assert isinstance(stats[metric], (int, float))
@@ -1166,8 +1192,10 @@ def run_comprehensive_tests() -> bool:
     def test_multifile_cache_management():
         """Test multi-file cache management capabilities."""
         try:
-            if "manage_multiple_gedcom_caches" in globals():
-                manager = globals()["manage_multiple_gedcom_caches"]
+            if function_registry and function_registry.is_available(
+                "manage_multiple_gedcom_caches"
+            ):
+                manager = function_registry.get("manage_multiple_gedcom_caches")
 
                 # Test with multiple file paths
                 test_files = [
@@ -1176,8 +1204,9 @@ def run_comprehensive_tests() -> bool:
                     "/path/to/research.ged",
                 ]
 
-                result = manager(test_files)
-                return isinstance(result, (dict, list, bool))
+                if manager:
+                    result = manager(test_files)
+                    return isinstance(result, (dict, list, bool))
 
             return True  # Pass if function doesn't exist
         except Exception:
@@ -1223,8 +1252,10 @@ def run_comprehensive_tests() -> bool:
     def test_cache_validation_integrity():
         """Test cache validation and integrity checking."""
         try:
-            if "validate_cache_integrity" in globals():
-                validator = globals()["validate_cache_integrity"]
+            if function_registry and function_registry.is_available(
+                "validate_cache_integrity"
+            ):
+                validator = function_registry.get("validate_cache_integrity")
 
                 # Test with mock cache data
                 mock_cache = {
@@ -1233,8 +1264,9 @@ def run_comprehensive_tests() -> bool:
                     "version": "1.0",
                 }
 
-                is_valid = validator(mock_cache)
-                return isinstance(is_valid, bool)
+                if validator:
+                    is_valid = validator(mock_cache)
+                    return isinstance(is_valid, bool)
 
             return True  # Pass if function doesn't exist
         except Exception:

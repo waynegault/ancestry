@@ -10,9 +10,35 @@ provides general utilities (decorators, formatting, rate limiting),
 and includes login/session verification logic closely tied to SessionManager.
 """
 
+# --- Path management and optimization imports ---
+from path_manager import standardize_module_imports
+
+# Try to import function_registry, but don't fail if it's not available
+try:
+    from path_manager import function_registry
+except ImportError:
+    # Create a dummy function_registry if not available
+    class DummyFunctionRegistry:
+        def is_available(self, name):
+            return False
+
+        def get(self, name):
+            return None
+
+        def register(self, name, func):
+            pass  # Do nothing for dummy registry
+
+    function_registry = DummyFunctionRegistry()
+
+standardize_module_imports()
+
 # --- Ensure core utility functions are always importable ---
 import re
 import logging
+import time
+import json
+import requests
+import cloudscraper
 import sys
 from typing import (
     Optional,
@@ -71,9 +97,6 @@ KEY_DATA = "data"
 # Keep the warning for optional dependencies, but don't define dummies.
 # If essential ones fail, other parts of the code will raise errors.
 try:
-    import cloudscraper
-    import requests
-    import undetected_chromedriver as uc
     from requests import Response as RequestsResponse
     from requests.adapters import HTTPAdapter
     from requests.cookies import RequestsCookieJar
@@ -6739,6 +6762,32 @@ def run_comprehensive_tests() -> bool:
 
 
 # ==============================================
+
+
+# Register module functions for optimized access via Function Registry
+def _register_utils_functions():
+    """Register this module's key functions with the Function Registry for optimized access."""
+    try:
+        # Register commonly accessed utility functions (only those that exist)
+        current_module = globals()
+        potential_functions = [
+            "SessionManager",
+            "format_name",
+            "parse_cookie",
+            "nav_to_page",
+        ]
+
+        for func_name in potential_functions:
+            if func_name in current_module and callable(current_module[func_name]):
+                function_registry.register(func_name, current_module[func_name])
+
+        logger.debug(f"✅ Registered utils functions in Function Registry")
+    except Exception as e:
+        logger.debug(f"⚠️ Function registration failed: {e}")
+
+
+# Register functions when module loads
+_register_utils_functions()
 
 
 # ==============================================

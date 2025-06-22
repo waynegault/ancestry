@@ -25,10 +25,10 @@ config_schema = config_manager.get_config()
 
 logger = logging.getLogger(__name__)
 
-# Ensure project root is in sys.path for imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# Use centralized path management
+from path_manager import ensure_imports
+
+ensure_imports()
 
 try:
     from database import Base
@@ -429,18 +429,9 @@ def run_comprehensive_tests():
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
+    from path_manager import import_context
 
-    # Add project root to allow relative imports
-    project_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(project_root))
-
-    # Since this is a core module, we need to make sure the parent of core is in the path
-    # to allow imports like `from config.config_manager import ConfigManager`
-    sys.path.insert(
-        0, str(project_root.parent)
-    )  # FIXME: This is a hack, should be fixed properly
-
-    print("🗄️ Running Database Manager comprehensive test suite...")
-    run_comprehensive_tests()
+    # Use clean import context for testing
+    with import_context():
+        print("🗄️ Running Database Manager comprehensive test suite...")
+        run_comprehensive_tests()

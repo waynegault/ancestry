@@ -4,11 +4,39 @@
 
 # gedcom_utils.py
 """
-Utility functions and class for loading, parsing, caching, and querying
-GEDCOM data using ged4py. Includes relationship mapping, path calculation,
-and fuzzy matching/scoring. Pre-processes individual data for faster access.
-V.20240502.FinalCode.SyntaxFix
+GEDCOM Utilities for Ancestry Project
+
+This module provides comprehensive GEDCOM file processing capabilities including:
+- Data parsing and validation
+- Family tree relationship analysis
+- Individual record matching and scoring
+- Optimized search algorithms (bidirectional BFS)
+- Data formatting and display utilities
+
+Key Features:
+- High-performance relationship path finding
+- Comprehensive individual scoring system
+- Flexible data filtering and search
+- Detailed life event formatting
+- Robust error handling and logging
 """
+
+# Try to import function_registry, but don't fail if it's not available
+try:
+    from path_manager import function_registry
+except ImportError:
+    # Create a dummy function_registry if not available
+    class DummyFunctionRegistry:
+        def is_available(self, name):
+            return False
+
+        def get(self, name):
+            return None
+
+        def register(self, name, func):
+            pass  # Do nothing for dummy registry
+
+    function_registry = DummyFunctionRegistry()
 
 # --- Standard library imports ---
 import logging
@@ -2521,9 +2549,9 @@ def run_comprehensive_tests() -> bool:
         """Test creating a mock GEDCOM class instance."""
         try:
             # Test creating a GedcomExtended instance (if available)
-            if "GedcomExtended" in globals():
+            if function_registry.is_available("GedcomExtended"):
                 # Don't actually create instance without valid file, just test the class exists
-                gedcom_class = globals()["GedcomExtended"]
+                gedcom_class = function_registry.get("GedcomExtended")
                 assert (
                     gedcom_class is not None
                 ), "GedcomExtended class should be available"

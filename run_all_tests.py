@@ -16,7 +16,14 @@ from typing import List, Dict, Any, Optional
 
 # Add project root to Python path to allow imports from subdirectories
 project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+
+# Use centralized path management
+try:
+    from path_manager import standardize_module_imports
+    standardize_module_imports()
+except ImportError:
+    # Fallback for cases where path_manager isn't available
+    sys.path.insert(0, str(project_root))
 
 
 def discover_test_modules() -> List[str]:

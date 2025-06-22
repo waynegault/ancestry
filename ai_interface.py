@@ -1,3 +1,5 @@
+from path_manager import function_registry, standardize_module_imports
+standardize_module_imports()
 #!/usr/bin/env python3
 
 # ai_interface.py

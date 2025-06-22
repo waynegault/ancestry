@@ -785,7 +785,17 @@ def run_comprehensive_tests():
 
 
 if __name__ == "__main__":
-    # Add project root to the Python path
+    # Use centralized path management
+    import os
+    import sys
+
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, project_root)
+    try:
+        sys.path.insert(0, project_root)
+        from path_manager import ensure_imports
+
+        ensure_imports()
+    except ImportError:
+        # Fallback for testing environment
+        sys.path.insert(0, project_root)
     run_comprehensive_tests()

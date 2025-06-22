@@ -49,6 +49,11 @@ from utils import (
     nav_to_page,
 )
 
+# Path management and optimization imports
+from path_manager import function_registry, standardize_module_imports
+
+standardize_module_imports()
+
 # Cache management
 from cache_manager import initialize_aggressive_caching, log_cache_status
 
