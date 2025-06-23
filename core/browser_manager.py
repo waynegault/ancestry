@@ -27,7 +27,13 @@ from utils import nav_to_page
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
+
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 # Type alias
 DriverType = Optional[WebDriver]
@@ -471,7 +477,8 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         sys.path.insert(0, str(project_root))
-        from path_manager import standardize_module_imports
+        from core_imports import standardize_module_imports
+
         standardize_module_imports()
     except ImportError:
         # Fallback for testing environment

@@ -5,13 +5,17 @@ This module defines type-safe configuration schemas using dataclasses
 with validation and default values.
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import os
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
 
 
 @dataclass

@@ -10,6 +10,10 @@ This module provides a comprehensive configuration management system with:
 - Hot reloading capabilities
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import json
 import logging
 import os
@@ -34,7 +38,12 @@ from .config_schema import (
     SecurityConfig,
 )
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
+
+try:
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 
 class ValidationError(Exception):

@@ -11,10 +11,20 @@ finding To-Do list IDs, and creating tasks within a specified list. Reads client
 and tenant ID configuration from environment variables.
 """
 
+# Unified import system
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
+
+# Auto-register module
+auto_register_module(globals(), __name__)
+
 # --- Standard library imports ---
 import atexit  # For saving cache on exit
 import json
-import logging
 import os
 import sys  # Used for sys.exit in main block
 from pathlib import Path

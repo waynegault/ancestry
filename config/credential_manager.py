@@ -5,12 +5,22 @@ This module provides secure credential management with integration
 to the SecurityManager and enhanced configuration system.
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import logging
 from pathlib import Path
 from typing import Dict, Optional, Any
 import os
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
+
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 
 class CredentialManager:
@@ -360,15 +370,14 @@ def run_comprehensive_tests():
     import traceback
     from typing import Dict, Any
     import tempfile
-    import os
+    import os  # Test framework imports with fallback
 
-    # Test framework imports with fallback
     try:
         from test_framework import (
-            TestSuite,
-            suppress_logging,
+            TestSuite,  # type: ignore
+            suppress_logging,  # type: ignore
             create_mock_data,
-            assert_valid_function,
+            assert_valid_function,  # type: ignore
         )
 
         HAS_TEST_FRAMEWORK = True
@@ -376,16 +385,23 @@ def run_comprehensive_tests():
         # Fallback implementations
         HAS_TEST_FRAMEWORK = False
 
+        # Define minimal fallback classes that match expected interface
+        from typing import Any, Callable
+        from types import TracebackType
+        from typing import Optional, Type
+
         class TestSuite:
-            def __init__(self, name, module):
+            def __init__(self, name: str, module: Any = None):
                 self.name = name
                 self.tests_passed = 0
                 self.tests_failed = 0
 
-            def start_suite(self):
+            def start_suite(self) -> None:
                 print(f"Starting {self.name} tests...")
 
-            def run_test(self, name, func, description):
+            def run_test(
+                self, name: str, func: Callable, description: str = ""
+            ) -> None:
                 try:
                     func()
                     self.tests_passed += 1
@@ -394,21 +410,25 @@ def run_comprehensive_tests():
                     self.tests_failed += 1
                     print(f"✗ {name}: {e}")
 
-            def finish_suite(self):
-                print(f"Tests: {self.tests_passed} passed, {self.tests_failed} failed")
+            def run_all_tests(self) -> bool:
                 return self.tests_failed == 0
 
         class suppress_logging:
             def __enter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc_val, exc_tb):
+            def __exit__(
+                self,
+                exc_type: Optional[Type[BaseException]],
+                exc_val: Optional[BaseException],
+                exc_tb: Optional[TracebackType],
+            ) -> None:
                 pass
 
-        def create_mock_data():
+        def create_mock_data() -> dict:
             return {}
 
-        def assert_valid_function(func, func_name):
+        def assert_valid_function(func: Any, func_name: str = "") -> None:
             assert callable(func), f"{func_name} should be callable"
 
     logger.info("=" * 60)

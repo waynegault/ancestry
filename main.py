@@ -50,7 +50,13 @@ from utils import (
 )
 
 # Path management and optimization imports
-from path_manager import function_registry, standardize_module_imports
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+)
 
 standardize_module_imports()
 
@@ -2043,6 +2049,14 @@ def run_comprehensive_tests() -> bool:
 
 
 # --- Entry Point ---
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     main()
 

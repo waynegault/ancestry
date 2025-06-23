@@ -15,6 +15,17 @@ Features:
 - Resolves log directory based on `config.py`.
 """
 
+# Unified import system
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
+
+# Auto-register module
+auto_register_module(globals(), __name__)
+
 # --- Standard library imports ---
 import copy
 import logging
@@ -53,6 +64,20 @@ import logging
 
 # Suppress INFO and lower logs during startup
 logging.basicConfig(level=logging.WARNING)
+
+# Suppress external library loggers early to prevent startup noise
+external_loggers = [
+    "urllib3",
+    "urllib3.connectionpool",
+    "selenium",
+    "websockets",
+    "undetected_chromedriver",
+    "httpx",
+    "requests",
+    "asyncio",
+]
+for logger_name in external_loggers:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 # --- Initialize Main Application Logger ---
 # Get the logger instance named 'logger' (used throughout the application)
@@ -638,3 +663,6 @@ if __name__ == "__main__":
     print("📋 Running Logging Configuration & Management comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

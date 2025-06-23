@@ -1,19 +1,13 @@
 # Safe import for function_registry with fallback
 try:
-    from path_manager import function_registry
+    from core_imports import register_function, get_function, is_function_available
 except ImportError:
+    from core.import_utils import get_function_registry
 
-    class DummyFunctionRegistry:
-        def register(self, name, func):
-            pass
+    function_registry = get_function_registry()
 
-        def get(self, name):
-            return None
+from core_imports import auto_register_module
 
-        def is_available(self, name):
-            return False
-
-    function_registry = DummyFunctionRegistry()
 #!/usr/bin/env python3
 
 # gedcom_cache.py
@@ -906,8 +900,8 @@ def run_comprehensive_tests() -> bool:
             # Test module instance
             module_name = _gedcom_cache_module.get_module_name()
             assert module_name == "gedcom_cache"  # Test basic cache functionality
-            if function_registry and function_registry.is_available("GedcomCache"):
-                cache_class = function_registry.get("GedcomCache")
+            if function_registry and is_function_available("GedcomCache"):
+                cache_class = get_function("GedcomCache")
                 if cache_class:
                     cache = cache_class()
                     assert cache is not None
@@ -962,7 +956,7 @@ def run_comprehensive_tests() -> bool:
             if function_registry and function_registry.is_available(
                 "parse_and_cache_gedcom"
             ):
-                parser = function_registry.get("parse_and_cache_gedcom")
+                parser = get_function("parse_and_cache_gedcom")
 
                 # Mock GEDCOM content
                 mock_gedcom_content = """
@@ -1005,7 +999,7 @@ def run_comprehensive_tests() -> bool:
             if function_registry and function_registry.is_available(
                 "get_cached_gedcom_data"
             ):
-                retriever = function_registry.get("get_cached_gedcom_data")
+                retriever = get_function("get_cached_gedcom_data")
 
                 # Test with mock file path
                 test_file_path = "/path/to/test.ged"
@@ -1088,7 +1082,7 @@ def run_comprehensive_tests() -> bool:
             if function_registry and function_registry.is_available(
                 "check_file_modification"
             ):
-                mod_checker = function_registry.get("check_file_modification")
+                mod_checker = get_function("check_file_modification")
 
                 with tempfile.NamedTemporaryFile() as temp_file:
                     # Test modification time checking
@@ -1159,7 +1153,7 @@ def run_comprehensive_tests() -> bool:
             if function_registry and function_registry.is_available(
                 "get_cache_performance_stats"
             ):
-                stats_func = function_registry.get("get_cache_performance_stats")
+                stats_func = get_function("get_cache_performance_stats")
                 if stats_func:
                     stats = stats_func()
 
@@ -1195,7 +1189,7 @@ def run_comprehensive_tests() -> bool:
             if function_registry and function_registry.is_available(
                 "manage_multiple_gedcom_caches"
             ):
-                manager = function_registry.get("manage_multiple_gedcom_caches")
+                manager = get_function("manage_multiple_gedcom_caches")
 
                 # Test with multiple file paths
                 test_files = [
@@ -1255,7 +1249,7 @@ def run_comprehensive_tests() -> bool:
             if function_registry and function_registry.is_available(
                 "validate_cache_integrity"
             ):
-                validator = function_registry.get("validate_cache_integrity")
+                validator = get_function("validate_cache_integrity")
 
                 # Test with mock cache data
                 mock_cache = {
@@ -1285,9 +1279,16 @@ def run_comprehensive_tests() -> bool:
 
 # --- Main Execution ---
 
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     print(
         "🗂️ Running GEDCOM Cache Management & Optimization comprehensive test suite..."
     )
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

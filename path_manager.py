@@ -29,11 +29,25 @@ Benefits:
 - Easier maintenance and debugging
 """
 
+# --- Unified import system ---
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    safe_execute,
+)
+
+# Register this module immediately
+auto_register_module(globals(), __name__)
+
 import os
 import sys
 from pathlib import Path
 from typing import Optional, Set, List, Callable, Any, Dict
 from contextlib import contextmanager
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # Global tracking to ensure paths are added only once
 _CONFIGURED_PATHS: Set[str] = set()
@@ -1696,4 +1710,15 @@ def run_full_automation(target_modules: Optional[List[str]] = None) -> bool:
         return False
 
 
-# ...existing code...
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
+
+if __name__ == "__main__":
+    # Use existing run_comprehensive_tests function
+    try:
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    except Exception as e:
+        logger.error(f"Failed to run tests: {e}")
+        sys.exit(1)

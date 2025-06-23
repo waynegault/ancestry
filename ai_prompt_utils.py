@@ -7,6 +7,17 @@ stored in a JSON file. It is used by both the main codebase and the
 test_ai_responses_menu.py script.
 """
 
+# Unified import system
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
+
+# Auto-register module
+auto_register_module(globals(), __name__)
+
 import json
 import os
 import shutil
@@ -820,3 +831,6 @@ if __name__ == "__main__":
     )
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

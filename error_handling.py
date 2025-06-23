@@ -1,21 +1,16 @@
 # Safe imports with fallback
-try:
-    from path_manager import function_registry
-except ImportError:
-    # Create a dummy function registry if path_manager is not available
-    class DummyFunctionRegistry:
-        def register(self, name, func):
-            pass
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
 
-        def get(self, name, default=None):
-            return default
+auto_register_module(globals(), __name__)
 
-        def is_available(self, name):
-            return False
-
-    function_registry = DummyFunctionRegistry()
-
-import logging
+# Initialize function_registry as None for backward compatibility
+function_registry = None
+from logging_config import logger
 from typing import Dict, Any, Optional, Callable, Union, Type, List, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -28,7 +23,6 @@ import requests
 from pathlib import Path
 import threading
 from functools import wraps
-from logging_config import logger
 
 # --- Test framework imports ---
 from test_framework import (
@@ -383,12 +377,13 @@ def run_comprehensive_tests() -> bool:
 
     # INITIALIZATION TESTS
     def test_error_recovery_manager_initialization():
-        """Test error recovery manager and circuit breaker initialization."""  # Verify error recovery manager exists
-        assert function_registry.is_available(
-            "error_recovery_manager"
+        """Test error recovery manager and circuit breaker initialization."""
+        # Verify error recovery manager exists
+        assert (
+            "error_recovery_manager" in globals()
         ), "error_recovery_manager not found in globals"
 
-        manager = function_registry.get("error_recovery_manager")
+        manager = globals().get("error_recovery_manager")
 
         if manager:
             # Test that manager has required methods
@@ -483,19 +478,17 @@ def run_comprehensive_tests() -> bool:
         def test_error_decorators():
             """Test error handling decorators."""
             # Test with_circuit_breaker decorator exists and is callable
-            assert function_registry.is_available(
-                "with_circuit_breaker"
+            assert (
+                "with_circuit_breaker" in globals()
             ), "with_circuit_breaker decorator not found"
 
-            cb_decorator = function_registry.get("with_circuit_breaker")
-            assert callable(cb_decorator), "with_circuit_breaker is not callable"
+            cb_decorator = globals().get("with_circuit_breaker")
+            assert callable(
+                cb_decorator
+            ), "with_circuit_breaker is not callable"  # Test with_recovery decorator
+            assert "with_recovery" in globals(), "with_recovery decorator not found"
 
-            # Test with_recovery decorator
-            assert function_registry.is_available(
-                "with_recovery"
-            ), "with_recovery decorator not found"
-
-            recovery_decorator = function_registry.get("with_recovery")
+            recovery_decorator = globals().get("with_recovery")
             assert callable(recovery_decorator), "with_recovery is not callable"
 
         suite.run_test(
@@ -536,12 +529,9 @@ def run_comprehensive_tests() -> bool:
         # INTEGRATION TESTS
         def test_circuit_state_management():
             """Test circuit state management and transitions."""
-            # Test CircuitState enum exists
-            assert function_registry.is_available(
-                "CircuitState"
-            ), "CircuitState enum not found"
+            # Test CircuitState enum exists            assert "CircuitState" in globals(), "CircuitState enum not found"
 
-            state_enum = function_registry.get("CircuitState")
+            state_enum = globals().get("CircuitState")
             required_states = ["CLOSED", "OPEN", "HALF_OPEN"]
 
             states_found = 0
@@ -629,3 +619,6 @@ if __name__ == "__main__":
     print("🚨 Running Error Handling & Recovery Systems comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

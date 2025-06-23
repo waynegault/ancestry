@@ -5,6 +5,10 @@ This module extracts API management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import logging
 from typing import Optional, Dict, Any, Union, List
 from urllib.parse import urljoin
@@ -16,8 +20,13 @@ from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 from config import config_schema
+from logging_config import logger
 
-logger = logging.getLogger(__name__)
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 # Type aliases
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]

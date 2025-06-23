@@ -23,20 +23,25 @@ Key Features:
 
 # Try to import function_registry, but don't fail if it's not available
 try:
-    from path_manager import function_registry
+    from core_imports import register_function, get_function, is_function_available
 except ImportError:
-    # Create a dummy function_registry if not available
-    class DummyFunctionRegistry:
-        def is_available(self, name):
-            return False
+    from core.import_utils import get_function_registry
 
-        def get(self, name):
-            return None
+    function_registry = get_function_registry()
 
-        def register(self, name, func):
-            pass  # Do nothing for dummy registry
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
-    function_registry = DummyFunctionRegistry()
+# Standardize imports if available
+try:
+    from core_imports import standardize_module_imports
+
+    standardize_module_imports()
+except ImportError:
+    pass
 
 # --- Standard library imports ---
 import logging
@@ -125,12 +130,8 @@ TAG_SURN = "SURN"
 
 
 # --- Logging Setup ---
-logger = logging.getLogger("gedcom_utils")
-if not logger.hasHandlers():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+# Use centralized logger from logging_config
+from logging_config import logger
 
 
 # ==============================================
@@ -2549,9 +2550,9 @@ def run_comprehensive_tests() -> bool:
         """Test creating a mock GEDCOM class instance."""
         try:
             # Test creating a GedcomExtended instance (if available)
-            if function_registry.is_available("GedcomExtended"):
+            if is_function_available("GedcomExtended"):
                 # Don't actually create instance without valid file, just test the class exists
-                gedcom_class = function_registry.get("GedcomExtended")
+                gedcom_class = get_function("GedcomExtended")
                 assert (
                     gedcom_class is not None
                 ), "GedcomExtended class should be available"
@@ -2726,6 +2727,10 @@ def run_comprehensive_tests() -> bool:
 
     return suite.finish_suite()
 
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
 
 if __name__ == "__main__":
     success = run_comprehensive_tests()

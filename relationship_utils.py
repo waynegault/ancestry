@@ -1,19 +1,27 @@
 # Safe imports with fallback
 try:
-    from path_manager import function_registry
+    from core_imports import register_function, get_function, is_function_available
 except ImportError:
-    # Create a dummy function registry if path_manager is not available
-    class DummyFunctionRegistry:
-        def register(self, name, func):
-            pass
+    try:
+        from core.import_utils import get_function_registry
 
-        def get(self, name, default=None):
-            return default
+        function_registry = get_function_registry()
+    except ImportError:
+        function_registry = None
 
-        def is_available(self, name):
-            return False
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
-    function_registry = DummyFunctionRegistry()
+# Standardize imports if available
+try:
+    from core_imports import standardize_module_imports
+
+    standardize_module_imports()
+except ImportError:
+    pass
 
 import logging
 import re
@@ -35,12 +43,8 @@ from collections import deque
 import traceback  # Added for test suite
 from contextlib import contextmanager
 
-# --- Initialize logger ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("relationship_utils")
+# Use centralized logger from logging_config
+from logging_config import logger
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup
@@ -1750,10 +1754,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
         # CORE FUNCTIONALITY TESTS
         def test_name_formatting_comprehensive():
             """Test comprehensive name formatting for genealogical records."""
-            if not function_registry.is_available("format_name"):
+            if not is_function_available("format_name"):
                 return False
 
-            format_func = function_registry.get("format_name")
+            format_func = get_function("format_name")
             if not format_func:
                 return False
 
@@ -1793,10 +1797,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_bidirectional_bfs_pathfinding():
             """Test bidirectional BFS for relationship path finding."""
-            if not function_registry.is_available("fast_bidirectional_bfs"):
+            if not is_function_available("fast_bidirectional_bfs"):
                 return False
 
-            bfs_func = function_registry.get("fast_bidirectional_bfs")
+            bfs_func = get_function("fast_bidirectional_bfs")
 
             # Create test family tree: Grandparent -> Parent -> Child
             id_to_parents = {
@@ -1844,10 +1848,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_relationship_term_mapping():
             """Test relationship term mapping based on gender."""
-            if not function_registry.is_available("_get_relationship_term"):
+            if not is_function_available("_get_relationship_term"):
                 return False
 
-            term_func = function_registry.get("_get_relationship_term")
+            term_func = get_function("_get_relationship_term")
 
             # Test gender-specific relationship terms
             test_cases = [
@@ -1884,10 +1888,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_api_relationship_formatting():
             """Test API relationship path formatting."""
-            if not function_registry.is_available("format_api_relationship_path"):
+            if not is_function_available("format_api_relationship_path"):
                 return False
 
-            format_func = function_registry.get("format_api_relationship_path")
+            format_func = get_function("format_api_relationship_path")
 
             try:
                 # Test typical API responses
@@ -1933,10 +1937,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
         # EDGE CASES TESTS
         def test_circular_family_relationships():
             """Test handling of circular or complex family relationships."""
-            if not function_registry.is_available("fast_bidirectional_bfs"):
+            if not is_function_available("fast_bidirectional_bfs"):
                 return False
 
-            bfs_func = function_registry.get("fast_bidirectional_bfs")
+            bfs_func = get_function("fast_bidirectional_bfs")
 
             # Create circular relationship (should be handled gracefully)
             circular_parents = {
@@ -1974,10 +1978,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_empty_family_data():
             """Test handling of empty or minimal family data."""
-            if not function_registry.is_available("fast_bidirectional_bfs"):
+            if not is_function_available("fast_bidirectional_bfs"):
                 return False
 
-            bfs_func = function_registry.get("fast_bidirectional_bfs")
+            bfs_func = get_function("fast_bidirectional_bfs")
 
             try:
                 # Test with empty family data
@@ -2023,8 +2027,8 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
             try:
                 # Test complete workflow
                 # 1. Format names
-                name1 = function_registry.get("format_name")("john smith")
-                name2 = function_registry.get("format_name")("mary smith")
+                name1 = get_function("format_name")("john smith")
+                name2 = get_function("format_name")("mary smith")
 
                 if name1 != "John Smith" or name2 != "Mary Smith":
                     return False
@@ -2037,7 +2041,7 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
                     "@I001@": {"@I002@"},  # John has child Mary
                 }
 
-                path = function_registry.get("fast_bidirectional_bfs")(
+                path = get_function("fast_bidirectional_bfs")(
                     "@I001@", "@I002@", family_data, children_data
                 )
 
@@ -2045,7 +2049,7 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
                     return False
 
                 # 3. Get relationship term
-                term = function_registry.get("_get_relationship_term")("F", "child")
+                term = get_function("_get_relationship_term")("F", "child")
 
                 if term != "daughter":
                     return False
@@ -2064,10 +2068,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_gedcom_format_integration():
             """Test integration with GEDCOM genealogical data format."""
-            if not function_registry.is_available("format_name"):
+            if not is_function_available("format_name"):
                 return False
 
-            format_func = function_registry.get("format_name")
+            format_func = get_function("format_name")
 
             try:
                 # Test GEDCOM name formats
@@ -2105,10 +2109,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
         # PERFORMANCE TESTS
         def test_large_family_tree_performance():
             """Test performance with large family tree datasets."""
-            if not function_registry.is_available("fast_bidirectional_bfs"):
+            if not is_function_available("fast_bidirectional_bfs"):
                 return False
 
-            bfs_func = function_registry.get("fast_bidirectional_bfs")
+            bfs_func = get_function("fast_bidirectional_bfs")
 
             try:
                 import time
@@ -2147,10 +2151,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_bulk_name_formatting_performance():
             """Test performance of bulk name formatting operations."""
-            if not function_registry.is_available("format_name"):
+            if not is_function_available("format_name"):
                 return False
 
-            format_func = function_registry.get("format_name")
+            format_func = get_function("format_name")
 
             try:
                 import time
@@ -2190,10 +2194,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
         # ERROR HANDLING TESTS
         def test_invalid_relationship_data():
             """Test handling of invalid or corrupted relationship data."""
-            if not function_registry.is_available("fast_bidirectional_bfs"):
+            if not is_function_available("fast_bidirectional_bfs"):
                 return False
 
-            bfs_func = function_registry.get("fast_bidirectional_bfs")
+            bfs_func = get_function("fast_bidirectional_bfs")
 
             # Test with invalid data types
             invalid_data_sets = [
@@ -2231,10 +2235,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
         def test_malformed_name_handling():
             """Test handling of malformed or problematic names."""
-            if not function_registry.is_available("format_name"):
+            if not is_function_available("format_name"):
                 return False
 
-            format_func = function_registry.get("format_name")
+            format_func = get_function("format_name")
 
             # Test with problematic name formats
             problematic_names = [
@@ -2278,6 +2282,10 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     import sys
 

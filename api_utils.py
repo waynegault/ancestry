@@ -1,103 +1,7 @@
-from path_manager import function_registry, standardize_module_imports
-# Auto-register functions for optimized access
-# Auto-register functions for optimized access
-try:
-    _current_module = globals()
-    if "parse_ancestry_person_details" in _current_module and callable(_current_module["parse_ancestry_person_details"]):
-        function_registry.register("parse_ancestry_person_details", _current_module["parse_ancestry_person_details"])
-    if "print_group" in _current_module and callable(_current_module["print_group"]):
-        function_registry.register("print_group", _current_module["print_group"])
-    if "call_suggest_api" in _current_module and callable(_current_module["call_suggest_api"]):
-        function_registry.register("call_suggest_api", _current_module["call_suggest_api"])
-    if "call_facts_user_api" in _current_module and callable(_current_module["call_facts_user_api"]):
-        function_registry.register("call_facts_user_api", _current_module["call_facts_user_api"])
-    if "call_getladder_api" in _current_module and callable(_current_module["call_getladder_api"]):
-        function_registry.register("call_getladder_api", _current_module["call_getladder_api"])
-    if "call_discovery_relationship_api" in _current_module and callable(_current_module["call_discovery_relationship_api"]):
-        function_registry.register("call_discovery_relationship_api", _current_module["call_discovery_relationship_api"])
-    if "call_treesui_list_api" in _current_module and callable(_current_module["call_treesui_list_api"]):
-        function_registry.register("call_treesui_list_api", _current_module["call_treesui_list_api"])
-    if "call_send_message_api" in _current_module and callable(_current_module["call_send_message_api"]):
-        function_registry.register("call_send_message_api", _current_module["call_send_message_api"])
-    if "call_profile_details_api" in _current_module and callable(_current_module["call_profile_details_api"]):
-        function_registry.register("call_profile_details_api", _current_module["call_profile_details_api"])
-    if "call_header_trees_api_for_tree_id" in _current_module and callable(_current_module["call_header_trees_api_for_tree_id"]):
-        function_registry.register("call_header_trees_api_for_tree_id", _current_module["call_header_trees_api_for_tree_id"])
-    if "call_tree_owner_api" in _current_module and callable(_current_module["call_tree_owner_api"]):
-        function_registry.register("call_tree_owner_api", _current_module["call_tree_owner_api"])
-    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
-        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
-    if "PersonSuggestResponse" in _current_module and callable(_current_module["PersonSuggestResponse"]):
-        function_registry.register("PersonSuggestResponse", _current_module["PersonSuggestResponse"])
-    if "ProfileDetailsResponse" in _current_module and callable(_current_module["ProfileDetailsResponse"]):
-        function_registry.register("ProfileDetailsResponse", _current_module["ProfileDetailsResponse"])
-    if "TreeOwnerResponse" in _current_module and callable(_current_module["TreeOwnerResponse"]):
-        function_registry.register("TreeOwnerResponse", _current_module["TreeOwnerResponse"])
-    if "PersonFactsResponse" in _current_module and callable(_current_module["PersonFactsResponse"]):
-        function_registry.register("PersonFactsResponse", _current_module["PersonFactsResponse"])
-    if "GetLadderResponse" in _current_module and callable(_current_module["GetLadderResponse"]):
-        function_registry.register("GetLadderResponse", _current_module["GetLadderResponse"])
-    if "DiscoveryRelationshipResponse" in _current_module and callable(_current_module["DiscoveryRelationshipResponse"]):
-        function_registry.register("DiscoveryRelationshipResponse", _current_module["DiscoveryRelationshipResponse"])
-    if "HeaderTreesResponse" in _current_module and callable(_current_module["HeaderTreesResponse"]):
-        function_registry.register("HeaderTreesResponse", _current_module["HeaderTreesResponse"])
-    if "SendMessageResponse" in _current_module and callable(_current_module["SendMessageResponse"]):
-        function_registry.register("SendMessageResponse", _current_module["SendMessageResponse"])
-    if "ApiRateLimiter" in _current_module and callable(_current_module["ApiRateLimiter"]):
-        function_registry.register("ApiRateLimiter", _current_module["ApiRateLimiter"])
-except Exception:
-    pass  # Silent registration - don't break module loading
+from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import auto_register_module
 
-try:
-    import inspect
-
-    frame = inspect.currentframe()
-
-    _current_module = frame.f_globals if frame else {}
-    if "parse_ancestry_person_details" in _current_module and callable(_current_module["parse_ancestry_person_details"]):
-        function_registry.register("parse_ancestry_person_details", _current_module["parse_ancestry_person_details"])
-    if "print_group" in _current_module and callable(_current_module["print_group"]):
-        function_registry.register("print_group", _current_module["print_group"])
-    if "call_suggest_api" in _current_module and callable(_current_module["call_suggest_api"]):
-        function_registry.register("call_suggest_api", _current_module["call_suggest_api"])
-    if "call_facts_user_api" in _current_module and callable(_current_module["call_facts_user_api"]):
-        function_registry.register("call_facts_user_api", _current_module["call_facts_user_api"])
-    if "call_getladder_api" in _current_module and callable(_current_module["call_getladder_api"]):
-        function_registry.register("call_getladder_api", _current_module["call_getladder_api"])
-    if "call_discovery_relationship_api" in _current_module and callable(_current_module["call_discovery_relationship_api"]):
-        function_registry.register("call_discovery_relationship_api", _current_module["call_discovery_relationship_api"])
-    if "call_treesui_list_api" in _current_module and callable(_current_module["call_treesui_list_api"]):
-        function_registry.register("call_treesui_list_api", _current_module["call_treesui_list_api"])
-    if "call_send_message_api" in _current_module and callable(_current_module["call_send_message_api"]):
-        function_registry.register("call_send_message_api", _current_module["call_send_message_api"])
-    if "call_profile_details_api" in _current_module and callable(_current_module["call_profile_details_api"]):
-        function_registry.register("call_profile_details_api", _current_module["call_profile_details_api"])
-    if "call_header_trees_api_for_tree_id" in _current_module and callable(_current_module["call_header_trees_api_for_tree_id"]):
-        function_registry.register("call_header_trees_api_for_tree_id", _current_module["call_header_trees_api_for_tree_id"])
-    if "call_tree_owner_api" in _current_module and callable(_current_module["call_tree_owner_api"]):
-        function_registry.register("call_tree_owner_api", _current_module["call_tree_owner_api"])
-    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
-        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
-    if "PersonSuggestResponse" in _current_module and callable(_current_module["PersonSuggestResponse"]):
-        function_registry.register("PersonSuggestResponse", _current_module["PersonSuggestResponse"])
-    if "ProfileDetailsResponse" in _current_module and callable(_current_module["ProfileDetailsResponse"]):
-        function_registry.register("ProfileDetailsResponse", _current_module["ProfileDetailsResponse"])
-    if "TreeOwnerResponse" in _current_module and callable(_current_module["TreeOwnerResponse"]):
-        function_registry.register("TreeOwnerResponse", _current_module["TreeOwnerResponse"])
-    if "PersonFactsResponse" in _current_module and callable(_current_module["PersonFactsResponse"]):
-        function_registry.register("PersonFactsResponse", _current_module["PersonFactsResponse"])
-    if "GetLadderResponse" in _current_module and callable(_current_module["GetLadderResponse"]):
-        function_registry.register("GetLadderResponse", _current_module["GetLadderResponse"])
-    if "DiscoveryRelationshipResponse" in _current_module and callable(_current_module["DiscoveryRelationshipResponse"]):
-        function_registry.register("DiscoveryRelationshipResponse", _current_module["DiscoveryRelationshipResponse"])
-    if "HeaderTreesResponse" in _current_module and callable(_current_module["HeaderTreesResponse"]):
-        function_registry.register("HeaderTreesResponse", _current_module["HeaderTreesResponse"])
-    if "SendMessageResponse" in _current_module and callable(_current_module["SendMessageResponse"]):
-        function_registry.register("SendMessageResponse", _current_module["SendMessageResponse"])
-    if "ApiRateLimiter" in _current_module and callable(_current_module["ApiRateLimiter"]):
-        function_registry.register("ApiRateLimiter", _current_module["ApiRateLimiter"])
-except Exception:
-    pass  # Silent registration - don't break module loading
+auto_register_module(globals(), __name__)
 
 standardize_module_imports()
 #!/usr/bin/env python3
@@ -3091,6 +2995,10 @@ def run_comprehensive_tests() -> bool:
 
 
 # --- Main Execution Block ---
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     import sys
 

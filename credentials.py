@@ -7,6 +7,17 @@ This is the single entry point for all credential management tasks.
 Usage: python credentials.py
 """
 
+# Unified import system
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
+
+# Auto-register module
+auto_register_module(globals(), __name__)
+
 import sys
 import os
 import json
@@ -1389,3 +1400,6 @@ def main():
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

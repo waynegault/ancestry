@@ -235,7 +235,7 @@ if __name__ == "__main__":
     try:
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from path_manager import standardize_module_imports
+        from core_imports import standardize_module_imports
         standardize_module_imports()
     except ImportError:
         # Fallback for testing environment

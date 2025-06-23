@@ -5,6 +5,10 @@ This module extracts session validation functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import logging
 from typing import Optional, Tuple, List
 from datetime import datetime, timezone
@@ -17,7 +21,13 @@ from config.config_manager import ConfigManager
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
+
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 
 class SessionValidator:

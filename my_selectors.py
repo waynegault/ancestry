@@ -1,5 +1,22 @@
-from path_manager import function_registry, standardize_module_imports
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+)
+
+auto_register_module(globals(), __name__)
 standardize_module_imports()
+
+
+# Create a mock function_registry for backward compatibility
+class MockRegistry:
+    def __init__(self):
+        self.registry = globals()
+
+
+function_registry = MockRegistry()
 #!/usr/bin/env python3
 
 # my_selectors.py
@@ -207,7 +224,9 @@ def run_comprehensive_tests() -> bool:
         """Test selector organization and completeness."""
         # Count selectors by category
         login_selectors = [
-            name for name in function_registry.registry if "LOGIN" in name and name.endswith("_SELECTOR")
+            name
+            for name in function_registry.registry
+            if "LOGIN" in name and name.endswith("_SELECTOR")
         ]
         message_selectors = [
             name
@@ -228,7 +247,9 @@ def run_comprehensive_tests() -> bool:
         assert len(error_selectors) >= 3, "Should have error-related selectors defined"
 
         # Test that all selector constants follow naming convention
-        all_selectors = [name for name in function_registry.registry if name.endswith("_SELECTOR")]
+        all_selectors = [
+            name for name in function_registry.registry if name.endswith("_SELECTOR")
+        ]
         for selector_name in all_selectors:
             assert (
                 selector_name.isupper()
@@ -358,6 +379,10 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     import sys
     import re

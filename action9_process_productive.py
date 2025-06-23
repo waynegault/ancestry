@@ -23,11 +23,25 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 # --- Local application imports ---
+try:
+    from core_imports import auto_register_module
+
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
+
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+)
+
+standardize_module_imports()
+
 from config import config_schema
 
 from database import (
-from path_manager import function_registry, standardize_module_imports
-standardize_module_imports()
     ConversationLog,
     MessageDirectionEnum,
     MessageType,
@@ -2111,11 +2125,9 @@ def run_comprehensive_tests() -> bool:
         ), "ACKNOWLEDGEMENT_MESSAGE_TYPE not set"
         assert (
             CUSTOM_RESPONSE_MESSAGE_TYPE == "Automated_Genealogy_Response"
-        ), "CUSTOM_RESPONSE_MESSAGE_TYPE not set"
-
-        # Test class availability
-        assert function_registry.is_available("PersonProcessor"), "PersonProcessor class not defined"
-        assert function_registry.is_available("BatchCommitManager"), "BatchCommitManager class not defined"
+        ), "CUSTOM_RESPONSE_MESSAGE_TYPE not set"  # Test class availability
+        assert "PersonProcessor" in globals(), "PersonProcessor class not defined"
+        assert "BatchCommitManager" in globals(), "BatchCommitManager class not defined"
 
         # Test function availability
         assert callable(
@@ -2329,6 +2341,10 @@ def run_comprehensive_tests() -> bool:
 
     return suite.finish_suite()
 
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
 
 if __name__ == "__main__":
     print(

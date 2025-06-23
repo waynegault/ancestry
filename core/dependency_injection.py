@@ -9,6 +9,10 @@ This module provides a comprehensive dependency injection system to:
 - Provide configuration-driven component instantiation
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import logging
 import threading
 from abc import ABC, abstractmethod
@@ -20,7 +24,13 @@ import os
 import unittest
 from unittest.mock import MagicMock
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
+
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 T = TypeVar("T")
 

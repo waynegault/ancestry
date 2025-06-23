@@ -8,19 +8,34 @@ Usage:
     python run_all_tests.py --fast    # Run all tests with reduced timeouts (faster but may miss slow tests)
 """
 
+# --- Unified import system ---
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    safe_execute,
+)
+
+# Register this module immediately
+auto_register_module(globals(), __name__)
+
 import sys
 import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+# Initialize logger
+logger = get_logger(__name__)
+
 # Add project root to Python path to allow imports from subdirectories
 project_root = Path(__file__).parent
 
 # Use centralized path management
 try:
-    from path_manager import standardize_module_imports
-    standardize_module_imports()
+    from path_manager import standardize_module_imports as legacy_standardize
+
+    legacy_standardize()
 except ImportError:
     # Fallback for cases where path_manager isn't available
     sys.path.insert(0, str(project_root))
@@ -323,6 +338,10 @@ def main():
     print(f"{'='*60}")
 
     return all_passed
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
 
 
 if __name__ == "__main__":

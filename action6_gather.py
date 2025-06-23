@@ -45,6 +45,21 @@ from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
 # --- Local application imports ---
+try:
+    from core_imports import auto_register_module
+
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
+
+# Standardize imports if available
+try:
+    from core_imports import standardize_module_imports
+
+    standardize_module_imports()
+except ImportError:
+    pass
+
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
 from selenium_utils import get_driver_cookies
@@ -2596,14 +2611,16 @@ def get_matches(
             )
             all_cookies = get_driver_cookies(driver)
             if all_cookies:
+                # get_driver_cookies returns a list of cookie dictionaries
                 for cookie_name in csrf_token_cookie_names:
-                    if cookie_name in all_cookies and all_cookies[cookie_name]:
-                        specific_csrf_token = unquote(all_cookies[cookie_name]).split(
-                            "|"
-                        )[0]
-                        logger.debug(
-                            f"Read CSRF token via fallback from '{cookie_name}'."
-                        )
+                    for cookie in all_cookies:
+                        if cookie.get("name") == cookie_name and cookie.get("value"):
+                            specific_csrf_token = unquote(cookie["value"]).split("|")[0]
+                            logger.debug(
+                                f"Read CSRF token via fallback from '{cookie_name}'."
+                            )
+                            break
+                    if specific_csrf_token:
                         break
             else:
                 logger.warning(
@@ -4028,6 +4045,10 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     import sys
 

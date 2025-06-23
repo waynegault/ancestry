@@ -75,6 +75,17 @@ ERROR HANDLING:
 - Exception handling with detailed logging for debugging
 """
 
+# --- Unified import system ---
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    safe_execute,
+)
+
+# Register this module immediately
+auto_register_module(globals(), __name__)
+
 import os
 import base64
 import json
@@ -85,7 +96,12 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import getpass
 import keyring
-from logging_config import logger
+
+# Initialize logger
+logger = get_logger(__name__)
+
+# Legacy logger import for compatibility
+from logging_config import logger as legacy_logger
 
 # --- Test framework imports ---
 from test_framework import (
@@ -1115,3 +1131,15 @@ SECURITY BEST PRACTICES:
 
 For more information, see the comprehensive test suite in run_comprehensive_tests().
 """
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
+
+if __name__ == "__main__":
+    import sys
+
+    print("🔐 Running Security Manager comprehensive test suite...")
+    success = safe_execute(lambda: run_comprehensive_tests())
+    sys.exit(0 if success else 1)

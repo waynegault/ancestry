@@ -5,6 +5,10 @@ This module provides consistent error handling patterns across the entire
 application with proper logging, recovery strategies, and user-friendly messages.
 """
 
+from core_imports import standardize_module_imports, auto_register_module
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
 import logging
 import traceback
 from abc import ABC, abstractmethod
@@ -13,7 +17,13 @@ from typing import Any, Dict, Optional, Type, Union, Callable, List
 from functools import wraps
 import time
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
+
+try:
+    from core_imports import auto_register_module
+    auto_register_module(globals(), __name__)
+except ImportError:
+    pass  # Continue without auto-registration if not available
 
 
 class ErrorSeverity(Enum):

@@ -11,6 +11,17 @@ and utility functions for managing the cache lifecycle (clearing, closing).
 Cache directory and default settings are configurable via `config.py`.
 """
 
+# Unified import system
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
+
+# Auto-register module
+auto_register_module(globals(), __name__)
+
 # --- Standard library imports ---
 import atexit
 import hashlib
@@ -1021,9 +1032,14 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_result_decorator():
         """Test @cache_result decorator functionality."""
+        import time
+
         call_count = 0
 
-        @cache_result(cache_key_prefix="test_decorator", expire=300)
+        # Use timestamp to ensure unique cache key for each test run
+        test_timestamp = str(int(time.time() * 1000))  # milliseconds for uniqueness
+
+        @cache_result(cache_key_prefix=f"test_decorator_{test_timestamp}", expire=300)
         def expensive_function(x, y):
             nonlocal call_count
             call_count += 1
@@ -1283,3 +1299,6 @@ def run_comprehensive_tests() -> bool:
 if __name__ == "__main__":
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

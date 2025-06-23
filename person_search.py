@@ -6,13 +6,27 @@ Unified module for searching and retrieving person information from GEDCOM and A
 Provides functions for searching, getting family details, and relationship paths.
 """
 
+# --- Unified import system ---
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    safe_execute,
+)
+
+# Register this module immediately
+auto_register_module(globals(), __name__)
+
 import re
 from typing import Dict, List, Any, Optional, Tuple, Union
 import os
 import json
 
+# Initialize logger
+logger = get_logger(__name__)
+
 # Import from local modules
-from logging_config import logger
+from logging_config import logger as legacy_logger
 from config import config_manager, config_schema
 from utils import SessionManager
 
@@ -108,6 +122,10 @@ def run_comprehensive_tests() -> bool:
         return suite.finish_suite()
 
 
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
+
 # ==============================================
 # Standalone Test Block
 # ==============================================
@@ -115,5 +133,5 @@ if __name__ == "__main__":
     import sys
 
     print("🔍 Running Person Search & Matching Engine comprehensive test suite...")
-    success = run_comprehensive_tests()
+    success = safe_execute(lambda: run_comprehensive_tests())
     sys.exit(0 if success else 1)

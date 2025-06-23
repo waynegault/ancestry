@@ -1,51 +1,7 @@
-from path_manager import function_registry, standardize_module_imports
-# Auto-register functions for optimized access
-# Auto-register functions for optimized access
-try:
-    _current_module = globals()
-    if "suppress_logging" in _current_module and callable(_current_module["suppress_logging"]):
-        function_registry.register("suppress_logging", _current_module["suppress_logging"])
-    if "create_mock_data" in _current_module and callable(_current_module["create_mock_data"]):
-        function_registry.register("create_mock_data", _current_module["create_mock_data"])
-    if "assert_valid_function" in _current_module and callable(_current_module["assert_valid_function"]):
-        function_registry.register("assert_valid_function", _current_module["assert_valid_function"])
-    if "assert_valid_config" in _current_module and callable(_current_module["assert_valid_config"]):
-        function_registry.register("assert_valid_config", _current_module["assert_valid_config"])
-    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
-        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
-    if "Colors" in _current_module and callable(_current_module["Colors"]):
-        function_registry.register("Colors", _current_module["Colors"])
-    if "Icons" in _current_module and callable(_current_module["Icons"]):
-        function_registry.register("Icons", _current_module["Icons"])
-    if "TestSuite" in _current_module and callable(_current_module["TestSuite"]):
-        function_registry.register("TestSuite", _current_module["TestSuite"])
-except Exception:
-    pass  # Silent registration - don't break module loading
+from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import auto_register_module
 
-try:
-    import inspect
-
-    frame = inspect.currentframe()
-
-    _current_module = frame.f_globals if frame else {}
-    if "suppress_logging" in _current_module and callable(_current_module["suppress_logging"]):
-        function_registry.register("suppress_logging", _current_module["suppress_logging"])
-    if "create_mock_data" in _current_module and callable(_current_module["create_mock_data"]):
-        function_registry.register("create_mock_data", _current_module["create_mock_data"])
-    if "assert_valid_function" in _current_module and callable(_current_module["assert_valid_function"]):
-        function_registry.register("assert_valid_function", _current_module["assert_valid_function"])
-    if "assert_valid_config" in _current_module and callable(_current_module["assert_valid_config"]):
-        function_registry.register("assert_valid_config", _current_module["assert_valid_config"])
-    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
-        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
-    if "Colors" in _current_module and callable(_current_module["Colors"]):
-        function_registry.register("Colors", _current_module["Colors"])
-    if "Icons" in _current_module and callable(_current_module["Icons"]):
-        function_registry.register("Icons", _current_module["Icons"])
-    if "TestSuite" in _current_module and callable(_current_module["TestSuite"]):
-        function_registry.register("TestSuite", _current_module["TestSuite"])
-except Exception:
-    pass  # Silent registration - don't break module loading
+auto_register_module(globals(), __name__)
 
 standardize_module_imports()
 #!/usr/bin/env python3
@@ -397,6 +353,10 @@ def run_comprehensive_tests():
 
     return suite.finish_suite()
 
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
 
 if __name__ == "__main__":
     # Test the framework itself

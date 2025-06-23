@@ -1,150 +1,12 @@
-from path_manager import function_registry, standardize_module_imports
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+)
+from core_imports import auto_register_module
 
-# Auto-register functions for optimized access
-# Auto-register functions for optimized access
-try:
-    _current_module = globals()
-    if "set_cached_gedcom_data" in _current_module and callable(
-        _current_module["set_cached_gedcom_data"]
-    ):
-        function_registry.register(
-            "set_cached_gedcom_data", _current_module["set_cached_gedcom_data"]
-        )
-    if "get_cached_gedcom_data" in _current_module and callable(
-        _current_module["get_cached_gedcom_data"]
-    ):
-        function_registry.register(
-            "get_cached_gedcom_data", _current_module["get_cached_gedcom_data"]
-        )
-    if "load_gedcom_data" in _current_module and callable(
-        _current_module["load_gedcom_data"]
-    ):
-        function_registry.register(
-            "load_gedcom_data", _current_module["load_gedcom_data"]
-        )
-    if "get_gedcom_data" in _current_module and callable(
-        _current_module["get_gedcom_data"]
-    ):
-        function_registry.register(
-            "get_gedcom_data", _current_module["get_gedcom_data"]
-        )
-    if "matches_criterion" in _current_module and callable(
-        _current_module["matches_criterion"]
-    ):
-        function_registry.register(
-            "matches_criterion", _current_module["matches_criterion"]
-        )
-    if "matches_year_criterion" in _current_module and callable(
-        _current_module["matches_year_criterion"]
-    ):
-        function_registry.register(
-            "matches_year_criterion", _current_module["matches_year_criterion"]
-        )
-    if "search_gedcom_for_criteria" in _current_module and callable(
-        _current_module["search_gedcom_for_criteria"]
-    ):
-        function_registry.register(
-            "search_gedcom_for_criteria", _current_module["search_gedcom_for_criteria"]
-        )
-    if "get_gedcom_family_details" in _current_module and callable(
-        _current_module["get_gedcom_family_details"]
-    ):
-        function_registry.register(
-            "get_gedcom_family_details", _current_module["get_gedcom_family_details"]
-        )
-    if "get_gedcom_relationship_path" in _current_module and callable(
-        _current_module["get_gedcom_relationship_path"]
-    ):
-        function_registry.register(
-            "get_gedcom_relationship_path",
-            _current_module["get_gedcom_relationship_path"],
-        )
-    if "run_comprehensive_tests" in _current_module and callable(
-        _current_module["run_comprehensive_tests"]
-    ):
-        function_registry.register(
-            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
-        )
-    if "search_frances_milne_demo" in _current_module and callable(
-        _current_module["search_frances_milne_demo"]
-    ):
-        function_registry.register(
-            "search_frances_milne_demo", _current_module["search_frances_milne_demo"]
-        )
-except Exception:
-    pass  # Silent registration - don't break module loading
-
-try:
-    _current_module = globals()
-    if "set_cached_gedcom_data" in _current_module and callable(
-        _current_module["set_cached_gedcom_data"]
-    ):
-        function_registry.register(
-            "set_cached_gedcom_data", _current_module["set_cached_gedcom_data"]
-        )
-    if "get_cached_gedcom_data" in _current_module and callable(
-        _current_module["get_cached_gedcom_data"]
-    ):
-        function_registry.register(
-            "get_cached_gedcom_data", _current_module["get_cached_gedcom_data"]
-        )
-    if "load_gedcom_data" in _current_module and callable(
-        _current_module["load_gedcom_data"]
-    ):
-        function_registry.register(
-            "load_gedcom_data", _current_module["load_gedcom_data"]
-        )
-    if "get_gedcom_data" in _current_module and callable(
-        _current_module["get_gedcom_data"]
-    ):
-        function_registry.register(
-            "get_gedcom_data", _current_module["get_gedcom_data"]
-        )
-    if "matches_criterion" in _current_module and callable(
-        _current_module["matches_criterion"]
-    ):
-        function_registry.register(
-            "matches_criterion", _current_module["matches_criterion"]
-        )
-    if "matches_year_criterion" in _current_module and callable(
-        _current_module["matches_year_criterion"]
-    ):
-        function_registry.register(
-            "matches_year_criterion", _current_module["matches_year_criterion"]
-        )
-    if "search_gedcom_for_criteria" in _current_module and callable(
-        _current_module["search_gedcom_for_criteria"]
-    ):
-        function_registry.register(
-            "search_gedcom_for_criteria", _current_module["search_gedcom_for_criteria"]
-        )
-    if "get_gedcom_family_details" in _current_module and callable(
-        _current_module["get_gedcom_family_details"]
-    ):
-        function_registry.register(
-            "get_gedcom_family_details", _current_module["get_gedcom_family_details"]
-        )
-    if "get_gedcom_relationship_path" in _current_module and callable(
-        _current_module["get_gedcom_relationship_path"]
-    ):
-        function_registry.register(
-            "get_gedcom_relationship_path",
-            _current_module["get_gedcom_relationship_path"],
-        )
-    if "run_comprehensive_tests" in _current_module and callable(
-        _current_module["run_comprehensive_tests"]
-    ):
-        function_registry.register(
-            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
-        )
-    if "search_frances_milne_demo" in _current_module and callable(
-        _current_module["search_frances_milne_demo"]
-    ):
-        function_registry.register(
-            "search_frances_milne_demo", _current_module["search_frances_milne_demo"]
-        )
-except Exception:
-    pass  # Silent registration - don't break module loading
+auto_register_module(globals(), __name__)
 
 standardize_module_imports()
 #!/usr/bin/env python3
@@ -1036,46 +898,45 @@ def run_comprehensive_tests() -> bool:
                     logger.info(
                         f"Found {len(results)} people with first name '{reference_person_name.split()[0]}'"
                     )
-
                 return True
             except MissingConfigError:
                 return True
 
         def test_get_gedcom_family_details_mock():
             try:
-
+                # Mock GEDCOM class with complete structure
                 class MockGedcom(GedcomData):
                     def __init__(self):
-                        pass
-
-                    processed_data_cache = {
-                        "@I1@": {
-                            "full_name_disp": "John Smith",
-                            "first_name": "John",
-                            "surname": "Smith",
-                            "gender": "M",
-                            "birth_year": 1850,
-                            "birth_date_disp": "1850",
-                            "birth_place_disp": "NY",
-                            "death_year": 1910,
-                            "death_date_disp": "1910",
-                            "death_place_disp": "Boston",
-                        },
-                        "@I2@": {
-                            "full_name_disp": "Jane Doe",
-                            "first_name": "Jane",
-                            "surname": "Doe",
-                            "gender": "F",
-                            "birth_year": 1855,
-                            "birth_date_disp": "1855",
-                            "birth_place_disp": "CA",
-                            "death_year": 1920,
-                            "death_date_disp": "1920",
-                            "death_place_disp": "LA",
-                        },
-                    }
-                    id_to_parents = {"@I1@": {"@I2@"}}
-                    id_to_children = {"@I2@": {"@I1@"}}
+                        # Initialize required attributes without calling parent __init__
+                        self.reader = None
+                        self.processed_data_cache = {
+                            "@I1@": {
+                                "full_name_disp": "John Smith",
+                                "first_name": "John",
+                                "surname": "Smith",
+                                "gender": "M",
+                                "birth_year": 1850,
+                                "birth_date_disp": "1850",
+                                "birth_place_disp": "NY",
+                                "death_year": 1910,
+                                "death_date_disp": "1910",
+                                "death_place_disp": "Boston",
+                            },
+                            "@I2@": {
+                                "full_name_disp": "Jane Doe",
+                                "first_name": "Jane",
+                                "surname": "Doe",
+                                "gender": "F",
+                                "birth_year": 1855,
+                                "birth_date_disp": "1855",
+                                "birth_place_disp": "CA",
+                                "death_year": 1920,
+                                "death_date_disp": "1920",
+                                "death_place_disp": "LA",
+                            },
+                        }
+                        self.id_to_parents = {"@I1@": {"@I2@"}}
+                        self.id_to_children = {"@I2@": {"@I1@"}}
 
                 details = get_gedcom_family_details("@I1@", gedcom_data=MockGedcom())
                 assert details["id"] == "@I1@"
@@ -1086,7 +947,7 @@ def run_comprehensive_tests() -> bool:
 
         def test_get_gedcom_relationship_path_mock():
             try:
-
+                # Mock individual class that matches expected interface
                 class StubIndividual:
                     def sub_tags(self, tag):
                         return []
@@ -1094,17 +955,22 @@ def run_comprehensive_tests() -> bool:
                     def sub_tag(self, tag):
                         return None
 
+                # Mock GEDCOM class with proper typing
                 class MockGedcom(GedcomData):
                     def __init__(self):
-                        pass
-
-                    processed_data_cache = {
-                        "@I1@": {"full_name_disp": "John Smith"},
-                        "@I2@": {"full_name_disp": "Jane Doe"},
-                    }
-                    id_to_parents = {"@I1@": {"@I2@"}, "@I2@": set()}
-                    id_to_children = {"@I2@": {"@I1@"}, "@I1@": set()}
-                    indi_index = {"@I1@": StubIndividual(), "@I2@": StubIndividual()}  # type: ignore                    reader = None
+                        # Initialize required attributes without calling parent __init__
+                        self.reader = None
+                        self.processed_data_cache = {
+                            "@I1@": {"full_name_disp": "John Smith"},
+                            "@I2@": {"full_name_disp": "Jane Doe"},
+                        }
+                        self.id_to_parents = {"@I1@": {"@I2@"}, "@I2@": set()}
+                        self.id_to_children = {"@I2@": {"@I1@"}, "@I1@": set()}
+                        # Use Any type to avoid type checker issues with mock objects
+                        self.indi_index: Dict[str, Any] = {
+                            "@I1@": StubIndividual(),
+                            "@I2@": StubIndividual(),
+                        }
 
                 orig_bfs = globals()["fast_bidirectional_bfs"]
                 globals()["fast_bidirectional_bfs"] = lambda *a, **kw: ["@I1@", "@I2@"]
@@ -1251,6 +1117,10 @@ def search_frances_milne_demo():
 
 
 # Self-test execution when run as main module
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     print("🧪 Running GEDCOM search utilities test suite...")
     success = run_comprehensive_tests()

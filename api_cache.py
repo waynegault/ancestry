@@ -1,418 +1,7 @@
-from path_manager import function_registry, standardize_module_imports
+from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import auto_register_module
 
-# Auto-register functions for optimized access
-# Auto-register functions for optimized access
-# Auto-register functions for optimized access
-try:
-    _current_module = globals()
-    if "create_api_cache_key" in _current_module and callable(
-        _current_module["create_api_cache_key"]
-    ):
-        function_registry.register(
-            "create_api_cache_key", _current_module["create_api_cache_key"]
-        )
-    if "cache_profile_details_api" in _current_module and callable(
-        _current_module["cache_profile_details_api"]
-    ):
-        function_registry.register(
-            "cache_profile_details_api", _current_module["cache_profile_details_api"]
-        )
-    if "cache_facts_api" in _current_module and callable(
-        _current_module["cache_facts_api"]
-    ):
-        function_registry.register(
-            "cache_facts_api", _current_module["cache_facts_api"]
-        )
-    if "cache_suggest_api" in _current_module and callable(
-        _current_module["cache_suggest_api"]
-    ):
-        function_registry.register(
-            "cache_suggest_api", _current_module["cache_suggest_api"]
-        )
-    if "create_ai_cache_key" in _current_module and callable(
-        _current_module["create_ai_cache_key"]
-    ):
-        function_registry.register(
-            "create_ai_cache_key", _current_module["create_ai_cache_key"]
-        )
-    if "cache_ai_classify_intent" in _current_module and callable(
-        _current_module["cache_ai_classify_intent"]
-    ):
-        function_registry.register(
-            "cache_ai_classify_intent", _current_module["cache_ai_classify_intent"]
-        )
-    if "cache_ai_extract_tasks" in _current_module and callable(
-        _current_module["cache_ai_extract_tasks"]
-    ):
-        function_registry.register(
-            "cache_ai_extract_tasks", _current_module["cache_ai_extract_tasks"]
-        )
-    if "cache_ai_genealogical_reply" in _current_module and callable(
-        _current_module["cache_ai_genealogical_reply"]
-    ):
-        function_registry.register(
-            "cache_ai_genealogical_reply",
-            _current_module["cache_ai_genealogical_reply"],
-        )
-    if "cache_person_by_profile_id" in _current_module and callable(
-        _current_module["cache_person_by_profile_id"]
-    ):
-        function_registry.register(
-            "cache_person_by_profile_id", _current_module["cache_person_by_profile_id"]
-        )
-    if "cache_conversation_logs" in _current_module and callable(
-        _current_module["cache_conversation_logs"]
-    ):
-        function_registry.register(
-            "cache_conversation_logs", _current_module["cache_conversation_logs"]
-        )
-    if "warm_api_caches" in _current_module and callable(
-        _current_module["warm_api_caches"]
-    ):
-        function_registry.register(
-            "warm_api_caches", _current_module["warm_api_caches"]
-        )
-    if "get_api_cache_stats" in _current_module and callable(
-        _current_module["get_api_cache_stats"]
-    ):
-        function_registry.register(
-            "get_api_cache_stats", _current_module["get_api_cache_stats"]
-        )
-    if "get_api_cache_module_stats" in _current_module and callable(
-        _current_module["get_api_cache_module_stats"]
-    ):
-        function_registry.register(
-            "get_api_cache_module_stats", _current_module["get_api_cache_module_stats"]
-        )
-    if "clear_api_cache" in _current_module and callable(
-        _current_module["clear_api_cache"]
-    ):
-        function_registry.register(
-            "clear_api_cache", _current_module["clear_api_cache"]
-        )
-    if "warm_api_cache" in _current_module and callable(
-        _current_module["warm_api_cache"]
-    ):
-        function_registry.register("warm_api_cache", _current_module["warm_api_cache"])
-    if "get_api_cache_health" in _current_module and callable(
-        _current_module["get_api_cache_health"]
-    ):
-        function_registry.register(
-            "get_api_cache_health", _current_module["get_api_cache_health"]
-        )
-    if "create_unified_api_cache_key" in _current_module and callable(
-        _current_module["create_unified_api_cache_key"]
-    ):
-        function_registry.register(
-            "create_unified_api_cache_key",
-            _current_module["create_unified_api_cache_key"],
-        )
-    if "create_unified_ai_cache_key" in _current_module and callable(
-        _current_module["create_unified_ai_cache_key"]
-    ):
-        function_registry.register(
-            "create_unified_ai_cache_key",
-            _current_module["create_unified_ai_cache_key"],
-        )
-    if "run_api_cache_tests" in _current_module and callable(
-        _current_module["run_api_cache_tests"]
-    ):
-        function_registry.register(
-            "run_api_cache_tests", _current_module["run_api_cache_tests"]
-        )
-    if "demonstrate_api_cache_usage" in _current_module and callable(
-        _current_module["demonstrate_api_cache_usage"]
-    ):
-        function_registry.register(
-            "demonstrate_api_cache_usage",
-            _current_module["demonstrate_api_cache_usage"],
-        )
-    if "run_comprehensive_tests" in _current_module and callable(
-        _current_module["run_comprehensive_tests"]
-    ):
-        function_registry.register(
-            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
-        )
-    if "ApiCacheModule" in _current_module and callable(
-        _current_module["ApiCacheModule"]
-    ):
-        function_registry.register("ApiCacheModule", _current_module["ApiCacheModule"])
-except Exception:
-    pass  # Silent registration - don't break module loading
-
-try:
-    _current_module = globals()
-    if "create_api_cache_key" in _current_module and callable(
-        _current_module["create_api_cache_key"]
-    ):
-        function_registry.register(
-            "create_api_cache_key", _current_module["create_api_cache_key"]
-        )
-    if "cache_profile_details_api" in _current_module and callable(
-        _current_module["cache_profile_details_api"]
-    ):
-        function_registry.register(
-            "cache_profile_details_api", _current_module["cache_profile_details_api"]
-        )
-    if "cache_facts_api" in _current_module and callable(
-        _current_module["cache_facts_api"]
-    ):
-        function_registry.register(
-            "cache_facts_api", _current_module["cache_facts_api"]
-        )
-    if "cache_suggest_api" in _current_module and callable(
-        _current_module["cache_suggest_api"]
-    ):
-        function_registry.register(
-            "cache_suggest_api", _current_module["cache_suggest_api"]
-        )
-    if "create_ai_cache_key" in _current_module and callable(
-        _current_module["create_ai_cache_key"]
-    ):
-        function_registry.register(
-            "create_ai_cache_key", _current_module["create_ai_cache_key"]
-        )
-    if "cache_ai_classify_intent" in _current_module and callable(
-        _current_module["cache_ai_classify_intent"]
-    ):
-        function_registry.register(
-            "cache_ai_classify_intent", _current_module["cache_ai_classify_intent"]
-        )
-    if "cache_ai_extract_tasks" in _current_module and callable(
-        _current_module["cache_ai_extract_tasks"]
-    ):
-        function_registry.register(
-            "cache_ai_extract_tasks", _current_module["cache_ai_extract_tasks"]
-        )
-    if "cache_ai_genealogical_reply" in _current_module and callable(
-        _current_module["cache_ai_genealogical_reply"]
-    ):
-        function_registry.register(
-            "cache_ai_genealogical_reply",
-            _current_module["cache_ai_genealogical_reply"],
-        )
-    if "cache_person_by_profile_id" in _current_module and callable(
-        _current_module["cache_person_by_profile_id"]
-    ):
-        function_registry.register(
-            "cache_person_by_profile_id", _current_module["cache_person_by_profile_id"]
-        )
-    if "cache_conversation_logs" in _current_module and callable(
-        _current_module["cache_conversation_logs"]
-    ):
-        function_registry.register(
-            "cache_conversation_logs", _current_module["cache_conversation_logs"]
-        )
-    if "warm_api_caches" in _current_module and callable(
-        _current_module["warm_api_caches"]
-    ):
-        function_registry.register(
-            "warm_api_caches", _current_module["warm_api_caches"]
-        )
-    if "get_api_cache_stats" in _current_module and callable(
-        _current_module["get_api_cache_stats"]
-    ):
-        function_registry.register(
-            "get_api_cache_stats", _current_module["get_api_cache_stats"]
-        )
-    if "get_api_cache_module_stats" in _current_module and callable(
-        _current_module["get_api_cache_module_stats"]
-    ):
-        function_registry.register(
-            "get_api_cache_module_stats", _current_module["get_api_cache_module_stats"]
-        )
-    if "clear_api_cache" in _current_module and callable(
-        _current_module["clear_api_cache"]
-    ):
-        function_registry.register(
-            "clear_api_cache", _current_module["clear_api_cache"]
-        )
-    if "warm_api_cache" in _current_module and callable(
-        _current_module["warm_api_cache"]
-    ):
-        function_registry.register("warm_api_cache", _current_module["warm_api_cache"])
-    if "get_api_cache_health" in _current_module and callable(
-        _current_module["get_api_cache_health"]
-    ):
-        function_registry.register(
-            "get_api_cache_health", _current_module["get_api_cache_health"]
-        )
-    if "create_unified_api_cache_key" in _current_module and callable(
-        _current_module["create_unified_api_cache_key"]
-    ):
-        function_registry.register(
-            "create_unified_api_cache_key",
-            _current_module["create_unified_api_cache_key"],
-        )
-    if "create_unified_ai_cache_key" in _current_module and callable(
-        _current_module["create_unified_ai_cache_key"]
-    ):
-        function_registry.register(
-            "create_unified_ai_cache_key",
-            _current_module["create_unified_ai_cache_key"],
-        )
-    if "run_api_cache_tests" in _current_module and callable(
-        _current_module["run_api_cache_tests"]
-    ):
-        function_registry.register(
-            "run_api_cache_tests", _current_module["run_api_cache_tests"]
-        )
-    if "demonstrate_api_cache_usage" in _current_module and callable(
-        _current_module["demonstrate_api_cache_usage"]
-    ):
-        function_registry.register(
-            "demonstrate_api_cache_usage",
-            _current_module["demonstrate_api_cache_usage"],
-        )
-    if "run_comprehensive_tests" in _current_module and callable(
-        _current_module["run_comprehensive_tests"]
-    ):
-        function_registry.register(
-            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
-        )
-    if "ApiCacheModule" in _current_module and callable(
-        _current_module["ApiCacheModule"]
-    ):
-        function_registry.register("ApiCacheModule", _current_module["ApiCacheModule"])
-except Exception:
-    pass  # Silent registration - don't break module loading
-
-try:
-    _current_module = globals()
-    if "create_api_cache_key" in _current_module and callable(
-        _current_module["create_api_cache_key"]
-    ):
-        function_registry.register(
-            "create_api_cache_key", _current_module["create_api_cache_key"]
-        )
-    if "cache_profile_details_api" in _current_module and callable(
-        _current_module["cache_profile_details_api"]
-    ):
-        function_registry.register(
-            "cache_profile_details_api", _current_module["cache_profile_details_api"]
-        )
-    if "cache_facts_api" in _current_module and callable(
-        _current_module["cache_facts_api"]
-    ):
-        function_registry.register(
-            "cache_facts_api", _current_module["cache_facts_api"]
-        )
-    if "cache_suggest_api" in _current_module and callable(
-        _current_module["cache_suggest_api"]
-    ):
-        function_registry.register(
-            "cache_suggest_api", _current_module["cache_suggest_api"]
-        )
-    if "create_ai_cache_key" in _current_module and callable(
-        _current_module["create_ai_cache_key"]
-    ):
-        function_registry.register(
-            "create_ai_cache_key", _current_module["create_ai_cache_key"]
-        )
-    if "cache_ai_classify_intent" in _current_module and callable(
-        _current_module["cache_ai_classify_intent"]
-    ):
-        function_registry.register(
-            "cache_ai_classify_intent", _current_module["cache_ai_classify_intent"]
-        )
-    if "cache_ai_extract_tasks" in _current_module and callable(
-        _current_module["cache_ai_extract_tasks"]
-    ):
-        function_registry.register(
-            "cache_ai_extract_tasks", _current_module["cache_ai_extract_tasks"]
-        )
-    if "cache_ai_genealogical_reply" in _current_module and callable(
-        _current_module["cache_ai_genealogical_reply"]
-    ):
-        function_registry.register(
-            "cache_ai_genealogical_reply",
-            _current_module["cache_ai_genealogical_reply"],
-        )
-    if "cache_person_by_profile_id" in _current_module and callable(
-        _current_module["cache_person_by_profile_id"]
-    ):
-        function_registry.register(
-            "cache_person_by_profile_id", _current_module["cache_person_by_profile_id"]
-        )
-    if "cache_conversation_logs" in _current_module and callable(
-        _current_module["cache_conversation_logs"]
-    ):
-        function_registry.register(
-            "cache_conversation_logs", _current_module["cache_conversation_logs"]
-        )
-    if "warm_api_caches" in _current_module and callable(
-        _current_module["warm_api_caches"]
-    ):
-        function_registry.register(
-            "warm_api_caches", _current_module["warm_api_caches"]
-        )
-    if "get_api_cache_stats" in _current_module and callable(
-        _current_module["get_api_cache_stats"]
-    ):
-        function_registry.register(
-            "get_api_cache_stats", _current_module["get_api_cache_stats"]
-        )
-    if "get_api_cache_module_stats" in _current_module and callable(
-        _current_module["get_api_cache_module_stats"]
-    ):
-        function_registry.register(
-            "get_api_cache_module_stats", _current_module["get_api_cache_module_stats"]
-        )
-    if "clear_api_cache" in _current_module and callable(
-        _current_module["clear_api_cache"]
-    ):
-        function_registry.register(
-            "clear_api_cache", _current_module["clear_api_cache"]
-        )
-    if "warm_api_cache" in _current_module and callable(
-        _current_module["warm_api_cache"]
-    ):
-        function_registry.register("warm_api_cache", _current_module["warm_api_cache"])
-    if "get_api_cache_health" in _current_module and callable(
-        _current_module["get_api_cache_health"]
-    ):
-        function_registry.register(
-            "get_api_cache_health", _current_module["get_api_cache_health"]
-        )
-    if "create_unified_api_cache_key" in _current_module and callable(
-        _current_module["create_unified_api_cache_key"]
-    ):
-        function_registry.register(
-            "create_unified_api_cache_key",
-            _current_module["create_unified_api_cache_key"],
-        )
-    if "create_unified_ai_cache_key" in _current_module and callable(
-        _current_module["create_unified_ai_cache_key"]
-    ):
-        function_registry.register(
-            "create_unified_ai_cache_key",
-            _current_module["create_unified_ai_cache_key"],
-        )
-    if "run_api_cache_tests" in _current_module and callable(
-        _current_module["run_api_cache_tests"]
-    ):
-        function_registry.register(
-            "run_api_cache_tests", _current_module["run_api_cache_tests"]
-        )
-    if "demonstrate_api_cache_usage" in _current_module and callable(
-        _current_module["demonstrate_api_cache_usage"]
-    ):
-        function_registry.register(
-            "demonstrate_api_cache_usage",
-            _current_module["demonstrate_api_cache_usage"],
-        )
-    if "run_comprehensive_tests" in _current_module and callable(
-        _current_module["run_comprehensive_tests"]
-    ):
-        function_registry.register(
-            "run_comprehensive_tests", _current_module["run_comprehensive_tests"]
-        )
-    if "ApiCacheModule" in _current_module and callable(
-        _current_module["ApiCacheModule"]
-    ):
-        function_registry.register("ApiCacheModule", _current_module["ApiCacheModule"])
-except Exception:
-    pass  # Silent registration - don't break module loading
+auto_register_module(globals(), __name__)
 
 standardize_module_imports()
 #!/usr/bin/env python3
@@ -1343,8 +932,8 @@ def run_comprehensive_tests() -> bool:
             "12345" in test_cache_key_12345
         ), "Test data should contain 12345 identifier"
 
-        if function_registry.is_available("APICache"):
-            cache_class = function_registry.get("APICache")
+        if is_function_available("APICache"):
+            cache_class = get_function("APICache")
             if cache_class:
                 cache = cache_class()
                 assert cache is not None, "Cache should initialize properly"
@@ -1355,8 +944,8 @@ def run_comprehensive_tests() -> bool:
     # Basic cache operations tests
     def test_basic_cache_operations():
         """Test fundamental cache get/set/delete operations."""
-        if function_registry.is_available("APICache"):
-            cache_class = function_registry.get("APICache")
+        if is_function_available("APICache"):
+            cache_class = get_function("APICache")
             if cache_class:
                 cache = cache_class()
 
@@ -1384,8 +973,8 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_expiration():
         """Test cache TTL (Time To Live) functionality."""
-        if function_registry.is_available("APICache"):
-            cache_class = function_registry.get("APICache")
+        if is_function_available("APICache"):
+            cache_class = get_function("APICache")
             if cache_class:
                 cache = cache_class()
 
@@ -1414,8 +1003,8 @@ def run_comprehensive_tests() -> bool:
     def test_cache_invalidation():
         """Test pattern-based cache invalidation functionality."""
 
-        if function_registry.is_available("invalidate_cache_pattern"):
-            invalidator = function_registry.get("invalidate_cache_pattern")
+        if is_function_available("invalidate_cache_pattern"):
+            invalidator = get_function("invalidate_cache_pattern")
 
             if (
                 invalidator
@@ -1439,8 +1028,8 @@ def run_comprehensive_tests() -> bool:
     # Cache statistics tests
     def test_cache_statistics():
         """Test cache performance metrics and statistics."""
-        if function_registry.is_available("get_cache_stats"):
-            stats_func = function_registry.get("get_cache_stats")
+        if is_function_available("get_cache_stats"):
+            stats_func = get_function("get_cache_stats")
             if stats_func:
                 stats = stats_func()
 
@@ -1456,8 +1045,8 @@ def run_comprehensive_tests() -> bool:
     # Error handling tests
     def test_error_handling():
         """Test cache error handling and recovery."""
-        if function_registry.is_available("APICache"):
-            cache_class = function_registry.get("APICache")
+        if is_function_available("APICache"):
+            cache_class = get_function("APICache")
             if cache_class:
                 cache = cache_class()
 
@@ -1531,6 +1120,10 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     print("💾 Running API Response Caching System comprehensive test suite...")
     success = run_comprehensive_tests()

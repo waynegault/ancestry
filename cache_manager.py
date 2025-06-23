@@ -1,19 +1,15 @@
 # Safe import for function_registry with fallback
-try:
-    from path_manager import function_registry
-except ImportError:
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+)
 
-    class DummyFunctionRegistry:
-        def register(self, name, func):
-            pass
+auto_register_module(globals(), __name__)
 
-        def get(self, name):
-            return None
-
-        def is_available(self, name):
-            return False
-
-    function_registry = DummyFunctionRegistry()
+# Initialize function_registry as None for backward compatibility
+function_registry = None
 
 #!/usr/bin/env python3
 
@@ -70,8 +66,8 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_manager_initialization():
         """Test CacheManager initialization and basic setup."""
-        if function_registry and function_registry.is_available("CacheManager"):
-            cache_manager_class = function_registry.get("CacheManager")
+        if function_registry and is_function_available("CacheManager"):
+            cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
                 assert cache_manager is not None
@@ -81,8 +77,8 @@ def run_comprehensive_tests() -> bool:
 
         # CORE FUNCTIONALITY TESTS    def test_cache_operations():
         """Test basic cache operations."""
-        if function_registry and function_registry.is_available("CacheManager"):
-            cache_manager_class = function_registry.get("CacheManager")
+        if function_registry and is_function_available("CacheManager"):
+            cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
                 if hasattr(cache_manager, "set") and hasattr(cache_manager, "get"):
@@ -93,8 +89,8 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_statistics():
         """Test cache statistics collection."""
-        if function_registry and function_registry.is_available("get_cache_stats"):
-            stats_func = function_registry.get("get_cache_stats")
+        if function_registry and is_function_available("get_cache_stats"):
+            stats_func = get_function("get_cache_stats")
             if stats_func:
                 stats = stats_func()
                 assert isinstance(stats, dict)
@@ -102,15 +98,15 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_invalidation():
         """Test cache invalidation patterns."""
-        if function_registry.is_available("invalidate_cache_pattern"):
-            invalidator = function_registry.get("invalidate_cache_pattern")
+        if is_function_available("invalidate_cache_pattern"):
+            invalidator = get_function("invalidate_cache_pattern")
             assert callable(invalidator)
         return True
 
         # EDGE CASE TESTS    def test_eviction_policies():
         """Test cache eviction policies."""
-        if function_registry and function_registry.is_available("CacheManager"):
-            cache_manager_class = function_registry.get("CacheManager")
+        if function_registry and is_function_available("CacheManager"):
+            cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class(max_size=2)
                 if hasattr(cache_manager, "set") and hasattr(
@@ -125,8 +121,8 @@ def run_comprehensive_tests() -> bool:
     # INTEGRATION TESTS
     def test_performance_monitoring():
         """Test performance monitoring capabilities."""
-        if function_registry and function_registry.is_available("CacheManager"):
-            cache_manager_class = function_registry.get("CacheManager")
+        if function_registry and is_function_available("CacheManager"):
+            cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
                 if hasattr(cache_manager, "cache_stats_history"):
@@ -135,8 +131,8 @@ def run_comprehensive_tests() -> bool:
 
         # PERFORMANCE TESTS    def test_cache_performance():
         """Test cache performance under load."""
-        if function_registry and function_registry.is_available("CacheManager"):
-            cache_manager_class = function_registry.get("CacheManager")
+        if function_registry and is_function_available("CacheManager"):
+            cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
                 if hasattr(cache_manager, "set") and hasattr(cache_manager, "get"):
@@ -153,8 +149,8 @@ def run_comprehensive_tests() -> bool:
     # ERROR HANDLING TESTS
     def test_error_handling():
         """Test error handling in cache operations."""
-        if function_registry and function_registry.is_available("CacheManager"):
-            cache_manager_class = function_registry.get("CacheManager")
+        if function_registry and is_function_available("CacheManager"):
+            cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
                 # Test getting non-existent key
@@ -228,8 +224,8 @@ def run_comprehensive_tests() -> bool:
 
     # Multi-level cache operations
     def test_multilevel_cache_operations():
-        if function_registry.is_available("CacheManager"):
-            cache_manager = function_registry.get("CacheManager")()
+        if is_function_available("CacheManager"):
+            cache_manager = get_function("CacheManager")()
 
             # Test memory cache
             cache_manager.set("memory_key", "memory_value", level="memory")
@@ -243,8 +239,8 @@ def run_comprehensive_tests() -> bool:
 
     # Cache eviction policies
     def test_cache_eviction_policies():
-        if function_registry.is_available("CacheManager"):
-            cache_manager = function_registry.get("CacheManager")(max_size=3)
+        if is_function_available("CacheManager"):
+            cache_manager = get_function("CacheManager")(max_size=3)
 
             # Fill cache beyond capacity
             for i in range(5):
@@ -256,8 +252,8 @@ def run_comprehensive_tests() -> bool:
 
     # Cache invalidation strategies
     def test_cache_invalidation():
-        if function_registry.is_available("invalidate_cache"):
-            invalidator = function_registry.get("invalidate_cache")
+        if is_function_available("invalidate_cache"):
+            invalidator = get_function("invalidate_cache")
 
             # Test pattern-based invalidation
             patterns = ["user_*", "session_*", "temp_*"]
@@ -267,8 +263,8 @@ def run_comprehensive_tests() -> bool:
 
     # Cache warming
     def test_cache_warming():
-        if function_registry.is_available("warm_cache"):
-            warmer = function_registry.get("warm_cache")
+        if is_function_available("warm_cache"):
+            warmer = get_function("warm_cache")
 
             # Test cache pre-loading
             data_sources = [
@@ -281,8 +277,8 @@ def run_comprehensive_tests() -> bool:
 
     # Cache statistics and monitoring
     def test_cache_statistics():
-        if function_registry.is_available("get_cache_stats"):
-            stats_func = function_registry.get("get_cache_stats")
+        if is_function_available("get_cache_stats"):
+            stats_func = get_function("get_cache_stats")
             stats = stats_func()
 
             assert isinstance(stats, dict)
@@ -298,8 +294,8 @@ def run_comprehensive_tests() -> bool:
 
     # TTL (Time To Live) handling
     def test_ttl_handling():
-        if function_registry.is_available("CacheManager"):
-            cache_manager = function_registry.get("CacheManager")()
+        if is_function_available("CacheManager"):
+            cache_manager = get_function("CacheManager")()
 
             # Set item with short TTL
             cache_manager.set("ttl_key", "ttl_value", ttl=1)
@@ -324,8 +320,8 @@ def run_comprehensive_tests() -> bool:
             "none_value": None,
         }
 
-        if function_registry.is_available("CacheManager"):
-            cache_manager = function_registry.get("CacheManager")()
+        if is_function_available("CacheManager"):
+            cache_manager = get_function("CacheManager")()
 
             cache_manager.set("complex_key", complex_data)
             retrieved = cache_manager.get("complex_key")
@@ -335,9 +331,9 @@ def run_comprehensive_tests() -> bool:
     def test_cache_persistence():
         if function_registry.is_available(
             "save_cache_to_disk"
-        ) and function_registry.is_available("load_cache_from_disk"):
-            save_func = function_registry.get("save_cache_to_disk")
-            load_func = function_registry.get("load_cache_from_disk")
+        ) and is_function_available("load_cache_from_disk"):
+            save_func = get_function("save_cache_to_disk")
+            load_func = get_function("load_cache_from_disk")
 
             # Test saving and loading
             test_data = {"key1": "value1", "key2": "value2"}
@@ -1548,3 +1544,6 @@ def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
 if __name__ == "__main__":
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+# Register all module functions
+auto_register_module(globals(), __name__)

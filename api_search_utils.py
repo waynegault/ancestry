@@ -1,39 +1,7 @@
-from path_manager import function_registry, standardize_module_imports
-# Auto-register functions for optimized access
-# Auto-register functions for optimized access
-try:
-    import inspect
+from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import auto_register_module
 
-    frame = inspect.currentframe()
-
-    _current_module = frame.f_globals if frame else {}
-    if "search_api_for_criteria" in _current_module and callable(_current_module["search_api_for_criteria"]):
-        function_registry.register("search_api_for_criteria", _current_module["search_api_for_criteria"])
-    if "get_api_family_details" in _current_module and callable(_current_module["get_api_family_details"]):
-        function_registry.register("get_api_family_details", _current_module["get_api_family_details"])
-    if "get_api_relationship_path" in _current_module and callable(_current_module["get_api_relationship_path"]):
-        function_registry.register("get_api_relationship_path", _current_module["get_api_relationship_path"])
-    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
-        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
-except Exception:
-    pass  # Silent registration - don't break module loading
-
-try:
-    import inspect
-
-    frame = inspect.currentframe()
-
-    _current_module = frame.f_globals if frame else {}
-    if "search_api_for_criteria" in _current_module and callable(_current_module["search_api_for_criteria"]):
-        function_registry.register("search_api_for_criteria", _current_module["search_api_for_criteria"])
-    if "get_api_family_details" in _current_module and callable(_current_module["get_api_family_details"]):
-        function_registry.register("get_api_family_details", _current_module["get_api_family_details"])
-    if "get_api_relationship_path" in _current_module and callable(_current_module["get_api_relationship_path"]):
-        function_registry.register("get_api_relationship_path", _current_module["get_api_relationship_path"])
-    if "run_comprehensive_tests" in _current_module and callable(_current_module["run_comprehensive_tests"]):
-        function_registry.register("run_comprehensive_tests", _current_module["run_comprehensive_tests"])
-except Exception:
-    pass  # Silent registration - don't break module loading
+auto_register_module(globals(), __name__)
 
 standardize_module_imports()
 #!/usr/bin/env python3
@@ -1245,6 +1213,10 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 if __name__ == "__main__":
     import sys
 

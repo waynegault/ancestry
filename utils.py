@@ -11,24 +11,15 @@ and includes login/session verification logic closely tied to SessionManager.
 """
 
 # --- Path management and optimization imports ---
-from path_manager import standardize_module_imports
+from core_imports import standardize_module_imports
 
 # Try to import function_registry, but don't fail if it's not available
 try:
-    from path_manager import function_registry
+    from core_imports import register_function, get_function, is_function_available
 except ImportError:
-    # Create a dummy function_registry if not available
-    class DummyFunctionRegistry:
-        def is_available(self, name):
-            return False
+    from core.import_utils import get_function_registry
 
-        def get(self, name):
-            return None
-
-        def register(self, name, func):
-            pass  # Do nothing for dummy registry
-
-    function_registry = DummyFunctionRegistry()
+    function_registry = get_function_registry()
 
 standardize_module_imports()
 
@@ -6765,8 +6756,12 @@ def run_comprehensive_tests() -> bool:
 
 
 # Register module functions for optimized access via Function Registry
-def _register_utils_functions():
-    """Register this module's key functions with the Function Registry for optimized access."""
+try:
+    from core_imports import auto_register_module
+
+    auto_register_module(globals(), __name__)
+except ImportError:
+    # Fallback to manual registration if auto_register_module is not available
     try:
         # Register commonly accessed utility functions (only those that exist)
         current_module = globals()
@@ -6776,18 +6771,25 @@ def _register_utils_functions():
             "parse_cookie",
             "nav_to_page",
         ]
-
         for func_name in potential_functions:
             if func_name in current_module and callable(current_module[func_name]):
-                function_registry.register(func_name, current_module[func_name])
-
+                # Use new unified import system if available
+                if "register_function" in globals():
+                    register_function(
+                        func_name, current_module[func_name]
+                    )  # Fallback to function_registry if available and has register method
+                elif "function_registry" in globals():
+                    try:  # Only call register if the method exists and is callable
+                        if hasattr(function_registry, "register") and callable(
+                            getattr(function_registry, "register")
+                        ):
+                            function_registry.register(func_name, current_module[func_name])  # type: ignore
+                    except (AttributeError, TypeError):
+                        # Silently handle cases where register method doesn't exist or is not callable
+                        pass
         logger.debug(f"✅ Registered utils functions in Function Registry")
     except Exception as e:
         logger.debug(f"⚠️ Function registration failed: {e}")
-
-
-# Register functions when module loads
-_register_utils_functions()
 
 
 # ==============================================
@@ -6797,4 +6799,9 @@ if __name__ == "__main__":
     print("🛠️ Running Core Utilities & Session Management comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
+
+
+# Register module functions at module load
+auto_register_module(globals(), __name__)
+
 # End of utils.py

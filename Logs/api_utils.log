@@ -1,0 +1,75 @@
+16:32:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:32:32 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+16:32:32 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+16:32:41 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:32:42 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:32:42 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:32:42 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:32:42 INF [api_util test_log 2721] Test log message
+16:35:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:35:45 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+16:35:45 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+16:35:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:35:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:35:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:35:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:35:55 INF [api_util test_log 2721] Test log message
+16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:55 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+16:46:55 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:55 INF [ms_graph <module> 75  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+16:46:55 INF [ms_graph <module> 76  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+16:46:55 INF [ms_graph <module> 94  ] MSAL token cache path set to: Data\ms_graph_cache.bin
+16:46:55 INF [ms_graph <module> 113 ] MSAL token cache loaded successfully.
+16:46:55 INF [ms_graph <module> 169 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:56 INF [cache_ma _registe 1104] Enhanced cache manager registered 2 cache modules
+16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:46:56 INF [ms_graph save_cac 130 ] Executing save_cache_on_exit via atexit...
+16:46:56 INF [ms_graph save_cac 147 ] MSAL cache unchanged since last load/save. No save needed.
+16:50:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:50:56 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+16:50:56 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+16:51:04 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:51:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:51:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:51:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+16:51:05 INF [api_util test_log 2721] Test log message
+17:22:52 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:22:52 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+17:22:52 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:23:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:23:02 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:23:02 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:23:02 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:23:02 INF [api_util test_log 2721] Test log message
+17:33:11 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:33:11 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+17:33:11 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:33:19 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:33:20 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:33:20 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:33:20 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:33:20 INF [api_util test_log 2721] Test log message
+17:38:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:38:03 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+17:38:03 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:38:11 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:38:12 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:38:12 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:38:12 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:38:12 INF [api_util test_log 2721] Test log message
+17:43:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:43:45 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
+17:43:45 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:43:53 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:43:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:43:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:43:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:43:55 INF [api_util test_log 2721] Test log message
