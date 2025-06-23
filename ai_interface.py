@@ -80,6 +80,7 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
 )
 
 # --- Constants and Prompts ---
@@ -1138,8 +1139,6 @@ def run_comprehensive_tests() -> bool:
 
         # Create mock session manager for testing
         try:
-            from unittest.mock import MagicMock
-
             mock_session = MagicMock()
             mock_session.my_profile_id = "test_123"
         except ImportError:
@@ -1172,8 +1171,6 @@ def run_comprehensive_tests() -> bool:
 
         # Create mock session manager for testing
         try:
-            from unittest.mock import MagicMock
-
             mock_session = MagicMock()
             mock_session.my_profile_id = "test_123"
         except ImportError:
@@ -1226,8 +1223,6 @@ def run_comprehensive_tests() -> bool:
             # Test with mock session manager
             mock_session = create_mock_data().get("session_manager")
             if mock_session is None:
-                from unittest.mock import MagicMock
-
                 mock_session = MagicMock()
                 mock_session.my_profile_id = "test_123"
 
@@ -1255,8 +1250,6 @@ def run_comprehensive_tests() -> bool:
 
         # Create mock session manager for testing
         try:
-            from unittest.mock import MagicMock
-
             mock_session = MagicMock()
             mock_session.my_profile_id = "test_123"
         except ImportError:

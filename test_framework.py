@@ -1,4 +1,9 @@
-from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+)
 from core_imports import auto_register_module
 
 auto_register_module(globals(), __name__)
@@ -17,6 +22,19 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional, Union
 from unittest.mock import MagicMock, patch
+
+
+# Export commonly used testing utilities
+__all__ = [
+    "TestSuite",
+    "suppress_logging",
+    "create_mock_data",
+    "assert_valid_function",
+    "mock_logger_context",
+    "MockLogger",
+    "MagicMock",
+    "patch",
+]
 
 
 # ANSI Color Codes for consistent formatting
@@ -354,7 +372,6 @@ def run_comprehensive_tests():
     return suite.finish_suite()
 
 
-
 # Register module functions at module load
 auto_register_module(globals(), __name__)
 
@@ -395,3 +412,73 @@ if __name__ == "__main__":
     print(f"{Icons.ROCKET} Testing the test framework itself...")
     success = demo_tests()
     sys.exit(0 if success else 1)
+
+
+# Test utility classes for eliminating code duplication
+class MockLogger:
+    """
+    Reusable mock logger for testing.
+    Eliminates the need for DummyLogger class duplication across test modules.
+    """
+
+    def __init__(self):
+        self.lines = []
+        self.messages = {
+            "debug": [],
+            "info": [],
+            "warning": [],
+            "error": [],
+            "critical": [],
+        }
+
+    def debug(self, msg, **kwargs):
+        self.lines.append(msg)
+        self.messages["debug"].append(msg)
+
+    def info(self, msg, **kwargs):
+        self.lines.append(msg)
+        self.messages["info"].append(msg)
+
+    def warning(self, msg, **kwargs):
+        self.lines.append(msg)
+        self.messages["warning"].append(msg)
+
+    def error(self, msg, **kwargs):
+        self.lines.append(msg)
+        self.messages["error"].append(msg)
+
+    def critical(self, msg, **kwargs):
+        self.lines.append(msg)
+        self.messages["critical"].append(msg)
+
+    def get_messages(self, level: Optional[str] = None) -> List[str]:
+        """Get messages by level, or all messages if level is None"""
+        if level:
+            return self.messages.get(level, [])
+        return self.lines
+
+    def clear(self):
+        """Clear all logged messages"""
+        self.lines.clear()
+        for level_msgs in self.messages.values():
+            level_msgs.clear()
+
+
+@contextmanager
+def mock_logger_context(module_globals: dict, logger_name: str = "logger"):
+    """
+    Context manager for temporarily replacing a module's logger with MockLogger.
+
+    Usage:
+        with mock_logger_context(globals()) as mock_logger:
+            # Test code that uses logger
+            pass
+    """
+    original_logger = module_globals.get(logger_name)
+    mock_logger = MockLogger()
+    module_globals[logger_name] = mock_logger
+    try:
+        yield mock_logger
+    finally:
+        if original_logger:
+            module_globals[logger_name] = original_logger

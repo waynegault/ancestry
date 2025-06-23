@@ -29,7 +29,6 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Callable
-from unittest.mock import MagicMock, patch, mock_open
 
 # --- Local application imports ---
 from cache import (
@@ -55,6 +54,8 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
+    patch,
 )
 
 # --- Global Variables ---
@@ -887,7 +888,7 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for gedcom_cache.py.
     Tests GEDCOM file caching, invalidation, and performance optimization.
     """
-    from test_framework import TestSuite, suppress_logging, create_mock_data
+    from test_framework import TestSuite, suppress_logging, create_mock_data, MagicMock, patch
 
     with suppress_logging():
         suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")

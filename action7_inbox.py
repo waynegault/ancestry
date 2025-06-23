@@ -1683,14 +1683,12 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for action7_inbox.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
     suite = TestSuite(
         "Ancestry Inbox Processing & AI Classification", "action7_inbox.py"
     )
     suite.start_suite()
-
-    from unittest.mock import MagicMock, patch
 
     # INITIALIZATION TESTS
     def test_inbox_processor_initialization():

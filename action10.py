@@ -53,7 +53,6 @@ import os
 import sys
 import time
 import argparse
-from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 
@@ -69,6 +68,7 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    mock_logger_context,
 )
 
 # --- Mock imports ---
@@ -906,7 +906,7 @@ def main():
 
 def run_comprehensive_tests() -> bool:
     """Comprehensive test suite for action10.py"""
-    from test_framework import TestSuite, suppress_logging, create_mock_data
+    from test_framework import TestSuite, suppress_logging, create_mock_data, MagicMock
     import types
     import builtins
     import io
@@ -1037,20 +1037,7 @@ def run_comprehensive_tests() -> bool:
         return True
 
     def test_display_top_matches_patch():
-        class DummyLogger:
-            def __init__(self):
-                self.lines = []
-
-            def info(self, msg):
-                self.lines.append(msg)
-
-            def debug(self, msg):
-                self.lines.append(msg)
-
-        dummy_logger = DummyLogger()
-        orig_logger = globals()["logger"]
-        globals()["logger"] = dummy_logger
-        try:
+        with mock_logger_context(globals()) as dummy_logger:
             matches = [
                 {
                     "display_id": "@I1@",
@@ -1066,8 +1053,6 @@ def run_comprehensive_tests() -> bool:
             ]
             top = display_top_matches(matches, 1)
             assert top is not None and top["display_id"] == "@I1@"
-        finally:
-            globals()["logger"] = orig_logger
         return True
 
     def test_display_relatives_mock():
@@ -1079,11 +1064,8 @@ def run_comprehensive_tests() -> bool:
                 "GEDCOM_FILE_PATH is not set in config or .env; cannot run test_display_relatives_mock."
             )
         gedcom = GedcomData(gedcom_path)
-        test_id = (
-            getattr(config_schema, "TESTING_PERSON_TREE_ID", None)
-            or os.environ.get("TESTING_PERSON_TREE_ID")
-            or getattr(config_schema, "REFERENCE_PERSON_ID", None)
-            or os.environ.get("REFERENCE_PERSON_ID")
+        test_id = getattr(config_schema, "TESTING_PERSON_TREE_ID", None) or getattr(
+            config_schema, "reference_person_id", None
         )
         # Try to get a real individual object (not dict)
         individual = None
@@ -1099,25 +1081,10 @@ def run_comprehensive_tests() -> bool:
                     "No individual found in GEDCOM data for relatives test."
                 )
 
-        class DummyLogger:
-            def __init__(self):
-                self.lines = []
-
-            def info(self, msg):
-                self.lines.append(msg)
-
-            def debug(self, msg):
-                self.lines.append(msg)
-
-        dummy_logger = DummyLogger()
-        orig_logger = globals()["logger"]
-        globals()["logger"] = dummy_logger
-        try:
+        with mock_logger_context(globals()) as dummy_logger:
             display_relatives(gedcom, individual)
             # Assert that at least one relative is displayed (not 'None found.')
             assert any("- " in l or "full_name_disp" in l for l in dummy_logger.lines)
-        finally:
-            globals()["logger"] = orig_logger
         return True
 
     def test_analyze_top_match_mock():
@@ -1133,26 +1100,7 @@ def run_comprehensive_tests() -> bool:
             id_to_parents = id_to_children = indi_index = {}
             reader = None
 
-        class DummyLogger:
-            def __init__(self):
-                self.lines = []
-
-            def info(self, msg):
-                self.lines.append(msg)
-
-            def error(self, msg, **kwargs):
-                self.lines.append(msg)
-
-            def warning(self, msg):
-                self.lines.append(msg)
-
-            def debug(self, msg):
-                self.lines.append(msg)
-
-        dummy_logger = DummyLogger()
-        orig_logger = globals()["logger"]
-        globals()["logger"] = dummy_logger
-        try:
+        with mock_logger_context(globals()) as dummy_logger:
             analyze_top_match(
                 MockGedcom(gedcom_path),
                 {
@@ -1165,16 +1113,12 @@ def run_comprehensive_tests() -> bool:
                 "Reference Person",
             )
             assert any("Reference Person" in l for l in dummy_logger.lines)
-        finally:
-            globals()["logger"] = orig_logger
         return True
 
     def test_filter_and_score_individuals():
         # Test the actual function that exists in the module
         try:
             # Create simple mock data
-            from unittest.mock import MagicMock
-
             gedcom_data = MagicMock()
             gedcom_data.get_individuals.return_value = [
                 MagicMock(first_name="John", birth_year=1850)
@@ -1195,8 +1139,6 @@ def run_comprehensive_tests() -> bool:
     def test_analyze_top_match():
         # Test the analyze_top_match function with proper parameters
         try:
-            from unittest.mock import MagicMock
-
             gedcom_data = MagicMock()
             individual = MagicMock()
             individual.first_name = "John"
@@ -1210,8 +1152,6 @@ def run_comprehensive_tests() -> bool:
     def test_display_functions():
         # Test display functions don't crash
         try:
-            from unittest.mock import MagicMock
-
             gedcom_data = MagicMock()
             individual = MagicMock()
 
@@ -1226,35 +1166,13 @@ def run_comprehensive_tests() -> bool:
         orig_input = builtins.input
         builtins.input = lambda _: ""
 
-        class DummyLogger:
-            def __init__(self):
-                self.lines = []
-
-            def info(self, msg):
-                self.lines.append(msg)
-
-            def error(self, msg, **kwargs):
-                self.lines.append(msg)
-
-            def warning(self, msg):
-                self.lines.append(msg)
-
-            def critical(self, msg):
-                self.lines.append(msg)
-
-            def debug(self, msg):
-                self.lines.append(msg)
-
-        dummy_logger = DummyLogger()
-        orig_logger = globals()["logger"]
-        globals()["logger"] = dummy_logger
         try:
-            result = main()
+            with mock_logger_context(globals()) as dummy_logger:
+                result = main()
 
-            assert result is not False
+                assert result is not False
         finally:
             builtins.input = orig_input
-            globals()["logger"] = orig_logger
         return True
 
     # Register all tests

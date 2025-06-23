@@ -157,6 +157,8 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
+    patch,
 )
 
 # --- Initialization & Template Loading ---
@@ -1704,12 +1706,12 @@ def run_comprehensive_tests() -> bool:
 
     Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
     """
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
     suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
     suite.start_suite()
 
-    from unittest.mock import MagicMock, patch  # === INITIALIZATION TESTS ===
+    from test_framework import TestSuite, suppress_logging, MagicMock, patch  # === INITIALIZATION TESTS ===
 
     def test_module_imports():
         """Test that all required modules and dependencies are properly imported."""

@@ -27,7 +27,7 @@ This module defines CSS selectors for interacting with the Ancestry website.
 Selectors are organized by page/functionality for easier maintenance.
 """
 
-from test_framework import TestSuite, suppress_logging  # Testing framework
+from test_framework import TestSuite, suppress_logging, MagicMock  # Testing framework
 
 # --- General Page Elements ---
 WAIT_FOR_PAGE_SELECTOR = "body"  # Used to wait for page load.
@@ -126,6 +126,7 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
 )
 
 
@@ -386,7 +387,6 @@ auto_register_module(globals(), __name__)
 if __name__ == "__main__":
     import sys
     import re
-    from unittest.mock import MagicMock, patch
 
     print(
         "🎯 Running CSS Selectors & Element Identification comprehensive test suite..."

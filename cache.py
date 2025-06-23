@@ -34,7 +34,6 @@ import time
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional, Dict, Union, List
-from unittest.mock import MagicMock, patch
 
 # --- Third-party imports ---
 from diskcache import Cache
@@ -52,6 +51,7 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
 )
 
 # --- Global Cache Initialization ---

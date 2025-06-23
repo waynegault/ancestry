@@ -1880,19 +1880,17 @@ def _handle_search_phase(
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
     base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
 
-    # Check if owner_tree_id is missing and try to get it from environment variables or config
+    # Check if owner_tree_id is missing and try to get it from config
     if not owner_tree_id:
-        # First try to get tree ID from environment variables
-        import os
-
-        env_tree_id = os.environ.get("MY_TREE_ID")
-        if env_tree_id:
-            owner_tree_id = env_tree_id
-            # Update the session manager with the tree ID from environment
+        # Try to get tree ID from config
+        config_tree_id = getattr(config_schema.api, "tree_id", None)
+        if config_tree_id:
+            owner_tree_id = config_tree_id
+            # Update the session manager with the tree ID from config
             session_manager_local.my_tree_id = owner_tree_id
-            logger.info(f"Using tree ID from environment variables: {owner_tree_id}")
+            logger.info(f"Using tree ID from configuration: {owner_tree_id}")
         else:
-            # Try to get tree ID from config
+            # Try to get tree ID from session manager's API call
             tree_name = config_schema.api.tree_name
             if tree_name:
                 logger.info(
@@ -2271,8 +2269,6 @@ def _handle_details_phase(
     # Check if owner_profile_id is missing and try to get it from environment variables
     if not owner_profile_id:
         # Try to get profile ID from environment variables
-        import os
-
         env_profile_id = os.environ.get("MY_PROFILE_ID")
         if env_profile_id:
             owner_profile_id = env_profile_id
@@ -2330,21 +2326,17 @@ def _handle_supplementary_info_phase(
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     owner_name = getattr(session_manager_local, "tree_owner_name", "the Tree Owner")
 
-    # Check if owner_tree_id is missing and try to get it from environment variables
+    # Check if owner_tree_id is missing and try to get it from config
     if not owner_tree_id:
-        import os
-
-        env_tree_id = os.environ.get("MY_TREE_ID")
-        if env_tree_id:
-            owner_tree_id = env_tree_id
-            # Update the session manager with the tree ID from environment
+        config_tree_id = getattr(config_schema.api, "tree_id", None)
+        if config_tree_id:
+            owner_tree_id = config_tree_id
+            # Update the session manager with the tree ID from config
             session_manager_local.my_tree_id = owner_tree_id
-            logger.info(f"Using tree ID from environment variables: {owner_tree_id}")
+            logger.info(f"Using tree ID from configuration: {owner_tree_id}")
 
     # Check if owner_profile_id is missing and try to get it from environment variables
     if not owner_profile_id:
-        import os
-
         env_profile_id = os.environ.get("MY_PROFILE_ID")
         if env_profile_id:
             owner_profile_id = env_profile_id
@@ -2356,21 +2348,21 @@ def _handle_supplementary_info_phase(
 
     # Check if owner_name is missing and try to get it from environment variables
     if owner_name == "the Tree Owner":
-        import os
-
-        env_owner_name = os.environ.get("TREE_OWNER_NAME")
-        if env_owner_name:
-            owner_name = env_owner_name  # Update the session manager with the owner name from environment
+        # Try to get from config first
+        config_owner_name = getattr(config_schema, "user_name", None)
+        if (
+            config_owner_name and config_owner_name != "Tree Owner"
+        ):  # Don't use generic default
+            owner_name = config_owner_name
+            # Update the session manager with the owner name from config
             session_manager_local.tree_owner_name = owner_name
-            logger.info(
-                f"Using tree owner name from environment variables: {owner_name}"
-            )
+            logger.info(f"Using tree owner name from configuration: {owner_name}")
         else:
-            # If not in environment, try to get from config or use generic default
+            # If not in config, try alternative config location
             if owner_profile_id:
-                # Try to get from config first, then use generic default
-                config_owner_name = getattr(
-                    config_schema.api, "reference_person_name", None
+                # Try to get from reference person name config
+                alt_config_owner_name = getattr(
+                    config_schema, "reference_person_name", None
                 )
                 owner_name = config_owner_name if config_owner_name else "Tree Owner"
                 session_manager_local.tree_owner_name = owner_name

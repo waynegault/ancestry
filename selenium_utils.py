@@ -192,76 +192,69 @@ def is_element_visible(element) -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Test all selenium utility functions with unified testing."""
-    logger.info("🔧 Testing Selenium Utilities...")
+    """Test all selenium utility functions using standardized test framework."""
+    from test_framework import TestSuite, suppress_logging, MagicMock
+    import time
 
-    success = True
-    tests_run = 0
-    tests_passed = 0
+    suite = TestSuite("Selenium Utilities", "selenium_utils")
 
-    # Basic function availability tests using unified registry
-    required_functions = [
-        "force_user_agent",
-        "extract_text",
-        "extract_attribute",
-        "is_elem_there",
-        "is_browser_open",
-        "close_tabs",
-        "get_driver_cookies",
-        "export_cookies",
-        "scroll_to_element",
-        "wait_for_element",
-        "safe_click",
-        "get_element_text",
-        "is_element_visible",
-    ]
-    for func_name in required_functions:
-        tests_run += 1
-        if func_name in globals() and callable(globals()[func_name]):
-            tests_passed += 1
-            logger.info(f"✅ {func_name} is available")
-        else:
-            logger.error(f"❌ {func_name} is not available")
-            success = False
+    # === INITIALIZATION TESTS ===
+    def test_function_availability():
+        """Test that all selenium utility functions are properly imported and callable."""
+        required_functions = [
+            "force_user_agent",
+            "extract_text",
+            "extract_attribute",
+            "is_elem_there",
+            "is_browser_open",
+            "close_tabs",
+            "get_driver_cookies",
+            "export_cookies",
+            "scroll_to_element",
+            "wait_for_element",
+            "safe_click",
+            "get_element_text",
+            "is_element_visible",
+        ]
+        for func_name in required_functions:
+            assert func_name in globals(), f"Function {func_name} should be available"
+            assert callable(
+                globals()[func_name]
+            ), f"Function {func_name} should be callable"
 
-    # Test force_user_agent with mock driver
-    tests_run += 1
-    try:
-        from unittest.mock import MagicMock
-
+    # === CORE FUNCTIONALITY TESTS ===
+    def test_force_user_agent():
+        """Test force_user_agent with mock driver."""
         mock_driver = MagicMock()
         result = force_user_agent(mock_driver, "test-agent")
         mock_driver.execute_script.assert_called_once()
-        assert result == True
-        logger.info("✅ force_user_agent test passed")
-        tests_passed += 1
-    except Exception as e:
-        logger.error(f"❌ force_user_agent test failed: {e}")
-        success = False
+        assert result == True, "force_user_agent should return True on success"
 
-    # Test text extraction functions
-    tests_run += 1
-    try:
-        from unittest.mock import MagicMock
-
+    def test_get_element_text():
+        """Test text extraction from mock element."""
         mock_element = MagicMock()
         mock_element.text = "test text"
         result = get_element_text(mock_element)
-        assert result == "test text"
-        logger.info("✅ get_element_text test passed")
-        tests_passed += 1
-    except Exception as e:
-        logger.error(f"❌ get_element_text test failed: {e}")
-        success = False
+        assert result == "test text", "Should extract text from element"
 
-    # Test unified error handling performance
-    tests_run += 1
-    try:
-        import time
+    def test_safe_execution_with_none():
+        """Test that functions handle None input safely."""
+        # These should not raise exceptions
+        assert (
+            extract_text(None) == ""
+        ), "extract_text should return empty string for None"
+        assert (
+            extract_attribute(None, "href") == ""
+        ), "extract_attribute should return empty string for None"
+        assert (
+            is_elem_there(None, "selector") == False
+        ), "is_elem_there should return False for None"
 
+    # === PERFORMANCE TESTS ===
+    def test_safe_execution_performance():
+        """Test performance of safe execution operations."""
         start_time = time.time()
         for _ in range(1000):
-            # Test safe execution with None input (should handle gracefully)
             extract_text(None)
             extract_attribute(None, "href")
             is_elem_there(None, "selector")
@@ -271,16 +264,35 @@ def run_comprehensive_tests() -> bool:
         assert (
             duration < 0.5
         ), f"1000 safe operations should be fast, took {duration:.3f}s"
-        logger.info(f"✅ Performance test passed (1000 ops in {duration:.3f}s)")
-        tests_passed += 1
-    except Exception as e:
-        logger.error(f"❌ Performance test failed: {e}")
-        success = False
 
-    status = "PASSED" if success else "FAILED"
-    logger.info(f"🎯 Selenium Utilities Tests: {status} ({tests_passed}/{tests_run})")
+    with suppress_logging():
+        suite.run_test(
+            "Function Availability",
+            test_function_availability,
+            "All required selenium utility functions are available and callable",
+        )
+        suite.run_test(
+            "Force User Agent",
+            test_force_user_agent,
+            "force_user_agent executes JavaScript and returns success status",
+        )
+        suite.run_test(
+            "Element Text Extraction",
+            test_get_element_text,
+            "get_element_text extracts text from elements correctly",
+        )
+        suite.run_test(
+            "Safe Execution with None",
+            test_safe_execution_with_none,
+            "Functions handle None input safely without exceptions",
+        )
+        suite.run_test(
+            "Safe Execution Performance",
+            test_safe_execution_performance,
+            "Safe execution operations maintain good performance",
+        )
 
-    return success
+    return suite.finish_suite()
 
 
 # Functions are automatically registered via auto_register_module() at import

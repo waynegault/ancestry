@@ -43,7 +43,7 @@ config = config_manager.get_config()
 from logging_config import logger  # Use configured application logger
 
 # --- Test framework imports ---
-from test_framework import TestSuite, suppress_logging
+from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
 
 # --- Initial Setup ---
@@ -498,7 +498,6 @@ def run_comprehensive_tests() -> bool:
     # Core Functionality Tests
     def test_core_functionality():
         """Test core Graph API functions."""
-        from unittest.mock import MagicMock, patch
 
         # Test authentication function structure
         assert callable(
@@ -532,10 +531,7 @@ def run_comprehensive_tests() -> bool:
     # Edge Cases Tests
     def test_edge_cases():
         """Test edge cases and error handling."""
-        from unittest.mock import (
-            patch,
-            MagicMock,
-        )  # Test authentication with no environment variables
+        # Test authentication with no environment variables
 
         with patch.dict(os.environ, {}, clear=True):
             with patch("ms_graph_utils.msal.PublicClientApplication") as mock_msal:
@@ -636,8 +632,6 @@ def run_comprehensive_tests() -> bool:
     # Error Handling Tests
     def test_error_handling():
         """Test error handling scenarios."""
-        from unittest.mock import patch, MagicMock
-
         # Test network error handling
         test_list_12345 = "test_list_12345"
         with patch("requests.get") as mock_get:

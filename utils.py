@@ -146,6 +146,7 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
 )
 
 # ------------------------------------------------------------------------------------
@@ -5958,8 +5959,6 @@ def main() -> None:
                 session_manager.browser_needed = True
                 session_manager.session_start_time = time.time()
                 # Create a mock driver for testing
-                from unittest.mock import MagicMock
-
                 session_manager.driver = MagicMock()
                 session_manager.driver.current_url = config_schema.api.base_url
                 session_manager.driver.window_handles = ["mock_handle"]
@@ -6298,6 +6297,7 @@ def run_comprehensive_tests() -> bool:
         suppress_logging,
         create_mock_data,
         assert_valid_function,
+        MagicMock,
     )
 
     suite = TestSuite("Core Utilities & Session Management", "utils.py")

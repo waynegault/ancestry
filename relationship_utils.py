@@ -2,12 +2,8 @@
 try:
     from core_imports import register_function, get_function, is_function_available
 except ImportError:
-    try:
-        from core.import_utils import get_function_registry
-
-        function_registry = get_function_registry()
-    except ImportError:
-        function_registry = None
+    # Fallback - use direct function calls instead of registry
+    pass
 
 try:
     from core_imports import auto_register_module
@@ -1675,8 +1671,8 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
     # Default
     return relationship_code  # Return original if no match
 
-    # COMMENTED OUT TO FIX PYLANCE ERRORS - TODO: Fix test framework integration
-    # def run_comprehensive_tests() -> bool:
+
+def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for relationship_utils.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
@@ -1699,9 +1695,7 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
             ]
 
             for func_name in required_functions:
-                if not function_registry.is_available(func_name):
-                    return False
-                if not function_registry.is_available(func_name):
+                if func_name not in globals():
                     return False
             return True
 
@@ -2019,19 +2013,17 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
 
             # Verify all functions exist
             for func_name in required_funcs:
-                if func_name not in globals() or not function_registry.is_available(
-                    func_name
-                ):
+                if func_name not in globals():
                     return False
 
             try:
                 # Test complete workflow
-                # 1. Format names
-                name1 = get_function("format_name")("john smith")
-                name2 = get_function("format_name")("mary smith")
-
-                if name1 != "John Smith" or name2 != "Mary Smith":
-                    return False
+                # 1. Format names (use direct function call)
+                if "format_name" in globals():
+                    name1 = format_name("john smith")
+                    name2 = format_name("mary smith")
+                    if name1 != "John Smith" or name2 != "Mary Smith":
+                        return False
 
                 # 2. Find relationship path
                 family_data = {
@@ -2290,6 +2282,5 @@ if __name__ == "__main__":
     import sys
 
     print("🧬 Running Relationship Utils comprehensive test suite...")
-    # success = run_comprehensive_tests()  # TODO: Fix test framework integration
-    success = True  # Placeholder
+    success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

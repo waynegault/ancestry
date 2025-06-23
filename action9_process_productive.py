@@ -60,6 +60,8 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
+    patch,
 )
 
 # Import the original helper functions and models
@@ -2105,7 +2107,7 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 # ==============================================
 def run_comprehensive_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
     suite = TestSuite(
         "Action 9 - AI Message Processing & Data Extraction",
@@ -2139,7 +2141,6 @@ def run_comprehensive_tests() -> bool:
 
     def test_core_functionality():
         """Test all core AI processing and data extraction functions"""
-        from unittest.mock import MagicMock
 
         # Test safe_column_value function with a simple object
         class TestObj:
@@ -2162,7 +2163,6 @@ def run_comprehensive_tests() -> bool:
 
     def test_ai_processing_functions():
         """Test AI processing and extraction functions"""
-        from unittest.mock import MagicMock
 
         # Test _process_ai_response function
         mock_response = {"status": "success", "data": {"extracted": "test_12345"}}
@@ -2203,7 +2203,6 @@ def run_comprehensive_tests() -> bool:
 
     def test_integration():
         """Test integration with external dependencies"""
-        from unittest.mock import MagicMock, patch
 
         # Test get_gedcom_data integration - patch the import
         with patch("gedcom_cache.load_gedcom_with_aggressive_caching") as mock_loader:
@@ -2227,7 +2226,6 @@ def run_comprehensive_tests() -> bool:
     def test_performance():
         """Test performance of processing operations"""
         import time
-        from unittest.mock import MagicMock
 
         # Test safe_column_value performance
         mock_obj = MagicMock()
@@ -2254,7 +2252,6 @@ def run_comprehensive_tests() -> bool:
 
     def test_error_handling():
         """Test error handling scenarios"""
-        from unittest.mock import MagicMock, PropertyMock
 
         # Test safe_column_value with attribute access exception
         class ErrorObj:

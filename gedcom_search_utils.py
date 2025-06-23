@@ -1,21 +1,35 @@
+#!/usr/bin/env python3
+
+"""
+GEDCOM Search Utilities - Utility functions for searching GEDCOM data
+
+This module provides standalone functions that can be used by other modules like action9, action10, and action11.
+Implements universal patterns for function registration and import standardization.
+
+Universal Patterns Applied:
+- Uses core_imports unified system exclusively
+- Configuration access via standardized patterns
+- Logger initialization via get_logger
+- Universal function registration patterns
+- No legacy fallback patterns or duplicate registries
+"""
+
+# --- STEP 1: Unified Import System (REQUIRED) ---
 from core_imports import (
+    auto_register_module,
+    standardize_module_imports,
+    get_logger,
+    safe_execute,
     register_function,
     get_function,
     is_function_available,
-    standardize_module_imports,
 )
-from core_imports import auto_register_module
 
+# STEP 2: Auto-register immediately (REQUIRED)
 auto_register_module(globals(), __name__)
 
+# STEP 3: Standardize imports if needed (OPTIONAL)
 standardize_module_imports()
-#!/usr/bin/env python3
-
-# gedcom_search_utils.py
-"""
-Utility functions for searching GEDCOM data and retrieving person and family information.
-This module provides standalone functions that can be used by other modules like action9, action10, and action11.
-"""
 
 # --- Standard library imports ---
 import os

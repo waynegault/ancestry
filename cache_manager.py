@@ -28,7 +28,6 @@ import sys
 import tempfile
 import time
 from typing import Dict, Any, List, Optional, Callable
-from unittest.mock import MagicMock, patch
 
 # --- Test framework imports ---
 from test_framework import (
@@ -36,6 +35,7 @@ from test_framework import (
     suppress_logging,
     create_mock_data,
     assert_valid_function,
+    MagicMock,
 )
 
 # --- Local application imports ---
