@@ -31,14 +31,8 @@ logger = get_logger(__name__)
 # Add project root to Python path to allow imports from subdirectories
 project_root = Path(__file__).parent
 
-# Use centralized path management
-try:
-    from core_imports import standardize_module_imports as legacy_standardize
-
-    legacy_standardize()
-except ImportError:
-    # Fallback for cases where core_imports isn't available
-    sys.path.insert(0, str(project_root))
+# Use centralized path management (already called at top of file)
+# standardize_module_imports() was already called in the unified import system above
 
 
 def discover_test_modules() -> List[str]:
@@ -343,10 +337,6 @@ def main():
     print(f"{'='*60}")
 
     return all_passed
-
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)
 
 
 if __name__ == "__main__":

@@ -8,9 +8,6 @@ from core_imports import (
 
 auto_register_module(globals(), __name__)
 
-# Initialize function_registry as None for backward compatibility
-function_registry = None
-
 #!/usr/bin/env python3
 
 # cache_manager.py
@@ -66,7 +63,7 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_manager_initialization():
         """Test CacheManager initialization and basic setup."""
-        if function_registry and is_function_available("CacheManager"):
+        if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
@@ -77,7 +74,7 @@ def run_comprehensive_tests() -> bool:
 
         # CORE FUNCTIONALITY TESTS    def test_cache_operations():
         """Test basic cache operations."""
-        if function_registry and is_function_available("CacheManager"):
+        if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
@@ -89,7 +86,7 @@ def run_comprehensive_tests() -> bool:
 
     def test_cache_statistics():
         """Test cache statistics collection."""
-        if function_registry and is_function_available("get_cache_stats"):
+        if is_function_available("get_cache_stats"):
             stats_func = get_function("get_cache_stats")
             if stats_func:
                 stats = stats_func()
@@ -105,7 +102,7 @@ def run_comprehensive_tests() -> bool:
 
         # EDGE CASE TESTS    def test_eviction_policies():
         """Test cache eviction policies."""
-        if function_registry and is_function_available("CacheManager"):
+        if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class(max_size=2)
@@ -121,7 +118,7 @@ def run_comprehensive_tests() -> bool:
     # INTEGRATION TESTS
     def test_performance_monitoring():
         """Test performance monitoring capabilities."""
-        if function_registry and is_function_available("CacheManager"):
+        if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
@@ -131,7 +128,7 @@ def run_comprehensive_tests() -> bool:
 
         # PERFORMANCE TESTS    def test_cache_performance():
         """Test cache performance under load."""
-        if function_registry and is_function_available("CacheManager"):
+        if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
@@ -149,7 +146,7 @@ def run_comprehensive_tests() -> bool:
     # ERROR HANDLING TESTS
     def test_error_handling():
         """Test error handling in cache operations."""
-        if function_registry and is_function_available("CacheManager"):
+        if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
                 cache_manager = cache_manager_class()
@@ -329,9 +326,9 @@ def run_comprehensive_tests() -> bool:
 
     # Cache persistence
     def test_cache_persistence():
-        if function_registry.is_available(
-            "save_cache_to_disk"
-        ) and is_function_available("load_cache_from_disk"):
+        if is_function_available("save_cache_to_disk") and is_function_available(
+            "load_cache_from_disk"
+        ):
             save_func = get_function("save_cache_to_disk")
             load_func = get_function("load_cache_from_disk")
 

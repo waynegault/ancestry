@@ -1,23 +1,16 @@
-# Safe imports with fallback
-try:
-    from core_imports import register_function, get_function, is_function_available
-except ImportError:
-    # Fallback - use direct function calls instead of registry
-    pass
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    auto_register_module,
+    standardize_module_imports,
+)
 
-try:
-    from core_imports import auto_register_module
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
+# Register this module immediately
+auto_register_module(globals(), __name__)
 
-# Standardize imports if available
-try:
-    from core_imports import standardize_module_imports
-
-    standardize_module_imports()
-except ImportError:
-    pass
+# Standardize imports
+standardize_module_imports()
 
 import logging
 import re

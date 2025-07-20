@@ -1302,7 +1302,3 @@ if __name__ == "__main__":
         success = False
 
     sys.exit(0 if success else 1)
-
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)

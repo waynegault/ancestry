@@ -7,6 +7,7 @@ to provide a clean, maintainable architecture.
 """
 
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
@@ -26,12 +27,6 @@ config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
 from logging_config import logger
-
-try:
-    from core_imports import auto_register_module
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
 
 
 class SessionManager:

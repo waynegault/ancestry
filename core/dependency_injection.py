@@ -27,13 +27,6 @@ from unittest.mock import MagicMock
 
 from logging_config import logger
 
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
-
 T = TypeVar("T")
 
 

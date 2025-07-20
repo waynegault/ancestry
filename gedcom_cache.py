@@ -1,13 +1,3 @@
-# Safe import for function_registry with fallback
-try:
-    from core_imports import register_function, get_function, is_function_available
-except ImportError:
-    from core.import_utils import get_function_registry
-
-    function_registry = get_function_registry()
-
-from core_imports import auto_register_module
-
 #!/usr/bin/env python3
 
 # gedcom_cache.py
@@ -19,6 +9,24 @@ Provides advanced caching strategies specifically for GEDCOM files and genealogi
 Implements multi-level caching (memory + disk), file-based invalidation, and preloading
 strategies to dramatically improve performance for frequently accessed genealogical data.
 """
+
+# Unified import system
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    safe_execute,
+    register_function,
+    get_function,
+    is_function_available,
+)
+
+# Auto-register module
+auto_register_module(globals(), __name__)
+standardize_module_imports()
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # --- Standard library imports ---
 import hashlib
@@ -888,7 +896,13 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for gedcom_cache.py.
     Tests GEDCOM file caching, invalidation, and performance optimization.
     """
-    from test_framework import TestSuite, suppress_logging, create_mock_data, MagicMock, patch
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        create_mock_data,
+        MagicMock,
+        patch,
+    )
 
     with suppress_logging():
         suite = TestSuite("GEDCOM Cache Management & Optimization", "gedcom_cache.py")
@@ -901,7 +915,7 @@ def run_comprehensive_tests() -> bool:
             # Test module instance
             module_name = _gedcom_cache_module.get_module_name()
             assert module_name == "gedcom_cache"  # Test basic cache functionality
-            if function_registry and is_function_available("GedcomCache"):
+            if is_function_available("GedcomCache"):
                 cache_class = get_function("GedcomCache")
                 if cache_class:
                     cache = cache_class()
@@ -954,9 +968,7 @@ def run_comprehensive_tests() -> bool:
     def test_gedcom_parsing_caching():
         """Test GEDCOM file parsing and caching."""
         try:
-            if function_registry and function_registry.is_available(
-                "parse_and_cache_gedcom"
-            ):
+            if is_function_available("parse_and_cache_gedcom"):
                 parser = get_function("parse_and_cache_gedcom")
 
                 # Mock GEDCOM content
@@ -997,9 +1009,7 @@ def run_comprehensive_tests() -> bool:
     def test_cached_data_retrieval():
         """Test cached GEDCOM data retrieval."""
         try:
-            if function_registry and function_registry.is_available(
-                "get_cached_gedcom_data"
-            ):
+            if is_function_available("get_cached_gedcom_data"):
                 retriever = get_function("get_cached_gedcom_data")
 
                 # Test with mock file path
@@ -1080,9 +1090,7 @@ def run_comprehensive_tests() -> bool:
     def test_cache_invalidation_file_modification():
         """Test cache invalidation based on file modification."""
         try:
-            if function_registry and function_registry.is_available(
-                "check_file_modification"
-            ):
+            if is_function_available("check_file_modification"):
                 mod_checker = get_function("check_file_modification")
 
                 with tempfile.NamedTemporaryFile() as temp_file:
@@ -1151,9 +1159,7 @@ def run_comprehensive_tests() -> bool:
     def test_cache_performance_metrics():
         """Test cache performance metrics collection."""
         try:
-            if function_registry and function_registry.is_available(
-                "get_cache_performance_stats"
-            ):
+            if is_function_available("get_cache_performance_stats"):
                 stats_func = get_function("get_cache_performance_stats")
                 if stats_func:
                     stats = stats_func()
@@ -1187,9 +1193,7 @@ def run_comprehensive_tests() -> bool:
     def test_multifile_cache_management():
         """Test multi-file cache management capabilities."""
         try:
-            if function_registry and function_registry.is_available(
-                "manage_multiple_gedcom_caches"
-            ):
+            if is_function_available("manage_multiple_gedcom_caches"):
                 manager = get_function("manage_multiple_gedcom_caches")
 
                 # Test with multiple file paths
@@ -1247,9 +1251,7 @@ def run_comprehensive_tests() -> bool:
     def test_cache_validation_integrity():
         """Test cache validation and integrity checking."""
         try:
-            if function_registry and function_registry.is_available(
-                "validate_cache_integrity"
-            ):
+            if is_function_available("validate_cache_integrity"):
                 validator = get_function("validate_cache_integrity")
 
                 # Test with mock cache data

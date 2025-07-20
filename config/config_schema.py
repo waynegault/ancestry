@@ -6,10 +6,19 @@ with comprehensive validation, environment variable integration,
 and schema versioning support.
 """
 
-from core_imports import standardize_module_imports, auto_register_module
+try:
+    import sys
+    from pathlib import Path
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+    # Add parent directory to path for core_imports
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from core_imports import standardize_module_imports, auto_register_module
+
+    standardize_module_imports()
+    auto_register_module(globals(), __name__)
+except ImportError:
+    # Fallback if core_imports is not available
+    pass
 
 import logging
 from dataclasses import dataclass, field
@@ -20,7 +29,11 @@ import re
 from enum import Enum
 from datetime import datetime
 
-from logging_config import logger
+try:
+    from logging_config import logger
+except ImportError:
+    # Fallback logging setup
+    logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
@@ -326,15 +339,6 @@ class DatabaseConfig:
             return f"sqlite:///{self.database_file}?{'&'.join(params)}"
         else:
             return f"sqlite:///{self.database_file}"
-            raise ValueError("pool_size must be positive")
-        if self.max_overflow < 0:
-            raise ValueError("max_overflow must be non-negative")
-        if self.pool_timeout <= 0:
-            raise ValueError("pool_timeout must be positive")
-        if self.journal_mode not in ["DELETE", "WAL", "MEMORY"]:
-            raise ValueError("journal_mode must be one of: DELETE, WAL, MEMORY")
-        if self.synchronous not in ["OFF", "NORMAL", "FULL"]:
-            raise ValueError("synchronous must be one of: OFF, NORMAL, FULL")
 
 
 @dataclass
@@ -802,14 +806,18 @@ def run_comprehensive_tests() -> bool:
         assert custom_config.journal_mode == "DELETE"  # Test validation errors
         try:
             DatabaseConfig(pool_size=-1)
-            assert False, "Should have raised ValueError for negative pool_size"
-        except ValueError:
+            assert (
+                False
+            ), "Should have raised ConfigValidationError for negative pool_size"
+        except ConfigValidationError:
             pass  # Expected
 
         try:
             DatabaseConfig(journal_mode="INVALID")
-            assert False, "Should have raised ValueError for invalid journal_mode"
-        except ValueError:
+            assert (
+                False
+            ), "Should have raised ConfigValidationError for invalid journal_mode"
+        except ConfigValidationError:
             pass  # Expected
 
     # Test 2: Selenium Config Creation and Validation

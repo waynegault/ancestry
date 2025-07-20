@@ -25,9 +25,9 @@ Key Features:
 try:
     from core_imports import register_function, get_function, is_function_available
 except ImportError:
-    from core.import_utils import get_function_registry
-
-    function_registry = get_function_registry()
+    register_function = None
+    get_function = lambda name, default=None: default
+    is_function_available = lambda name: False
 
 try:
     from core_imports import auto_register_module

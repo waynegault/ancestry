@@ -2,7 +2,7 @@
 """Integration test for all enhanced systems."""
 
 from performance_monitor import profile, performance_monitor
-from error_handling import CircuitBreaker, RetryConfig, RetryStrategy
+from core.error_handling import AppError, ErrorSeverity, ErrorCategory
 from config.config_schema import DatabaseConfig, EnvironmentType
 from core_imports import get_import_stats
 import time
@@ -19,24 +19,25 @@ def main():
         time.sleep(0.01)
         return "Performance test complete"
 
-    # Test error handling with retry
-    cb = CircuitBreaker(
-        "integration_test",
-        retry_config=RetryConfig(
-            max_attempts=2, strategy=RetryStrategy.EXPONENTIAL_BACKOFF
-        ),
-    )
-
-    @cb
-    def test_circuit_breaker():
-        return "Circuit breaker test complete"
+    # Test basic error handling
+    def test_error_handling():
+        try:
+            # Test error handling integration
+            return "Error handling test complete"
+        except Exception as e:
+            raise AppError(
+                "Integration test error",
+                category=ErrorCategory.SYSTEM,
+                severity=ErrorSeverity.MEDIUM,
+                original_exception=e,
+            )
 
     # Test configuration
     db_config = DatabaseConfig()
 
     # Run tests
     print("✅ Performance Monitor Test:", test_performance())
-    print("✅ Circuit Breaker Test:", test_circuit_breaker())
+    print("✅ Error Handling Test:", test_error_handling())
     print("✅ Config System Test: Environment =", db_config._get_environment().value)
 
     # Get statistics

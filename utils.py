@@ -17,9 +17,9 @@ from core_imports import standardize_module_imports
 try:
     from core_imports import register_function, get_function, is_function_available
 except ImportError:
-    from core.import_utils import get_function_registry
-
-    function_registry = get_function_registry()
+    register_function = None
+    get_function = lambda name, default=None: default
+    is_function_available = lambda name: False
 
 standardize_module_imports()
 
@@ -6774,19 +6774,8 @@ except ImportError:
         for func_name in potential_functions:
             if func_name in current_module and callable(current_module[func_name]):
                 # Use new unified import system if available
-                if "register_function" in globals():
-                    register_function(
-                        func_name, current_module[func_name]
-                    )  # Fallback to function_registry if available and has register method
-                elif "function_registry" in globals():
-                    try:  # Only call register if the method exists and is callable
-                        if hasattr(function_registry, "register") and callable(
-                            getattr(function_registry, "register")
-                        ):
-                            function_registry.register(func_name, current_module[func_name])  # type: ignore
-                    except (AttributeError, TypeError):
-                        # Silently handle cases where register method doesn't exist or is not callable
-                        pass
+                if register_function and callable(register_function):
+                    register_function(func_name, current_module[func_name])
         logger.debug(f"✅ Registered utils functions in Function Registry")
     except Exception as e:
         logger.debug(f"⚠️ Function registration failed: {e}")

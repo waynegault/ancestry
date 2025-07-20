@@ -6,17 +6,12 @@ inconsistent logging patterns across the codebase.
 """
 
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
 import logging
 from typing import Optional
-
-try:
-    from core_imports import auto_register_module
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
 
 # Global flag to track if logging has been initialized
 _centralized_logging_setup = False

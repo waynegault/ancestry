@@ -23,13 +23,6 @@ from urllib3.util.retry import Retry
 from config import config_schema
 from logging_config import logger
 
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
-
 # Type aliases
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
 

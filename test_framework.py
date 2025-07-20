@@ -3,8 +3,8 @@ from core_imports import (
     get_function,
     is_function_available,
     standardize_module_imports,
+    auto_register_module,
 )
-from core_imports import auto_register_module
 
 auto_register_module(globals(), __name__)
 
