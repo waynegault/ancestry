@@ -6,6 +6,7 @@ application with proper logging, recovery strategies, and user-friendly messages
 """
 
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
@@ -21,6 +22,7 @@ from logging_config import logger
 
 try:
     from core_imports import auto_register_module
+
     auto_register_module(globals(), __name__)
 except ImportError:
     pass  # Continue without auto-registration if not available
@@ -805,7 +807,7 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         # Replaced with standardize_module_imports()
-        from path_manager import ensure_imports
+        from core_imports import ensure_imports
 
         ensure_imports()
     except ImportError:

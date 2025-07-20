@@ -11,6 +11,9 @@ Key improvements:
 - Provides unified, consistent import patterns across all modules
 - Single source of truth for all imports and function management
 - Optimized performance with caching and minimal overhead
+- Advanced error handling and recovery mechanisms
+- Performance monitoring and statistics
+- Thread-safe operations for concurrent access
 """
 
 import os
@@ -19,35 +22,120 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Callable, List, Union
 import logging
+import threading
 from contextlib import contextmanager
+from functools import wraps
 
-# Global state tracking
+# Thread-safe locks for concurrent access
+_lock = threading.RLock()
+
+# Global state tracking with enhanced metrics
 _initialized = False
 _project_root: Optional[Path] = None
 _registry: Dict[str, Any] = {}
 _import_cache: Dict[str, bool] = {}
+_error_log: List[Dict[str, Any]] = []
 _stats = {
     "functions_registered": 0,
     "imports_resolved": 0,
     "cache_hits": 0,
+    "cache_misses": 0,
+    "errors_encountered": 0,
     "initialization_time": 0.0,
+    "last_cleanup": 0.0,
 }
 
 
+def get_import_stats() -> Dict[str, Any]:
+    """Get comprehensive import system statistics."""
+    with _lock:
+        return {
+            **_stats.copy(),
+            "registry_size": len(_registry),
+            "cache_size": len(_import_cache),
+            "error_count": len(_error_log),
+            "hit_ratio": (
+                _stats["cache_hits"]
+                / max(1, _stats["cache_hits"] + _stats["cache_misses"])
+            )
+            * 100,
+        }
+
+
 def get_project_root() -> Path:
-    """Get the project root directory with caching for performance."""
+    """Get the project root directory with caching and enhanced error handling."""
     global _project_root
-    if _project_root is None:
-        # Start from current file and work up
-        current = Path(__file__).resolve()
-        for parent in [current.parent, current.parent.parent]:
-            if (parent / "main.py").exists():
-                _project_root = parent
-                break
-        else:
-            # Fallback to current file's parent
-            _project_root = current.parent
-    return _project_root
+
+    with _lock:
+        if _project_root is None:
+            try:
+                # Start from current file and work up
+                current = Path(__file__).resolve()
+
+                # Look for project markers in order of preference
+                markers = [
+                    "main.py",
+                    "requirements.txt",
+                    ".git",
+                    "setup.py",
+                    "pyproject.toml",
+                ]
+
+                for parent in [
+                    current.parent,
+                    current.parent.parent,
+                    current.parent.parent.parent,
+                ]:
+                    for marker in markers:
+                        if (parent / marker).exists():
+                            _project_root = parent
+                            _log_info(
+                                f"Project root identified: {_project_root} (marker: {marker})"
+                            )
+                            return _project_root
+
+                # Fallback to current file's parent
+                _project_root = current.parent
+                _log_warning(f"Using fallback project root: {_project_root}")
+
+            except Exception as e:
+                # Ultimate fallback
+                _project_root = Path.cwd()
+                _log_error(f"Error determining project root, using CWD: {e}")
+                _stats["errors_encountered"] += 1
+
+        return _project_root
+
+
+def _log_info(message: str) -> None:
+    """Internal logging function that safely handles early initialization."""
+    try:
+        logging.getLogger(__name__).info(message)
+    except:
+        print(f"INFO: {message}")
+
+
+def _log_warning(message: str) -> None:
+    """Internal logging function that safely handles early initialization."""
+    try:
+        logging.getLogger(__name__).warning(message)
+    except:
+        print(f"WARNING: {message}")
+
+
+def _log_error(message: str) -> None:
+    """Internal logging function that safely handles early initialization."""
+    try:
+        logging.getLogger(__name__).error(message)
+        _error_log.append(
+            {
+                "timestamp": time.time(),
+                "message": message,
+                "function": "get_project_root",
+            }
+        )
+    except:
+        print(f"ERROR: {message}")
 
 
 def ensure_imports() -> None:

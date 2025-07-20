@@ -2,27 +2,140 @@
 Configuration Schema Definitions.
 
 This module defines type-safe configuration schemas using dataclasses
-with validation and default values.
+with comprehensive validation, environment variable integration,
+and schema versioning support.
 """
 
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union, Callable
 import os
+import re
+from enum import Enum
+from datetime import datetime
 
 from logging_config import logger
 
 
+class ConfigValidationError(Exception):
+    """Raised when configuration validation fails."""
+
+    pass
+
+
+class EnvironmentType(Enum):
+    """Supported environment types."""
+
+    DEVELOPMENT = "development"
+    TESTING = "testing"
+    PRODUCTION = "production"
+
+
+@dataclass
+class ValidationRule:
+    """Configuration validation rule."""
+
+    field_name: str
+    validator: Callable[[Any], bool]
+    error_message: str
+    required: bool = True
+
+
+class ConfigValidator:
+    """Advanced configuration validator with custom rules."""
+
+    def __init__(self):
+        self.rules: List[ValidationRule] = []
+        self.environment_rules: Dict[EnvironmentType, List[ValidationRule]] = {}
+
+    def add_rule(self, rule: ValidationRule) -> None:
+        """Add a validation rule."""
+        self.rules.append(rule)
+
+    def add_environment_rule(self, env: EnvironmentType, rule: ValidationRule) -> None:
+        """Add an environment-specific validation rule."""
+        if env not in self.environment_rules:
+            self.environment_rules[env] = []
+        self.environment_rules[env].append(rule)
+
+    def validate(
+        self, config: Any, environment: EnvironmentType = EnvironmentType.DEVELOPMENT
+    ) -> List[str]:
+        """Validate configuration and return list of errors."""
+        errors = []
+
+        # Apply general rules
+        for rule in self.rules:
+            if hasattr(config, rule.field_name):
+                value = getattr(config, rule.field_name)
+                if value is None and rule.required:
+                    errors.append(f"Required field {rule.field_name} is missing")
+                elif value is not None and not rule.validator(value):
+                    errors.append(rule.error_message)
+            elif rule.required:
+                errors.append(f"Required field {rule.field_name} is missing")
+
+        # Apply environment-specific rules
+        if environment in self.environment_rules:
+            for rule in self.environment_rules[environment]:
+                if hasattr(config, rule.field_name):
+                    value = getattr(config, rule.field_name)
+                    if value is None and rule.required:
+                        errors.append(
+                            f"Environment-required field {rule.field_name} is missing for {environment.value}"
+                        )
+                    elif value is not None and not rule.validator(value):
+                        errors.append(
+                            f"{rule.error_message} (environment: {environment.value})"
+                        )
+                elif rule.required:
+                    errors.append(
+                        f"Environment-required field {rule.field_name} is missing for {environment.value}"
+                    )
+
+        return errors
+
+
+def validate_path_exists(path: Union[str, Path]) -> bool:
+    """Validate that a path exists."""
+    return Path(path).exists() if path else False
+
+
+def validate_file_extension(
+    extensions: List[str],
+) -> Callable[[Union[str, Path]], bool]:
+    """Create validator for file extensions."""
+
+    def validator(path: Union[str, Path]) -> bool:
+        if not path:
+            return True  # Allow None/empty values
+        path_obj = Path(path)
+        return path_obj.suffix.lower() in [ext.lower() for ext in extensions]
+
+    return validator
+
+
+def validate_port_range(port: int) -> bool:
+    """Validate port is in valid range."""
+    return 1024 <= port <= 65535
+
+
+def validate_positive_integer(value: int) -> bool:
+    """Validate value is a positive integer."""
+    return isinstance(value, int) and value > 0
+
+
 @dataclass
 class DatabaseConfig:
-    """Database configuration schema."""  # Database file path
+    """Enhanced database configuration schema with validation."""
 
-    database_file: Optional[Path] = None
+    database_file: Optional[Path] = None  # Database file path
     gedcom_file_path: Optional[Path] = None  # GEDCOM file path (loaded from .env)
 
     # Connection pool settings
@@ -39,15 +152,180 @@ class DatabaseConfig:
     backup_enabled: bool = True
     backup_interval_hours: int = 24
     max_backups: int = 7
+    backup_compression: bool = True
+    backup_encryption: bool = False
+
+    # Performance settings
+    cache_size_mb: int = 256
+    page_size: int = 4096
+    auto_vacuum: str = "INCREMENTAL"
+
+    # Monitoring settings
+    log_slow_queries: bool = True
+    slow_query_threshold_ms: int = 1000
+    enable_query_stats: bool = False
 
     # Field with default_factory must come last
-    data_dir: Optional[Path] = field(
-        default_factory=lambda: Path("Data")
-    )  # General data directory
+    data_dir: Optional[Path] = field(default_factory=lambda: Path("Data"))
 
     def __post_init__(self):
-        """Validate configuration after initialization."""
-        if self.pool_size <= 0:
+        """Enhanced validation after initialization."""
+        validator = self._get_validator()
+        errors = validator.validate(self, self._get_environment())
+
+        if errors:
+            error_msg = f"Database configuration validation failed:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
+            logger.error(error_msg)
+            raise ConfigValidationError(error_msg)
+
+        # Convert string paths to Path objects
+        if isinstance(self.database_file, str):
+            self.database_file = Path(self.database_file)
+        if isinstance(self.gedcom_file_path, str):
+            self.gedcom_file_path = Path(self.gedcom_file_path)
+        if isinstance(self.data_dir, str):
+            self.data_dir = Path(self.data_dir)
+
+        # Create directories if they don't exist
+        self._ensure_directories()
+
+        logger.info(
+            f"Database configuration validated successfully for {self._get_environment().value} environment"
+        )
+
+    def _get_validator(self) -> ConfigValidator:
+        """Get configured validator for database settings."""
+        validator = ConfigValidator()
+
+        # General validation rules
+        validator.add_rule(
+            ValidationRule(
+                "pool_size",
+                validate_positive_integer,
+                "pool_size must be a positive integer",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "max_overflow",
+                lambda x: isinstance(x, int) and x >= 0,
+                "max_overflow must be a non-negative integer",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "pool_timeout",
+                lambda x: isinstance(x, int) and x > 0,
+                "pool_timeout must be a positive integer",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "journal_mode",
+                lambda x: x
+                in ["DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"],
+                "journal_mode must be one of: DELETE, TRUNCATE, PERSIST, MEMORY, WAL, OFF",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "synchronous",
+                lambda x: x in ["OFF", "NORMAL", "FULL", "EXTRA"],
+                "synchronous must be one of: OFF, NORMAL, FULL, EXTRA",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "backup_interval_hours",
+                lambda x: isinstance(x, int) and 1 <= x <= 168,  # 1 hour to 1 week
+                "backup_interval_hours must be between 1 and 168",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "max_backups",
+                lambda x: isinstance(x, int) and 1 <= x <= 100,
+                "max_backups must be between 1 and 100",
+            )
+        )
+
+        validator.add_rule(
+            ValidationRule(
+                "cache_size_mb",
+                lambda x: isinstance(x, int) and 16 <= x <= 4096,
+                "cache_size_mb must be between 16 and 4096",
+            )
+        )
+
+        # Production-specific rules
+        validator.add_environment_rule(
+            EnvironmentType.PRODUCTION,
+            ValidationRule(
+                "database_file",
+                lambda x: x is not None,
+                "database_file is required in production environment",
+            ),
+        )
+
+        validator.add_environment_rule(
+            EnvironmentType.PRODUCTION,
+            ValidationRule(
+                "backup_enabled",
+                lambda x: x is True,
+                "backups must be enabled in production environment",
+            ),
+        )
+
+        return validator
+
+    def _get_environment(self) -> EnvironmentType:
+        """Determine current environment."""
+        env_str = os.getenv("ENVIRONMENT", "development").lower()
+        try:
+            return EnvironmentType(env_str)
+        except ValueError:
+            logger.warning(
+                f"Unknown environment '{env_str}', defaulting to development"
+            )
+            return EnvironmentType.DEVELOPMENT
+
+    def _ensure_directories(self) -> None:
+        """Ensure required directories exist."""
+        if self.data_dir:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.database_file:
+            self.database_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def get_connection_string(self) -> str:
+        """Get SQLite connection string with optimizations."""
+        if not self.database_file:
+            raise ConfigValidationError("database_file not configured")
+
+        params = []
+        if self.journal_mode != "DELETE":
+            params.append(f"journal_mode={self.journal_mode}")
+        if self.foreign_keys:
+            params.append("foreign_keys=ON")
+        if self.synchronous != "NORMAL":
+            params.append(f"synchronous={self.synchronous}")
+
+        cache_size = -(self.cache_size_mb * 1024)  # Negative value means KB
+        params.append(f"cache_size={cache_size}")
+        params.append(f"page_size={self.page_size}")
+
+        if params:
+            return f"sqlite:///{self.database_file}?{'&'.join(params)}"
+        else:
+            return f"sqlite:///{self.database_file}"
             raise ValueError("pool_size must be positive")
         if self.max_overflow < 0:
             raise ValueError("max_overflow must be non-negative")

@@ -1,27 +1,46 @@
+# Database and State Files
 /ancestry.db
 /messages.json
 /session_state.json
+
+# Environment and Configuration
 /.env
-/__init__.py
-/venv
-/lib
-/Data
-/cache
-/archive
-/.vscode
-/__pycache__
-/logs/ancestry.log
-/logs/ancestry.log.1
-/test.py
-/gedcom_processor.log
-/gedcom_analysis.log
-/Logs/gedcom_interrogator.log
-/Logs/ancestry.log
-/Logs/api_utils_self_check.log
-/Logs/gedcom_processor.log
-/Logs/action11.log
-/Logs/app.log
-/Logs/action10.log
-/.env.env.backup
+/.env.*
+/.env-*
 /credentials.enc
-/.env-back
+
+# Python Environment
+/venv/
+/.venv/
+/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Development Tools
+/.vscode/
+.DS_Store
+Thumbs.db
+
+# Data and Cache Directories
+/Data/
+/Cache/
+/cache/
+/archive/
+
+# Log Files
+/Logs/
+*.log
+
+# Temporary and Development Files
+*.tmp
+*.temp
+*~
+*.bak
+*.backup*
+*_temp.py
+*_debug.py
+
+# Legacy and Deprecated Files
+/__init__.py

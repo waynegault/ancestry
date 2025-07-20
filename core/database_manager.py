@@ -6,6 +6,7 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
@@ -31,12 +32,13 @@ from logging_config import logger
 
 try:
     from core_imports import auto_register_module
+
     auto_register_module(globals(), __name__)
 except ImportError:
     pass  # Continue without auto-registration if not available
 
 # Use centralized path management
-from path_manager import ensure_imports
+from core_imports import ensure_imports
 
 ensure_imports()
 
@@ -439,7 +441,7 @@ def run_comprehensive_tests():
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    from path_manager import import_context
+    from core_imports import import_context
 
     # Use clean import context for testing
     with import_context():

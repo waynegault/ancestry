@@ -1,4 +1,9 @@
-from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+)
 from core_imports import auto_register_module
 
 auto_register_module(globals(), __name__)

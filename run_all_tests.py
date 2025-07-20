@@ -33,11 +33,11 @@ project_root = Path(__file__).parent
 
 # Use centralized path management
 try:
-    from path_manager import standardize_module_imports as legacy_standardize
+    from core_imports import standardize_module_imports as legacy_standardize
 
     legacy_standardize()
 except ImportError:
-    # Fallback for cases where path_manager isn't available
+    # Fallback for cases where core_imports isn't available
     sys.path.insert(0, str(project_root))
 
 
@@ -46,13 +46,18 @@ def discover_test_modules() -> List[str]:
     test_modules = []
 
     for python_file in project_root.rglob("*.py"):
-        # Skip the test runner itself, __init__.py, main.py, and setup files
-        if python_file.name in [
-            "run_all_tests.py",
-            "__init__.py",
-            "main.py",
-            "setup.py",
-        ] or "__pycache__" in str(python_file):
+        # Skip the test runner itself, __init__.py, main.py, setup files, and backup files
+        if (
+            python_file.name
+            in [
+                "run_all_tests.py",
+                "__init__.py",
+                "main.py",
+                "setup.py",
+            ]
+            or "__pycache__" in str(python_file)
+            or python_file.name.endswith("_backup.py")
+        ):
             continue
 
         # Construct module name from path (e.g., core.api_manager)
