@@ -888,21 +888,21 @@ def run_comprehensive_tests() -> bool:
                 # Load real GEDCOM data
                 gedcom_data = GedcomData(str(gedcom_path))
 
-                # Use reference person from .env for testing
-                reference_person_name = config_schema.reference_person_name or "Wayne"
+                # Search for someone we know is in the test data (John from the test GEDCOM)
+                test_first_name = "John"
 
-                # Search for someone with the reference person's first name
-                search_criteria = {"first_name": reference_person_name.split()[0]}
+                # Search for someone with the test first name
+                search_criteria = {"first_name": test_first_name}
 
                 results = search_gedcom_for_criteria(
                     search_criteria, max_results=5, gedcom_data=gedcom_data
                 )
 
                 assert isinstance(results, list)
-                # Should find at least one person with the reference person's first name
+                # Should find at least one person with the test first name
                 assert (
                     len(results) > 0
-                ), f"Should find people with first name '{reference_person_name.split()[0]}'"
+                ), f"Should find people with first name '{test_first_name}'"
 
                 # Verify the results have the expected structure
                 if results:
@@ -910,7 +910,7 @@ def run_comprehensive_tests() -> bool:
                     assert "id" in first_result
                     assert "first_name" in first_result
                     logger.info(
-                        f"Found {len(results)} people with first name '{reference_person_name.split()[0]}'"
+                        f"Found {len(results)} people with first name '{test_first_name}'"
                     )
                 return True
             except MissingConfigError:

@@ -1,6 +1,4 @@
 # Database and State Files
-/ancestry.db
-/messages.json
 /session_state.json
 
 # Environment and Configuration
@@ -24,7 +22,6 @@ __pycache__/
 Thumbs.db
 
 # Data and Cache Directories
-/Data/
 /Cache/
 /cache/
 /archive/
@@ -44,3 +41,7 @@ Thumbs.db
 
 # Legacy and Deprecated Files
 /__init__.py
+/config/__pycache__
+/core/__pycache__
+/backup_before_migration
+/.pytest_cache

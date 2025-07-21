@@ -1,257 +1,132 @@
-16:32:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:32:32 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-16:32:32 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-16:32:41 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:32:42 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:32:42 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:32:42 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:32:42 INF [api_util test_log 2721] Test log message
-16:35:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:35:45 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-16:35:45 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-16:35:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:35:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:35:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:35:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:35:55 INF [api_util test_log 2721] Test log message
-16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:55 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-16:46:55 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:55 INF [ms_graph <module> 75  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
-16:46:55 INF [ms_graph <module> 76  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
-16:46:55 INF [ms_graph <module> 94  ] MSAL token cache path set to: Data\ms_graph_cache.bin
-16:46:55 INF [ms_graph <module> 113 ] MSAL token cache loaded successfully.
-16:46:55 INF [ms_graph <module> 169 ] Initialized shared MSAL PublicClientApplication with persistent cache.
-16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:56 INF [cache_ma _registe 1104] Enhanced cache manager registered 2 cache modules
-16:46:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:46:56 INF [ms_graph save_cac 130 ] Executing save_cache_on_exit via atexit...
-16:46:56 INF [ms_graph save_cac 147 ] MSAL cache unchanged since last load/save. No save needed.
-16:50:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:50:56 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-16:50:56 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-16:51:04 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:51:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:51:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:51:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:51:05 INF [api_util test_log 2721] Test log message
-17:22:52 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:22:52 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-17:22:52 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-17:23:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:23:02 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:23:02 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:23:02 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:23:02 INF [api_util test_log 2721] Test log message
-17:33:11 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:33:11 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-17:33:11 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-17:33:19 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:33:20 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:33:20 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:33:20 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:33:20 INF [api_util test_log 2721] Test log message
-17:38:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:38:03 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-17:38:03 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-17:38:11 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:38:12 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:38:12 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:38:12 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:38:12 INF [api_util test_log 2721] Test log message
-17:43:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:43:45 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-17:43:45 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-17:43:53 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:43:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:43:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:43:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-17:43:55 INF [api_util test_log 2721] Test log message
-22:56:06 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-22:56:06 INF [action8_ <module> 163 ] Action 8 Initializing: APP_MODE is development
-22:56:06 INF [action8_ <module> 174 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-22:56:14 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-22:56:15 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-22:56:15 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-22:56:15 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-22:56:15 INF [api_util test_log 2721] Test log message
-16:16:55 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:16:55 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-16:16:55 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-16:17:04 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:17:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:17:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:17:06 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:17:06 INF [api_util test_log 2721] Test log message
-18:20:52 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:20:52 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:20:52 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-18:20:52 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-18:20:52 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-18:21:00 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:00 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:00 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-18:21:01 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:01 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-18:21:01 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:01 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-18:21:01 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:01 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-18:21:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-18:21:01 INF [api_util test_log 2721] Test log message
-19:47:38 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:38 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-19:47:38 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-19:47:38 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-19:47:46 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:46 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:46 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-19:47:47 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:47 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:47 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-19:47:47 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:47 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:47 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-19:47:47 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:47 INF [config_s __post_i 168 ] Database configuration validated successfully for development environment
-19:47:47 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-19:47:47 INF [api_util test_log 2721] Test log message
-20:56:41 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:41 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:41 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-20:56:41 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-20:56:41 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-20:56:49 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:49 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-20:56:50 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:50 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:50 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-20:56:50 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:50 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:50 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-20:56:50 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:50 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-20:56:50 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-20:56:50 INF [api_util test_log 2721] Test log message
-21:22:59 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:22:59 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:22:59 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:22:59 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-21:22:59 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-21:23:07 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:07 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:07 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:23:08 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:08 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:08 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:23:08 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:08 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:08 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:23:08 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:08 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:23:08 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:23:08 INF [api_util test_log 2721] Test log message
-21:26:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:28 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:26:28 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-21:26:28 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-21:26:36 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:36 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:36 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:26:37 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:37 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:37 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:26:37 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:37 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:37 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:26:37 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:37 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:26:37 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:26:37 INF [api_util test_log 2721] Test log message
-21:31:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:28 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:31:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:28 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:31:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:28 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:28 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:31:28 INF [api_util test_log 2726] Test log message
-21:31:48 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:48 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:31:48 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:32:16 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:32:16 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:32:16 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:32:16 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:32:16 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:32:16 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:32:16 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:32:16 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:32:16 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:50:14 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:14 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:14 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:50:14 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-21:50:14 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-21:50:22 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:22 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:22 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:50:23 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:23 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:23 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:50:23 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:23 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:23 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:50:23 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:23 INF [config_s __post_i 194 ] Database configuration validated successfully for development environment
-21:50:23 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:50:23 INF [api_util test_log 2726] Test log message
-21:58:44 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:44 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:58:44 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-21:58:44 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-21:58:51 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:51 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:51 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:58:52 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:52 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:52 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:58:52 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:52 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:52 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:58:52 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:52 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
-21:58:52 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-21:58:52 INF [api_util test_log 2726] Test log message
-00:19:47 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:47 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:47 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:19:47 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-00:19:47 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-00:19:56 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:56 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:19:57 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:57 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:57 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:19:57 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:57 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:57 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:19:57 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:57 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:57 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:19:57 INF [api_util test_log 2726] Test log message
+12:21:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:30 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:21:30 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+12:21:30 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+12:21:30 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+12:21:37 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:37 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:37 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:21:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:21:38 INF [api_util test_log 2726] Test log message
+12:27:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:27:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:27:36 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:27:36 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+12:27:36 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+12:27:36 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+12:27:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:27:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:27:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:27:45 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+12:27:45 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+12:27:45 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+12:50:39 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:39 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:39 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:50:39 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+12:50:39 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+12:50:39 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+12:50:48 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:48 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:48 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:50:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:50:49 INF [api_util test_log 2726] Test log message
+12:55:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:55:44 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+12:55:44 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+12:55:44 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+12:55:56 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:56 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:55:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:55:58 INF [api_util test_log 2726] Test log message
+12:56:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:18 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:56:18 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+12:56:18 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+12:56:18 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+12:56:28 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:28 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:28 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:29 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:29 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:56:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+12:56:30 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+12:56:30 INF [api_util test_log 2726] Test log message
+13:04:21 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:04:21 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:04:21 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:04:21 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+13:04:21 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+13:04:21 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+13:08:51 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:08:51 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:08:51 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:08:51 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
+13:08:51 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+13:08:51 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
+13:09:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:09:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:09:03 INF [api_util test_log 2726] Test log message
+13:12:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:36 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:12:36 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+13:12:36 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+13:12:36 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+13:12:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+13:12:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+13:12:45 INF [api_util test_log 2726] Test log message

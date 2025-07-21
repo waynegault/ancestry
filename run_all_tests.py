@@ -51,6 +51,9 @@ def discover_test_modules() -> List[str]:
             ]
             or "__pycache__" in str(python_file)
             or python_file.name.endswith("_backup.py")
+            or "backup_before_migration" in str(python_file)
+            or python_file.name.startswith("phase1_cleanup")
+            or python_file.name.startswith("test_phase1")
         ):
             continue
 

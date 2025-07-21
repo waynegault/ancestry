@@ -1140,11 +1140,23 @@ def run_comprehensive_tests() -> bool:
         # Test the analyze_top_match function with proper parameters
         try:
             gedcom_data = MagicMock()
-            individual = MagicMock()
-            individual.first_name = "John"
-            individual.last_name = "Doe"
+            # Create a mock individual that will be returned by find_individual_by_id
+            mock_individual = MagicMock()
+            mock_individual.first_name = "John"
+            mock_individual.last_name = "Doe"
+            gedcom_data.find_individual_by_id.return_value = mock_individual
 
-            analyze_top_match(gedcom_data, individual, "john_doe", "John Doe")
+            # Create a proper top_match dictionary structure
+            top_match = {
+                "id": "test_id",
+                "full_name_disp": "John Doe",
+                "total_score": 100,
+                "raw_data": {"birth_year": 1850, "death_year": 1920},
+            }
+
+            analyze_top_match(
+                gedcom_data, top_match, "reference_id", "Reference Person"
+            )
             return True
         except Exception:
             return True  # Function may require specific setup

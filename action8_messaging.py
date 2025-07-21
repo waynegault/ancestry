@@ -108,6 +108,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
 # --- Local application imports ---
 try:
     from core_imports import auto_register_module
+
     auto_register_module(globals(), __name__)
 except ImportError:
     pass  # Continue without auto-registration if not available
@@ -1711,7 +1712,12 @@ def run_comprehensive_tests() -> bool:
     suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
     suite.start_suite()
 
-    from test_framework import TestSuite, suppress_logging, MagicMock, patch  # === INITIALIZATION TESTS ===
+    from test_framework import (
+        TestSuite,
+        suppress_logging,
+        MagicMock,
+        patch,
+    )  # === INITIALIZATION TESTS ===
 
     def test_module_imports():
         """Test that all required modules and dependencies are properly imported."""
@@ -1993,7 +1999,10 @@ def run_comprehensive_tests() -> bool:
         with patch.dict(
             "action8_messaging.MESSAGE_TEMPLATES", mock_templates, clear=True
         ):
-            template = MESSAGE_TEMPLATES.get("In_Tree-Initial")
+            # Import the module's MESSAGE_TEMPLATES within the patch context
+            import action8_messaging
+
+            template = action8_messaging.MESSAGE_TEMPLATES.get("In_Tree-Initial")
             assert template is not None, "Should have In_Tree-Initial template"
             assert "{name}" in template, "Template should have name placeholder"
 
