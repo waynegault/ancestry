@@ -2339,10 +2339,6 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
 if __name__ == "__main__":
     print(
         "🤖 Running Action 9 - AI Message Processing & Data Extraction comprehensive test suite..."

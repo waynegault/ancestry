@@ -45,20 +45,13 @@ from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
 # --- Local application imports ---
-try:
-    from core_imports import auto_register_module
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+)
 
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
-
-# Standardize imports if available
-try:
-    from core_imports import standardize_module_imports
-
-    standardize_module_imports()
-except ImportError:
-    pass
+auto_register_module(globals(), __name__)
+standardize_module_imports()
 
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
@@ -4045,9 +4038,6 @@ def run_comprehensive_tests() -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)
 
 if __name__ == "__main__":
     import sys

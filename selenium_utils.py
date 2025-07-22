@@ -299,9 +299,6 @@ def run_comprehensive_tests() -> bool:
 # No manual registration needed - this is a key benefit of the unified system
 
 
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
 if __name__ == "__main__":
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

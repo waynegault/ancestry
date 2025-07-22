@@ -1,4 +1,9 @@
-from core_imports import register_function, get_function, is_function_available, standardize_module_imports
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+)
 from core_imports import auto_register_module
 
 auto_register_module(globals(), __name__)
@@ -1454,9 +1459,6 @@ USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They marr
 # ==============================================
 # Standalone Test Block
 # ==============================================
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)
 
 if __name__ == "__main__":
     import sys

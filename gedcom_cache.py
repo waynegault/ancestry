@@ -1283,15 +1283,9 @@ def run_comprehensive_tests() -> bool:
 # --- Main Execution ---
 
 
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
 if __name__ == "__main__":
     print(
         "🗂️ Running GEDCOM Cache Management & Optimization comprehensive test suite..."
     )
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-
-# Register all module functions
-auto_register_module(globals(), __name__)

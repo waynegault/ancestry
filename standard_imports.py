@@ -181,7 +181,7 @@ from logging_config import logger
 # Pattern 4 - Manual fallbacks
 try:
     from core_imports import auto_register_module
-    auto_register_module(globals(), __name__)
+    pass  # Already registered at line 169
 except ImportError:
     pass
 

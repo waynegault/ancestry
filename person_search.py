@@ -122,10 +122,6 @@ def run_comprehensive_tests() -> bool:
         return suite.finish_suite()
 
 
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
-
 # ==============================================
 # Standalone Test Block
 # ==============================================

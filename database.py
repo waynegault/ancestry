@@ -2781,9 +2781,6 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
 # ----------------------------------------------------------------------
 
 
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
 if __name__ == "__main__":
     # Step 1: Setup basic logging for standalone execution
     # Use a temporary logger setup if the main one fails or is unavailable

@@ -1541,6 +1541,3 @@ def run_enhanced_cache_manager_tests() -> Dict[str, Any]:
 if __name__ == "__main__":
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-
-# Register all module functions
-auto_register_module(globals(), __name__)

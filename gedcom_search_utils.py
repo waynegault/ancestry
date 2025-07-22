@@ -1132,9 +1132,6 @@ def search_frances_milne_demo():
 
 # Self-test execution when run as main module
 
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
 if __name__ == "__main__":
     print("🧪 Running GEDCOM search utilities test suite...")
     success = run_comprehensive_tests()

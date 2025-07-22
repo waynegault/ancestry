@@ -537,6 +537,3 @@ if __name__ == "__main__":
     print("📊 Running Performance Monitor comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-
-# Register all module functions
-auto_register_module(globals(), __name__)

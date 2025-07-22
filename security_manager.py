@@ -1133,10 +1133,6 @@ For more information, see the comprehensive test suite in run_comprehensive_test
 """
 
 
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
-
 if __name__ == "__main__":
     import sys
 

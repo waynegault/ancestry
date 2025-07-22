@@ -21,28 +21,17 @@ Key Features:
 - Robust error handling and logging
 """
 
-# Try to import function_registry, but don't fail if it's not available
-try:
-    from core_imports import register_function, get_function, is_function_available
-except ImportError:
-    register_function = None
-    get_function = lambda name, default=None: default
-    is_function_available = lambda name: False
+# --- Unified import system ---
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    register_function, 
+    get_function, 
+    is_function_available,
+)
 
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
-
-# Standardize imports if available
-try:
-    from core_imports import standardize_module_imports
-
-    standardize_module_imports()
-except ImportError:
-    pass
+auto_register_module(globals(), __name__)
+standardize_module_imports()
 
 # --- Standard library imports ---
 import logging
@@ -2728,9 +2717,6 @@ def run_comprehensive_tests() -> bool:
 
     return suite.finish_suite()
 
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)
 
 if __name__ == "__main__":
     success = run_comprehensive_tests()

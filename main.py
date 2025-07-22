@@ -2053,10 +2053,6 @@ def run_comprehensive_tests() -> bool:
 # Register module functions at module load
 auto_register_module(globals(), __name__)
 
-
-# Register module functions at module load
-auto_register_module(globals(), __name__)
-
 if __name__ == "__main__":
     main()
 
