@@ -2105,7 +2105,7 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 # ==============================================
 # Standalone Test Block
 # ==============================================
-def run_comprehensive_tests() -> bool:
+def action9_process_productive_module_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
     from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
@@ -2337,6 +2337,15 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests(
+        "action9_process_productive", action9_process_productive_module_tests
+    )
 
 
 if __name__ == "__main__":

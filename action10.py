@@ -904,7 +904,7 @@ def main():
         return False
 
 
-def run_comprehensive_tests() -> bool:
+def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
     from test_framework import TestSuite, suppress_logging, create_mock_data, MagicMock
     import types
@@ -1290,6 +1290,13 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("action10", action10_module_tests)
 
 
 # Register module functions for optimized access via Function Registry

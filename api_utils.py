@@ -2558,7 +2558,7 @@ def _sc_print_summary(
 # End of _sc_print_summary
 
 
-def run_comprehensive_tests() -> bool:
+def api_utils_module_tests() -> bool:
     """
     Comprehensive test suite for api_utils.py following the standardized 6-category TestSuite framework.
     Tests API functionality, data parsing, and integration capabilities.
@@ -2997,6 +2997,13 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("api_utils", api_utils_module_tests)
 
 
 # --- Main Execution Block ---

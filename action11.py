@@ -3546,7 +3546,7 @@ def load_test_person_from_env():
 # ==============================================
 
 
-def run_comprehensive_tests() -> bool:
+def action11_module_tests() -> bool:
     """
     Comprehensive test suite for action11.py following the standardized 6-category TestSuite framework.
     Tests live API research functionality, person search capabilities, and genealogical data processing.
@@ -3875,6 +3875,13 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("action11", action11_module_tests)
 
 
 if __name__ == "__main__":

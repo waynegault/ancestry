@@ -132,7 +132,7 @@ __all__ = [
 ]
 
 
-def run_comprehensive_tests() -> bool:
+def core_package_module_tests() -> bool:
     """
     Comprehensive test suite for core package initialization.
     Tests package structure, imports, and component availability.
@@ -227,6 +227,13 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("core", core_package_module_tests)
+
+
 if __name__ == "__main__":
     import sys
     import os
@@ -234,8 +241,10 @@ if __name__ == "__main__":
     # Use centralized path management
     try:
         from pathlib import Path
+
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from core_imports import standardize_module_imports
+
         standardize_module_imports()
     except ImportError:
         # Fallback for testing environment

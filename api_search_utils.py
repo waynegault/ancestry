@@ -1027,11 +1027,13 @@ def get_api_relationship_path(
         return f"(Error formatting relationship path: {str(e)})"
 
 
-def run_comprehensive_tests() -> bool:
+def api_search_utils_module_tests() -> bool:
     """Comprehensive test suite for api_search_utils.py"""
     from test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite("API Search Utilities & Query Building", "api_search_utils.py")
+    suite = TestSuite(
+        "API Search Utilities & GEDCOM Processing System", "api_search_utils.py"
+    )
     suite.start_suite()
 
     # INITIALIZATION TESTS
@@ -1213,6 +1215,13 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("api_search_utils", api_search_utils_module_tests)
 
 
 # ==============================================

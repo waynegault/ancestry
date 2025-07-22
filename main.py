@@ -1550,7 +1550,7 @@ def main():
 # end main
 
 
-def run_comprehensive_tests() -> bool:
+def main_module_tests() -> bool:
     """Comprehensive test suite for main.py"""
     try:
         from test_framework import TestSuite, suppress_logging
@@ -2046,6 +2046,13 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("main", main_module_tests)
 
 
 # --- Entry Point ---

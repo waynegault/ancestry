@@ -1,265 +1,265 @@
-12:21:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:30 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:21:30 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-12:21:30 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:21:30 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-12:21:37 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:37 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:37 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:38 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:21:38 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:21:38 INF [api_util test_log 2726] Test log message
-12:27:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:27:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:27:36 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:27:36 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-12:27:36 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:27:36 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-12:27:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:27:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:27:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:27:45 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-12:27:45 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:27:45 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-12:50:39 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:39 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:39 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:39 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-12:50:39 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:50:39 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-12:50:48 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:48 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:48 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:49 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:49 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:49 INF [api_util test_log 2726] Test log message
-12:55:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:55:44 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-12:55:44 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:55:44 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-12:55:56 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:56 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:56 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:55:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:55:58 INF [api_util test_log 2726] Test log message
-12:56:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:18 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:56:18 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-12:56:18 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:56:18 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-12:56:28 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:28 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:28 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:29 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:29 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:29 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:56:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:30 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:56:30 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:56:30 INF [api_util test_log 2726] Test log message
-13:04:21 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:04:21 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:04:21 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:04:21 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-13:04:21 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-13:04:21 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-13:08:51 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:08:51 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:08:51 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:08:51 INF [action8_ <module> 165 ] Action 8 Initializing: APP_MODE is development
-13:08:51 INF [action8_ <module> 176 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-13:08:51 CRI [action8_ <module> 268 ] Essential message templates failed to load. Cannot proceed reliably.
-13:09:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:03 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:09:03 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:09:03 INF [api_util test_log 2726] Test log message
-13:12:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:36 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:12:36 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-13:12:36 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-13:12:36 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-13:12:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:45 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:12:45 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:12:45 INF [api_util test_log 2726] Test log message
-13:35:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:35:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:35:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:35:58 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-13:35:58 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-13:35:58 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-13:36:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:07 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:36:08 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:08 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:08 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:36:08 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:08 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:08 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:36:08 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:08 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-13:36:08 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-13:36:08 INF [api_util test_log 2726] Test log message
-14:40:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:36 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:36 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-14:40:36 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-14:40:36 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-14:40:36 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-14:40:43 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:43 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:43 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-14:40:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-14:40:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-14:40:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-14:40:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-14:40:44 INF [api_util test_log 2726] Test log message
-15:16:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:44 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:44 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:16:44 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-15:16:44 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-15:16:44 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-15:16:53 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:53 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:53 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:16:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:16:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:16:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:16:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:16:54 INF [api_util test_log 2726] Test log message
-15:44:15 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:15 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:15 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:44:15 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-15:44:15 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-15:44:15 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-15:44:24 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:24 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:24 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:44:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:25 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:44:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:25 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:44:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-15:44:25 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-15:44:25 INF [api_util test_log 2726] Test log message
-16:02:10 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:10 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:10 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:02:10 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-16:02:10 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-16:02:10 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-16:02:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:17 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:02:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:18 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:02:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:18 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:02:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:18 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-16:02:18 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-16:02:18 INF [api_util test_log 2726] Test log message
-00:19:51 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:51 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:19:51 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:19:51 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-00:19:51 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-00:19:52 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-00:20:00 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:00 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:00 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:20:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:20:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:20:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:01 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-00:20:01 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-00:20:01 INF [api_util test_log 2726] Test log message
-12:50:23 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:23 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:23 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:23 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
-12:50:23 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
-12:50:23 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
-12:50:31 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:31 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:31 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
-12:50:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
-12:50:32 INF [api_util test_log 2726] Test log message
+15:08:10 INF [ms_graph save_cac 130 ] Executing save_cache_on_exit via atexit...
+15:08:10 INF [ms_graph save_cac 147 ] MSAL cache unchanged since last load/save. No save needed.
+15:25:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+15:25:54 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+15:25:54 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+15:29:33 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+15:29:33 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+15:29:33 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+15:29:33 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+15:29:33 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+15:29:33 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+15:42:59 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+15:42:59 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+15:42:59 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+15:42:59 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+15:42:59 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+15:42:59 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+15:42:59 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+15:42:59 INF [test_fra run_all_ 156 ] ============================================================
+15:42:59 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+15:42:59 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+15:42:59 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+15:42:59 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+15:42:59 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+15:42:59 INF [test_fra run_test 66  ] ✅ Function registration passed (0.001s)
+15:42:59 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+15:42:59 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+15:42:59 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+15:42:59 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+15:42:59 INF [test_fra _generat 179 ] ============================================================
+15:42:59 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+15:42:59 INF [test_fra _generat 181 ] Tests: 5/5 passed
+15:42:59 INF [test_fra _generat 182 ] Duration: 0.002s
+15:42:59 INF [test_fra _generat 183 ] Status: ✅ PASSED
+15:42:59 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+15:42:59 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+15:42:59 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+15:42:59 INF [test_fra _generat 190 ] ✅ Function registration: 0.001s
+15:42:59 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+15:42:59 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+15:42:59 INF [test_fra _generat 194 ] ============================================================
+17:04:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:04:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:04:25 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:04:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:04:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:04:25 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:04:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:04:25 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:04:25 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:04:25 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+17:04:25 INF [test_fra run_all_ 156 ] ============================================================
+17:04:25 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:04:25 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:04:25 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:04:25 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:04:25 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:04:25 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:04:25 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:04:25 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:04:25 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:04:25 INF [api_util test_log 2726] Test log message
+17:04:25 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.012s)
+17:04:25 INF [test_fra _generat 179 ] ============================================================
+17:04:25 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+17:04:25 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:04:25 INF [test_fra _generat 182 ] Duration: 0.013s
+17:04:25 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:04:25 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:04:25 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:04:25 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:04:25 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:04:25 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:04:25 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.012s
+17:04:25 INF [test_fra _generat 194 ] ============================================================
+17:24:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:32 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+17:24:32 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:24:32 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+17:24:32 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+17:24:32 INF [test_fra run_all_ 156 ] ============================================================
+17:24:32 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:24:32 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:24:32 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:24:32 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:24:32 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:24:32 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:24:32 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:24:32 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:24:32 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:24:32 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+17:24:32 INF [test_fra _generat 179 ] ============================================================
+17:24:32 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+17:24:32 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:24:32 INF [test_fra _generat 182 ] Duration: 0.001s
+17:24:32 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:24:32 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:24:32 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+17:24:32 INF [test_fra _generat 194 ] ============================================================
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:40 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+17:24:40 INF [test_fra run_all_ 156 ] ============================================================
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:24:40 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:24:40 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:24:40 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:24:40 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:24:40 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.003s)
+17:24:40 INF [test_fra _generat 179 ] ============================================================
+17:24:40 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+17:24:40 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:24:40 INF [test_fra _generat 182 ] Duration: 0.003s
+17:24:40 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:24:40 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:24:40 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.003s
+17:24:40 INF [test_fra _generat 194 ] ============================================================
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:41 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:41 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:41 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:41 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+17:24:41 INF [test_fra run_all_ 156 ] ============================================================
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:24:41 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:24:41 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:24:41 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:24:41 INF [test_fra run_test 66  ] ✅ Import performance passed (0.001s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:24:41 INF [api_util test_log 2726] Test log message
+17:24:41 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+17:24:41 INF [test_fra _generat 179 ] ============================================================
+17:24:41 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+17:24:41 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:24:41 INF [test_fra _generat 182 ] Duration: 0.005s
+17:24:41 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:24:41 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:24:41 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:24:41 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:24:41 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:24:41 INF [test_fra _generat 190 ] ✅ Import performance: 0.001s
+17:24:41 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+17:24:41 INF [test_fra _generat 194 ] ============================================================
+17:46:24 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:24 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:24 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:24 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+17:46:24 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:46:24 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+17:46:24 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+17:46:24 INF [test_fra run_all_ 156 ] ============================================================
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:46:24 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:46:24 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:46:24 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:46:24 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:46:24 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+17:46:24 INF [test_fra _generat 179 ] ============================================================
+17:46:24 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+17:46:24 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:46:24 INF [test_fra _generat 182 ] Duration: 0.001s
+17:46:24 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:46:24 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:46:24 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+17:46:24 INF [test_fra _generat 194 ] ============================================================
+17:46:31 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:31 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:31 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:31 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+17:46:31 INF [test_fra run_all_ 156 ] ============================================================
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:46:31 INF [test_fra run_test 66  ] ✅ Core imports passed (0.001s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:46:31 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:46:31 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:46:31 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:46:31 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.002s)
+17:46:31 INF [test_fra _generat 179 ] ============================================================
+17:46:31 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+17:46:31 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:46:31 INF [test_fra _generat 182 ] Duration: 0.003s
+17:46:31 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:46:31 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:46:31 INF [test_fra _generat 190 ] ✅ Core imports: 0.001s
+17:46:31 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:46:31 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:46:31 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:46:31 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.002s
+17:46:31 INF [test_fra _generat 194 ] ============================================================
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:32 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+17:46:32 INF [test_fra run_all_ 156 ] ============================================================
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:46:32 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:46:32 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:46:32 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:46:32 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:46:32 INF [api_util test_log 2726] Test log message
+17:46:32 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+17:46:32 INF [test_fra _generat 179 ] ============================================================
+17:46:32 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+17:46:32 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:46:32 INF [test_fra _generat 182 ] Duration: 0.005s
+17:46:32 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:46:32 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:46:32 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+17:46:32 INF [test_fra _generat 194 ] ============================================================

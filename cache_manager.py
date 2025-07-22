@@ -51,7 +51,7 @@ from logging_config import logger
 
 
 # (Removed duplicate definition of run_comprehensive_tests to avoid obscuring the main implementation.)
-def run_comprehensive_tests() -> bool:
+def cache_manager_module_tests() -> bool:
     """
     Comprehensive test suite for cache_manager.py.
     Tests cache management, eviction policies, and performance optimization.
@@ -218,6 +218,13 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("cache_manager", cache_manager_module_tests)
 
     # Multi-level cache operations
     def test_multilevel_cache_operations():

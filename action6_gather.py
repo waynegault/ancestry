@@ -3785,7 +3785,7 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 # ==============================================
 
 
-def run_comprehensive_tests() -> bool:
+def action6_gather_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py"""
     from test_framework import TestSuite, suppress_logging
 
@@ -4033,6 +4033,13 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("action6_gather", action6_gather_module_tests)
 
 
 # ==============================================

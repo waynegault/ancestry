@@ -478,57 +478,96 @@ performance_monitor.start_monitoring()
 
 
 # Test suite integration
+def performance_monitor_module_tests():
+    """Essential performance monitor tests for unified framework."""
+    import time
+
+    tests = []
+
+    # Test 1: Basic metric recording
+    def test_metric_recording():
+        monitor = PerformanceMonitor()
+        monitor.record_metric("test_metric", 100.0, "test")
+        assert len(monitor.metrics) == 1, "Should record one metric"
+        assert (
+            monitor.metrics[0].name == "test_metric"
+        ), "Should record correct metric name"
+        assert monitor.metrics[0].value == 100.0, "Should record correct metric value"
+
+    tests.append(("Metric Recording", test_metric_recording))
+
+    # Test 2: Function profiling decorator
+    def test_function_profiling():
+        monitor = PerformanceMonitor()
+
+        @monitor.profile_function
+        def test_function():
+            time.sleep(0.001)  # Minimal sleep
+            return "test"
+
+        result = test_function()
+        assert result == "test", "Decorated function should return correct value"
+        assert "test_function" in str(
+            monitor.function_profiles
+        ), "Function should be profiled"
+
+    tests.append(("Function Profiling", test_function_profiling))
+
+    # Test 3: Report generation
+    def test_report_generation():
+        monitor = PerformanceMonitor()
+        monitor.record_metric("test_metric", 50.0, "test")
+
+        report = monitor.get_report(1)
+        assert "metric_statistics" in report, "Report should include metric statistics"
+        assert "function_profiles" in report, "Report should include function profiles"
+        assert "system_info" in report, "Report should include system info"
+
+    tests.append(("Report Generation", test_report_generation))
+
+    # Test 4: Performance monitoring start/stop
+    def test_monitoring_control():
+        monitor = PerformanceMonitor()
+
+        # Test start monitoring
+        monitor.start_monitoring()
+        assert (
+            monitor._stop_monitoring == False
+        ), "Monitoring should be active after start"
+
+        # Test stop monitoring
+        monitor.stop_monitoring()
+        assert (
+            monitor._stop_monitoring == True
+        ), "Monitoring should be inactive after stop"
+
+    tests.append(("Monitoring Control", test_monitoring_control))
+
+    # Test 5: Performance validation
+    def test_performance():
+        monitor = PerformanceMonitor()
+
+        # Test bulk metric recording performance
+        start_time = time.time()
+        for i in range(100):
+            monitor.record_metric(f"test_metric_{i}", float(i), "bulk_test")
+        duration = time.time() - start_time
+
+        assert (
+            duration < 0.1
+        ), f"100 metric recordings should be fast, took {duration:.3f}s"
+        assert len(monitor.metrics) == 100, "Should record all 100 metrics"
+
+    tests.append(("Performance Validation", test_performance))
+
+    return tests
+
+
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests for the performance monitor."""
-    from test_framework import suppress_logging, create_mock_data, assert_valid_function
+    """Run performance monitor tests using unified framework."""
+    from test_framework_unified import run_unified_tests
 
-    with suppress_logging():
-        print("Running Performance Monitor Tests...")
-        tests_passed = 0
-        total_tests = 0
-
-        # Test 1: Basic functionality
-        try:
-            monitor = PerformanceMonitor()
-            monitor.record_metric("test_metric", 100.0, "test")
-            assert len(monitor.metrics) == 1
-            tests_passed += 1
-            print("✅ Basic functionality - Metric recording works correctly")
-        except Exception as e:
-            print(f"❌ Basic functionality - Error: {e}")
-        total_tests += 1
-
-        # Test 2: Function profiling
-        try:
-
-            @monitor.profile_function
-            def test_function():
-                time.sleep(0.01)
-                return "test"
-
-            result = test_function()
-            assert result == "test"
-            assert "test_function" in str(monitor.function_profiles)
-            tests_passed += 1
-            print("✅ Function profiling - Decorator works correctly")
-        except Exception as e:
-            print(f"❌ Function profiling - Error: {e}")
-        total_tests += 1
-
-        # Test 3: Report generation
-        try:
-            report = monitor.get_report(1)
-            assert "metric_statistics" in report
-            assert "function_profiles" in report
-            assert "system_info" in report
-            tests_passed += 1
-            print("✅ Report generation - Comprehensive report generated")
-        except Exception as e:
-            print(f"❌ Report generation - Error: {e}")
-        total_tests += 1
-
-        print(f"\nPerformance Monitor Tests: {tests_passed}/{total_tests} passed")
-        return tests_passed == total_tests
+    return run_unified_tests("performance_monitor", performance_monitor_module_tests)
 
 
 if __name__ == "__main__":

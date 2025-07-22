@@ -3012,7 +3012,7 @@ from test_framework import (
 )
 
 
-def run_comprehensive_tests() -> bool:
+def database_module_tests() -> bool:
     """
     Comprehensive test suite for database.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
@@ -3327,6 +3327,13 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("database", database_module_tests)
 
 
 # === END OF database.py ===

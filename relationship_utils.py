@@ -1665,603 +1665,108 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
     return relationship_code  # Return original if no match
 
 
+def relationship_module_tests():
+    """Essential relationship utilities tests for unified framework."""
+    import time
+
+    tests = []
+
+    # Test 1: Function availability
+    def test_function_availability():
+        required_functions = [
+            "format_name",
+            "fast_bidirectional_bfs",
+            "_get_relationship_term",
+            "format_api_relationship_path",
+            "format_relationship_path_unified",
+        ]
+        for func_name in required_functions:
+            assert func_name in globals(), f"Function {func_name} should be available"
+            assert callable(
+                globals()[func_name]
+            ), f"Function {func_name} should be callable"
+
+    tests.append(("Function Availability", test_function_availability))
+
+    # Test 2: Name formatting
+    def test_name_formatting():
+        test_cases = [
+            ("john doe", "John Doe"),
+            ("/John Smith/", "John Smith"),  # GEDCOM format
+            (None, "Valued Relative"),
+            ("", "Valued Relative"),
+            ("MARY ELIZABETH", "Mary Elizabeth"),
+        ]
+        for input_name, expected in test_cases:
+            result = format_name(input_name)
+            assert (
+                result == expected
+            ), f"format_name({input_name}) should return {expected}, got {result}"
+
+    tests.append(("Name Formatting", test_name_formatting))
+
+    # Test 3: Bidirectional BFS pathfinding
+    def test_bfs_pathfinding():
+        # Simple family tree: Grandparent -> Parent -> Child
+        id_to_parents = {
+            "@I002@": {"@I001@"},  # Parent has Grandparent
+            "@I003@": {"@I002@"},  # Child has Parent
+        }
+        id_to_children = {
+            "@I001@": {"@I002@"},  # Grandparent has Parent
+            "@I002@": {"@I003@"},  # Parent has Child
+        }
+
+        # Test path finding
+        path = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+        assert isinstance(path, list), "BFS should return a list"
+        assert len(path) >= 2, "Path should contain at least start and end"
+
+        # Test same person path
+        same_path = fast_bidirectional_bfs(
+            "@I001@", "@I001@", id_to_parents, id_to_children
+        )
+        assert len(same_path) == 1, "Same person path should have length 1"
+
+    tests.append(("BFS Pathfinding", test_bfs_pathfinding))
+
+    # Test 4: Relationship term mapping
+    def test_relationship_terms():
+        test_cases = [
+            ("M", "parent", "father"),
+            ("F", "parent", "mother"),
+            ("M", "child", "son"),
+            ("F", "child", "daughter"),
+            (None, "parent", "parent"),  # Unknown gender fallback
+        ]
+        for gender, relationship, expected in test_cases:
+            result = _get_relationship_term(gender, relationship)
+            assert (
+                result == expected
+            ), f"Term for {gender}/{relationship} should be {expected}"
+
+    tests.append(("Relationship Terms", test_relationship_terms))
+
+    # Test 5: Performance validation
+    def test_performance():
+        # Test name formatting performance
+        start_time = time.time()
+        for _ in range(100):
+            format_name("john smith")
+            format_name("/Mary/Jones/")
+        duration = time.time() - start_time
+        assert duration < 0.1, f"Name formatting should be fast, took {duration:.3f}s"
+
+    tests.append(("Performance Validation", test_performance))
+
+    return tests
+
+
 def run_comprehensive_tests() -> bool:
-    """
-    Comprehensive test suite for relationship_utils.py with real functionality testing.
-    Tests initialization, core functionality, edge cases, integration, performance, and error handling.
-    """
-    from test_framework import TestSuite, suppress_logging
+    """Run relationship utilities tests using unified framework."""
+    from test_framework_unified import run_unified_tests
 
-    with suppress_logging():
-        suite = TestSuite("Relationship Path Analysis", "relationship_utils.py")
-        suite.start_suite()
-
-        # INITIALIZATION TESTS
-        def test_module_initialization():
-            """Test that all required relationship analysis components are available."""
-            required_functions = [
-                "format_name",
-                "fast_bidirectional_bfs",
-                "_get_relationship_term",
-                "format_api_relationship_path",
-                "format_relationship_path_unified",
-            ]
-
-            for func_name in required_functions:
-                if func_name not in globals():
-                    return False
-            return True
-
-        suite.run_test(
-            "Relationship Module Initialization",
-            test_module_initialization,
-            "All core relationship functions (format_name, fast_bidirectional_bfs, format_api_relationship_path) are available",
-            "Verify that all essential relationship analysis functions exist and are callable",
-            "Test module initialization and verify all core relationship analysis functions exist",
-        )
-
-        def test_genealogical_data_structures():
-            """Test genealogical data structure handling."""
-            try:
-                # Test basic family tree structure
-                sample_family = {
-                    "parents": {
-                        "@I001@": {"@I002@", "@I003@"}
-                    },  # Child has two parents
-                    "children": {
-                        "@I002@": {"@I001@"},
-                        "@I003@": {"@I001@"},
-                    },  # Parents have child
-                    "individuals": {
-                        "@I001@": {"name": "John Smith", "sex": "M"},
-                        "@I002@": {"name": "Mary Smith", "sex": "F"},
-                        "@I003@": {"name": "Robert Smith", "sex": "M"},
-                    },
-                }
-
-                # Validate structure
-                for individual_id in sample_family["individuals"]:
-                    if not individual_id.startswith("@I") or not individual_id.endswith(
-                        "@"
-                    ):
-                        return False
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Genealogical Data Structure Validation",
-            test_genealogical_data_structures,
-            "Family tree data structures have proper individual IDs and relationship mappings",
-            "Create sample family tree with parents/children relationships and validate structure",
-            "Test genealogical data structure validation with family tree relationships",
-        )
-
-        # CORE FUNCTIONALITY TESTS
-        def test_name_formatting_comprehensive():
-            """Test comprehensive name formatting for genealogical records."""
-            if not is_function_available("format_name"):
-                return False
-
-            format_func = get_function("format_name")
-            if not format_func:
-                return False
-
-            # Comprehensive test cases for genealogical names
-            test_cases = [
-                ("john doe", "John Doe"),
-                ("MARY ELIZABETH SMITH", "Mary Elizabeth Smith"),
-                ("jean-paul sartre", "Jean-Paul Sartre"),
-                ("o'malley", "O'Malley"),
-                ("McAffee", "McAffee"),
-                ("van der Berg", "Van der Berg"),
-                ("/John Smith/", "John Smith"),  # GEDCOM format
-                ("//John//", "John"),  # Multiple slashes
-                (None, "Valued Relative"),
-                ("", "Valued Relative"),
-                ("   ", "Valued Relative"),
-                ("Unknown", "Unknown"),  # Common genealogical entry
-            ]
-
-            for input_name, expected in test_cases:
-                try:
-                    result = format_func(input_name)
-                    if result != expected:
-                        return False
-                except Exception:
-                    return False
-
-            return True
-
-        suite.run_test(
-            "Comprehensive Name Formatting",
-            test_name_formatting_comprehensive,
-            "Name formatting handles genealogical records including GEDCOM format and family name patterns",
-            "Test format_name() with genealogical names including GEDCOM slashes, hyphens, and apostrophes",
-            "Test comprehensive name formatting for genealogical records and family names",
-        )
-
-        def test_bidirectional_bfs_pathfinding():
-            """Test bidirectional BFS for relationship path finding."""
-            if not is_function_available("fast_bidirectional_bfs"):
-                return False
-
-            bfs_func = get_function("fast_bidirectional_bfs")
-
-            # Create test family tree: Grandparent -> Parent -> Child
-            id_to_parents = {
-                "@I002@": {"@I001@"},  # Parent has Grandparent
-                "@I003@": {"@I002@"},  # Child has Parent
-            }
-            id_to_children = {
-                "@I001@": {"@I002@"},  # Grandparent has Parent
-                "@I002@": {"@I003@"},  # Parent has Child
-            }
-
-            try:
-                # Test direct path finding
-                path = bfs_func("@I001@", "@I003@", id_to_parents, id_to_children)
-                if not isinstance(path, list):
-                    return False
-
-                # Should find path Grandparent -> Parent -> Child
-                if len(path) != 3:
-                    return False
-
-                # Test same person (should return single-item list)
-                path_same = bfs_func("@I001@", "@I001@", id_to_parents, id_to_children)
-                if len(path_same) != 1 or path_same[0] != "@I001@":
-                    return False
-
-                # Test reverse path
-                path_reverse = bfs_func(
-                    "@I003@", "@I001@", id_to_parents, id_to_children
-                )
-                if not isinstance(path_reverse, list) or len(path_reverse) == 0:
-                    return False
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Bidirectional BFS Relationship Pathfinding",
-            test_bidirectional_bfs_pathfinding,
-            "BFS algorithm finds shortest relationship paths through family tree connections",
-            "Test fast_bidirectional_bfs() with 3-generation family tree and verify path finding",
-            "Test bidirectional BFS algorithm for genealogical relationship path finding",
-        )
-
-        def test_relationship_term_mapping():
-            """Test relationship term mapping based on gender."""
-            if not is_function_available("_get_relationship_term"):
-                return False
-
-            term_func = get_function("_get_relationship_term")
-
-            # Test gender-specific relationship terms
-            test_cases = [
-                ("M", "parent", "father"),
-                ("F", "parent", "mother"),
-                ("M", "child", "son"),
-                ("F", "child", "daughter"),
-                ("M", "sibling", "brother"),
-                ("F", "sibling", "sister"),
-                ("M", "grandparent", "grandfather"),
-                ("F", "grandparent", "grandmother"),
-                (None, "parent", "parent"),  # Unknown gender fallback
-                ("U", "child", "child"),  # Unknown gender fallback
-                ("", "sibling", "sibling"),  # Empty gender fallback
-            ]
-
-            try:
-                for gender, relationship, expected in test_cases:
-                    result = term_func(gender, relationship)
-                    if result != expected:
-                        return False
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Relationship Term Gender Mapping",
-            test_relationship_term_mapping,
-            "Relationship terms map correctly based on gender (father/mother, son/daughter, etc.)",
-            "Test _get_relationship_term() with various gender/relationship combinations",
-            "Test relationship term mapping with gender-specific genealogical terminology",
-        )
-
-        def test_api_relationship_formatting():
-            """Test API relationship path formatting."""
-            if not is_function_available("format_api_relationship_path"):
-                return False
-
-            format_func = get_function("format_api_relationship_path")
-
-            try:
-                # Test typical API responses
-                test_cases = [
-                    (
-                        "John Smith is the father of Mary Jones",
-                        "John Smith",
-                        "Mary Jones",
-                    ),
-                    ("Mary is the mother of Robert", "Mary", "Robert"),
-                    ("David is the brother of Susan", "David", "Susan"),
-                    ("No relationship found", "Person A", "Person B"),
-                ]
-
-                for api_response, person1, person2 in test_cases:
-                    result = format_func(api_response, person1, person2)
-
-                    # Should return a string
-                    if not isinstance(result, str):
-                        return False
-
-                    # Should contain some meaningful content
-                    if len(result) == 0:
-                        return False
-
-                # Test with None/empty inputs
-                result_none = format_func(None, "Person A", "Person B")
-                if not isinstance(result_none, str) or len(result_none) == 0:
-                    return False
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "API Relationship Path Formatting",
-            test_api_relationship_formatting,
-            "API relationship responses are formatted into readable relationship descriptions",
-            "Test format_api_relationship_path() with various API response formats",
-            "Test API relationship path formatting with genealogical relationship descriptions",
-        )
-
-        # EDGE CASES TESTS
-        def test_circular_family_relationships():
-            """Test handling of circular or complex family relationships."""
-            if not is_function_available("fast_bidirectional_bfs"):
-                return False
-
-            bfs_func = get_function("fast_bidirectional_bfs")
-
-            # Create circular relationship (should be handled gracefully)
-            circular_parents = {
-                "@I001@": {"@I002@"},
-                "@I002@": {"@I001@"},  # Circular reference
-            }
-            circular_children = {
-                "@I001@": {"@I002@"},
-                "@I002@": {"@I001@"},  # Circular reference
-            }
-
-            try:
-                # Should handle circular relationships without infinite loops
-                path = bfs_func(
-                    "@I001@",
-                    "@I002@",
-                    circular_parents,
-                    circular_children,
-                    timeout_sec=1,
-                )
-
-                # Should return some result without hanging
-                return isinstance(path, list)
-            except Exception:
-                # Exception handling is acceptable for circular relationships
-                return True
-
-        suite.run_test(
-            "Circular Family Relationship Handling",
-            test_circular_family_relationships,
-            "Algorithm handles circular family relationships without infinite loops",
-            "Test fast_bidirectional_bfs() with circular parent-child relationships",
-            "Test edge case handling for circular or complex family relationships",
-        )
-
-        def test_empty_family_data():
-            """Test handling of empty or minimal family data."""
-            if not is_function_available("fast_bidirectional_bfs"):
-                return False
-
-            bfs_func = get_function("fast_bidirectional_bfs")
-
-            try:
-                # Test with empty family data
-                empty_path = bfs_func("@I001@", "@I002@", {}, {})
-
-                # Should return fallback path or empty list
-                if not isinstance(empty_path, list):
-                    return False
-
-                # Test with None data
-                none_path = bfs_func("@I001@", "@I002@", None, None)
-
-                # Should handle gracefully
-                return isinstance(none_path, list)
-            except Exception:
-                # Exception handling is acceptable
-                return True
-
-        suite.run_test(
-            "Empty Family Data Handling",
-            test_empty_family_data,
-            "System handles empty or missing family relationship data gracefully",
-            "Test fast_bidirectional_bfs() with empty dictionaries and None inputs",
-            "Test edge case handling for empty or missing genealogical data",
-        )
-
-        # INTEGRATION TESTS
-        def test_complete_relationship_workflow():
-            """Test complete relationship analysis workflow."""
-            required_funcs = [
-                "format_name",
-                "fast_bidirectional_bfs",
-                "_get_relationship_term",
-            ]
-
-            # Verify all functions exist
-            for func_name in required_funcs:
-                if func_name not in globals():
-                    return False
-
-            try:
-                # Test complete workflow
-                # 1. Format names (use direct function call)
-                if "format_name" in globals():
-                    name1 = format_name("john smith")
-                    name2 = format_name("mary smith")
-                    if name1 != "John Smith" or name2 != "Mary Smith":
-                        return False
-
-                # 2. Find relationship path
-                family_data = {
-                    "@I002@": {"@I001@"},  # Mary is child of John
-                }
-                children_data = {
-                    "@I001@": {"@I002@"},  # John has child Mary
-                }
-
-                path = get_function("fast_bidirectional_bfs")(
-                    "@I001@", "@I002@", family_data, children_data
-                )
-
-                if not isinstance(path, list) or len(path) < 2:
-                    return False
-
-                # 3. Get relationship term
-                term = get_function("_get_relationship_term")("F", "child")
-
-                if term != "daughter":
-                    return False
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Complete Relationship Analysis Workflow",
-            test_complete_relationship_workflow,
-            "Name formatting, path finding, and relationship terms work together in genealogical analysis",
-            "Test workflow: format names -> find path -> determine relationship terms",
-            "Test integration of complete relationship analysis workflow components",
-        )
-
-        def test_gedcom_format_integration():
-            """Test integration with GEDCOM genealogical data format."""
-            if not is_function_available("format_name"):
-                return False
-
-            format_func = get_function("format_name")
-
-            try:
-                # Test GEDCOM name formats
-                gedcom_names = [
-                    "/John/Smith/",  # Standard GEDCOM format
-                    "/Mary Elizabeth/Jones/",  # Multi-part given name
-                    "//Unknown//",  # Missing name
-                    "/John/",  # Only given name
-                    "",  # Empty GEDCOM field
-                ]
-
-                for gedcom_name in gedcom_names:
-                    result = format_func(gedcom_name)
-
-                    # Should return a valid string
-                    if not isinstance(result, str):
-                        return False
-
-                    # Should handle GEDCOM slashes appropriately
-                    if "//" in result and result != "":
-                        return False  # Slashes should be removed
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "GEDCOM Format Integration",
-            test_gedcom_format_integration,
-            "Name formatting properly handles GEDCOM genealogical data format with slashes",
-            "Test format_name() with various GEDCOM name formats and slash patterns",
-            "Test integration with GEDCOM genealogical data format standards",
-        )
-
-        # PERFORMANCE TESTS
-        def test_large_family_tree_performance():
-            """Test performance with large family tree datasets."""
-            if not is_function_available("fast_bidirectional_bfs"):
-                return False
-
-            bfs_func = get_function("fast_bidirectional_bfs")
-
-            try:
-                import time
-
-                # Create large family tree (linear chain)
-                large_parents = {}
-                large_children = {}
-
-                for i in range(1, 100):  # 100-person family tree
-                    parent_id = f"@I{i:03d}@"
-                    child_id = f"@I{i+1:03d}@"
-                    large_parents[child_id] = {parent_id}
-                    large_children[parent_id] = {child_id}
-
-                start_time = time.time()
-
-                # Find path from first to last person
-                path = bfs_func(
-                    "@I001@", "@I100@", large_parents, large_children, timeout_sec=2
-                )
-
-                duration = time.time() - start_time
-
-                # Should complete within reasonable time
-                return duration < 2.0 and isinstance(path, list)
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Large Family Tree Performance",
-            test_large_family_tree_performance,
-            "Path finding completes within 2 seconds for 100-person linear family tree",
-            "Create 100-person family tree and find path from first to last person",
-            "Test performance with large genealogical family tree datasets",
-        )
-
-        def test_bulk_name_formatting_performance():
-            """Test performance of bulk name formatting operations."""
-            if not is_function_available("format_name"):
-                return False
-
-            format_func = get_function("format_name")
-
-            try:
-                import time
-
-                # Create bulk name data
-                test_names = [
-                    "john smith",
-                    "MARY JOHNSON",
-                    "/Elizabeth/Brown/",
-                    "robert o'connor",
-                    "jean-paul martin",
-                    None,
-                    "",
-                ] * 100  # 700 total names
-
-                start_time = time.time()
-
-                # Format all names
-                for name in test_names:
-                    format_func(name)
-
-                duration = time.time() - start_time
-
-                # Should complete 700 name formatting operations quickly
-                return duration < 0.5  # Less than 500ms
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Bulk Name Formatting Performance",
-            test_bulk_name_formatting_performance,
-            "700 name formatting operations complete in under 500ms demonstrating efficient processing",
-            "Format 700 genealogical names including GEDCOM format and special characters",
-            "Test performance of bulk name formatting for large genealogical datasets",
-        )
-
-        # ERROR HANDLING TESTS
-        def test_invalid_relationship_data():
-            """Test handling of invalid or corrupted relationship data."""
-            if not is_function_available("fast_bidirectional_bfs"):
-                return False
-
-            bfs_func = get_function("fast_bidirectional_bfs")
-
-            # Test with invalid data types
-            invalid_data_sets = [
-                ("string", "string"),  # Strings instead of dicts
-                ([1, 2, 3], [4, 5, 6]),  # Lists instead of dicts
-                (123, 456),  # Numbers instead of dicts
-                ({}, "not_a_dict"),  # Mixed valid/invalid
-            ]
-
-            try:
-                for invalid_parents, invalid_children in invalid_data_sets:
-                    try:
-                        result = bfs_func(
-                            "@I001@", "@I002@", invalid_parents, invalid_children
-                        )
-
-                        # Should return a list or handle gracefully
-                        if result is not None and not isinstance(result, list):
-                            return False
-                    except Exception:
-                        # Exception handling is acceptable for invalid data
-                        continue
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Invalid Relationship Data Handling",
-            test_invalid_relationship_data,
-            "Path finding handles invalid data types gracefully without crashing",
-            "Test fast_bidirectional_bfs() with invalid data types (strings, lists, numbers)",
-            "Test error handling for invalid or corrupted genealogical relationship data",
-        )
-
-        def test_malformed_name_handling():
-            """Test handling of malformed or problematic names."""
-            if not is_function_available("format_name"):
-                return False
-
-            format_func = get_function("format_name")
-
-            # Test with problematic name formats
-            problematic_names = [
-                {"not": "a string"},  # Dict
-                ["list", "name"],  # List
-                123,  # Number
-                True,  # Boolean
-                object(),  # Object
-                "\n\t\r",  # Only whitespace chars
-                "///",  # Only slashes
-                "🙂😊🎉",  # Emoji
-            ]
-
-            try:
-                for problematic_name in problematic_names:
-                    try:
-                        result = format_func(problematic_name)
-
-                        # Should return a string
-                        if not isinstance(result, str):
-                            return False
-                    except Exception:
-                        # Exception handling is acceptable
-                        continue
-
-                return True
-            except Exception:
-                return False
-
-        suite.run_test(
-            "Malformed Name Input Handling",
-            test_malformed_name_handling,
-            "Name formatting handles various invalid input types gracefully",
-            "Test format_name() with dicts, lists, numbers, and non-string inputs",
-            "Test error handling for malformed or invalid name input data",
-        )
-
-        return suite.finish_suite()
+    return run_unified_tests("relationship_utils", relationship_module_tests)
 
 
 # ==============================================

@@ -916,7 +916,7 @@ def demonstrate_api_cache_usage() -> Dict[str, Any]:
 # ==============================================
 
 
-def run_comprehensive_tests() -> bool:
+def api_cache_module_tests() -> bool:
     """
     Comprehensive test suite for api_cache.py.
     Tests API response caching, invalidation, and performance optimization.
@@ -1120,6 +1120,13 @@ def run_comprehensive_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("api_cache", api_cache_module_tests)
 
 
 # ==============================================

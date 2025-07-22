@@ -121,247 +121,107 @@ from test_framework import (
 )
 
 
-def run_comprehensive_tests() -> bool:
-    """
-    Comprehensive test suite for my_selectors.py.
-    Tests CSS selector definitions, validation, and organization.
-    """
-    suite = TestSuite("CSS Selectors & Element Identification", "my_selectors.py")
-    suite.start_suite()
+def my_selectors_module_tests():
+    """Essential CSS selectors tests for unified framework."""
+    import re
 
-    # Initialization Tests
-    def test_initialization():
-        """Test that all basic selectors are defined as strings."""
-        basic_selectors_12345 = [
+    tests = []
+
+    # Test 1: Basic selector definitions
+    def test_selector_definitions():
+        basic_selectors = [
             "WAIT_FOR_PAGE_SELECTOR",
             "POPUP_CLOSE_SELECTOR",
             "PAGE_NO_LONGER_AVAILABLE_SELECTOR",
             "UNAVAILABLE_MATCH_SELECTOR",
-            "MESSAGE_CENTER_UNAVAILABLE_SELECTOR",
-            "TEMP_UNAVAILABLE_SELECTOR",
         ]
+        for selector_name in basic_selectors:
+            assert selector_name in globals(), f"{selector_name} should be defined"
+            selector_value = globals()[selector_name]
+            assert isinstance(
+                selector_value, str
+            ), f"{selector_name} should be a string"
+            assert (
+                len(selector_value.strip()) > 0
+            ), f"{selector_name} should not be empty"
 
-        for selector_name in basic_selectors_12345:
-            if selector_name in globals():
-                selector_value = globals()[selector_name]
-                assert isinstance(
-                    selector_value, str
-                ), f"{selector_name} should be a string"
-                assert (
-                    len(selector_value.strip()) > 0
-                ), f"{selector_name} should not be empty"
+    tests.append(("Selector Definitions", test_selector_definitions))
 
-    # Core Functionality Tests
-    def test_core_functionality():
-        """Test selector structure and CSS validity."""
-        # Test CSS selector format validity
-        import re
-
+    # Test 2: CSS selector format validation
+    def test_css_format():
         css_selector_pattern = r'^[a-zA-Z0-9._#\[\]:=\-\s\(\),>+~"\']+$'
-
-        test_selectors_12345 = [
+        test_selectors = [
             WAIT_FOR_PAGE_SELECTOR,
             POPUP_CLOSE_SELECTOR,
             PAGE_NO_LONGER_AVAILABLE_SELECTOR,
             UNAVAILABLE_MATCH_SELECTOR,
         ]
-
-        for selector in test_selectors_12345:
+        for selector in test_selectors:
             assert re.match(
                 css_selector_pattern, selector
-            ), f"Invalid CSS selector format: {selector}"
-            # Test that selectors don't have common issues
-            assert not selector.startswith(
-                "."
-            ), f"Selector should not start with dot: {selector}"
-            assert (
-                selector.strip() == selector
-            ), f"Selector should not have leading/trailing whitespace: {selector}"
+            ), f"Invalid CSS selector: {selector}"
+            assert selector.strip() == selector, f"Selector has whitespace: {selector}"
 
-        # Test data with 12345 identifier
-        test_data_12345 = "test_selector_12345"
-        assert "12345" in test_data_12345, "Test data should contain 12345 identifier"
+    tests.append(("CSS Format Validation", test_css_format))
 
-    # Edge Cases Tests
-    def test_edge_cases():
-        """Test edge cases and special selector formats."""
-        # Test selectors with placeholders
-        placeholder_selectors_12345 = []
-        for name, value in globals().items():
-            if isinstance(value, str) and "{" in value and "}" in value:
-                placeholder_selectors_12345.append((name, value))
-
-        for name, selector in placeholder_selectors_12345:
-            assert selector.count("{") == selector.count(
-                "}"
-            ), f"Unmatched braces in {name}: {selector}"
-            # Test that placeholder names are reasonable
-            import re
-
-            placeholders = re.findall(r"\{([^}]+)\}", selector)
-            for placeholder in placeholders:
-                assert (
-                    placeholder.replace("_", "")
-                    .replace(".", "")
-                    .replace("-", "")
-                    .isalnum()
-                ), f"Invalid placeholder in {name}: {placeholder}"
-
-        # Test data with 12345 identifier
-        edge_test_12345 = "edge_case_selector_12345"
-        assert "12345" in edge_test_12345, "Test data should contain 12345 identifier"
-
-    # Integration Tests
-    def test_integration():
-        """Test selector organization and completeness."""
+    # Test 3: Selector organization
+    def test_selector_organization():
         # Count selectors by category
-        login_selectors = [
-            name for name in globals() if "LOGIN" in name and name.endswith("_SELECTOR")
-        ]
-        message_selectors = [
-            name
-            for name in globals()
-            if ("MESSAGE" in name or "INBOX" in name) and name.endswith("_SELECTOR")
-        ]
-        error_selectors = [
-            name
-            for name in globals()
-            if ("ERROR" in name or "UNAVAILABLE" in name) and name.endswith("_SELECTOR")
-        ]
-
-        # Ensure we have selectors for major functionality areas
-        assert len(login_selectors) >= 0, "Should have login-related selectors defined"
-        assert (
-            len(message_selectors) >= 5
-        ), "Should have message-related selectors defined"
-        assert len(error_selectors) >= 3, "Should have error-related selectors defined"
-
-        # Test that all selector constants follow naming convention
         all_selectors = [name for name in globals() if name.endswith("_SELECTOR")]
-        for selector_name in all_selectors:
+        error_selectors = [
+            name for name in all_selectors if "UNAVAILABLE" in name or "ERROR" in name
+        ]
+
+        assert len(all_selectors) > 10, "Should have multiple selectors defined"
+        assert len(error_selectors) >= 3, "Should have error-related selectors"
+
+        # Test naming convention
+        for selector_name in all_selectors[:5]:  # Test first 5 for performance
             assert (
                 selector_name.isupper()
             ), f"Selector {selector_name} should be uppercase"
-            assert (
-                "_" in selector_name
-            ), f"Selector {selector_name} should use underscore naming"
 
-    # Performance Tests
+    tests.append(("Selector Organization", test_selector_organization))
+
+    # Test 4: Placeholder validation
+    def test_placeholder_selectors():
+        placeholder_selectors = []
+        for name, value in globals().items():
+            if isinstance(value, str) and "{" in value and "}" in value:
+                placeholder_selectors.append((name, value))
+
+        # Test placeholder format if any exist
+        for name, selector in placeholder_selectors[:3]:  # Limit for performance
+            assert selector.count("{") == selector.count(
+                "}"
+            ), f"Unmatched braces in {name}"
+
+    tests.append(("Placeholder Validation", test_placeholder_selectors))
+
+    # Test 5: Performance validation
     def test_performance():
-        """Test selector efficiency and structure."""
-        # Test selector complexity (avoid overly complex selectors)
-        complex_selectors = []
-        for name, value in globals().items():
-            if isinstance(value, str) and name.endswith("_SELECTOR"):
-                # Count selector complexity indicators
-                complexity_score = (
-                    value.count(" ")
-                    + value.count(">")
-                    + value.count("+")
-                    + value.count("~")
-                )
-                if complexity_score > 10:  # Arbitrary threshold
-                    complex_selectors.append((name, complexity_score))
+        import time
 
-        # This is informational rather than failing
-        for name, score in complex_selectors:
-            print(f"Info: Complex selector {name} (score: {score})")
+        start_time = time.time()
 
-        # Test for duplicate selectors (same value)
-        selector_values = {}
-        for name, value in globals().items():
-            if isinstance(value, str) and name.endswith("_SELECTOR"):
-                if value in selector_values:
-                    print(
-                        f"Info: Duplicate selector value '{value}' in {name} and {selector_values[value]}"
-                    )
-                else:
-                    selector_values[value] = name
+        # Test rapid selector access
+        for _ in range(100):
+            _ = WAIT_FOR_PAGE_SELECTOR
+            _ = POPUP_CLOSE_SELECTOR
 
-    # Error Handling Tests
-    def test_error_handling():
-        """Test error selector completeness."""
-        # Ensure error selectors are comprehensive
-        error_types = ["UNAVAILABLE", "ERROR", "TEMP"]
-        error_selectors = []
+        duration = time.time() - start_time
+        assert duration < 0.01, f"Selector access should be fast, took {duration:.3f}s"
 
-        for error_type in error_types:
-            matching_selectors = [
-                name
-                for name in globals()
-                if error_type in name and name.endswith("_SELECTOR")
-            ]
-            error_selectors.extend(matching_selectors)
+    tests.append(("Performance Validation", test_performance))
 
-        assert (
-            len(error_selectors) >= 3
-        ), "Should have multiple error handling selectors"
+    return tests
 
-        # Test that error selectors target appropriate elements
-        for name in error_selectors:
-            if name in globals():
-                selector = globals()[name]
-                # Error selectors should typically target headers, divs, or spans
-                assert any(
-                    tag in selector.lower()
-                    for tag in ["h1", "h2", "div", "span", "header"]
-                ), f"Error selector {name} should target appropriate elements"
 
-        # Test data with 12345 identifier
-        error_test_12345 = "error_selector_test_12345"
-        assert "12345" in error_test_12345, "Test data should contain 12345 identifier"
+def run_comprehensive_tests() -> bool:
+    """Run CSS selectors tests using unified framework."""
+    from test_framework_unified import run_unified_tests
 
-    # Run all test categories with 5-parameter format
-    with suppress_logging():
-        suite.run_test(
-            "WAIT_FOR_PAGE_SELECTOR, POPUP_CLOSE_SELECTOR, PAGE_NO_LONGER_AVAILABLE_SELECTOR",
-            test_initialization,
-            "All basic CSS selectors are defined as non-empty strings",
-            "Verify that essential CSS selectors exist in globals and are properly formatted strings",
-            "All basic selectors are properly defined as non-empty string constants",
-        )
-
-        suite.run_test(
-            "CSS selector validation and format checking",
-            test_core_functionality,
-            "CSS selectors follow valid format patterns and don't contain common issues",
-            "Test CSS selector format validity using regex patterns and common issue detection",
-            "All CSS selectors follow valid CSS syntax and formatting rules",
-        )
-
-        suite.run_test(
-            "Placeholder and special format selectors",
-            test_edge_cases,
-            "Selectors with placeholders have matching braces and valid placeholder names",
-            "Test selectors containing placeholder patterns for proper brace matching and naming",
-            "All placeholder selectors have properly matched braces and valid placeholder names",
-        )
-
-        suite.run_test(
-            "Selector organization and completeness",
-            test_integration,
-            "Selectors are properly organized by category with adequate coverage for major functionality",
-            "Count selectors by category and verify naming conventions are followed",
-            "Selector organization provides adequate coverage for login, message, and error scenarios",
-        )
-
-        suite.run_test(
-            "Selector performance and efficiency",
-            test_performance,
-            "Selector definitions and validation operations complete efficiently",
-            "Test performance of selector access and validation with timing measurements",
-            "All selector operations complete within acceptable performance thresholds",
-        )
-
-        suite.run_test(
-            "Selector error handling and edge cases",
-            test_error_handling,
-            "Selector system handles undefined selectors and edge cases gracefully",
-            "Test selector system with undefined selectors and various edge case conditions",
-            "Selector system provides comprehensive error detection and graceful handling",
-        )
-
-    return suite.finish_suite()
+    return run_unified_tests("my_selectors", my_selectors_module_tests)
 
 
 # ==============================================

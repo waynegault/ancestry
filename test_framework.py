@@ -285,7 +285,7 @@ def assert_valid_config(config: Any, required_attrs: List[str]):
         assert hasattr(config, attr), f"Config should have attribute {attr}"
 
 
-def run_comprehensive_tests():
+def test_framework_module_tests():
     """
     Comprehensive test suite for the test framework module.
     Tests all core functionality including colors, icons, test suite operations, and mock data.
@@ -370,6 +370,13 @@ def run_comprehensive_tests():
     )
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests():
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("test_framework", test_framework_module_tests)
 
 
 if __name__ == "__main__":

@@ -340,53 +340,32 @@ def cleanup_registry() -> None:
     }
 
 
-def run_comprehensive_tests() -> bool:
-    """Comprehensive test suite for the unified import system."""
-    logger = get_logger(__name__)
-    logger.info("🔧 Testing Unified Import & Function Registry System...")
-
-    success = True
-    tests_run = 0
-    tests_passed = 0
-
-    # Test 1: Function registration and retrieval
-    tests_run += 1
+def core_imports_module_tests() -> bool:
+    """Module-specific tests for core_imports.py functionality."""
     try:
-
+        # Test 1: Function registration and retrieval
         def test_func(x):
             return x * 2
 
         register_function("test_func", test_func)
-        assert is_function_available("test_func")
-        assert call_function("test_func", 5) == 10
-        tests_passed += 1
-        logger.info("✅ Function registration and retrieval")
-    except Exception as e:
-        logger.error(f"❌ Function registration failed: {e}")
-        success = False
+        assert is_function_available(
+            "test_func"
+        ), "Function should be available after registration"
+        assert call_function("test_func", 5) == 10, "Function should execute correctly"
 
-    # Test 2: Auto-registration
-    tests_run += 1
-    try:
+        # Test 2: Auto-registration
         test_globals = {"test_function": lambda: "test", "_private": lambda: "private"}
         auto_register_module(test_globals, "test_module")
-        assert is_function_available("test_module.test_function")
-        tests_passed += 1
-        logger.info("✅ Auto-registration")
-    except Exception as e:
-        logger.error(f"❌ Auto-registration failed: {e}")
-        success = False
+        assert is_function_available(
+            "test_module.test_function"
+        ), "Auto-registered function should be available"
 
-    # Test 3: Performance caching
-    tests_run += 1
-    try:
-        # Test cache performance
+        # Test 3: Performance caching
         start_time = time.time()
         for _ in range(1000):
             is_function_available("test_func")
-        end_time = time.time()
+        duration = time.time() - start_time
 
-        duration = end_time - start_time
         stats = get_stats()
         cache_hit_rate = stats["cache_hit_rate"]
 
@@ -394,49 +373,29 @@ def run_comprehensive_tests() -> bool:
         assert (
             cache_hit_rate > 50
         ), f"Cache hit rate should be high, got {cache_hit_rate:.1f}%"
-        tests_passed += 1
-        logger.info(f"✅ Performance caching (hit rate: {cache_hit_rate:.1f}%)")
-    except Exception as e:
-        logger.error(f"❌ Performance test failed: {e}")
-        success = False
 
-    # Test 4: Import standardization
-    tests_run += 1
-    try:
+        # Test 4: Import standardization
         result = standardize_module_imports()
-        assert result == True
-        tests_passed += 1
-        logger.info("✅ Import standardization")
-    except Exception as e:
-        logger.error(f"❌ Import standardization failed: {e}")
-        success = False
+        assert result == True, "Import standardization should succeed"
 
-    # Test 5: Context manager
-    tests_run += 1
-    try:
+        # Test 5: Context manager
         original_path = sys.path.copy()
         with import_context():
             pass
-        assert sys.path == original_path
-        tests_passed += 1
-        logger.info("✅ Import context manager")
+        assert sys.path == original_path, "Context manager should restore sys.path"
+
+        return True
     except Exception as e:
-        logger.error(f"❌ Context manager failed: {e}")
-        success = False
+        logger = get_logger(__name__)
+        logger.error(f"Core imports module tests failed: {e}")
+        return False
 
-    status = "PASSED" if success else "FAILED"
-    logger.info(
-        f"🎯 Unified Import System Tests: {status} ({tests_passed}/{tests_run})"
-    )
 
-    # Log performance stats
-    stats = get_stats()
-    logger.info(
-        f"📊 Performance: {stats['functions_registered']} functions, "
-        f"{stats['cache_hit_rate']:.1f}% cache hit rate"
-    )
+def run_comprehensive_tests() -> bool:
+    """Unified test framework integration for core_imports.py."""
+    from test_framework_unified import run_unified_tests
 
-    return success
+    return run_unified_tests(__name__, core_imports_module_tests)
 
 
 # Initialize immediately when imported

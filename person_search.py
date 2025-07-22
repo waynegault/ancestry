@@ -39,7 +39,7 @@ from test_framework import (
 )
 
 
-def run_comprehensive_tests() -> bool:
+def person_search_module_tests() -> bool:
     """
     Comprehensive test suite for person_search.py.
     Tests person searching, filtering, and matching functionality.
@@ -120,6 +120,13 @@ def run_comprehensive_tests() -> bool:
 
         # ERROR HANDLING TESTS
         return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("person_search", person_search_module_tests)
 
 
 # ==============================================

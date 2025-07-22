@@ -993,7 +993,7 @@ class UnifiedCredentialManager:
             return False
 
 
-def run_comprehensive_tests() -> bool:
+def credentials_module_tests() -> bool:
     """Comprehensive test suite for credentials.py"""
     import tempfile
     import json
@@ -1318,6 +1318,13 @@ def run_comprehensive_tests() -> bool:
     test_dir.cleanup()
 
     return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    from test_framework_unified import run_unified_tests
+
+    return run_unified_tests("credentials", credentials_module_tests)
 
 
 def main():
