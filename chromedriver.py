@@ -735,57 +735,57 @@ def main():
 # End of main
 
 
-def run_comprehensive_tests() -> bool:
+def test_chromedriver_initialization():
+    """Test ChromeDriver initialization functionality."""
+    if is_function_available("initialize_chrome_driver"):
+        init_func = get_function("initialize_chrome_driver")
+        # Test that function exists and is callable
+        assert callable(init_func)
+
+def test_preferences_file_reset():
+    """Test preferences file reset functionality."""
+    # Test that preference management functions are properly defined
+    required_funcs = [
+        "init_webdvr",
+        "safe_close_chrome",
+        "cleanup_chrome_processes",
+    ]
+    for func_name in required_funcs:
+        if func_name in globals():
+            func = globals()[func_name]
+            assert callable(func), f"{func_name} should be callable"
+
+def test_chrome_process_cleanup():
+    """Test Chrome process cleanup functionality."""
+    # Test that cleanup functions exist and are properly structured
+    cleanup_functions = ["cleanup_chrome_processes", "safe_close_chrome"]
+    for func_name in cleanup_functions:
+        if func_name in globals():
+            func = globals()[func_name]
+            assert callable(func), f"{func_name} should be callable"
+            # Test function signature
+            import inspect
+
+            sig = inspect.signature(func)
+            assert (
+                len(sig.parameters) >= 0
+            ), f"{func_name} should have valid parameters"
+
+def test_webdriver_initialization():
+    """Test WebDriver initialization with various configurations."""
+    if is_function_available("initialize_chrome_driver"):
+        init_func = get_function("initialize_chrome_driver")
+        assert callable(init_func)
+
+def chromedriver_module_tests() -> bool:
     """
-    Comprehensive test suite for chromedriver.py.
+    Chrome Driver Management module test suite.
     Tests Chrome driver setup, configuration, and process management.
     """
     from test_framework import TestSuite
 
     suite = TestSuite("Chrome Driver Management", __name__)
     suite.start_suite()
-
-    def test_chromedriver_initialization():
-        """Test ChromeDriver initialization functionality."""
-        if is_function_available("initialize_chrome_driver"):
-            init_func = get_function("initialize_chrome_driver")
-            # Test that function exists and is callable
-            assert callable(init_func)
-
-    def test_preferences_file_reset():
-        """Test preferences file reset functionality."""
-        # Test that preference management functions are properly defined
-        required_funcs = [
-            "init_webdvr",
-            "safe_close_chrome",
-            "cleanup_chrome_processes",
-        ]
-        for func_name in required_funcs:
-            if func_name in globals():
-                func = globals()[func_name]
-                assert callable(func), f"{func_name} should be callable"
-
-    def test_chrome_process_cleanup():
-        """Test Chrome process cleanup functionality."""
-        # Test that cleanup functions exist and are properly structured
-        cleanup_functions = ["cleanup_chrome_processes", "safe_close_chrome"]
-        for func_name in cleanup_functions:
-            if func_name in globals():
-                func = globals()[func_name]
-                assert callable(func), f"{func_name} should be callable"
-                # Test function signature
-                import inspect
-
-                sig = inspect.signature(func)
-                assert (
-                    len(sig.parameters) >= 0
-                ), f"{func_name} should have valid parameters"
-
-    def test_webdriver_initialization():
-        """Test WebDriver initialization with various configurations."""
-        if is_function_available("initialize_chrome_driver"):
-            init_func = get_function("initialize_chrome_driver")
-            assert callable(init_func)
 
     # Run all tests using the suite
     suite.run_test(
@@ -813,6 +813,23 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests including both module tests and unified framework tests."""
+    try:
+        from test_framework_unified import run_unified_tests
+        
+        # Run module tests first (with verbose output)
+        module_result = chromedriver_module_tests()
+        
+        # Run unified framework tests
+        unified_result = run_unified_tests(__name__)
+        
+        return module_result and unified_result
+        
+    except ImportError:
+        print("Unified test framework not available, running module tests only.")
+        return chromedriver_module_tests()
 
 
 # ==============================================
