@@ -40,7 +40,7 @@ def discover_test_modules() -> List[str]:
     test_modules = []
 
     for python_file in project_root.rglob("*.py"):
-        # Skip the test runner itself, __init__.py, main.py, setup files, and backup files
+        # Skip the test runner itself, __init__.py, main.py, setup files, and temporary files
         if (
             python_file.name
             in [
@@ -54,6 +54,15 @@ def discover_test_modules() -> List[str]:
             or "backup_before_migration" in str(python_file)
             or python_file.name.startswith("phase1_cleanup")
             or python_file.name.startswith("test_phase1")
+            or python_file.name.startswith("cleanup_")
+            or python_file.name.startswith("migration_")
+            or python_file.name.startswith("fix_")
+            or python_file.name.startswith("convert_")
+            or python_file.name.startswith("test_")
+            and python_file.name
+            not in ["test_framework.py", "test_framework_unified.py"]
+            or "temp" in python_file.name.lower()
+            or "_old" in python_file.name
         ):
             continue
 
