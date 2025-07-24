@@ -86,9 +86,457 @@
 09:22:22 INF [test_fra _generat 183 ] Status: ✅ PASSED
 09:22:22 INF [test_fra _generat 187 ] 
                                       📋 Detailed Results:
+<<<<<<< HEAD
 09:22:22 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
 09:22:22 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
 09:22:22 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
 09:22:22 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
 09:22:22 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.005s
 09:22:22 INF [test_fra _generat 194 ] ============================================================
+=======
+17:24:32 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:24:32 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+17:24:32 INF [test_fra _generat 194 ] ============================================================
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:40 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+17:24:40 INF [test_fra run_all_ 156 ] ============================================================
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:24:40 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:24:40 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:24:40 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:24:40 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:24:40 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:24:40 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.003s)
+17:24:40 INF [test_fra _generat 179 ] ============================================================
+17:24:40 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+17:24:40 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:24:40 INF [test_fra _generat 182 ] Duration: 0.003s
+17:24:40 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:24:40 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:24:40 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:24:40 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.003s
+17:24:40 INF [test_fra _generat 194 ] ============================================================
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:40 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:41 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:41 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:24:41 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:24:41 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+17:24:41 INF [test_fra run_all_ 156 ] ============================================================
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:24:41 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:24:41 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:24:41 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:24:41 INF [test_fra run_test 66  ] ✅ Import performance passed (0.001s)
+17:24:41 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:24:41 INF [api_util test_log 2726] Test log message
+17:24:41 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+17:24:41 INF [test_fra _generat 179 ] ============================================================
+17:24:41 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+17:24:41 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:24:41 INF [test_fra _generat 182 ] Duration: 0.005s
+17:24:41 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:24:41 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:24:41 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:24:41 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:24:41 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:24:41 INF [test_fra _generat 190 ] ✅ Import performance: 0.001s
+17:24:41 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+17:24:41 INF [test_fra _generat 194 ] ============================================================
+17:46:24 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:24 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:24 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:24 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+17:46:24 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:46:24 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+17:46:24 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+17:46:24 INF [test_fra run_all_ 156 ] ============================================================
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:46:24 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:46:24 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:46:24 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:46:24 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:46:24 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:46:24 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+17:46:24 INF [test_fra _generat 179 ] ============================================================
+17:46:24 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+17:46:24 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:46:24 INF [test_fra _generat 182 ] Duration: 0.001s
+17:46:24 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:46:24 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:46:24 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:46:24 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+17:46:24 INF [test_fra _generat 194 ] ============================================================
+17:46:31 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:31 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:31 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:31 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+17:46:31 INF [test_fra run_all_ 156 ] ============================================================
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:46:31 INF [test_fra run_test 66  ] ✅ Core imports passed (0.001s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:46:31 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:46:31 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:46:31 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:46:31 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:46:31 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.002s)
+17:46:31 INF [test_fra _generat 179 ] ============================================================
+17:46:31 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+17:46:31 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:46:31 INF [test_fra _generat 182 ] Duration: 0.003s
+17:46:31 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:46:31 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:46:31 INF [test_fra _generat 190 ] ✅ Core imports: 0.001s
+17:46:31 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:46:31 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:46:31 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:46:31 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.002s
+17:46:31 INF [test_fra _generat 194 ] ============================================================
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+17:46:32 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+17:46:32 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+17:46:32 INF [test_fra run_all_ 156 ] ============================================================
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+17:46:32 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+17:46:32 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+17:46:32 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+17:46:32 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+17:46:32 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+17:46:32 INF [api_util test_log 2726] Test log message
+17:46:32 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+17:46:32 INF [test_fra _generat 179 ] ============================================================
+17:46:32 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+17:46:32 INF [test_fra _generat 181 ] Tests: 5/5 passed
+17:46:32 INF [test_fra _generat 182 ] Duration: 0.005s
+17:46:32 INF [test_fra _generat 183 ] Status: ✅ PASSED
+17:46:32 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+17:46:32 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+17:46:32 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+17:46:32 INF [test_fra _generat 194 ] ============================================================
+18:27:59 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:27:59 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:27:59 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+18:27:59 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+18:27:59 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+18:27:59 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+18:27:59 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+18:27:59 INF [test_fra run_all_ 156 ] ============================================================
+18:27:59 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+18:27:59 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+18:27:59 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+18:27:59 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+18:27:59 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+18:27:59 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+18:27:59 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+18:27:59 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+18:27:59 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+18:27:59 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+18:27:59 INF [test_fra _generat 179 ] ============================================================
+18:27:59 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+18:27:59 INF [test_fra _generat 181 ] Tests: 5/5 passed
+18:27:59 INF [test_fra _generat 182 ] Duration: 0.001s
+18:27:59 INF [test_fra _generat 183 ] Status: ✅ PASSED
+18:27:59 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+18:27:59 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+18:27:59 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+18:27:59 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+18:27:59 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+18:27:59 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+18:27:59 INF [test_fra _generat 194 ] ============================================================
+18:28:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:06 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+18:28:06 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+18:28:06 INF [test_fra run_all_ 156 ] ============================================================
+18:28:06 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+18:28:06 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+18:28:06 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+18:28:06 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+18:28:06 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+18:28:06 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+18:28:06 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+18:28:06 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+18:28:06 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+18:28:06 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.002s)
+18:28:06 INF [test_fra _generat 179 ] ============================================================
+18:28:06 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+18:28:06 INF [test_fra _generat 181 ] Tests: 5/5 passed
+18:28:06 INF [test_fra _generat 182 ] Duration: 0.003s
+18:28:06 INF [test_fra _generat 183 ] Status: ✅ PASSED
+18:28:06 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+18:28:06 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+18:28:06 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+18:28:06 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+18:28:06 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+18:28:06 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.002s
+18:28:06 INF [test_fra _generat 194 ] ============================================================
+18:28:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:07 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+18:28:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:07 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+18:28:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:07 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+18:28:07 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+18:28:07 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+18:28:07 INF [test_fra run_all_ 156 ] ============================================================
+18:28:07 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+18:28:07 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+18:28:07 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+18:28:07 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+18:28:07 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+18:28:07 INF [test_fra run_test 66  ] ✅ Function registration passed (0.001s)
+18:28:07 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+18:28:07 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+18:28:07 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+18:28:07 INF [api_util test_log 2726] Test log message
+18:28:07 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+18:28:07 INF [test_fra _generat 179 ] ============================================================
+18:28:07 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+18:28:07 INF [test_fra _generat 181 ] Tests: 5/5 passed
+18:28:07 INF [test_fra _generat 182 ] Duration: 0.005s
+18:28:07 INF [test_fra _generat 183 ] Status: ✅ PASSED
+18:28:07 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+18:28:07 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+18:28:07 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+18:28:07 INF [test_fra _generat 190 ] ✅ Function registration: 0.001s
+18:28:07 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+18:28:07 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+18:28:07 INF [test_fra _generat 194 ] ============================================================
+20:45:09 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:09 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:09 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+20:45:09 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+20:45:09 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+20:45:09 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+20:45:09 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+20:45:09 INF [test_fra run_all_ 156 ] ============================================================
+20:45:09 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+20:45:09 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+20:45:09 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+20:45:09 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+20:45:09 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+20:45:09 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+20:45:09 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+20:45:09 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+20:45:09 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+20:45:09 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+20:45:09 INF [test_fra _generat 179 ] ============================================================
+20:45:09 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+20:45:09 INF [test_fra _generat 181 ] Tests: 5/5 passed
+20:45:09 INF [test_fra _generat 182 ] Duration: 0.001s
+20:45:09 INF [test_fra _generat 183 ] Status: ✅ PASSED
+20:45:09 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+20:45:09 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+20:45:09 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+20:45:09 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+20:45:09 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+20:45:09 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+20:45:09 INF [test_fra _generat 194 ] ============================================================
+20:45:16 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:16 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:16 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+20:45:16 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+20:45:16 INF [test_fra run_all_ 156 ] ============================================================
+20:45:16 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+20:45:16 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+20:45:16 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+20:45:16 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+20:45:16 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+20:45:16 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+20:45:16 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+20:45:16 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+20:45:16 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+20:45:16 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.003s)
+20:45:16 INF [test_fra _generat 179 ] ============================================================
+20:45:16 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+20:45:16 INF [test_fra _generat 181 ] Tests: 5/5 passed
+20:45:16 INF [test_fra _generat 182 ] Duration: 0.003s
+20:45:16 INF [test_fra _generat 183 ] Status: ✅ PASSED
+20:45:16 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+20:45:16 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+20:45:16 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+20:45:16 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+20:45:16 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+20:45:16 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.003s
+20:45:16 INF [test_fra _generat 194 ] ============================================================
+20:45:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:17 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+20:45:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:17 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+20:45:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:17 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+20:45:17 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+20:45:17 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+20:45:17 INF [test_fra run_all_ 156 ] ============================================================
+20:45:17 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+20:45:17 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+20:45:17 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+20:45:17 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+20:45:17 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+20:45:17 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+20:45:17 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+20:45:17 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+20:45:17 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+20:45:17 INF [api_util test_log 2726] Test log message
+20:45:17 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+20:45:17 INF [test_fra _generat 179 ] ============================================================
+20:45:17 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+20:45:17 INF [test_fra _generat 181 ] Tests: 5/5 passed
+20:45:17 INF [test_fra _generat 182 ] Duration: 0.004s
+20:45:17 INF [test_fra _generat 183 ] Status: ✅ PASSED
+20:45:17 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+20:45:17 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+20:45:17 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+20:45:17 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+20:45:17 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+20:45:17 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+20:45:17 INF [test_fra _generat 194 ] ============================================================
+23:54:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:54:58 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:54:58 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+23:54:58 INF [action8_ <module> 166 ] Action 8 Initializing: APP_MODE is development
+23:54:58 INF [action8_ <module> 177 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+23:54:58 CRI [action8_ <module> 269 ] Essential message templates failed to load. Cannot proceed reliably.
+23:54:58 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for __main__
+23:54:58 INF [test_fra run_all_ 156 ] ============================================================
+23:54:58 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+23:54:58 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+23:54:58 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+23:54:58 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+23:54:58 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+23:54:58 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+23:54:58 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+23:54:58 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+23:54:58 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+23:54:58 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.000s)
+23:54:58 INF [test_fra _generat 179 ] ============================================================
+23:54:58 INF [test_fra _generat 180 ] 📊 Test Summary for __main__
+23:54:58 INF [test_fra _generat 181 ] Tests: 5/5 passed
+23:54:58 INF [test_fra _generat 182 ] Duration: 0.000s
+23:54:58 INF [test_fra _generat 183 ] Status: ✅ PASSED
+23:54:58 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+23:54:58 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+23:54:58 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+23:54:58 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+23:54:58 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+23:54:58 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.000s
+23:54:58 INF [test_fra _generat 194 ] ============================================================
+23:55:05 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:05 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:05 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+23:55:05 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_search_utils
+23:55:05 INF [test_fra run_all_ 156 ] ============================================================
+23:55:05 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+23:55:05 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+23:55:05 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+23:55:05 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+23:55:05 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+23:55:05 INF [test_fra run_test 66  ] ✅ Function registration passed (0.001s)
+23:55:05 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+23:55:05 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+23:55:05 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+23:55:05 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.002s)
+23:55:05 INF [test_fra _generat 179 ] ============================================================
+23:55:05 INF [test_fra _generat 180 ] 📊 Test Summary for api_search_utils
+23:55:05 INF [test_fra _generat 181 ] Tests: 5/5 passed
+23:55:05 INF [test_fra _generat 182 ] Duration: 0.003s
+23:55:05 INF [test_fra _generat 183 ] Status: ✅ PASSED
+23:55:05 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+23:55:05 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+23:55:05 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+23:55:05 INF [test_fra _generat 190 ] ✅ Function registration: 0.001s
+23:55:05 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+23:55:05 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.002s
+23:55:05 INF [test_fra _generat 194 ] ============================================================
+23:55:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:06 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+23:55:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:06 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+23:55:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:06 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
+23:55:06 INF [config_m load_con 142 ] Configuration loaded successfully for environment: development
+23:55:06 INF [test_fra run_all_ 155 ] 🚀 Running unified test suite for api_utils
+23:55:06 INF [test_fra run_all_ 156 ] ============================================================
+23:55:06 INF [test_fra run_test 61  ] 🧪 Running Core imports...
+23:55:06 INF [test_fra run_test 66  ] ✅ Core imports passed (0.000s)
+23:55:06 INF [test_fra run_test 61  ] 🧪 Running Logging setup...
+23:55:06 INF [test_fra run_test 66  ] ✅ Logging setup passed (0.000s)
+23:55:06 INF [test_fra run_test 61  ] 🧪 Running Function registration...
+23:55:06 INF [test_fra run_test 66  ] ✅ Function registration passed (0.000s)
+23:55:06 INF [test_fra run_test 61  ] 🧪 Running Import performance...
+23:55:06 INF [test_fra run_test 66  ] ✅ Import performance passed (0.000s)
+23:55:06 INF [test_fra run_test 61  ] 🧪 Running Custom module tests...
+23:55:06 INF [api_util test_log 2726] Test log message
+23:55:06 INF [test_fra run_test 66  ] ✅ Custom module tests passed (0.004s)
+23:55:06 INF [test_fra _generat 179 ] ============================================================
+23:55:06 INF [test_fra _generat 180 ] 📊 Test Summary for api_utils
+23:55:06 INF [test_fra _generat 181 ] Tests: 5/5 passed
+23:55:06 INF [test_fra _generat 182 ] Duration: 0.004s
+23:55:06 INF [test_fra _generat 183 ] Status: ✅ PASSED
+23:55:06 INF [test_fra _generat 187 ] 
+                                      📋 Detailed Results:
+23:55:06 INF [test_fra _generat 190 ] ✅ Core imports: 0.000s
+23:55:06 INF [test_fra _generat 190 ] ✅ Logging setup: 0.000s
+23:55:06 INF [test_fra _generat 190 ] ✅ Function registration: 0.000s
+23:55:06 INF [test_fra _generat 190 ] ✅ Import performance: 0.000s
+23:55:06 INF [test_fra _generat 190 ] ✅ Custom module tests: 0.004s
+23:55:06 INF [test_fra _generat 194 ] ============================================================
+>>>>>>> 0d4e8d623cc249d2787bd75a47ac7e39b09e80f6
