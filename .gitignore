@@ -10,11 +10,17 @@
 # Python Environment
 /venv/
 /.venv/
-/__pycache__/
+__pycache__/
+*/__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
-__pycache__/
+*.so
+.Python
+*.egg-info/
+dist/
+build/
 
 # Development Tools
 /.vscode/
@@ -41,7 +47,5 @@ Thumbs.db
 
 # Legacy and Deprecated Files
 /__init__.py
-/config/__pycache__
-/core/__pycache__
 /backup_before_migration
 /.pytest_cache
