@@ -303,13 +303,10 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
 # End of setup_logging
 
 
-def run_comprehensive_tests() -> bool:
+def logging_config_module_tests() -> bool:
     """
-    Run comprehensive tests for the logging configuration module.
-    Tests the six categories: Initialization, Core Functionality, Edge Cases,    Integration, Performance, and Error Handling.
-
-    Returns:
-        bool: True if all tests pass, False otherwise.
+    Logging Configuration & Management module test suite.
+    Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
     from test_framework import (
         TestSuite,
@@ -319,7 +316,7 @@ def run_comprehensive_tests() -> bool:
     )
 
     with suppress_logging():
-        suite = TestSuite("Logging Configuration Tests", "logging_config.py")
+        suite = TestSuite("Logging Configuration Tests", __name__)
         suite.start_suite()  # --- INITIALIZATION TESTS ---
         suite.run_test(
             "Logger Creation",
@@ -417,6 +414,23 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests including both module tests and unified framework tests."""
+    try:
+        from test_framework_unified import run_unified_tests
+        
+        # Run module tests first (with verbose output)
+        module_result = logging_config_module_tests()
+        
+        # Run unified framework tests
+        unified_result = run_unified_tests(__name__)
+        
+        return module_result and unified_result
+        
+    except ImportError:
+        print("Unified test framework not available, running module tests only.")
+        return logging_config_module_tests()
 
 
 # Test functions for comprehensive testing
