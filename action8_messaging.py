@@ -13,7 +13,17 @@ for recipient filtering. Updates the database (`conversation_log`, `people`)
 after sending/simulating messages.
 """
 
-# --- Standard library imports ---
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
 import sys
@@ -24,7 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urljoin
 
-# --- Third-party imports ---
+# === THIRD-PARTY IMPORTS ===
 import requests
 from sqlalchemy import (
     and_,
@@ -33,13 +43,11 @@ from sqlalchemy import (
     tuple_,
 )  # Minimal imports
 
-# --- Local application imports (minimal for helper function) ---
+# === LOCAL IMPORTS ===
 # Import PersonStatusEnum early for use in safe_column_value
 from database import PersonStatusEnum
 
-# Import logger early for use in safe_column_value
-from core_imports import get_logger
-
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
 

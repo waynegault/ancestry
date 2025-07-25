@@ -1,18 +1,4 @@
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    get_logger,
-)
-from core_imports import auto_register_module
-
-auto_register_module(globals(), __name__)
-
-standardize_module_imports()
 #!/usr/bin/env python3
-
-# api_cache.py
 
 """
 api_cache.py - Aggressive API Response Caching System
@@ -22,7 +8,20 @@ Implements intelligent cache keys, response validation, and automatic cache warm
 dramatically improve performance for frequently accessed external data.
 """
 
-# --- Standard library imports ---
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import hashlib
 import json
 import sys
@@ -32,7 +31,7 @@ import time
 from typing import Any, Dict, Optional, Union, List, Callable
 from unittest.mock import MagicMock, patch
 
-# --- Test framework imports ---
+# === THIRD-PARTY IMPORTS ===
 from test_framework import (
     TestSuite,
     suppress_logging,
@@ -40,7 +39,7 @@ from test_framework import (
     assert_valid_function,
 )
 
-# --- Local application imports ---
+# === LOCAL IMPORTS ===
 from cache import (
     cache_result,
     cache,
@@ -53,10 +52,11 @@ from cache import (
 )
 from config import config_schema
 
-# Initialize logger with standardized pattern
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
-# --- Cache Configuration ---
+# === MODULE CONSTANTS ===
+# Cache Configuration
 API_CACHE_EXPIRE = 3600  # 1 hour for API responses
 DB_CACHE_EXPIRE = 1800  # 30 minutes for database queries
 AI_CACHE_EXPIRE = 86400  # 24 hours for AI responses (they're expensive!)

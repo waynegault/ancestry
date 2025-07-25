@@ -12,7 +12,17 @@ Handles pagination, rate limiting, caching (via utils/cache.py decorators used
 within helpers), error handling, and concurrent API fetches using ThreadPoolExecutor.
 """
 
-# --- Standard library imports ---
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
 import random
@@ -23,12 +33,9 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from config.config_schema import ConfigSchema
 from urllib.parse import urljoin, urlparse, urlencode, unquote
 
-# --- Third-party imports ---
+# === THIRD-PARTY IMPORTS ===
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
@@ -44,19 +51,12 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Ses
 from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
-# --- Local application imports ---
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
-
-auto_register_module(globals(), __name__)
-standardize_module_imports()
+# === LOCAL IMPORTS ===
+if TYPE_CHECKING:
+    from config.config_schema import ConfigSchema
 
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
-from selenium_utils import get_driver_cookies
 from database import (
     DnaMatch,
     FamilyTree,
@@ -64,9 +64,8 @@ from database import (
     PersonStatusEnum,
     db_transn,
 )
-
-logger = get_logger(__name__)
 from my_selectors import *  # Import CSS selectors
+from selenium_utils import get_driver_cookies
 from utils import (
     SessionManager,  # Import SessionManager for type hints and usage
     _api_req,  # API request helper
@@ -75,14 +74,15 @@ from utils import (
     retry_api,  # API retry decorator
     nav_to_page,  # Navigation helper
 )
-
-# --- Test framework imports ---
 from test_framework import (
     TestSuite,
     suppress_logging,
     create_mock_data,
     assert_valid_function,
 )
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 
 # --- Constants ---

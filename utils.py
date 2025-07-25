@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# utils.py
-
 """
 utils.py - Core Session Management, API Requests, General Utilities
 
@@ -10,28 +8,25 @@ provides general utilities (decorators, formatting, rate limiting),
 and includes login/session verification logic closely tied to SessionManager.
 """
 
-# --- Path management and optimization imports ---
-from core_imports import standardize_module_imports
-
-# --- Unified import system ---
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
     register_function,
     get_function,
     is_function_available,
+    get_logger,
 )
 
 standardize_module_imports()
+auto_register_module(globals(), __name__)
 
-# --- Ensure core utility functions are always importable ---
-import re
-import logging
-import time
+# === STANDARD LIBRARY IMPORTS ===
 import json
-import requests
-import cloudscraper
+import logging
+import re
 import sys
+import time
 from typing import (
     Optional,
     Dict,
@@ -43,38 +38,38 @@ from typing import (
     Type,
     Generator,
 )  # Consolidated typing imports
-
-# --- Standard library imports ---
+import base64  # For make_ube
+import binascii  # For make_ube
+import contextlib  # Added import for contextlib
+import random  # For make_newrelic, retry_api, DynamicRateLimiter
+import sqlite3  # For SessionManager._initialize_db_engine_and_session (pragma exception)
 import time
+import uuid  # For make_ube, make_traceparent, make_tracestate
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
-import contextlib  # <<<< MODIFIED LINE: Added import for contextlib
-import json  # For make_ube, _api_req (potential json in csrf)
-import base64  # For make_ube
-import binascii  # For make_ube
-import random  # For make_newrelic, retry_api, DynamicRateLimiter
-import uuid  # For make_ube, make_traceparent, make_tracestate
-import sqlite3  # For SessionManager._initialize_db_engine_and_session (pragma exception)
 
-
-# --- Type Aliases ---
-# Import types needed for type aliases
+# === THIRD-PARTY IMPORTS ===
+import cloudscraper
+import requests
 from requests import Response as RequestsResponse
 from selenium.webdriver.remote.webdriver import WebDriver
 
+# === LOCAL IMPORTS ===
+# (Note: Some imports done locally to avoid circular dependencies)
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
+
+# === TYPE ALIASES ===
 # Define type aliases
 RequestsResponseTypeOptional = Optional[RequestsResponse]
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
 DriverType = Optional[WebDriver]
+SessionManagerType = Optional["SessionManager"]  # Use string literal for forward reference
 
-
-SessionManagerType = Optional[
-    "SessionManager"
-]  # Use string literal for forward reference
-
-# --- Constants ---
+# === MODULE CONSTANTS ===
 # Key constants remain here or moved to api_utils as appropriate
 API_PATH_CSRF_TOKEN = "discoveryui-matches/parents/api/csrfToken"
 API_PATH_PROFILE_ID = "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"

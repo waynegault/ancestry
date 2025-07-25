@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-# --- START OF FILE gedcom_utils.py ---
-
-# gedcom_utils.py
 """
 GEDCOM Utilities for Ancestry Project
 
@@ -21,7 +18,7 @@ Key Features:
 - Robust error handling and logging
 """
 
-# --- Unified import system ---
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
@@ -31,10 +28,10 @@ from core_imports import (
     get_logger,
 )
 
-auto_register_module(globals(), __name__)
 standardize_module_imports()
+auto_register_module(globals(), __name__)
 
-# --- Standard library imports ---
+# === STANDARD LIBRARY IMPORTS ===
 import logging
 import re
 import sys
@@ -81,16 +78,18 @@ except ImportError:
         "WARNING: dateparser library not found. Date parsing will be limited. Run 'pip install dateparser'"
     )
 
-
-# --- Local application imports ---
-from utils import format_name, ordinal_case
+# === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
+from utils import format_name, ordinal_case
 
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
+
+# === MODULE CONFIGURATION ===
 config_manager = ConfigManager()
 config = config_manager.get_config()
 
-
-# --- Constants ---
+# === TYPE ALIASES ===
 # Define type aliases for GEDCOM types
 if TYPE_CHECKING:
     GedcomIndividualType = Individual
@@ -121,8 +120,8 @@ TAG_SURN = "SURN"
 
 
 # --- Logging Setup ---
-# Use standardized logger pattern
-logger = get_logger(__name__)
+# Use centralized logger from logging_config
+from logging_config import logger
 
 
 # ==============================================

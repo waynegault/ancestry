@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Comprehensive Test Runner for Ancestry Project
 Runs all unit tests and integration tests across the entire project.
@@ -8,7 +9,7 @@ Usage:
     python run_all_tests.py --fast    # Run all tests with reduced timeouts (faster but may miss slow tests)
 """
 
-# --- Unified import system ---
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
@@ -16,14 +17,18 @@ from core_imports import (
     safe_execute,
 )
 
-# Register this module immediately
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-import sys
+# === STANDARD LIBRARY IMPORTS ===
 import os
+import sys
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 # Initialize logger
 logger = get_logger(__name__)

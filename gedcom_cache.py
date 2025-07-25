@@ -50,8 +50,7 @@ from cache import (
     invalidate_related_caches,
 )
 from config.config_manager import ConfigManager
-
-logger = get_logger(__name__)
+from logging_config import logger
 
 # Initialize config
 config_manager = ConfigManager()

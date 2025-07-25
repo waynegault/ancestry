@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
-# person_search.py
 """
 Unified module for searching and retrieving person information from GEDCOM and Ancestry API.
 Provides functions for searching, getting family details, and relationship paths.
 """
 
-# --- Unified import system ---
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
@@ -14,15 +13,17 @@ from core_imports import (
     safe_execute,
 )
 
-# Register this module immediately
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-import re
-from typing import Dict, List, Any, Optional, Tuple, Union
-import os
+# === STANDARD LIBRARY IMPORTS ===
 import json
+import os
+import re
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Initialize logger
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 logger = get_logger(__name__)
 
 # Import from local modules

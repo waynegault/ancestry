@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# File: ms_graph_utils.py
-
 """
 ms_graph_utils.py - Microsoft Graph API Interaction Utilities
 
@@ -11,19 +9,20 @@ finding To-Do list IDs, and creating tasks within a specified list. Reads client
 and tenant ID configuration from environment variables.
 """
 
-# Unified import system
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
     register_function,
     get_function,
     is_function_available,
-    auto_register_module,
     get_logger,
 )
 
-# Auto-register module
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-# --- Standard library imports ---
+# === STANDARD LIBRARY IMPORTS ===
 import atexit  # For saving cache on exit
 import json
 import os
@@ -41,7 +40,7 @@ from config.config_manager import ConfigManager
 
 config_manager = ConfigManager()
 config = config_manager.get_config()
-logger = get_logger(__name__)  # Use configured application logger
+from logging_config import logger  # Use configured application logger
 
 # --- Test framework imports ---
 from test_framework import TestSuite, suppress_logging, MagicMock, patch

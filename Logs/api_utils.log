@@ -36,3 +36,18 @@
 10:36:41 INF [config_s __post_i 207 ] Database configuration validated successfully for development environment
 10:36:41 INF [config_m load_con 163 ] Configuration loaded successfully for environment: development
 10:36:41 INF [api_util test_log 2726] Test log message
+16:43:04 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
+16:43:04 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
+16:43:04 INF [config_m load_con 169 ] Configuration loaded successfully for environment: development
+16:43:04 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
+16:43:04 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
+16:43:04 INF [config_m load_con 169 ] Configuration loaded successfully for environment: development
+16:43:04 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
+16:43:04 INF [config_s __post_i 206 ] Database configuration validated successfully for development environment
+16:43:04 INF [config_m load_con 169 ] Configuration loaded successfully for environment: development
+17:27:50 INF [action8_ <module> 178 ] Action 8 Initializing: APP_MODE is development
+17:27:50 INF [action8_ <module> 189 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+17:27:50 INF [action8_ load_mes 256 ] Message templates loaded and validated successfully (9 total templates).
+17:27:53 INF [ms_graph save_cac 130 ] Executing save_cache_on_exit via atexit...
+17:27:53 INF [ms_graph save_cac 147 ] MSAL cache unchanged since last load/save. No save needed.
+17:27:59 INF [api_util test_log 2724] Test log message

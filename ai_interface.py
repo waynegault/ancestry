@@ -1,18 +1,4 @@
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    get_logger,
-)
-from core_imports import auto_register_module
-
-auto_register_module(globals(), __name__)
-
-standardize_module_imports()
 #!/usr/bin/env python3
-
-# ai_interface.py
 
 """
 ai_interface.py - AI Model Interaction Layer
@@ -23,14 +9,27 @@ Supports DeepSeek (OpenAI compatible) and Google Gemini Pro. Includes error
 handling and rate limiting integration with SessionManager.
 """
 
-# --- Standard library imports ---
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
 from typing import Any, Dict, List, Optional
 
-# --- Third-party Imports ---
+# === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
 try:
     from openai import (
@@ -71,12 +70,14 @@ except ImportError:
         "Google GenerativeAI library not found. Gemini functionality disabled."
     )
 
-# --- Local Application Imports ---
+# === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
 from utils import SessionManager
 
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
+# === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()

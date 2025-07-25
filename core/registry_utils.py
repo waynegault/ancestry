@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Streamlined Function Registration Utilities
 
@@ -13,20 +15,24 @@ Key improvements:
 5. Eliminates 200+ lines of duplicate code per module
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# === STANDARD LIBRARY IMPORTS ===
 import inspect
 import logging
 from typing import Dict, Any, List, Optional, Callable, Set
 from functools import wraps
 
-from core_imports import get_logger
+from core_imports import (
+    get_logger,
+)
 
 logger = get_logger(__name__)
 

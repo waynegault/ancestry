@@ -1,29 +1,43 @@
-# Safe imports with fallback
+#!/usr/bin/env python3
+
+"""
+Error handling utilities for the Ancestry project.
+"""
+
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
     register_function,
     get_function,
     is_function_available,
-    auto_register_module,
     get_logger,
 )
 
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-# Initialize function_registry as None for backward compatibility
-function_registry = None
-logger = get_logger(__name__)
-from typing import Dict, Any, Optional, Callable, Union, Type, List, Tuple
+# === STANDARD LIBRARY IMPORTS ===
+import functools
+import sqlite3
+import threading
+import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import traceback
-import time
-import functools
-import sqlite3
-import requests
-from pathlib import Path
-import threading
 from functools import wraps
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+
+# === THIRD-PARTY IMPORTS ===
+import requests
+
+# === LOCAL IMPORTS ===
+from logging_config import logger
+
+# === MODULE LOGGER ===
+module_logger = get_logger(__name__)
 
 # --- Test framework imports ---
 from test_framework import (

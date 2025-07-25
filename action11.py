@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+
+"""
+Action 11: API Report - Search Ancestry API, display details, family, relationship.
+V18.8: Corrected SyntaxError in _parse_treesui_list_response.
+       Ensured correct function definition order.
+       Verified 'gender_match' key usage.
+       Verified initial comparison flow.
+       Verified MAX_SUGGESTIONS_TO_SCORE limit logic.
+"""
+
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     register_function,
     get_function,
@@ -7,56 +19,37 @@ from core_imports import (
     get_logger,
 )
 
-auto_register_module(globals(), __name__)
 standardize_module_imports()
-#!/usr/bin/env python3
-# --- START OF FILE action11.py ---
-# action11.py
-"""
-Action 11: API Report - Search Ancestry API, display details, family, relationship.
-V18.8: Corrected SyntaxError in _parse_treesui_list_response.
-       Ensured correct function definition order.
-       Verified 'gender_match' key usage.
-       Verified initial comparison flow.
-       Verified MAX_SUGGESTIONS_TO_SCORE limit logic.
-"""
-# --- Standard library imports ---
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
+import argparse
+import json
 import logging
+import os
+import re  # Added for robust lifespan splitting
 import sys
 import time
-from traceback import print_exception
 import urllib.parse
-import json
-import re  # Added for robust lifespan splitting
-from pathlib import Path
-from urllib.parse import urljoin, urlencode, quote
-from tabulate import tabulate
-import requests  # Keep for potential exception types
-import argparse
-import os
-from dotenv import load_dotenv
-
-# Import specific types needed locally
-from typing import Optional, List, Dict, Any, Tuple, Union, cast
 from datetime import datetime
+from pathlib import Path
+from traceback import print_exception
+from typing import Optional, List, Dict, Any, Tuple, Union, cast
+from urllib.parse import urljoin, urlencode, quote
 
-# --- Third-party imports ---
-# (BeautifulSoup not currently needed)
+# === THIRD-PARTY IMPORTS ===
+import requests  # Keep for potential exception types
+from dotenv import load_dotenv
+from tabulate import tabulate
 
-# --- Local application imports ---
-# Use centralized logging config setup
-from logging_config import setup_logging
+# === LOCAL IMPORTS ===
+from config import config_schema
 
-# Initialize logger with standardized pattern
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
-# --- Test framework - No longer using external test framework ---
-# All testing is now self-contained within this script
-
-# --- Load Config (Mandatory - Direct Import) ---
+# === CONFIGURATION VALIDATION ===
 try:
-    from config import config_schema
-
     logger.debug("Successfully imported configuration schema.")
     if not config_schema:
         raise ImportError("Configuration schema is None.")
