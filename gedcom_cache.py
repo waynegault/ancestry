@@ -593,9 +593,6 @@ def get_gedcom_cache_health() -> Dict[str, Any]:
     return _gedcom_cache_module.get_health_status()
 
 
-
-
-
 # --- GEDCOM Cache Demo Functions ---
 
 
@@ -713,6 +710,7 @@ def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
 
 # --- Individual Test Functions ---
 
+
 def test_gedcom_cache_initialization():
     """Test GEDCOM cache module initialization."""
     try:
@@ -728,6 +726,7 @@ def test_gedcom_cache_initialization():
         return True
     except Exception:
         return False
+
 
 def test_memory_cache_operations():
     """Test basic memory cache operations."""
@@ -749,6 +748,7 @@ def test_memory_cache_operations():
     except Exception:
         return False
 
+
 def test_gedcom_parsing_caching():
     """Test GEDCOM file parsing and caching."""
     try:
@@ -757,13 +757,14 @@ def test_gedcom_parsing_caching():
             # Test with mock data
             mock_file_path = "/path/to/test.ged"
             mock_data = {"individuals": [], "families": []}
-            
+
             if cache_func:
                 result = cache_func(mock_file_path, mock_data)
                 return isinstance(result, bool) or result is None
         return True  # Pass if function doesn't exist
     except Exception:
         return False
+
 
 def test_cached_data_retrieval():
     """Test cached GEDCOM data retrieval."""
@@ -778,6 +779,7 @@ def test_cached_data_retrieval():
         return True  # Pass if function doesn't exist
     except Exception:
         return False
+
 
 def test_cache_key_generation():
     """Test cache key generation consistency."""
@@ -795,6 +797,7 @@ def test_cache_key_generation():
         return key1 == key2  # Keys should be consistent
     except Exception:
         return False
+
 
 def test_memory_cache_expiration():
     """Test memory cache expiration handling."""
@@ -816,6 +819,7 @@ def test_memory_cache_expiration():
     except Exception:
         return False
 
+
 def test_cache_invalidation_file_modification():
     """Test cache invalidation on file modification."""
     try:
@@ -830,18 +834,20 @@ def test_cache_invalidation_file_modification():
     except Exception:
         return False
 
+
 def test_cache_statistics_collection():
     """Test cache statistics collection."""
     try:
         stats = _gedcom_cache_module.get_stats()
         required_fields = [
             "module_name",
-            "memory_cache_entries", 
+            "memory_cache_entries",
             "cache_max_age_seconds",
         ]
         return all(field in stats for field in required_fields)
     except Exception:
         return False
+
 
 def test_cache_health_status():
     """Test cache health status check."""
@@ -856,6 +862,7 @@ def test_cache_health_status():
     except Exception:
         return False
 
+
 def test_cache_performance_metrics():
     """Test cache performance metrics collection."""
     try:
@@ -866,26 +873,28 @@ def test_cache_performance_metrics():
     except Exception:
         return False
 
+
 def test_multifile_cache_management():
     """Test multi-file cache management."""
     try:
         # Test cache can handle multiple file paths
         test_files = ["/path/test1.ged", "/path/test2.ged"]
         test_data = {"test": "data"}
-        
+
         for file_path in test_files:
             test_key = _get_memory_cache_key(file_path, "test_operation")
             _store_in_memory_cache(test_key, test_data)
-            
+
         # Clean up
         for file_path in test_files:
             test_key = _get_memory_cache_key(file_path, "test_operation")
             if test_key in _MEMORY_CACHE:
                 del _MEMORY_CACHE[test_key]
-                
+
         return True
     except Exception:
         return False
+
 
 def test_memory_management_cleanup():
     """Test memory management and cleanup."""
@@ -897,6 +906,7 @@ def test_memory_management_cleanup():
     except Exception:
         return False
 
+
 def test_cache_validation_integrity():
     """Test cache validation and integrity checking."""
     try:
@@ -905,6 +915,7 @@ def test_cache_validation_integrity():
         return isinstance(health, dict) and "overall_health" in health
     except Exception:
         return False
+
 
 def gedcom_cache_module_tests() -> bool:
     """
@@ -1026,21 +1037,8 @@ def gedcom_cache_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests including both module tests and unified framework tests."""
-    try:
-        from test_framework_unified import run_unified_tests
-        
-        # Run module tests first (with verbose output)
-        module_result = gedcom_cache_module_tests()
-        
-        # Run unified framework tests
-        unified_result = run_unified_tests(__name__)
-        
-        return module_result and unified_result
-        
-    except ImportError:
-        print("Unified test framework not available, running module tests only.")
-        return gedcom_cache_module_tests()
+    """Run comprehensive GEDCOM cache tests using standardized TestSuite format."""
+    return gedcom_cache_module_tests()
 
     # INITIALIZATION TESTS
     def test_gedcom_cache_initialization():

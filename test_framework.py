@@ -374,9 +374,7 @@ def test_framework_module_tests():
 
 def run_comprehensive_tests():
     """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("test_framework", test_framework_module_tests)
+    return test_framework_module_tests()
 
 
 if __name__ == "__main__":

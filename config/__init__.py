@@ -10,9 +10,23 @@ Main components:
 - CredentialManager: Secure credential management integration
 """
 
-from .config_manager import ConfigManager
-from .config_schema import ConfigSchema
-from .credential_manager import CredentialManager
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+try:
+    from .config_manager import ConfigManager
+    from .config_schema import ConfigSchema
+    from .credential_manager import CredentialManager
+except ImportError:
+    # If relative imports fail, try absolute imports
+    from config_manager import ConfigManager
+    from config_schema import ConfigSchema
+    from credential_manager import CredentialManager
 
 # Create the main configuration manager instance
 config_manager = ConfigManager()

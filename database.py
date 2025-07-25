@@ -3330,10 +3330,8 @@ def database_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("database", database_module_tests)
+    """Run comprehensive database tests using standardized TestSuite format."""
+    return database_module_tests()
 
 
 # === END OF database.py ===

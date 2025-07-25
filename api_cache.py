@@ -1123,10 +1123,8 @@ def api_cache_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("api_cache", api_cache_module_tests)
+    """Run comprehensive API cache tests using standardized TestSuite format."""
+    return api_cache_module_tests()
 
 
 # ==============================================

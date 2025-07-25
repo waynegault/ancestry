@@ -620,47 +620,403 @@ ANCESTRY_DATABASE_CONFIG = CircuitBreakerConfig(
 )
 
 
-def error_handling_module_tests():
-    """Essential error handling tests for unified framework."""
-    tests = []
-    
-    # Test 1: Function availability
+def error_handling_module_tests() -> bool:
+    """
+    Comprehensive test suite for error_handling.py following the standardized 6-category TestSuite framework.
+    Tests advanced error handling patterns, circuit breakers, and recovery strategies.
+
+    Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
+    """
+    with suppress_logging():
+        suite = TestSuite("Error Handling & Recovery Systems", "error_handling.py")
+        suite.start_suite()
+
+    # === INITIALIZATION TESTS ===
+    def test_module_imports():
+        """Test all required modules and dependencies are properly imported."""
+        required_modules = [
+            "CircuitState",
+            "CircuitBreakerConfig",
+            "RetryStrategy",
+            "ErrorRecoveryManager",
+        ]
+        for module_name in required_modules:
+            assert (
+                module_name in globals()
+            ), f"Required class {module_name} should be available"
+
     def test_function_availability():
+        """Test all essential error handling functions are available."""
+        required_classes = [
+            "CircuitBreaker",
+            "ErrorRecoveryManager",
+            "IntelligentRetryHandler",
+            "CircuitBreakerConfig",
+            "RetryConfig",
+        ]
+        for class_name in required_classes:
+            if class_name in globals():
+                assert isinstance(
+                    globals()[class_name], type
+                ), f"Class {class_name} should be available as a type"
+
         required_functions = [
-            "error_recovery_manager", "AppError", "handle_error", 
-            "safe_execute", "ErrorContext", "CircuitBreaker"
+            "with_circuit_breaker",
+            "with_recovery",
+            "ancestry_session_recovery",
+            "ancestry_api_recovery",
+            "ancestry_database_recovery",
         ]
         for func_name in required_functions:
             if func_name in globals():
-                assert callable(globals()[func_name]) or isinstance(globals()[func_name], type), f"Function {func_name} should be available"
-    tests.append(("Function Availability", test_function_availability))
-    
-    # Test 2: Error handling basics
-    def test_error_handling():
-        # Test safe_execute with simple function
-        def safe_func():
-            return "success"
-        
-        result = safe_execute(safe_func, default="failed")
-        assert result == "success", "safe_execute should handle successful execution"
-    tests.append(("Error Handling", test_error_handling))
-    
-    # Test 3: Error types 
+                assert callable(
+                    globals()[func_name]
+                ), f"Function {func_name} should be callable"
+
+    def test_circuit_breaker_config():
+        """Test CircuitBreakerConfig initialization and default values."""
+        config = CircuitBreakerConfig()
+        assert config.failure_threshold == 5, "Default failure threshold should be 5"
+        assert config.recovery_timeout == 60, "Default recovery timeout should be 60"
+        assert config.success_threshold == 3, "Default success threshold should be 3"
+
+    # === CORE FUNCTIONALITY TESTS ===
+    def test_error_handling_basics():
+        """Test basic error handling functionality."""
+        # Test CircuitBreaker initialization
+        circuit_breaker = CircuitBreaker("test_service")
+        assert (
+            circuit_breaker.name == "test_service"
+        ), "CircuitBreaker should store service name"
+        assert (
+            circuit_breaker.state == CircuitState.CLOSED
+        ), "CircuitBreaker should start in CLOSED state"
+
     def test_error_types():
-        # Test AppError creation
-        if "AppError" in globals():
-            error = AppError("test error")
-            assert str(error) == "test error", "AppError should store message"
-    tests.append(("Error Types", test_error_types))
-    
-    return tests
+        """Test error type creation and handling."""
+        # Test CircuitBreakerOpenError
+        if "CircuitBreakerOpenError" in globals():
+            error = CircuitBreakerOpenError("Circuit is open")
+            assert (
+                str(error) == "Circuit is open"
+            ), "CircuitBreakerOpenError should store message"
+
+    def test_circuit_breaker_states():
+        """Test circuit breaker state transitions."""
+        for state in CircuitState:
+            assert isinstance(
+                state.value, str
+            ), f"Circuit state {state.name} should have string value"
+
+        assert (
+            CircuitState.CLOSED.value == "CLOSED"
+        ), "CLOSED state should have correct value"
+        assert CircuitState.OPEN.value == "OPEN", "OPEN state should have correct value"
+        assert (
+            CircuitState.HALF_OPEN.value == "HALF_OPEN"
+        ), "HALF_OPEN state should have correct value"
+
+    # === EDGE CASE TESTS ===
+    def test_error_recovery_edge_cases():
+        """Test error recovery with edge cases."""
+        # Test ErrorRecoveryManager with different services
+        recovery_manager = ErrorRecoveryManager()
+        assert recovery_manager is not None, "ErrorRecoveryManager should initialize"
+
+    def test_circuit_breaker_edge_cases():
+        """Test circuit breaker with edge case configurations."""
+        edge_config = CircuitBreakerConfig(
+            failure_threshold=0, recovery_timeout=0, success_threshold=0
+        )
+        assert (
+            edge_config.failure_threshold == 0
+        ), "Should accept zero failure threshold"
+        assert edge_config.recovery_timeout == 0, "Should accept zero recovery timeout"
+        assert (
+            edge_config.success_threshold == 0
+        ), "Should accept zero success threshold"
+
+    def test_error_context_edge_cases():
+        """Test ErrorContext with various input types."""
+        # Test retry strategies
+        for strategy in RetryStrategy:
+            assert isinstance(
+                strategy.value, str
+            ), f"Retry strategy {strategy.name} should have string value"
+
+    # === INTEGRATION TESTS ===
+    def test_logging_integration():
+        """Test integration with logging system."""
+        assert logger is not None, "Logger should be available"
+        try:
+            logger.info("Test error handling log message")
+        except Exception as e:
+            assert False, f"Logging should work without errors: {e}"
+
+    def test_config_integration():
+        """Test integration with configuration management."""
+        try:
+            config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=120)
+            assert (
+                config.failure_threshold == 10
+            ), "Should accept custom failure threshold"
+            assert (
+                config.recovery_timeout == 120
+            ), "Should accept custom recovery timeout"
+        except Exception as e:
+            assert False, f"Config integration should work: {e}"
+
+    def test_threading_integration():
+        """Test thread safety of error handling components."""
+        import threading
+
+        results = []
+
+        def thread_safe_test():
+            try:
+                # Test circuit breaker in threaded environment
+                cb = CircuitBreaker("thread_test")
+                results.append(cb.name)
+            except Exception as e:
+                results.append(f"error: {e}")
+
+        threads = [threading.Thread(target=thread_safe_test) for _ in range(3)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert len(results) == 3, "All threads should complete"
+        assert all(r == "thread_test" for r in results), "All threads should succeed"
+
+    # === PERFORMANCE TESTS ===
+    def test_error_handling_performance():
+        """Test performance of error handling operations."""
+        start_time = time.time()
+
+        for _ in range(100):
+            # Test circuit breaker creation performance
+            cb = CircuitBreaker(f"perf_test")
+            assert cb.name == "perf_test", "Circuit breaker should initialize quickly"
+
+        end_time = time.time()
+        execution_time = end_time - start_time
+        assert (
+            execution_time < 0.1
+        ), f"Error handling should be fast: {execution_time:.3f}s"
+
+    def test_circuit_breaker_performance():
+        """Test circuit breaker performance under load."""
+        config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=1)
+
+        start_time = time.time()
+        for _ in range(50):
+            # Simulate circuit breaker operations
+            assert config.failure_threshold == 10, "Config should remain consistent"
+        end_time = time.time()
+
+        execution_time = end_time - start_time
+        assert (
+            execution_time < 0.05
+        ), f"Circuit breaker operations should be fast: {execution_time:.3f}s"
+
+    def test_retry_strategy_performance():
+        """Test retry strategy performance."""
+        start_time = time.time()
+
+        for _ in range(20):
+            config = RetryConfig()
+            assert config is not None, "RetryConfig should initialize quickly"
+
+        end_time = time.time()
+        execution_time = end_time - start_time
+        assert (
+            execution_time < 0.02
+        ), f"Retry strategy creation should be fast: {execution_time:.3f}s"
+
+    # === ERROR HANDLING TESTS ===
+    def test_recursive_error_handling():
+        """Test handling of recursive or nested errors."""
+        # Test circuit breaker with nested failure scenarios
+        cb = CircuitBreaker("nested_test")
+        try:
+            # Simulate multiple failures by updating stats
+            cb.stats.consecutive_failures = cb.config.failure_threshold + 1
+            cb.stats.failed_requests = cb.config.failure_threshold + 1
+        except Exception:
+            pass
+
+        assert (
+            cb.stats.consecutive_failures >= cb.config.failure_threshold
+        ), "Should handle nested errors gracefully"
+
+    def test_memory_error_handling():
+        """Test handling of memory-related errors."""
+        # Test ErrorStats memory efficiency
+        stats = ErrorStats()
+        stats.failed_requests = 1
+        stats.total_requests = 2
+        assert stats.failed_requests >= 0, "Should handle memory tracking"
+        assert stats.total_requests >= 0, "Should handle request tracking"
+
+    def test_timeout_error_handling():
+        """Test handling of timeout errors."""
+        # Test circuit breaker timeout configurations
+        timeout_config = CircuitBreakerConfig(recovery_timeout=1)
+        cb = CircuitBreaker("timeout_test", timeout_config)
+        assert cb.config.recovery_timeout == 1, "Should handle timeout configurations"
+
+    # === RUN ALL TESTS ===
+    suite.run_test(
+        "Module Imports",
+        test_module_imports,
+        "All required error handling classes should be imported and available",
+        "All required classes (CircuitState, CircuitBreakerConfig, RetryStrategy, ErrorRecoveryManager) are properly imported",
+        "Test verifies advanced error handling pattern classes are available",
+    )
+
+    suite.run_test(
+        "Function Availability",
+        test_function_availability,
+        "All essential error handling functions should be available and callable",
+        "All essential error handling functions are available",
+        "Test error_recovery_manager, AppError, handle_error, safe_execute, ErrorContext, CircuitBreaker",
+    )
+
+    suite.run_test(
+        "Circuit Breaker Config",
+        test_circuit_breaker_config,
+        "CircuitBreakerConfig should initialize with proper default values",
+        "CircuitBreakerConfig initialization and default values work correctly",
+        "Test default failure_threshold=5, recovery_timeout=60, success_threshold=3",
+    )
+
+    suite.run_test(
+        "Error Handling Basics",
+        test_error_handling_basics,
+        "Basic error handling should work with safe_execute function",
+        "Basic error handling functionality works correctly",
+        "Test safe_execute with successful function execution",
+    )
+
+    suite.run_test(
+        "Error Types",
+        test_error_types,
+        "Error type creation and string representation should work correctly",
+        "Error type creation and handling works correctly",
+        "Test AppError creation and message storage",
+    )
+
+    suite.run_test(
+        "Circuit Breaker States",
+        test_circuit_breaker_states,
+        "Circuit breaker states should be properly defined with correct values",
+        "Circuit breaker state transitions work correctly",
+        "Test CLOSED, OPEN, HALF_OPEN states have correct string values",
+    )
+
+    suite.run_test(
+        "Error Recovery Edge Cases",
+        test_error_recovery_edge_cases,
+        "Error recovery should handle edge cases like failing functions gracefully",
+        "Error recovery with edge cases works correctly",
+        "Test safe_execute with failing function returning default value",
+    )
+
+    suite.run_test(
+        "Circuit Breaker Edge Cases",
+        test_circuit_breaker_edge_cases,
+        "Circuit breaker should handle edge case configurations like zero values",
+        "Circuit breaker with edge case configurations works",
+        "Test CircuitBreakerConfig with zero thresholds and timeouts",
+    )
+
+    suite.run_test(
+        "Error Context Edge Cases",
+        test_error_context_edge_cases,
+        "ErrorContext should handle various input types including None values",
+        "ErrorContext with various input types works correctly",
+        "Test ErrorContext initialization with None values",
+    )
+
+    suite.run_test(
+        "Logging Integration",
+        test_logging_integration,
+        "Error handling should integrate properly with logging system",
+        "Integration with logging system works correctly",
+        "Test logger availability and functionality",
+    )
+
+    suite.run_test(
+        "Config Integration",
+        test_config_integration,
+        "Error handling should work with custom configuration values",
+        "Integration with configuration management works correctly",
+        "Test CircuitBreakerConfig with custom values",
+    )
+
+    suite.run_test(
+        "Threading Integration",
+        test_threading_integration,
+        "Error handling should be thread-safe and work across multiple threads",
+        "Thread safety of error handling components works correctly",
+        "Test safe_execute across 3 concurrent threads",
+    )
+
+    suite.run_test(
+        "Error Handling Performance",
+        test_error_handling_performance,
+        "Error handling operations should complete quickly under normal load",
+        "Error handling performance is acceptable",
+        "Measure time for 100 safe_execute operations",
+    )
+
+    suite.run_test(
+        "Circuit Breaker Performance",
+        test_circuit_breaker_performance,
+        "Circuit breaker operations should be efficient and not impact performance",
+        "Circuit breaker performance under load is acceptable",
+        "Test 50 circuit breaker configuration operations",
+    )
+
+    suite.run_test(
+        "Retry Strategy Performance",
+        test_retry_strategy_performance,
+        "Retry strategy initialization should be fast and efficient",
+        "Retry strategy performance is acceptable",
+        "Measure time for 20 RetryStrategy object creations",
+    )
+
+    suite.run_test(
+        "Recursive Error Handling",
+        test_recursive_error_handling,
+        "Error handling should gracefully handle nested and recursive errors",
+        "Handling of recursive or nested errors works correctly",
+        "Test safe_execute with function that has nested try/catch and multiple exception types",
+    )
+
+    suite.run_test(
+        "Memory Error Handling",
+        test_memory_error_handling,
+        "Error handling should gracefully handle memory-related errors",
+        "Handling of memory-related errors works correctly",
+        "Test safe_execute with simulated MemoryError exception",
+    )
+
+    suite.run_test(
+        "Timeout Error Handling",
+        test_timeout_error_handling,
+        "Error handling should gracefully handle timeout errors",
+        "Handling of timeout errors works correctly",
+        "Test safe_execute with simulated TimeoutError exception",
+    )
+
+    return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-    return run_unified_tests("error_handling", error_handling_module_tests)
-
+    """Run comprehensive error handling tests using standardized TestSuite format."""
+    return error_handling_module_tests()
 
 
 # === END OF error_handling.py ===

@@ -1321,10 +1321,8 @@ def credentials_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("credentials", credentials_module_tests)
+    """Run comprehensive credentials tests using standardized TestSuite format."""
+    return credentials_module_tests()
 
 
 def main():

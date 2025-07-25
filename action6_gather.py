@@ -4037,9 +4037,7 @@ def action6_gather_module_tests() -> bool:
 
 def run_comprehensive_tests() -> bool:
     """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("action6_gather", action6_gather_module_tests)
+    return action6_gather_module_tests()
 
 
 # ==============================================

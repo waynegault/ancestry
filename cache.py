@@ -942,7 +942,7 @@ def invalidate_cache_pattern(pattern: str) -> int:
 def cache_module_tests() -> bool:
     """
     Run all cache tests and return True if successful.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
@@ -963,7 +963,7 @@ def cache_module_tests() -> bool:
         """Test cache interface classes."""
         base_module = BaseCacheModule()
         assert base_module.get_module_name() == "base_cache"
-        
+
         # Test health status method
         health = base_module.get_health_status()
         assert isinstance(health, dict), "Health status should be dict"
@@ -975,15 +975,17 @@ def cache_module_tests() -> bool:
         """Test fundamental cache set/get/delete operations."""
         if cache is None:
             return True  # Skip if cache not available
-            
+
         # Test basic set/get
         test_key = "test_basic_ops"
         test_value = "test_value_123"
-        
+
         cache.set(test_key, test_value)
         retrieved = cache.get(test_key)
-        assert retrieved == test_value, f"Retrieved value {retrieved} doesn't match set value {test_value}"
-        
+        assert (
+            retrieved == test_value
+        ), f"Retrieved value {retrieved} doesn't match set value {test_value}"
+
         # Test delete
         cache.delete(test_key)
         retrieved_after_delete = cache.get(test_key)
@@ -993,18 +995,18 @@ def cache_module_tests() -> bool:
     def test_cache_decorator():
         """Test @cache_result decorator functionality."""
         call_count = 0
-        
+
         @cache_result("test_decorator")
         def test_function(x, y):
             nonlocal call_count
             call_count += 1
             return x + y
-        
+
         # First call should execute function
         result1 = test_function(1, 2)
         assert result1 == 3
         assert call_count == 1
-        
+
         # Second call should use cache
         result2 = test_function(1, 2)
         assert result2 == 3
@@ -1015,20 +1017,21 @@ def cache_module_tests() -> bool:
         """Test cache TTL and expiration."""
         if cache is None:
             return True
-            
+
         test_key = "test_expiration"
         test_value = "expires_soon"
-        
+
         # Set with very short TTL
         cache.set(test_key, test_value, expire=0.1)  # 100ms
-        
+
         # Should be available immediately
         assert cache.get(test_key) == test_value
-        
+
         # Wait for expiration
         import time
+
         time.sleep(0.2)
-        
+
         # Should be expired
         expired_value = cache.get(test_key)
         assert expired_value is None
@@ -1039,11 +1042,11 @@ def cache_module_tests() -> bool:
         # This is a basic test - actual size management depends on diskcache config
         if cache is None:
             return True
-            
+
         # Set multiple values
         for i in range(5):
             cache.set(f"size_test_{i}", f"value_{i}")
-        
+
         # Verify they're stored
         for i in range(5):
             value = cache.get(f"size_test_{i}")
@@ -1055,18 +1058,18 @@ def cache_module_tests() -> bool:
         """Test cache clearing functionality."""
         if cache is None:
             return True
-            
+
         # Set some test data
         cache.set("clear_test_1", "data1")
         cache.set("clear_test_2", "data2")
-        
+
         # Verify data exists
         assert cache.get("clear_test_1") == "data1"
         assert cache.get("clear_test_2") == "data2"
-        
+
         # Clear cache
         cache.clear()
-        
+
         # Verify data is gone
         assert cache.get("clear_test_1") is None
         assert cache.get("clear_test_2") is None
@@ -1076,13 +1079,13 @@ def cache_module_tests() -> bool:
         """Test caching of complex data structures."""
         if cache is None:
             return True
-            
+
         # Test dictionary
         test_dict = {"key1": "value1", "nested": {"key2": "value2"}}
         cache.set("test_dict", test_dict)
         retrieved_dict = cache.get("test_dict")
         assert retrieved_dict == test_dict
-        
+
         # Test list
         test_list = [1, 2, {"nested": "value"}, [3, 4]]
         cache.set("test_list", test_list)
@@ -1094,30 +1097,33 @@ def cache_module_tests() -> bool:
         """Test cache performance and statistics."""
         if cache is None:
             return True
-            
+
         # Performance test - basic operations should be fast
         import time
+
         start_time = time.time()
-        
+
         for i in range(100):
             cache.set(f"perf_test_{i}", f"value_{i}")
             cache.get(f"perf_test_{i}")
-        
+
         duration = time.time() - start_time
-        assert duration < 5.0, f"100 cache operations took {duration}s, should be under 5s"
+        assert (
+            duration < 5.0
+        ), f"100 cache operations took {duration}s, should be under 5s"
         return True
 
     def test_error_handling():
         """Test cache error handling and edge cases."""
         if cache is None:
             return True
-            
+
         # Test with None values
         cache.set("test_none", None)
         retrieved_none = cache.get("test_none")
         # Note: this might be None due to the value OR due to key not found
         # The actual behavior depends on diskcache implementation
-        
+
         # Test with empty string
         cache.set("test_empty", "")
         retrieved_empty = cache.get("test_empty")
@@ -1131,7 +1137,7 @@ def cache_module_tests() -> bool:
             stats_func = get_function("get_cache_stats")
             stats = stats_func()
             assert isinstance(stats, dict)
-        
+
         # Test cache directory health
         if cache is not None:
             # Basic health check - cache should be operational
@@ -1142,28 +1148,66 @@ def cache_module_tests() -> bool:
     # Create test suite and run tests
     suite = TestSuite("Disk-Based Caching System", "cache.py")
     suite.start_suite()
-    
+
     # Run all tests
-    suite.run_test("Cache System Initialization", test_cache_initialization, "Cache directory exists and cache object has required methods when available")
-    suite.run_test("Cache Interface Classes", test_cache_interfaces, "BaseCacheModule interface works correctly with proper methods")
-    suite.run_test("Basic Cache Operations", test_basic_cache_operations, "Fundamental set/get/delete operations work correctly")
-    suite.run_test("Cache Decorator", test_cache_decorator, "@cache_result decorator caches function outputs correctly")
-    suite.run_test("Cache Expiration", test_cache_expiration, "TTL and expiration work correctly")
-    suite.run_test("Cache Size Management", test_cache_size_management, "Cache handles size limits and eviction properly")
-    suite.run_test("Cache Clearing", test_cache_clearing, "Cache clearing removes all stored data")
-    suite.run_test("Complex Data Types", test_complex_data_types, "Cache handles dictionaries, lists, and nested structures")
-    suite.run_test("Cache Performance", test_cache_performance, "Cache operations perform within acceptable timeframes")
-    suite.run_test("Error Handling", test_error_handling, "Cache handles edge cases and special values correctly")
-    suite.run_test("Health Monitoring", test_health_monitoring, "Cache health monitoring functions work correctly")
-    
+    suite.run_test(
+        "Cache System Initialization",
+        test_cache_initialization,
+        "Cache directory exists and cache object has required methods when available",
+    )
+    suite.run_test(
+        "Cache Interface Classes",
+        test_cache_interfaces,
+        "BaseCacheModule interface works correctly with proper methods",
+    )
+    suite.run_test(
+        "Basic Cache Operations",
+        test_basic_cache_operations,
+        "Fundamental set/get/delete operations work correctly",
+    )
+    suite.run_test(
+        "Cache Decorator",
+        test_cache_decorator,
+        "@cache_result decorator caches function outputs correctly",
+    )
+    suite.run_test(
+        "Cache Expiration", test_cache_expiration, "TTL and expiration work correctly"
+    )
+    suite.run_test(
+        "Cache Size Management",
+        test_cache_size_management,
+        "Cache handles size limits and eviction properly",
+    )
+    suite.run_test(
+        "Cache Clearing", test_cache_clearing, "Cache clearing removes all stored data"
+    )
+    suite.run_test(
+        "Complex Data Types",
+        test_complex_data_types,
+        "Cache handles dictionaries, lists, and nested structures",
+    )
+    suite.run_test(
+        "Cache Performance",
+        test_cache_performance,
+        "Cache operations perform within acceptable timeframes",
+    )
+    suite.run_test(
+        "Error Handling",
+        test_error_handling,
+        "Cache handles edge cases and special values correctly",
+    )
+    suite.run_test(
+        "Health Monitoring",
+        test_health_monitoring,
+        "Cache health monitoring functions work correctly",
+    )
+
     return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("cache", cache_module_tests)
+    """Run comprehensive cache tests using standardized TestSuite format."""
+    return cache_module_tests()
 
 
 if __name__ == "__main__":

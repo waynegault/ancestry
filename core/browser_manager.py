@@ -5,6 +5,14 @@ This module extracts browser management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 import logging
 import time
 from pathlib import Path
@@ -31,6 +39,7 @@ from logging_config import logger
 
 try:
     from core_imports import auto_register_module
+
     auto_register_module(globals(), __name__)
 except ImportError:
     pass  # Continue without auto-registration if not available

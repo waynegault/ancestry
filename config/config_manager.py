@@ -10,7 +10,16 @@ This module provides a comprehensive configuration management system with:
 - Hot reloading capabilities
 """
 
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
@@ -28,15 +37,27 @@ try:
 except ImportError:
     DOTENV_AVAILABLE = False
 
-from .config_schema import (
-    ConfigSchema,
-    DatabaseConfig,
-    SeleniumConfig,
-    APIConfig,
-    LoggingConfig,
-    CacheConfig,
-    SecurityConfig,
-)
+try:
+    from .config_schema import (
+        ConfigSchema,
+        DatabaseConfig,
+        SeleniumConfig,
+        APIConfig,
+        LoggingConfig,
+        CacheConfig,
+        SecurityConfig,
+    )
+except ImportError:
+    # If relative import fails, try absolute import
+    from config_schema import (
+        ConfigSchema,
+        DatabaseConfig,
+        SeleniumConfig,
+        APIConfig,
+        LoggingConfig,
+        CacheConfig,
+        SecurityConfig,
+    )
 
 from logging_config import logger
 

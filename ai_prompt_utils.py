@@ -362,7 +362,7 @@ def cleanup_old_backups(keep_count: int = 5) -> int:
 def ai_prompt_utils_module_tests() -> bool:
     """
     AI Prompt Utils module tests using TestSuite for verbose output.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
@@ -440,25 +440,47 @@ def ai_prompt_utils_module_tests() -> bool:
 
     # Create test suite and run tests
     with suppress_logging():
-        suite = TestSuite("AI Prompt Management & Template System", "ai_prompt_utils.py")
+        suite = TestSuite(
+            "AI Prompt Management & Template System", "ai_prompt_utils.py"
+        )
         suite.start_suite()
-        
+
         # Run all tests
-        suite.run_test("Prompts Loading", test_prompts_loading, "Should load prompts structure correctly")
-        suite.run_test("Prompt Validation", test_prompt_validation, "Should validate prompt structure")
-        suite.run_test("Backup Functionality", test_backup_functionality, "Should handle backup operations")
-        suite.run_test("Import Functionality", test_import_functionality, "Should import improved prompts")
-        suite.run_test("Error Handling", test_error_handling, "Should handle errors gracefully")
-        suite.run_test("Prompt Operations", test_prompt_operations, "Should handle get/update operations")
-        
+        suite.run_test(
+            "Prompts Loading",
+            test_prompts_loading,
+            "Should load prompts structure correctly",
+        )
+        suite.run_test(
+            "Prompt Validation",
+            test_prompt_validation,
+            "Should validate prompt structure",
+        )
+        suite.run_test(
+            "Backup Functionality",
+            test_backup_functionality,
+            "Should handle backup operations",
+        )
+        suite.run_test(
+            "Import Functionality",
+            test_import_functionality,
+            "Should import improved prompts",
+        )
+        suite.run_test(
+            "Error Handling", test_error_handling, "Should handle errors gracefully"
+        )
+        suite.run_test(
+            "Prompt Operations",
+            test_prompt_operations,
+            "Should handle get/update operations",
+        )
+
         return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:
     """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("ai_prompt_utils", ai_prompt_utils_module_tests)
+    return ai_prompt_utils_module_tests()
 
 
 def get_prompts_summary() -> Dict[str, Any]:
@@ -481,7 +503,9 @@ def get_prompts_summary() -> Dict[str, Any]:
             "file_size_bytes": (
                 PROMPTS_FILE.stat().st_size if PROMPTS_FILE.exists() else 0
             ),
-            "backup_count": len(list(PROMPTS_FILE.parent.glob(f"{PROMPTS_FILE.stem}.bak.*"))),
+            "backup_count": len(
+                list(PROMPTS_FILE.parent.glob(f"{PROMPTS_FILE.stem}.bak.*"))
+            ),
         }
 
         return summary

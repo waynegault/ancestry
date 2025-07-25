@@ -47,8 +47,9 @@ def main():
     print("\n📊 SYSTEM STATISTICS:")
     print(f"  Functions Registered: {import_stats['functions_registered']}")
     print(f"  Registry Size: {import_stats['registry_size']}")
-    print(f"  Performance Metrics: {perf_report['total_metrics']}")
+    print(f"  Performance Metrics: {perf_report['summary']['total_metrics']}")
     print(f"  Function Profiles: {len(perf_report['function_profiles'])}")
+    print(f"  Uptime: {perf_report['summary']['uptime_seconds']:.2f} seconds")
 
     print("\n🎉 ALL ENHANCED SYSTEMS INTEGRATED SUCCESSFULLY!")
     print("✅ Import System: Enhanced with error handling and stats")

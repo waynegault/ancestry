@@ -6327,11 +6327,8 @@ def utils_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Unified test framework integration for utils.py."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests(__name__, utils_module_tests)
-
+    """Run comprehensive utils tests using standardized TestSuite format."""
+    return utils_module_tests()
 
 
 # ==============================================
@@ -6346,9 +6343,234 @@ auto_register_module(globals(), __name__)
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite(
+        "Core Utilities & Session Management", "utils.py"
+    )  # Basic utility functions
+
+    def test_parse_cookie():
+        cookie_str = "session_id=abc123; path=/; domain=.example.com"
+        result = parse_cookie(cookie_str)
+        assert isinstance(result, dict), "Should return dictionary"
+        assert "session_id" in result, "Should parse session_id"
+        assert result["session_id"] == "abc123", "Should extract correct value"
+
+    def test_ordinal_case():
+        assert ordinal_case(1) == "1st", "First ordinal test failed"
+        assert ordinal_case(2) == "2nd", "Second ordinal test failed"
+        assert ordinal_case(3) == "3rd", "Third ordinal test failed"
+        assert ordinal_case(4) == "4th", "Fourth ordinal test failed"
+        assert ordinal_case(21) == "21st", "Twenty-first ordinal test failed"
+        assert ordinal_case(22) == "22nd", "Twenty-second ordinal test failed"
+        assert ordinal_case(23) == "23rd", "Twenty-third ordinal test failed"
+
+    def test_format_name():
+        assert format_name("john doe") == "John Doe", "Basic name formatting failed"
+        assert format_name(None) == "Valued Relative", "None handling failed"
+        assert format_name("") == "Valued Relative", "Empty string handling failed"
+        assert format_name("JOHN DOE") == "John Doe", "Uppercase conversion failed"
+        assert format_name("john /doe/") == "John Doe", "GEDCOM format handling failed"
+
+    def test_decorators():
+        # Test retry decorator availability
+        assert callable(retry), "retry decorator should be callable"
+        assert callable(retry_api), "retry_api decorator should be callable"
+        assert callable(
+            ensure_browser_open
+        ), "ensure_browser_open decorator should be callable"
+        assert callable(time_wait), "time_wait decorator should be callable"
+
+        # Basic decorator functionality test
+        @retry(MAX_RETRIES=1, BACKOFF_FACTOR=0.001)
+        def test_func():
+            return "success"
+
+        result = test_func()
+        assert result == "success", "Retry decorator should work"
+
+    def test_rate_limiter():
+        # Test DynamicRateLimiter instantiation and basic functionality
+        limiter = DynamicRateLimiter(initial_delay=0.001, max_delay=0.01)
+        assert limiter is not None, "Rate limiter should instantiate"
+        assert hasattr(limiter, "wait"), "Rate limiter should have wait method"
+        assert hasattr(
+            limiter, "reset_delay"
+        ), "Rate limiter should have reset_delay method"
+        assert hasattr(
+            limiter, "increase_delay"
+        ), "Rate limiter should have increase_delay method"
+        assert hasattr(
+            limiter, "decrease_delay"
+        ), "Rate limiter should have decrease_delay method"
+
+        # Test wait method (should not hang)
+        start_time = time.time()
+        limiter.wait()
+        elapsed = time.time() - start_time
+        assert elapsed < 1.0, "Wait should complete quickly in test"
+
+    def test_session_manager():
+        # Test SessionManager class availability and basic attributes
+        sm = SessionManager()
+        assert hasattr(
+            sm, "driver_live"
+        ), "SessionManager should have driver_live attribute"
+        assert hasattr(
+            sm, "session_ready"
+        ), "SessionManager should have session_ready attribute"
+        assert hasattr(
+            sm, "ensure_session_ready"
+        ), "SessionManager should have ensure_session_ready method"
+        assert hasattr(sm, "close_sess"), "SessionManager should have close_sess method"
+
+        # Test initial state
+        assert not sm.driver_live, "Driver should not be live initially"
+        assert not sm.session_ready, "Session should not be ready initially"
+
+    def test_api_request_function():
+        # Test _api_req function availability
+        assert callable(_api_req), "_api_req function should be callable"
+
+        # Test function signature (should not raise errors)
+        import inspect as inspect_module
+
+        sig = inspect_module.signature(_api_req)
+        assert len(sig.parameters) >= 2, "_api_req should accept multiple parameters"
+
+    def test_login_status_function():
+        # Test login_status function availability
+        assert callable(login_status), "login_status function should be callable"
+
+        # Test function signature
+        import inspect as inspect_module
+
+        sig = inspect_module.signature(login_status)
+        assert (
+            "session_manager" in sig.parameters
+        ), "login_status should accept session_manager parameter"
+
+    def test_module_registration():
+        # Test that module registration functions work
+        assert callable(
+            auto_register_module
+        ), "auto_register_module should be available"
+        assert callable(register_function), "register_function should be available"
+        assert callable(get_function), "get_function should be available"
+        assert callable(
+            is_function_available
+        ), "is_function_available should be available"
+
+        # Test that core functions are available
+        assert "format_name" in globals(), "format_name should be in globals"
+        assert (
+            "DynamicRateLimiter" in globals()
+        ), "DynamicRateLimiter should be in globals"
+        assert "SessionManager" in globals(), "SessionManager should be in globals"
+
+    def test_performance_validation():
+        # Test that key operations complete within reasonable time
+        start_time = time.time()
+
+        # Format name performance
+        for i in range(100):
+            format_name(f"test name {i}")
+
+        # Ordinal case performance
+        for i in range(1, 101):
+            ordinal_case(i)
+
+        elapsed = time.time() - start_time
+        assert (
+            elapsed < 1.0
+        ), f"Performance test should complete quickly, took {elapsed:.3f}s"
+
+    # Run all tests
     print("🛠️ Running Core Utilities & Session Management comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+
+    with suppress_logging():
+        suite.run_test(
+            "Cookie parsing functionality",
+            test_parse_cookie,
+            "Test parse_cookie with sample cookie string and verify correct parsing",
+            "Cookie parsing extracts key-value pairs from cookie strings",
+            "Cookie string data is properly parsed into dictionary format",
+        )
+
+        suite.run_test(
+            "Ordinal number formatting",
+            test_ordinal_case,
+            "Test ordinal_case with various numbers and verify correct ordinal suffix",
+            "Ordinal formatting provides correct suffixes for numbers",
+            "Numbers are formatted with appropriate ordinal suffixes (1st, 2nd, 3rd, etc.)",
+        )
+
+        suite.run_test(
+            "Name formatting functionality",
+            test_format_name,
+            "Test format_name with various inputs including None, empty, and GEDCOM formats",
+            "Name formatting provides consistent title case output",
+            "Names are properly formatted with title case and GEDCOM handling",
+        )
+
+        suite.run_test(
+            "Decorator availability and functionality",
+            test_decorators,
+            "Test availability and basic functionality of retry, API, and timing decorators",
+            "Decorators provide robust function enhancement capabilities",
+            "All utility decorators are available and function correctly",
+        )
+
+        suite.run_test(
+            "Dynamic rate limiting",
+            test_rate_limiter,
+            "Test DynamicRateLimiter instantiation and basic rate limiting functionality",
+            "Rate limiting manages API request timing and prevents throttling",
+            "Dynamic rate limiter provides effective request flow control",
+        )
+
+        suite.run_test(
+            "Session management",
+            test_session_manager,
+            "Test SessionManager class instantiation and basic session management features",
+            "Session management provides browser automation and session handling",
+            "SessionManager class provides complete session lifecycle management",
+        )
+
+        suite.run_test(
+            "API request functionality",
+            test_api_request_function,
+            "Test _api_req function availability and signature validation",
+            "API request function provides core HTTP request capabilities",
+            "Core API request functionality is available and properly configured",
+        )
+
+        suite.run_test(
+            "Login status checking",
+            test_login_status_function,
+            "Test login_status function availability and parameter validation",
+            "Login status checking provides authentication state verification",
+            "Login status functionality is available for session validation",
+        )
+
+        suite.run_test(
+            "Module registration system",
+            test_module_registration,
+            "Test module registration functions and verify core functions are registered",
+            "Module registration provides optimized function access",
+            "All core utility functions are properly registered and accessible",
+        )
+
+        suite.run_test(
+            "Performance validation",
+            test_performance_validation,
+            "Test performance of name formatting and ordinal operations with datasets",
+            "Performance validation ensures efficient utility function execution",
+            "Utility functions complete processing within reasonable time limits",
+        )
+
+    # Generate summary report
+    suite.finish_suite()
 
 
 # End of utils.py

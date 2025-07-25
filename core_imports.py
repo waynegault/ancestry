@@ -392,10 +392,8 @@ def core_imports_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Unified test framework integration for core_imports.py."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests(__name__, core_imports_module_tests)
+    """Run comprehensive core imports tests using standardized TestSuite format."""
+    return core_imports_module_tests()
 
 
 # Initialize immediately when imported
