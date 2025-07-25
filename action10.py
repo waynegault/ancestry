@@ -11,15 +11,10 @@ using the cached GEDCOM data.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-    safe_execute,
-)
+from standard_imports import setup_module, safe_execute
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import sys
@@ -29,9 +24,6 @@ from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
 # === LOCAL IMPORTS ===
 from config import config_manager, config_schema
 from core.error_handling import MissingConfigError
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 """
 Action 10: Find GEDCOM Matches and Relationship Path

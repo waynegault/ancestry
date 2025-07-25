@@ -7,22 +7,12 @@ Provides cache operations with comprehensive testing and cache management utilit
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-    is_function_available,
-    get_function,
-)
+from standard_imports import setup_module, is_function_available, get_function
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === LOCAL IMPORTS ===
 from test_framework import TestSuite
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 
 # ==============================================

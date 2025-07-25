@@ -11,19 +11,14 @@ SessionManager class to provide a clean separation of concerns.
 import sys
 import os
 
-# Add parent directory to path for core_imports
+# Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
@@ -50,9 +45,6 @@ from utils import nav_to_page
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 # === TYPE ALIASES ===
 DriverType = Optional[WebDriver]

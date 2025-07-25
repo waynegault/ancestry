@@ -9,17 +9,9 @@ dramatically improve performance for frequently accessed external data.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module, get_function, is_function_available
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
@@ -51,9 +43,6 @@ from cache import (
     invalidate_related_caches,
 )
 from config import config_schema
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 # === MODULE CONSTANTS ===
 # Cache Configuration

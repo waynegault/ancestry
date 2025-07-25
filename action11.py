@@ -10,17 +10,15 @@ V18.8: Corrected SyntaxError in _parse_treesui_list_response.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
+from standard_imports import (
+    setup_module,
     register_function,
     get_function,
     is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
 )
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import argparse
@@ -44,9 +42,6 @@ from tabulate import tabulate
 
 # === LOCAL IMPORTS ===
 from config import config_schema
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 # === CONFIGURATION VALIDATION ===
 try:

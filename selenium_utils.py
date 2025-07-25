@@ -6,18 +6,9 @@ and element interaction, separated from general or API-specific utilities.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    register_function,
-    get_function,
-    is_function_available,
-    safe_execute,
-    get_logger,
-)
+from standard_imports import setup_module, safe_execute
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -40,14 +31,8 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
-
 # Local imports
 from config import config_schema
-
-# Initialize logger
-logger = get_logger(__name__)
 
 # --- Selenium Specific Helpers ---
 

@@ -9,17 +9,16 @@ and includes login/session verification logic closely tied to SessionManager.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
+from standard_imports import (
+    setup_module,
     register_function,
     get_function,
     is_function_available,
-    get_logger,
+    auto_register_module,  # Needed for testing
 )
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -59,15 +58,14 @@ from selenium.webdriver.remote.webdriver import WebDriver
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
 
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
-
 # === TYPE ALIASES ===
 # Define type aliases
 RequestsResponseTypeOptional = Optional[RequestsResponse]
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
 DriverType = Optional[WebDriver]
-SessionManagerType = Optional["SessionManager"]  # Use string literal for forward reference
+SessionManagerType = Optional[
+    "SessionManager"
+]  # Use string literal for forward reference
 
 # === MODULE CONSTANTS ===
 # Key constants remain here or moved to api_utils as appropriate
@@ -6333,8 +6331,7 @@ def run_comprehensive_tests() -> bool:
 # Module Registration
 # ==============================================
 
-# Auto-register module functions for optimized access
-auto_register_module(globals(), __name__)
+# Module setup already handled by setup_module() call at top of file
 
 
 # ==============================================

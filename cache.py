@@ -10,17 +10,14 @@ Cache directory and default settings are configurable via `config.py`.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
+from standard_imports import (
+    setup_module,
     register_function,
     get_function,
     is_function_available,
-    get_logger,
 )
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import atexit
@@ -43,7 +40,6 @@ from diskcache.core import ENOVAL, UNKNOWN
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
-from logging_config import logger  # Use configured logger
 
 # --- Test framework imports ---
 from test_framework import (

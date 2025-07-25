@@ -17,14 +17,10 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
@@ -42,42 +38,9 @@ from config.config_manager import ConfigManager
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
-
-import sys
-import os
-
-# Add parent directory to path for core_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
-
-standardize_module_imports()
-auto_register_module(globals(), __name__)
-
-import logging
-import time
-from typing import Optional
-
-from core.database_manager import DatabaseManager
-from core.browser_manager import BrowserManager
-from core.api_manager import APIManager
-from core.session_validator import SessionValidator
-
-from config.config_manager import ConfigManager
-
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
-
-logger = get_logger(__name__)
 
 
 class SessionManager:

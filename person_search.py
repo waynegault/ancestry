@@ -6,25 +6,15 @@ Provides functions for searching, getting family details, and relationship paths
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-    safe_execute,
-)
+from standard_imports import setup_module, safe_execute
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
-logger = get_logger(__name__)
 
 # Import from local modules
 from config import config_schema

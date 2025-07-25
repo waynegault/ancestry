@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Integration test for all enhanced systems."""
 
+from standard_imports import setup_module, get_stats
+
+logger = setup_module(globals(), __name__)
+
 from performance_monitor import profile, performance_monitor
 from core.error_handling import AppError, ErrorSeverity, ErrorCategory
 from config.config_schema import DatabaseConfig, EnvironmentType
-from core_imports import (
-    get_import_stats,
-)
 import time
 
 
@@ -43,7 +44,7 @@ def main():
     print("✅ Config System Test: Environment =", db_config._get_environment().value)
 
     # Get statistics
-    import_stats = get_import_stats()
+    import_stats = get_stats()
     perf_report = performance_monitor.get_report(hours=1)
 
     print("\n📊 SYSTEM STATISTICS:")

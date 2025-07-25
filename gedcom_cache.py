@@ -11,22 +11,15 @@ strategies to dramatically improve performance for frequently accessed genealogi
 """
 
 # Unified import system
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
+from standard_imports import (
+    setup_module,
     safe_execute,
     register_function,
     get_function,
     is_function_available,
 )
 
-# Auto-register module
-auto_register_module(globals(), __name__)
-standardize_module_imports()
-
-# Initialize logger
-logger = get_logger(__name__)
+logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
 import hashlib
