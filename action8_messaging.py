@@ -36,7 +36,11 @@ from sqlalchemy import (
 # --- Local application imports (minimal for helper function) ---
 # Import PersonStatusEnum early for use in safe_column_value
 from database import PersonStatusEnum
-from logging_config import logger  # Import logger early for use in safe_column_value
+
+# Import logger early for use in safe_column_value
+from core_imports import get_logger
+
+logger = get_logger(__name__)
 
 
 # --- Helper function for SQLAlchemy Column conversion ---

@@ -34,7 +34,9 @@ from config.config_manager import ConfigManager
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-from logging_config import logger
+from core_imports import get_logger
+
+logger = get_logger(__name__)
 
 
 class SessionManager:

@@ -26,7 +26,9 @@ import logging
 from typing import Dict, Any, List, Optional, Callable, Set
 from functools import wraps
 
-from logging_config import logger
+from core_imports import get_logger
+
+logger = get_logger(__name__)
 
 
 class SmartFunctionRegistry:

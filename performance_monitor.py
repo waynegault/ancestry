@@ -17,7 +17,7 @@ Features:
 - Optimization recommendations
 """
 
-from core_imports import standardize_module_imports, auto_register_module
+from core_imports import standardize_module_imports, auto_register_module, get_logger
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
@@ -37,7 +37,7 @@ import statistics
 from enum import Enum
 from collections import defaultdict, deque
 
-from logging_config import logger
+logger = get_logger(__name__)
 
 
 class AlertLevel(Enum):

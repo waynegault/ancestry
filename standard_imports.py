@@ -178,7 +178,7 @@ except ImportError:
     register_function = None
 
 # Pattern 3 - Mixed logger sources
-from logging_config import logger
+logger = get_logger(__name__)
 
 # Pattern 4 - Manual fallbacks
 try:

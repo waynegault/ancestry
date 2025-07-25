@@ -4,6 +4,7 @@ from core_imports import (
     get_function,
     is_function_available,
     auto_register_module,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
@@ -71,7 +72,7 @@ from test_framework import (
 )
 
 # Use centralized logger from logging_config
-from logging_config import logger
+logger = get_logger(__name__)
 
 try:
     from core_imports import auto_register_module

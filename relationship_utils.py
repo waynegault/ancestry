@@ -4,6 +4,7 @@ from core_imports import (
     is_function_available,
     auto_register_module,
     standardize_module_imports,
+    get_logger,
 )
 
 # Register this module immediately
@@ -32,8 +33,8 @@ from collections import deque
 import traceback  # Added for test suite
 from contextlib import contextmanager
 
-# Use centralized logger from logging_config
-from logging_config import logger
+# Use standardized logger pattern
+logger = get_logger(__name__)
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup

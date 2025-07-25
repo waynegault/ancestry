@@ -13,7 +13,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import standardize_module_imports, auto_register_module
+from core_imports import standardize_module_imports, auto_register_module, get_logger
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
@@ -29,7 +29,8 @@ from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 from config import config_schema
-from logging_config import logger
+
+logger = get_logger(__name__)
 
 # Type aliases
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]

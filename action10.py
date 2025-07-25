@@ -17,7 +17,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
 from pathlib import Path
 
 # --- Path management and optimization imports ---
-from core_imports import standardize_module_imports, safe_execute
+from core_imports import standardize_module_imports, safe_execute, get_logger
 from core_imports import auto_register_module
 
 auto_register_module(globals(), __name__)
@@ -26,7 +26,10 @@ standardize_module_imports()
 
 # --- Local application imports ---
 from config import config_manager, config_schema
-from logging_config import logger
+
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
+
 from core.error_handling import MissingConfigError
 
 """

@@ -3,6 +3,7 @@ from core_imports import (
     get_function,
     is_function_available,
     standardize_module_imports,
+    get_logger,
 )
 from core_imports import auto_register_module
 
@@ -73,7 +74,8 @@ except ImportError:
 # --- Local Application Imports ---
 from config.config_manager import ConfigManager
 from utils import SessionManager
-from logging_config import logger
+
+logger = get_logger(__name__)
 
 # Initialize config
 config_manager = ConfigManager()

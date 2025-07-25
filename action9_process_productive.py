@@ -35,6 +35,7 @@ from core_imports import (
     get_function,
     is_function_available,
     standardize_module_imports,
+    get_logger,
 )
 
 standardize_module_imports()
@@ -49,7 +50,8 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
-from logging_config import logger
+
+logger = get_logger(__name__)
 import ms_graph_utils
 from utils import SessionManager, format_name
 from ai_interface import extract_genealogical_entities

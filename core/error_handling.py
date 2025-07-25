@@ -26,7 +26,9 @@ from typing import Any, Dict, Optional, Type, Union, Callable, List
 from functools import wraps
 import time
 
-from logging_config import logger
+from core_imports import get_logger
+
+logger = get_logger(__name__)
 
 
 # Simple CircuitBreaker implementation for error handling tests

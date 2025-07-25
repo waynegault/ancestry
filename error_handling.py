@@ -4,13 +4,14 @@ from core_imports import (
     get_function,
     is_function_available,
     auto_register_module,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
 
 # Initialize function_registry as None for backward compatibility
 function_registry = None
-from logging_config import logger
+logger = get_logger(__name__)
 from typing import Dict, Any, Optional, Callable, Union, Type, List, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta

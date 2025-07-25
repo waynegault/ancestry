@@ -48,6 +48,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging throu
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
@@ -63,7 +64,8 @@ from database import (
     PersonStatusEnum,
     db_transn,
 )
-from logging_config import logger  # Use configured logger
+
+logger = get_logger(__name__)
 from my_selectors import *  # Import CSS selectors
 from utils import (
     SessionManager,  # Import SessionManager for type hints and usage
