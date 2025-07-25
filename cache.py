@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# cache.py
-
 """
 cache.py - Disk-Based Caching Utility
 
@@ -11,19 +9,20 @@ and utility functions for managing the cache lifecycle (clearing, closing).
 Cache directory and default settings are configurable via `config.py`.
 """
 
-# Unified import system
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
     register_function,
     get_function,
     is_function_available,
-    auto_register_module,
     get_logger,
 )
 
-# Auto-register module
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-# --- Standard library imports ---
+# === STANDARD LIBRARY IMPORTS ===
 import atexit
 import hashlib
 import logging
@@ -44,9 +43,7 @@ from diskcache.core import ENOVAL, UNKNOWN
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
-
-# Initialize logger with standardized pattern
-logger = get_logger(__name__)
+from logging_config import logger  # Use configured logger
 
 # --- Test framework imports ---
 from test_framework import (

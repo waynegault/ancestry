@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Standardized Imports Module - Single Source of Truth
 
@@ -20,33 +22,30 @@ This replaces inconsistent patterns like:
 - Various fallback patterns
 """
 
-# === CORE UNIFIED IMPORTS ===
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
-    # Core functionality
     auto_register_module,
-    get_logger,
-    standardize_module_imports,
-    safe_execute,
-    # Function registry
-    register_function,
-    get_function,
-    is_function_available,
     call_function,
-    get_available_functions,
-    register_many,
-    # Utilities
-    get_project_root,
-    import_context,
     cleanup_registry,
-    get_stats,
     ensure_imports,
+    get_available_functions,
+    get_function,
+    get_logger,
+    get_project_root,
+    get_stats,
+    import_context,
+    is_function_available,
+    register_function,
+    register_many,
+    safe_execute,
+    standardize_module_imports,
 )
 
-# === STANDARD LIBRARY IMPORTS (COMMONLY NEEDED) ===
+# === STANDARD LIBRARY IMPORTS ===
+import logging
 import os
 import sys
 import time
-import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable, Union, Tuple
 from typing import Dict, List, Any, Optional, Callable, Union, Tuple
@@ -178,7 +177,7 @@ except ImportError:
     register_function = None
 
 # Pattern 3 - Mixed logger sources
-logger = get_logger(__name__)
+from logging_config import logger
 
 # Pattern 4 - Manual fallbacks
 try:

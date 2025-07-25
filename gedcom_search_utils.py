@@ -14,10 +14,10 @@ Universal Patterns Applied:
 - No legacy fallback patterns or duplicate registries
 """
 
-# --- STEP 1: Unified Import System (REQUIRED) ---
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
-    auto_register_module,
     standardize_module_imports,
+    auto_register_module,
     get_logger,
     safe_execute,
     register_function,
@@ -52,7 +52,7 @@ from test_framework import (
 )
 
 # --- Local module imports ---
-logger = get_logger(__name__)
+from logging_config import logger
 from config.config_manager import ConfigManager
 from gedcom_utils import GedcomData, calculate_match_score, _normalize_id
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Browser Manager - Handles all browser/WebDriver operations.
 
@@ -5,20 +7,32 @@ This module extracts browser management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import logging
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
-from contextlib import contextmanager
 
+# === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import (
     InvalidSessionIdException,
     NoSuchWindowException,
@@ -26,21 +40,21 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
+# === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
 from chromedriver import init_webdvr
 from selenium_utils import export_cookies
 from utils import nav_to_page
 
+# === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-from core_imports import auto_register_module, get_logger
-
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
-auto_register_module(globals(), __name__)
 
-# Type alias
+# === TYPE ALIASES ===
 DriverType = Optional[WebDriver]
 
 

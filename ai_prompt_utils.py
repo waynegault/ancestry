@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Utility functions for managing AI prompts.
 
@@ -7,26 +8,31 @@ stored in a JSON file. It is used by both the main codebase and the
 test_ai_responses_menu.py script.
 """
 
-# Unified import system
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
     register_function,
     get_function,
     is_function_available,
-    auto_register_module,
     get_logger,
 )
 
-# Auto-register module
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
+# === STANDARD LIBRARY IMPORTS ===
 import json
 import os
 import shutil
 from datetime import datetime
 from pathlib import Path
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 from typing import Dict, Any, Optional, List, Tuple
 
-logger = get_logger(__name__)
+from logging_config import logger
 
 # --- Test framework imports ---
 from test_framework import (

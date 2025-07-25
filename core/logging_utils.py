@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Centralized Logging Utilities.
 
@@ -5,21 +7,30 @@ This module provides standardized logging setup and utilities to eliminate
 inconsistent logging patterns across the codebase.
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import standardize_module_imports, auto_register_module
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
+# === STANDARD LIBRARY IMPORTS ===
 import logging
 from typing import Optional
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 # Global flag to track if logging has been initialized
 _centralized_logging_setup = False

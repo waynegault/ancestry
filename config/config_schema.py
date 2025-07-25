@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Configuration Schema Definitions.
 
@@ -6,11 +8,15 @@ with comprehensive validation, environment variable integration,
 and schema versioning support.
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
-from pathlib import Path
+import os
 
 # Add parent directory to path for core_imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
@@ -19,6 +25,8 @@ from core_imports import (
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 
 import logging
 from dataclasses import dataclass, field

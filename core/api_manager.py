@@ -8,34 +8,42 @@ SessionManager class to provide a clean separation of concerns.
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import standardize_module_imports, auto_register_module, get_logger
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
+# === STANDARD LIBRARY IMPORTS ===
 import logging
 from typing import Optional, Dict, Any, Union, List
 from urllib.parse import urljoin
 
+# === THIRD-PARTY IMPORTS ===
 import requests
 from requests import Response as RequestsResponse
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
+# === LOCAL IMPORTS ===
 from config import config_schema
 
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
-# Type aliases
+# === TYPE ALIASES ===
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
 
-# API Constants
+# === API CONSTANTS ===
 API_PATH_CSRF_TOKEN = "discoveryui-matches/parents/api/csrfToken"
 API_PATH_PROFILE_ID = "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"
 API_PATH_UUID = "api/uhome/secure/rest/header/dna"

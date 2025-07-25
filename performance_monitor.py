@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+#!/usr/bin/env python3
+
 """
 Performance Monitor - Advanced Performance Tracking & Optimization
 
@@ -17,26 +19,35 @@ Features:
 - Optimization recommendations
 """
 
-from core_imports import standardize_module_imports, auto_register_module, get_logger
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-import time
-import threading
-import psutil
+# === STANDARD LIBRARY IMPORTS ===
 import gc
-import sys
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Callable, Any, Tuple
-from datetime import datetime, timedelta
-from functools import wraps
-from pathlib import Path
 import json
 import statistics
-from enum import Enum
+import sys
+import threading
+import time
 from collections import defaultdict, deque
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from functools import wraps
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+# === THIRD-PARTY IMPORTS ===
+import psutil
+
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
 

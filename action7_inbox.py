@@ -12,7 +12,17 @@ Uses batch processing, pagination (cursors), rate limiting, and handles potentia
 session invalidity.
 """
 
-# --- Standard library imports ---
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import enum
 import inspect
 import json
@@ -28,8 +38,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, cast, Union
 
-# --- Third-party imports ---
+# === THIRD-PARTY IMPORTS ===
 import requests
+from selenium.common.exceptions import WebDriverException
 from sqlalchemy import (
     Boolean,
     Column,
@@ -50,20 +61,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, aliased, joinedload
-from selenium.common.exceptions import WebDriverException
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-# --- Local application imports ---
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
-
-auto_register_module(globals(), __name__)
-standardize_module_imports()
-
+# === LOCAL IMPORTS ===
 from ai_interface import classify_message_intent
 from config import config_schema
 from database import (
@@ -75,8 +76,6 @@ from database import (
     db_transn,
     commit_bulk_data,
 )
-
-logger = get_logger(__name__)
 from utils import (
     DynamicRateLimiter,
     SessionManager,
@@ -88,6 +87,9 @@ from utils import (
     time_wait,
     urljoin,
 )
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 
 # --- Helper function for SQLAlchemy Column conversion ---

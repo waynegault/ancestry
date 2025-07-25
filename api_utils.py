@@ -1,17 +1,5 @@
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
-
-auto_register_module(globals(), __name__)
-
-standardize_module_imports()
 #!/usr/bin/env python3
-# api_utils.py
+
 """
 Utility functions for parsing Ancestry API responses and formatting API data.
 
@@ -24,29 +12,34 @@ Provides functions to:
 Note: Relationship path formatting functions previously in test_relationship_path.py are now integrated here.
 """
 
-# --- Standard library imports ---
-import re
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    register_function,
+    get_function,
+    is_function_available,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import json
-import time  # For rate limiting and delays
-import traceback  # For error reporting
-import requests  # Keep for exception types and Response object checking
 import logging
+import re
+import time
+import traceback
 import uuid
-from typing import Optional, Dict, Any, List, Tuple, Callable, cast, TYPE_CHECKING
-from datetime import (
-    datetime,
-    timezone,
-)  # Import datetime for parse_ancestry_person_details and self_check
-from urllib.parse import urljoin, quote, urlencode
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast
+from urllib.parse import quote, urlencode, urljoin
+
+# === THIRD-PARTY IMPORTS ===
+import requests
 
 # --- Check for optional dependencies ---
-try:
-    import pydantic
-
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
-
 try:
     from bs4 import BeautifulSoup
 
@@ -55,17 +48,27 @@ except ImportError:
     BeautifulSoup = None  # type: ignore
     BS4_AVAILABLE = False
 
-# --- Local application imports ---
-# Use centralized logging config setup
-logger = get_logger(__name__)
+try:
+    import pydantic
+
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+
+# === LOCAL IMPORTS ===
+from config import config_schema
+from database import Person
+from gedcom_utils import _parse_date, _clean_display_date
+from logging_config import setup_logging
+from utils import SessionManager, _api_req, format_name
 
 # --- Test framework imports ---
 try:
     from test_framework import (
         TestSuite as TestFrameworkTestSuite,
-        suppress_logging,
-        create_mock_data,
         assert_valid_function,
+        create_mock_data,
+        suppress_logging,
     )
 
     TestSuite = TestFrameworkTestSuite  # type: ignore
@@ -76,11 +79,8 @@ except ImportError:
     create_mock_data = None
     assert_valid_function = None
 
-# --- Local application imports ---
-from utils import SessionManager, _api_req, format_name
-from gedcom_utils import _parse_date, _clean_display_date
-from config import config_schema
-from database import Person  # Required for call_send_message_api
+# === MODULE LOGGER ===
+logger = setup_logging(log_file="api_utils.log", log_level="INFO")
 
 # Note: format_api_relationship_path has been moved to relationship_utils.py
 

@@ -76,6 +76,7 @@ ERROR HANDLING:
 """
 
 # --- Unified import system ---
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
@@ -83,30 +84,33 @@ from core_imports import (
     safe_execute,
 )
 
-# Register this module immediately
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-import os
+# === STANDARD LIBRARY IMPORTS ===
 import base64
+import getpass
 import json
+import os
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+# === THIRD-PARTY IMPORTS ===
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import getpass
 import keyring
 
-# Initialize logger
-logger = get_logger(__name__)
-
-# --- Test framework imports ---
+# === LOCAL IMPORTS ===
 from test_framework import (
     TestSuite,
-    suppress_logging,
-    create_mock_data,
     assert_valid_function,
+    create_mock_data,
+    suppress_logging,
 )
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 
 class SecurityManager:

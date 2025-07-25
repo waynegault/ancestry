@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-# action10.py
 """
 Action 10: Find GEDCOM Matches and Relationship Path
 
@@ -11,26 +10,28 @@ highest scoring individual, and attempts to find a relationship path to that per
 using the cached GEDCOM data.
 """
 
-# --- Standard library imports ---
-import sys
-from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
-from pathlib import Path
-
-# --- Path management and optimization imports ---
-from core_imports import standardize_module_imports, safe_execute, get_logger
-from core_imports import auto_register_module
-
-auto_register_module(globals(), __name__)
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    safe_execute,
+)
 
 standardize_module_imports()
+auto_register_module(globals(), __name__)
 
-# --- Local application imports ---
+# === STANDARD LIBRARY IMPORTS ===
+import sys
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
+
+# === LOCAL IMPORTS ===
 from config import config_manager, config_schema
-
-# Initialize logger with standardized pattern
-logger = get_logger(__name__)
-
 from core.error_handling import MissingConfigError
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 """
 Action 10: Find GEDCOM Matches and Relationship Path

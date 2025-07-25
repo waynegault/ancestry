@@ -1,18 +1,4 @@
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    get_logger,
-)
-from core_imports import auto_register_module
-
-auto_register_module(globals(), __name__)
-
-standardize_module_imports()
 #!/usr/bin/env python3
-
-# database.py
 
 """
 database.py - SQLAlchemy Models, Database Utilities, and Schema Management
@@ -23,7 +9,20 @@ for creating tables and views automatically. Uses Enums for controlled vocabular
 in specific fields (status, direction). Implements a transactional context manager.
 """
 
-# --- Standard library imports ---
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import contextlib
 import enum
 import gc
@@ -33,12 +32,12 @@ import os
 import shutil
 import sys
 import time
-from uuid import uuid4
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from uuid import uuid4
 
-# --- Third-party imports ---
+# === THIRD-PARTY IMPORTS ===
 from sqlalchemy import (
     Boolean,
     Column,
@@ -66,19 +65,18 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
-# --- Local application imports ---
+# === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
 
-# Initialize logger with standardized pattern
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
 
+# === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
 # Note: SessionManager imported locally when needed to avoid circular imports
-
-# --- Test framework imports ---
 from test_framework import (
     TestSuite,
     suppress_logging,

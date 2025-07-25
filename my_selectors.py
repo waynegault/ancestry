@@ -1,16 +1,4 @@
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-)
-
-auto_register_module(globals(), __name__)
-standardize_module_imports()
 #!/usr/bin/env python3
-
-# my_selectors.py
 
 """
 This module defines CSS selectors for interacting with the Ancestry website.
@@ -18,7 +6,24 @@ This module defines CSS selectors for interacting with the Ancestry website.
 Selectors are organized by page/functionality for easier maintenance.
 """
 
-from test_framework import TestSuite, suppress_logging, MagicMock  # Testing framework
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    register_function,
+    get_function,
+    is_function_available,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === THIRD-PARTY IMPORTS ===
+from test_framework import TestSuite, suppress_logging, MagicMock
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 # --- General Page Elements ---
 WAIT_FOR_PAGE_SELECTOR = "body"  # Used to wait for page load.

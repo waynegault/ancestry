@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Refactored Session Manager - Orchestrates all session components.
 
@@ -6,15 +8,56 @@ the specialized managers (DatabaseManager, BrowserManager, APIManager, etc.)
 to provide a clean, maintainable architecture.
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import standardize_module_imports, auto_register_module
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
+import logging
+import time
+from typing import Optional
+
+# === LOCAL IMPORTS ===
+from core.database_manager import DatabaseManager
+from core.browser_manager import BrowserManager
+from core.api_manager import APIManager
+from core.session_validator import SessionValidator
+from config.config_manager import ConfigManager
+
+# === MODULE CONSTANTS ===
+config_manager = ConfigManager()
+config_schema = config_manager.get_config()
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
+
+import sys
+import os
+
+# Add parent directory to path for core_imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
@@ -33,8 +76,6 @@ from config.config_manager import ConfigManager
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
-
-from core_imports import get_logger
 
 logger = get_logger(__name__)
 

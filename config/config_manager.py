@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Enhanced Configuration Manager.
 
@@ -10,26 +12,38 @@ This module provides a comprehensive configuration management system with:
 - Hot reloading capabilities
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import standardize_module_imports, auto_register_module, get_logger
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
+# === STANDARD LIBRARY IMPORTS ===
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
+import copy
 import json
 import logging
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
-import copy
 
+# === THIRD-PARTY IMPORTS ===
 try:
     from dotenv import load_dotenv
 

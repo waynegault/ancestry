@@ -1,18 +1,5 @@
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
-
-auto_register_module(globals(), __name__)
-
-standardize_module_imports()
 #!/usr/bin/env python3
 
-# api_search_utils.py
 """
 Utility functions for searching Ancestry API and retrieving person and family information.
 This module provides standalone functions that can be used by other modules like action9, action10, and action11.
@@ -37,11 +24,25 @@ Run `python api_search_utils.py` to execute the comprehensive test suite.
 All tests pass with 100% success rate.
 """
 
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
+import os  # Used for path operations
 import re
 from typing import Dict, List, Any, Optional, Tuple, Union
-import os  # Used for path operations
 
-# --- Test framework imports ---
+# === THIRD-PARTY IMPORTS ===
 from test_framework import (
     TestSuite,
     suppress_logging,
@@ -49,29 +50,22 @@ from test_framework import (
     assert_valid_function,
 )
 
-
-# Import from local modules
-logger = get_logger(__name__)
-from config import config_schema
-from utils import SessionManager
-
-
-# Note: api_search_utils provides search utility functions.
-# API functions are imported from api_utils where available.
-
-# Import API functions that are actually used in this module
+# === LOCAL IMPORTS ===
 from api_utils import (
     call_suggest_api,
     call_facts_user_api,
     call_getladder_api,
     call_treesui_list_api,
 )
-
-API_UTILS_AVAILABLE = True
-
-# Import relationship path formatting function
+from config import config_schema
 from relationship_utils import format_api_relationship_path
+from utils import SessionManager
 
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
+
+# === MODULE CONSTANTS ===
+API_UTILS_AVAILABLE = True
 RELATIONSHIP_UTILS_AVAILABLE = True
 
 

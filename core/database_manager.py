@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Database Manager - Handles all database-related operations.
 
@@ -5,45 +7,54 @@ This module extracts database management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
+# === CORE INFRASTRUCTURE ===
 import sys
 import os
 
-# Add parent directory to path for imports
+# Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import standardize_module_imports, auto_register_module
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    ensure_imports,
+)
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
+# === STANDARD LIBRARY IMPORTS ===
+
+# === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import logging
+import os
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Optional, Generator
-import contextlib
-import sys
-import os
 
+# === THIRD-PARTY IMPORTS ===
 from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+# === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
 
+# === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-from core_imports import auto_register_module, get_logger
-
+# === MODULE LOGGER ===
 logger = get_logger(__name__)
-auto_register_module(globals(), __name__)
 
+# === IMPORT VERIFICATION ===
 # Use centralized path management
-from core_imports import ensure_imports
-
 ensure_imports()
 
 try:

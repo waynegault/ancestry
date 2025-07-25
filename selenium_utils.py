@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
+
 """
 Selenium/WebDriver utility functions specifically for browser automation
 and element interaction, separated from general or API-specific utilities.
 """
 
-# Unified import system - consolidated from multiple sources
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
@@ -14,22 +16,18 @@ from core_imports import (
     get_logger,
 )
 
-# Initialize unified system
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-# Standard library imports
-import time
-import os
+# === STANDARD LIBRARY IMPORTS ===
 import json
+import os
 import sys
+import time
 from typing import Optional, Dict
 
-# Third-party imports
-from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.wait import WebDriverWait
+# === THIRD-PARTY IMPORTS ===
+import undetected_chromedriver as uc
 from selenium.common.exceptions import (
     NoSuchElementException,
     TimeoutException,
@@ -37,7 +35,13 @@ from selenium.common.exceptions import (
     InvalidSessionIdException,
     NoSuchWindowException,
 )
-import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 # Local imports
 from config import config_schema

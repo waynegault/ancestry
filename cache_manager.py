@@ -1,5 +1,29 @@
-# Import the unified imports to use across the project
-from core_imports import *
+#!/usr/bin/env python3
+
+"""
+cache_manager.py - Cache Management Functionality
+
+Provides cache operations with comprehensive testing and cache management utilities.
+"""
+
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+    is_function_available,
+    get_function,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === LOCAL IMPORTS ===
+from test_framework import TestSuite
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
+
 
 # ==============================================
 # MODULE: cache_manager.py

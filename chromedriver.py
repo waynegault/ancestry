@@ -1,20 +1,4 @@
-# Safe import for function_registry with fallback
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    auto_register_module,
-    get_logger,
-)
-
-auto_register_module(globals(), __name__)
-
-# Initialize function_registry as None for backward compatibility
-function_registry = None
-
 #!/usr/bin/env python3
-
-# chromedriver.py
 
 """
 chromedriver.py - ChromeDriver management and configuration utility
@@ -24,24 +8,34 @@ Features:
 - Chrome preferences management
 - Connection pool configuration for Selenium
 - Retry logic for driver initialization
-- Window management integration
-- Enhanced logging and error handling
-- Headless mode support via .env configuration
-- User-Agent spoofing for enhanced privacy
-- Robust process cleanup for Chrome and ChromeDriver
-- Chrome profile management via config
-- Custom retry and timeout settings for Selenium connections
-
-https://googlechromelabs.github.io/chrome-for-testing/#stable
 """
 
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    register_function,
+    get_function,
+    is_function_available,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
+import logging
 import os
+import platform
+import random
+import subprocess
 import sys
 import time
-import subprocess
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+# === THIRD-PARTY IMPORTS ===
 import psutil
-import logging
-import random
 import json
 import undetected_chromedriver as uc
 from selenium import webdriver  # Standard Selenium WebDriver
@@ -72,7 +66,7 @@ from test_framework import (
 )
 
 # Use centralized logger from logging_config
-logger = get_logger(__name__)
+from logging_config import logger
 
 try:
     from core_imports import auto_register_module

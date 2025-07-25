@@ -7,24 +7,28 @@ This is the single entry point for all credential management tasks.
 Usage: python credentials.py
 """
 
-# Unified import system
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     register_function,
     get_function,
     is_function_available,
+    standardize_module_imports,
     auto_register_module,
+    get_logger,
 )
 
-# Auto-register module
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-import sys
-import os
+# === STANDARD LIBRARY IMPORTS ===
 import json
+import os
+import sys
 import time
 from pathlib import Path
 from typing import Dict, Optional
 
+# === LOCAL IMPORTS ===
 # Import SecurityManager
 try:
     from security_manager import SecurityManager
@@ -38,7 +42,6 @@ except ImportError as e:
     print("\nRequired security packages:")
     print("  - cryptography: For secure encryption/decryption of credentials")
     print("  - keyring: For secure storage of master encryption keys")
-
     print("\n📋 Installation Instructions:")
     print("1. Install required packages using pip:")
     print("   pip install cryptography keyring")
@@ -49,7 +52,6 @@ except ImportError as e:
     print("• Linux/macOS: You may need an alternative keyring backend:")
     print("  pip install keyrings.alt")
     print("  (Some Linux distros may require: sudo apt-get install python3-dbus)")
-
     print("\n🔍 Troubleshooting:")
     print(
         "• If you have permission issues: Use 'pip install --user cryptography keyring'"
@@ -58,13 +60,16 @@ except ImportError as e:
     print("  - Windows: Ensure Visual C++ Build Tools are installed")
     print("  - Linux: Install 'python3-dev' and 'libffi-dev' packages")
     print("• For more information, see SECURITY_STREAMLINED.md")
-
     print("\n💡 Quick Fix:")
     print(
         "Run the credential manager again and select 'y' when prompted to install dependencies"
     )
     print("Or type: python credentials.py")
+
     SECURITY_AVAILABLE = False
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 
 class UnifiedCredentialManager:

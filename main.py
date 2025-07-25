@@ -1,8 +1,27 @@
 #!/usr/bin/env python3
 
-# main.py
+"""
+main.py - Ancestry Research Automation Main Entry Point
 
-# --- Standard library imports ---
+Provides the main application entry point with menu-driven interface for
+all automation workflows including DNA match gathering, inbox processing,
+messaging, and genealogical research tools.
+"""
+
+# === CORE INFRASTRUCTURE ===
+from core_imports import (
+    register_function,
+    get_function,
+    is_function_available,
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
+
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 import gc
 import inspect
 import json
@@ -15,12 +34,12 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urljoin
 
-# --- Third-party imports ---
+# === THIRD-PARTY IMPORTS ===
 import psutil
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
-# --- Local application imports ---
+# === LOCAL IMPORTS ===
 # Action modules
 from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
@@ -49,15 +68,8 @@ from utils import (
     nav_to_page,
 )
 
-# Path management and optimization imports
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 # Initialize logger with standardized pattern
 logger = get_logger(__name__)

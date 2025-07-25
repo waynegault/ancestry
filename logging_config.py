@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# logging_config.py
-
 """
 logging_config.py - Centralized Logging Configuration
 
@@ -15,14 +13,20 @@ Features:
 - Resolves log directory based on `config.py`.
 """
 
-# Unified import system
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
     register_function,
     get_function,
     is_function_available,
-    auto_register_module,
+    get_logger,
 )
 
+standardize_module_imports()
+auto_register_module(globals(), __name__)
+
+# === STANDARD LIBRARY IMPORTS ===
 # Auto-register module
 auto_register_module(globals(), __name__)
 

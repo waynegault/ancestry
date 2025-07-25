@@ -1,37 +1,36 @@
+#!/usr/bin/env python3
+
+"""
+Relationship utilities for processing genealogical relationship data.
+"""
+
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
     register_function,
     get_function,
     is_function_available,
-    auto_register_module,
-    standardize_module_imports,
     get_logger,
 )
 
-# Register this module immediately
+standardize_module_imports()
 auto_register_module(globals(), __name__)
 
-# Standardize imports
-standardize_module_imports()
-
+# === STANDARD LIBRARY IMPORTS ===
+import html
+import json
 import logging
 import re
-import json
 import time
-import html
-from typing import (
-    Optional,
-    Dict,
-    Any,
-    Union,
-    List,
-    Tuple,
-    Set,
-    Callable,
-)  # Added Callable for test suite
-from datetime import datetime
+import traceback
 from collections import deque
-import traceback  # Added for test suite
 from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
 
 # Use standardized logger pattern
 logger = get_logger(__name__)

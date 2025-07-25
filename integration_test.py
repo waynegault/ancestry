@@ -4,7 +4,9 @@
 from performance_monitor import profile, performance_monitor
 from core.error_handling import AppError, ErrorSeverity, ErrorCategory
 from config.config_schema import DatabaseConfig, EnvironmentType
-from core_imports import get_import_stats
+from core_imports import (
+    get_import_stats,
+)
 import time
 
 

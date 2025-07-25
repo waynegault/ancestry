@@ -3,45 +3,42 @@
 
 #!/usr/bin/env python3
 
-#####################################################
-# Imports (keep the same imports as original)
-#####################################################
+"""
+Action 9: Process Productive DNA Matches
 
-# Standard library imports
-import sys
-from typing import Any, Dict, List, Optional, Union, Literal, Tuple
-from datetime import datetime, timezone
-import json
-from dataclasses import dataclass
-from pydantic import BaseModel, Field, ValidationError, field_validator
+Streamlined version of the productive match processing workflow.
+"""
 
-# Third-party imports
-from sqlalchemy.orm import Session as DbSession, joinedload
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import and_, func, or_
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
-
-# --- Local application imports ---
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
-
+# === CORE INFRASTRUCTURE ===
 from core_imports import (
     register_function,
     get_function,
     is_function_available,
     standardize_module_imports,
+    auto_register_module,
     get_logger,
 )
 
 standardize_module_imports()
+auto_register_module(globals(), __name__)
 
+# === STANDARD LIBRARY IMPORTS ===
+import json
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Union, Literal, Tuple
+
+# === THIRD-PARTY IMPORTS ===
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session as DbSession, joinedload
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
+
+# === LOCAL IMPORTS ===
 from config import config_schema
-
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -50,13 +47,8 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
-
-logger = get_logger(__name__)
-import ms_graph_utils
-from utils import SessionManager, format_name
 from ai_interface import extract_genealogical_entities
-
-# --- Test framework imports ---
+import ms_graph_utils
 from test_framework import (
     TestSuite,
     suppress_logging,
@@ -65,9 +57,12 @@ from test_framework import (
     MagicMock,
     patch,
 )
+from utils import SessionManager, format_name
 
-# Import the original helper functions and models
-# Constants from original action9
+# === MODULE LOGGER ===
+logger = get_logger(__name__)
+
+# === CONSTANTS ===
 PRODUCTIVE_SENTIMENT = "PRODUCTIVE"  # Sentiment string set by Action 7
 OTHER_SENTIMENT = (
     "OTHER"  # Sentiment string for messages that don't fit other categories
