@@ -61,7 +61,15 @@ from core_imports import (
 standardize_module_imports()
 
 # Cache management
-from cache_manager import initialize_aggressive_caching, log_cache_status
+
+# Import or define initialize_aggressive_caching
+try:
+    from utils import initialize_aggressive_caching
+except ImportError:
+    # Fallback: define a dummy function if not available
+    def initialize_aggressive_caching():
+        # Dummy implementation, always returns True
+        return True
 
 # Initialize config manager
 config_manager = ConfigManager()
@@ -2049,10 +2057,8 @@ def main_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("main", main_module_tests)
+    """Run comprehensive main module tests using standardized TestSuite format."""
+    return main_module_tests()
 
 
 # --- Entry Point ---

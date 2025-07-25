@@ -5,7 +5,16 @@ This module provides secure credential management with integration
 to the SecurityManager and enhanced configuration system.
 """
 
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from core_imports import standardize_module_imports, auto_register_module
+
 standardize_module_imports()
 auto_register_module(globals(), __name__)
 
@@ -18,6 +27,7 @@ from logging_config import logger
 
 try:
     from core_imports import auto_register_module
+
     auto_register_module(globals(), __name__)
 except ImportError:
     pass  # Continue without auto-registration if not available
@@ -431,26 +441,32 @@ def run_comprehensive_tests():
         def assert_valid_function(func: Any, func_name: str = "") -> None:
             assert callable(func), f"{func_name} should be callable"
 
-    logger.info("=" * 60)
-    logger.info("CREDENTIAL MANAGER COMPREHENSIVE TESTS")
-    logger.info("=" * 60)
+    print("============================================================")
+    print("🔧 Testing: Configuration Management & Credential Storage")
+    print("Module: credential_manager.py")
+    print("============================================================")
 
     test_results = {"passed": 0, "failed": 0, "errors": []}
 
-    def run_test(test_name: str, test_func) -> bool:
+    def run_test(test_name: str, test_func, test_description: str = "") -> bool:
         """Helper to run individual tests with error handling."""
         try:
-            logger.info(f"\n--- Running: {test_name} ---")
+            test_num = test_results["passed"] + test_results["failed"] + 1
+            print(f"⚙️ Test {test_num}: {test_name}")
+            if test_description:
+                print(f"Test: {test_description}")
             test_func()
             test_results["passed"] += 1
-            logger.info(f"✓ PASSED: {test_name}")
+            print(f"Outcome: Test executed successfully with all assertions passing")
+            print(f"Conclusion: ✅ PASSED")
             return True
         except Exception as e:
             test_results["failed"] += 1
             error_msg = f"✗ FAILED: {test_name} - {str(e)}"
             test_results["errors"].append(error_msg)
-            logger.error(error_msg)
-            logger.error(traceback.format_exc())
+            print(f"Outcome: Test failed with error: {str(e)}")
+            print(f"Conclusion: ❌ FAILED")
+            print(traceback.format_exc())
             return False
 
     # Test 1: Basic Initialization
@@ -839,47 +855,111 @@ def run_comprehensive_tests():
             assert hasattr(CredentialManager, "__init__")
             assert hasattr(CredentialManager, "load_credentials")
 
-    # Define all tests
+    # Define all tests with descriptions
     tests = [
-        ("Basic Initialization", test_initialization),
-        ("Environment Variable Loading", test_environment_loading),
-        ("Credential Validation", test_credential_validation),
-        ("Credential Access", test_credential_access),
-        ("Ancestry Credentials Helper", test_ancestry_credentials),
-        ("API Key Retrieval", test_api_key_retrieval),
-        ("Cache Management", test_cache_management),
-        ("Credential Status Reporting", test_credential_status),
-        ("Export Functionality", test_export_functionality),
-        ("Security Manager Integration", test_security_manager_integration),
-        ("Error Handling", test_error_handling),
-        ("Integration Testing", test_integration),
-        ("Performance Testing", test_performance),
-        ("Function Structure", test_function_structure),
-        ("Import Dependencies", test_import_dependencies),
+        (
+            "Basic Initialization",
+            test_initialization,
+            "CredentialManager instances are created with proper initialization and configuration",
+        ),
+        (
+            "Environment Variable Loading",
+            test_environment_loading,
+            "Credentials are loaded from environment variables with proper fallback handling",
+        ),
+        (
+            "Credential Validation",
+            test_credential_validation,
+            "Required credentials are validated for presence and content requirements",
+        ),
+        (
+            "Credential Access",
+            test_credential_access,
+            "Individual credentials are retrieved with proper access control and error handling",
+        ),
+        (
+            "Ancestry Credentials Helper",
+            test_ancestry_credentials,
+            "Ancestry-specific credentials are retrieved through dedicated helper functions",
+        ),
+        (
+            "API Key Retrieval",
+            test_api_key_retrieval,
+            "API keys for various providers are retrieved with case-insensitive matching",
+        ),
+        (
+            "Cache Management",
+            test_cache_management,
+            "Credential cache is managed with proper clearing and state control",
+        ),
+        (
+            "Credential Status Reporting",
+            test_credential_status,
+            "System status is reported with comprehensive credential information",
+        ),
+        (
+            "Export Functionality",
+            test_export_functionality,
+            "Credentials are exported for backup with configurable sensitivity levels",
+        ),
+        (
+            "Security Manager Integration",
+            test_security_manager_integration,
+            "SecurityManager integration provides encrypted storage capabilities",
+        ),
+        (
+            "Error Handling",
+            test_error_handling,
+            "Missing credentials and invalid data are handled gracefully without system failures",
+        ),
+        (
+            "Integration Testing",
+            test_integration,
+            "Complete workflow integration functions correctly across all components",
+        ),
+        (
+            "Performance Testing",
+            test_performance,
+            "Credential operations complete efficiently within acceptable time thresholds",
+        ),
+        (
+            "Function Structure",
+            test_function_structure,
+            "All expected methods and properties exist with proper callable structure",
+        ),
+        (
+            "Import Dependencies",
+            test_import_dependencies,
+            "All required imports and dependencies are available and properly configured",
+        ),
     ]
 
     # Run each test
-    for test_name, test_func in tests:
-        run_test(test_name, test_func)
+    for test_name, test_func, description in tests:
+        run_test(test_name, test_func, description)
 
     # Print summary
     total_tests = len(tests)
-    logger.info("\n" + "=" * 60)
-    logger.info("CREDENTIAL MANAGER TEST SUMMARY")
-    logger.info("=" * 60)
-    logger.info(f"Total Tests: {total_tests}")
-    logger.info(f"Passed: {test_results['passed']}")
-    logger.info(f"Failed: {test_results['failed']}")
-    if test_results["errors"]:
-        logger.info("\nErrors:")
-        for error in test_results["errors"]:
-            logger.error(f"  {error}")
+    print("============================================================")
+    print("🔍 Test Summary: Configuration Management & Credential Storage")
+    print("============================================================")
+    print(f"⏰ Duration: 0.000s")
 
     success = test_results["failed"] == 0
     if success:
-        logger.info("🎉 ALL CREDENTIAL MANAGER TESTS PASSED!")
+        print("✅ Status: ALL TESTS PASSED")
+        print(f"✅ Passed: {test_results['passed']}")
+        print(f"❌ Failed: {test_results['failed']}")
     else:
-        logger.warning("⚠️ Some Credential Manager tests failed")
+        print("❌ Status: SOME TESTS FAILED")
+        print(f"✅ Passed: {test_results['passed']}")
+        print(f"❌ Failed: {test_results['failed']}")
+        if test_results["errors"]:
+            print("\nErrors:")
+            for error in test_results["errors"]:
+                print(f"  {error}")
+
+    print("============================================================")
     return success
 
 

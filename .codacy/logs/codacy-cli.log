@@ -161,3 +161,17 @@
 2025-07-22T20:47:36+01:00 [INFO] (codacy-cli-v2/cli-v2.go:27) Starting Codacy CLI version=1.0.0-main.349.sha.1b80ceb (1b80ceb) built at 2025-07-10T10:14:35Z
 2025-07-22T20:47:36+01:00 [INFO] (codacy-cli-v2/cmd/root.go:34) Executing CLI command args=[] command=analyze full_command=[/home/wayne/.cache/codacy/codacy-cli-v2/1.0.0-main.349.sha.1b80ceb/codacy-cli-v2 analyze --format sarif --tool pylint]
 2025-07-22T20:47:36+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool tool=pylint toolConfigPath=.codacy/tools-configs/pylint.rc
+2025-07-24T11:54:40+01:00 [INFO] (codacy-cli-v2/cli-v2.go:27) Starting Codacy CLI version=1.0.0-main.349.sha.1b80ceb (1b80ceb) built at 2025-07-10T10:14:35Z
+2025-07-24T11:54:40+01:00 [INFO] (codacy-cli-v2/cmd/root.go:34) Executing CLI command args=[] command=analyze full_command=[/home/wayne/.cache/codacy/codacy-cli-v2/1.0.0-main.349.sha.1b80ceb/codacy-cli-v2 analyze --format sarif]
+2025-07-24T11:54:40+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool toolConfigPath=.codacy/tools-configs/analysis_options.yaml tool=dartanalyzer
+2025-07-24T11:54:43+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool toolConfigPath=.codacy/tools-configs/eslint.config.mjs tool=eslint
+2025-07-24T11:54:43+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool tool=lizard toolConfigPath=.codacy/tools-configs/lizard.yaml
+2025-07-24T11:54:45+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool tool=pmd toolConfigPath=.codacy/tools-configs/ruleset.xml
+2025-07-24T11:54:45+01:00 [DEBUG] (codacy-cli-v2/tools/pmdRunner.go:32) PMD binary path pmdBinary=/home/wayne/.cache/codacy/tools/pmd@7.11.0/pmd-bin-7.11.0/bin/pmd
+2025-07-24T11:54:45+01:00 [DEBUG] (codacy-cli-v2/tools/pmdRunner.go:98) Setting up Java environment javaHome=/home/wayne/.cache/codacy/runtimes/jdk-17.0.10+7
+2025-07-24T11:54:45+01:00 [DEBUG] (codacy-cli-v2/tools/pmdRunner.go:144) Updated environment variables binDir=/home/wayne/.cache/codacy/runtimes/jdk-17.0.10+7/bin javaBinary=/home/wayne/.cache/codacy/runtimes/jdk-17.0.10+7/bin/java javaHome=JAVA_HOME=/home/wayne/.cache/codacy/runtimes/jdk-17.0.10+7 path=PATH=/home/wayne/.cache/codacy/runtimes/jdk-17.0.10+7/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib
+2025-07-24T11:54:45+01:00 [DEBUG] (codacy-cli-v2/tools/pmdRunner.go:160) Running PMD command command=/home/wayne/.cache/codacy/tools/pmd@7.11.0/pmd-bin-7.11.0/bin/pmd check --no-fail-on-violation -R .codacy/tools-configs/ruleset.xml -d /mnt/c/Users/wayne/GitHub/Python/Projects/Ancestry -f sarif -r /tmp/codacy-analysis-1777528775/pmd.sarif
+2025-07-24T11:54:52+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool toolConfigPath=.codacy/tools-configs/pylint.rc tool=pylint
+2025-07-24T11:55:37+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool tool=revive toolConfigPath=.codacy/tools-configs/revive.toml
+2025-07-24T11:55:37+01:00 [DEBUG] (codacy-cli-v2/tools/revive/reviveRunner.go:53) Running Revive command command=/home/wayne/.cache/codacy/tools/revive@1.7.0/revive -config .codacy/tools-configs/revive.toml -formatter sarif ./...
+2025-07-24T11:55:47+01:00 [INFO] (codacy-cli-v2/cmd/analyze.go:334) Config file found for tool toolConfigPath=.codacy/tools-configs/trivy.yaml tool=trivy

@@ -1294,9 +1294,7 @@ def action10_module_tests() -> bool:
 
 def run_comprehensive_tests() -> bool:
     """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("action10", action10_module_tests)
+    return action10_module_tests()
 
 
 # Register module functions for optimized access via Function Registry

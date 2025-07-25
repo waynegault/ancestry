@@ -228,10 +228,8 @@ def core_package_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("core", core_package_module_tests)
+    """Run comprehensive core package tests using standardized TestSuite format."""
+    return core_package_module_tests()
 
 
 if __name__ == "__main__":

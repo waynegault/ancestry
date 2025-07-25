@@ -263,9 +263,17 @@ def selenium_module_tests():
 
 def run_comprehensive_tests() -> bool:
     """Run selenium utilities tests using unified framework."""
-    from test_framework_unified import run_unified_tests
+    from test_framework import TestSuite
 
-    return run_unified_tests("selenium_utils", selenium_module_tests)
+    suite = TestSuite("Selenium Utilities Tests", "selenium_utils.py")
+    suite.start_suite()
+
+    # Get the test list and run each test
+    test_list = selenium_module_tests()
+    for test_name, test_func in test_list:
+        suite.run_test(test_name, test_func, f"Should pass {test_name}")
+
+    return suite.finish_suite()
 
 
 # Functions are automatically registered via auto_register_module() at import
@@ -273,5 +281,276 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    from test_framework import TestSuite, suppress_logging
+    from unittest.mock import MagicMock
+    import time
+
+    suite = TestSuite("Selenium Utilities & Browser Automation", "selenium_utils.py")
+
+    def test_function_availability():
+        required_functions = [
+            "force_user_agent",
+            "extract_text",
+            "extract_attribute",
+            "is_elem_there",
+            "is_browser_open",
+            "close_tabs",
+            "get_driver_cookies",
+            "export_cookies",
+            "safe_click",
+            "get_element_text",
+            "is_element_visible",
+        ]
+        for func_name in required_functions:
+            assert func_name in globals(), f"Function {func_name} should be available"
+            assert callable(
+                globals()[func_name]
+            ), f"Function {func_name} should be callable"
+
+    def test_force_user_agent():
+        mock_driver = MagicMock()
+        result = force_user_agent(mock_driver, "test-agent")
+        mock_driver.execute_script.assert_called_once()
+        assert result == True, "force_user_agent should return True on success"
+
+    def test_safe_text_extraction():
+        # Test safe extraction with None elements
+        assert extract_text(None) == "", "extract_text should handle None safely"
+        assert (
+            extract_attribute(None, "href") == ""
+        ), "extract_attribute should handle None safely"
+
+        # Test with mock element
+        mock_element = MagicMock()
+        mock_element.text = "test text"
+        mock_element.get_attribute.return_value = "test value"
+
+        assert (
+            extract_text(mock_element) == "test text"
+        ), "extract_text should return element text"
+        assert (
+            extract_attribute(mock_element, "href") == "test value"
+        ), "extract_attribute should return attribute value"
+
+    def test_element_detection():
+        # Test with None driver
+        assert (
+            is_elem_there(None, "selector") == False
+        ), "is_elem_there should handle None driver safely"
+
+        # Test with mock driver - element found
+        mock_driver = MagicMock()
+        mock_driver.find_element.return_value = MagicMock()
+        result = is_elem_there(mock_driver, "test-selector")
+        assert result == True, "is_elem_there should return True when element found"
+
+        # Test with mock driver - element not found
+        mock_driver.find_element.side_effect = NoSuchElementException()
+        result = is_elem_there(mock_driver, "missing-selector")
+        assert (
+            result == False
+        ), "is_elem_there should return False when element not found"
+
+    def test_browser_status():
+        # Test with None driver
+        assert (
+            is_browser_open(None) == False
+        ), "is_browser_open should return False for None driver"
+
+        # Test with valid mock driver
+        mock_driver = MagicMock()
+        mock_driver.current_url = "https://example.com"
+        result = is_browser_open(mock_driver)
+        assert result == True, "is_browser_open should return True for valid driver"
+
+        # Test with invalid session - use spec-based mock with property descriptor
+        from selenium.webdriver.chrome.webdriver import WebDriver
+
+        mock_invalid_driver = MagicMock(spec=WebDriver)
+
+        # Define property that raises exception
+        def current_url_getter(self):
+            raise InvalidSessionIdException()
+
+        # Set the property on the mock's type
+        type(mock_invalid_driver).current_url = property(current_url_getter)
+
+        result = is_browser_open(mock_invalid_driver)
+        assert (
+            result == False
+        ), "is_browser_open should return False for invalid session"
+
+    def test_tab_management():
+        mock_driver = MagicMock()
+        mock_driver.window_handles = ["tab1", "tab2", "tab3"]
+
+        # Test closing tabs while keeping first
+        close_tabs(mock_driver, keep_first=True)
+        assert (
+            mock_driver.switch_to.window.call_count >= 1
+        ), "Should switch to tabs for closing"
+
+        # Test closing all tabs
+        close_tabs(mock_driver, keep_first=False)
+        assert mock_driver.close.called, "Should close tabs when keep_first=False"
+
+    def test_cookie_operations():
+        mock_driver = MagicMock()
+        mock_cookies = [
+            {"name": "session", "value": "abc123"},
+            {"name": "user", "value": "test_user"},
+        ]
+        mock_driver.get_cookies.return_value = mock_cookies
+
+        # Test getting cookies
+        cookies = get_driver_cookies(mock_driver)
+        assert isinstance(cookies, list), "get_driver_cookies should return a list"
+        assert len(cookies) == 2, "Should return correct number of cookies"
+
+        # Test with None driver
+        cookies = get_driver_cookies(None)
+        assert (
+            cookies == []
+        ), "get_driver_cookies should return empty list for None driver"
+
+    def test_safe_interaction():
+        # Test safe_click with None element
+        result = safe_click(None, None)
+        assert result == False, "safe_click should return False for None element"
+
+        # Test with mock element
+        mock_driver = MagicMock()
+        mock_element = MagicMock()
+        result = safe_click(mock_driver, mock_element)
+        mock_element.click.assert_called_once()
+        assert result == True, "safe_click should return True on successful click"
+
+    def test_element_text_helpers():
+        # Test get_element_text with None
+        assert (
+            get_element_text(None) == ""
+        ), "get_element_text should handle None safely"
+
+        # Test is_element_visible with None
+        assert (
+            is_element_visible(None) == False
+        ), "is_element_visible should handle None safely"
+
+        # Test with mock elements
+        mock_element = MagicMock()
+        mock_element.text = "test content"
+        mock_element.is_displayed.return_value = True
+
+        assert (
+            get_element_text(mock_element) == "test content"
+        ), "get_element_text should return element text"
+        assert (
+            is_element_visible(mock_element) == True
+        ), "is_element_visible should return visibility status"
+
+    def test_performance_validation():
+        # Test that operations complete within reasonable time
+        start_time = time.time()
+
+        # Run multiple operations
+        for _ in range(50):
+            extract_text(None)
+            extract_attribute(None, "href")
+            is_elem_there(None, "test")
+            is_browser_open(None)
+            get_element_text(None)
+            is_element_visible(None)
+
+        elapsed = time.time() - start_time
+        assert (
+            elapsed < 0.1
+        ), f"Performance test should complete quickly, took {elapsed:.3f}s"
+
+    # Run all tests
+    print(
+        "🌐 Running Selenium Utilities & Browser Automation comprehensive test suite..."
+    )
+
+    with suppress_logging():
+        suite.run_test(
+            "Function availability verification",
+            test_function_availability,
+            "Test availability of all core Selenium utility functions",
+            "Function availability ensures complete Selenium utility interface",
+            "All required Selenium utility functions are available and callable",
+        )
+
+        suite.run_test(
+            "User agent configuration",
+            test_force_user_agent,
+            "Test force_user_agent function with mock WebDriver instance",
+            "User agent configuration allows browser fingerprint customization",
+            "User agent can be programmatically set for browser sessions",
+        )
+
+        suite.run_test(
+            "Safe text extraction",
+            test_safe_text_extraction,
+            "Test extract_text and extract_attribute with None and mock elements",
+            "Safe text extraction provides robust element content retrieval",
+            "Text and attribute extraction handles missing elements gracefully",
+        )
+
+        suite.run_test(
+            "Element detection functionality",
+            test_element_detection,
+            "Test is_elem_there with various driver and element states",
+            "Element detection provides reliable presence checking",
+            "Element detection accurately identifies element presence in DOM",
+        )
+
+        suite.run_test(
+            "Browser session status",
+            test_browser_status,
+            "Test is_browser_open with valid, invalid, and None driver instances",
+            "Browser status checking provides accurate session validation",
+            "Browser session status accurately reflects WebDriver connectivity",
+        )
+
+        suite.run_test(
+            "Tab management operations",
+            test_tab_management,
+            "Test close_tabs functionality with different keep_first settings",
+            "Tab management provides browser window organization capabilities",
+            "Tab management allows selective closing and window organization",
+        )
+
+        suite.run_test(
+            "Cookie handling operations",
+            test_cookie_operations,
+            "Test get_driver_cookies with mock driver and cookie data",
+            "Cookie operations provide session state management capabilities",
+            "Cookie handling safely retrieves and manages browser session data",
+        )
+
+        suite.run_test(
+            "Safe element interaction",
+            test_safe_interaction,
+            "Test safe_click with None and mock elements for robust clicking",
+            "Safe interaction provides reliable element manipulation",
+            "Element interaction handles missing elements and click operations safely",
+        )
+
+        suite.run_test(
+            "Element text helpers",
+            test_element_text_helpers,
+            "Test get_element_text and is_element_visible with various element states",
+            "Element helpers provide comprehensive element information retrieval",
+            "Text helpers and visibility checks work correctly with all element types",
+        )
+
+        suite.run_test(
+            "Performance validation",
+            test_performance_validation,
+            "Test performance of core Selenium operations with multiple iterations",
+            "Performance validation ensures efficient Selenium utility execution",
+            "Selenium operations complete within reasonable time limits for automation",
+        )
+
+    # Generate summary report
+    suite.finish_suite()

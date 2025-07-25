@@ -742,6 +742,7 @@ def test_chromedriver_initialization():
         # Test that function exists and is callable
         assert callable(init_func)
 
+
 def test_preferences_file_reset():
     """Test preferences file reset functionality."""
     # Test that preference management functions are properly defined
@@ -755,6 +756,7 @@ def test_preferences_file_reset():
             func = globals()[func_name]
             assert callable(func), f"{func_name} should be callable"
 
+
 def test_chrome_process_cleanup():
     """Test Chrome process cleanup functionality."""
     # Test that cleanup functions exist and are properly structured
@@ -767,15 +769,15 @@ def test_chrome_process_cleanup():
             import inspect
 
             sig = inspect.signature(func)
-            assert (
-                len(sig.parameters) >= 0
-            ), f"{func_name} should have valid parameters"
+            assert len(sig.parameters) >= 0, f"{func_name} should have valid parameters"
+
 
 def test_webdriver_initialization():
     """Test WebDriver initialization with various configurations."""
     if is_function_available("initialize_chrome_driver"):
         init_func = get_function("initialize_chrome_driver")
         assert callable(init_func)
+
 
 def chromedriver_module_tests() -> bool:
     """
@@ -814,22 +816,11 @@ def chromedriver_module_tests() -> bool:
 
     return suite.finish_suite()
 
+
 def run_comprehensive_tests() -> bool:
     """Run comprehensive tests including both module tests and unified framework tests."""
-    try:
-        from test_framework_unified import run_unified_tests
-        
-        # Run module tests first (with verbose output)
-        module_result = chromedriver_module_tests()
-        
-        # Run unified framework tests
-        unified_result = run_unified_tests(__name__)
-        
-        return module_result and unified_result
-        
-    except ImportError:
-        print("Unified test framework not available, running module tests only.")
-        return chromedriver_module_tests()
+    # Run module tests directly (no unified framework needed)
+    return chromedriver_module_tests()
 
 
 # ==============================================

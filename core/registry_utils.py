@@ -13,6 +13,14 @@ Key improvements:
 5. Eliminates 200+ lines of duplicate code per module
 """
 
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 import inspect
 import logging
 from typing import Dict, Any, List, Optional, Callable, Set

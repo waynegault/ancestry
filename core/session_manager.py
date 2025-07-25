@@ -6,6 +6,14 @@ the specialized managers (DatabaseManager, BrowserManager, APIManager, etc.)
 to provide a clean, maintainable architecture.
 """
 
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from core_imports import standardize_module_imports, auto_register_module
 
 standardize_module_imports()

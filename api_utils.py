@@ -3000,10 +3000,8 @@ def api_utils_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("api_utils", api_utils_module_tests)
+    """Run comprehensive API utilities tests using standardized TestSuite format."""
+    return api_utils_module_tests()
 
 
 # --- Main Execution Block ---

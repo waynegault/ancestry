@@ -471,12 +471,11 @@ def create_todo_task(
 
 # --- Individual Test Functions ---
 
+
 def test_initialization():
-    """Test that authentication and configuration setup works."""  
+    """Test that authentication and configuration setup works."""
     # Test that required configuration is accessible
-    assert hasattr(
-        config.database, "data_dir"
-    ), "Config should have database.data_dir"  
+    assert hasattr(config.database, "data_dir"), "Config should have database.data_dir"
     # Test token cache directory creation capability
     cache_dir = config.database.data_dir or Path(".")
     assert (
@@ -489,6 +488,7 @@ def test_initialization():
     # Test test data with 12345 identifier
     test_client_id = "test_client_12345"
     assert "12345" in test_client_id, "Test data should contain 12345 identifier"
+
 
 def test_core_functionality():
     """Test core Graph API functions."""
@@ -517,11 +517,14 @@ def test_core_functionality():
         # Test device flow with mock response
         result = acquire_token_device_flow()
         # Result may be None due to mocked environment, which is acceptable
-        assert result is None or isinstance(result, str), "Device flow should return None or string"
+        assert result is None or isinstance(
+            result, str
+        ), "Device flow should return None or string"
+
 
 def test_edge_cases():
     """Test edge cases and error scenarios."""
-    
+
     # Test invalid client ID handling
     invalid_client_id = ""
     assert len(invalid_client_id) == 0, "Empty client ID should be detected"
@@ -548,16 +551,17 @@ def test_edge_cases():
         except PermissionError:
             pass  # Expected behavior
 
+
 def test_integration():
     """Test integration with Microsoft Graph services."""
-    
+
     # Test token validation structure
     test_token = {
         "access_token": "test_token_12345",
         "token_type": "Bearer",
-        "expires_in": 3600
+        "expires_in": 3600,
     }
-    
+
     # Validate token structure
     assert "access_token" in test_token, "Token should have access_token"
     assert "token_type" in test_token, "Token should have token_type"
@@ -569,60 +573,64 @@ def test_integration():
     assert "graph.microsoft.com" in me_endpoint, "Endpoint should use Graph domain"
     assert "/v1.0/me" in me_endpoint, "Endpoint should target user profile"
 
+
 def test_performance():
     """Test performance characteristics."""
-    
+
     import time
-    
+
     # Test function execution time
     start_time = time.time()
-    
+
     # Simulate Graph API call structure
     mock_response = {
         "value": [{"id": f"item_{i}", "name": f"Test Item {i}"} for i in range(100)]
     }
-    
+
     # Test data processing
     processed_count = 0
     for item in mock_response["value"]:
         if "id" in item and "name" in item:
             processed_count += 1
-    
+
     end_time = time.time()
     duration = end_time - start_time
-    
+
     # Performance assertions
     assert processed_count == 100, "Should process all 100 items"
     assert duration < 1.0, "Processing should complete within 1 second"
 
+
 def test_error_handling():
     """Test error handling and recovery mechanisms."""
-    
+
     # Test HTTP error simulation
     from unittest.mock import Mock
-    
+
     # Test 401 Unauthorized handling
     mock_response_401 = Mock()
     mock_response_401.status_code = 401
     mock_response_401.json.return_value = {"error": "Unauthorized"}
-    
+
     # Test error response structure
     assert mock_response_401.status_code == 401, "Should simulate 401 error"
-    
+
     # Test 403 Forbidden handling
     mock_response_403 = Mock()
     mock_response_403.status_code = 403
     mock_response_403.json.return_value = {"error": "Forbidden"}
-    
+
     assert mock_response_403.status_code == 403, "Should simulate 403 error"
-    
+
     # Test network timeout simulation
     with patch("requests.get", side_effect=TimeoutError("Network timeout")):
         try:
             import requests
+
             requests.get("https://graph.microsoft.com/v1.0/me", timeout=1)
         except TimeoutError:
             pass  # Expected behavior for timeout handling
+
 
 def ms_graph_utils_module_tests() -> bool:
     """
@@ -684,22 +692,10 @@ def ms_graph_utils_module_tests() -> bool:
 
     return suite.finish_suite()
 
+
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests including both module tests and unified framework tests."""
-    try:
-        from test_framework_unified import run_unified_tests
-        
-        # Run module tests first (with verbose output)
-        module_result = ms_graph_utils_module_tests()
-        
-        # Run unified framework tests
-        unified_result = run_unified_tests(__name__)
-        
-        return module_result and unified_result
-        
-    except ImportError:
-        print("Unified test framework not available, running module tests only.")
-        return ms_graph_utils_module_tests()
+    """Run comprehensive MS Graph utilities tests using standardized TestSuite format."""
+    return ms_graph_utils_module_tests()
 
 
 # End of ms_graph_utils.py

@@ -1072,9 +1072,7 @@ def ai_interface_tests():
 
 def run_comprehensive_tests() -> bool:
     """Run tests using unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests(__name__, ai_interface_tests)
+    return ai_interface_tests()
 
 
 def quick_health_check(session_manager: SessionManager) -> Dict[str, Any]:

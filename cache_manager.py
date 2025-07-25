@@ -2,16 +2,17 @@
 from core_imports import *
 
 # ==============================================
-# MODULE: cache_manager.py  
+# MODULE: cache_manager.py
 # PURPOSE: Cache management functionality with comprehensive tests
 # USAGE: Provides cache operations with detailed testing
 # ==============================================
+
 
 # (Removed duplicate definition of run_comprehensive_tests to avoid obscuring the main implementation.)
 def cache_manager_module_tests() -> bool:
     """
     Run all cache_manager tests and return True if successful.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
@@ -28,6 +29,7 @@ def cache_manager_module_tests() -> bool:
         return True
 
         # CORE FUNCTIONALITY TESTS
+
     def test_cache_operations():
         # Test basic cache operations
         if is_function_available("CacheManager"):
@@ -51,6 +53,7 @@ def cache_manager_module_tests() -> bool:
         return True
 
         # EDGE CASE TESTS
+
     def test_eviction_policies():
         # Test cache eviction when full
         if is_function_available("CacheManager"):
@@ -74,7 +77,8 @@ def cache_manager_module_tests() -> bool:
                 # Test performance tracking
         return True
 
-        # PERFORMANCE TESTS  
+        # PERFORMANCE TESTS
+
     def test_cache_performance():
         # Test cache performance under load
         pass
@@ -90,7 +94,8 @@ def cache_manager_module_tests() -> bool:
         pass
         return True
 
-        # INTEGRATION TESTS  
+        # INTEGRATION TESTS
+
     def test_database_integration():
         # Test cache integration with database
         pass
@@ -106,7 +111,8 @@ def cache_manager_module_tests() -> bool:
         pass
         return True
 
-        # ERROR HANDLING TESTS  
+        # ERROR HANDLING TESTS
+
     def test_error_handling():
         # Test cache error scenarios
         pass
@@ -122,7 +128,8 @@ def cache_manager_module_tests() -> bool:
         pass
         return True
 
-        # SECURITY TESTS  
+        # SECURITY TESTS
+
     def test_data_encryption():
         # Test encrypted cache storage
         pass
@@ -138,7 +145,8 @@ def cache_manager_module_tests() -> bool:
         pass
         return True
 
-        # CONFIGURATION TESTS  
+        # CONFIGURATION TESTS
+
     def test_configuration_loading():
         # Test cache configuration
         pass
@@ -157,39 +165,93 @@ def cache_manager_module_tests() -> bool:
     # Create test suite and run tests
     suite = TestSuite("Cache Manager", "cache_manager.py")
     suite.start_suite()
-    
+
     # Run tests using the suite's run_test method
-    suite.run_test("Cache Manager Initialization", test_cache_manager_initialization, "Should initialize cache manager with required methods")
-    suite.run_test("Basic Cache Operations", test_cache_operations, "Should support set/get operations")
-    suite.run_test("Cache Statistics", test_cache_statistics, "Should track cache metrics")
-    suite.run_test("Cache Invalidation", test_cache_invalidation, "Should support cache invalidation")
-    suite.run_test("Cache Eviction Policies", test_eviction_policies, "Should enforce size limits and evict items")
-    suite.run_test("Performance Monitoring", test_performance_monitoring, "Should monitor cache performance")
-    suite.run_test("Cache Performance", test_cache_performance, "Should perform well under load")
-    suite.run_test("Concurrent Access", test_concurrent_access, "Should handle concurrent operations")
-    suite.run_test("Memory Management", test_memory_management, "Should manage memory efficiently")
-    suite.run_test("Database Integration", test_database_integration, "Should integrate with database")
-    suite.run_test("API Integration", test_api_integration, "Should integrate with API calls")
-    suite.run_test("Session Management", test_session_management, "Should handle sessions properly")
-    suite.run_test("Error Handling", test_error_handling, "Should handle errors gracefully")
-    suite.run_test("Recovery Mechanisms", test_recovery_mechanisms, "Should recover from failures")
-    suite.run_test("Data Corruption Handling", test_data_corruption_handling, "Should handle corrupted data")
+    suite.run_test(
+        "Cache Manager Initialization",
+        test_cache_manager_initialization,
+        "Should initialize cache manager with required methods",
+    )
+    suite.run_test(
+        "Basic Cache Operations",
+        test_cache_operations,
+        "Should support set/get operations",
+    )
+    suite.run_test(
+        "Cache Statistics", test_cache_statistics, "Should track cache metrics"
+    )
+    suite.run_test(
+        "Cache Invalidation",
+        test_cache_invalidation,
+        "Should support cache invalidation",
+    )
+    suite.run_test(
+        "Cache Eviction Policies",
+        test_eviction_policies,
+        "Should enforce size limits and evict items",
+    )
+    suite.run_test(
+        "Performance Monitoring",
+        test_performance_monitoring,
+        "Should monitor cache performance",
+    )
+    suite.run_test(
+        "Cache Performance", test_cache_performance, "Should perform well under load"
+    )
+    suite.run_test(
+        "Concurrent Access",
+        test_concurrent_access,
+        "Should handle concurrent operations",
+    )
+    suite.run_test(
+        "Memory Management", test_memory_management, "Should manage memory efficiently"
+    )
+    suite.run_test(
+        "Database Integration",
+        test_database_integration,
+        "Should integrate with database",
+    )
+    suite.run_test(
+        "API Integration", test_api_integration, "Should integrate with API calls"
+    )
+    suite.run_test(
+        "Session Management", test_session_management, "Should handle sessions properly"
+    )
+    suite.run_test(
+        "Error Handling", test_error_handling, "Should handle errors gracefully"
+    )
+    suite.run_test(
+        "Recovery Mechanisms", test_recovery_mechanisms, "Should recover from failures"
+    )
+    suite.run_test(
+        "Data Corruption Handling",
+        test_data_corruption_handling,
+        "Should handle corrupted data",
+    )
     suite.run_test("Data Encryption", test_data_encryption, "Should encrypt cache data")
-    suite.run_test("Access Control", test_access_control, "Should control access properly")
+    suite.run_test(
+        "Access Control", test_access_control, "Should control access properly"
+    )
     suite.run_test("Audit Logging", test_audit_logging, "Should log cache operations")
-    suite.run_test("Configuration Loading", test_configuration_loading, "Should load configuration")
-    suite.run_test("Environment Adaptation", test_environment_adaptation, "Should adapt to environments")
-    suite.run_test("Feature Toggles", test_feature_toggles, "Should support feature flags")
-    
+    suite.run_test(
+        "Configuration Loading", test_configuration_loading, "Should load configuration"
+    )
+    suite.run_test(
+        "Environment Adaptation",
+        test_environment_adaptation,
+        "Should adapt to environments",
+    )
+    suite.run_test(
+        "Feature Toggles", test_feature_toggles, "Should support feature flags"
+    )
+
     # Complete the test suite
     return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("cache_manager", cache_manager_module_tests)
+    """Run comprehensive cache manager tests using standardized TestSuite format."""
+    return cache_manager_module_tests()
 
 
 # ==============================================
@@ -198,4 +260,5 @@ def run_comprehensive_tests() -> bool:
 if __name__ == "__main__":
     success = run_comprehensive_tests()
     import sys
+
     sys.exit(0 if success else 1)

@@ -316,121 +316,155 @@ def logging_config_module_tests() -> bool:
     )
 
     with suppress_logging():
-        suite = TestSuite("Logging Configuration Tests", __name__)
-        suite.start_suite()  # --- INITIALIZATION TESTS ---
+        suite = TestSuite("Logging Configuration & Management", "logging_config.py")
+
+    # Run all tests
+    print("📋 Running Logging Configuration & Management comprehensive test suite...")
+
+    with suppress_logging():
         suite.run_test(
-            "Logger Creation",
+            "Logger creation verification",
             test_logger_creation,
-            "Logger created with correct name, level, and propagation settings",
+            "Test logger creation with correct name, level, and propagation settings",
+            "Logger creation ensures proper initialization and configuration",
+            "Logger is created with appropriate name, level, and propagation settings",
         )
+
         suite.run_test(
-            "Default Configuration",
+            "Default configuration validation",
             test_default_configuration,
-            "LOG_FORMAT, DATE_FORMAT, and LOG_DIRECTORY are properly defined",
+            "Test LOG_FORMAT, DATE_FORMAT, and LOG_DIRECTORY are properly defined",
+            "Default configuration provides consistent logging setup across application",
+            "LOG_FORMAT, DATE_FORMAT, and LOG_DIRECTORY constants are properly configured",
         )
+
         suite.run_test(
-            "Directory Creation",
+            "Directory creation functionality",
             test_directory_creation,
-            "Log directory is created when needed",
+            "Test log directory creation when needed for file logging",
+            "Directory creation ensures log files can be written to designated location",
+            "Log directory is automatically created when it doesn't exist",
         )
 
-        # --- CORE FUNCTIONALITY TESTS ---
         suite.run_test(
-            "Setup Logging",
+            "Setup logging configuration",
             test_setup_logging,
-            "Logger is properly configured and returned",
+            "Test logger setup and configuration with handlers and formatters",
+            "Setup logging provides complete logging system initialization",
+            "Logger is properly configured with handlers, formatters, and returned ready for use",
         )
+
         suite.run_test(
-            "Log Level Setting",
+            "Log level setting functionality",
             test_log_level_setting,
-            "Handlers have correct log levels set",
+            "Test handlers have correct log levels set according to configuration",
+            "Log level setting ensures appropriate message filtering by severity",
+            "Handlers are configured with correct log levels for console and file output",
         )
+
         suite.run_test(
-            "Handler Configuration",
+            "Handler configuration management",
             test_handler_configuration,
-            "Handlers are properly configured and attached",
+            "Test handlers are properly configured and attached to logger",
+            "Handler configuration provides structured logging output management",
+            "Console and file handlers are properly configured and attached to logger",
         )
+
         suite.run_test(
-            "Formatter Application",
+            "Formatter application verification",
             test_formatter_application,
-            "AlignedMessageFormatter formats messages correctly",
+            "Test AlignedMessageFormatter formats log messages correctly",
+            "Formatter application ensures consistent and readable log message format",
+            "AlignedMessageFormatter produces properly aligned and formatted log messages",
         )
 
-        # --- EDGE CASES ---
         suite.run_test(
-            "Invalid Log Level",
+            "Invalid log level handling",
             test_invalid_log_level,
-            "Invalid log levels default to INFO gracefully",
+            "Test invalid log levels default to INFO gracefully without errors",
+            "Invalid log level handling provides robust error recovery",
+            "Invalid log levels are handled gracefully with fallback to INFO level",
         )
+
         suite.run_test(
-            "Missing Directory",
+            "Missing directory handling",
             test_missing_directory,
-            "Missing directories are created automatically",
+            "Test missing directories are created automatically for log files",
+            "Missing directory handling ensures logging continues even with missing paths",
+            "Missing log directories are automatically created when needed",
         )
+
         suite.run_test(
-            "Reinitialize Logging",
+            "Logging reinitialization management",
             test_reinitialize_logging,
-            "Reinitialization updates existing handlers without duplicating",
+            "Test reinitialization updates existing handlers without creating duplicates",
+            "Reinitialization management prevents handler duplication and configuration conflicts",
+            "Logger reinitialization updates configuration without duplicating handlers",
         )
 
-        # --- INTEGRATION TESTS ---
         suite.run_test(
-            "Multiple Handlers",
+            "Multiple handlers integration",
             test_multiple_handlers,
-            "Multiple handlers work correctly together",
+            "Test multiple handlers work correctly together for comprehensive logging",
+            "Multiple handlers integration provides flexible logging output options",
+            "Console and file handlers work together correctly without conflicts",
         )
+
         suite.run_test(
-            "Filter Integration",
+            "Filter integration functionality",
             test_filter_integration,
-            "NameFilter correctly filters log records",
+            "Test NameFilter correctly filters log records based on logger names",
+            "Filter integration provides selective logging control for different components",
+            "NameFilter successfully filters log records based on configured criteria",
         )
+
         suite.run_test(
-            "External Library Logging",
+            "External library logging control",
             test_external_library_logging,
-            "External libraries have appropriate log levels set",
+            "Test external libraries have appropriate log levels set to reduce noise",
+            "External library logging control manages third-party logging verbosity",
+            "External libraries (Selenium, urllib3) have appropriate log levels configured",
         )
 
-        # --- PERFORMANCE TESTS ---
         suite.run_test(
-            "Logging Speed",
+            "Logging performance validation",
             test_logging_speed,
-            "100 log messages complete in under 1 second",
+            "Test 100 log messages complete within reasonable time limits",
+            "Logging performance validation ensures efficient message processing",
+            "Logging operations complete quickly without performance bottlenecks",
         )
+
         suite.run_test(
-            "Handler Performance",
+            "Handler performance verification",
             test_handler_performance,
-            "Handlers maintain reasonable performance",
-        )  # --- ERROR HANDLING TESTS ---
+            "Test handlers maintain reasonable performance under load",
+            "Handler performance verification ensures scalable logging operations",
+            "Console and file handlers maintain good performance characteristics",
+        )
+
         suite.run_test(
-            "Invalid File Path",
+            "Invalid file path handling",
             test_invalid_file_path,
-            "Invalid paths are handled gracefully",
+            "Test invalid file paths are handled gracefully without crashes",
+            "Invalid file path handling provides robust error recovery for logging setup",
+            "Invalid log file paths are handled gracefully with appropriate fallback",
         )
 
         suite.run_test(
-            "Permission Errors",
+            "Permission error handling",
             test_permission_errors,
-            "Permission errors are handled without crashing",
+            "Test permission errors are handled without crashing the application",
+            "Permission error handling ensures logging continues despite file access issues",
+            "Permission errors for log files are handled gracefully without application crashes",
         )
 
-        return suite.finish_suite()
+    # Generate summary report
+    return suite.finish_suite()
+
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests including both module tests and unified framework tests."""
-    try:
-        from test_framework_unified import run_unified_tests
-        
-        # Run module tests first (with verbose output)
-        module_result = logging_config_module_tests()
-        
-        # Run unified framework tests
-        unified_result = run_unified_tests(__name__)
-        
-        return module_result and unified_result
-        
-    except ImportError:
-        print("Unified test framework not available, running module tests only.")
-        return logging_config_module_tests()
+    """Run comprehensive logging configuration tests using standardized TestSuite format."""
+    return logging_config_module_tests()
 
 
 # Test functions for comprehensive testing

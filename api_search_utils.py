@@ -1218,10 +1218,8 @@ def api_search_utils_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    from test_framework_unified import run_unified_tests
-
-    return run_unified_tests("api_search_utils", api_search_utils_module_tests)
+    """Run comprehensive API search utilities tests using standardized TestSuite format."""
+    return api_search_utils_module_tests()
 
 
 # ==============================================
