@@ -49,10 +49,12 @@ Thumbs.db
 /__init__.py
 /backup_before_migration
 /.pytest_cache
-ai_prompts.bak.20250724_155856
+ai_prompts.bak.*
 .codacy/logs/codacy-cli.log
 Logs/api_utils.log
 Logs/test.log
 Logs/api_utils.log
 .codacy/logs/codacy-cli.log
 Logs/api_utils.log
+IMPLEMENTATION_PLAN.md
+/ai_prompts.bak.*

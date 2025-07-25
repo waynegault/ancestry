@@ -35,14 +35,10 @@ from utils import nav_to_page
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-from logging_config import logger
+from core_imports import auto_register_module, get_logger
 
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
+logger = get_logger(__name__)
+auto_register_module(globals(), __name__)
 
 # Type alias
 DriverType = Optional[WebDriver]

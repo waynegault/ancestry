@@ -4,6 +4,7 @@ from core_imports import (
     is_function_available,
     standardize_module_imports,
     auto_register_module,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
@@ -50,7 +51,7 @@ from test_framework import (
 
 
 # Import from local modules
-from logging_config import logger
+logger = get_logger(__name__)
 from config import config_schema
 from utils import SessionManager
 

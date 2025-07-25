@@ -13,6 +13,7 @@ from core_imports import (
     get_function,
     is_function_available,
     auto_register_module,
+    get_logger,
 )
 
 # Auto-register module
@@ -25,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
-from logging_config import logger
+logger = get_logger(__name__)
 
 # --- Test framework imports ---
 from test_framework import (

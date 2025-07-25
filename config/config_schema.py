@@ -6,19 +6,19 @@ with comprehensive validation, environment variable integration,
 and schema versioning support.
 """
 
-try:
-    import sys
-    from pathlib import Path
+import sys
+from pathlib import Path
 
-    # Add parent directory to path for core_imports
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from core_imports import standardize_module_imports, auto_register_module
+# Add parent directory to path for core_imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core_imports import (
+    standardize_module_imports,
+    auto_register_module,
+    get_logger,
+)
 
-    standardize_module_imports()
-    auto_register_module(globals(), __name__)
-except ImportError:
-    # Fallback if core_imports is not available
-    pass
+standardize_module_imports()
+auto_register_module(globals(), __name__)
 
 import logging
 from dataclasses import dataclass, field
@@ -29,11 +29,7 @@ import re
 from enum import Enum
 from datetime import datetime
 
-try:
-    from logging_config import logger
-except ImportError:
-    # Fallback logging setup
-    logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ConfigValidationError(Exception):

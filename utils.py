@@ -119,7 +119,10 @@ try:
     # Assume these are essential or handled elsewhere if missing
     from chromedriver import init_webdvr
     from config import config_manager, config_schema
-    from logging_config import logger
+    from core_imports import get_logger
+
+    # Initialize logger with standardized pattern
+    logger = get_logger(__name__)
 
     from database import Base  # Import Base for table creation
     from my_selectors import *

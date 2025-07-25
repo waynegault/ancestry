@@ -28,6 +28,7 @@ from core_imports import (
     register_function,
     get_function,
     is_function_available,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
@@ -120,8 +121,8 @@ TAG_SURN = "SURN"
 
 
 # --- Logging Setup ---
-# Use centralized logger from logging_config
-from logging_config import logger
+# Use standardized logger pattern
+logger = get_logger(__name__)
 
 
 # ==============================================

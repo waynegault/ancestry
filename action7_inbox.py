@@ -58,6 +58,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from core_imports import (
     standardize_module_imports,
     auto_register_module,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
@@ -74,7 +75,8 @@ from database import (
     db_transn,
     commit_bulk_data,
 )
-from logging_config import logger
+
+logger = get_logger(__name__)
 from utils import (
     DynamicRateLimiter,
     SessionManager,

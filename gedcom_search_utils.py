@@ -52,7 +52,7 @@ from test_framework import (
 )
 
 # --- Local module imports ---
-from logging_config import logger
+logger = get_logger(__name__)
 from config.config_manager import ConfigManager
 from gedcom_utils import GedcomData, calculate_match_score, _normalize_id
 

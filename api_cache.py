@@ -3,6 +3,7 @@ from core_imports import (
     get_function,
     is_function_available,
     standardize_module_imports,
+    get_logger,
 )
 from core_imports import auto_register_module
 
@@ -51,7 +52,9 @@ from cache import (
     invalidate_related_caches,
 )
 from config import config_schema
-from logging_config import logger
+
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
 
 # --- Cache Configuration ---
 API_CACHE_EXPIRE = 3600  # 1 hour for API responses

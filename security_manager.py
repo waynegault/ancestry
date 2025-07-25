@@ -100,9 +100,6 @@ import keyring
 # Initialize logger
 logger = get_logger(__name__)
 
-# Legacy logger import for compatibility
-from logging_config import logger as legacy_logger
-
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,

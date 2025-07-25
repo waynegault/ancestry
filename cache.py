@@ -17,6 +17,7 @@ from core_imports import (
     get_function,
     is_function_available,
     auto_register_module,
+    get_logger,
 )
 
 # Auto-register module
@@ -43,7 +44,9 @@ from diskcache.core import ENOVAL, UNKNOWN
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
-from logging_config import logger  # Use configured logger
+
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
 
 # --- Test framework imports ---
 from test_framework import (

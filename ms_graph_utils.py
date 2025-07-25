@@ -17,6 +17,7 @@ from core_imports import (
     get_function,
     is_function_available,
     auto_register_module,
+    get_logger,
 )
 
 # Auto-register module
@@ -40,7 +41,7 @@ from config.config_manager import ConfigManager
 
 config_manager = ConfigManager()
 config = config_manager.get_config()
-from logging_config import logger  # Use configured application logger
+logger = get_logger(__name__)  # Use configured application logger
 
 # --- Test framework imports ---
 from test_framework import TestSuite, suppress_logging, MagicMock, patch

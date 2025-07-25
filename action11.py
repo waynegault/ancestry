@@ -4,6 +4,7 @@ from core_imports import (
     is_function_available,
     standardize_module_imports,
     auto_register_module,
+    get_logger,
 )
 
 auto_register_module(globals(), __name__)
@@ -44,10 +45,10 @@ from datetime import datetime
 
 # --- Local application imports ---
 # Use centralized logging config setup
-from logging_config import setup_logging, logger
+from logging_config import setup_logging
 
-# Initialize the logger with a specific log file for this module
-logger = setup_logging(log_file="action11.log", log_level="INFO")
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
 
 # --- Test framework - No longer using external test framework ---
 # All testing is now self-contained within this script

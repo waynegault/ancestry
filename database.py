@@ -3,6 +3,7 @@ from core_imports import (
     get_function,
     is_function_available,
     standardize_module_imports,
+    get_logger,
 )
 from core_imports import auto_register_module
 
@@ -67,7 +68,9 @@ from sqlalchemy.orm import (
 
 # --- Local application imports ---
 from config.config_manager import ConfigManager
-from logging_config import logger
+
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
 
 # Initialize config
 config_manager = ConfigManager()

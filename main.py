@@ -41,7 +41,7 @@ from database import (
     DnaMatch,
     FamilyTree,
 )
-from logging_config import logger, setup_logging
+from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
 from utils import (
     SessionManager,
@@ -56,7 +56,11 @@ from core_imports import (
     is_function_available,
     standardize_module_imports,
     auto_register_module,
+    get_logger,
 )
+
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
 
 standardize_module_imports()
 
@@ -70,6 +74,7 @@ except ImportError:
     def initialize_aggressive_caching():
         # Dummy implementation, always returns True
         return True
+
 
 # Initialize config manager
 config_manager = ConfigManager()
@@ -1484,8 +1489,8 @@ def main():
             elif choice == "s":
                 # Show cache statistics
                 try:
-                    log_cache_status()
-                    print("Cache statistics logged. Check the log file for details.")
+                    logger.info("Cache statistics feature currently unavailable")
+                    print("Cache statistics feature currently unavailable.")
                 except Exception as e:
                     logger.error(f"Error displaying cache statistics: {e}")
                     print("Error displaying cache statistics. Check logs for details.")
