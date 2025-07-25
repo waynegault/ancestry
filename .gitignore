@@ -55,3 +55,4 @@ Logs/api_utils.log
 Logs/test.log
 Logs/api_utils.log
 .codacy/logs/codacy-cli.log
+Logs/api_utils.log
