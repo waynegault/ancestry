@@ -14,21 +14,9 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    register_function,
-    get_function,
-    is_function_available,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
-
-# === STANDARD LIBRARY IMPORTS ===
-# Auto-register module
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
 import copy

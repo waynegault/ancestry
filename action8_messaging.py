@@ -14,14 +14,10 @@ after sending/simulating messages.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -46,9 +42,6 @@ from sqlalchemy import (
 # === LOCAL IMPORTS ===
 # Import PersonStatusEnum early for use in safe_column_value
 from database import PersonStatusEnum
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 
 # --- Helper function for SQLAlchemy Column conversion ---

@@ -13,14 +13,10 @@ within helpers), error handling, and concurrent API fetches using ThreadPoolExec
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -80,10 +76,6 @@ from test_framework import (
     create_mock_data,
     assert_valid_function,
 )
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
-
 
 # --- Constants ---
 MATCHES_PER_PAGE: int = 20  # Default matches per page (adjust based on API response)

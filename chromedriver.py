@@ -11,17 +11,15 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
+from standard_imports import (
+    setup_module,
     register_function,
     get_function,
     is_function_available,
-    get_logger,
+    auto_register_module,
 )
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging

@@ -9,17 +9,14 @@ test_ai_responses_menu.py script.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
+from standard_imports import (
+    setup_module,
     register_function,
     get_function,
     is_function_available,
-    get_logger,
 )
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -27,12 +24,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 from typing import Dict, Any, Optional, List, Tuple
-
-from logging_config import logger
 
 # --- Test framework imports ---
 from test_framework import (

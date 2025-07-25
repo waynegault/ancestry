@@ -6,17 +6,9 @@ Provides consistent test output formatting, colors, and icons across all scripts
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    register_function,
-    get_function,
-    is_function_available,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
@@ -30,9 +22,6 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 from unittest.mock import MagicMock, patch
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 
 # Export commonly used testing utilities

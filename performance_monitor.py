@@ -20,14 +20,9 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import gc
@@ -46,9 +41,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 
 class AlertLevel(Enum):

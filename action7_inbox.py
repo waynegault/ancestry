@@ -13,14 +13,10 @@ session invalidity.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import enum
@@ -87,9 +83,6 @@ from utils import (
     time_wait,
     urljoin,
 )
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 
 # --- Helper function for SQLAlchemy Column conversion ---

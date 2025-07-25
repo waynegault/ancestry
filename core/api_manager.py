@@ -8,19 +8,14 @@ SessionManager class to provide a clean separation of concerns.
 import sys
 import os
 
-# Add parent directory to path for core_imports
+# Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
@@ -36,9 +31,6 @@ from urllib3.util.retry import Retry
 
 # === LOCAL IMPORTS ===
 from config import config_schema
-
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
 
 # === TYPE ALIASES ===
 ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
