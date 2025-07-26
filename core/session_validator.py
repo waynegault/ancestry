@@ -20,6 +20,21 @@ from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    APIRateLimitError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple

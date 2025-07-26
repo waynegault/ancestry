@@ -98,3 +98,90 @@
 22:50:28 INF [ms_graph save_cac 121 ] Executing save_cache_on_exit via atexit...
 22:50:28 INF [ms_graph save_cac 138 ] MSAL cache unchanged since last load/save. No save needed.
 22:50:33 INF [api_util test_log 2722] Test log message
+22:59:16 INF [action8_ <module> 171 ] Action 8 Initializing: APP_MODE is development
+22:59:16 INF [action8_ <module> 182 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+22:59:16 INF [action8_ load_mes 249 ] Message templates loaded and validated successfully (9 total templates).
+22:59:19 INF [ms_graph save_cac 121 ] Executing save_cache_on_exit via atexit...
+22:59:19 INF [ms_graph save_cac 138 ] MSAL cache unchanged since last load/save. No save needed.
+22:59:25 INF [api_util test_log 2722] Test log message
+23:47:47 WAR [error_ha wrapper  963 ] demo_fallback_function failed, using graceful degradation: Simulated failure
+01:24:21 INF [action8_ <module> 186 ] Action 8 Initializing: APP_MODE is development
+01:24:21 INF [action8_ <module> 197 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+01:24:21 INF [action8_ load_mes 264 ] Message templates loaded and validated successfully (9 total templates).
+01:24:21 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:21 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:21 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:21 INF [ms_graph <module> 66  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+01:24:21 INF [ms_graph <module> 67  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+01:24:21 INF [ms_graph <module> 85  ] MSAL token cache path set to: Data\ms_graph_cache.bin
+01:24:21 INF [ms_graph <module> 106 ] MSAL cache file not found. Starting with empty cache.
+01:24:21 INF [ms_graph <module> 160 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+01:24:21 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:21 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:21 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+01:24:22 INF [config_m load_con 181 ] Configuration loaded successfully for environment: development
+01:24:22 INF [ms_graph save_cac 121 ] Executing save_cache_on_exit via atexit...
+01:24:22 INF [ms_graph save_cac 138 ] MSAL cache unchanged since last load/save. No save needed.
+10:42:31 INF [action8_ <module> 186 ] Action 8 Initializing: APP_MODE is development
+10:42:31 INF [action8_ <module> 197 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [ms_graph <module> 66  ] MS Graph Config: Client ID = ab07d95c-bb7f-4121-b365-0784fa7831e8
+10:42:32 INF [ms_graph <module> 67  ] MS Graph Config: Authority URL = https://login.microsoftonline.com/fa6506d2-27a3-47fb-8051-03562f4b7f49
+10:42:32 INF [ms_graph <module> 85  ] MSAL token cache path set to: Data\ms_graph_cache.bin
+10:42:32 INF [ms_graph <module> 106 ] MSAL cache file not found. Starting with empty cache.
+10:42:32 INF [ms_graph <module> 160 ] Initialized shared MSAL PublicClientApplication with persistent cache.
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [performa __init__ 133 ] Performance monitor initialized
+10:42:32 INF [performa start_mo 154 ] Background performance monitoring started
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_s __post_i 203 ] Database configuration validated successfully for development environment
+10:42:32 INF [config_m load_con 182 ] Configuration loaded successfully for environment: development
+10:42:32 INF [ms_graph save_cac 121 ] Executing save_cache_on_exit via atexit...
+10:42:32 INF [ms_graph save_cac 138 ] MSAL cache unchanged since last load/save. No save needed.
+11:41:05 INF [action8_ <module> 186 ] Action 8 Initializing: APP_MODE is development
+11:41:05 INF [action8_ <module> 197 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+11:41:08 INF [ms_graph save_cac 136 ] Executing save_cache_on_exit via atexit...
+11:41:08 INF [ms_graph save_cac 153 ] MSAL cache unchanged since last load/save. No save needed.
+11:41:13 INF [api_util test_log 2784] Test log message
+11:46:24 INF [action8_ <module> 186 ] Action 8 Initializing: APP_MODE is development
+11:46:24 INF [action8_ <module> 197 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+11:46:24 INF [action8_ load_mes 264 ] Message templates loaded and validated successfully (9 total templates).
+11:46:27 INF [ms_graph save_cac 136 ] Executing save_cache_on_exit via atexit...
+11:46:27 INF [ms_graph save_cac 153 ] MSAL cache unchanged since last load/save. No save needed.
+11:46:33 INF [api_util test_log 2784] Test log message

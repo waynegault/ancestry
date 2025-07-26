@@ -2,20 +2,18 @@
 
 """
 Error handling utilities for the Ancestry project.
+Enhanced for Phase 4.1: Error Handling & Resilience Enhancement
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    register_function,
+from standard_imports import (
+    setup_module,
+    safe_execute,
     get_function,
     is_function_available,
-    get_logger,
 )
 
-standardize_module_imports()
-auto_register_module(globals(), __name__)
+logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import functools
@@ -34,10 +32,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 import requests
 
 # === LOCAL IMPORTS ===
-from logging_config import logger
+# Module logger is set up by setup_module() above
 
-# === MODULE LOGGER ===
-module_logger = get_logger(__name__)
+# --- Test framework imports ---
+from test_framework import (
+    TestSuite,
+    suppress_logging,
+    create_mock_data,
+    assert_valid_function,
+)
 
 # --- Test framework imports ---
 from test_framework import (
@@ -485,6 +488,194 @@ class CircuitBreakerOpenError(Exception):
     pass
 
 
+# === PHASE 4.1: ENHANCED EXCEPTION HIERARCHY ===
+
+
+class AncestryException(Exception):
+    """
+    Base exception class for all Ancestry project errors.
+    Provides structured error context and recovery guidance.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        error_code: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        severity: str = "ERROR",
+        recovery_hint: Optional[str] = None,
+        cause: Optional[Exception] = None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+        self.context = context or {}
+        self.severity = severity
+        self.recovery_hint = recovery_hint
+        self.cause = cause
+        self.timestamp = datetime.now()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert exception to dictionary for logging/debugging."""
+        return {
+            "type": self.__class__.__name__,
+            "message": self.message,
+            "error_code": self.error_code,
+            "context": self.context,
+            "severity": self.severity,
+            "recovery_hint": self.recovery_hint,
+            "timestamp": self.timestamp.isoformat(),
+            "cause": str(self.cause) if self.cause else None,
+        }
+
+
+class RetryableError(AncestryException):
+    """Error that can be retried with appropriate strategy."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(message, severity="WARNING", **kwargs)
+
+
+class FatalError(AncestryException):
+    """Error that cannot be recovered from automatically."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(message, severity="FATAL", **kwargs)
+
+
+class ConfigurationError(AncestryException):
+    """Configuration-related errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            severity="ERROR",
+            recovery_hint="Check configuration settings and retry",
+            **kwargs,
+        )
+
+
+class DatabaseConnectionError(RetryableError):
+    """Database connection issues that can be retried."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="DB_CONNECTION_FAILED",
+            recovery_hint="Check database connectivity and retry",
+            **kwargs,
+        )
+
+
+class BrowserSessionError(RetryableError):
+    """Browser session issues that can be recovered."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="BROWSER_SESSION_FAILED",
+            recovery_hint="Restart browser session and retry",
+            **kwargs,
+        )
+
+
+class APIRateLimitError(RetryableError):
+    """API rate limiting that requires backoff."""
+
+    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs):
+        self.retry_after = retry_after
+        super().__init__(
+            message,
+            error_code="API_RATE_LIMIT",
+            recovery_hint=(
+                f"Retry after {retry_after} seconds"
+                if retry_after
+                else "Retry with exponential backoff"
+            ),
+            context={"retry_after": retry_after},
+            **kwargs,
+        )
+
+
+class AuthenticationExpiredError(RetryableError):
+    """Authentication token expiration."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="AUTH_EXPIRED",
+            recovery_hint="Refresh authentication token and retry",
+            **kwargs,
+        )
+
+
+class NetworkTimeoutError(RetryableError):
+    """Network timeout that can be retried."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="NETWORK_TIMEOUT",
+            recovery_hint="Check network connectivity and retry",
+            **kwargs,
+        )
+
+
+class DataValidationError(FatalError):
+    """Data validation errors that require manual intervention."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="DATA_VALIDATION_FAILED",
+            recovery_hint="Fix data validation issues manually",
+            **kwargs,
+        )
+
+
+# === ENHANCED ERROR CONTEXT CAPTURE ===
+
+
+@dataclass
+class ErrorContext:
+    """Enhanced error context for debugging and recovery."""
+
+    operation: str
+    module: str
+    function: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    environment: Dict[str, Any] = field(default_factory=dict)
+    timing: Dict[str, float] = field(default_factory=dict)
+    stack_trace: Optional[str] = None
+    error_id: str = field(default_factory=lambda: f"err_{int(time.time())}")
+
+    def capture_environment(self):
+        """Capture current environment state."""
+        import platform
+        import sys
+
+        self.environment.update(
+            {
+                "python_version": sys.version,
+                "platform": platform.platform(),
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for logging."""
+        return {
+            "operation": self.operation,
+            "module": self.module,
+            "function": self.function,
+            "parameters": self.parameters,
+            "environment": self.environment,
+            "timing": self.timing,
+            "stack_trace": self.stack_trace,
+            "error_id": self.error_id,
+        }
+
+
 class ErrorRecoveryManager:
     """
     Manages error recovery strategies and graceful degradation.
@@ -567,6 +758,280 @@ def with_circuit_breaker(
             service_name, config
         )
         return circuit_breaker(func)
+
+    return decorator
+
+
+# === PHASE 4.1: ENHANCED DECORATOR FRAMEWORK ===
+
+
+def retry_on_failure(
+    max_attempts: int = 3,
+    backoff_factor: float = 2.0,
+    retry_on: Optional[List[Type[Exception]]] = None,
+    stop_on: Optional[List[Type[Exception]]] = None,
+    jitter: bool = True,
+):
+    """
+    Decorator for automatic retry with exponential backoff.
+
+    Args:
+        max_attempts: Maximum number of retry attempts
+        backoff_factor: Multiplier for delay between retries
+        retry_on: List of exceptions to retry on (default: all RetryableError)
+        stop_on: List of exceptions to never retry (default: FatalError)
+        jitter: Add randomization to prevent thundering herd
+    """
+    if retry_on is None:
+        retry_on = [RetryableError, NetworkTimeoutError, DatabaseConnectionError]
+    if stop_on is None:
+        stop_on = [FatalError, DataValidationError]
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            context = ErrorContext(
+                operation="retry_decorated_call",
+                module=func.__module__,
+                function=func.__name__,
+                parameters={"args": str(args)[:200], "kwargs": str(kwargs)[:200]},
+            )
+            context.capture_environment()
+
+            last_exception = None
+            start_time = time.time()
+
+            for attempt in range(max_attempts):
+                try:
+                    attempt_start = time.time()
+                    result = func(*args, **kwargs)
+
+                    # Log success metrics
+                    execution_time = time.time() - attempt_start
+                    if attempt > 0:
+                        logger.info(
+                            f"{func.__name__} succeeded on attempt {attempt + 1}/{max_attempts} "
+                            f"after {execution_time:.2f}s"
+                        )
+
+                    return result
+
+                except Exception as e:
+                    last_exception = e
+
+                    # Check if we should stop retrying
+                    if any(isinstance(e, stop_type) for stop_type in stop_on):
+                        logger.error(
+                            f"{func.__name__} failed with non-retryable error: {e}"
+                        )
+                        context.stack_trace = traceback.format_exc()
+                        if isinstance(e, AncestryException):
+                            e.context.update(context.to_dict())
+                        raise
+
+                    # Check if we should retry
+                    if not any(isinstance(e, retry_type) for retry_type in retry_on):
+                        logger.error(
+                            f"{func.__name__} failed with non-retryable error type: {e}"
+                        )
+                        raise
+
+                    # Calculate delay for next attempt
+                    if attempt < max_attempts - 1:
+                        delay = backoff_factor**attempt
+                        if jitter:
+                            import random
+
+                            delay *= 0.5 + random.random()
+
+                        logger.warning(
+                            f"{func.__name__} failed on attempt {attempt + 1}/{max_attempts}, "
+                            f"retrying in {delay:.2f}s: {e}"
+                        )
+                        time.sleep(delay)
+
+            # All attempts exhausted
+            total_time = time.time() - start_time
+            if last_exception is None:
+                last_exception = Exception(
+                    f"{func.__name__} failed after {max_attempts} attempts"
+                )
+
+            logger.error(
+                f"{func.__name__} failed after {max_attempts} attempts in {total_time:.2f}s: {last_exception}"
+            )
+            context.stack_trace = traceback.format_exc()
+            if isinstance(last_exception, AncestryException):
+                last_exception.context.update(context.to_dict())
+            raise last_exception
+
+        return wrapper
+
+    return decorator
+
+
+def circuit_breaker(
+    failure_threshold: int = 5,
+    recovery_timeout: int = 60,
+    success_threshold: int = 3,
+):
+    """
+    Decorator for circuit breaker pattern.
+
+    Args:
+        failure_threshold: Number of failures before opening circuit
+        recovery_timeout: Seconds to wait before attempting recovery
+        success_threshold: Successes needed to close circuit from half-open
+    """
+
+    def decorator(func: Callable) -> Callable:
+        config = CircuitBreakerConfig(
+            failure_threshold=failure_threshold,
+            recovery_timeout=recovery_timeout,
+            success_threshold=success_threshold,
+        )
+        service_name = f"{func.__module__}.{func.__name__}"
+        cb = error_recovery_manager.get_circuit_breaker(service_name, config)
+        return cb(func)
+
+    return decorator
+
+
+def timeout_protection(timeout: int = 30):
+    """
+    Decorator for timeout protection.
+
+    Args:
+        timeout: Maximum execution time in seconds
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Use threading approach for cross-platform compatibility
+            import threading
+
+            result: List[Any] = [None]
+            exception: List[Optional[Exception]] = [None]
+
+            def target():
+                try:
+                    result[0] = func(*args, **kwargs)
+                except Exception as e:
+                    exception[0] = e
+
+            thread = threading.Thread(target=target)
+            thread.daemon = True  # Allow main program to exit even if thread is running
+            thread.start()
+            thread.join(timeout)
+
+            if thread.is_alive():
+                # Thread is still running, timeout occurred
+                logger.warning(f"{func.__name__} timed out after {timeout}s")
+                raise NetworkTimeoutError(
+                    f"{func.__name__} timed out after {timeout} seconds",
+                    context={"timeout": timeout, "function": func.__name__},
+                )
+
+            if exception[0]:
+                raise exception[0]
+
+            return result[0]
+
+        return wrapper
+
+    return decorator
+
+
+def graceful_degradation(
+    fallback_value: Any = None, fallback_func: Optional[Callable] = None
+):
+    """
+    Decorator for graceful degradation when service fails.
+
+    Args:
+        fallback_value: Value to return if function fails
+        fallback_func: Function to call if main function fails
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                logger.warning(
+                    f"{func.__name__} failed, using graceful degradation: {e}"
+                )
+
+                if fallback_func:
+                    try:
+                        return fallback_func(*args, **kwargs)
+                    except Exception as fallback_error:
+                        logger.error(
+                            f"Fallback function also failed for {func.__name__}: {fallback_error}"
+                        )
+                        return fallback_value
+
+                return fallback_value
+
+        return wrapper
+
+    return decorator
+
+
+def error_context(operation: str):
+    """
+    Decorator to add comprehensive error context to function calls.
+
+    Args:
+        operation: Description of the operation being performed
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            context = ErrorContext(
+                operation=operation,
+                module=func.__module__,
+                function=func.__name__,
+                parameters={
+                    "args_count": len(args),
+                    "kwargs_keys": list(kwargs.keys()),
+                    "args_preview": str(args)[:100],
+                    "kwargs_preview": str(kwargs)[:100],
+                },
+            )
+            context.capture_environment()
+
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                execution_time = time.time() - start_time
+                context.timing["execution_time"] = execution_time
+
+                logger.debug(
+                    f"{operation} completed successfully in {execution_time:.2f}s",
+                    extra={"error_context": context.to_dict()},
+                )
+                return result
+
+            except Exception as e:
+                execution_time = time.time() - start_time
+                context.timing["execution_time"] = execution_time
+                context.stack_trace = traceback.format_exc()
+
+                # Enhance exception with context if it's an AncestryException
+                if isinstance(e, AncestryException):
+                    e.context.update(context.to_dict())
+
+                logger.error(
+                    f"{operation} failed after {execution_time:.2f}s: {e}",
+                    extra={"error_context": context.to_dict()},
+                )
+                raise
+
+        return wrapper
 
     return decorator
 

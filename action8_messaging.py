@@ -19,6 +19,21 @@ from standard_imports import setup_module
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    APIRateLimitError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
@@ -1349,6 +1364,11 @@ def _process_single_person(
 # ------------------------------------------------------------------------------
 
 
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@circuit_breaker(failure_threshold=5, recovery_timeout=300)
+@timeout_protection(timeout=1800)  # 30 minutes for messaging operations
+@graceful_degradation(fallback_value=False)
+@error_context("action8_messaging")
 def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
     Main function for Action 8.
