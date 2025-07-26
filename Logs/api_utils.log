@@ -191,3 +191,9 @@
 16:36:42 INF [ms_graph save_cac 136 ] Executing save_cache_on_exit via atexit...
 16:36:42 INF [ms_graph save_cac 153 ] MSAL cache unchanged since last load/save. No save needed.
 16:36:48 INF [api_util test_log 2786] Test log message
+19:45:44 INF [action8_ <module> 186 ] Action 8 Initializing: APP_MODE is development
+19:45:44 INF [action8_ <module> 197 ] Action 8 Using minimum message interval: 56 days, 0:00:00
+19:45:44 INF [action8_ load_mes 264 ] Message templates loaded and validated successfully (9 total templates).
+19:45:47 INF [ms_graph save_cac 136 ] Executing save_cache_on_exit via atexit...
+19:45:47 INF [ms_graph save_cac 153 ] MSAL cache unchanged since last load/save. No save needed.
+19:45:53 INF [api_util test_log 2786] Test log message
