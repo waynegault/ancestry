@@ -81,6 +81,21 @@ from standard_imports import setup_module, safe_execute
 
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    APIRateLimitError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 import base64
 import getpass

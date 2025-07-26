@@ -20,6 +20,21 @@ from standard_imports import (
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    FatalError,
+    DatabaseConnectionError,
+    DataValidationError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
 import enum
@@ -28,6 +43,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -584,51 +600,132 @@ def _create_views(_target, connection, **_kw):
 
 
 # ----------------------------------------------------------------------
-# Transaction Context Manager (Remains the same)
+# Enhanced Transaction Context Manager with Phase 4.1 Error Handling
 # ----------------------------------------------------------------------
 @contextlib.contextmanager
+@error_context("Database Transaction")
 def db_transn(session: Session):
     """
     Provides a transactional scope around a series of database operations
     using a SQLAlchemy session. Handles commit on success and rollback on error.
+    Enhanced with Phase 4.1 error handling for better resilience.
 
     Args:
         session: The SQLAlchemy Session object to manage.
     """
-    # Step 1: Check session activity (optional logging)
-    # if not session.is_active: logger.debug("Transaction started on inactive session.")
+    transaction_start = time.time()
+    session_id = id(session)
+
+    # Create enhanced error context
+    context = ErrorContext(
+        operation="database_transaction",
+        module=__name__,
+        function="db_transn",
+        parameters={"session_id": session_id},
+    )
+    context.capture_environment()
 
     try:
-        # Step 2: Yield the session to the 'with' block
-        logger.debug(f"--- Entering db_transn block (Session: {id(session)}) ---")
-        yield session
-        # Step 3: Commit if the block exits without exception
+        # Step 1: Validate session state
+        if not hasattr(session, "commit"):
+            raise DatabaseConnectionError(
+                "Invalid session object provided",
+                context={
+                    "session_id": session_id,
+                    "session_type": type(session).__name__,
+                },
+            )
+
         logger.debug(
-            f"--- Exiting db_transn block successfully (Session: {id(session)}) ---"
+            f"--- Entering enhanced db_transn block (Session: {session_id}) ---"
         )
-        logger.debug(f"Attempting commit... (Session: {id(session)})")
-        session.commit()
-        logger.debug(f"Commit successful. (Session: {id(session)})")
+        yield session
+
+        # Step 2: Attempt commit with timeout protection
+        commit_start = time.time()
+        logger.debug(f"Attempting commit... (Session: {session_id})")
+
+        try:
+            session.commit()
+            commit_time = time.time() - commit_start
+            transaction_time = time.time() - transaction_start
+
+            logger.debug(
+                f"Commit successful in {commit_time:.3f}s. Total transaction: {transaction_time:.3f}s (Session: {session_id})"
+            )
+
+        except Exception as commit_error:
+            raise DatabaseConnectionError(
+                f"Database commit failed: {commit_error}",
+                context={
+                    "session_id": session_id,
+                    "commit_time": time.time() - commit_start,
+                    "transaction_time": time.time() - transaction_start,
+                },
+                recovery_hint="Check database connectivity and retry transaction",
+            )
+
+    except DatabaseConnectionError:
+        # Re-raise database-specific errors
+        raise
+
     except Exception as e:
-        # Step 4: Rollback on any exception
+        # Wrap other exceptions in appropriate error types
+        error_type = type(e).__name__
+        transaction_time = time.time() - transaction_start
+
         logger.error(
-            f"Exception occurred in db_transn block: {type(e).__name__}. Rolling back... (Session: {id(session)})",
+            f"Exception occurred in db_transn block: {error_type}. Rolling back... (Session: {session_id})",
             exc_info=True,
         )
+
+        # Enhanced rollback with error handling
         try:
+            rollback_start = time.time()
             session.rollback()
-            logger.warning(f"Rollback successful. (Session: {id(session)})")
-        except Exception as rb_err:
-            logger.critical(
-                f"CRITICAL: Failed during rollback: {rb_err} (Session: {id(session)})",
-                exc_info=True,
+            rollback_time = time.time() - rollback_start
+
+            logger.warning(
+                f"Rollback successful in {rollback_time:.3f}s. (Session: {session_id})"
             )
-        raise  # Re-raise the original exception
+
+            # Determine if error is retryable
+            if isinstance(e, (sqlite3.OperationalError, sqlite3.DatabaseError)):
+                raise DatabaseConnectionError(
+                    f"Database operation failed: {e}",
+                    context={
+                        "session_id": session_id,
+                        "transaction_time": transaction_time,
+                        "original_error": str(e),
+                    },
+                    recovery_hint="Database may be temporarily unavailable, retry after delay",
+                )
+            else:
+                raise RetryableError(
+                    f"Transaction failed: {e}",
+                    context={
+                        "session_id": session_id,
+                        "transaction_time": transaction_time,
+                        "error_type": error_type,
+                    },
+                )
+
+        except Exception as rb_err:
+            # Critical rollback failure
+            raise FatalError(
+                f"CRITICAL: Failed during rollback: {rb_err}",
+                context={
+                    "session_id": session_id,
+                    "original_error": str(e),
+                    "rollback_error": str(rb_err),
+                },
+                recovery_hint="Database may be corrupted, check database integrity",
+            )
+
     finally:
-        # Step 5: Log exit from the finally block
-        # Note: Session closing is handled by the SessionManager that provided the session.
+        transaction_time = time.time() - transaction_start
         logger.debug(
-            f"--- db_transn finally block reached (Session: {id(session)}). ---"
+            f"--- db_transn finally block reached in {transaction_time:.3f}s (Session: {session_id}). ---"
         )
 
 
@@ -2320,10 +2417,14 @@ def delete_database(
 # --- Backup and Recovery ---
 
 
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@timeout_protection(timeout=300)  # 5 minutes for large database backups
+@error_context("Database Backup Operation")
 def backup_database(_session_manager=None):
     """
     Creates a backup copy of the current database file.
     The backup is named 'ancestry_backup.db' and stored in the DATA_DIR.
+    Enhanced with Phase 4.1 error handling for better resilience.
 
     Args:
         session_manager: Not used, kept for signature consistency in main.py.
@@ -2331,45 +2432,147 @@ def backup_database(_session_manager=None):
     Returns:
         True if backup was successful, False otherwise.
     """
-    # Step 1: Get paths from config
-    db_path = config_schema.database.database_file
-    backup_dir = config_schema.database.data_dir
+    backup_start = time.time()
 
-    # Step 2: Validate paths
-    if db_path is None:
-        logger.error("Cannot backup database: DATABASE_FILE is not configured.")
-        return False
-
-    if backup_dir is None:
-        logger.error("Cannot backup database: DATA_DIR is not configured.")
-        return False
-
-    # Step 3: Ensure backup directory exists
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_dir / "ancestry_backup.db"
-    logger.debug(
-        f"Attempting to back up database '{db_path.name}' to '{backup_path}'..."
-    )
-
-    # Step 4: Perform backup if source exists
     try:
-        if db_path.exists():
+        # Step 1: Get paths from config with validation
+        db_path = config_schema.database.database_file
+        backup_dir = config_schema.database.data_dir
+
+        # Step 2: Enhanced path validation
+        if db_path is None:
+            raise AncestryException(
+                "Cannot backup database: DATABASE_FILE is not configured",
+                error_code="CONFIG_MISSING_DB_PATH",
+                severity="ERROR",
+                recovery_hint="Configure DATABASE_FILE in configuration",
+            )
+
+        if backup_dir is None:
+            raise AncestryException(
+                "Cannot backup database: DATA_DIR is not configured",
+                error_code="CONFIG_MISSING_BACKUP_DIR",
+                severity="ERROR",
+                recovery_hint="Configure DATA_DIR in configuration",
+            )
+
+        # Step 3: Check source database exists and is accessible
+        if not db_path.exists():
+            raise AncestryException(
+                f"Database file '{db_path.name}' not found",
+                error_code="DB_FILE_NOT_FOUND",
+                context={"db_path": str(db_path)},
+                recovery_hint="Ensure database file exists before backup",
+            )
+
+        # Check if database file is readable
+        try:
+            with open(db_path, "rb") as f:
+                f.read(1)  # Try to read first byte
+        except PermissionError:
+            raise DatabaseConnectionError(
+                f"Permission denied accessing database file '{db_path}'",
+                context={"db_path": str(db_path)},
+                recovery_hint="Check file permissions and ensure database is not locked",
+            )
+
+        # Step 4: Ensure backup directory exists with error handling
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            raise DatabaseConnectionError(
+                f"Permission denied creating backup directory '{backup_dir}'",
+                context={"backup_dir": str(backup_dir)},
+                recovery_hint="Check directory permissions",
+            )
+
+        backup_path = backup_dir / "ancestry_backup.db"
+
+        # Check available disk space
+        import shutil as disk_utils
+
+        try:
+            disk_usage = disk_utils.disk_usage(backup_dir)
+            db_size = db_path.stat().st_size
+            available_space = disk_usage.free
+
+            if available_space < db_size * 1.1:  # Need 10% extra space
+                raise DatabaseConnectionError(
+                    f"Insufficient disk space for backup. Need {db_size * 1.1 / 1024 / 1024:.1f}MB, available {available_space / 1024 / 1024:.1f}MB",
+                    context={
+                        "db_size": db_size,
+                        "available_space": available_space,
+                        "backup_dir": str(backup_dir),
+                    },
+                    recovery_hint="Free up disk space or choose different backup location",
+                )
+        except Exception as space_check_error:
+            logger.warning(f"Could not check disk space: {space_check_error}")
+
+        logger.info(
+            f"Starting database backup: '{db_path.name}' -> '{backup_path}' "
+            f"(Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB)"
+        )
+
+        # Step 5: Perform backup with enhanced error handling
+        try:
             # Use copy2 to preserve metadata (like modification time)
             shutil.copy2(db_path, backup_path)
-            logger.info(f"Database backed up to '{backup_path.name}'.")
-            return True
-        else:
-            logger.warning(
-                f"Database file '{db_path.name}' not found. Cannot create backup."
+
+            # Verify backup integrity
+            if not backup_path.exists():
+                raise DatabaseConnectionError(
+                    "Backup file was not created successfully",
+                    context={"backup_path": str(backup_path)},
+                )
+
+            # Verify backup size matches original
+            original_size = db_path.stat().st_size
+            backup_size = backup_path.stat().st_size
+
+            if backup_size != original_size:
+                raise DataValidationError(
+                    f"Backup size mismatch: original {original_size} bytes, backup {backup_size} bytes",
+                    context={
+                        "original_size": original_size,
+                        "backup_size": backup_size,
+                        "backup_path": str(backup_path),
+                    },
+                )
+
+            backup_time = time.time() - backup_start
+            logger.info(
+                f"Database backup completed successfully in {backup_time:.2f}s: '{backup_path.name}' "
+                f"({backup_size / 1024 / 1024:.1f}MB)"
             )
-            return False
-    # Step 5: Handle errors during backup
-    except Exception as e:
-        logger.error(
-            f"Error backing up database from '{db_path}' to '{backup_path}': {e}",
-            exc_info=True,
+            return True
+
+        except PermissionError as perm_error:
+            raise DatabaseConnectionError(
+                f"Permission denied during backup operation: {perm_error}",
+                context={"source": str(db_path), "destination": str(backup_path)},
+                recovery_hint="Check file and directory permissions",
+            )
+        except OSError as os_error:
+            raise DatabaseConnectionError(
+                f"File system error during backup: {os_error}",
+                context={"source": str(db_path), "destination": str(backup_path)},
+                recovery_hint="Check disk space and file system health",
+            )
+
+    except AncestryException:
+        # Re-raise our custom exceptions
+        raise
+    except Exception as unexpected_error:
+        backup_time = time.time() - backup_start
+        raise RetryableError(
+            f"Unexpected error during database backup: {unexpected_error}",
+            context={
+                "backup_time": backup_time,
+                "error_type": type(unexpected_error).__name__,
+            },
+            recovery_hint="Check system resources and retry",
         )
-        return False
 
 
 # End of backup_database

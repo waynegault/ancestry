@@ -16,6 +16,21 @@ from standard_imports import setup_module, safe_execute
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    APIRateLimitError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 import sys
 from pathlib import Path
@@ -825,6 +840,11 @@ def analyze_top_match(
             logger.warning("Cannot calculate relationship path: Invalid IDs")
 
 
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@circuit_breaker(failure_threshold=5, recovery_timeout=300)
+@timeout_protection(timeout=1200)  # 20 minutes for GEDCOM analysis
+@graceful_degradation(fallback_value=None)
+@error_context("action10_gedcom_analysis")
 def main():
     """
     Main function for action10 GEDCOM analysis.

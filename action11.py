@@ -20,6 +20,23 @@ from standard_imports import (
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    APIRateLimitError,
+    ErrorContext,
+)
+
+logger = setup_module(globals(), __name__)
+
 # === STANDARD LIBRARY IMPORTS ===
 import argparse
 import json
@@ -3192,6 +3209,11 @@ def handle_api_report():
 
 
 # --- Main Execution ---
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@circuit_breaker(failure_threshold=5, recovery_timeout=300)
+@timeout_protection(timeout=1800)  # 30 minutes for API report generation
+@graceful_degradation(fallback_value=None)
+@error_context("action11_api_report")
 def main():
     """Main execution flow for Action 11 (API Report)."""
     logger.debug("--- Action 11: API Report Starting ---")

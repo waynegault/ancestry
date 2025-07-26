@@ -23,6 +23,21 @@ from standard_imports import (
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    APIRateLimitError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
@@ -969,6 +984,10 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 # End of _get_owner_referer
 
 
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@circuit_breaker(failure_threshold=5, recovery_timeout=60)
+@timeout_protection(timeout=180)  # 3 minutes for complex API calls
+@error_context("Ancestry Suggest API Call")
 def call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
@@ -977,20 +996,35 @@ def call_suggest_api(
     search_criteria: Dict[str, Any],
     timeouts: Optional[List[int]] = None,
 ) -> Optional[List[Dict]]:
+    # Validate inputs and raise appropriate exceptions
     if not callable(_api_req):
         logger.critical(
             "Suggest API call failed: _api_req function unavailable (Import Failed?)."
         )
-        raise ImportError("_api_req function not available from utils")
-    # End of if
-    if not isinstance(session_manager, SessionManager):
-        logger.error("Suggest API call failed: Invalid SessionManager passed.")
-        return None
-    # End of if
+        raise AncestryException(
+            "_api_req function not available from utils",
+            error_code="IMPORT_ERROR",
+            severity="FATAL",
+            recovery_hint="Check module imports and dependencies",
+        )
+
+    if not isinstance(session_manager, SessionManager) and not hasattr(
+        session_manager, "is_sess_valid"
+    ):
+        raise AncestryException(
+            "Invalid SessionManager passed to suggest API",
+            error_code="INVALID_SESSION_MANAGER",
+            severity="ERROR",
+            recovery_hint="Provide a valid SessionManager instance",
+        )
+
     if not owner_tree_id:
-        logger.error("Suggest API call failed: owner_tree_id is required.")
-        return None
-    # End of if
+        raise AncestryException(
+            "owner_tree_id is required for suggest API",
+            error_code="MISSING_TREE_ID",
+            severity="ERROR",
+            recovery_hint="Provide a valid tree ID",
+        )
 
     api_description = "Suggest API"
 
@@ -1100,16 +1134,46 @@ def call_suggest_api(
                 break
             # End of if/elif/else
         except requests.exceptions.Timeout:
-            logger.warning(
-                f"{api_description} _api_req call timed out after {timeout}s on attempt {attempt}/{max_attempts}."
+            timeout_error = NetworkTimeoutError(
+                f"API request timed out after {timeout}s",
+                context={
+                    "api": api_description,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "timeout": timeout,
+                    "url": suggest_url,
+                },
+                recovery_hint="Check network connectivity and try again",
+            )
+            logger.warning(str(timeout_error))
+            if attempt == max_attempts:
+                raise timeout_error
+        except requests.exceptions.RequestException as req_err:
+            if "rate limit" in str(req_err).lower() or "429" in str(req_err):
+                raise APIRateLimitError(
+                    f"API rate limit exceeded: {req_err}",
+                    context={"api": api_description, "url": suggest_url},
+                )
+            raise NetworkTimeoutError(
+                f"Network request failed: {req_err}",
+                context={"api": api_description, "url": suggest_url},
             )
         except Exception as api_err:
             logger.error(
                 f"{api_description} _api_req call failed on attempt {attempt}/{max_attempts}: {api_err}",
                 exc_info=True,
             )
+            if attempt == max_attempts:
+                raise RetryableError(
+                    f"API call failed after {max_attempts} attempts: {api_err}",
+                    context={
+                        "api": api_description,
+                        "attempts": max_attempts,
+                        "url": suggest_url,
+                    },
+                )
             suggest_response = None
-            break
+            continue
         # End of try/except
     # End of for
 

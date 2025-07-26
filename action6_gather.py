@@ -18,6 +18,22 @@ from standard_imports import setup_module
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    DatabaseConnectionError,
+    BrowserSessionError,
+    AuthenticationExpiredError,
+    ErrorContext,
+)
+
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
@@ -464,6 +480,10 @@ def _main_page_processing_loop(
 # ------------------------------------------------------------------------------
 
 
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@circuit_breaker(failure_threshold=3, recovery_timeout=60)
+@timeout_protection(timeout=300)
+@error_context("DNA match gathering coordination")
 def coord(
     session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
@@ -477,11 +497,18 @@ def coord(
         or not session_manager.driver_live
         or not session_manager.session_ready
     ):
-        logger.error("coord: WebDriver/Session not ready. Exiting gather action.")
-        return False
+        raise BrowserSessionError(
+            "WebDriver/Session not ready for DNA match gathering",
+            context={
+                "driver_live": session_manager.driver_live,
+                "session_ready": session_manager.session_ready,
+            },
+        )
     if not session_manager.my_uuid:
-        logger.error("coord: Failed to retrieve my_uuid. Exiting.")
-        return False
+        raise AuthenticationExpiredError(
+            "Failed to retrieve my_uuid for DNA match gathering",
+            context={"session_state": "authenticated but no UUID"},
+        )
 
     # Step 2: Initialize state
     state = _initialize_gather_state()
