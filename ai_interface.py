@@ -86,6 +86,9 @@ except ImportError:
 from config.config_manager import ConfigManager
 from utils import SessionManager
 
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from core.system_cache import cached_api_call, get_system_cache_stats
+
 # === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
@@ -211,6 +214,7 @@ Your response should be ONLY the message text, with no additional formatting, ex
 # --- Private Helper for AI Calls ---
 
 
+@cached_api_call("ai", ttl=1800)  # Cache AI model responses for 30 minutes
 def _call_ai_model(
     provider: str,
     system_prompt: str,
@@ -376,6 +380,7 @@ def _call_ai_model(
 # --- Public AI Interaction Functions ---
 
 
+@cached_api_call("ai", ttl=3600)  # Cache AI responses for 1 hour
 def classify_message_intent(
     context_history: str, session_manager: SessionManager
 ) -> Optional[str]:
