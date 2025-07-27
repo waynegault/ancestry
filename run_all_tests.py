@@ -48,50 +48,35 @@ def discover_test_modules() -> List[str]:
     test_modules = []
 
     for python_file in project_root.rglob("*.py"):
-        # Skip the test runner itself, __init__.py, main.py, setup files, and temporary files
+        # Skip the test runner itself and main.py
+        if python_file.name in ["run_all_tests.py", "main.py"]:
+            continue
+        # Skip __init__.py and setup.py
+        if python_file.name in ["__init__.py", "setup.py"]:
+            continue
+        # Skip cache, backup, temp, migration, old files, and anything in .venv or site-packages
+        file_path_str = str(python_file)
         if (
-            python_file.name
-            in [
-                "run_all_tests.py",
-                "__init__.py",
-                "main.py",
-                "setup.py",
-            ]
-            or "__pycache__" in str(python_file)
+            "__pycache__" in file_path_str
             or python_file.name.endswith("_backup.py")
-            or "backup_before_migration" in str(python_file)
+            or "backup_before_migration" in file_path_str
+            or "temp" in python_file.name.lower()
+            or "_old" in python_file.name
             or python_file.name.startswith("phase1_cleanup")
             or python_file.name.startswith("test_phase1")
             or python_file.name.startswith("cleanup_")
             or python_file.name.startswith("migration_")
             or python_file.name.startswith("fix_")
             or python_file.name.startswith("convert_")
-            or python_file.name.startswith("test_")
-            and python_file.name
-            not in ["test_framework.py", "test_framework_unified.py"]
-            or "temp" in python_file.name.lower()
-            or "_old" in python_file.name
+            or ".venv" in file_path_str
+            or "site-packages" in file_path_str
         ):
             continue
 
         # Construct module name from path (e.g., core.api_manager)
         relative_path = python_file.relative_to(project_root)
         module_name = ".".join(relative_path.with_suffix("").parts)
-
-        try:
-            with open(python_file, "r", encoding="utf-8") as f:
-                content = f.read()
-
-                # Standardized TestSuite detection
-                has_main_block = 'if __name__ == "__main__"' in content
-                has_test_content = "run_comprehensive_tests()" in content
-
-                if has_main_block and has_test_content:
-                    test_modules.append(module_name)
-
-        except Exception as e:
-            print(f"⚠️  Skipping {python_file.name}: Could not read file ({e})")
-            continue
+        test_modules.append(module_name)
 
     return sorted(test_modules)
 

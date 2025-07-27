@@ -97,7 +97,7 @@ try:
     if config.database.data_dir is not None:
         config.database.data_dir.mkdir(parents=True, exist_ok=True)
         CACHE_FILEPATH = config.database.data_dir / CACHE_FILENAME
-        logger.info(f"MSAL token cache path set to: {CACHE_FILEPATH}")
+        logger.debug(f"MSAL token cache path set to: {CACHE_FILEPATH}")
     else:
         logger.error("config.database.data_dir is None. Cache will be in-memory only.")
         CACHE_FILEPATH = None
@@ -118,7 +118,7 @@ if CACHE_FILEPATH:
             persistent_cache.deserialize(CACHE_FILEPATH.read_text(encoding="utf-8"))
             logger.info("MSAL token cache loaded successfully.")
         else:
-            logger.info("MSAL cache file not found. Starting with empty cache.")
+            logger.debug("MSAL cache file not found. Starting with empty cache.")
     except Exception as e:
         logger.warning(
             f"Failed to load MSAL cache from {CACHE_FILEPATH}: {e}. Starting with empty cache."
@@ -137,7 +137,7 @@ def save_cache_on_exit():
     try:
         # Check if cache state actually changed since loading/last save
         if persistent_cache.has_state_changed:
-            logger.info(f"MSAL cache has changed. Saving to: {CACHE_FILEPATH}")
+            logger.debug(f"MSAL cache has changed. Saving to: {CACHE_FILEPATH}")
             # Ensure directory exists again (paranoid check)
             CACHE_FILEPATH.parent.mkdir(parents=True, exist_ok=True)
             # Serialize and write cache data
@@ -146,11 +146,11 @@ def save_cache_on_exit():
                 f"Serialized cache data length: {len(cache_data_to_save)} bytes."
             )
             CACHE_FILEPATH.write_text(cache_data_to_save, encoding="utf-8")
-            logger.info("Successfully saved MSAL token cache.")
+            logger.debug("Successfully saved MSAL token cache.")
             # Optional: Reset flag manually after save if needed, though MSAL might handle this.
             # persistent_cache.has_state_changed = False
         else:
-            logger.info("MSAL cache unchanged since last load/save. No save needed.")
+            logger.debug("MSAL cache unchanged since last load/save. No save needed.")
     except Exception as e:
         logger.error(
             f"Failed to save MSAL cache to {CACHE_FILEPATH}: {e}", exc_info=True

@@ -179,7 +179,7 @@ class ConfigManager:
             if self.config_file:
                 self._file_modification_time = self.config_file.stat().st_mtime
 
-            logger.info(
+            logger.debug(
                 f"Configuration loaded successfully for environment: {self.environment}"
             )
             return config

@@ -215,7 +215,7 @@ class DatabaseConfig:
         # Create directories if they don't exist
         self._ensure_directories()
 
-        logger.info(
+        logger.debug(
             f"Database configuration validated successfully for {self._get_environment().value} environment"
         )
 
