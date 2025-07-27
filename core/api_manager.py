@@ -419,10 +419,132 @@ class APIManager:
 # ==============================================
 
 
+# === Decomposed Helper Functions ===
+def _test_api_manager_initialization():
+    try:
+        api_manager = APIManager()
+        assert hasattr(api_manager, "csrf_token"), "Should have csrf_token attribute"
+        assert hasattr(
+            api_manager, "my_profile_id"
+        ), "Should have my_profile_id attribute"
+        assert hasattr(api_manager, "my_uuid"), "Should have my_uuid attribute"
+        assert hasattr(api_manager, "_requests_session"), "Should have requests session"
+        assert api_manager.csrf_token is None, "CSRF token should initially be None"
+        assert api_manager.my_profile_id is None, "Profile ID should initially be None"
+        assert api_manager.my_uuid is None, "UUID should initially be None"
+        return True
+    except Exception:
+        return False
+
+
+def _test_identifier_management():
+    try:
+        api_manager = APIManager()
+        assert hasattr(
+            api_manager, "has_essential_identifiers"
+        ), "Should have identifier check property"
+        initial_state = api_manager.has_essential_identifiers
+        assert isinstance(initial_state, bool), "Identifier check should return boolean"
+        api_manager.my_profile_id = "test_profile_123"
+        api_manager.my_uuid = "test_uuid_456"
+        updated_state = api_manager.has_essential_identifiers
+        assert (
+            updated_state == True
+        ), "Should have essential identifiers after setting them"
+        return True
+    except Exception:
+        return False
+
+
+def _test_api_request_methods():
+    try:
+        api_manager = APIManager()
+        api_methods = [
+            "get_csrf_token",
+            "get_profile_id",
+            "get_uuid",
+            "clear_identifiers",
+        ]
+        available_methods = []
+        for method_name in api_methods:
+            if hasattr(api_manager, method_name):
+                method = getattr(api_manager, method_name)
+                if callable(method):
+                    available_methods.append(method_name)
+        assert (
+            len(available_methods) >= 3
+        ), f"Should have API methods available, found: {available_methods}"
+        return True
+    except Exception:
+        return False
+
+
+def _test_invalid_response_handling():
+    try:
+        api_manager = APIManager()
+        api_manager.clear_identifiers()
+        assert (
+            not api_manager.has_essential_identifiers
+        ), "Should not have identifiers after clearing"
+        return True
+    except Exception:
+        return False
+
+
+def _test_config_integration():
+    try:
+        assert config_schema is not None, "Config schema should be available"
+        api_constants = ["API_PATH_CSRF_TOKEN", "API_PATH_PROFILE_ID", "API_PATH_UUID"]
+        constants_defined = []
+        for constant in api_constants:
+            if constant in globals():
+                constants_defined.append(constant)
+        assert (
+            len(constants_defined) >= 2
+        ), f"Should have API path constants defined: {constants_defined}"
+        return True
+    except Exception:
+        return False
+
+
+def _test_session_reuse_efficiency():
+    try:
+        import time
+
+        api_manager = APIManager()
+        session1 = api_manager.requests_session
+        session2 = api_manager.requests_session
+        assert session1 is session2, "Should reuse the same session instance"
+        start_time = time.time()
+        managers = [APIManager() for _ in range(5)]
+        end_time = time.time()
+        assert (end_time - start_time) < 0.1, "Should create API managers efficiently"
+        assert len(managers) == 5, "Should create all requested managers"
+        return True
+    except Exception:
+        return False
+
+
+def _test_connection_error_handling():
+    try:
+        api_manager = APIManager()
+        session = api_manager.requests_session
+        if hasattr(session, "adapters"):
+            adapter_count = len(session.adapters)
+            assert adapter_count >= 0, "Should have session adapters configured"
+        from requests.exceptions import RequestException
+
+        assert RequestException is not None, "Should have RequestException available"
+        return True
+    except ImportError:
+        return False
+    except Exception:
+        return False
+
+
 def run_comprehensive_tests() -> bool:
     """
-    Comprehensive test suite for core/api_manager.py with real functionality testing.
-    Tests initialization, core functionality, edge cases, integration, performance, and error handling.
+    Comprehensive test suite for core/api_manager.py (decomposed).
     """
     from test_framework import (
         TestSuite,
@@ -433,253 +555,55 @@ def run_comprehensive_tests() -> bool:
 
     suite = TestSuite("API Manager & HTTP Request Handling", "api_manager.py")
     suite.start_suite()
-
-    # INITIALIZATION TESTS
-    def test_api_manager_initialization():
-        """Test APIManager initialization and configuration."""
-        try:
-            api_manager = APIManager()
-
-            # Verify basic attributes exist
-            assert hasattr(
-                api_manager, "csrf_token"
-            ), "Should have csrf_token attribute"
-            assert hasattr(
-                api_manager, "my_profile_id"
-            ), "Should have my_profile_id attribute"
-            assert hasattr(api_manager, "my_uuid"), "Should have my_uuid attribute"
-            assert hasattr(
-                api_manager, "_requests_session"
-            ), "Should have requests session"
-
-            # Initial state should be None for identifiers
-            assert api_manager.csrf_token is None, "CSRF token should initially be None"
-            assert (
-                api_manager.my_profile_id is None
-            ), "Profile ID should initially be None"
-            assert api_manager.my_uuid is None, "UUID should initially be None"
-
-            return True
-        except Exception:
-            return False
-
     suite.run_test(
         "API Manager Initialization",
-        test_api_manager_initialization,
+        _test_api_manager_initialization,
         "APIManager initializes with proper attributes and session management",
         "Test APIManager class initialization and verify core attributes exist",
         "Test API manager initialization and verify basic attributes and session setup",
     )
-
-    # CORE FUNCTIONALITY TESTS
-    def test_identifier_management():
-        """Test user identifier management methods."""
-        try:
-            api_manager = APIManager()
-
-            # Test identifier properties
-            assert hasattr(
-                api_manager, "has_essential_identifiers"
-            ), "Should have identifier check property"
-
-            # Initially should not have essential identifiers
-            initial_state = api_manager.has_essential_identifiers
-            assert isinstance(
-                initial_state, bool
-            ), "Identifier check should return boolean"
-
-            # Test setting identifiers
-            api_manager.my_profile_id = "test_profile_123"
-            api_manager.my_uuid = "test_uuid_456"
-
-            # Should now have essential identifiers
-            updated_state = api_manager.has_essential_identifiers
-            assert (
-                updated_state == True
-            ), "Should have essential identifiers after setting them"
-
-            return True
-        except Exception:
-            return False
-
     suite.run_test(
         "User Identifier Management",
-        test_identifier_management,
+        _test_identifier_management,
         "User identifiers (profile ID, UUID) manage correctly with validation",
         "Test identifier setting and validation methods",
         "Test user identifier management and essential identifier validation",
     )
-
-    def test_api_request_methods():
-        """Test API request method availability."""
-        try:
-            api_manager = APIManager()
-
-            # Check for API request methods
-            api_methods = [
-                "get_csrf_token",
-                "get_profile_id",
-                "get_uuid",
-                "clear_identifiers",
-            ]
-
-            available_methods = []
-            for method_name in api_methods:
-                if hasattr(api_manager, method_name):
-                    method = getattr(api_manager, method_name)
-                    if callable(method):
-                        available_methods.append(method_name)
-
-            # Should have most API methods
-            assert (
-                len(available_methods) >= 3
-            ), f"Should have API methods available, found: {available_methods}"
-
-            return True
-        except Exception:
-            return False
-
     suite.run_test(
         "API Request Methods",
-        test_api_request_methods,
+        _test_api_request_methods,
         "API request methods (get_csrf_token, get_profile_id, etc.) are available and callable",
         "Test availability of core API request methods",
         "Test API request method availability and callability",
     )
-
-    # EDGE CASES TESTS
-    def test_invalid_response_handling():
-        """Test handling of invalid API responses."""
-        try:
-            api_manager = APIManager()
-
-            # Test identifier clearing
-            api_manager.clear_identifiers()
-
-            # After clearing, should not have essential identifiers
-            assert (
-                not api_manager.has_essential_identifiers
-            ), "Should not have identifiers after clearing"
-
-            return True
-        except Exception:
-            return False
-
     suite.run_test(
         "Invalid Response Handling",
-        test_invalid_response_handling,
+        _test_invalid_response_handling,
         "API manager handles invalid or empty responses gracefully",
         "Test API manager with invalid response scenarios",
         "Test edge case handling for invalid API responses and data clearing",
     )
-
-    # INTEGRATION TESTS
-    def test_config_integration():
-        """Test integration with configuration system."""
-        try:
-            # Test config integration
-            assert config_schema is not None, "Config schema should be available"
-
-            # Test that API constants are defined
-            api_constants = [
-                "API_PATH_CSRF_TOKEN",
-                "API_PATH_PROFILE_ID",
-                "API_PATH_UUID",
-            ]
-
-            constants_defined = []
-            for constant in api_constants:
-                if constant in globals():
-                    constants_defined.append(constant)
-
-            assert (
-                len(constants_defined) >= 2
-            ), f"Should have API path constants defined: {constants_defined}"
-
-            return True
-        except Exception:
-            return False
-
     suite.run_test(
         "Configuration Integration",
-        test_config_integration,
+        _test_config_integration,
         "API manager integrates properly with configuration system and API constants",
         "Test integration with configuration system and API path constants",
         "Test integration between API manager and configuration system",
     )
-
-    # PERFORMANCE TESTS
-    def test_session_reuse_efficiency():
-        """Test HTTP session reuse for performance."""
-        try:
-            import time
-
-            api_manager = APIManager()
-
-            # Test that session is reused (same instance)
-            session1 = api_manager.requests_session
-            session2 = api_manager.requests_session
-
-            # Should be the same session instance for efficiency
-            assert session1 is session2, "Should reuse the same session instance"
-
-            # Test multiple API manager instances
-            start_time = time.time()
-            managers = [APIManager() for _ in range(5)]
-            end_time = time.time()
-
-            # Should create 5 managers quickly (< 0.1 seconds)
-            assert (
-                end_time - start_time
-            ) < 0.1, "Should create API managers efficiently"
-            assert len(managers) == 5, "Should create all requested managers"
-
-            return True
-        except Exception:
-            return False
-
     suite.run_test(
         "Session Reuse Efficiency",
-        test_session_reuse_efficiency,
+        _test_session_reuse_efficiency,
         "HTTP sessions reuse efficiently and API managers create quickly",
         "Measure API manager creation time and session reuse patterns",
         "Test performance of session reuse and API manager creation",
     )
-
-    # ERROR HANDLING TESTS
-    def test_connection_error_handling():
-        """Test handling of connection errors."""
-        try:
-            api_manager = APIManager()
-            session = api_manager.requests_session
-
-            # Test that session has proper error handling setup
-            if hasattr(session, "adapters"):
-                # Should have adapters configured for error handling
-                adapter_count = len(session.adapters)
-                assert adapter_count >= 0, "Should have session adapters configured"
-
-            # Test exception handling imports
-            from requests.exceptions import RequestException
-
-            assert (
-                RequestException is not None
-            ), "Should have RequestException available"
-
-            return True
-        except ImportError:
-            return False
-        except Exception:
-            return False
-
     suite.run_test(
         "Connection Error Handling",
-        test_connection_error_handling,
+        _test_connection_error_handling,
         "API manager handles connection errors and request exceptions gracefully",
         "Test error handling setup and exception class availability",
         "Test connection error handling and request exception management",
     )
-
     return suite.finish_suite()
 
 
