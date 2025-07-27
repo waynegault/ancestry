@@ -518,10 +518,110 @@ class SessionManager:
         return clear_session_cache()
 
 
+# === Decomposed Helper Functions ===
+def _test_session_manager_initialization():
+    session_manager = SessionManager()
+    assert session_manager is not None, "SessionManager should initialize"
+    assert hasattr(session_manager, "db_manager"), "Should have db_manager"
+    assert hasattr(session_manager, "browser_manager"), "Should have browser_manager"
+    assert hasattr(session_manager, "api_manager"), "Should have api_manager"
+    assert hasattr(session_manager, "validator"), "Should have validator"
+    assert (
+        session_manager.session_ready == False
+    ), "Should start with session_ready=False"
+    return True
+
+
+def _test_component_manager_availability():
+    session_manager = SessionManager()
+    assert session_manager.db_manager is not None, "DatabaseManager should be created"
+    assert (
+        session_manager.browser_manager is not None
+    ), "BrowserManager should be created"
+    assert session_manager.api_manager is not None, "APIManager should be created"
+    assert session_manager.validator is not None, "SessionValidator should be created"
+    return True
+
+
+def _test_database_operations():
+    session_manager = SessionManager()
+    result = session_manager.ensure_db_ready()
+    assert isinstance(result, bool), "ensure_db_ready should return bool"
+    return True
+
+
+def _test_browser_operations():
+    session_manager = SessionManager()
+    result = session_manager.start_browser("test_action")
+    assert isinstance(result, bool), "start_browser should return bool"
+    session_manager.close_browser()
+    return True
+
+
+def _test_property_access():
+    session_manager = SessionManager()
+    properties_to_check = [
+        "my_profile_id",
+        "my_uuid",
+        "my_tree_id",
+        "csrf_token",
+        "tree_owner_name",
+        "requests_session",
+        "is_ready",
+        "session_age_seconds",
+    ]
+    for prop in properties_to_check:
+        assert hasattr(session_manager, prop), f"Property {prop} should exist"
+    return True
+
+
+def _test_component_delegation():
+    session_manager = SessionManager()
+    db_result = session_manager.ensure_db_ready()
+    assert isinstance(db_result, bool), "Database delegation should work"
+    browser_result = session_manager.start_browser("test")
+    assert isinstance(browser_result, bool), "Browser delegation should work"
+    return True
+
+
+def _test_initialization_performance():
+    import time
+
+    session_managers = []
+    start_time = time.time()
+    for i in range(3):
+        session_manager = SessionManager()
+        session_managers.append(session_manager)
+    end_time = time.time()
+    total_time = end_time - start_time
+    max_time = 5.0
+    assert (
+        total_time < max_time
+    ), f"3 optimized initializations took {total_time:.3f}s, should be under {max_time}s"
+    for sm in session_managers:
+        try:
+            sm.close_sess(keep_db=True)
+        except Exception:
+            pass
+    return True
+
+
+def _test_error_handling():
+    session_manager = SessionManager()
+    try:
+        session_manager.ensure_db_ready()
+        session_manager.start_browser("test_action")
+        session_manager.close_browser()
+        _ = session_manager.session_ready
+        _ = session_manager.is_ready
+    except Exception as e:
+        assert False, f"SessionManager should handle operations gracefully: {e}"
+    return True
+
+
 def run_comprehensive_tests() -> bool:
     """
-    Comprehensive test suite for session_manager.py with real functionality testing.
-    Tests initialization, core functionality, edge cases, integration, performance, and error handling.
+    Comprehensive test suite for session_manager.py (decomposed).
     """
     from test_framework import TestSuite, suppress_logging
 
@@ -530,214 +630,62 @@ def run_comprehensive_tests() -> bool:
             "Session Manager & Component Coordination", "session_manager.py"
         )
         suite.start_suite()
-
-        # INITIALIZATION TESTS
-        def test_session_manager_initialization():
-            """Test SessionManager initialization and component creation."""
-            session_manager = SessionManager()
-            assert session_manager is not None, "SessionManager should initialize"
-            assert hasattr(session_manager, "db_manager"), "Should have db_manager"
-            assert hasattr(
-                session_manager, "browser_manager"
-            ), "Should have browser_manager"
-            assert hasattr(session_manager, "api_manager"), "Should have api_manager"
-            assert hasattr(session_manager, "validator"), "Should have validator"
-            assert (
-                session_manager.session_ready == False
-            ), "Should start with session_ready=False"
-            return True
-
         suite.run_test(
             "SessionManager Initialization",
-            test_session_manager_initialization,
+            _test_session_manager_initialization,
             "SessionManager creates successfully with all component managers (database, browser, API, validator)",
             "Instantiate SessionManager and verify all component managers are created and session_ready starts as False",
             "Test SessionManager initialization and component manager creation",
         )
-
-        def test_component_manager_availability():
-            """Test that all component managers are properly created."""
-            session_manager = SessionManager()
-            assert (
-                session_manager.db_manager is not None
-            ), "DatabaseManager should be created"
-            assert (
-                session_manager.browser_manager is not None
-            ), "BrowserManager should be created"
-            assert (
-                session_manager.api_manager is not None
-            ), "APIManager should be created"
-            assert (
-                session_manager.validator is not None
-            ), "SessionValidator should be created"
-            return True
-
         suite.run_test(
             "Component Manager Availability",
-            test_component_manager_availability,
+            _test_component_manager_availability,
             "All component managers (database, browser, API, validator) are properly instantiated and accessible",
             "Verify that all component managers exist and are not None after SessionManager creation",
             "Test component manager instantiation and availability",
         )
-
-        # CORE FUNCTIONALITY TESTS
-        def test_database_operations():
-            """Test database operation delegation."""
-            session_manager = SessionManager()
-            result = session_manager.ensure_db_ready()
-            assert isinstance(result, bool), "ensure_db_ready should return bool"
-            return True
-
         suite.run_test(
             "Database Operations",
-            test_database_operations,
+            _test_database_operations,
             "Database operations are properly delegated to DatabaseManager and return expected types",
             "Call ensure_db_ready() and verify it returns a boolean result",
             "Test database operation delegation and return type validation",
         )
-
-        def test_browser_operations():
-            """Test browser operation delegation."""
-            session_manager = SessionManager()
-            # Test browser start (will fail gracefully without WebDriver)
-            result = session_manager.start_browser("test_action")
-            assert isinstance(result, bool), "start_browser should return bool"
-
-            # Test browser close (should not raise exception)
-            session_manager.close_browser()
-            return True
-
         suite.run_test(
             "Browser Operations",
-            test_browser_operations,
+            _test_browser_operations,
             "Browser operations are properly delegated to BrowserManager without errors",
             "Call start_browser() and close_browser() and verify proper delegation and error handling",
             "Test browser operation delegation and graceful error handling",
         )
-
-        # EDGE CASES TESTS
-        def test_property_access():
-            """Test property access and delegation."""
-            session_manager = SessionManager()
-
-            # Test properties exist (may be None initially)
-            properties_to_check = [
-                "my_profile_id",
-                "my_uuid",
-                "my_tree_id",
-                "csrf_token",
-                "tree_owner_name",
-                "requests_session",
-                "is_ready",
-                "session_age_seconds",
-            ]
-
-            for prop in properties_to_check:
-                # Should not raise AttributeError
-                assert hasattr(session_manager, prop), f"Property {prop} should exist"
-            return True
-
         suite.run_test(
             "Property Access",
-            test_property_access,
+            _test_property_access,
             "All expected properties are accessible without AttributeError",
             "Access various session properties and verify they exist (even if None)",
             "Test property access and delegation to component managers",
         )
-
-        # INTEGRATION TESTS
-        def test_component_delegation():
-            """Test that method calls are properly delegated to component managers."""
-            session_manager = SessionManager()
-
-            # Test database delegation
-            db_result = session_manager.ensure_db_ready()
-            assert isinstance(db_result, bool), "Database delegation should work"
-
-            # Test browser delegation
-            browser_result = session_manager.start_browser("test")
-            assert isinstance(browser_result, bool), "Browser delegation should work"
-            return True
-
         suite.run_test(
             "Component Method Delegation",
-            test_component_delegation,
+            _test_component_delegation,
             "Method calls are properly delegated to appropriate component managers",
             "Call methods that should be delegated and verify they execute without errors",
             "Test delegation pattern between SessionManager and component managers",
         )
-
-        # PERFORMANCE TESTS
-        def test_initialization_performance():
-            """Test SessionManager initialization performance with caching optimization."""
-            import time
-
-            start_time = time.time()
-
-            # PHASE 5.1: Test optimized initialization with caching
-            session_managers = []
-            for i in range(3):  # Test 3 instances
-                logger.debug(f"Creating SessionManager {i+1}/3...")
-                session_manager = SessionManager()
-                session_managers.append(session_manager)
-
-            end_time = time.time()
-            total_time = end_time - start_time
-
-            # PHASE 5.1: Much stricter performance requirement due to caching
-            max_time = 5.0  # Reduced from 15s to 5s with caching optimization
-
-            logger.debug(
-                f"SessionManager initialization test: {total_time:.3f}s (target: <{max_time}s)"
-            )
-            logger.debug(f"Cache stats: {get_session_cache_stats()}")
-
-            assert (
-                total_time < max_time
-            ), f"3 optimized initializations took {total_time:.3f}s, should be under {max_time}s"
-
-            # Clean up to prevent resource leaks
-            for sm in session_managers:
-                try:
-                    sm.close_sess(keep_db=True)
-                except Exception as e:
-                    logger.debug(f"Cleanup warning: {e}")
-
-            return True
-
         suite.run_test(
             "Initialization Performance",
-            test_initialization_performance,
+            _test_initialization_performance,
             "3 SessionManager initializations complete in under 15 seconds",
             "Create 3 SessionManager instances and measure total time",
             "Test performance of SessionManager initialization with all component managers",
         )
-
-        # ERROR HANDLING TESTS
-        def test_error_handling():
-            """Test graceful error handling for invalid operations."""
-            session_manager = SessionManager()
-            try:
-                # These operations should handle errors gracefully
-                session_manager.ensure_db_ready()
-                session_manager.start_browser("test_action")
-                session_manager.close_browser()
-
-                # Property access should not raise errors
-                _ = session_manager.session_ready
-                _ = session_manager.is_ready
-            except Exception as e:
-                assert False, f"SessionManager should handle operations gracefully: {e}"
-            return True
-
         suite.run_test(
             "Error Handling",
-            test_error_handling,
+            _test_error_handling,
             "SessionManager handles various operations gracefully without raising exceptions",
             "Perform various operations and property access and verify no exceptions are raised",
             "Test error handling and graceful degradation for session operations",
         )
-
         return suite.finish_suite()
 
 
