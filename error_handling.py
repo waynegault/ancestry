@@ -696,7 +696,7 @@ class ErrorRecoveryManager:
     def register_recovery_strategy(self, service_name: str, strategy: Callable):
         """Register a recovery strategy for a service."""
         self.recovery_strategies[service_name] = strategy
-        logger.info(f"Registered recovery strategy for {service_name}")
+        logger.debug(f"Registered recovery strategy for {service_name}")
 
     def execute_with_recovery(
         self, service_name: str, operation: Callable, *args, **kwargs

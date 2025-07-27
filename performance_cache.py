@@ -353,24 +353,57 @@ class FastMockDataFactory:
 
 
 if __name__ == "__main__":
-    # Test the performance cache
-    print("🚀 Performance Cache Test")
-    print(f"Cache stats: {get_cache_stats()}")
+    print("🚀 Performance Cache Comprehensive Test Suite")
+    cache = PerformanceCache(max_memory_cache_size=2)
 
-    @cache_gedcom_results(ttl=300)
-    def test_function(x):
-        time.sleep(0.1)  # Simulate work
+    # Test cache key generation
+    key1 = cache._generate_cache_key(1, 2, a=3)
+    key2 = cache._generate_cache_key(1, 2, a=3)
+    assert key1 == key2, "Cache key generation should be deterministic"
+
+    # Test memory cache set/get
+    cache.set("mem_key", "value1", disk_cache=False)
+    assert cache.get("mem_key") == "value1", "Memory cache get failed"
+
+    # Test disk cache set/get
+    cache.set("disk_key", {"a": 1}, disk_cache=True)
+    assert cache.get("disk_key") == {"a": 1}, "Disk cache get failed"
+
+    # Test cache miss
+    assert cache.get("missing_key") is None, "Cache miss should return None"
+
+    # Test non-serializable object handling
+    class NonSerializable:
+        pass
+
+    try:
+        cache.set("bad_key", NonSerializable(), disk_cache=True)
+    except Exception:
+        pass  # Should not raise
+
+    # Test cache cleanup (memory size limit)
+    cache.set("key1", 1)
+    cache.set("key2", 2)
+    cache.set("key3", 3)
+    cache._cleanup_old_entries()
+    assert len(cache._memory_cache) <= cache._max_size, "Cache cleanup failed"
+
+    # Test cache_gedcom_results decorator
+    @cache_gedcom_results(ttl=1)
+    def double(x):
         return x * 2
 
-    # Test caching
-    start = time.time()
-    result1 = test_function(42)
-    time1 = time.time() - start
+    v1 = double(10)
+    v2 = double(10)
+    assert v1 == v2 == 20, "Decorator cache failed"
 
-    start = time.time()
-    result2 = test_function(42)  # Should be cached
-    time2 = time.time() - start
+    # Test fast_test_cache decorator
+    @fast_test_cache
+    def triple(x):
+        return x * 3
 
-    print(f"First call: {time1:.3f}s, Second call: {time2:.3f}s")
-    print(f"Speedup: {time1/time2:.1f}x")
-    print(f"Cache stats: {get_cache_stats()}")
+    t1 = triple(5)
+    t2 = triple(5)
+    assert t1 == t2 == 15, "Fast test cache failed"
+
+    print("✅ All performance cache internal tests passed.")

@@ -183,7 +183,7 @@ from test_framework import (
 )
 
 # --- Initialization & Template Loading ---
-logger.info(f"Action 8 Initializing: APP_MODE is {config_schema.environment}")
+logger.debug(f"Action 8 Initializing: APP_MODE is {config_schema.environment}")
 
 # Define message intervals based on app mode (controls time between follow-ups)
 MESSAGE_INTERVALS = {
@@ -194,7 +194,7 @@ MESSAGE_INTERVALS = {
 MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
     config_schema.environment, timedelta(weeks=8)
 )
-logger.info(f"Action 8 Using minimum message interval: {MIN_MESSAGE_INTERVAL}")
+logger.debug(f"Action 8 Using minimum message interval: {MIN_MESSAGE_INTERVAL}")
 
 # Define standard message type keys (must match messages.json)
 MESSAGE_TYPES_ACTION8: Dict[str, str] = {
