@@ -88,6 +88,14 @@ from database import (
     db_transn,
     commit_bulk_data,
 )
+
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from core.system_cache import (
+    cached_api_call,
+    cached_database_query,
+    get_system_cache_stats,
+)
+
 from utils import (
     DynamicRateLimiter,
     SessionManager,
@@ -236,6 +244,7 @@ class InboxProcessor:
 
     # --- Private Helper Methods ---
 
+    @cached_api_call("ancestry", ttl=900)  # 15-minute cache for conversations
     @retry_api()  # Apply retry decorator for resilience
     def _get_all_conversations_api(
         self, session_manager: SessionManager, limit: int, cursor: Optional[str] = None
@@ -443,6 +452,7 @@ class InboxProcessor:
 
     # End of _extract_conversation_info
 
+    @cached_api_call("ancestry", ttl=600)  # 10-minute cache for conversation context
     @retry_api(max_retries=2)  # Allow retries for fetching context
     def _fetch_conversation_context(
         self, conversation_id: str

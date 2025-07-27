@@ -62,6 +62,14 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
+
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from core.system_cache import (
+    cached_database_query,
+    memory_optimized,
+    get_system_cache_stats,
+)
+
 from ai_interface import extract_genealogical_entities
 import ms_graph_utils
 from test_framework import (
@@ -1488,6 +1496,7 @@ def _setup_configuration(
     return True
 
 
+@cached_database_query(ttl=300)  # 5-minute cache for candidate queries
 def _query_candidates(
     db_state: DatabaseState, msg_config: MessageConfig, limit: int
 ) -> List[Person]:

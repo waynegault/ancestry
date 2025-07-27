@@ -58,3 +58,5 @@ Logs/api_utils.log
 Logs/api_utils.log
 IMPLEMENTATION_PLAN.md
 /ai_prompts.bak.*
+ancestry.db-shm
+ancestry.db-wal
