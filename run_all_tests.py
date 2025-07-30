@@ -401,6 +401,12 @@ def main():
     # Auto-discover all test modules
     discovered_modules = discover_test_modules()
 
+    # Ensure action10.py and action11.py are included
+    must_have = ["action10.py", "action11.py"]
+    for mod in must_have:
+        if mod not in discovered_modules:
+            discovered_modules.append(mod)
+
     if not discovered_modules:
         print("⚠️  No test modules discovered.")
         return False
@@ -419,6 +425,8 @@ def main():
         "selenium_utils.py": "Browser Automation & Web Element Utilities",
         "logging_config.py": "Logging Configuration & Management",
         "action8_messaging.py": "Action 8 - Automated Messaging System",
+        "action10.py": "Action 10 - Custom Action",
+        "action11.py": "Action 11 - Custom Action",
     }
 
     results = []

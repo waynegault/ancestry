@@ -318,14 +318,16 @@ def backup_prompts_file() -> bool:
     """
     try:
         if PROMPTS_FILE.exists():
-            backup_file = PROMPTS_FILE.with_suffix(
-                f".bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            logs_dir = PROMPTS_FILE.parent / "Logs"
+            logs_dir.mkdir(exist_ok=True)
+            backup_file = (
+                logs_dir / f"ai_prompts.bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
             shutil.copy2(PROMPTS_FILE, backup_file)
             logger.info(f"Created backup: {backup_file}")
 
             # Clean up old backups
-            deleted = cleanup_old_backups()
+            deleted = cleanup_old_backups(logs_dir=logs_dir)
             if deleted > 0:
                 logger.info(f"Cleaned up {deleted} old backup files")
 
@@ -336,7 +338,10 @@ def backup_prompts_file() -> bool:
         return False
 
 
-def cleanup_old_backups(keep_count: int = 5) -> int:
+from typing import Optional
+
+
+def cleanup_old_backups(keep_count: int = 5, logs_dir: Optional[Path] = None) -> int:
     """
     Clean up old backup files, keeping only the most recent ones.
 
@@ -347,8 +352,10 @@ def cleanup_old_backups(keep_count: int = 5) -> int:
         int: Number of backup files deleted
     """
     try:
-        backup_pattern = f"{PROMPTS_FILE.stem}.bak.*"
-        backup_files = list(PROMPTS_FILE.parent.glob(backup_pattern))
+        if logs_dir is None:
+            logs_dir = PROMPTS_FILE.parent / "Logs"
+        backup_pattern = f"ai_prompts.bak.*"
+        backup_files = list(logs_dir.glob(backup_pattern))
 
         if len(backup_files) <= keep_count:
             return 0
