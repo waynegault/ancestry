@@ -125,6 +125,14 @@ class SessionManager:
         self.ancestry_username: str = config_schema.api.username
         self.ancestry_password: str = config_schema.api.password
 
+        # Add dynamic rate limiter for AI calls (matches utils.py SessionManager)
+        try:
+            from utils import DynamicRateLimiter
+
+            self.dynamic_rate_limiter = DynamicRateLimiter()
+        except ImportError:
+            self.dynamic_rate_limiter = None
+
         # PHASE 5.1: Only initialize database if not already cached and ready
         if not self.db_manager.is_ready:
             self.db_manager.ensure_ready()

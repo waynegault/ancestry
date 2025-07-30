@@ -15,18 +15,35 @@ import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy import text
-from core.session_manager import SessionManager
+
+try:
+    from utils import SessionManager  # Use utils.SessionManager for AI/model functions
+except ImportError:
+    from core.session_manager import SessionManager
 from database import Person, DnaMatch, FamilyTree, ConversationLog, MessageDirectionEnum
 from ai_interface import classify_message_intent, extract_genealogical_entities
 from person_search import search_gedcom_persons
 from config import config_schema
+from pathlib import Path
+
+
+from typing import Any
 
 
 class SafeTestingProtocol:
     """Implements safe testing protocol with Frances McHardy only."""
 
     def __init__(self, session_manager: SessionManager):
-        self.session_manager = session_manager
+        # Always use utils.SessionManager for AI/model functions
+        try:
+            from utils import SessionManager as UtilsSessionManager
+
+            if not isinstance(session_manager, UtilsSessionManager):
+                self.session_manager = UtilsSessionManager()
+            else:
+                self.session_manager = session_manager
+        except Exception:
+            self.session_manager = session_manager
         self.test_start_time = datetime.now(timezone.utc)
         self.approved_patterns = ["frances", "fran", "mchardy", "milne"]
         self.test_results = {}
@@ -81,7 +98,7 @@ class SafeTestingProtocol:
         finally:
             self.session_manager.return_session(session)
 
-    def analyze_current_state(self) -> Dict[str, any]:
+    def analyze_current_state(self) -> Dict[str, Any]:
         """Phase 1: Analyze current database state."""
         logger.info("🔍 Phase 1: Analyzing current database state...")
 
@@ -105,11 +122,18 @@ class SafeTestingProtocol:
             )
 
             total_result = session.execute(total_query).fetchone()
-            results["match_inventory"] = {
-                "total_matches": total_result.total_matches,
-                "in_tree_count": total_result.in_tree_count,
-                "out_tree_count": total_result.out_tree_count,
-            }
+            if total_result is not None:
+                results["match_inventory"] = {
+                    "total_matches": getattr(total_result, "total_matches", None),
+                    "in_tree_count": getattr(total_result, "in_tree_count", None),
+                    "out_tree_count": getattr(total_result, "out_tree_count", None),
+                }
+            else:
+                results["match_inventory"] = {
+                    "total_matches": None,
+                    "in_tree_count": None,
+                    "out_tree_count": None,
+                }
 
             # Status breakdown
             status_query = text(
@@ -123,7 +147,8 @@ class SafeTestingProtocol:
 
             status_results = session.execute(status_query).fetchall()
             results["status_breakdown"] = {
-                row.status: row.count for row in status_results
+                getattr(row, "status", None): getattr(row, "count", None)
+                for row in status_results
             }
 
             # Tree placement analysis
@@ -146,9 +171,13 @@ class SafeTestingProtocol:
             tree_results = session.execute(tree_query).fetchall()
             results["tree_placement"] = [
                 {
-                    "relationship": row.actual_relationship,
-                    "count": row.match_count,
-                    "avg_cm": float(row.avg_cm) if row.avg_cm else 0,
+                    "relationship": getattr(row, "actual_relationship", None),
+                    "count": getattr(row, "match_count", None),
+                    "avg_cm": (
+                        float(getattr(row, "avg_cm", 0))
+                        if getattr(row, "avg_cm", None)
+                        else 0
+                    ),
                 }
                 for row in tree_results
             ]
@@ -168,12 +197,28 @@ class SafeTestingProtocol:
             )
 
             comm_result = session.execute(comm_query).fetchone()
-            results["communication_summary"] = {
-                "total_conversations": comm_result.total_conversations,
-                "outgoing_conversations": comm_result.outgoing_conversations,
-                "incoming_conversations": comm_result.incoming_conversations,
-                "productive_conversations": comm_result.productive_conversations,
-            }
+            if comm_result is not None:
+                results["communication_summary"] = {
+                    "total_conversations": getattr(
+                        comm_result, "total_conversations", None
+                    ),
+                    "outgoing_conversations": getattr(
+                        comm_result, "outgoing_conversations", None
+                    ),
+                    "incoming_conversations": getattr(
+                        comm_result, "incoming_conversations", None
+                    ),
+                    "productive_conversations": getattr(
+                        comm_result, "productive_conversations", None
+                    ),
+                }
+            else:
+                results["communication_summary"] = {
+                    "total_conversations": None,
+                    "outgoing_conversations": None,
+                    "incoming_conversations": None,
+                    "productive_conversations": None,
+                }
 
             logger.info("✅ Phase 1 completed: Database state analyzed")
             return results
@@ -184,7 +229,7 @@ class SafeTestingProtocol:
         finally:
             self.session_manager.return_session(session)
 
-    def test_ai_processing(self) -> Dict[str, any]:
+    def test_ai_processing(self) -> Dict[str, Any]:
         """Phase 2: Test AI processing capabilities."""
         logger.info("🤖 Phase 2: Testing AI processing...")
 
@@ -198,16 +243,28 @@ class SafeTestingProtocol:
 
         results = []
 
+        # Always use utils.SessionManager for AI/model functions
+        try:
+            from utils import SessionManager as UtilsSessionManager
+
+            ai_session_manager = (
+                self.session_manager
+                if isinstance(self.session_manager, UtilsSessionManager)
+                else UtilsSessionManager()
+            )
+        except Exception:
+            ai_session_manager = self.session_manager
+
         for i, message in enumerate(test_messages):
             try:
                 logger.info(f"Testing message {i+1}/5...")
 
-                # Test AI classification
-                classification = classify_message_intent(message, self.session_manager)
+                # Test AI classification (force correct SessionManager type)
+                classification = classify_message_intent(message, ai_session_manager)
 
                 # Test data extraction
                 extracted_data = extract_genealogical_entities(
-                    message, self.session_manager
+                    message, ai_session_manager
                 )
 
                 result = {
@@ -245,7 +302,7 @@ class SafeTestingProtocol:
             "total_tests": len(results),
         }
 
-    def test_tree_integration(self) -> Dict[str, any]:
+    def test_tree_integration(self) -> Dict[str, Any]:
         """Phase 3: Test tree integration capabilities."""
         logger.info("🌳 Phase 3: Testing tree integration...")
 
@@ -285,7 +342,7 @@ class SafeTestingProtocol:
             logger.error(f"Error testing tree integration: {e}")
             return {"success": False, "error": str(e)}
 
-    def validate_safety_guards(self) -> Dict[str, any]:
+    def validate_safety_guards(self) -> Dict[str, Any]:
         """Phase 4: Validate safety guards are working."""
         logger.info("🛡️ Phase 4: Validating safety guards...")
 
@@ -315,7 +372,11 @@ class SafeTestingProtocol:
 
             results = {
                 "test_start_time": self.test_start_time.isoformat(),
-                "unauthorized_messages_count": unauthorized_result.count,
+                "unauthorized_messages_count": (
+                    getattr(unauthorized_result, "count", None)
+                    if unauthorized_result
+                    else None
+                ),
                 "frances_found": frances is not None,
                 "frances_username": frances.username if frances else None,
                 "safety_guards_active": True,
@@ -428,7 +489,9 @@ def run_comprehensive_tests() -> bool:
 
         # Save report to file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_file = f"test_report_{timestamp}.md"
+        logs_dir = Path(__file__).parent / "Logs"
+        logs_dir.mkdir(exist_ok=True)
+        report_file = logs_dir / f"test_report_{timestamp}.md"
         with open(report_file, "w", encoding="utf-8") as f:
             f.write(report)
 
