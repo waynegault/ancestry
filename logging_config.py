@@ -332,9 +332,9 @@ def logging_config_module_tests() -> bool:
         suite.run_test(
             "Logger creation verification",
             test_logger_creation,
-            "Test logger creation with correct name, level, and propagation settings",
-            "Logger creation ensures proper initialization and configuration",
-            "Logger is created with appropriate name, level, and propagation settings",
+            "3 logger configuration tests: logger.name→'logger', logger.level→DEBUG, logger.propagate→False.",
+            "Test that logger is properly created and configured with detailed verification.",
+            "Verify logger.name→'logger' identity, logger.level→DEBUG verbosity, logger.propagate→False isolation.",
         )
 
         suite.run_test(
@@ -476,10 +476,29 @@ def run_comprehensive_tests() -> bool:
 
 # Test functions for comprehensive testing
 def test_logger_creation():
-    """Test that logger is properly created and configured."""
-    assert logger.name == "logger"
-    assert logger.level == logging.DEBUG
-    assert not logger.propagate
+    """Test that logger is properly created and configured with detailed verification."""
+    logger_tests = [
+        ("logger.name", logger.name, "logger", "Logger name configuration"),
+        ("logger.level", logger.level, logging.DEBUG, "Logger level setting"),
+        ("logger.propagate", logger.propagate, False, "Logger propagation disabled"),
+    ]
+
+    print("📋 Testing logger creation and configuration:")
+    results = []
+
+    for test_name, actual, expected, description in logger_tests:
+        test_passed = actual == expected
+
+        status = "✅" if test_passed else "❌"
+        print(f"   {status} {description}")
+        print(f"      {test_name}: {actual} (Expected: {expected})")
+
+        results.append(test_passed)
+        assert actual == expected, f"{test_name} should be {expected}, got {actual}"
+
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} logger configuration tests passed"
+    )
 
 
 def test_default_configuration():

@@ -377,6 +377,39 @@ class ConfigManager:
         if app_mode_value:
             config["app_mode"] = app_mode_value
 
+        # Load AI configuration
+        ai_provider_value = os.getenv("AI_PROVIDER")
+        if ai_provider_value:
+            config["ai_provider"] = ai_provider_value
+
+        # Load API configuration
+        api_config = {}
+
+        # DeepSeek API configuration
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        if deepseek_api_key:
+            api_config["deepseek_api_key"] = deepseek_api_key
+
+        deepseek_ai_model = os.getenv("DEEPSEEK_AI_MODEL")
+        if deepseek_ai_model:
+            api_config["deepseek_ai_model"] = deepseek_ai_model
+
+        deepseek_ai_base_url = os.getenv("DEEPSEEK_AI_BASE_URL")
+        if deepseek_ai_base_url:
+            api_config["deepseek_ai_base_url"] = deepseek_ai_base_url
+
+        # Google API configuration
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if google_api_key:
+            api_config["google_api_key"] = google_api_key
+
+        google_ai_model = os.getenv("GOOGLE_AI_MODEL")
+        if google_ai_model:
+            api_config["google_ai_model"] = google_ai_model
+
+        if api_config:
+            config["api"] = api_config
+
         # Load database configuration
         db_config = {}
         database_file_value = os.getenv("DATABASE_FILE")
@@ -431,20 +464,24 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid DEBUG_PORT value: {debug_port_value}")
         if selenium_config:
-            config["selenium"] = selenium_config  # Load API configuration
-        api_config = {}
+            config["selenium"] = selenium_config
+
+        # Merge additional API configuration with existing api_config
+        if "api" not in config:
+            config["api"] = {}
+
         base_url_value = os.getenv("BASE_URL")
         if base_url_value:
-            api_config["base_url"] = base_url_value
+            config["api"]["base_url"] = base_url_value
 
         api_base_url_value = os.getenv("API_BASE_URL")
         if api_base_url_value:
-            api_config["api_base_url"] = api_base_url_value
+            config["api"]["api_base_url"] = api_base_url_value
 
         request_timeout_value = os.getenv("REQUEST_TIMEOUT")
         if request_timeout_value:
             try:
-                api_config["request_timeout"] = int(request_timeout_value)
+                config["api"]["request_timeout"] = int(request_timeout_value)
             except ValueError:
                 logger.warning(
                     f"Invalid REQUEST_TIMEOUT value: {request_timeout_value}"
@@ -452,13 +489,11 @@ class ConfigManager:
 
         tree_name_value = os.getenv("TREE_NAME")
         if tree_name_value:
-            api_config["tree_name"] = tree_name_value
+            config["api"]["tree_name"] = tree_name_value
 
         tree_id_value = os.getenv("TREE_ID")
         if tree_id_value:
-            api_config["tree_id"] = tree_id_value
-        if api_config:
-            config["api"] = api_config  # Load logging configuration
+            config["api"]["tree_id"] = tree_id_value  # Load logging configuration
         logging_config = {}
         log_level_value = os.getenv("LOG_LEVEL")
         if log_level_value:

@@ -292,24 +292,54 @@ if __name__ == "__main__":
     suite = TestSuite("Selenium Utilities & Browser Automation", "selenium_utils.py")
 
     def test_function_availability():
+        """Test selenium utility functions are available with detailed verification."""
         required_functions = [
-            "force_user_agent",
-            "extract_text",
-            "extract_attribute",
-            "is_elem_there",
-            "is_browser_open",
-            "close_tabs",
-            "get_driver_cookies",
-            "export_cookies",
-            "safe_click",
-            "get_element_text",
-            "is_element_visible",
+            ("force_user_agent", "User agent modification for browser automation"),
+            ("extract_text", "Safe text extraction from web elements"),
+            ("extract_attribute", "Safe attribute extraction from web elements"),
+            ("is_elem_there", "Element presence detection with selectors"),
+            ("is_browser_open", "Browser session status validation"),
+            ("close_tabs", "Tab management and cleanup operations"),
+            ("get_driver_cookies", "Cookie extraction from browser sessions"),
+            ("export_cookies", "Cookie export functionality"),
+            ("safe_click", "Safe element clicking with error handling"),
+            ("get_element_text", "Element text extraction with fallbacks"),
+            ("is_element_visible", "Element visibility detection"),
         ]
-        for func_name in required_functions:
-            assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(
-                globals()[func_name]
-            ), f"Function {func_name} should be callable"
+
+        print("📋 Testing selenium utility function availability:")
+        results = []
+
+        for func_name, description in required_functions:
+            # Test function existence
+            func_exists = func_name in globals()
+
+            # Test function callability
+            func_callable = False
+            if func_exists:
+                try:
+                    func_callable = callable(globals()[func_name])
+                except Exception:
+                    func_callable = False
+
+            # Test function type
+            func_type = type(globals().get(func_name, None)).__name__
+
+            status = "✅" if func_exists and func_callable else "❌"
+            print(f"   {status} {func_name}: {description}")
+            print(
+                f"      Exists: {func_exists}, Callable: {func_callable}, Type: {func_type}"
+            )
+
+            test_passed = func_exists and func_callable
+            results.append(test_passed)
+
+            assert func_exists, f"Function {func_name} should be available"
+            assert func_callable, f"Function {func_name} should be callable"
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} selenium utility functions available"
+        )
 
     def test_force_user_agent():
         mock_driver = MagicMock()
@@ -479,9 +509,9 @@ if __name__ == "__main__":
         suite.run_test(
             "Function availability verification",
             test_function_availability,
-            "Test availability of all core Selenium utility functions",
-            "Function availability ensures complete Selenium utility interface",
-            "All required Selenium utility functions are available and callable",
+            "11 selenium functions tested: force_user_agent, extract_text, extract_attribute, is_elem_there, is_browser_open, close_tabs, get_driver_cookies, export_cookies, safe_click, get_element_text, is_element_visible.",
+            "Test selenium utility functions are available with detailed verification.",
+            "Verify force_user_agent→browser identity, extract_text→safe text, extract_attribute→safe attributes, is_elem_there→element detection, is_browser_open→session status, close_tabs→tab management.",
         )
 
         suite.run_test(

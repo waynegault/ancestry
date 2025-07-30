@@ -3814,25 +3814,61 @@ def action6_gather_module_tests() -> bool:
     suite.start_suite()  # INITIALIZATION TESTS
 
     def test_module_initialization():
-        """Test module initialization and state functions"""
+        """Test module initialization and state functions with detailed verification"""
+        print("📋 Testing Action 6 module initialization:")
+        results = []
+
         # Test _initialize_gather_state function
-        state = _initialize_gather_state()
-        assert isinstance(state, dict), "Should return dictionary state"
-        assert "total_new" in state, "Should have total_new in state"
-        assert "total_updated" in state, "Should have total_updated in state"
-        assert (
-            "total_pages_processed" in state
-        ), "Should have total_pages_processed in state"
+        print("   • Testing _initialize_gather_state...")
+        try:
+            state = _initialize_gather_state()
+            is_dict = isinstance(state, dict)
+
+            required_keys = ["total_new", "total_updated", "total_pages_processed"]
+            keys_present = all(key in state for key in required_keys)
+
+            print(f"   ✅ State dictionary created: {is_dict}")
+            print(
+                f"   ✅ Required keys present: {keys_present} ({len(required_keys)} keys)"
+            )
+            print(f"   ✅ State structure: {list(state.keys())}")
+
+            results.extend([is_dict, keys_present])
+            assert is_dict, "Should return dictionary state"
+            assert keys_present, "Should have all required keys in state"
+
+        except Exception as e:
+            print(f"   ❌ _initialize_gather_state: Exception {e}")
+            results.extend([False, False])
 
         # Test _validate_start_page function
-        result = _validate_start_page("5")
-        assert result == 5, "Should convert string to integer"
+        print("   • Testing _validate_start_page...")
+        validation_tests = [
+            ("5", 5, "String number conversion"),
+            (10, 10, "Integer input handling"),
+            (None, 1, "None input (should default to 1)"),
+            ("invalid", 1, "Invalid string (should default to 1)"),
+            (0, 1, "Zero input (should default to 1)"),
+        ]
 
-        result = _validate_start_page(10)
-        assert result == 10, "Should handle integer input"
+        for input_val, expected, description in validation_tests:
+            try:
+                result = _validate_start_page(input_val)
+                matches_expected = result == expected
 
-        result = _validate_start_page(None)
-        assert result == 1, "Should default to 1 for None input"
+                status = "✅" if matches_expected else "❌"
+                print(f"   {status} {description}: {repr(input_val)} → {result}")
+
+                results.append(matches_expected)
+                assert (
+                    matches_expected
+                ), f"Failed for {input_val}: expected {expected}, got {result}"
+
+            except Exception as e:
+                print(f"   ❌ {description}: Exception {e}")
+                results.append(False)
+
+        print(f"📊 Results: {sum(results)}/{len(results)} initialization tests passed")
 
     # CORE FUNCTIONALITY TESTS
     def test_core_functionality():

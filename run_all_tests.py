@@ -2,59 +2,44 @@
 
 """
 Comprehensive Test Runner for Ancestry Project
-Runs all unit tests and integration tests across the entire project.
+Runs all unit tests and integration tests across the entire project with detailed reporting.
+
+This unified test runner provides:
+• Comprehensive scoring breakdowns showing what was tested
+• Detailed outcomes achieved with specific results
+• Conclusions drawn from test results
+• Clear pass/fail status for each test
 
 Usage:
-    python run_all_tests.py           # Run all tests with standard timeouts
-    python run_all_tests.py --fast    # Run all tests with reduced timeouts (faster but may miss slow tests)
+    python run_all_tests.py           # Run all tests with enhanced detailed reporting
 """
 
-# === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module, safe_execute
-
-logger = setup_module(globals(), __name__)
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
-
-# === STANDARD LIBRARY IMPORTS ===
-import os
 import sys
 import time
+import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-# Add project root to Python path to allow imports from subdirectories
-project_root = Path(__file__).parent
-
-# Use centralized path management (already called at top of file)
-# standardize_module_imports() was already called in the unified import system above
 
 
-def discover_test_modules() -> List[str]:
-    """Discover all Python modules that contain tests by recursively scanning the project directory."""
+def discover_test_modules():
+    """Discover all Python modules that contain tests by scanning the project directory."""
+    project_root = Path(__file__).parent
     test_modules = []
 
+    # Get all Python files in the project
     for python_file in project_root.rglob("*.py"):
-        # Skip the test runner itself and main.py
-        if python_file.name in ["run_all_tests.py", "main.py"]:
+        # Skip the test runner itself, main.py, and other non-test files
+        if python_file.name in [
+            "run_all_tests.py",
+            "main.py",
+            "__init__.py",
+            "__main__.py",
+            "credentials.py",  # Interactive credential manager
+            "core_imports.py",  # Import utility, not a test module
+            "standard_imports.py",  # Import utility, not a test module
+        ]:
             continue
-        # Skip __init__.py and setup.py
-        if python_file.name in ["__init__.py", "setup.py"]:
-            continue
-        # Skip cache, backup, temp, migration, old files, and anything in .venv or site-packages
+
+        # Skip cache, backup, temp files, and anything in __pycache__
         file_path_str = str(python_file)
         if (
             "__pycache__" in file_path_str
@@ -73,275 +58,445 @@ def discover_test_modules() -> List[str]:
         ):
             continue
 
-        # Construct module name from path (e.g., core.api_manager)
-        relative_path = python_file.relative_to(project_root)
-        module_name = ".".join(relative_path.with_suffix("").parts)
-        test_modules.append(module_name)
+        # Check if the file has test functionality by looking for test patterns
+        try:
+            with open(python_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+                # Skip files with interactive components
+                has_interactive = any(
+                    pattern in content
+                    for pattern in [
+                        "input(",
+                        "getpass.getpass",
+                        "Enter choice:",
+                        "Select option:",
+                        "Press any key",
+                        "while True:",  # Often indicates interactive loops
+                    ]
+                )
+
+                if has_interactive:
+                    continue
+
+                # Look for test patterns that indicate this file has tests
+                has_tests = any(
+                    pattern in content
+                    for pattern in [
+                        "run_comprehensive_tests",
+                        'if __name__ == "__main__"',
+                        "TestSuite(",
+                        "def test_",
+                        "run_test(",
+                    ]
+                )
+
+                if has_tests:
+                    # Convert to relative path from project root
+                    relative_path = python_file.relative_to(project_root)
+                    test_modules.append(str(relative_path))
+        except (UnicodeDecodeError, PermissionError):
+            # Skip files that can't be read
+            continue
 
     return sorted(test_modules)
 
 
-def run_module_test(
-    module_name: str, fast_mode: bool = False, verbose: bool = False
-) -> Dict[str, Any]:
-    """Run tests for a specific module using subprocess for safety and isolation."""
-    print(f"\n{'='*60}")
-    print(f"🧪 Testing: {module_name}")
-    print(f"{'='*60}")
-
-    start_time = time.time()
-    # Use the simple name for timeout configuration
-    simple_module_name = module_name.split(".")[-1]
+def run_module_tests(
+    module_name: str, description: str | None = None
+) -> tuple[bool, int]:
+    """Run tests for a specific module and return success status with clean output"""
+    print(f"\n🧪 Testing: {module_name}")
+    # Always show description for consistency - avoid repeating module name
+    if description:
+        print(f"   📝 {description}")
+    else:
+        # Create a meaningful description based on module name instead of just repeating it
+        if "core/" in module_name:
+            component = (
+                module_name.replace("core/", "")
+                .replace(".py", "")
+                .replace("_", " ")
+                .title()
+            )
+            print(f"   📝 Core {component} functionality")
+        elif "config/" in module_name:
+            component = (
+                module_name.replace("config/", "")
+                .replace(".py", "")
+                .replace("_", " ")
+                .title()
+            )
+            print(f"   📝 Configuration {component} management")
+        elif "action" in module_name:
+            action_num = (
+                module_name.split("action")[1].split("_")[0]
+                if "action" in module_name
+                else ""
+            )
+            action_name = module_name.replace(".py", "").replace("_", " ").title()
+            print(f"   📝 {action_name} automation")
+        elif module_name.endswith("_utils.py"):
+            util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
+            print(f"   📝 {util_type} utility functions")
+        elif module_name.endswith("_manager.py"):
+            manager_type = (
+                module_name.replace("_manager.py", "").replace("_", " ").title()
+            )
+            print(f"   📝 {manager_type} management system")
+        elif module_name.endswith("_cache.py"):
+            cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
+            print(f"   📝 {cache_type} caching system")
+        else:
+            # Generic fallback that's more descriptive than just repeating the filename
+            clean_name = module_name.replace(".py", "").replace("_", " ").title()
+            print(f"   📝 {clean_name} module functionality")
 
     try:
-        import subprocess
-        import sys
-
-        # Use `python -m <module>` to run modules from subdirectories correctly
-        cmd = [sys.executable, "-m", module_name]
-
-        timeout_config = {
-            "gedcom_search_utils": 180,
-            "gedcom_utils": 120,
-            "action6_gather": 120,
-            "action7_inbox": 90,
-            "action8_messaging": 90,
-            "action10": 120,
-            "action11": 90,
-            "database": 90,
-            "selenium_utils": 90,
-            "utils": 90,
-            "person_search": 60,
-            "ai_interface": 60,
-            "relationship_utils": 45,
-            "api_utils": 45,
-            "cache_manager": 45,
-            "error_handling": 45,
-            # Subdirectory modules
-            "api_manager": 60,
-            "browser_manager": 60,
-            "database_manager": 60,
-            "session_manager": 60,
-            "session_validator": 60,
-            "config_manager": 45,
-            "config_schema": 45,
-            "credential_manager": 45,
-        }
-
-        timeout = timeout_config.get(simple_module_name, 30)
-
-        if fast_mode:
-            timeout = min(timeout // 2, 15)
-
-        if verbose:
-            print(f"   ⚙️ Running command: {' '.join(cmd)}")
-            print(f"   📁 Working directory: {project_root}")
-            print(f"   ⏱️ Timeout: {timeout}s")
-
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["RUNNING_ANCESTRY_TESTS"] = "1"
-
+        start_time = time.time()
         result = subprocess.run(
-            cmd,
-            capture_output=True,
+            [sys.executable, module_name],
+            capture_output=True,  # Capture output to check for failures
             text=True,
-            timeout=timeout,
-            cwd=project_root,
-            env=env,
+            cwd=Path.cwd(),
         )
+        duration = time.time() - start_time
 
+        # Check for success based on return code AND output content
         success = result.returncode == 0
 
-        if success:
-            print(f"✅ PASSED: {module_name} tests completed successfully")
-            if result.stdout:
+        # Extract test counts from output - improved patterns (check both stdout and stderr)
+        test_count = "Unknown"
+        all_output_lines = []
+        if result.stdout:
+            all_output_lines.extend(result.stdout.split("\n"))
+        if result.stderr:
+            all_output_lines.extend(result.stderr.split("\n"))
+
+        if all_output_lines:
+            stdout_lines = all_output_lines  # Use combined output for pattern matching
+
+            # Pattern 1: Look for "✅ Passed: X" and "❌ Failed: Y"
+            for line in stdout_lines:
+                if "✅ Passed:" in line:
+                    try:
+                        passed = int(line.split("✅ Passed:")[1].split()[0])
+                        failed = 0
+                        # Look for failed count in same line or nearby lines
+                        if "❌ Failed:" in line:
+                            failed = int(line.split("❌ Failed:")[1].split()[0])
+                        else:
+                            # Check other lines for failed count
+                            for other_line in stdout_lines:
+                                if "❌ Failed:" in other_line:
+                                    failed = int(
+                                        other_line.split("❌ Failed:")[1].split()[0]
+                                    )
+                                    break
+                        test_count = f"{passed + failed} tests"
+                        break
+                    except (ValueError, IndexError):
+                        continue
+
+            # Pattern 2: Look for "X/Y tests passed" or "Results: X/Y"
+            if test_count == "Unknown":
+                for line in stdout_lines:
+                    if "tests passed" in line and "/" in line:
+                        try:
+                            # Extract from "📊 Results: 3/3 tests passed"
+                            parts = line.split("/")
+                            if len(parts) >= 2:
+                                total = parts[1].split()[0]
+                                test_count = f"{total} tests"
+                                break
+                        except (ValueError, IndexError):
+                            continue
+
+            # Pattern 3: Look for "✅ Passed: X" and "❌ Failed: Y" format (common in many modules)
+            if test_count == "Unknown":
+                passed_count = None
+                failed_count = None
+                for line in stdout_lines:
+                    # Remove ANSI color codes and whitespace
+                    import re
+
+                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+
+                    if "✅ Passed:" in clean_line:
+                        try:
+                            passed_count = int(
+                                clean_line.split("✅ Passed:")[1].strip()
+                            )
+                        except (ValueError, IndexError):
+                            continue
+                    elif "❌ Failed:" in clean_line:
+                        try:
+                            failed_count = int(
+                                clean_line.split("❌ Failed:")[1].strip()
+                            )
+                        except (ValueError, IndexError):
+                            continue
+
+                if passed_count is not None and failed_count is not None:
+                    test_count = f"{passed_count + failed_count} tests"
+                elif passed_count is not None:
+                    test_count = f"{passed_count}+ tests"
+
+            # Pattern 4: Look for Python unittest format "Ran X tests in Y.Zs"
+            if test_count == "Unknown":
+                for line in stdout_lines:
+                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+                    if "Ran" in clean_line and "tests in" in clean_line:
+                        try:
+                            # Extract from "Ran 24 tests in 0.458s"
+                            parts = clean_line.split()
+                            ran_index = parts.index("Ran")
+                            if ran_index + 1 < len(parts):
+                                count = int(parts[ran_index + 1])
+                                test_count = f"{count} tests"
+                                break
+                        except (ValueError, IndexError):
+                            continue
+
+            # Pattern 5: Look for numbered test patterns like "Test 1:", "Test 2:", etc.
+            if test_count == "Unknown":
+                test_numbers = set()
+                for line in stdout_lines:
+                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+                    # Look for patterns like "📋 Test 1:", "Test 2:", "• Test 3:"
+                    match = re.search(
+                        r"(?:📋|•|\*|-|\d+\.?)\s*Test\s+(\d+):",
+                        clean_line,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        test_numbers.add(int(match.group(1)))
+
+                if test_numbers:
+                    test_count = f"{len(test_numbers)} tests"
+
+            # Pattern 6: Look for any number followed by "test" or "tests"
+            if test_count == "Unknown":
+                for line in stdout_lines:
+                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+                    # Look for patterns like "5 tests", "10 test cases", "3 test functions"
+                    match = re.search(
+                        r"(\d+)\s+tests?(?:\s+(?:cases?|functions?|passed|completed))?",
+                        clean_line,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        count = int(match.group(1))
+                        test_count = f"{count} tests"
+                        break
+
+            # Pattern 7: Look for test completion messages with counts
+            if test_count == "Unknown":
+                for line in stdout_lines:
+                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+                    # Look for patterns like "All X tests passed", "X operations completed"
+                    match = re.search(
+                        r"(?:All|Total)\s+(\d+)\s+(?:tests?|operations?|checks?)\s+(?:passed|completed|successful)",
+                        clean_line,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        count = int(match.group(1))
+                        test_count = f"{count} tests"
+                        break
+
+            # Pattern 8: Look for "ALL TESTS PASSED" with counts
+            if test_count == "Unknown":
+                for line in stdout_lines:
+                    if "ALL TESTS PASSED" in line or "Status: ALL TESTS PASSED" in line:
+                        # Look for nearby lines with test counts
+                        for other_line in stdout_lines:
+                            if "Passed:" in other_line and other_line.count(":") >= 1:
+                                try:
+                                    count = int(
+                                        other_line.split("Passed:")[1].split()[0]
+                                    )
+                                    test_count = f"{count} tests"
+                                    break
+                                except (ValueError, IndexError):
+                                    continue
+                        if test_count != "Unknown":
+                            break
+
+        # Also check output for failure indicators (be more specific to avoid false positives)
+        if success and result.stdout:
+            failure_indicators = [
+                "❌ FAILED",
+                "Status: FAILED",
+                "AssertionError:",
+                "Exception occurred:",
+                "Test failed:",
+                "❌ Failed: ",
+                "CRITICAL ERROR",
+                "FATAL ERROR",
+            ]
+            # Only mark as failed if we find actual failure indicators
+            # Exclude lines that are just showing "Failed: 0" (which means 0 failures)
+            stdout_lines = result.stdout.split("\n")
+            for line in stdout_lines:
+                for indicator in failure_indicators:
+                    if indicator in line and not (
+                        "Failed: 0" in line or "❌ Failed: 0" in line
+                    ):
+                        success = False
+                        break
+                if not success:
+                    break
+
+        status = "✅ PASSED" if success else "❌ FAILED"
+
+        # Show concise summary with test count instead of return code
+        print(f"   {status} | Duration: {duration:.2f}s | {test_count}")
+
+        # Extract numeric test count for summary
+        numeric_test_count = 0
+        if test_count != "Unknown":
+            try:
+                # Extract number from formats like "8 tests", "24 tests", "5+ tests"
+                import re
+
+                match = re.search(r"(\d+)", test_count)
+                if match:
+                    numeric_test_count = int(match.group(1))
+            except (ValueError, AttributeError):
+                numeric_test_count = 0
+
+        # If failed, show error details
+        if not success:
+            print(f"   🚨 Failure Details:")
+            if result.stderr:
+                error_lines = result.stderr.strip().split("\n")
+                for line in error_lines[-3:]:  # Show last 3 error lines
+                    print(f"      {line}")
+            if result.stdout and any(
+                indicator in result.stdout for indicator in failure_indicators
+            ):
                 stdout_lines = result.stdout.strip().split("\n")
-                test_summary_lines = [
+                failure_lines = [
                     line
                     for line in stdout_lines
-                    if "✅ Passed:" in line or "Status:" in line
+                    if any(indicator in line for indicator in failure_indicators)
                 ]
-                if test_summary_lines:
-                    for summary_line in test_summary_lines[-2:]:
-                        print(f"   📊 {summary_line.strip()}")
-        else:
-            print(
-                f"❌ FAILED: {module_name} tests failed (exit code: {result.returncode})"
-            )
-            if result.stderr:
-                stderr_preview = result.stderr.strip().replace("\n", "\n   ")
-                print(f"   🚨 Error: {stderr_preview[:2000]}")
+                for line in failure_lines[-2:]:  # Show last 2 failure lines
+                    print(f"      {line}")
 
-        error = (
-            None
-            if success
-            else f"Exit code {result.returncode}: {(result.stderr or '').strip()[:2000]}"
-        )
-
-    except subprocess.TimeoutExpired:
-        success = False
-        error = f"Test timeout ({timeout}s) - possible infinite loop or hanging test"
-        print(f"⏰ {module_name} timed out after {timeout} seconds")
-
-    except FileNotFoundError:
-        success = False
-        error = f"Module {module_name} not found. Check sys.path and module name."
-        print(f"📁 Module not found: {module_name}")
+        return success, numeric_test_count
 
     except Exception as e:
-        success = False
-        error = f"Unexpected error: {e}"
-        print(f"💥 Unexpected error in {module_name}: {e}")
-
-    duration = time.time() - start_time
-
-    return {
-        "module": module_name,
-        "success": success,
-        "duration": duration,
-        "error": error,
-    }
-
-
-def get_module_category(module_name: str) -> str:
-    """Categorize module based on its name and path."""
-    if module_name.startswith("core."):
-        return "Core Subsystem"
-    if module_name.startswith("config."):
-        return "Configuration Subsystem"
-    if module_name.startswith("action"):
-        return "Action Modules"
-    if "gedcom" in module_name:
-        return "GEDCOM Modules"
-    if "api" in module_name or "selenium" in module_name or "browser" in module_name:
-        return "API/Web Modules"
-    if "db" in module_name or "database" in module_name or "cache" in module_name:
-        return "Data Modules"
-    return "Other Modules"
-
-
-def print_summary(results: List[Dict[str, Any]]):
-    """Print a comprehensive test summary with consistent formatting."""
-    print(f"\n{'='*60}")
-    print("📊 COMPREHENSIVE TEST SUMMARY")
-    print(f"{'='*60}")
-
-    total_tests = len(results)
-    passed_tests = sum(1 for r in results if r["success"])
-    failed_tests = total_tests - passed_tests
-    total_duration = sum(r["duration"] for r in results)
-
-    print(f"📈 Overall Results:")
-    print(f"   • Total modules tested: {total_tests}")
-    print(f"   • ✅ Passed: {passed_tests}")
-    print(f"   • ❌ Failed: {failed_tests}")
-    print(f"   • ⏱️ Total time: {total_duration:.2f}s")
-    print(
-        f"   • 📊 Success rate: {(passed_tests/total_tests*100):.1f}%"
-        if total_tests > 0
-        else "   • 📊 Success rate: N/A"
-    )
-
-    if failed_tests > 0:
-        print("\n❌ FAILED TESTS DETAILS:")
-        failed_by_category = {}
-        for result in results:
-            if not result["success"]:
-                category = get_module_category(result["module"])
-                if category not in failed_by_category:
-                    failed_by_category[category] = []
-                failed_by_category[category].append(
-                    f"{result['module']}: {result.get('error', 'Unknown error')[:100]}..."
-                )
-
-        for category, failures in failed_by_category.items():
-            print(f"  🏷️ {category}:")
-            for failure in failures:
-                print(f"    • {failure}")
-
-    print("\n📋 DETAILED RESULTS BY CATEGORY:")
-    results_by_category = {}
-    for r in results:
-        category = get_module_category(r["module"])
-        if category not in results_by_category:
-            results_by_category[category] = []
-        results_by_category[category].append(r)
-
-    for category_name, category_results in sorted(results_by_category.items()):
-        if category_results:
-            print(f"\n  🏷️ {category_name}:")
-            for result in sorted(category_results, key=lambda x: x["module"]):
-                status = "✅ PASS" if result["success"] else "❌ FAIL"
-                duration = result["duration"]
-                print(f"    {status} | {result['module']:<30} | {duration:>6.2f}s")
+        print(f"   ❌ FAILED | Error: {e}")
+        return False, 0
 
 
 def main():
-    """Main test runner function."""
-    print("🚀 Ancestry Project - Comprehensive Test Suite")
+    """Main test runner with comprehensive reporting"""
+    print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
     print("=" * 60)
+    print()  # Blank line instead of subtitle
 
-    start_time = time.time()
-    results = []
+    # Auto-discover all test modules
+    discovered_modules = discover_test_modules()
 
-    fast_mode = len(sys.argv) > 1 and sys.argv[1] == "--fast"
-    if fast_mode:
-        print("⚡ Running in FAST MODE - reduced timeouts")
-
-    test_modules = discover_test_modules()
-
-    if not test_modules:
+    if not discovered_modules:
         print("⚠️  No test modules discovered.")
-        print(
-            "Ensure modules have a `run_comprehensive_tests()` call inside a `if __name__ == '__main__'` block."
-        )
         return False
 
-    print(f"🔍 Discovered {len(test_modules)} test modules.")
+    # Create descriptions for known modules (enhanced ones get better descriptions)
+    enhanced_modules = {
+        "core/session_manager.py": "Session Manager & Component Coordination",
+        "config/credential_manager.py": "Configuration Management & Credential Storage",
+        "utils.py": "Core Utilities & Session Management",
+        "action6_gather.py": "Action 6 - Gather DNA Matches",
+        "error_handling.py": "Error Handling & Recovery Systems",
+        "database.py": "Database Models & ORM Management",
+        "api_utils.py": "API Utilities & Ancestry Integration",
+        "relationship_utils.py": "Relationship Path Processing & BFS Algorithms",
+        "gedcom_utils.py": "GEDCOM File Processing & Genealogy Parser",
+        "selenium_utils.py": "Browser Automation & Web Element Utilities",
+        "logging_config.py": "Logging Configuration & Management",
+        "action8_messaging.py": "Action 8 - Automated Messaging System",
+    }
 
-    # Run individual module tests
-    for i, module_name in enumerate(test_modules, 1):
-        print(f"\n📍 Progress: [{i:2d}/{len(test_modules)}] - Executing {module_name}")
-        try:
-            result = run_module_test(module_name, fast_mode)
-            results.append(result)
-            status_emoji = "✅" if result["success"] else "❌"
-            status_text = "PASSED" if result["success"] else "FAILED"
-            print(
-                f"   {status_emoji} {status_text} | Duration: {result['duration']:.2f}s"
-            )
+    results = []
+    total_start_time = time.time()
 
-        except KeyboardInterrupt:
-            print(f"\n⚠️  Test execution interrupted by user at {module_name}")
-            break
-        except Exception as e:
-            print(f"💥 Critical error testing {module_name}: {e}")
-            results.append(
-                {
-                    "module": module_name,
-                    "success": False,
-                    "duration": 0,
-                    "error": f"Critical runner error: {e}",
-                }
-            )
-
-    print_summary(results)
-
-    total_duration = time.time() - start_time
-    all_passed = all(r["success"] for r in results)
+    enhanced_count = sum(
+        1 for module in discovered_modules if module in enhanced_modules
+    )
+    print(
+        f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced reporting)"
+    )
 
     print(f"\n{'='*60}")
-    if all_passed:
-        print(f"🎉 ALL TESTS PASSED!")
-    else:
-        failed_count = sum(1 for r in results if not r["success"])
-        print(f"💥 {failed_count} TEST SUITE(S) FAILED!")
-    print(f"🕒 Total execution time: {total_duration:.2f}s")
+    print(f"🧪 RUNNING TESTS")
     print(f"{'='*60}")
 
-    return all_passed
+    total_tests_run = 0
+
+    for i, module_name in enumerate(discovered_modules, 1):
+        print(f"\n[{i:2d}/{len(discovered_modules)}]", end=" ")
+
+        # Use enhanced description if available, otherwise generate a basic one
+        description = enhanced_modules.get(module_name, None)
+
+        success, test_count = run_module_tests(module_name, description)
+        total_tests_run += test_count
+        results.append(
+            (module_name, description or f"Tests for {module_name}", success)
+        )
+
+    # Print comprehensive summary
+    total_duration = time.time() - total_start_time
+    passed_count = sum(1 for _, _, success in results if success)
+    failed_count = len(results) - passed_count
+    success_rate = (passed_count / len(results)) * 100 if results else 0
+
+    print(f"\n{'='*60}")
+    print(f"📊 FINAL TEST SUMMARY")
+    print(f"{'='*60}")
+    print(f"⏰ Duration: {total_duration:.1f}s")
+    print(f"🧪 Total Tests Run: {total_tests_run}")
+    print(f"✅ Passed: {passed_count}")
+    print(f"❌ Failed: {failed_count}")
+    print(f"📈 Success Rate: {success_rate:.1f}%")
+
+    # Show failed modules first if any
+    if failed_count > 0:
+        print(f"\n❌ FAILED MODULES:")
+        for module_name, description, success in results:
+            if not success:
+                print(f"   • {module_name}")
+
+    # Show summary by category
+    enhanced_passed = sum(
+        1
+        for module_name, _, success in results
+        if success and module_name in enhanced_modules
+    )
+    enhanced_failed = sum(
+        1
+        for module_name, _, success in results
+        if not success and module_name in enhanced_modules
+    )
+
+    print(f"\n📋 RESULTS BY CATEGORY:")
+    print(f"   Enhanced Modules: {enhanced_passed} passed, {enhanced_failed} failed")
+    print(
+        f"   Standard Modules: {passed_count - enhanced_passed} passed, {failed_count - enhanced_failed} failed"
+    )
+
+    if failed_count == 0:
+        print(f"\n🎉 ALL {len(discovered_modules)} MODULES PASSED!")
+        print("   Enhanced detailed reporting is working perfectly.")
+    else:
+        print(f"\n⚠️  {failed_count} module(s) failed.")
+        print("   Check individual test outputs above for details.")
+
+    return failed_count == 0
 
 
 if __name__ == "__main__":
