@@ -655,10 +655,14 @@ class ConfigSchema:
             # --- Existing Date Weights ---
             "exact_birth_date": 25.0,  # if input date of birth is exact with candidate date of birth
             "exact_death_date": 25.0,  # if input date of death is exact with candidate date of death
-            "birth_year_match": 20.0,  # if input birth year matches candidate birth year
-            "death_year_match": 20.0,  # if input death year matches candidate death year
+            "birth_year_match": 20.0,  # if input birth year matches candidate birth year (Action 11 key)
+            "year_birth": 20.0,  # if input birth year matches candidate birth year (GEDCOM utils key)
+            "death_year_match": 20.0,  # if input death year matches candidate death year (Action 11 key)
+            "year_death": 20.0,  # if input death year matches candidate death year (GEDCOM utils key)
             "birth_year_close": 10.0,  # if input birth year is within range of candidate birth year
             "death_year_close": 10.0,  # if input death year is within range of candidate death year
+            # --- Special Death Weights ---
+            "death_dates_both_absent": 15.0,  # if both search and candidate have no death date (person is alive)
             # --- Place Weights ---
             "birth_place_match": 20.0,  # if input birth place matches candidate birth place
             "death_place_match": 20.0,  # if input death place matches candidate death place

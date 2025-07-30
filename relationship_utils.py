@@ -1674,40 +1674,104 @@ def relationship_module_tests():
 
     # Test 1: Function availability
     def test_function_availability():
+        """Test all essential relationship utility functions are available with detailed verification."""
         required_functions = [
-            "format_name",
-            "fast_bidirectional_bfs",
-            "_get_relationship_term",
-            "format_api_relationship_path",
-            "format_relationship_path_unified",
+            ("format_name", "Name formatting and cleanup"),
+            (
+                "fast_bidirectional_bfs",
+                "Bidirectional breadth-first search pathfinding",
+            ),
+            ("_get_relationship_term", "Relationship term mapping and gender handling"),
+            ("format_api_relationship_path", "API relationship path formatting"),
+            (
+                "format_relationship_path_unified",
+                "Unified relationship path formatting",
+            ),
+            ("explain_relationship_path", "Relationship path explanation generation"),
+            ("convert_api_path_to_unified_format", "API path conversion utilities"),
         ]
-        for func_name in required_functions:
-            assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(
-                globals()[func_name]
-            ), f"Function {func_name} should be callable"
+
+        print("📋 Testing relationship utility function availability:")
+        results = []
+
+        for func_name, description in required_functions:
+            # Test function existence
+            func_exists = func_name in globals()
+
+            # Test function callability
+            func_callable = False
+            if func_exists:
+                try:
+                    func_callable = callable(globals()[func_name])
+                except Exception:
+                    func_callable = False
+
+            # Test function type
+            func_type = type(globals().get(func_name, None)).__name__
+
+            status = "✅" if func_exists and func_callable else "❌"
+            print(f"   {status} {func_name}: {description}")
+            print(
+                f"      Exists: {func_exists}, Callable: {func_callable}, Type: {func_type}"
+            )
+
+            test_passed = func_exists and func_callable
+            results.append(test_passed)
+
+            assert func_exists, f"Function {func_name} should be available"
+            assert func_callable, f"Function {func_name} should be callable"
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} relationship utility functions available"
+        )
 
     tests.append(("Function Availability", test_function_availability))
 
     # Test 2: Name formatting
     def test_name_formatting():
+        """Test name formatting with various input cases and detailed verification."""
         test_cases = [
-            ("john doe", "John Doe"),
-            ("/John Smith/", "John Smith"),  # GEDCOM format
-            (None, "Valued Relative"),
-            ("", "Valued Relative"),
-            ("MARY ELIZABETH", "Mary Elizabeth"),
+            ("john doe", "John Doe", "lowercase input"),
+            ("/John Smith/", "John Smith", "GEDCOM format with slashes"),
+            (None, "Valued Relative", "None input handling"),
+            ("", "Valued Relative", "empty string handling"),
+            ("MARY ELIZABETH", "Mary Elizabeth", "uppercase input"),
+            ("  spaced  name  ", "Spaced Name", "whitespace handling"),
+            ("O'Connor-Smith", "O'Connor-Smith", "special characters"),
         ]
-        for input_name, expected in test_cases:
-            result = format_name(input_name)
-            assert (
-                result == expected
-            ), f"format_name({input_name}) should return {expected}, got {result}"
+
+        print("📋 Testing name formatting with various cases:")
+        results = []
+
+        for input_name, expected, description in test_cases:
+            try:
+                result = format_name(input_name)
+                test_passed = result == expected
+
+                status = "✅" if test_passed else "❌"
+                print(f"   {status} {description}")
+                print(
+                    f"      Input: {repr(input_name)} → Output: {repr(result)} (Expected: {repr(expected)})"
+                )
+
+                results.append(test_passed)
+                assert (
+                    result == expected
+                ), f"format_name({input_name}) should return {expected}, got {result}"
+
+            except Exception as e:
+                print(f"   ❌ {description}")
+                print(f"      Input: {repr(input_name)} → Error: {e}")
+                results.append(False)
+                raise
+
+        print(f"📊 Results: {sum(results)}/{len(results)} name formatting tests passed")
 
     tests.append(("Name Formatting", test_name_formatting))
 
     # Test 3: Bidirectional BFS pathfinding
     def test_bfs_pathfinding():
+        """Test bidirectional breadth-first search pathfinding with detailed verification."""
         # Simple family tree: Grandparent -> Parent -> Child
         id_to_parents = {
             "@I002@": {"@I001@"},  # Parent has Grandparent
@@ -1718,16 +1782,76 @@ def relationship_module_tests():
             "@I002@": {"@I003@"},  # Parent has Child
         }
 
-        # Test path finding
-        path = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
-        assert isinstance(path, list), "BFS should return a list"
-        assert len(path) >= 2, "Path should contain at least start and end"
+        print("📋 Testing bidirectional BFS pathfinding:")
+        results = []
 
-        # Test same person path
-        same_path = fast_bidirectional_bfs(
-            "@I001@", "@I001@", id_to_parents, id_to_children
-        )
-        assert len(same_path) == 1, "Same person path should have length 1"
+        # Test 1: Multi-generation path finding
+        try:
+            path = fast_bidirectional_bfs(
+                "@I001@", "@I003@", id_to_parents, id_to_children
+            )
+            path_valid = isinstance(path, list) and len(path) >= 2
+
+            status = "✅" if path_valid else "❌"
+            print(f"   {status} Multi-generation pathfinding")
+            print(
+                f"      From: @I001@ → To: @I003@, Path: {path}, Length: {len(path) if path else 0}"
+            )
+
+            results.append(path_valid)
+            assert isinstance(path, list), "BFS should return a list"
+            assert len(path) >= 2, "Path should contain at least start and end"
+
+        except Exception as e:
+            print(f"   ❌ Multi-generation pathfinding")
+            print(f"      Error: {e}")
+            results.append(False)
+            raise
+
+        # Test 2: Same person path
+        try:
+            same_path = fast_bidirectional_bfs(
+                "@I001@", "@I001@", id_to_parents, id_to_children
+            )
+            same_path_valid = isinstance(same_path, list) and len(same_path) == 1
+
+            status = "✅" if same_path_valid else "❌"
+            print(f"   {status} Same person pathfinding")
+            print(
+                f"      From: @I001@ → To: @I001@, Path: {same_path}, Length: {len(same_path) if same_path else 0}"
+            )
+
+            results.append(same_path_valid)
+            assert len(same_path) == 1, "Same person path should have length 1"
+
+        except Exception as e:
+            print(f"   ❌ Same person pathfinding")
+            print(f"      Error: {e}")
+            results.append(False)
+            raise
+
+        # Test 3: No path available
+        try:
+            no_path = fast_bidirectional_bfs(
+                "@I001@", "@I999@", id_to_parents, id_to_children
+            )
+            no_path_valid = no_path is None or (
+                isinstance(no_path, list) and len(no_path) == 0
+            )
+
+            status = "✅" if no_path_valid else "❌"
+            print(f"   {status} No path available handling")
+            print(f"      From: @I001@ → To: @I999@ (non-existent), Result: {no_path}")
+
+            results.append(no_path_valid)
+
+        except Exception as e:
+            print(f"   ❌ No path available handling")
+            print(f"      Error: {e}")
+            results.append(False)
+            # Don't raise for this test as it might be expected behavior
+
+        print(f"📊 Results: {sum(results)}/{len(results)} BFS pathfinding tests passed")
 
     tests.append(("BFS Pathfinding", test_bfs_pathfinding))
 
@@ -1988,25 +2112,25 @@ def run_comprehensive_tests() -> bool:
         suite.run_test(
             "Name formatting functionality",
             test_name_formatting,
-            "Name formatting handles various input cases correctly",
-            "Test format_name with normal names, empty/None values, and special characters",
-            "Name formatting provides consistent output for all input types",
+            "6 name formatting tests: lowercase→title, GEDCOM slashes, None→'Valued Relative', empty→'Valued Relative', uppercase→title, whitespace cleanup.",
+            "Test name formatting handles various input cases correctly with detailed verification.",
+            "Verify format_name() handles john doe→John Doe, /John Smith/→John Smith, None→Valued Relative, empty→Valued Relative, MARY→Mary, whitespace cleanup.",
         )
 
         suite.run_test(
             "Bidirectional BFS path finding",
             test_bidirectional_bfs,
-            "BFS algorithm finds optimal paths between nodes in relationship graphs",
-            "Test fast_bidirectional_bfs with sample relationship data and verify path correctness",
-            "BFS pathfinding successfully connects start and end nodes through family relationships",
+            "3 BFS pathfinding tests: multi-generation paths, same-person paths, no-path-available handling.",
+            "Test bidirectional breadth-first search pathfinding with detailed verification.",
+            "Verify fast_bidirectional_bfs() finds @I001@→@I003@ paths, handles @I001@→@I001@ same-person, manages non-existent targets.",
         )
 
         suite.run_test(
             "GEDCOM path conversion",
             test_gedcom_path_conversion,
-            "GEDCOM format relationships are converted to unified format",
-            "Test convert_gedcom_path_to_unified_format with mock GEDCOM data and reader",
-            "GEDCOM conversion transforms genealogy data to standard format",
+            "GEDCOM format relationship conversion tested: genealogy data→unified format transformation.",
+            "Test GEDCOM format relationships are converted to unified format.",
+            "Verify GEDCOM conversion transforms genealogy relationship data to standardized format for processing.",
         )
 
         suite.run_test(

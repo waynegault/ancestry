@@ -3223,23 +3223,67 @@ def database_module_tests() -> bool:
 
     # INITIALIZATION TESTS
     def test_database_model_definitions():
-        """Test that all required ORM models exist and can be instantiated."""
-        # Test that all required models exist
-        required_models = [Person, DnaMatch, FamilyTree, MessageType]
-        for model in required_models:
-            assert model is not None, f"{model.__name__} model should be defined"
+        """Test that all required ORM models exist and can be instantiated with detailed verification."""
+        model_tests = [
+            (Person, "Person", "Main DNA match person record"),
+            (DnaMatch, "DnaMatch", "DNA match details and relationships"),
+            (FamilyTree, "FamilyTree", "Family tree position and genealogy"),
+            (MessageType, "MessageType", "Message template types"),
+            (ConversationLog, "ConversationLog", "Conversation history tracking"),
+        ]
+
+        print("📋 Testing database model definitions:")
+        results = []
+
+        for model_class, model_name, description in model_tests:
+            # Test model existence
+            model_exists = model_class is not None
 
             # Test model instantiation
-            instance = model()
-            assert instance is not None, f"{model.__name__} should be instantiable"
+            instance_created = False
+            instance_type = None
+            try:
+                instance = model_class()
+                instance_created = instance is not None
+                instance_type = type(instance).__name__
+            except Exception as e:
+                print(f"   ❌ {model_name} instantiation failed: {e}")
+                instance_created = False
+
+            # Test table definition
+            has_table = (
+                hasattr(model_class, "__table__") and model_class.__table__ is not None
+            )
+            table_name = (
+                model_class.__tablename__
+                if hasattr(model_class, "__tablename__")
+                else "Unknown"
+            )
+
+            status = "✅" if model_exists and instance_created and has_table else "❌"
+            print(f"   {status} {model_name}: {description}")
+            print(
+                f"      Exists: {model_exists}, Instantiable: {instance_created}, Table: {table_name}"
+            )
+
+            test_passed = model_exists and instance_created and has_table
+            results.append(test_passed)
+
+            assert model_exists, f"{model_name} model should be defined"
+            assert instance_created, f"{model_name} model should be instantiable"
+            assert has_table, f"{model_name} should have table definition"
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} database models properly defined"
+        )
 
     with suppress_logging():
         suite.run_test(
             "Database Model Definitions",
             test_database_model_definitions,
-            "All required ORM models (Person, DnaMatch, FamilyTree, MessageType) are defined and instantiable",
-            "Test database model definitions and basic instantiation capabilities",
-            "Verify that all database models exist in globals and can be instantiated without errors",
+            "5 database models tested: Person, DnaMatch, FamilyTree, MessageType, ConversationLog - all exist, instantiable, with table definitions.",
+            "Test that all required ORM models exist and can be instantiated with detailed verification.",
+            "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageType→message_types, ConversationLog→conversation_log tables.",
         )
 
         def test_enum_definitions():

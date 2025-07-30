@@ -2633,17 +2633,23 @@ def api_utils_module_tests() -> bool:
 
     # === INITIALIZATION TESTS ===
     def test_module_imports():
-        """Test all required modules and dependencies are properly imported."""
+        """Test all required modules and dependencies are properly imported with detailed verification."""
         required_modules = [
-            "json",
-            "requests",
-            "time",
-            "logging",
-            "uuid",
-            "re",
-            "traceback",
+            ("json", "JSON parsing and serialization"),
+            ("requests", "HTTP requests and API calls"),
+            ("time", "Time and timing operations"),
+            ("logging", "Logging functionality"),
+            ("uuid", "UUID generation and handling"),
+            ("re", "Regular expression operations"),
+            ("traceback", "Error traceback handling"),
+            ("datetime", "Date and time operations"),
+            ("urllib.parse", "URL parsing and encoding"),
         ]
-        for module_name in required_modules:
+
+        print("📋 Testing API utilities module imports:")
+        results = []
+
+        for module_name, description in required_modules:
             # Check if module is imported or available
             module_imported = (
                 module_name in sys.modules
@@ -2654,7 +2660,26 @@ def api_utils_module_tests() -> bool:
                     if hasattr(item, "__module__")
                 )
             )
+
+            # Additional check for datetime and urllib.parse
+            if not module_imported and "." in module_name:
+                try:
+                    __import__(module_name)
+                    module_imported = True
+                    import_method = "dynamic import"
+                except ImportError:
+                    import_method = "import failed"
+            else:
+                import_method = "sys.modules/globals check"
+
+            status = "✅" if module_imported else "❌"
+            print(f"   {status} {module_name}: {description}")
+            print(f"      Method: {import_method}, Available: {module_imported}")
+
+            results.append(module_imported)
             assert module_imported, f"Required module {module_name} not available"
+
+        print(f"📊 Results: {sum(results)}/{len(results)} required modules imported")
 
     def test_optional_dependencies():
         """Test optional dependencies are properly detected."""
@@ -2915,24 +2940,24 @@ def api_utils_module_tests() -> bool:
     suite.run_test(
         "Module Imports",
         test_module_imports,
-        "All required modules should be importable and accessible",
-        "All required modules and dependencies are properly imported",
-        "Test verifies essential modules (json, requests, time, logging, uuid, re, traceback) are available",
+        "9 required modules imported: json, requests, time, logging, uuid, re, traceback, datetime, urllib.parse.",
+        "Test all required modules and dependencies are properly imported with detailed verification.",
+        "Verify json→serialization, requests→HTTP, time→timing, logging→logs, uuid→IDs, re→regex, traceback→errors, datetime→dates, urllib.parse→URLs.",
     )
 
     suite.run_test(
         "Optional Dependencies",
         test_optional_dependencies,
-        "Optional dependency flags should be properly set",
-        "Optional dependencies (pydantic, BeautifulSoup) are properly detected",
-        "Test PYDANTIC_AVAILABLE and BS4_AVAILABLE boolean flags",
+        "2 optional dependency flags tested: PYDANTIC_AVAILABLE and BS4_AVAILABLE boolean detection.",
+        "Test optional dependencies are properly detected.",
+        "Verify PYDANTIC_AVAILABLE→bool for validation, BS4_AVAILABLE→bool for HTML parsing availability.",
     )
 
     suite.run_test(
         "Logger Initialization",
         test_logger_initialization,
-        "Logger should be configured with all required methods",
-        "Logging configuration is properly set up",
+        "4 logger methods tested: logger exists, has info(), error(), warning() methods.",
+        "Test logging configuration is properly set up.",
         "Test logger object exists and has info, error, warning methods",
     )
 

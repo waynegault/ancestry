@@ -1113,45 +1113,105 @@ def error_handling_module_tests() -> bool:
 
     # === INITIALIZATION TESTS ===
     def test_module_imports():
-        """Test all required modules and dependencies are properly imported."""
+        """Test all required modules and dependencies are properly imported with detailed verification."""
         required_modules = [
-            "CircuitState",
-            "CircuitBreakerConfig",
-            "RetryStrategy",
-            "ErrorRecoveryManager",
+            ("CircuitState", "Circuit breaker state enumeration"),
+            ("CircuitBreakerConfig", "Circuit breaker configuration class"),
+            ("RetryStrategy", "Retry strategy enumeration"),
+            ("ErrorRecoveryManager", "Error recovery management class"),
+            ("IntelligentRetryHandler", "Advanced retry handler"),
+            ("AncestryException", "Base exception class"),
         ]
-        for module_name in required_modules:
-            assert (
-                module_name in globals()
-            ), f"Required class {module_name} should be available"
+
+        print("📋 Testing error handling module imports:")
+        results = []
+
+        for module_name, description in required_modules:
+            is_available = module_name in globals()
+            is_type = (
+                isinstance(globals().get(module_name), type) if is_available else False
+            )
+
+            status = "✅" if is_available else "❌"
+            print(f"   {status} {module_name}: {description}")
+            print(f"      Available: {is_available}, Is Type: {is_type}")
+
+            results.append(is_available)
+            assert is_available, f"Required class {module_name} should be available"
+
+        print(f"📊 Results: {sum(results)}/{len(results)} module imports available")
 
     def test_function_availability():
-        """Test all essential error handling functions are available."""
-        required_classes = [
-            "CircuitBreaker",
-            "ErrorRecoveryManager",
-            "IntelligentRetryHandler",
-            "CircuitBreakerConfig",
-            "RetryConfig",
+        """Test all essential error handling functions are available with detailed verification."""
+        test_categories = [
+            (
+                "Classes",
+                [
+                    ("CircuitBreaker", "Circuit breaker implementation"),
+                    ("ErrorRecoveryManager", "Error recovery coordination"),
+                    ("IntelligentRetryHandler", "Advanced retry logic"),
+                    ("CircuitBreakerConfig", "Circuit breaker configuration"),
+                    ("RetryConfig", "Retry strategy configuration"),
+                ],
+            ),
+            (
+                "Functions",
+                [
+                    ("with_circuit_breaker", "Circuit breaker decorator"),
+                    ("with_recovery", "Recovery strategy decorator"),
+                    ("ancestry_session_recovery", "Session recovery strategy"),
+                    ("ancestry_api_recovery", "API recovery strategy"),
+                    ("ancestry_database_recovery", "Database recovery strategy"),
+                ],
+            ),
         ]
-        for class_name in required_classes:
-            if class_name in globals():
-                assert isinstance(
-                    globals()[class_name], type
-                ), f"Class {class_name} should be available as a type"
 
-        required_functions = [
-            "with_circuit_breaker",
-            "with_recovery",
-            "ancestry_session_recovery",
-            "ancestry_api_recovery",
-            "ancestry_database_recovery",
-        ]
-        for func_name in required_functions:
-            if func_name in globals():
-                assert callable(
-                    globals()[func_name]
-                ), f"Function {func_name} should be callable"
+        print("📋 Testing error handling function availability:")
+        results = []
+
+        for category_name, items in test_categories:
+            print(f"   • Testing {category_name}:")
+
+            for item_name, description in items:
+                is_available = item_name in globals()
+
+                if category_name == "Classes":
+                    is_correct_type = (
+                        isinstance(globals().get(item_name), type)
+                        if is_available
+                        else False
+                    )
+                    test_passed = is_available and is_correct_type
+                    type_info = (
+                        f"Type: {type(globals().get(item_name)).__name__}"
+                        if is_available
+                        else "Not Available"
+                    )
+                else:  # Functions
+                    is_callable = (
+                        callable(globals().get(item_name)) if is_available else False
+                    )
+                    test_passed = is_available and is_callable
+                    type_info = (
+                        f"Callable: {is_callable}" if is_available else "Not Available"
+                    )
+
+                status = "✅" if test_passed else "❌"
+                print(f"     {status} {item_name}: {description}")
+                print(f"        {type_info}")
+
+                results.append(test_passed)
+
+                if category_name == "Classes" and is_available:
+                    assert isinstance(
+                        globals()[item_name], type
+                    ), f"Class {item_name} should be available as a type"
+                elif category_name == "Functions" and is_available:
+                    assert callable(
+                        globals()[item_name]
+                    ), f"Function {item_name} should be callable"
+
+        print(f"📊 Results: {sum(results)}/{len(results)} functions/classes available")
 
     def test_circuit_breaker_config():
         """Test CircuitBreakerConfig initialization and default values."""
@@ -1350,17 +1410,17 @@ def error_handling_module_tests() -> bool:
     suite.run_test(
         "Module Imports",
         test_module_imports,
-        "All required error handling classes should be imported and available",
-        "All required classes (CircuitState, CircuitBreakerConfig, RetryStrategy, ErrorRecoveryManager) are properly imported",
-        "Test verifies advanced error handling pattern classes are available",
+        "6 error handling classes imported: CircuitState, CircuitBreakerConfig, RetryStrategy, ErrorRecoveryManager, IntelligentRetryHandler, AncestryException.",
+        "Test all required modules and dependencies are properly imported with detailed verification.",
+        "Verify CircuitState→enum, CircuitBreakerConfig→class, RetryStrategy→enum, ErrorRecoveryManager→class, IntelligentRetryHandler→class, AncestryException→class.",
     )
 
     suite.run_test(
         "Function Availability",
         test_function_availability,
-        "All essential error handling functions should be available and callable",
-        "All essential error handling functions are available",
-        "Test error_recovery_manager, AppError, handle_error, safe_execute, ErrorContext, CircuitBreaker",
+        "10 items tested: 5 classes (CircuitBreaker, ErrorRecoveryManager, etc.) + 5 functions (with_circuit_breaker, recovery strategies).",
+        "Test all essential error handling functions are available with detailed verification.",
+        "Verify classes are types, functions are callable: CircuitBreaker, ErrorRecoveryManager, with_circuit_breaker, ancestry_*_recovery functions.",
     )
 
     suite.run_test(

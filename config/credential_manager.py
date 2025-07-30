@@ -480,17 +480,51 @@ def run_comprehensive_tests():
 
     # Test 1: Basic Initialization
     def test_initialization():
-        """Test CredentialManager initialization."""
+        """Test CredentialManager initialization with detailed verification."""
+        initialization_tests = [
+            ("Default app name", "AncestryAutomation", "Default application name"),
+            ("Custom app name", "TestApp", "Custom application name"),
+        ]
+
+        print("📋 Testing CredentialManager initialization:")
+
         with suppress_logging():
+            results = []
+
             # Test default initialization
+            print("   • Testing default initialization...")
             cm = CredentialManager()
-            assert cm.app_name == "AncestryAutomation"
-            assert cm._security_manager is None
-            assert cm._credentials_cache is None
+
+            default_app_correct = cm.app_name == "AncestryAutomation"
+            security_manager_none = cm._security_manager is None
+            cache_none = cm._credentials_cache is None
+
+            print(
+                f"   ✅ Default app name: {cm.app_name} (Expected: AncestryAutomation)"
+            )
+            print(
+                f"   ✅ Security manager initial state: {cm._security_manager} (Expected: None)"
+            )
+            print(
+                f"   ✅ Credentials cache initial state: {cm._credentials_cache} (Expected: None)"
+            )
+
+            results.extend([default_app_correct, security_manager_none, cache_none])
 
             # Test custom app name
+            print("   • Testing custom app name initialization...")
             custom_cm = CredentialManager("TestApp")
-            assert custom_cm.app_name == "TestApp"
+            custom_app_correct = custom_cm.app_name == "TestApp"
+
+            print(f"   ✅ Custom app name: {custom_cm.app_name} (Expected: TestApp)")
+
+            results.append(custom_app_correct)
+
+            print(
+                f"📊 Results: {sum(results)}/{len(results)} initialization checks passed"
+            )
+
+            assert all(results), "All initialization checks should pass"
 
     # Test 2: Environment Variable Loading
     def test_environment_loading():
@@ -869,17 +903,17 @@ def run_comprehensive_tests():
         (
             "Basic Initialization",
             test_initialization,
-            "CredentialManager instances are created with proper initialization and configuration",
+            "4 initialization checks: default app name=AncestryAutomation, custom app name=TestApp, security_manager=None, cache=None.",
         ),
         (
             "Environment Variable Loading",
             test_environment_loading,
-            "Credentials are loaded from environment variables with proper fallback handling",
+            "3 environment variables loaded: ANCESTRY_USERNAME, ANCESTRY_PASSWORD, DEEPSEEK_API_KEY with correct values.",
         ),
         (
             "Credential Validation",
             test_credential_validation,
-            "Required credentials are validated for presence and content requirements",
+            "4 validation scenarios: valid credentials→True, missing username→False, missing password→False, empty values→False.",
         ),
         (
             "Credential Access",

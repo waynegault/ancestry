@@ -1726,9 +1726,159 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 # Standalone Test Block
 # ==============================================
 def action8_messaging_tests():
-    """Test suite for action8_messaging.py - Automated Messaging System"""
-    # Test implementation moved to unified test framework
-    return True
+    """Test suite for action8_messaging.py - Automated Messaging System with detailed reporting."""
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
+
+    def test_function_availability():
+        """Test messaging system functions are available with detailed verification."""
+        required_functions = [
+            ("safe_column_value", "Safe SQLAlchemy column value extraction"),
+            ("load_message_templates", "Message template loading from JSON"),
+            ("determine_next_message_type", "Next message type determination logic"),
+            ("_commit_messaging_batch", "Database batch commit operations"),
+            ("_prefetch_messaging_data", "Data prefetching for messaging"),
+            ("_process_single_person", "Individual person message processing"),
+            ("send_messages_to_matches", "Main messaging function for DNA matches"),
+        ]
+
+        print("📋 Testing Action 8 messaging function availability:")
+        results = []
+
+        for func_name, description in required_functions:
+            # Test function existence
+            func_exists = func_name in globals()
+
+            # Test function callability
+            func_callable = False
+            if func_exists:
+                try:
+                    func_callable = callable(globals()[func_name])
+                except Exception:
+                    func_callable = False
+
+            # Test function type
+            func_type = type(globals().get(func_name, None)).__name__
+
+            status = "✅" if func_exists and func_callable else "❌"
+            print(f"   {status} {func_name}: {description}")
+            print(
+                f"      Exists: {func_exists}, Callable: {func_callable}, Type: {func_type}"
+            )
+
+            test_passed = func_exists and func_callable
+            results.append(test_passed)
+
+            assert func_exists, f"Function {func_name} should be available"
+            assert func_callable, f"Function {func_name} should be callable"
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} Action 8 messaging functions available"
+        )
+
+    def test_safe_column_value():
+        """Test safe column value extraction with detailed verification."""
+        test_cases = [
+            (None, "attr", "default", "None object handling"),
+            (
+                type("MockObj", (), {"attr": "value"})(),
+                "attr",
+                "default",
+                "object with attribute",
+            ),
+            (
+                type("MockObj", (), {})(),
+                "missing_attr",
+                "fallback",
+                "object without attribute",
+            ),
+        ]
+
+        print("📋 Testing safe column value extraction:")
+        results = []
+
+        for obj, attr_name, default, description in test_cases:
+            try:
+                result = safe_column_value(obj, attr_name, default)
+                test_passed = result is not None or result == default
+
+                status = "✅" if test_passed else "❌"
+                print(f"   {status} {description}")
+                print(
+                    f"      Input: obj={type(obj).__name__}, attr='{attr_name}', default='{default}' → Result: {repr(result)}"
+                )
+
+                results.append(test_passed)
+
+            except Exception as e:
+                print(f"   ❌ {description}")
+                print(f"      Error: {e}")
+                results.append(False)
+                raise
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} safe column value tests passed"
+        )
+
+    def test_message_template_loading():
+        """Test message template loading functionality."""
+        print("📋 Testing message template loading:")
+        results = []
+
+        try:
+            templates = load_message_templates()
+            templates_loaded = isinstance(templates, dict)
+
+            status = "✅" if templates_loaded else "❌"
+            print(f"   {status} Message template loading")
+            print(
+                f"      Type: {type(templates).__name__}, Count: {len(templates) if templates_loaded else 0}"
+            )
+
+            results.append(templates_loaded)
+            assert templates_loaded, "load_message_templates should return a dictionary"
+
+        except Exception as e:
+            print(f"   ❌ Message template loading")
+            print(f"      Error: {e}")
+            results.append(False)
+            # Don't raise as templates file might not exist in test environment
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} message template loading tests passed"
+        )
+
+    print(
+        "📧 Running Action 8 - Automated Messaging System comprehensive test suite..."
+    )
+
+    with suppress_logging():
+        suite.run_test(
+            "Function availability verification",
+            test_function_availability,
+            "7 messaging functions tested: safe_column_value, load_message_templates, determine_next_message_type, _commit_messaging_batch, _prefetch_messaging_data, _process_single_person, send_messages_to_matches.",
+            "Test messaging system functions are available with detailed verification.",
+            "Verify safe_column_value→SQLAlchemy extraction, load_message_templates→JSON loading, determine_next_message_type→logic, _commit_messaging_batch→database, _prefetch_messaging_data→optimization, _process_single_person→individual processing, send_messages_to_matches→main function.",
+        )
+
+        suite.run_test(
+            "Safe column value extraction",
+            test_safe_column_value,
+            "3 safe extraction tests: None object, object with attribute, object without attribute - all handle gracefully.",
+            "Test safe column value extraction with detailed verification.",
+            "Verify safe_column_value() handles None→default, obj.attr→value, obj.missing→default extraction patterns.",
+        )
+
+        suite.run_test(
+            "Message template loading",
+            test_message_template_loading,
+            "Message template loading tested: load_message_templates() returns dictionary of templates from JSON.",
+            "Test message template loading functionality.",
+            "Verify load_message_templates() loads JSON→dict templates for messaging system.",
+        )
+
+    return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:

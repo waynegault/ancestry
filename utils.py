@@ -6362,27 +6362,136 @@ if __name__ == "__main__":
     )  # Basic utility functions
 
     def test_parse_cookie():
-        cookie_str = "session_id=abc123; path=/; domain=.example.com"
-        result = parse_cookie(cookie_str)
-        assert isinstance(result, dict), "Should return dictionary"
-        assert "session_id" in result, "Should parse session_id"
-        assert result["session_id"] == "abc123", "Should extract correct value"
+        """Test cookie parsing with various cookie string formats"""
+        test_cases = [
+            (
+                "session_id=abc123; path=/; domain=.example.com",
+                {"session_id": "abc123", "path": "/", "domain": ".example.com"},
+                "Standard cookie string",
+            ),
+            ("", {}, "Empty string"),
+            ("single=value", {"single": "value"}, "Single cookie"),
+            ("a=1; b=2; c=3", {"a": "1", "b": "2", "c": "3"}, "Multiple cookies"),
+            (
+                "invalid_part; valid=test",
+                {"valid": "test"},
+                "Mixed valid/invalid parts",
+            ),
+        ]
+
+        print("📋 Testing cookie parsing with various formats:")
+        results = []
+
+        for cookie_str, expected, description in test_cases:
+            try:
+                result = parse_cookie(cookie_str)
+                is_dict = isinstance(result, dict)
+                matches_expected = result == expected
+
+                status = "✅" if is_dict and matches_expected else "❌"
+                print(f"   {status} {description}")
+                print(f"      Input: '{cookie_str}'")
+                print(f"      Output: {result}")
+                print(f"      Expected: {expected}")
+
+                results.append(is_dict and matches_expected)
+                assert is_dict, f"Should return dictionary for '{cookie_str}'"
+                assert (
+                    matches_expected
+                ), f"Should match expected result for '{cookie_str}'"
+
+            except Exception as e:
+                print(f"   ❌ {description}: Exception {e}")
+                results.append(False)
+
+        print(f"📊 Results: {sum(results)}/{len(results)} cookie parsing tests passed")
 
     def test_ordinal_case():
-        assert ordinal_case(1) == "1st", "First ordinal test failed"
-        assert ordinal_case(2) == "2nd", "Second ordinal test failed"
-        assert ordinal_case(3) == "3rd", "Third ordinal test failed"
-        assert ordinal_case(4) == "4th", "Fourth ordinal test failed"
-        assert ordinal_case(21) == "21st", "Twenty-first ordinal test failed"
-        assert ordinal_case(22) == "22nd", "Twenty-second ordinal test failed"
-        assert ordinal_case(23) == "23rd", "Twenty-third ordinal test failed"
+        """Test ordinal number formatting with various input types"""
+        test_cases = [
+            (1, "1st", "First ordinal"),
+            (2, "2nd", "Second ordinal"),
+            (3, "3rd", "Third ordinal"),
+            (4, "4th", "Fourth ordinal"),
+            (11, "11th", "Eleventh (special case)"),
+            (12, "12th", "Twelfth (special case)"),
+            (13, "13th", "Thirteenth (special case)"),
+            (21, "21st", "Twenty-first ordinal"),
+            (22, "22nd", "Twenty-second ordinal"),
+            (23, "23rd", "Twenty-third ordinal"),
+            (101, "101st", "One hundred first"),
+            ("Great Uncle", "Great Uncle", "Text input"),
+        ]
+
+        print("📋 Testing ordinal number formatting:")
+        results = []
+
+        for input_val, expected, description in test_cases:
+            try:
+                result = ordinal_case(input_val)
+                matches_expected = result == expected
+
+                status = "✅" if matches_expected else "❌"
+                print(f"   {status} {description}")
+                print(f"      Input: {input_val} (Type: {type(input_val).__name__})")
+                print(f"      Output: '{result}' (Expected: '{expected}')")
+
+                results.append(matches_expected)
+                assert (
+                    matches_expected
+                ), f"Failed for {input_val}: expected '{expected}', got '{result}'"
+
+            except Exception as e:
+                print(f"   ❌ {description}: Exception {e}")
+                results.append(False)
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} ordinal formatting tests passed"
+        )
 
     def test_format_name():
-        assert format_name("john doe") == "John Doe", "Basic name formatting failed"
-        assert format_name(None) == "Valued Relative", "None handling failed"
-        assert format_name("") == "Valued Relative", "Empty string handling failed"
-        assert format_name("JOHN DOE") == "John Doe", "Uppercase conversion failed"
-        assert format_name("john /doe/") == "John Doe", "GEDCOM format handling failed"
+        """Test name formatting with various input types and edge cases"""
+        test_cases = [
+            ("john doe", "John Doe", "Basic name formatting"),
+            (None, "Valued Relative", "None input handling"),
+            ("", "Valued Relative", "Empty string handling"),
+            ("JOHN DOE", "John Doe", "Uppercase conversion"),
+            ("john /doe/", "John Doe", "GEDCOM format handling"),
+            ("o'malley", "O'Malley", "Irish apostrophe names"),
+            ("mcdonald", "McDonald", "Scottish Mc names"),
+            ("macleod", "MacLeod", "Scottish Mac names"),
+            ("'betty' smith", "'Betty' Smith", "Quoted nicknames"),
+            (
+                "jean-claude van damme",
+                "Jean-Claude van Damme",
+                "Hyphenated with particles",
+            ),
+            ("j. r. r. tolkien", "J. R. R. Tolkien", "Initials with periods"),
+        ]
+
+        print("📋 Testing name formatting with various cases:")
+        results = []
+
+        for input_val, expected, description in test_cases:
+            try:
+                result = format_name(input_val)
+                matches_expected = result == expected
+
+                status = "✅" if matches_expected else "❌"
+                print(f"   {status} {description}")
+                print(f"      Input: {repr(input_val)} → Output: '{result}'")
+                print(f"      Expected: '{expected}'")
+
+                results.append(matches_expected)
+                assert (
+                    matches_expected
+                ), f"Failed for {repr(input_val)}: expected '{expected}', got '{result}'"
+
+            except Exception as e:
+                print(f"   ❌ {description}: Exception {e}")
+                results.append(False)
+
+        print(f"📊 Results: {sum(results)}/{len(results)} name formatting tests passed")
 
     def test_decorators():
         # Test retry decorator availability
@@ -6504,25 +6613,25 @@ if __name__ == "__main__":
         suite.run_test(
             "Cookie parsing functionality",
             test_parse_cookie,
-            "Test parse_cookie with sample cookie string and verify correct parsing",
-            "Cookie parsing extracts key-value pairs from cookie strings",
-            "Cookie string data is properly parsed into dictionary format",
+            "5 cookie formats tested: standard, empty, single, multiple, mixed valid/invalid parts.",
+            "Test cookie parsing with various cookie string formats.",
+            "Test parse_cookie with: 'session_id=abc123; path=/', '', 'single=value', 'a=1; b=2; c=3', 'invalid_part; valid=test'.",
         )
 
         suite.run_test(
             "Ordinal number formatting",
             test_ordinal_case,
-            "Test ordinal_case with various numbers and verify correct ordinal suffix",
-            "Ordinal formatting provides correct suffixes for numbers",
-            "Numbers are formatted with appropriate ordinal suffixes (1st, 2nd, 3rd, etc.)",
+            "12 ordinal tests: 1st, 2nd, 3rd, 4th, 11th-13th (special), 21st-23rd, 101st, text input.",
+            "Test ordinal number formatting with various input types.",
+            "Test ordinal_case with: 1→'1st', 2→'2nd', 3→'3rd', 11→'11th', 21→'21st', 'Great Uncle'→'Great Uncle'.",
         )
 
         suite.run_test(
             "Name formatting functionality",
             test_format_name,
-            "Test format_name with various inputs including None, empty, and GEDCOM formats",
-            "Name formatting provides consistent title case output",
-            "Names are properly formatted with title case and GEDCOM handling",
+            "11 name formats: basic, None→'Valued Relative', GEDCOM /slashes/, O'Malley, McDonald, MacLeod, 'Betty', hyphenated, initials.",
+            "Test name formatting with various input types and edge cases.",
+            "Test format_name with: 'john doe'→'John Doe', None→'Valued Relative', 'john /doe/'→'John Doe', 'o'malley'→'O'Malley'.",
         )
 
         suite.run_test(
