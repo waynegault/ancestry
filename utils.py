@@ -20,6 +20,14 @@ from standard_imports import (
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === SESSION MANAGER IMPORT ===
+# Import SessionManager from core module
+try:
+    from core.session_manager import SessionManager
+except ImportError:
+    # Fallback for testing or standalone usage
+    SessionManager = None
+
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
     retry_on_failure,
@@ -94,7 +102,6 @@ KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
 KEY_DATA = "data"
 
-
 # --- Third-party and local imports ---
 # Keep the warning for optional dependencies, but don't define dummies.
 # If essential ones fail, other parts of the code will raise errors.
@@ -167,7 +174,6 @@ from test_framework import (
 # Helper functions (General Utilities)
 # ------------------------------------------------------------------------------------
 
-
 def parse_cookie(cookie_string: str) -> Dict[str, str]:
     """
     Parses a raw HTTP cookie string into a dictionary of key-value pairs.
@@ -196,9 +202,7 @@ def parse_cookie(cookie_string: str) -> Dict[str, str]:
     # End of for
     return cookies
 
-
 # End of parse_cookie
-
 
 def ordinal_case(text: Union[str, int]) -> str:
     """
@@ -242,9 +246,7 @@ def ordinal_case(text: Union[str, int]) -> str:
         # End of if/else
     # End of try/except
 
-
 # End of ordinal_case
-
 
 def format_name(name: Optional[str]) -> str:
     """
@@ -401,14 +403,11 @@ def format_name(name: Optional[str]) -> str:
         # End of try/except
     # End of try/except
 
-
 # End of format_name
-
 
 # ------------------------------
 # Decorators (Remain in utils.py)
 # ------------------------------
-
 
 def retry(
     MAX_RETRIES: Optional[int] = None,
@@ -466,9 +465,7 @@ def retry(
     # End of decorator
     return decorator
 
-
 # End of retry
-
 
 def retry_api(
     max_retries: Optional[int] = None,
@@ -604,9 +601,7 @@ def retry_api(
     # End of decorator
     return decorator
 
-
 # End of retry_api
-
 
 def ensure_browser_open(func: Callable) -> Callable:
     """Decorator to ensure browser session is valid before executing."""
@@ -655,9 +650,7 @@ def ensure_browser_open(func: Callable) -> Callable:
     # End of wrapper
     return wrapper
 
-
 # End of ensure_browser_open
-
 
 def time_wait(wait_description: str) -> Callable:
     """Decorator factory to time Selenium WebDriverWait calls."""
@@ -695,9 +688,7 @@ def time_wait(wait_description: str) -> Callable:
     # End of decorator
     return decorator
 
-
 # End of time_wait
-
 
 # ------------------------------
 # Rate Limiting (Remains in utils.py)
@@ -864,2405 +855,21 @@ class DynamicRateLimiter:
 
     # End of is_throttled
 
-
 # End of DynamicRateLimiter class
 
-
 # ------------------------------
-# Session Management (Remains in utils.py)
+# Session Management (MOVED TO core.session_manager)
 # ------------------------------
-class SessionManager:
-    """
-    Manages WebDriver and requests sessions, database connections,
-    and essential user identifiers (CSRF token, profile ID, UUID, tree ID).
-    Includes methods for session startup, validation, readiness checks, and cleanup.
+# SessionManager class has been moved to core.session_manager.SessionManager
+# Import it from there: from core.session_manager import SessionManager
 
-    The SessionManager now separates database initialization from browser initialization,
-    allowing for more efficient resource management when only database access is needed.
-    """
+# ----------------------------------------------------------------------------
 
-    def __init__(self) -> None:
-        self.driver: DriverType = None
-        self.driver_live: bool = False
-        self.session_ready: bool = False
-        self.browser_needed: bool = False  # Flag to track if browser is needed
-
-        # Use new config system
-        db_file = config_schema.database.database_file
-        self.db_path: str = str(db_file.resolve()) if db_file else ""
-        self.ancestry_username: str = config_schema.api.username
-        self.ancestry_password: str = config_schema.api.password
-        self.debug_port: int = config_schema.selenium.debug_port
-        self.chrome_user_data_dir: Optional[Path] = (
-            config_schema.selenium.chrome_user_data_dir
-        )
-        self.profile_dir: str = config_schema.selenium.profile_dir
-        self.chrome_driver_path: Optional[Path] = (
-            config_schema.selenium.chrome_driver_path
-        )
-        self.chrome_browser_path: Optional[Path] = (
-            config_schema.selenium.chrome_browser_path
-        )
-        self.chrome_max_retries: int = config_schema.selenium.chrome_max_retries
-        self.chrome_retry_delay: int = config_schema.selenium.chrome_retry_delay
-        self.headless_mode: bool = config_schema.selenium.headless_mode
-        self.engine = None
-        self.Session: Optional[sessionmaker] = None  # type: ignore # Assume imported
-        self._db_init_attempted: bool = False
-        self._db_ready: bool = False  # Flag to track if database is ready
-        cache_dir = config_schema.cache.cache_dir
-        self.cache_dir: Optional[Path] = cache_dir
-        self.csrf_token: Optional[str] = None
-        self.my_profile_id: Optional[str] = None
-        self.my_uuid: Optional[str] = None
-        self.my_tree_id: Optional[str] = None
-        self.tree_owner_name: Optional[str] = None
-        self.session_start_time: Optional[float] = None
-        self._profile_id_logged: bool = False
-        self._uuid_logged: bool = False
-        self._tree_id_logged: bool = False
-        self._owner_logged: bool = False
-
-        # Initialize requests session immediately
-        self._requests_session = requests.Session()  # type: ignore # Assume imported
-        retry_strategy = Retry(  # type: ignore # Assume imported
-            total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504]
-        )
-        adapter = HTTPAdapter(  # type: ignore # Assume imported
-            pool_connections=20, pool_maxsize=50, max_retries=retry_strategy
-        )
-        self._requests_session.mount("http://", adapter)
-        self._requests_session.mount("https://", adapter)
-        logger.debug("Initialized shared requests.Session with HTTPAdapter.")
-
-        # Initialize Cloudscraper
-        self.scraper: Optional[cloudscraper.CloudScraper] = None  # type: ignore # Assume imported
-        try:
-            self.scraper = cloudscraper.create_scraper(  # type: ignore
-                browser={"browser": "chrome", "platform": "windows", "desktop": True},
-                delay=10,
-            )
-            scraper_retry = Retry(  # type: ignore
-                total=3,
-                backoff_factor=0.8,
-                status_forcelist=[403, 429, 500, 502, 503, 504],
-                allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
-            )
-            scraper_adapter = HTTPAdapter(max_retries=scraper_retry)  # type: ignore
-            self.scraper.mount("http://", scraper_adapter)
-            self.scraper.mount("https://", scraper_adapter)
-            logger.debug(
-                "Initialized shared cloudscraper instance with retry strategy."
-            )
-        except Exception as scraper_init_e:
-            logger.error(
-                f"Failed to initialize cloudscraper instance: {scraper_init_e}",
-                exc_info=True,
-            )
-            self.scraper = None
-        # End of try/except
-
-        self.dynamic_rate_limiter: DynamicRateLimiter = DynamicRateLimiter()
-        self.last_js_error_check: datetime = datetime.now(timezone.utc)
-
-        # Initialize database connection on creation
-        self.ensure_db_ready()
-
-        logger.debug(f"SessionManager instance created: ID={id(self)}\n")
-
-    # End of __init__
-
-    def ensure_db_ready(self) -> bool:
-        """
-        Ensures the database connection is ready.
-        This method initializes the database engine and session factory if needed.
-
-        Returns:
-            bool: True if database is ready, False otherwise
-        """
-        logger.debug("Ensuring database is ready...")
-
-        # Initialize DB if not already done
-        if not self.engine or not self.Session:
-            try:
-                self._initialize_db_engine_and_session()
-                self._db_ready = True
-                logger.debug("Database initialized successfully.")
-                return True
-            except Exception as db_init_e:
-                logger.critical(f"DB Initialization failed: {db_init_e}")
-                self._db_ready = False
-                return False
-        else:
-            self._db_ready = True
-            logger.debug("Database already initialized.")
-            return True
-
-    # End of ensure_db_ready
-
-    def start_browser(self, action_name: Optional[str] = None) -> bool:
-        """
-        Starts the browser session.
-        This method initializes the WebDriver and navigates to the base URL.
-
-        Args:
-            action_name: Optional name of the action requiring the browser
-
-        Returns:
-            bool: True if browser started successfully, False otherwise
-        """
-        logger.debug(
-            f"--- SessionManager: Starting Browser ({action_name or 'Unknown Action'}) ---\n"
-        )
-
-        # Reset browser-related state
-        self.driver_live = False
-        self.session_ready = False
-        self.driver = None
-        self.csrf_token = None
-        self.my_profile_id = None
-        self.my_uuid = None
-        self.my_tree_id = None
-        self.tree_owner_name = None
-        self._reset_logged_flags()
-
-        # Ensure requests session exists (should be guaranteed by __init__)
-        if not hasattr(self, "_requests_session") or not self._requests_session:
-            logger.critical(
-                "Internal _requests_session missing. This should not happen."
-            )
-            # Recreate it as a last resort
-            self._requests_session = requests.Session()  # type: ignore
-        # End of if
-
-        logger.debug("Initializing WebDriver instance (using init_webdvr)...")
-        try:
-            # Assume init_webdvr is imported
-            self.driver = init_webdvr()
-            if not self.driver:
-                logger.error(
-                    "WebDriver initialization failed (init_webdvr returned None after retries)."
-                )
-                return False
-            # End of if
-            logger.debug("WebDriver initialization successful.")
-            logger.debug(
-                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
-            )
-            # Assume nav_to_page is available
-            base_url_nav_ok = nav_to_page(
-                self.driver,
-                config_schema.api.base_url,
-                selector="body",
-                session_manager=self,
-            )
-            if not base_url_nav_ok:
-                logger.error("Failed to navigate to Base URL after WebDriver init.")
-                self.close_browser()
-                return False
-            # End of if
-            logger.debug("Initial navigation to Base URL successful.")
-            self.driver_live = True
-            self.browser_needed = True
-            self.session_start_time = time.time()
-            self.last_js_error_check = datetime.now(timezone.utc)
-            logger.debug("--- SessionManager: Browser Start Successful ---")
-            return True
-        except WebDriverException as wd_exc:  # type: ignore # Assume imported
-            logger.error(
-                f"WebDriverException during browser start/base nav: {wd_exc}",
-                exc_info=False,
-            )
-            self.close_browser()
-            return False
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during browser start/base nav: {e}", exc_info=True
-            )
-            self.close_browser()
-            return False
-        # End of try/except
-
-    # End of start_browser
-
-    def close_browser(self) -> None:
-        """
-        Closes the browser session without affecting the database connection.
-        """
-        if self.driver:
-            logger.debug("Attempting to close WebDriver session...")
-            try:
-                self.driver.quit()
-                logger.debug("WebDriver session quit successfully.")
-            except WebDriverException as e:  # type: ignore
-                logger.error(f"Error closing WebDriver session: {e}", exc_info=False)
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error closing WebDriver session: {e}", exc_info=True
-                )
-            finally:
-                self.driver = None  # Ensure driver is set to None
-            # End of try/except/finally
-        else:
-            logger.debug("No active WebDriver session to close.")
-        # End of if/else
-
-        # Reset browser-related flags
-        self.driver_live = False
-        self.session_ready = False
-        self.csrf_token = None  # Clear sensitive data on close
-
-    # End of close_browser
-
-    def start_sess(self, action_name: Optional[str] = None) -> bool:
-        """
-        Starts both database and browser sessions.
-
-        Args:
-            action_name: Optional name of the action
-
-        Returns:
-            bool: True if sessions started successfully, False otherwise
-        """
-        logger.debug(
-            f"--- SessionManager Phase 1: Starting Driver ({action_name or 'Unknown Action'}) ---\n"
-        )
-
-        # Ensure database is ready
-        if not self.ensure_db_ready():
-            return False
-
-        # Start browser if needed
-        if self.browser_needed:
-            return self.start_browser(action_name)
-        else:
-            # For database-only operations, we consider the session "live" even without a browser
-            self.driver_live = True
-            self.session_start_time = time.time()
-            return True
-
-    # End of start_sess
-
-    def ensure_driver_live(
-        self, action_name: Optional[str] = "Ensure Driver Live"
-    ) -> bool:
-        """
-        Ensures the WebDriver is live and ready for use.
-
-        Args:
-            action_name: Optional name of the action requiring the driver
-
-        Returns:
-            bool: True if driver is live, False otherwise
-        """
-        # Set browser_needed flag to True since this method is called
-        # only when browser functionality is required
-        self.browser_needed = True
-
-        # First ensure database is ready
-        if not self.ensure_db_ready():
-            logger.error(f"Cannot ensure driver live: Database initialization failed")
-            return False
-
-        if self.driver_live:
-            logger.debug(f"Driver already live (Action: {action_name}).")
-            return True
-        else:
-            logger.debug(
-                f"Driver not live, attempting to start browser (Action: {action_name})..."
-            )
-            return self.start_browser(action_name=action_name)
-        # End of if/else
-
-    # End of ensure_driver_live
-
-    def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:
-        """
-        Ensures the session is ready for use.
-        For database-only operations, this only ensures the database is ready.
-        For browser operations, this ensures both database and browser are ready.
-
-        Args:
-            action_name: Optional name of the action requiring session readiness
-
-        Returns:
-            bool: True if session is ready, False otherwise
-        """
-
-        # First ensure database is ready
-        if not self.ensure_db_ready():
-            logger.error(f"Cannot ensure session ready: Database initialization failed")
-            self.session_ready = False
-            return False
-
-        # If browser is not needed, we're done
-        if not self.browser_needed:
-            logger.debug(
-                f"Skipping browser-dependent session readiness checks (browser_needed=False)"
-            )
-            self.session_ready = True
-            return True
-
-        # If browser is needed, ensure driver is live
-        if not self.ensure_driver_live(action_name=f"{action_name} - Ensure Driver"):
-            logger.error(
-                f"Cannot ensure session ready for '{action_name}': Driver start failed."
-            )
-            self.session_ready = False
-
-            return False
-        # End of if
-
-        ready_checks_ok = False
-        try:
-
-            ready_checks_ok = self._perform_readiness_checks(
-                action_name=f"{action_name} - Readiness Checks"
-            )
-
-        except Exception as e:
-            logger.critical(
-                f"Exception in _perform_readiness_checks: {e}", exc_info=True
-            )
-            self.session_ready = False
-            return False
-        except BaseException as be:  # Catch BaseException like SystemExit
-            logger.critical(
-                f"BaseException in _perform_readiness_checks: {type(be).__name__}: {be}",
-                exc_info=True,
-            )
-            self.session_ready = False
-            raise  # Re-raise BaseException
-        # End of try/except
-
-        identifiers_ok = self._retrieve_identifiers()
-        # Only retrieve owner if TREE_NAME is configured
-        owner_ok = self._retrieve_tree_owner() if config_schema.api.tree_name else True
-
-        logger.debug(
-            f"Identifiers after fetch: profile_id={self.my_profile_id}, uuid={self.my_uuid}, tree_id={self.my_tree_id}"
-        )
-        logger.debug(f"Tree owner name after fetch: {self.tree_owner_name}")
-
-        if not identifiers_ok:
-            logger.warning("One or more essential identifiers could not be retrieved.")
-        # End of if
-        if config_schema.api.tree_name and not owner_ok:
-            logger.warning("Tree owner name could not be retrieved (Tree configured).")
-        # End of if
-
-        self.session_ready = ready_checks_ok and identifiers_ok and owner_ok
-
-        return self.session_ready
-
-    # End of ensure_session_ready
-
-    def _check_login_and_attempt_relogin(
-        self, attempt: int
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Checks login status and attempts relogin if needed.
-
-        Args:
-            attempt: The current attempt number
-
-        Returns:
-            Tuple of (success, error_message)
-            - success: True if logged in, False otherwise
-            - error_message: Error message if any, None if successful
-        """
-        # --- Check Login Status ---
-        login_status_result = login_status(
-            self, disable_ui_fallback=True
-        )  # API check only for speed and to avoid redundant checks
-
-        # --- Handle Login Check Error ---
-        if login_status_result is None:
-            logger.error("Critical error checking login status (returned None).")
-            return False, "login_status returned None"  # Critical failure
-
-        # --- Handle Not Logged In ---
-        if login_status_result is False:
-            logger.info("Not logged in. Attempting login via automation...")
-            # Assume log_in function is available
-            login_result_str = log_in(self)
-            if login_result_str != "LOGIN_SUCCEEDED":
-                logger.error(
-                    f"Login attempt failed ({login_result_str}). Readiness check failed on attempt {attempt}."
-                )
-                return False, f"Login attempt failed: {login_result_str}"
-            # End of if
-
-            # Double-check login status after successful login
-            verify_login = login_status(self, disable_ui_fallback=False)
-            if verify_login is not True:
-                logger.warning(
-                    f"Login verification returned {verify_login} after successful login report. Proceeding cautiously."
-                )
-
-            # Export cookies after successful login
-            cookies_backup_path = self._get_cookie_backup_path()
-            if cookies_backup_path:
-                try:
-                    # Now properly imported from selenium_utils
-                    export_cookies(self.driver, str(cookies_backup_path))
-                    logger.debug(f"Cookies exported to {cookies_backup_path}")
-                except (WebDriverException, OSError, IOError) as export_err:  # type: ignore
-                    logger.debug(f"Failed to export cookies after login: {export_err}")
-                except Exception as e:
-                    logger.debug(f"Unexpected error exporting cookies: {e}")
-                # End of try/except
-            # End of if
-
-            # We trust the login result from log_in function
-            # No need for an additional check that could trigger more API calls
-            logger.debug("Login reported as successful by automation.")
-        # End of if login_status_result is False
-
-        return True, None  # Login successful
-
-    # End of _check_login_and_attempt_relogin
-
-    def _check_essential_cookies(self) -> Tuple[bool, Optional[str]]:
-        """
-        Verifies that essential cookies are present.
-
-        Returns:
-            Tuple of (success, error_message)
-            - success: True if all essential cookies are present, False otherwise
-            - error_message: Error message if any, None if successful
-        """
-        logger.debug("Verifying essential cookies...")
-        essential_cookies = ["ANCSESSIONID", "SecureATT"]
-        if not self.get_cookies(essential_cookies, timeout=5):
-            logger.error(f"Essential cookies {essential_cookies} not found.")
-            return False, f"Essential cookies missing: {essential_cookies}"
-        # End of if
-        logger.debug("Essential cookies OK.")
-        return True, None
-
-    # End of _check_essential_cookies
-
-    def _sync_cookies_to_requests(self) -> Tuple[bool, Optional[str]]:
-        """
-        Synchronizes cookies from the WebDriver to the requests session.
-
-        Returns:
-            Tuple of (success, error_message)
-            - success: True if cookies were synced successfully, False otherwise
-            - error_message: Error message if any, None if successful
-        """
-        logger.debug("Syncing cookies to requests session...")
-        try:
-            self._sync_cookies()
-            logger.debug("Cookies synced.")
-            return True, None
-        except Exception as sync_e:
-            logger.error(f"Cookie sync failed: {sync_e}", exc_info=True)
-            return False, f"Cookie sync failed: {sync_e}"
-        # End of try/except
-
-    # End of _sync_cookies_to_requests
-
-    def _check_csrf_token(self) -> Tuple[bool, Optional[str]]:
-        """
-        Ensures a valid CSRF token is available.
-
-        Returns:
-            Tuple of (success, error_message)
-            - success: True if a valid CSRF token is available, False otherwise
-            - error_message: Error message if any, None if successful
-        """
-        logger.debug("Ensuring CSRF token...")
-        # Fetch CSRF token if missing or seems invalid
-        if not self.csrf_token or len(self.csrf_token) < 20:
-            self.csrf_token = self.get_csrf()
-        # End of if
-        if not self.csrf_token or len(self.csrf_token) < 20:
-            logger.error("Failed to retrieve/verify valid CSRF token.")
-            return False, "CSRF token missing/invalid"
-        # End of if
-        logger.debug("CSRF token OK.")
-        return True, None
-
-    # End of _check_csrf_token
-
-    def _perform_readiness_checks(self, action_name: Optional[str] = None) -> bool:
-        """
-        Performs a series of checks to ensure the session is ready for use.
-
-        Args:
-            action_name: Optional name of the action requiring readiness
-
-        Returns:
-            True if all checks pass, False otherwise
-        """
-        max_attempts = 2
-        attempt = 0
-        last_check_error: Optional[str] = None
-
-        while attempt < max_attempts:
-            attempt += 1
-            logger.debug(
-                f"Performing readiness checks (Attempt {attempt}/{max_attempts}, Action: {action_name})..."
-            )
-            last_check_error = None  # Reset error for this attempt
-
-            try:
-                # --- Check Driver Status ---
-                if not self.driver_live or not self.driver:
-                    logger.error("Cannot perform readiness checks: Driver not live.")
-                    last_check_error = "Driver not live"
-                    return False  # Cannot proceed without driver
-                # End of if
-
-                # --- Check Login Status and Attempt Relogin if Needed ---
-                login_success, login_error = self._check_login_and_attempt_relogin(
-                    attempt
-                )
-                if not login_success:
-                    last_check_error = login_error
-                    continue  # Try next readiness attempt
-
-                # --- Check and Handle Current URL ---
-                if not self._check_and_handle_url():
-                    logger.error("URL check/handling failed.")
-                    last_check_error = "URL check/handling failed"
-                    continue  # Try next readiness attempt
-                # End of if
-                logger.debug("URL check/handling OK.")
-
-                # --- Check Essential Cookies ---
-                cookies_success, cookies_error = self._check_essential_cookies()
-                if not cookies_success:
-                    last_check_error = cookies_error
-                    continue  # Try next readiness attempt
-
-                # --- Sync Cookies to Requests Session ---
-                sync_success, sync_error = self._sync_cookies_to_requests()
-                if not sync_success:
-                    last_check_error = sync_error
-                    continue  # Try next readiness attempt
-
-                # --- Check CSRF Token ---
-                csrf_success, csrf_error = self._check_csrf_token()
-                if not csrf_success:
-                    last_check_error = csrf_error
-                    continue  # Try next readiness attempt
-
-                # --- Reached end of checks for this attempt ---
-                logger.info(f"Readiness checks PASSED on attempt {attempt}.")
-                return True  # All checks passed for this attempt
-
-            # --- Handle Exceptions during checks ---
-            except WebDriverException as wd_exc:  # type: ignore
-                logger.error(
-                    f"WebDriverException during readiness check attempt {attempt}: {wd_exc}",
-                    exc_info=False,  # Keep log cleaner for common session issues
-                )
-                last_check_error = f"WebDriverException: {wd_exc}"
-                if not self.is_sess_valid():
-                    logger.error(
-                        "Session invalid during readiness check. Aborting checks."
-                    )
-                    self.driver_live = False
-                    self.session_ready = False
-                    return False  # Unrecoverable if session dies
-                # End of if
-                if attempt >= max_attempts:
-                    logger.error(
-                        "Readiness checks failed after final attempt (WebDriverException)."
-                    )
-                    return False
-                # End of if
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error during readiness check attempt {attempt}: {e}",
-                    exc_info=True,
-                )
-                last_check_error = f"Unexpected Error: {e}"
-                if attempt >= max_attempts:
-                    logger.error(
-                        "Readiness checks failed after final attempt (Exception)."
-                    )
-                    return False
-                # End of if
-            # End of try/except for checks
-
-            # --- Wait before next attempt if needed ---
-            logger.info(
-                f"Waiting {config_schema.selenium.chrome_retry_delay}s before next readiness attempt (Last Error: {last_check_error})..."
-            )
-            time.sleep(config_schema.selenium.chrome_retry_delay)
-        # End of while loop
-
-        logger.error(
-            f"All {max_attempts} readiness check attempts failed. Last Error: {last_check_error}"
-        )
-        return False
-
-    # End of _perform_readiness_checks
-
-    def _get_cookie_backup_path(self) -> Optional[Path]:
-        """
-        Gets the path for cookie backup file and ensures the directory exists.
-
-        Returns:
-            Path to the cookie backup file or None if the directory cannot be created
-        """
-        if not self.chrome_user_data_dir:
-            return None
-        # End of if
-
-        try:
-            # Ensure the directory exists
-            self.chrome_user_data_dir.mkdir(parents=True, exist_ok=True)
-            return self.chrome_user_data_dir / "ancestry_cookies.json"
-        except OSError as e:
-            logger.debug(f"Failed to create directory for cookie backup: {e}")
-            return None
-        # End of try/except
-
-    # End of _get_cookie_backup_path
-
-    def _initialize_db_engine_and_session(self):
-        # Prevent re-initialization if already done
-        if self.engine and self.Session:
-            logger.debug(
-                f"DB Engine/Session already initialized for SM ID={id(self)}. Skipping."
-            )
-            return
-        # End of if
-        logger.debug(
-            f"SessionManager ID={id(self)} initializing SQLAlchemy Engine/Session..."
-        )
-        self._db_init_attempted = True
-
-        # Dispose existing engine if somehow present but Session is not
-        if self.engine:
-            logger.warning(
-                f"Disposing existing engine before re-initializing (SM ID={id(self)})."
-            )
-            try:
-                self.engine.dispose()
-            except Exception as dispose_e:
-                logger.error(f"Error disposing existing engine: {dispose_e}")
-            # End of try/except
-            self.engine = None
-            self.Session = None
-        # End of if
-
-        try:
-            logger.debug(f"DB Path: {self.db_path}")
-            # Pool configuration
-            pool_size = config_schema.database.pool_size
-            if not isinstance(pool_size, int) or pool_size <= 0:
-                logger.warning(f"Invalid DB_POOL_SIZE '{pool_size}'. Using default 10.")
-                pool_size = 10
-            # End of if
-            pool_size = min(pool_size, 100)  # Cap pool size
-            max_overflow = max(5, int(pool_size * 0.2))
-            pool_timeout = 30
-            pool_class = sqlalchemy_pool.QueuePool  # type: ignore # Assume imported
-            logger.debug(
-                f"DB Pool Config: Size={pool_size}, MaxOverflow={max_overflow}, Timeout={pool_timeout}"
-            )
-
-            # Create Engine
-            self.engine = create_engine(  # type: ignore # Assume imported
-                f"sqlite:///{self.db_path}",
-                echo=False,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=pool_timeout,
-                poolclass=pool_class,
-                connect_args={
-                    "check_same_thread": False
-                },  # Needed for multithreading if applicable
-            )
-            logger.debug(
-                f"Created NEW SQLAlchemy engine: ID={id(self.engine)} for SM ID={id(self)}"
-            )
-
-            # Attach event listener for PRAGMA settings
-            @event.listens_for(self.engine, "connect")  # type: ignore # Assume imported
-            def enable_sqlite_settings(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                try:
-                    cursor.execute("PRAGMA journal_mode=WAL;")
-                    cursor.execute("PRAGMA foreign_keys=ON;")
-                    cursor.execute("PRAGMA synchronous=NORMAL;")
-                    logger.debug(
-                        "SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal)."
-                    )
-                except sqlite3.Error as pragma_e:
-                    logger.error(f"Failed setting PRAGMA: {pragma_e}")
-                finally:
-                    cursor.close()
-                # End of try/except/finally
-
-            # End of enable_sqlite_settings
-
-            # Create Session Factory
-            self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)  # type: ignore
-            logger.debug(f"Created Session factory for Engine ID={id(self.engine)}")
-
-            # Ensure tables are created
-            try:
-                # Check if the database file exists and has tables
-                inspector = inspect(self.engine)
-                existing_tables = inspector.get_table_names()
-
-                if existing_tables:
-                    logger.debug(
-                        f"Database already exists with tables: {existing_tables}"
-                    )
-                    # Skip table creation if tables already exist
-                    logger.debug("Skipping table creation for existing database.")
-                else:
-                    # Create tables only if the database is empty
-                    Base.metadata.create_all(self.engine)  # type: ignore
-                    logger.debug("DB tables created successfully.")
-            except SQLAlchemyError as table_create_e:  # type: ignore
-                logger.warning(
-                    f"Non-critical error during DB table check/creation: {table_create_e}"
-                )
-                # Don't raise the error, just log it and continue
-                # This allows the code to work with existing databases that might have
-                # slightly different schemas
-            # End of try/except
-
-        except SQLAlchemyError as sql_e:  # type: ignore
-            logger.critical(f"FAILED to initialize SQLAlchemy: {sql_e}", exc_info=True)
-            if self.engine:
-                self.engine.dispose()
-            # End of if
-            self.engine = None
-            self.Session = None
-            self._db_init_attempted = False  # Reset flag on failure
-            raise sql_e  # Re-raise critical error
-        except Exception as e:
-            logger.critical(
-                f"UNEXPECTED error initializing SQLAlchemy: {e}", exc_info=True
-            )
-            if self.engine:
-                self.engine.dispose()
-            # End of if
-            self.engine = None
-            self.Session = None
-            self._db_init_attempted = False  # Reset flag on failure
-            raise e  # Re-raise critical error
-        # End of try/except
-
-    # End of _initialize_db_engine_and_session
-
-    def _check_and_handle_url(self) -> bool:
-        if not self.driver:
-            logger.error("Driver attribute is None. Cannot check URL.")
-            return False
-        # End of if
-        try:
-            current_url = self.driver.current_url
-            logger.debug(f"Current URL for check: {current_url}")
-        except WebDriverException as e:  # type: ignore
-            logger.error(f"Error getting current URL: {e}. Session might be dead.")
-            if not self.is_sess_valid():
-                logger.warning("Session seems invalid during URL check.")
-            # End of if
-            return False
-        except AttributeError:  # Should not happen if first check passed
-            logger.error("Driver attribute became None unexpectedly. Cannot check URL.")
-            return False
-        # End of try/except
-
-        # Use new config system
-        base_url_parsed = urlparse(config_schema.api.base_url)
-        base_url_norm = urlunparse(
-            (
-                base_url_parsed.scheme,
-                base_url_parsed.netloc,
-                base_url_parsed.path.rstrip("/"),
-                "",
-                "",
-                "",
-            )
-        ).rstrip("/")
-        signin_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip(
-            "/"
-        )
-        logout_url_base = urljoin(config_schema.api.base_url, "c/logout").rstrip("/")
-        mfa_url_base = urljoin(
-            config_schema.api.base_url, "account/signin/mfa/"
-        ).rstrip("/")
-
-        # Define disallowed paths based on their base URL component
-        disallowed_starts = (
-            urlunparse(urlparse(signin_url_base)[:3] + ("", "", "")).rstrip("/"),
-            urlunparse(urlparse(logout_url_base)[:3] + ("", "", "")).rstrip("/"),
-            urlunparse(urlparse(mfa_url_base)[:3] + ("", "", "")).rstrip("/"),
-        )
-
-        current_url_parsed = urlparse(current_url)
-        current_url_norm = urlunparse(
-            (
-                current_url_parsed.scheme,
-                current_url_parsed.netloc,
-                current_url_parsed.path.rstrip("/"),
-                "",
-                "",
-                "",
-            )
-        ).rstrip("/")
-
-        is_api_path = "/api/" in current_url
-
-        needs_navigation = False
-        reason = ""
-
-        # Check 1: Domain mismatch
-        if current_url_parsed.netloc != base_url_parsed.netloc:
-            needs_navigation = True
-            reason = f"URL domain ({current_url_parsed.netloc}) differs from base ({base_url_parsed.netloc})."
-        # Check 2: Disallowed path match
-        elif any(current_url_norm == path for path in disallowed_starts):
-            needs_navigation = True
-            reason = f"URL matches disallowed path ({current_url_norm})."
-        # Check 3: API path detected
-        elif is_api_path:
-            needs_navigation = True
-            reason = "URL contains '/api/'."
-        # End of if/elif chain
-
-        # Perform navigation if needed
-        if needs_navigation:
-            logger.info(
-                f"Current URL unsuitable ({reason}). Navigating to base URL: {config_schema.api.base_url}"
-            )
-            # Use new config system
-            if not nav_to_page(
-                self.driver,
-                config_schema.api.base_url,
-                selector="body",
-                session_manager=self,
-            ):
-                logger.error("Failed to navigate to base URL during check.")
-                return False
-            # End of if
-            logger.debug("Navigation to base URL successful.")
-        else:
-            logger.debug("Current URL is suitable, no extra navigation needed.")
-        # End of if/else
-
-        return True
-
-    # End of _check_and_handle_url
-
-    def _retrieve_identifiers(self) -> bool:
-
-        if not self.is_sess_valid():
-            logger.error("_retrieve_identifiers: Session is invalid.")
-            return False
-        # End of if
-        all_ok = True
-
-        # Get Profile ID
-        if not self.my_profile_id:
-            logger.debug("Retrieving profile ID (ucdmid)...")
-            self.my_profile_id = self.get_my_profileId()
-            if not self.my_profile_id:
-                logger.error("Failed to retrieve profile ID (ucdmid).")
-                all_ok = False
-            elif not self._profile_id_logged:
-                logger.info(f"My profile id: {self.my_profile_id}")
-                self._profile_id_logged = True
-            # End of if/elif
-        elif not self._profile_id_logged:  # Log if already present but not logged
-            logger.info(f"My profile id: {self.my_profile_id}")
-            self._profile_id_logged = True
-        # End of if/elif
-
-        # Get UUID
-        if not self.my_uuid:
-            logger.debug("Retrieving UUID (testId)...")
-            self.my_uuid = self.get_my_uuid()
-            if not self.my_uuid:
-                logger.error("Failed to retrieve UUID (testId).")
-                all_ok = False
-            elif not self._uuid_logged:
-                logger.info(f"My uuid: {self.my_uuid}")
-                self._uuid_logged = True
-            # End of if/elif
-        elif not self._uuid_logged:  # Log if already present but not logged
-            logger.info(f"My uuid: {self.my_uuid}")
-            self._uuid_logged = True
-        # End of if/elif
-
-        # Get Tree ID (only if TREE_NAME is configured)
-        if config_schema.api.tree_name and not self.my_tree_id:
-            logger.debug(
-                f"Retrieving tree ID for tree name: '{config_schema.api.tree_name}'..."
-            )
-            try:
-                self.my_tree_id = self.get_my_tree_id()  # Calls the method below
-            except ImportError as tree_id_imp_err:
-                # Handle case where api_utils couldn't be imported by get_my_tree_id
-                logger.error(
-                    f"Failed to retrieve tree ID due to import error: {tree_id_imp_err}"
-                )
-                all_ok = False
-            # End of try/except
-
-            if (
-                all_ok and not self.my_tree_id
-            ):  # Check if retrieval failed after import success
-                logger.error(
-                    f"TREE_NAME '{config_schema.api.tree_name}' configured, but failed to get corresponding tree ID."
-                )
-                all_ok = False
-            elif all_ok and self.my_tree_id and not self._tree_id_logged:
-                logger.info(f"My tree id: {self.my_tree_id}")
-                self._tree_id_logged = True
-            # End of if/elif
-        elif self.my_tree_id and not self._tree_id_logged:  # Log if already present
-            logger.info(f"My tree id: {self.my_tree_id}")
-            self._tree_id_logged = True
-        elif not config_schema.api.tree_name:
-            logger.debug("No TREE_NAME configured, skipping tree ID retrieval.")
-        # End of if/elif chain for Tree ID
-
-        return all_ok
-
-    # End of _retrieve_identifiers
-
-    def _retrieve_tree_owner(self) -> bool:
-
-        if not self.is_sess_valid():
-            logger.error("_retrieve_tree_owner: Session is invalid.")
-            return False
-        # End of if
-        if not self.my_tree_id:
-            # This is expected if TREE_NAME wasn't set or tree ID retrieval failed
-            logger.debug("Cannot retrieve tree owner name: my_tree_id is not set.")
-
-            return False  # Indicate failure if tree_id expected but missing
-        # End of if
-
-        # Only retrieve if not already present
-        if self.tree_owner_name and self._owner_logged:
-
-            return True
-        # End of if
-
-        logger.debug("Retrieving tree owner name...")
-        owner_name_retrieved = False
-        try:
-            self.tree_owner_name = self.get_tree_owner(
-                self.my_tree_id
-            )  # Calls method below
-            owner_name_retrieved = bool(self.tree_owner_name)
-        except ImportError as owner_imp_err:
-            logger.error(
-                f"Failed to retrieve tree owner due to import error: {owner_imp_err}"
-            )
-            owner_name_retrieved = False
-        # End of try/except
-
-        if not owner_name_retrieved:
-            logger.error("Failed to retrieve tree owner name.")
-
-            return False
-        # End of if
-
-        # Log only once
-        if not self._owner_logged:
-            logger.info(f"Tree owner name: {self.tree_owner_name}")
-            self._owner_logged = True
-        # End of if
-
-        return True
-
-    # End of _retrieve_tree_owner
-
-    @retry_api()
-    def get_csrf(self) -> Optional[str]:
-        if not self.is_sess_valid():
-            logger.error("get_csrf: Session invalid.")
-            return None
-        # End of if
-        # Use new config system
-        csrf_token_url = urljoin(config_schema.api.base_url, API_PATH_CSRF_TOKEN)
-        logger.debug(f"Attempting to fetch fresh CSRF token from: {csrf_token_url}")
-
-        # Check essential cookies (optional but good practice)
-        essential_cookies = ["ANCSESSIONID", "SecureATT"]
-        if not self.get_cookies(essential_cookies, timeout=10):
-            logger.warning(
-                f"Essential cookies {essential_cookies} NOT found before CSRF token API call. API might fail."
-            )
-        # End of if
-
-        response_data = _api_req(
-            url=csrf_token_url,
-            driver=self.driver,
-            session_manager=self,
-            method="GET",
-            use_csrf_token=False,  # Important! Don't need CSRF to get CSRF
-            api_description="CSRF Token API",
-            force_text_response=True,  # Expect plain text
-        )
-
-        if response_data and isinstance(response_data, str):
-            csrf_token_val = response_data.strip()
-            # Add more validation if needed (e.g., length, format)
-            if csrf_token_val and len(csrf_token_val) > 20:
-                logger.debug(
-                    f"CSRF token successfully retrieved (Length: {len(csrf_token_val)})."
-                )
-                self.csrf_token = csrf_token_val  # Store it
-                return csrf_token_val
-            else:
-                logger.error(
-                    f"CSRF token API returned empty or invalid string: '{csrf_token_val}'"
-                )
-                return None
-            # End of if/else
-        elif response_data is None:
-            logger.warning(
-                "Failed to get CSRF token response via _api_req (returned None/error)."
-            )
-            return None
-        else:  # Handle unexpected response type (e.g., Response object)
-            status = getattr(response_data, "status_code", "N/A")
-            logger.error(
-                f"Unexpected response type or status ({status}) for CSRF token API: {type(response_data)}"
-            )
-            logger.debug(f"Response data received: {str(response_data)}")
-            return None
-        # End of if/elif/else
-
-    # End of get_csrf
-
-    def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
-        if not self.driver:
-            logger.error("get_cookies: WebDriver instance is None.")
-            return False
-        # End of if
-        if not self.is_sess_valid():  # Check session validity at start
-            logger.warning("get_cookies: Session invalid at start of check.")
-            return False
-        # End of if
-
-        start_time = time.time()
-        logger.debug(f"Waiting up to {timeout}s for cookies: {cookie_names}...")
-        required_lower = {name.lower() for name in cookie_names}
-        interval = 0.5
-        last_missing_str = ""
-
-        while time.time() - start_time < timeout:
-            try:
-                # Re-check validity inside loop in case session dies during wait
-                if not self.is_sess_valid():
-                    logger.warning("Session became invalid while waiting for cookies.")
-                    return False
-                # End of if
-
-                cookies = self.driver.get_cookies()
-                current_cookies_lower = {
-                    c["name"].lower()
-                    for c in cookies
-                    if isinstance(c, dict) and "name" in c
-                }
-                missing_lower = required_lower - current_cookies_lower
-
-                if not missing_lower:
-                    logger.debug(f"All required cookies found: {cookie_names}.")
-                    return True
-                # End of if
-
-                # Log missing cookies only if the set changes
-                missing_str = ", ".join(sorted(missing_lower))
-                if missing_str != last_missing_str:
-                    logger.debug(f"Still missing cookies: {missing_str}")
-                    last_missing_str = missing_str
-                # End of if
-
-                time.sleep(interval)
-
-            except WebDriverException as e:  # type: ignore
-                logger.error(f"WebDriverException while retrieving cookies: {e}")
-                # Check if session died due to the exception
-                if not self.is_sess_valid():
-                    logger.error(
-                        "Session invalid after WebDriverException during cookie retrieval."
-                    )
-                    return False
-                # End of if
-                # If session still valid, wait a bit longer before next try
-                time.sleep(interval * 2)
-            except Exception as e:
-                logger.error(f"Unexpected error retrieving cookies: {e}", exc_info=True)
-                time.sleep(interval * 2)  # Wait before retry
-            # End of try/except
-        # End of while
-
-        # Final check after timeout
-        missing_final = []
-        try:
-            if self.is_sess_valid():
-                cookies_final = self.driver.get_cookies()
-                current_cookies_final_lower = {
-                    c["name"].lower()
-                    for c in cookies_final
-                    if isinstance(c, dict) and "name" in c
-                }
-                missing_final = [
-                    name
-                    for name in cookie_names
-                    if name.lower() not in current_cookies_final_lower
-                ]
-            else:
-                missing_final = cookie_names  # Assume all missing if session invalid
-            # End of if/else
-        except Exception:
-            missing_final = cookie_names  # Assume all missing on error
-        # End of try/except
-
-        if missing_final:
-            logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
-            return False
-        else:
-            # Should ideally not be reached if loop logic is correct
-            logger.debug("Cookies found in final check after loop (unexpected).")
-            return True
-        # End of if/else
-
-    # End of get_cookies
-
-    def _sync_cookies(self):
-        if not self.is_sess_valid():
-            logger.warning("Cannot sync cookies: WebDriver session invalid.")
-            return
-        # End of if
-        if not self.driver:
-            logger.error("Cannot sync cookies: WebDriver instance is None.")
-            return
-        # End of if
-        if not hasattr(self, "_requests_session") or not self._requests_session:
-            logger.error("Cannot sync cookies: requests.Session not initialized.")
-            return
-        # End of if
-
-        try:
-            driver_cookies = self.driver.get_cookies()
-            logger.debug(
-                f"Retrieved {len(driver_cookies)} cookies from WebDriver for sync."
-            )
-        except WebDriverException as e:  # type: ignore
-            logger.error(f"WebDriverException getting cookies for sync: {e}")
-            if not self.is_sess_valid():
-                logger.error(
-                    "Session invalid after WebDriverException during cookie sync."
-                )
-            # End of if
-            return  # Cannot proceed
-        except Exception as e:
-            logger.error(
-                f"Unexpected error getting cookies for sync: {e}", exc_info=True
-            )
-            return  # Cannot proceed
-        # End of try/except
-
-        requests_cookie_jar: RequestsCookieJar = self._requests_session.cookies  # type: ignore
-        requests_cookie_jar.clear()  # Clear existing requests cookies first
-
-        synced_count = 0
-        skipped_count = 0
-        for cookie in driver_cookies:
-            # Basic validation of cookie structure
-            if (
-                not isinstance(cookie, dict)
-                or "name" not in cookie
-                or "value" not in cookie
-                or "domain" not in cookie
-            ):
-                logger.warning(f"Skipping invalid cookie format during sync: {cookie}")
-                skipped_count += 1
-                continue
-            # End of if
-
-            try:
-                # Map WebDriver cookie attributes to requests CookieJar attributes
-                cookie_attrs = {
-                    "name": cookie["name"],
-                    "value": cookie["value"],
-                    "domain": cookie["domain"],
-                    "path": cookie.get("path", "/"),  # Default path if missing
-                    "secure": cookie.get("secure", False),
-                    "rest": {
-                        "httpOnly": cookie.get("httpOnly", False)
-                    },  # Store httpOnly here
-                }
-                # Handle expiry (needs to be integer timestamp)
-                if "expiry" in cookie and cookie["expiry"] is not None:
-                    try:
-                        # Ensure expiry is treated as number, handle potential float
-                        cookie_attrs["expires"] = int(float(cookie["expiry"]))
-                    except (ValueError, TypeError):
-                        logger.warning(
-                            f"Skipping invalid expiry format for cookie {cookie['name']}: {cookie['expiry']}"
-                        )
-                        # Don't set expires if invalid format
-                # End of if expiry
-
-                # Set the cookie in the requests jar
-                requests_cookie_jar.set(**cookie_attrs)
-                synced_count += 1
-
-            except Exception as set_err:
-                logger.warning(
-                    f"Failed to set cookie '{cookie.get('name', '??')}' in requests session: {set_err}"
-                )
-                skipped_count += 1
-            # End of try/except
-        # End of for loop
-
-        if skipped_count > 0:
-            logger.warning(
-                f"Skipped {skipped_count} cookies during sync due to format/errors."
-            )
-        # End of if
-        logger.debug(f"Successfully synced {synced_count} cookies to requests session.")
-
-    # End of _sync_cookies
-
-    def return_session(self, session: Session):  # type: ignore # Assume imported
-        if session:
-            session_id = id(session)
-            try:
-                session.close()
-                logger.debug(f"DB session {session_id} closed and returned to pool.")
-            except Exception as e:
-                logger.error(
-                    f"Error closing DB session {session_id}: {e}", exc_info=True
-                )
-            # End of try/except
-        else:
-            logger.warning("Attempted to return a None DB session.")
-        # End of if/else
-
-    # End of return_session
-
-    def _reset_logged_flags(self):
-        """Resets flags used to prevent repeated logging of IDs."""
-        self._profile_id_logged = False
-        self._uuid_logged = False
-        self._tree_id_logged = False
-        self._owner_logged = False
-
-    # End of _reset_logged_flags
-
-    def get_db_conn(self) -> Optional[Session]:  # type: ignore # Assume imported
-        engine_id_str = id(self.engine) if self.engine else "None"
-        logger.debug(
-            f"SessionManager ID={id(self)} get_db_conn called. Current Engine ID: {engine_id_str}"
-        )
-
-        # Initialize DB if needed
-        if not self._db_init_attempted or not self.engine or not self.Session:
-            logger.debug(
-                f"SessionManager ID={id(self)}: Engine/Session factory not ready. Triggering initialization..."
-            )
-            try:
-                self._initialize_db_engine_and_session()
-                if not self.Session:  # Check again after initialization attempt
-                    logger.error(
-                        f"SessionManager ID={id(self)}: Initialization failed, cannot get DB connection."
-                    )
-                    return None
-                # End of if
-            except Exception as init_e:
-                logger.error(
-                    f"SessionManager ID={id(self)}: Exception during lazy initialization in get_db_conn: {init_e}"
-                )
-                return None
-            # End of try/except
-        # End of if
-
-        # Get session from factory
-        try:
-            new_session: Session = self.Session()  # type: ignore
-            logger.debug(
-                f"SessionManager ID={id(self)} obtained DB session {id(new_session)} from Engine ID={id(self.engine)}"
-            )
-            return new_session
-        except Exception as e:
-            logger.error(
-                f"SessionManager ID={id(self)} Error getting DB session from factory: {e}",
-                exc_info=True,
-            )
-            # Attempt to recover by disposing engine and resetting flags
-            if self.engine:
-                try:
-                    self.engine.dispose()
-                except Exception:
-                    pass
-                # End of try/except
-            # End of if
-            self.engine = None
-            self.Session = None
-            self._db_init_attempted = False
-            return None
-        # End of try/except
-
-    # End of get_db_conn
-
-    @contextlib.contextmanager
-    def get_db_conn_context(self) -> Generator[Optional[Session], None, None]:  # type: ignore
-        session: Optional[Session] = None  # type: ignore
-        session_id_for_log = "N/A"
-        try:
-            session = self.get_db_conn()
-            if session:
-                session_id_for_log = str(id(session))
-                logger.debug(
-                    f"DB Context Manager: Acquired session {session_id_for_log}."
-                )
-                yield session  # Provide the session to the 'with' block
-
-                # After the 'with' block finishes:
-                if session.is_active:  # Check if session is still usable
-                    try:
-                        session.commit()
-                        logger.debug(
-                            f"DB Context Manager: Commit successful for session {session_id_for_log}."
-                        )
-                    except SQLAlchemyError as commit_err:  # type: ignore
-                        logger.error(
-                            f"DB Context Manager: Commit failed for session {session_id_for_log}: {commit_err}. Rolling back."
-                        )
-                        session.rollback()
-                        raise  # Re-raise after rollback
-                    # End of try/except
-                else:
-                    # This might happen if rollback occurred within the 'with' block
-                    logger.warning(
-                        f"DB Context Manager: Session {session_id_for_log} inactive after yield, skipping commit."
-                    )
-                # End of if/else
-            else:
-                logger.error("DB Context Manager: Failed to obtain DB session.")
-                yield None  # Provide None to the 'with' block
-            # End of if/else
-        except SQLAlchemyError as sql_e:  # type: ignore
-            logger.error(
-                f"DB Context Manager: SQLAlchemyError ({type(sql_e).__name__}). Rolling back session {session_id_for_log}.",
-                exc_info=True,
-            )
-            if session and session.is_active:
-                try:
-                    session.rollback()
-                    logger.warning(
-                        f"DB Context Manager: Rollback successful for session {session_id_for_log}."
-                    )
-                except Exception as rb_err:
-                    logger.error(
-                        f"DB Context Manager: Error during rollback for session {session_id_for_log}: {rb_err}"
-                    )
-                # End of try/except
-            # End of if
-            raise sql_e  # Re-raise the original error
-        except Exception as e:
-            logger.error(
-                f"DB Context Manager: Unexpected Exception ({type(e).__name__}). Rolling back session {session_id_for_log}.",
-                exc_info=True,
-            )
-            if session and session.is_active:
-                try:
-                    session.rollback()
-                    logger.warning(
-                        f"DB Context Manager: Rollback successful for session {session_id_for_log}."
-                    )
-                except Exception as rb_err:
-                    logger.error(
-                        f"DB Context Manager: Error during rollback for session {session_id_for_log}: {rb_err}"
-                    )
-                # End of try/except
-            # End of if
-            raise e  # Re-raise the original error
-        finally:
-            # Always return the session to the pool (or close it)
-            if session:
-                self.return_session(session)
-            else:
-                logger.debug("DB Context Manager: No valid session to return.")
-            # End of if/else
-
-    # End of get_db_conn_context
-
-    def cls_db_conn(self, keep_db: bool = True) -> None:
-        # Option to keep engine alive (e.g., between restarts)
-        if keep_db:
-            engine_id_str = str(id(self.engine)) if self.engine else "None"
-            logger.debug(
-                f"cls_db_conn called (keep_db=True). Skipping engine disposal for Engine ID: {engine_id_str}"
-            )
-            return
-        # End of if
-
-        # Dispose engine if it exists
-        if not self.engine:
-            logger.debug(
-                f"SessionManager ID={id(self)}: No active SQLAlchemy engine to dispose."
-            )
-            self.Session = None  # Ensure Session factory is also cleared
-            self._db_init_attempted = False
-            return
-        # End of if
-
-        engine_id = id(self.engine)
-        logger.debug(
-            f"SessionManager ID={id(self)} cls_db_conn called (keep_db=False). Disposing Engine ID: {engine_id}"
-        )
-        try:
-            self.engine.dispose()
-            logger.debug(f"Engine ID={engine_id} disposed successfully.")
-        except Exception as e:
-            logger.error(
-                f"Error disposing SQLAlchemy engine ID={engine_id}: {e}", exc_info=True
-            )
-        finally:
-            # Always reset engine, Session factory, and init flag after disposal attempt
-            self.engine = None
-            self.Session = None
-            self._db_init_attempted = False
-        # End of try/except/finally
-
-    # End of cls_db_conn
-
-    @retry_api()
-    def get_my_profileId(self) -> Optional[str]:
-        if not self.is_sess_valid():
-            logger.error("get_my_profileId: Session invalid.")
-            return None
-        # End of if
-        # Use new config system
-        url = urljoin(config_schema.api.base_url, API_PATH_PROFILE_ID)
-        logger.debug("Attempting to fetch own profile ID (ucdmid)...")
-        try:
-            response_data: ApiResponseType = _api_req(
-                url=url,
-                driver=self.driver,
-                session_manager=self,
-                method="GET",
-                use_csrf_token=False,  # Usually not needed for 'me' endpoints
-                api_description="Get my profile_id",
-            )
-
-            if not response_data:
-                logger.warning(
-                    "Failed to get profile_id response via _api_req (returned None/error)."
-                )
-                return None
-            # End of if
-
-            if isinstance(response_data, dict) and KEY_DATA in response_data:
-                data_dict = response_data[KEY_DATA]
-                if isinstance(data_dict, dict) and KEY_UCDMID in data_dict:
-                    my_profile_id_val = str(data_dict[KEY_UCDMID]).upper()
-                    logger.debug(
-                        f"Successfully retrieved profile_id: {my_profile_id_val}"
-                    )
-                    self.my_profile_id = my_profile_id_val  # Store it
-                    return my_profile_id_val
-                else:
-                    logger.error(
-                        f"Could not find '{KEY_UCDMID}' in '{KEY_DATA}' dict of profile_id API response."
-                    )
-                    logger.debug(f"Data dict received: {data_dict}")
-                    return None
-                # End of if/else
-            else:  # Handle unexpected response format
-                status = "N/A"
-                if isinstance(response_data, requests.Response):  # type: ignore
-                    status = str(response_data.status_code)
-                # End of if
-                logger.error(
-                    f"Unexpected response format (Type: {type(response_data)}, Status: {status}) for profile_id API."
-                )
-                logger.debug(f"Full profile_id response data: {str(response_data)}")
-                return None
-            # End of if/else
-        except Exception as e:
-            logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
-            return None
-        # End of try/except
-
-    # End of get_my_profileId
-
-    @retry_api()
-    def get_my_uuid(self) -> Optional[str]:
-        if not self.is_sess_valid():
-            logger.error("get_my_uuid: Session invalid.")
-            return None
-        # End of if
-        # Use new config system
-        url = urljoin(config_schema.api.base_url, API_PATH_UUID)
-        logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
-        response_data: ApiResponseType = _api_req(
-            url=url,
-            driver=self.driver,
-            session_manager=self,
-            method="GET",
-            use_csrf_token=False,  # Not needed for this endpoint
-            api_description="Get UUID API",
-        )
-
-        if response_data and isinstance(response_data, dict):
-            if KEY_TEST_ID in response_data:
-                my_uuid_val = str(response_data[KEY_TEST_ID]).upper()
-                logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
-                self.my_uuid = my_uuid_val  # Store it
-                return my_uuid_val
-            else:
-                logger.error(
-                    f"Could not retrieve UUID ('{KEY_TEST_ID}' missing in response)."
-                )
-                logger.debug(f"Full get_my_uuid response data: {str(response_data)}")
-                return None
-            # End of if/else
-        elif response_data is None:
-            logger.error(
-                "Failed to get header/dna data via _api_req (returned None/error)."
-            )
-            return None
-        else:  # Handle unexpected response type
-            status = "N/A"
-            if isinstance(response_data, requests.Response):  # type: ignore
-                status = str(response_data.status_code)
-            # End of if
-            logger.error(
-                f"Unexpected response format (Type: {type(response_data)}, Status: {status}) for UUID API."
-            )
-            logger.debug(f"Full get_my_uuid response data: {str(response_data)}")
-            return None
-        # End of if/elif/else
-
-    # End of get_my_uuid
-
-    @retry_api()
-    def get_my_tree_id(self) -> Optional[str]:
-        """Fetches the Tree ID by calling the specific API utility function."""
-        # Import locally to avoid circular dependency at module level
-        try:
-            import api_utils as local_api_utils
-        except ImportError as e:
-            logger.error(f"get_my_tree_id: Failed to import api_utils: {e}")
-            raise ImportError(
-                f"api_utils module failed to import and is required by get_my_tree_id: {e}"
-            )
-        # End of try/except
-
-        tree_name_config = config_schema.api.tree_name
-        if not tree_name_config:
-            logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
-            return None
-        # End of if
-        if not self.is_sess_valid():
-            logger.error("get_my_tree_id: Session invalid.")
-            return None
-        # End of if
-
-        logger.debug(
-            f"Delegating tree ID fetch for TREE_NAME='{tree_name_config}' to api_utils..."
-        )
-        try:
-            # Call the function using the locally imported module
-            my_tree_id_val = local_api_utils.call_header_trees_api_for_tree_id(
-                self, tree_name_config
-            )
-            if my_tree_id_val:
-                self.my_tree_id = my_tree_id_val  # Store it
-                return my_tree_id_val
-            else:
-                # Error logging is handled within call_header_trees_api_for_tree_id
-                logger.warning(
-                    "api_utils.call_header_trees_api_for_tree_id returned None."
-                )
-                return None
-            # End of if/else
-        except Exception as e:
-            logger.error(
-                f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}",
-                exc_info=True,
-            )
-            return None
-        # End of try/except
-
-    # End of get_my_tree_id
-
-    @retry_api()
-    def get_tree_owner(self, tree_id: str) -> Optional[str]:
-        """Fetches the tree owner name by calling the specific API utility function."""
-        # Import locally to avoid circular dependency at module level
-        try:
-            import api_utils as local_api_utils
-        except ImportError as e:
-            logger.error(f"get_tree_owner: Failed to import api_utils: {e}")
-            raise ImportError(
-                f"api_utils module failed to import and is required by get_tree_owner: {e}"
-            )
-        # End of try/except
-
-        if not tree_id:
-            logger.warning("Cannot get tree owner: tree_id is missing.")
-            return None
-        # End of if
-        if not isinstance(tree_id, str):
-            logger.warning(
-                f"Invalid tree_id type provided: {type(tree_id)}. Expected string."
-            )
-            return None
-        # End of if
-        if not self.is_sess_valid():
-            logger.error("get_tree_owner: Session invalid.")
-            return None
-        # End of if
-
-        logger.debug(
-            f"Delegating tree owner fetch for tree ID {tree_id} to api_utils..."
-        )
-        try:
-            # Call the function using the locally imported module
-            owner_name = local_api_utils.call_tree_owner_api(self, tree_id)
-            if owner_name:
-                self.tree_owner_name = owner_name  # Store it
-                return owner_name
-            else:
-                # Error logging handled within call_tree_owner_api
-                logger.warning("api_utils.call_tree_owner_api returned None.")
-                return None
-            # End of if/else
-        except Exception as e:
-            logger.error(
-                f"Error calling api_utils.call_tree_owner_api: {e}", exc_info=True
-            )
-            return None
-        # End of try/except
-
-    # End of get_tree_owner
-
-    def verify_sess(self) -> bool:
-        logger.debug("Verifying session status (using login_status)...")
-        try:
-            login_ok = login_status(
-                self, disable_ui_fallback=False
-            )  # Use UI fallback for reliability during verification
-            if login_ok is True:
-                logger.debug("Session verification successful (logged in).")
-                return True
-            elif login_ok is False:
-                logger.warning("Session verification failed (user not logged in).")
-                return False
-            else:  # login_ok is None
-                logger.error(
-                    "Session verification failed critically (login_status returned None)."
-                )
-                return False
-            # End of if/elif/else
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during session verification: {e}", exc_info=True
-            )
-            return False
-        # End of try/except
-
-    # End of verify_sess
-
-    def _verify_api_login_status(self) -> Optional[bool]:
-        """
-        Verifies login status using the API. This is the primary and most reliable method
-        to check if a user is logged in.
-
-        Returns:
-            True if definitely logged in, False if definitely not logged in,
-            None only if the check is truly ambiguous.
-        """
-        api_url = urljoin(config_schema.api.base_url, API_PATH_UUID)
-        api_description = "API Login Verification (header/dna)"
-        logger.debug(f"Verifying login status via API endpoint: {api_url}...")
-
-        # --- Check 1: Validate session and driver ---
-        if not self.driver or not self.is_sess_valid():
-            logger.debug("Session or driver invalid, user cannot be logged in.")
-            # If session is invalid, we can definitively say user is not logged in
-            return False
-        # End of if
-
-        # --- Check 2: Sync cookies to ensure requests session has latest cookies ---
-        try:
-            logger.debug("Syncing cookies before API login check...")
-            self._sync_cookies()
-        except Exception as sync_e:
-            logger.warning(f"Error syncing cookies before API login check: {sync_e}")
-            # Continue despite sync error - we might still have valid cookies
-        # End of try/except
-
-        # --- Check 3: Make API request and analyze response ---
-        try:
-            # Try direct fetch first with shorter timeout
-            logger.debug(f"Making API request to {api_url} for login verification...")
-            response_data: ApiResponseType = _api_req(
-                url=api_url,
-                driver=self.driver,
-                session_manager=self,
-                method="GET",
-                use_csrf_token=False,
-                api_description=api_description,
-                timeout=15,  # Shorter timeout for quick check
-            )
-
-            # --- Case 1: API request failed completely ---
-            if response_data is None:
-                logger.warning(f"{api_description}: _api_req returned None.")
-                # Check if we have essential cookies as a secondary indicator
-                essential_cookies = ["ANCSESSIONID", "SecureATT"]
-                cookie_check_result = self.get_cookies(essential_cookies, timeout=3)
-                if not cookie_check_result:
-                    logger.debug(
-                        f"Essential cookies {essential_cookies} not found. User is likely NOT logged in."
-                    )
-                    return False
-                # End of if
-
-                # Try a second API endpoint as a fallback
-                try:
-                    logger.debug(
-                        "Primary API check failed. Trying profile ID endpoint as fallback..."
-                    )
-                    profile_url = urljoin(
-                        config_schema.api.base_url, API_PATH_PROFILE_ID
-                    )
-                    profile_response = _api_req(
-                        url=profile_url,
-                        driver=self.driver,
-                        session_manager=self,
-                        method="GET",
-                        use_csrf_token=False,
-                        api_description="Profile ID API (login check fallback)",
-                        timeout=10,
-                    )
-
-                    if (
-                        isinstance(profile_response, dict)
-                        and KEY_UCDMID in profile_response
-                    ):
-                        logger.debug(
-                            f"Fallback API check successful. User is logged in."
-                        )
-                        return True
-                    # End of if
-                except Exception as fallback_e:
-                    logger.warning(f"Fallback API check also failed: {fallback_e}")
-                    # Continue to ambiguous result
-                # End of try/except
-
-                logger.warning(
-                    f"{api_description}: All API checks failed but essential cookies present. Status ambiguous."
-                )
-                return None
-
-            # --- Case 2: API returned a Response object (usually an error) ---
-            elif isinstance(response_data, requests.Response):  # type: ignore
-                status_code = response_data.status_code
-                logger.debug(
-                    f"API returned Response object with status code {status_code}"
-                )
-
-                # Authentication failures are definitive indicators of not being logged in
-                if status_code in [401, 403]:
-                    logger.debug(
-                        f"{api_description}: API check failed with status {status_code}. User NOT logged in."
-                    )
-                    return False
-
-                # Redirect to login page is a clear indicator of not being logged in
-                elif status_code in [301, 302, 307, 308]:
-                    try:
-                        redirect_url = response_data.headers.get("Location", "")
-                        logger.debug(f"API redirected to: {redirect_url}")
-                        if (
-                            "signin" in redirect_url.lower()
-                            or "login" in redirect_url.lower()
-                        ):
-                            logger.debug(
-                                f"{api_description}: API redirected to login page. User NOT logged in."
-                            )
-                            return False
-                        # End of if
-                    except Exception as redirect_e:
-                        logger.warning(f"Error checking redirect URL: {redirect_e}")
-                    # End of try/except
-
-                # Server errors are ambiguous - could be temporary issues
-                elif 500 <= status_code < 600:
-                    logger.warning(
-                        f"{api_description}: Server error {status_code}. Status ambiguous."
-                    )
-                    return None
-
-                # For other status codes, check response content for clues
-                try:
-                    content_type = response_data.headers.get("Content-Type", "")
-                    logger.debug(f"Response Content-Type: {content_type}")
-
-                    if "json" in content_type.lower():
-                        try:
-                            json_data = response_data.json()
-                            logger.debug(
-                                f"Response JSON keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'Not a dict'}"
-                            )
-
-                            # Check for error messages that indicate auth issues
-                            if isinstance(json_data, dict):
-                                error_msg = (
-                                    json_data.get("error", {})
-                                    .get("message", "")
-                                    .lower()
-                                    if isinstance(json_data.get("error"), dict)
-                                    else str(json_data.get("error", "")).lower()
-                                )
-
-                                if any(
-                                    term in error_msg
-                                    for term in [
-                                        "auth",
-                                        "login",
-                                        "signin",
-                                        "session",
-                                        "token",
-                                    ]
-                                ):
-                                    logger.debug(
-                                        f"{api_description}: Auth-related error message found. User NOT logged in."
-                                    )
-                                    return False
-                                # End of if
-                            # End of if
-                        except Exception as json_e:
-                            logger.warning(f"Error parsing JSON response: {json_e}")
-                        # End of try/except
-                    # End of if
-                except Exception as content_e:
-                    logger.warning(f"Error checking response content: {content_e}")
-                # End of try/except
-
-                # If we couldn't determine status from the error response
-                logger.warning(
-                    f"{api_description}: API check failed with status {status_code}. Status ambiguous."
-                )
-                return None
-
-            # --- Case 3: API returned a dictionary (successful JSON response) ---
-            elif isinstance(response_data, dict):
-                logger.debug(
-                    f"API returned dictionary with keys: {list(response_data.keys())}"
-                )
-
-                # Check for expected key as sign of successful (authenticated) response
-                if KEY_TEST_ID in response_data:
-                    test_id_value = response_data[KEY_TEST_ID]
-                    logger.debug(
-                        f"{api_description}: API login check successful ('{KEY_TEST_ID}' found with value: {test_id_value})."
-                    )
-                    # Store the UUID if not already set
-                    if not self.my_uuid and test_id_value:
-                        self.my_uuid = str(test_id_value).upper()
-                        logger.debug(f"Updated session UUID to: {self.my_uuid}")
-                    # End of if
-                    return True
-
-                # Check for other keys that might indicate a successful response
-                elif (
-                    "data" in response_data
-                    or "user" in response_data
-                    or "profile" in response_data
-                ):
-                    logger.debug(
-                        f"{api_description}: API login check successful (alternative keys found)."
-                    )
-                    return True
-
-                # Check for error messages that indicate auth issues
-                elif "error" in response_data:
-                    error_msg = str(response_data.get("error", {})).lower()
-                    logger.debug(f"Error message in response: {error_msg}")
-                    if any(
-                        term in error_msg
-                        for term in ["auth", "login", "signin", "session", "token"]
-                    ):
-                        logger.debug(
-                            f"{api_description}: Auth-related error message found. User NOT logged in."
-                        )
-                        return False
-                    # End of if
-
-                # If we couldn't determine status from the JSON response
-                logger.warning(
-                    f"{api_description}: API check succeeded, but response format unexpected. Status ambiguous."
-                )
-                logger.debug(f"API Response Content: {response_data}")
-                return None
-
-            # --- Case 4: API returned a string ---
-            elif isinstance(response_data, str):
-                logger.debug(
-                    f"API returned string response (length: {len(response_data)})"
-                )
-                # Some APIs return plain text responses
-                if len(response_data.strip()) > 0:
-                    # If it looks like JSON, try to parse it
-                    if response_data.strip().startswith(
-                        "{"
-                    ) or response_data.strip().startswith("["):
-                        try:
-                            json_data = json.loads(response_data)
-                            logger.debug(
-                                f"Parsed string response as JSON: {type(json_data)}"
-                            )
-                            # Recursively check the parsed JSON
-                            if isinstance(json_data, dict) and KEY_TEST_ID in json_data:
-                                test_id_value = json_data[KEY_TEST_ID]
-                                logger.debug(
-                                    f"{api_description}: API login check successful ('{KEY_TEST_ID}' found in parsed JSON string with value: {test_id_value})."
-                                )
-                                # Store the UUID if not already set
-                                if not self.my_uuid and test_id_value:
-                                    self.my_uuid = str(test_id_value).upper()
-                                    logger.debug(
-                                        f"Updated session UUID to: {self.my_uuid}"
-                                    )
-                                # End of if
-                                return True
-                            # End of if
-                        except json.JSONDecodeError as json_e:
-                            logger.warning(f"Failed to parse string as JSON: {json_e}")
-                        # End of try/except
-                    # End of if
-
-                    # Check for error messages in the string
-                    if any(
-                        term in response_data.lower()
-                        for term in [
-                            "not logged in",
-                            "login required",
-                            "authentication required",
-                        ]
-                    ):
-                        logger.debug(
-                            f"{api_description}: Auth-related error message found in string response. User NOT logged in."
-                        )
-                        return False
-                    # End of if
-                # End of if
-
-                logger.warning(
-                    f"{api_description}: API returned string response. Status ambiguous."
-                )
-                return None
-
-            # --- Case 5: Other response types ---
-            else:
-                logger.error(
-                    f"{api_description}: _api_req returned unexpected type {type(response_data)}. Status ambiguous."
-                )
-                logger.debug(f"API Response Data: {str(response_data)[:500]}")
-                return None
-            # End of if/elif/else
-
-        # --- Handle exceptions during API check ---
-        except RequestException as req_e:  # type: ignore
-            logger.error(
-                f"RequestException during {api_description}: {req_e}", exc_info=False
-            )
-
-            # Check if the error message indicates auth issues
-            error_msg = str(req_e).lower()
-            if any(
-                term in error_msg
-                for term in [
-                    "auth",
-                    "login",
-                    "signin",
-                    "session",
-                    "token",
-                    "unauthorized",
-                ]
-            ):
-                logger.debug(
-                    f"{api_description}: Auth-related RequestException. User NOT logged in."
-                )
-                return False
-            # End of if
-
-            return None  # Other network/request errors are ambiguous
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during {api_description}: {e}", exc_info=True
-            )
-            return None  # Other errors are ambiguous
-        # End of try/except
-
-    # End of _verify_api_login_status
-
-    def _validate_sess_cookies(self, required_cookies: List[str]) -> bool:
-        if not self.is_sess_valid():
-            logger.warning("Cannot validate cookies: Session invalid.")
-            return False
-        # End of if
-        if not self.driver:
-            logger.error("Cannot validate cookies: WebDriver instance is None.")
-            return False
-        # End of if
-        try:
-            cookies = {
-                c["name"]: c["value"]
-                for c in self.driver.get_cookies()
-                if isinstance(c, dict) and "name" in c
-            }
-            missing_cookies = [name for name in required_cookies if name not in cookies]
-
-            if not missing_cookies:
-                logger.debug(f"Cookie validation successful for: {required_cookies}")
-                return True
-            else:
-                logger.debug(f"Cookie validation failed. Missing: {missing_cookies}")
-                return False
-            # End of if/else
-        except WebDriverException as e:  # type: ignore
-            logger.error(f"WebDriverException during cookie validation: {e}")
-            if not self.is_sess_valid():
-                logger.error(
-                    "Session invalid after WebDriverException during cookie validation."
-                )
-            # End of if
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error validating cookies: {e}", exc_info=True)
-            return False
-        # End of try/except
-
-    # End of _validate_sess_cookies
-
-    def is_sess_valid(self) -> bool:
-        if not self.driver:
-            return False
-        # End of if
-        try:
-            # Attempting simple operations that require a valid session
-            _ = self.driver.window_handles
-            _ = self.driver.title
-            return True
-        except InvalidSessionIdException:  # type: ignore # Assume imported
-            logger.debug(
-                "Session ID is invalid (browser likely closed or session terminated)."
-            )
-            return False
-        except (NoSuchWindowException, WebDriverException) as e:  # type: ignore # Assume imported
-            # Check common phrases indicating session closure/invalidity
-            err_str = str(e).lower()
-            if any(
-                sub in err_str
-                for sub in [
-                    "disconnected",
-                    "target crashed",
-                    "no such window",
-                    "unable to connect",
-                    "invalid session id",
-                    "session deleted",
-                ]
-            ):
-                logger.warning(
-                    f"Session seems invalid due to WebDriverException: {type(e).__name__}"
-                )
-                return False
-            else:
-                # Log unexpected WebDriver errors but still treat session as potentially invalid
-                logger.warning(
-                    f"Unexpected WebDriverException checking session validity, assuming invalid: {e}"
-                )
-                return False
-            # End of if/else
-        except Exception as e:
-            # Catch any other errors during the check
-            logger.error(
-                f"Unexpected error checking session validity: {e}", exc_info=True
-            )
-            return False
-        # End of try/except
-
-    # End of is_sess_valid
-
-    def close_sess(self, keep_db: bool = False) -> None:
-        """
-        Closes the session, including browser and optionally database connections.
-
-        Args:
-            keep_db: If True, keeps database connections alive. If False, closes them.
-        """
-        # Close browser if it's open
-        self.close_browser()
-
-        # Reset browser-needed flag
-        self.browser_needed = False
-
-        # Handle DB connection disposal
-        if not keep_db:
-            logger.debug("Closing database connection pool...")
-            self.cls_db_conn(keep_db=False)  # Call helper to dispose engine
-            self._db_ready = False
-        else:
-            logger.debug("Keeping DB connection pool alive (keep_db=True).")
-        # End of if/else
-
-    # End of close_sess
-
-    def restart_sess(self, url: Optional[str] = None) -> bool:
-        """
-        Restarts the session, keeping database connections alive.
-        If browser is needed, restarts the browser session.
-
-        Args:
-            url: Optional URL to navigate to after restart
-
-        Returns:
-            bool: True if restart successful, False otherwise
-        """
-        logger.warning("Restarting session...")
-
-        # Keep track of whether browser was needed before restart
-        was_browser_needed = self.browser_needed
-
-        # Close session but keep database connections
-        self.close_sess(keep_db=True)
-
-        # Restore browser_needed flag
-        self.browser_needed = was_browser_needed
-
-        # If browser is needed, restart it
-        if self.browser_needed:
-            logger.debug("Restarting browser session...")
-            browser_start_ok = self.start_browser(
-                action_name="Session Restart - Browser"
-            )
-            if not browser_start_ok:
-                logger.error("Failed to restart browser session.")
-                return False
-
-        # Ensure the session is ready (database and browser if needed)
-        ready_ok = self.ensure_session_ready(
-            action_name="Session Restart - Ready Check"
-        )
-        if not ready_ok:
-            logger.error("Failed to ensure session ready during restart.")
-            self.close_sess(keep_db=True)  # Clean up the failed restart attempt
-            return False
-
-        # Navigate if requested and possible
-        if url and self.driver and self.browser_needed:
-            logger.info(f"Session restart successful. Re-navigating to: {url}")
-            try:
-                # Assume nav_to_page is available
-                nav_ok = nav_to_page(
-                    self.driver,
-                    url,
-                    selector="body",
-                    session_manager=self,
-                )
-                if not nav_ok:
-                    logger.warning(f"Failed to navigate to {url} after restart.")
-                    # Continue anyway, as the restart itself was successful
-                else:
-                    logger.info(f"Successfully re-navigated to {url}.")
-            except Exception as e:
-                logger.warning(f"Error navigating to {url} after restart: {e}")
-                # Continue anyway, as the restart itself was successful
-
-        logger.info("Session restart completed successfully.")
-        return True
-
-    # End of restart_sess
-
-    @ensure_browser_open
-    def make_tab(self) -> Optional[str]:
-        driver = self.driver
-        if driver is None:  # Should be caught by decorator, but double-check
-            logger.error("Driver is None in make_tab despite decorator.")
-            return None
-        # End of if
-        try:
-            tab_list_before = driver.window_handles
-            logger.debug(f"Window handles before new tab: {tab_list_before}")
-
-            # Execute script to open a new tab
-            driver.switch_to.new_window("tab")
-            logger.debug("Executed new_window('tab') command.")
-
-            # Wait for the new handle to appear
-            WebDriverWait(
-                driver, config_schema.selenium.explicit_wait
-            ).until(  # Use new config
-                lambda d: len(d.window_handles) > len(tab_list_before)
-            )
-
-            tab_list_after = driver.window_handles
-            # Find the new handle using set difference
-            new_tab_handles = list(set(tab_list_after) - set(tab_list_before))
-
-            if new_tab_handles:
-                new_tab_handle = new_tab_handles[0]
-                logger.debug(f"New tab handle identified: {new_tab_handle}")
-                return new_tab_handle
-            else:
-                # This case indicates an issue, maybe the command didn't work as expected
-                logger.error(
-                    "Could not identify new tab handle (set difference empty after wait)."
-                )
-                logger.debug(
-                    f"Handles before: {tab_list_before}, Handles after: {tab_list_after}"
-                )
-                return None
-            # End of if/else
-
-        except TimeoutException:  # type: ignore
-            logger.error("Timeout waiting for new tab handle to appear.")
-            try:
-                logger.debug(f"Window handles during timeout: {driver.window_handles}")
-            except Exception:
-                pass
-            # End of try/except
-            return None
-        except WebDriverException as e:  # type: ignore
-            logger.error(f"WebDriverException identifying new tab handle: {e}")
-            try:
-                logger.debug(f"Window handles during error: {driver.window_handles}")
-            except Exception:
-                pass
-            # End of try/except
-            return None
-        except Exception as e:
-            logger.error(
-                f"An unexpected error occurred in make_tab: {e}", exc_info=True
-            )
-            return None
-        # End of try/except
-
-    # End of make_tab
-
-    def check_js_errors(self) -> None:
-        if not self.is_sess_valid() or not self.driver:
-            logger.debug("Skipping JS error check: Session invalid or driver None.")
-            return
-        # End of if
-
-        try:
-            log_types = self.driver.log_types
-            if "browser" not in log_types:
-                logger.debug("Browser log type not available, skipping JS error check.")
-                return
-            # End of if
-        except WebDriverException as e:  # type: ignore
-            logger.warning(f"Could not get log_types: {e}. Skipping JS error check.")
-            return
-        except AttributeError:  # Should not happen if first check passed
-            logger.warning(
-                "Driver became None before getting log_types. Skipping JS error check."
-            )
-            return
-        # End of try/except
-
-        try:
-            logs = self.driver.get_log("browser")
-        except WebDriverException as e:  # type: ignore
-            logger.warning(f"WebDriverException getting browser logs: {e}")
-            return
-        except Exception as e:
-            logger.error(f"Unexpected error getting browser logs: {e}", exc_info=True)
-            return
-        # End of try/except
-
-        new_errors_found = False
-        most_recent_error_time_this_check = self.last_js_error_check
-
-        for entry in logs:
-            if not isinstance(entry, dict):
-                continue  # Skip malformed entries
-            # End of if
-            level = entry.get("level")
-            timestamp_ms = entry.get("timestamp")
-
-            # Process only SEVERE errors with valid timestamps
-            if level == "SEVERE" and timestamp_ms:
-                try:
-                    timestamp_dt = datetime.fromtimestamp(
-                        timestamp_ms / 1000.0, tz=timezone.utc
-                    )
-
-                    # Check if error is newer than the last check time
-                    if timestamp_dt > self.last_js_error_check:
-                        new_errors_found = True
-                        error_message = entry.get("message", "No message")
-
-                        # Attempt to extract source file/line
-                        source_match = re.search(r"(.+?):(\d+)", error_message)
-                        source_info = ""
-                        if source_match:
-                            # Extract filename nicely
-                            filename = (
-                                source_match.group(1).split("/")[-1].split("\\")[-1]
-                            )
-                            line_num = source_match.group(2)
-                            source_info = f" (Source: {filename}:{line_num})"
-                        # End of if
-
-                        logger.warning(
-                            f"JS ERROR DETECTED:{source_info} {error_message}"
-                        )
-
-                        # Track the most recent error time within this batch
-                        if timestamp_dt > most_recent_error_time_this_check:
-                            most_recent_error_time_this_check = timestamp_dt
-                        # End of if
-                    # End of if timestamp_dt > last_check
-                except (TypeError, ValueError) as parse_e:
-                    logger.warning(
-                        f"Error parsing JS log entry timestamp {timestamp_ms}: {parse_e}"
-                    )
-                except Exception as entry_proc_e:
-                    logger.warning(
-                        f"Error processing JS log entry {entry}: {entry_proc_e}"
-                    )
-                # End of try/except
-            # End of if level == SEVERE
-        # End of for entry in logs
-
-        # Update the last check time if new errors were found
-        if new_errors_found:
-            self.last_js_error_check = most_recent_error_time_this_check
-            logger.debug(
-                f"Updated last_js_error_check time to: {self.last_js_error_check.isoformat()}"
-            )
-        # End of if
-
-    # End of check_js_errors
-
-
-# End of SessionManager class
-
+# ----------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------
 # Stand alone functions
 # ----------------------------------------------------------------------------
-
 
 def _prepare_base_headers(
     method: str,
@@ -3319,9 +926,7 @@ def _prepare_base_headers(
 
     return base_headers
 
-
 # End of _prepare_base_headers
-
 
 def _prepare_api_headers(
     session_manager: SessionManager,  # Assume available
@@ -3447,9 +1052,7 @@ def _prepare_api_headers(
 
     return final_headers
 
-
 # End of _prepare_api_headers
-
 
 def _sync_cookies_for_request(
     session_manager: SessionManager,
@@ -3492,9 +1095,7 @@ def _sync_cookies_for_request(
         return False
     # End of try/except
 
-
 # End of _sync_cookies_for_request
-
 
 def _apply_rate_limiting(
     session_manager: SessionManager,
@@ -3520,9 +1121,7 @@ def _apply_rate_limiting(
     # End of if
     return wait_time
 
-
 # End of _apply_rate_limiting
-
 
 def _log_request_details(
     api_description: str,
@@ -3593,9 +1192,7 @@ def _log_request_details(
         logger.debug(f"   >> Form Data: {log_body}")
     # End of if/elif
 
-
 # End of _log_request_details
-
 
 def _prepare_api_request(
     session_manager: SessionManager,
@@ -3717,9 +1314,7 @@ def _prepare_api_request(
         "cookies": effective_cookie_jar,
     }
 
-
 # End of _prepare_api_request
-
 
 def _execute_api_request(
     session_manager: SessionManager,
@@ -3777,9 +1372,7 @@ def _execute_api_request(
         )
         return None
 
-
 # End of _execute_api_request
-
 
 def _process_api_response(
     response: RequestsResponseTypeOptional,
@@ -3855,9 +1448,7 @@ def _process_api_response(
     # This allows the caller to handle specific error cases
     return response
 
-
 # End of _process_api_response
-
 
 def _api_req(
     url: str,
@@ -4158,9 +1749,7 @@ def _api_req(
     )
     return response
 
-
 # End of _api_req
-
 
 def make_ube(driver: DriverType) -> Optional[str]:
     if not driver:
@@ -4237,9 +1826,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
         return None
     # End of try/except
 
-
 # End of make_ube
-
 
 def make_newrelic(driver: DriverType) -> Optional[str]:
     # This function generates a plausible NewRelic header structure.
@@ -4276,9 +1863,7 @@ def make_newrelic(driver: DriverType) -> Optional[str]:
         return None
     # End of try/except
 
-
 # End of make_newrelic
-
 
 def make_traceparent(driver: DriverType) -> Optional[str]:
     # Generates a W3C Trace Context traceparent header.
@@ -4295,9 +1880,7 @@ def make_traceparent(driver: DriverType) -> Optional[str]:
         return None
     # End of try/except
 
-
 # End of make_traceparent
-
 
 def make_tracestate(driver: DriverType) -> Optional[str]:
     # Generates a tracestate header, often including NewRelic state.
@@ -4318,15 +1901,12 @@ def make_tracestate(driver: DriverType) -> Optional[str]:
         return None
     # End of try/except
 
-
 # End of make_tracestate
-
 
 # ----------------------------------------------------------------------------
 # Login Functions (Remain in utils.py)
 # ----------------------------------------------------------------------------
 TWO_STEP_VERIFICATION_HEADER_SELECTOR = "h1.two-step-verification-header"
-
 
 @time_wait("Handle 2FA Page")
 def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
@@ -4519,9 +2099,7 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
     # Should not be reachable unless an early return was missed
     # return False
 
-
 # End of handle_twoFA
-
 
 def enter_creds(driver: WebDriver) -> bool:  # type: ignore
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
@@ -4702,9 +2280,7 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
         return False
     # End of try/except
 
-
 # End of enter_creds
-
 
 @retry(MAX_RETRIES=2, BACKOFF_FACTOR=1, MAX_DELAY=3)  # Add retry for consent handling
 def consent(driver: WebDriver) -> bool:  # type: ignore
@@ -4857,9 +2433,7 @@ def consent(driver: WebDriver) -> bool:  # type: ignore
     logger.error("Could not remove consent overlay via JS or button click.")
     return False
 
-
 # End of consent
-
 
 # Login Main Function
 def log_in(session_manager: SessionManager) -> str:  # type: ignore
@@ -5124,9 +2698,7 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
         return "LOGIN_FAILED_UNEXPECTED"
     # End of try/except login process
 
-
 # End of log_in
-
 
 # Login Status Check Function
 @retry(MAX_RETRIES=2)  # Add retry in case of transient API issues during check
@@ -5278,9 +2850,7 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
         return None
     # End of try/except UI check
 
-
 # End of login_status
-
 
 # ------------------------------------------------------------------------------------
 # Navigation Functions (Remains in utils.py)
@@ -5683,9 +3253,7 @@ def nav_to_page(
     # End of try/except
     return False
 
-
 # End of nav_to_page
-
 
 def _check_for_unavailability(
     driver: WebDriver, selectors: Dict[str, Tuple[str, int]]  # type: ignore
@@ -5711,9 +3279,7 @@ def _check_for_unavailability(
     # Return default (no action, zero wait) if no matching selectors found
     return None, 0
 
-
 # End of _check_for_unavailability
-
 
 def main() -> None:
     """
@@ -6296,9 +3862,7 @@ def main() -> None:
         #      sys.exit(1)
     # End of finally block
 
-
 # End of main
-
 
 def utils_module_tests() -> bool:
     """Module-specific tests for utils.py functionality."""
@@ -6338,18 +3902,15 @@ def utils_module_tests() -> bool:
         logger.error(f"Utils module tests failed: {e}")
         return False
 
-
 def run_comprehensive_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
     return utils_module_tests()
-
 
 # ==============================================
 # Module Registration
 # ==============================================
 
 # Module setup already handled by setup_module() call at top of file
-
 
 # ==============================================
 # Standalone Test Block
@@ -6692,6 +4253,5 @@ if __name__ == "__main__":
 
     # Generate summary report
     suite.finish_suite()
-
 
 # End of utils.py

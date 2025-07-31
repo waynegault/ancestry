@@ -55,7 +55,24 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import logging
 import time
-from typing import Optional, Dict, Any
+from datetime import datetime, timezone
+from typing import Optional, Dict, Any, List
+
+# === THIRD-PARTY IMPORTS ===
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+try:
+    import cloudscraper
+except ImportError:
+    cloudscraper = None
+    logger.warning("CloudScraper not available - anti-bot protection disabled")
+
+# === SELENIUM IMPORTS ===
+try:
+    from selenium.common.exceptions import WebDriverException
+except ImportError:
+    WebDriverException = Exception
 
 # === LOCAL IMPORTS ===
 from core.database_manager import DatabaseManager
@@ -133,6 +150,16 @@ class SessionManager:
         except ImportError:
             self.dynamic_rate_limiter = None
 
+        # === ENHANCED SESSION CAPABILITIES ===
+        # JavaScript error monitoring
+        self.last_js_error_check: datetime = datetime.now(timezone.utc)
+
+        # Initialize enhanced requests session with advanced configuration
+        self._initialize_enhanced_requests_session()
+
+        # Initialize CloudScraper for anti-bot protection
+        self._initialize_cloudscraper()
+
         # PHASE 5.1: Only initialize database if not already cached and ready
         if not self.db_manager.is_ready:
             self.db_manager.ensure_ready()
@@ -167,6 +194,81 @@ class SessionManager:
         """Get cached SessionValidator instance"""
         logger.debug("Creating/retrieving SessionValidator from cache")
         return SessionValidator()
+
+    def _initialize_enhanced_requests_session(self):
+        """
+        Initialize enhanced requests session with advanced configuration.
+        Includes connection pooling, retry strategies, and performance optimizations.
+        """
+        logger.debug("Initializing enhanced requests session...")
+
+        # Enhanced retry strategy with more comprehensive status codes
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
+        )
+
+        # Advanced HTTPAdapter with connection pooling
+        adapter = HTTPAdapter(
+            pool_connections=20,
+            pool_maxsize=50,
+            max_retries=retry_strategy
+        )
+
+        # Apply adapter to API manager's requests session
+        if hasattr(self.api_manager, '_requests_session'):
+            self.api_manager._requests_session.mount("http://", adapter)
+            self.api_manager._requests_session.mount("https://", adapter)
+            logger.debug("Enhanced requests session configuration applied to APIManager")
+        else:
+            logger.warning("APIManager requests session not found - creating fallback")
+            # Create fallback session if APIManager doesn't have one
+            self.api_manager._requests_session = requests.Session()
+            self.api_manager._requests_session.mount("http://", adapter)
+            self.api_manager._requests_session.mount("https://", adapter)
+
+    def _initialize_cloudscraper(self):
+        """
+        Initialize CloudScraper for anti-bot protection.
+        Provides enhanced capabilities for bypassing CloudFlare and other protections.
+        """
+        if cloudscraper is None:
+            logger.debug("CloudScraper not available - skipping initialization")
+            self._scraper = None
+            return
+
+        logger.debug("Initializing CloudScraper with anti-bot protection...")
+
+        try:
+            # Create CloudScraper with browser fingerprinting
+            self._scraper = cloudscraper.create_scraper(
+                browser={"browser": "chrome", "platform": "windows", "desktop": True},
+                delay=10,
+            )
+
+            # Enhanced retry strategy for CloudScraper
+            scraper_retry = Retry(
+                total=3,
+                backoff_factor=0.8,
+                status_forcelist=[403, 429, 500, 502, 503, 504],
+                allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+            )
+
+            # Apply retry adapter to CloudScraper
+            scraper_adapter = HTTPAdapter(max_retries=scraper_retry)
+            self._scraper.mount("http://", scraper_adapter)
+            self._scraper.mount("https://", scraper_adapter)
+
+            logger.debug("CloudScraper initialized successfully with retry strategy")
+
+        except Exception as scraper_init_e:
+            logger.error(
+                f"Failed to initialize CloudScraper: {scraper_init_e}",
+                exc_info=True,
+            )
+            self._scraper = None
 
     def ensure_db_ready(self) -> bool:
         """
@@ -335,12 +437,224 @@ class SessionManager:
 
     def is_sess_valid(self) -> bool:
         """
-        Check if session is valid.
+        Enhanced session validity check with comprehensive validation.
+
+        Checks both browser session and API session validity.
 
         Returns:
             bool: True if session is valid, False otherwise
         """
-        return self.browser_manager.is_session_valid()
+        # Check browser session validity
+        if self.browser_manager.browser_needed:
+            if not self.browser_manager.is_session_valid():
+                logger.debug("Browser session invalid")
+                return False
+
+        # Check if driver is responsive (if browser is active)
+        if self.driver and self.driver_live:
+            try:
+                # Quick responsiveness check
+                _ = self.driver.current_url
+            except WebDriverException:
+                logger.debug("Driver not responsive")
+                return False
+            except Exception as e:
+                logger.debug(f"Driver check failed: {e}")
+                return False
+
+        # Check API session validity through validator
+        if hasattr(self.validator, 'verify_login_status'):
+            try:
+                api_valid = self.validator.verify_login_status(self.api_manager)
+                if not api_valid:
+                    logger.debug("API session invalid")
+                    return False
+            except Exception as e:
+                logger.debug(f"API validation failed: {e}")
+                return False
+
+        return True
+
+    def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
+        """
+        Advanced cookie management with timeout and session validation.
+
+        Waits for specific cookies to be available with intelligent retry logic
+        and continuous session validity checking.
+
+        Args:
+            cookie_names: List of cookie names to wait for
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            bool: True if all cookies found, False otherwise
+        """
+        if not self.driver:
+            logger.error("get_cookies: WebDriver instance is None.")
+            return False
+
+        if not self.is_sess_valid():
+            logger.warning("get_cookies: Session invalid at start of check.")
+            return False
+
+        start_time = time.time()
+        logger.debug(f"Waiting up to {timeout}s for cookies: {cookie_names}...")
+        required_lower = {name.lower() for name in cookie_names}
+        interval = 0.5
+        last_missing_str = ""
+
+        while time.time() - start_time < timeout:
+            try:
+                # Re-check validity inside loop in case session dies during wait
+                if not self.is_sess_valid():
+                    logger.warning("Session became invalid while waiting for cookies.")
+                    return False
+
+                cookies = self.driver.get_cookies()
+                current_cookies_lower = {
+                    c["name"].lower()
+                    for c in cookies
+                    if isinstance(c, dict) and "name" in c
+                }
+                missing_lower = required_lower - current_cookies_lower
+
+                if not missing_lower:
+                    logger.debug(f"All required cookies found: {cookie_names}.")
+                    # Sync cookies to requests session if available
+                    self._sync_cookies_to_requests()
+                    return True
+
+                # Log missing cookies only if the set changes
+                missing_str = ", ".join(sorted(missing_lower))
+                if missing_str != last_missing_str:
+                    logger.debug(f"Still missing cookies: {missing_str}")
+                    last_missing_str = missing_str
+
+                time.sleep(interval)
+
+            except WebDriverException as e:
+                logger.error(f"WebDriverException while retrieving cookies: {e}")
+                # Check if session died due to the exception
+                if not self.is_sess_valid():
+                    logger.error("Session invalid after WebDriverException during cookie retrieval.")
+                    return False
+                # If session still valid, wait a bit longer before next try
+                time.sleep(interval)
+
+            except Exception as e:
+                logger.error(f"Unexpected error during cookie retrieval: {e}")
+                return False
+
+        # Timeout reached
+        logger.warning(f"Timeout waiting for cookies: {cookie_names}")
+        return False
+
+    def _sync_cookies_to_requests(self):
+        """
+        Synchronize cookies from WebDriver to requests session.
+
+        This ensures that API calls made through requests.Session
+        have the same authentication cookies as the browser session.
+        """
+        if not self.driver or not hasattr(self.api_manager, '_requests_session'):
+            return
+
+        try:
+            # Get cookies from WebDriver
+            driver_cookies = self.driver.get_cookies()
+
+            # Clear existing cookies in requests session
+            self.api_manager._requests_session.cookies.clear()
+
+            # Sync cookies from driver to requests session
+            synced_count = 0
+            for cookie in driver_cookies:
+                if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
+                    self.api_manager._requests_session.cookies.set(
+                        cookie["name"],
+                        cookie["value"],
+                        domain=cookie.get("domain"),
+                        path=cookie.get("path", "/")
+                    )
+                    synced_count += 1
+
+            logger.debug(f"Synced {synced_count} cookies from WebDriver to requests session")
+
+        except Exception as e:
+            logger.error(f"Failed to sync cookies to requests session: {e}")
+
+    def check_js_errors(self) -> List[Dict[str, Any]]:
+        """
+        Check for JavaScript errors in the browser console.
+
+        Returns:
+            List[Dict]: List of JavaScript errors found since last check
+        """
+        if not self.driver or not self.driver_live:
+            return []
+
+        try:
+            # Get browser logs
+            logs = self.driver.get_log('browser')
+
+            # Filter for errors that occurred after last check
+            current_time = datetime.now(timezone.utc)
+            js_errors = []
+
+            for log_entry in logs:
+                # Check if this is a JavaScript error
+                if log_entry.get('level') in ['SEVERE', 'ERROR']:
+                    # Parse timestamp (browser logs use milliseconds since epoch)
+                    log_timestamp = datetime.fromtimestamp(
+                        log_entry.get('timestamp', 0) / 1000,
+                        tz=timezone.utc
+                    )
+
+                    # Only include errors since last check
+                    if log_timestamp > self.last_js_error_check:
+                        js_errors.append({
+                            'timestamp': log_timestamp,
+                            'level': log_entry.get('level'),
+                            'message': log_entry.get('message', ''),
+                            'source': log_entry.get('source', '')
+                        })
+
+            # Update last check time
+            self.last_js_error_check = current_time
+
+            if js_errors:
+                logger.warning(f"Found {len(js_errors)} JavaScript errors since last check")
+                for error in js_errors:
+                    logger.debug(f"JS Error: {error['message']}")
+
+            return js_errors
+
+        except Exception as e:
+            logger.error(f"Failed to check JavaScript errors: {e}")
+            return []
+
+    def monitor_js_errors(self) -> bool:
+        """
+        Monitor JavaScript errors and log warnings if found.
+
+        Returns:
+            bool: True if no critical errors found, False if critical errors detected
+        """
+        errors = self.check_js_errors()
+
+        # Count critical errors (those that might affect functionality)
+        critical_errors = [
+            error for error in errors
+            if any(keyword in error['message'].lower() for keyword in [
+                'uncaught', 'reference error', 'type error', 'syntax error'
+            ])
+        ]
+
+        if critical_errors:
+            logger.warning(f"Found {len(critical_errors)} critical JavaScript errors")
+            return False
+
+        return True
 
     def restart_sess(self, url: Optional[str] = None) -> bool:
         """
@@ -476,6 +790,39 @@ class SessionManager:
     @property
     def requests_session(self):
         """Get the requests session."""
+        return self.api_manager.requests_session
+
+    # Enhanced capabilities properties
+    @property
+    def scraper(self):
+        """Get the CloudScraper instance for anti-bot protection."""
+        return getattr(self, '_scraper', None)
+
+    @scraper.setter
+    def scraper(self, value):
+        """Set the CloudScraper instance."""
+        self._scraper = value
+
+    # Compatibility properties for legacy code
+    @property
+    def browser_needed(self):
+        """Get/set browser needed flag."""
+        return self.browser_manager.browser_needed
+
+    @browser_needed.setter
+    def browser_needed(self, value: bool):
+        """Set browser needed flag."""
+        self.browser_manager.browser_needed = value
+
+    @property
+    def scraper(self):
+        """Get the cloudscraper session (compatibility property)."""
+        # For compatibility with legacy code that expects scraper
+        return getattr(self.api_manager, 'scraper', None)
+
+    @property
+    def _requests_session(self):
+        """Get the requests session (compatibility property with underscore)."""
         return self.api_manager.requests_session
 
     # Status properties    @property

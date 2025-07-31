@@ -80,7 +80,8 @@ from test_framework import (
     MagicMock,
     patch,
 )
-from utils import SessionManager, format_name
+from core.session_manager import SessionManager
+from utils import format_name
 
 # === CONSTANTS ===
 PRODUCTIVE_SENTIMENT = "PRODUCTIVE"  # Sentiment string set by Action 7

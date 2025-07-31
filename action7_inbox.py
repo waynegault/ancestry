@@ -96,9 +96,9 @@ from core.system_cache import (
     get_system_cache_stats,
 )
 
+from core.session_manager import SessionManager
 from utils import (
     DynamicRateLimiter,
-    SessionManager,
     SessionManagerType,  # Added SessionManagerType
     _api_req,
     format_name,

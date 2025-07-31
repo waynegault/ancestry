@@ -155,9 +155,9 @@ from database import (  # Database models and utilities
     db_transn,
     commit_bulk_data,
 )
+from core.session_manager import SessionManager
 from utils import (  # Core utilities
     DynamicRateLimiter,  # Rate limiter (accessed via SessionManager)
-    SessionManager,
     _api_req,  # API request helper (unused directly here, via _send_message)
     format_name,  # Name formatting
     login_status,  # Login check utility

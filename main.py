@@ -75,8 +75,8 @@ from database import (
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
+from core.session_manager import SessionManager
 from utils import (
-    SessionManager,
     login_status,
     nav_to_page,
 )
