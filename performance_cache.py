@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Performance Cache Module - High-Impact Caching for GEDCOM and Test Operations
+Performance Cache - High-Impact GEDCOM and Operation Caching
 
-This module provides intelligent caching specifically designed to address the
-performance bottlenecks identified in action10.py (98.64s → target 20s).
+Provides specialized high-performance caching for GEDCOM operations and genealogical
+data processing with intelligent cache strategies designed to dramatically reduce
+processing times and optimize memory usage for large family tree datasets.
 """
 
 # === CORE INFRASTRUCTURE ===

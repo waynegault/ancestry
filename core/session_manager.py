@@ -142,6 +142,16 @@ class SessionManager:
         self.ancestry_username: str = config_schema.api.username
         self.ancestry_password: str = config_schema.api.password
 
+        # Database state tracking (from old SessionManager)
+        self._db_init_attempted: bool = False
+        self._db_ready: bool = False
+
+        # Identifier logging flags (from old SessionManager)
+        self._profile_id_logged: bool = False
+        self._uuid_logged: bool = False
+        self._tree_id_logged: bool = False
+        self._owner_logged: bool = False
+
         # Add dynamic rate limiter for AI calls (matches utils.py SessionManager)
         try:
             from utils import DynamicRateLimiter
@@ -289,6 +299,8 @@ class SessionManager:
         Returns:
             bool: True if browser started successfully, False otherwise
         """
+        # Reset logged flags when starting browser
+        self._reset_logged_flags()
         return self.browser_manager.start_browser(action_name)
 
     def close_browser(self):
@@ -379,11 +391,9 @@ class SessionManager:
             return False
 
         # PHASE 5.1: Optimized identifier retrieval with caching
-        identifiers_ok = True
-        if not self.api_manager.has_essential_identifiers:
-            identifiers_ok = self.api_manager.retrieve_all_identifiers()
-            if not identifiers_ok:
-                logger.warning("Some identifiers could not be retrieved.")
+        identifiers_ok = self._retrieve_identifiers()
+        if not identifiers_ok:
+            logger.warning("Some identifiers could not be retrieved.")
 
         # Retrieve tree owner if configured (with caching)
         owner_ok = True
@@ -403,16 +413,6 @@ class SessionManager:
             f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}"
         )
         return self.session_ready
-        if config_schema.api.tree_name:
-            owner_ok = self._retrieve_tree_owner()
-            if not owner_ok:
-                logger.warning("Tree owner name could not be retrieved.")
-
-        # Set session ready status
-        self.session_ready = ready_checks_ok and identifiers_ok and owner_ok
-
-        logger.debug(f"Session ready status: {self.session_ready}")
-        return self.session_ready
 
     def _retrieve_tree_owner(self) -> bool:
         """
@@ -428,12 +428,29 @@ class SessionManager:
 
     def verify_sess(self) -> bool:
         """
-        Verify session status.
+        Verify session status using login_status function.
 
         Returns:
             bool: True if session is valid, False otherwise
         """
-        return self.validator.verify_login_status(self.api_manager)
+        logger.debug("Verifying session status (using login_status)...")
+        try:
+            # Import login_status locally to avoid circular imports
+            from utils import login_status
+
+            login_ok = login_status(self, disable_ui_fallback=False)
+            if login_ok is True:
+                logger.debug("Session verification successful (logged in).")
+                return True
+            elif login_ok is False:
+                logger.warning("Session verification failed (user not logged in).")
+                return False
+            else:  # login_ok is None
+                logger.error("Session verification failed critically (login_status returned None).")
+                return False
+        except Exception as e:
+            logger.error(f"Unexpected error during session verification: {e}", exc_info=True)
+            return False
 
     def is_sess_valid(self) -> bool:
         """
@@ -474,6 +491,83 @@ class SessionManager:
                 return False
 
         return True
+
+    def _reset_logged_flags(self):
+        """Reset flags used to prevent repeated logging of IDs."""
+        self._profile_id_logged = False
+        self._uuid_logged = False
+        self._tree_id_logged = False
+        self._owner_logged = False
+
+    def _retrieve_identifiers(self) -> bool:
+        """
+        Retrieve all essential identifiers.
+
+        Returns:
+            bool: True if all identifiers retrieved successfully, False otherwise
+        """
+        if not self.is_sess_valid():
+            logger.error("_retrieve_identifiers: Session is invalid.")
+            return False
+
+        all_ok = True
+
+        # Get Profile ID
+        if not self.my_profile_id:
+            logger.debug("Retrieving profile ID (ucdmid)...")
+            profile_id = self.get_my_profileId()
+            if not profile_id:
+                logger.error("Failed to retrieve profile ID (ucdmid).")
+                all_ok = False
+
+        # Get UUID
+        if not self.my_uuid:
+            logger.debug("Retrieving UUID (testId)...")
+            uuid_val = self.get_my_uuid()
+            if not uuid_val:
+                logger.error("Failed to retrieve UUID (testId).")
+                all_ok = False
+
+        # Get Tree ID (only if TREE_NAME is configured)
+        if config_schema.api.tree_name and not self.my_tree_id:
+            logger.debug(f"Retrieving tree ID for tree name: '{config_schema.api.tree_name}'...")
+            try:
+                tree_id = self.get_my_tree_id()
+                if not tree_id:
+                    logger.error(f"TREE_NAME '{config_schema.api.tree_name}' configured, but failed to get corresponding tree ID.")
+                    all_ok = False
+            except ImportError as tree_id_imp_err:
+                logger.error(f"Failed to retrieve tree ID due to import error: {tree_id_imp_err}")
+                all_ok = False
+
+        return all_ok
+
+    def _retrieve_tree_owner(self) -> bool:
+        """
+        Retrieve tree owner name.
+
+        Returns:
+            bool: True if tree owner retrieved successfully, False otherwise
+        """
+        if not self.is_sess_valid():
+            logger.error("_retrieve_tree_owner: Session is invalid.")
+            return False
+
+        if not self.my_tree_id:
+            logger.debug("Cannot retrieve tree owner name: my_tree_id is not set.")
+            return False
+
+        # Only retrieve if not already present
+        if self.tree_owner_name and self._owner_logged:
+            return True
+
+        logger.debug("Retrieving tree owner name...")
+        try:
+            owner_name = self.get_tree_owner(self.my_tree_id)
+            return bool(owner_name)
+        except ImportError as owner_imp_err:
+            logger.error(f"Failed to retrieve tree owner due to import error: {owner_imp_err}")
+            return False
 
     def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
         """
@@ -539,15 +633,37 @@ class SessionManager:
                     logger.error("Session invalid after WebDriverException during cookie retrieval.")
                     return False
                 # If session still valid, wait a bit longer before next try
-                time.sleep(interval)
+                time.sleep(interval * 2)
 
             except Exception as e:
                 logger.error(f"Unexpected error during cookie retrieval: {e}")
-                return False
+                time.sleep(interval * 2)
 
-        # Timeout reached
-        logger.warning(f"Timeout waiting for cookies: {cookie_names}")
-        return False
+        # Final check after timeout
+        missing_final = []
+        try:
+            if self.is_sess_valid():
+                cookies_final = self.driver.get_cookies()
+                current_cookies_final_lower = {
+                    c["name"].lower()
+                    for c in cookies_final
+                    if isinstance(c, dict) and "name" in c
+                }
+                missing_final = [
+                    name for name in cookie_names
+                    if name.lower() not in current_cookies_final_lower
+                ]
+            else:
+                missing_final = cookie_names
+        except Exception:
+            missing_final = cookie_names
+
+        if missing_final:
+            logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
+            return False
+        else:
+            logger.debug("Cookies found in final check after loop (unexpected).")
+            return True
 
     def _sync_cookies_to_requests(self):
         """
@@ -582,6 +698,83 @@ class SessionManager:
 
         except Exception as e:
             logger.error(f"Failed to sync cookies to requests session: {e}")
+
+    def _sync_cookies(self):
+        """
+        Enhanced cookie synchronization from WebDriver to requests session.
+
+        This is the comprehensive version from the old SessionManager.
+        """
+        if not self.is_sess_valid():
+            logger.warning("Cannot sync cookies: WebDriver session invalid.")
+            return
+
+        if not self.driver:
+            logger.error("Cannot sync cookies: WebDriver instance is None.")
+            return
+
+        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
+            logger.error("Cannot sync cookies: requests.Session not initialized.")
+            return
+
+        try:
+            driver_cookies = self.driver.get_cookies()
+            logger.debug(f"Retrieved {len(driver_cookies)} cookies from WebDriver for sync.")
+        except WebDriverException as e:
+            logger.error(f"WebDriverException getting cookies for sync: {e}")
+            if not self.is_sess_valid():
+                logger.error("Session invalid after WebDriverException during cookie sync.")
+            return
+        except Exception as e:
+            logger.error(f"Unexpected error getting cookies for sync: {e}", exc_info=True)
+            return
+
+        requests_cookie_jar = self.api_manager._requests_session.cookies
+        requests_cookie_jar.clear()  # Clear existing requests cookies first
+
+        synced_count = 0
+        skipped_count = 0
+        for cookie in driver_cookies:
+            # Basic validation of cookie structure
+            if (
+                not isinstance(cookie, dict)
+                or "name" not in cookie
+                or "value" not in cookie
+                or "domain" not in cookie
+            ):
+                logger.warning(f"Skipping invalid cookie format during sync: {cookie}")
+                skipped_count += 1
+                continue
+
+            try:
+                # Map WebDriver cookie attributes to requests CookieJar attributes
+                cookie_attrs = {
+                    "name": cookie["name"],
+                    "value": cookie["value"],
+                    "domain": cookie["domain"],
+                    "path": cookie.get("path", "/"),
+                    "secure": cookie.get("secure", False),
+                    "rest": {"httpOnly": cookie.get("httpOnly", False)},
+                }
+
+                # Handle expiry (needs to be integer timestamp)
+                if "expiry" in cookie and cookie["expiry"] is not None:
+                    try:
+                        cookie_attrs["expires"] = int(float(cookie["expiry"]))
+                    except (ValueError, TypeError):
+                        logger.warning(f"Skipping invalid expiry format for cookie {cookie['name']}: {cookie['expiry']}")
+
+                # Set the cookie in the requests jar
+                requests_cookie_jar.set(**cookie_attrs)
+                synced_count += 1
+
+            except Exception as set_err:
+                logger.warning(f"Failed to set cookie '{cookie.get('name', '??')}' in requests session: {set_err}")
+                skipped_count += 1
+
+        if skipped_count > 0:
+            logger.warning(f"Skipped {skipped_count} cookies during sync due to format/errors.")
+        logger.debug(f"Successfully synced {synced_count} cookies to requests session.")
 
     def check_js_errors(self) -> List[Dict[str, Any]]:
         """
@@ -727,6 +920,251 @@ class SessionManager:
 
         logger.debug("Session closed.")
 
+    # === MISSING API METHODS FROM OLD SESSIONMANAGER ===
+
+    @retry_on_failure(max_attempts=3)
+    def get_csrf(self) -> Optional[str]:
+        """
+        Retrieve CSRF token from API.
+
+        Returns:
+            str: CSRF token if successful, None otherwise
+        """
+        if not self.is_sess_valid():
+            logger.error("get_csrf: Session invalid.")
+            return None
+
+        from urllib.parse import urljoin
+        csrf_token_url = urljoin(config_schema.api.base_url, "discoveryui-matches/parents/api/csrfToken")
+        logger.debug(f"Attempting to fetch fresh CSRF token from: {csrf_token_url}")
+
+        # Check essential cookies
+        essential_cookies = ["ANCSESSIONID", "SecureATT"]
+        if not self.get_cookies(essential_cookies, timeout=10):
+            logger.warning(f"Essential cookies {essential_cookies} NOT found before CSRF token API call.")
+
+        try:
+            # Import _api_req locally to avoid circular imports
+            from utils import _api_req
+
+            response_data = _api_req(
+                url=csrf_token_url,
+                driver=self.driver,
+                session_manager=self,
+                method="GET",
+                use_csrf_token=False,
+                api_description="CSRF Token API",
+                force_text_response=True,
+            )
+
+            if response_data and isinstance(response_data, str):
+                csrf_token_val = response_data.strip()
+                if csrf_token_val and len(csrf_token_val) > 20:
+                    logger.debug(f"CSRF token successfully retrieved (Length: {len(csrf_token_val)}).")
+                    self.csrf_token = csrf_token_val
+                    return csrf_token_val
+                else:
+                    logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
+                    return None
+            else:
+                logger.warning("Failed to get CSRF token response via _api_req.")
+                return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error in get_csrf: {e}", exc_info=True)
+            return None
+
+    @retry_on_failure(max_attempts=3)
+    def get_my_profileId(self) -> Optional[str]:
+        """
+        Retrieve user's profile ID (ucdmid).
+
+        Returns:
+            str: Profile ID if successful, None otherwise
+        """
+        if not self.is_sess_valid():
+            logger.error("get_my_profileId: Session invalid.")
+            return None
+
+        from urllib.parse import urljoin
+        url = urljoin(config_schema.api.base_url, "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid")
+        logger.debug("Attempting to fetch own profile ID (ucdmid)...")
+
+        try:
+            from utils import _api_req
+
+            response_data = _api_req(
+                url=url,
+                driver=self.driver,
+                session_manager=self,
+                method="GET",
+                use_csrf_token=False,
+                api_description="Get my profile_id",
+            )
+
+            if not response_data:
+                logger.warning("Failed to get profile_id response via _api_req.")
+                return None
+
+            if isinstance(response_data, dict) and "data" in response_data:
+                data_dict = response_data["data"]
+                if isinstance(data_dict, dict) and "ucdmid" in data_dict:
+                    my_profile_id_val = str(data_dict["ucdmid"]).upper()
+                    logger.debug(f"Successfully retrieved profile_id: {my_profile_id_val}")
+                    # Store in API manager
+                    self.api_manager.my_profile_id = my_profile_id_val
+                    if not self._profile_id_logged:
+                        logger.info(f"My profile id: {my_profile_id_val}")
+                        self._profile_id_logged = True
+                    return my_profile_id_val
+                else:
+                    logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
+                    return None
+            else:
+                logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
+            return None
+
+    @retry_on_failure(max_attempts=3)
+    def get_my_uuid(self) -> Optional[str]:
+        """
+        Retrieve user's UUID (testId).
+
+        Returns:
+            str: UUID if successful, None otherwise
+        """
+        if not self.is_sess_valid():
+            logger.error("get_my_uuid: Session invalid.")
+            return None
+
+        from urllib.parse import urljoin
+        url = urljoin(config_schema.api.base_url, "api/uhome/secure/rest/header/dna")
+        logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
+
+        try:
+            from utils import _api_req
+
+            response_data = _api_req(
+                url=url,
+                driver=self.driver,
+                session_manager=self,
+                method="GET",
+                use_csrf_token=False,
+                api_description="Get UUID API",
+            )
+
+            if response_data and isinstance(response_data, dict):
+                if "testId" in response_data:
+                    my_uuid_val = str(response_data["testId"]).upper()
+                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
+                    # Store in API manager
+                    self.api_manager.my_uuid = my_uuid_val
+                    if not self._uuid_logged:
+                        logger.info(f"My uuid: {my_uuid_val}")
+                        self._uuid_logged = True
+                    return my_uuid_val
+                else:
+                    logger.error("Could not retrieve UUID ('testId' missing in response).")
+                    return None
+            else:
+                logger.error("Failed to get header/dna data via _api_req.")
+                return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
+            return None
+
+    @retry_on_failure(max_attempts=3)
+    def get_my_tree_id(self) -> Optional[str]:
+        """
+        Retrieve user's tree ID.
+
+        Returns:
+            str: Tree ID if successful, None otherwise
+        """
+        try:
+            import api_utils as local_api_utils
+        except ImportError as e:
+            logger.error(f"get_my_tree_id: Failed to import api_utils: {e}")
+            raise ImportError(f"api_utils module failed to import: {e}")
+
+        tree_name_config = config_schema.api.tree_name
+        if not tree_name_config:
+            logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
+            return None
+
+        if not self.is_sess_valid():
+            logger.error("get_my_tree_id: Session invalid.")
+            return None
+
+        logger.debug(f"Delegating tree ID fetch for TREE_NAME='{tree_name_config}' to api_utils...")
+        try:
+            my_tree_id_val = local_api_utils.call_header_trees_api_for_tree_id(
+                self, tree_name_config
+            )
+            if my_tree_id_val:
+                # Store in API manager
+                self.api_manager.my_tree_id = my_tree_id_val
+                if not self._tree_id_logged:
+                    logger.info(f"My tree id: {my_tree_id_val}")
+                    self._tree_id_logged = True
+                return my_tree_id_val
+            else:
+                logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
+                return None
+        except Exception as e:
+            logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
+            return None
+
+    @retry_on_failure(max_attempts=3)
+    def get_tree_owner(self, tree_id: str) -> Optional[str]:
+        """
+        Retrieve tree owner name.
+
+        Args:
+            tree_id: The tree ID to get owner for
+
+        Returns:
+            str: Tree owner name if successful, None otherwise
+        """
+        try:
+            import api_utils as local_api_utils
+        except ImportError as e:
+            logger.error(f"get_tree_owner: Failed to import api_utils: {e}")
+            raise ImportError(f"api_utils module failed to import: {e}")
+
+        if not tree_id:
+            logger.warning("Cannot get tree owner: tree_id is missing.")
+            return None
+
+        if not isinstance(tree_id, str):
+            logger.warning(f"Invalid tree_id type provided: {type(tree_id)}. Expected string.")
+            return None
+
+        if not self.is_sess_valid():
+            logger.error("get_tree_owner: Session invalid.")
+            return None
+
+        logger.debug(f"Delegating tree owner fetch for tree ID {tree_id} to api_utils...")
+        try:
+            owner_name = local_api_utils.call_tree_owner_api(self, tree_id)
+            if owner_name:
+                # Store in API manager
+                self.api_manager.tree_owner_name = owner_name
+                if not self._owner_logged:
+                    logger.info(f"Tree owner name: {owner_name}")
+                    self._owner_logged = True
+                return owner_name
+            else:
+                logger.warning("api_utils.call_tree_owner_api returned None.")
+                return None
+        except Exception as e:
+            logger.error(f"Error calling api_utils.call_tree_owner_api: {e}", exc_info=True)
+            return None
+
     # Database delegation methods
     def get_db_conn(self):
         """Get a database session."""
@@ -764,22 +1202,38 @@ class SessionManager:
     @property
     def my_profile_id(self):
         """Get the user's profile ID."""
-        return self.api_manager.my_profile_id
+        # Try to get from API manager first, then retrieve if needed
+        profile_id = self.api_manager.my_profile_id
+        if not profile_id:
+            profile_id = self.get_my_profileId()
+        return profile_id
 
     @property
     def my_uuid(self):
         """Get the user's UUID."""
-        return self.api_manager.my_uuid
+        # Try to get from API manager first, then retrieve if needed
+        uuid_val = self.api_manager.my_uuid
+        if not uuid_val:
+            uuid_val = self.get_my_uuid()
+        return uuid_val
 
     @property
     def my_tree_id(self):
         """Get the user's tree ID."""
-        return self.api_manager.my_tree_id
+        # Try to get from API manager first, then retrieve if needed
+        tree_id = self.api_manager.my_tree_id
+        if not tree_id and config_schema.api.tree_name:
+            tree_id = self.get_my_tree_id()
+        return tree_id
 
     @property
     def csrf_token(self):
         """Get the CSRF token."""
-        return self.api_manager.csrf_token
+        # Try to get from API manager first, then retrieve if needed
+        csrf = self.api_manager.csrf_token
+        if not csrf:
+            csrf = self.get_csrf()
+        return csrf
 
     # Public properties
     @property

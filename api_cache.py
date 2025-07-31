@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 """
-api_cache.py - Aggressive API Response Caching System
+API Response Caching System - High-Performance Data Caching
 
-Provides advanced caching strategies for API responses, database queries, and AI model calls.
-Implements intelligent cache keys, response validation, and automatic cache warming to
-dramatically improve performance for frequently accessed external data.
+Implements intelligent caching strategies for API responses, database queries, and AI
+model calls with automatic cache warming, validation, and performance optimization
+for dramatically improved response times in genealogical data processing.
 """
 
 # === CORE INFRASTRUCTURE ===

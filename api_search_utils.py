@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
 
 """
-Utility functions for searching Ancestry API and retrieving person and family information.
-This module provides standalone functions that can be used by other modules like action9, action10, and action11.
+API Search Utilities - Ancestry API Search and Retrieval
 
-FIXED ISSUES (May 29, 2025):
-- ✅ Fixed syntax errors in function signatures (_extract_year_from_date)
-- ✅ Fixed RecursionError in get_config_value function with proper error handling
-- ✅ Resolved import hanging issue by temporarily commenting out problematic imports
-- ✅ Added comprehensive self-test suite with 25 tests (100% success rate)
-- ✅ Fixed mock patching issues in test suite using globals() approach
-- ✅ Module now imports and runs correctly on Windows 11 with VS Code
-
-AVAILABLE FUNCTIONS:
-- get_config_value: Safely retrieve configuration values with fallback
-- search_api_for_criteria: Search Ancestry API for individuals matching criteria
-- get_api_family_details: Get family details for a specific individual
-- get_api_relationship_path: Get relationship path between individuals
-- self_test: Run comprehensive test suite (25 tests)
-
-TESTING:
-Run `python api_search_utils.py` to execute the comprehensive test suite.
-All tests pass with 100% success rate.
+Provides comprehensive Ancestry API search capabilities with person and family
+information retrieval, relationship path analysis, and intelligent search
+criteria matching for genealogical research and family tree analysis.
 """
+
+# TESTING:
+# Run `python api_search_utils.py` to execute the comprehensive test suite.
+# All tests pass with 100% success rate.
 
 # === CORE INFRASTRUCTURE ===
 from core_imports import (
@@ -1038,7 +1026,7 @@ def get_api_relationship_path(
 
 
 def api_search_utils_module_tests() -> bool:
-    """Comprehensive test suite for api_search_utils.py"""
+    # Comprehensive test suite for api_search_utils.py
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
@@ -1048,7 +1036,7 @@ def api_search_utils_module_tests() -> bool:
 
     # INITIALIZATION TESTS
     def test_module_initialization():
-        """Test module initialization and configuration"""
+        # Test module initialization and configuration
         # Test configuration access
         result = getattr(config_schema, "TEST_KEY_12345", "default_value")
         assert isinstance(result, str), "Should return string value"
@@ -1067,7 +1055,7 @@ def api_search_utils_module_tests() -> bool:
 
     # CORE FUNCTIONALITY TESTS
     def test_core_functionality():
-        """Test all core API search and scoring functions"""
+        # Test all core API search and scoring functions
         # Test _extract_year_from_date function
         result = _extract_year_from_date("15 Jan 1985")
         assert result == 1985, "Should extract year from simple date"
@@ -1102,7 +1090,7 @@ def api_search_utils_module_tests() -> bool:
 
     # EDGE CASE TESTS
     def test_edge_cases():
-        """Test edge cases and boundary conditions"""
+        # Test edge cases and boundary conditions
         # Test _extract_year_from_date with edge cases
         result = _extract_year_from_date("")
         assert result is None, "Should handle empty string"
@@ -1120,7 +1108,7 @@ def api_search_utils_module_tests() -> bool:
 
     # INTEGRATION TESTS
     def test_integration():
-        """Test integration with mocked external dependencies"""
+        # Test integration with mocked external dependencies
         from unittest.mock import MagicMock, patch
 
         # Test search_api_for_criteria with mock session
@@ -1137,7 +1125,7 @@ def api_search_utils_module_tests() -> bool:
 
     # PERFORMANCE TESTS
     def test_performance():
-        """Test performance of scoring operations"""
+        # Test performance of scoring operations
         import time
 
         # Test multiple scoring operations
@@ -1154,7 +1142,7 @@ def api_search_utils_module_tests() -> bool:
 
     # ERROR HANDLING TESTS
     def test_error_handling():
-        """Test error handling scenarios"""
+        # Test error handling scenarios
         from unittest.mock import MagicMock
 
         # Test configuration access with error
@@ -1228,7 +1216,7 @@ def api_search_utils_module_tests() -> bool:
 
 
 def run_comprehensive_tests() -> bool:
-    """Run comprehensive API search utilities tests using standardized TestSuite format."""
+    '''Run comprehensive API search utilities tests.'''
     return api_search_utils_module_tests()
 
 

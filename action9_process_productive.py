@@ -1,12 +1,11 @@
-# File: action9_process_productive_refactored.py
-# Streamlined and simplified version of action9_process_productive.py
-
 #!/usr/bin/env python3
 
 """
-Action 9: Process Productive DNA Matches
+Action 9: Productive DNA Match Processing
 
-Streamlined version of the productive match processing workflow.
+Analyzes and processes productive DNA matches with comprehensive relationship
+analysis, GEDCOM integration, and automated workflow management for genealogical
+research including match scoring, family tree analysis, and research prioritization.
 """
 
 # === CORE INFRASTRUCTURE ===

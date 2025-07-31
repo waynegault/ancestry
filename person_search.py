@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Unified module for searching and retrieving person information from GEDCOM and Ancestry API.
-Provides functions for searching, getting family details, and relationship paths.
+Person Search Engine - Unified GEDCOM and API Search
+
+Provides comprehensive person search capabilities across GEDCOM files and Ancestry API
+with advanced filtering, family relationship analysis, and intelligent match scoring
+for genealogical research and relationship path discovery.
 """
 
 # === CORE INFRASTRUCTURE ===

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Integration test for all enhanced systems."""
+
+"""
+Integration Test Suite - Comprehensive System Validation
+
+Validates the integration and functionality of all enhanced systems including
+error handling, caching, performance monitoring, and core components to ensure
+they work together correctly in the Ancestry automation environment.
+"""
 
 from standard_imports import setup_module, get_stats
 

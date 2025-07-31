@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Standardized Test Framework for Ancestry Project
-Provides consistent test output formatting, colors, and icons across all scripts.
+Standardized Test Framework - Unified Testing Infrastructure
+
+Provides consistent test execution, output formatting, result reporting, and
+validation utilities across all modules in the Ancestry automation project
+with standardized colors, icons, and comprehensive test result tracking.
 """
 
 # === CORE INFRASTRUCTURE ===

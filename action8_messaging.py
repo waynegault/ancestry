@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 
-# File: action8_messaging.py
-
 """
-action8_messaging.py - Send Standard Templated Messages
+Action 8: Automated Messaging System
 
-Handles the logic for sending predefined messages (Initial, Follow-up, Reminder,
-Desist Acknowledgement) to DNA matches based on their status, tree linkage,
-communication history, and configured time intervals. Uses templates from
-messages.json and respects application mode (dry_run, testing, production)
-for recipient filtering. Updates the database (`conversation_log`, `people`)
-after sending/simulating messages.
+Manages intelligent, templated messaging to DNA matches with status-based workflows,
+communication history tracking, and automated follow-up sequences using configurable
+templates and comprehensive recipient filtering based on relationship and engagement.
 """
 
 # === CORE INFRASTRUCTURE ===

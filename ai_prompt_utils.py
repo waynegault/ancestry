@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Utility functions for managing AI prompts.
+AI Prompt Management - Dynamic Prompt Configuration
 
-This module provides functions for loading, updating, and managing AI prompts
-stored in a JSON file. It is used by both the main codebase and the
-test_ai_responses_menu.py script.
+Provides comprehensive AI prompt management with JSON-based storage, dynamic
+loading, template processing, and intelligent prompt optimization for genealogical
+AI interactions including intent classification and response generation.
 """
 
 # === CORE INFRASTRUCTURE ===

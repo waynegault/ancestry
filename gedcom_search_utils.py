@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
 
 """
-GEDCOM Search Utilities - Utility functions for searching GEDCOM data
+GEDCOM Search Utilities - Advanced Genealogical Data Search
 
-This module provides standalone functions that can be used by other modules like action9, action10, and action11.
-Implements universal patterns for function registration and import standardization.
-
-Universal Patterns Applied:
-- Uses core_imports unified system exclusively
-- Configuration access via standardized patterns
-- Logger initialization via get_logger
-- Universal function registration patterns
-- No legacy fallback patterns or duplicate registries
+Provides comprehensive GEDCOM file search capabilities with intelligent filtering,
+scoring algorithms, family relationship analysis, and optimized search patterns
+for efficient genealogical research and family tree data processing.
 """
 
 # === CORE INFRASTRUCTURE ===

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 
-# gedcom_cache.py
-
 """
-gedcom_cache.py - Aggressive GEDCOM File Caching System
+GEDCOM Cache System - Advanced Genealogical Data Caching
 
-Provides advanced caching strategies specifically for GEDCOM files and genealogical data.
-Implements multi-level caching (memory + disk), file-based invalidation, and preloading
-strategies to dramatically improve performance for frequently accessed genealogical data.
+Implements multi-level caching strategies specifically optimized for GEDCOM files
+and genealogical data with memory and disk caching, intelligent invalidation,
+and preloading for dramatically improved family tree processing performance.
 """
 
 # Unified import system
