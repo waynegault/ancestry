@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Action 11: API Report - Search Ancestry API, display details, family, relationship.
-V18.8: Corrected SyntaxError in _parse_treesui_list_response.
-       Ensured correct function definition order.
-       Verified 'gender_match' key usage.
-       Verified initial comparison flow.
-       Verified MAX_SUGGESTIONS_TO_SCORE limit logic.
+Action 11: Ancestry API Search and Family Analysis
+
+Searches Ancestry API for individuals, displays detailed person information,
+analyzes family relationships, and generates comprehensive genealogical reports
+with relationship path calculations and family tree visualization.
 """
 
 # === CORE INFRASTRUCTURE ===

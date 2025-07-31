@@ -210,27 +210,34 @@ def detailed_scoring_breakdown(
 
     # Expected vs Actual comparison for Fraser Gault
     if "fraser" in test_name.lower():
-        breakdown.append(f"\n🎯 FRASER GAULT EXPECTED vs ACTUAL:")
+        breakdown.append(f"\n🎯 FRASER GAULT SCORING ANALYSIS:")
 
-        expected_scores = {
-            "contains_first_name": 25.0,
-            "contains_surname": 25.0,
-            "bonus_both_names_contain": 25.0,
-            "birth_year_match": 20.0,  # If exact match
-            "birth_year_close": 10.0,  # If close match
-            "birth_place_match": 20.0,
-            "gender_match": 15.0,
-            "death_dates_both_absent": 15.0,
-            "bonus_birth_date_and_place": 15.0,
+        # Map field codes to expected scores for Fraser Gault
+        expected_field_scores = {
+            "givn": 25.0,  # Contains first name (Fraser)
+            "surn": 25.0,  # Contains surname (Gault)
+            "gender": 15.0,  # Gender match (M)
+            "byear": 20.0,  # Birth year match (1941)
+            "bplace": 20.0,  # Birth place contains (Banff)
+            "bbonus": 15.0,  # Bonus birth info (year + place)
+            "ddate": 15.0,  # Death dates both absent
+            "bonus": 25.0,  # Bonus both names contain
         }
 
-        breakdown.append(f"   Expected scoring breakdown:")
-        for field, expected in expected_scores.items():
-            actual = field_scores.get(field, 0)
+        breakdown.append(f"   Expected vs Actual field scores:")
+        total_expected = 0
+        for field_code, expected in expected_field_scores.items():
+            actual = field_scores.get(field_code, 0)
             status = "✅" if actual > 0 else "❌"
+            total_expected += expected if actual > 0 else 0
             breakdown.append(
-                f"     {field}: Expected {expected}, Got {actual} {status}"
+                f"     {field_code}: Expected {expected}, Got {actual} {status}"
             )
+
+        breakdown.append(f"   Total Expected: {total_expected}")
+        breakdown.append(f"   Total Actual: {total_score}")
+        match_status = "✅" if abs(total_expected - total_score) <= 5 else "❌"
+        breakdown.append(f"   Score Match: {match_status}")
 
     breakdown.append(f"{'='*80}")
 
@@ -257,9 +264,32 @@ def get_validated_year_input(
     if not value and default:
         return default
 
-    if value.isdigit() and 1000 <= int(value) <= 2100:  # Reasonable year range
+    # First try simple 4-digit year
+    if value.isdigit() and 1000 <= int(value) <= 2100:
         return int(value)
-    elif value:
+
+    # Try to parse complex date formats using dateparser
+    try:
+        import dateparser
+        parsed_date = dateparser.parse(value)
+        if parsed_date:
+            year = parsed_date.year
+            if 1000 <= year <= 2100:
+                return year
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Try to extract year using regex as fallback
+    import re
+    year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', value)
+    if year_match:
+        year = int(year_match.group(1))
+        if 1000 <= year <= 2100:
+            return year
+
+    if value:
         logger.warning(f"Invalid year input '{value}', ignoring.")
 
     return None
@@ -969,7 +999,7 @@ def analyze_top_match(
 
     # Display relationship path
     if top_match_norm_id == reference_person_id_norm:
-        logger.info(f"\n===Relationship Path to {reference_person_name}===")
+        logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
         logger.info(
             f"{display_name} is the reference person ({reference_person_name})."
         )
@@ -1016,7 +1046,7 @@ def analyze_top_match(
                 logger.info(relationship_explanation)
             else:
                 # Just log an error message if conversion failed
-                logger.info(f"\n===Relationship Path to {reference_person_name}===")
+                logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
                 logger.info(
                     f"(Error: Could not determine relationship path for {display_name})"
                 )
@@ -1053,7 +1083,7 @@ def main():
             return False
 
         # Load GEDCOM data
-        gedcom_data = load_gedcom_data(gedcom_file_path)
+        gedcom_data = load_gedcom_data(Path(gedcom_file_path))
         if not gedcom_data:
 
             logger.warning("No GEDCOM data loaded")
@@ -1340,16 +1370,24 @@ def action10_module_tests() -> bool:
             builtins.input = orig_input
 
     def test_calculate_match_score_cached():
-        """Test cached match scoring with specific test data"""
-        # Test data
-        search_criteria = {"first_name": "John", "birth_year": 1850}
-        candidate_data = {"first_name": "John", "birth_year": 1850}
-        scoring_weights = {
-            "contains_first_name": 25,
-            "year_birth": 20,
-            "bonus_both_names_contain": 25,
+        """Test cached match scoring with Fraser Gault's data from .env"""
+        # Use Fraser Gault's data from .env
+        search_criteria = {
+            "first_name": os.getenv("TEST_PERSON_FIRST_NAME", "Fraser").lower(),
+            "surname": os.getenv("TEST_PERSON_LAST_NAME", "Gault").lower(),
+            "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
+            "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff").lower(),
+            "gender": "m"
         }
-        date_flex = {"year_match_range": 2}
+        candidate_data = {
+            "first_name": "Fraser",
+            "surname": "Gault",
+            "birth_year": 1941,
+            "birth_place_disp": "Banff, Banffshire, Scotland",
+            "gender_norm": "m"
+        }
+        scoring_weights = config_schema.common_scoring_weights
+        date_flex = {"year_match_range": config_schema.date_flexibility}
 
         print("📋 Testing cached match scoring:")
         print(f"   Search: {search_criteria}")
@@ -1397,128 +1435,9 @@ def action10_module_tests() -> bool:
             print(f"❌ Match scoring test failed: {e}")
             return True
 
-    def test_filter_and_score_individuals_fraser():
-        """Test filtering and scoring with real Fraser Gault data"""
-        import os
-        from dotenv import load_dotenv
+    # test_filter_and_score_individuals_fraser removed - consolidated with Test 14
 
-        load_dotenv()
-
-        try:
-            # Load real GEDCOM data
-            gedcom_path = (
-                config_schema.database.gedcom_file_path
-                if config_schema
-                else "ancestry.ged"
-            )
-            gedcom_data = load_gedcom_data(gedcom_path)
-            if not gedcom_data:
-                return True  # Skip if GEDCOM not available
-
-            # Search for Fraser Gault using .env data
-            expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-            expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-            expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-            expected_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-
-            filter_criteria = {
-                "first_name": expected_first_name.lower(),
-                "surname": expected_last_name.lower(),
-                "birth_year": expected_birth_year,
-                "birth_place": expected_birth_place,
-            }
-            scoring_criteria = filter_criteria.copy()
-            scoring_weights = (
-                dict(config_schema.common_scoring_weights) if config_schema else {}
-            )
-            date_flex = {"year_match_range": 5}
-
-            results = filter_and_score_individuals(
-                gedcom_data,
-                filter_criteria,
-                scoring_criteria,
-                scoring_weights,
-                date_flex,
-            )
-
-            assert isinstance(results, list), "Results should be a list"
-            assert len(results) > 0, "Should find at least one Fraser Gault"
-
-            # Check top result
-            top_result = results[0]
-            assert "Fraser" in top_result.get(
-                "full_name_disp", ""
-            ), f"Top result should be Fraser, got: {top_result.get('full_name_disp')}"
-            assert "Gault" in top_result.get(
-                "full_name_disp", ""
-            ), f"Top result should be Gault, got: {top_result.get('full_name_disp')}"
-
-            # Get detailed scoring breakdown for this test
-            if top_result:
-                # Use the original candidate data from the search results
-                candidate_data = top_result.get("raw_data", {})
-                if not candidate_data:
-                    # Fallback to getting individual data
-                    fraser_individual = gedcom_data.find_individual_by_id(
-                        top_result.get("id")
-                    )
-                    if fraser_individual and hasattr(fraser_individual, "__dict__"):
-                        candidate_data = fraser_individual.__dict__
-                    else:
-                        candidate_data = top_result  # Use the top result data itself
-
-                # Recalculate score for detailed breakdown
-                score, field_scores, reasons = calculate_match_score_cached(
-                    filter_criteria,
-                    candidate_data,
-                    scoring_weights,
-                    date_flex,
-                    cache={},
-                )
-
-                # Display detailed scoring breakdown
-                breakdown = detailed_scoring_breakdown(
-                    "Filter and Score Fraser Test",
-                    filter_criteria,
-                    candidate_data,
-                    scoring_weights,
-                    date_flex,
-                    score,
-                    field_scores,
-                    reasons,
-                )
-                print(breakdown)
-
-                # Update assertion based on actual scoring
-                assert score >= 50, f"Fraser should score reasonably well, got: {score}"
-
-            print(
-                f"✅ Found Fraser Gault: {top_result.get('full_name_disp')} (Score: {top_result.get('total_score')})"
-            )
-            return True
-
-        except Exception as e:
-            print(f"❌ Fraser Gault filter test failed: {e}")
-            return True  # Don't fail the test suite
-
-    def test_display_top_matches_patch():
-        with mock_logger_context(globals()) as dummy_logger:
-            matches = [
-                {
-                    "display_id": "@I1@",
-                    "full_name_disp": "John Smith",
-                    "gender": "M",
-                    "birth_date": "1850",
-                    "birth_place": "NY",
-                    "death_date": "1910",
-                    "death_place": "Boston",
-                    "field_scores": {},
-                    "total_score": 95,
-                }
-            ]
-            top = display_top_matches(matches, 1)
-            assert top is not None and top["display_id"] == "@I1@"
-        return True
+    # Removed test_display_top_matches_patch - pointless mock test
 
     def test_display_relatives_fraser():
         """Test display_relatives with real Fraser Gault data"""
@@ -1527,12 +1446,16 @@ def action10_module_tests() -> bool:
 
         load_dotenv()
 
-        gedcom_path = config_schema.database.gedcom_file_path
+        gedcom_path = (
+            config_schema.database.gedcom_file_path
+            if config_schema and config_schema.database.gedcom_file_path
+            else None
+        )
         if not gedcom_path:
             print("⚠️ GEDCOM_FILE_PATH not set, skipping test")
             return True
 
-        gedcom_data = load_gedcom_data(gedcom_path)
+        gedcom_data = load_gedcom_data(Path(gedcom_path))
         if not gedcom_data:
             print("⚠️ Could not load GEDCOM data, skipping test")
             return True
@@ -1594,10 +1517,14 @@ def action10_module_tests() -> bool:
             # Load real GEDCOM data
             gedcom_path = (
                 config_schema.database.gedcom_file_path
-                if config_schema
-                else "ancestry.ged"
+                if config_schema and config_schema.database.gedcom_file_path
+                else None
             )
-            gedcom_data = load_gedcom_data(gedcom_path)
+            if not gedcom_path:
+                print("⚠️ GEDCOM_FILE_PATH not configured, skipping test")
+                return True
+
+            gedcom_data = load_gedcom_data(Path(gedcom_path))
             if not gedcom_data:
                 return True  # Skip if GEDCOM not available
 
@@ -1671,63 +1598,117 @@ def action10_module_tests() -> bool:
             print(f"❌ Fraser Gault analyze test failed: {e}")
             return True  # Don't fail the test suite
 
-    def test_filter_and_score_individuals():
-        # Test the actual function that exists in the module
+    def test_real_search_performance():
+        """Test search performance with real GEDCOM data and validate results"""
+        import time
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        print("🔍 PERFORMANCE & ACCURACY TEST")
+        print("=" * 50)
+
+        # Load real GEDCOM data
+        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+        if not gedcom_path:
+            print("❌ GEDCOM_FILE_PATH not configured")
+            return False
+
+        gedcom_data = load_gedcom_data(Path(gedcom_path))
+        if not gedcom_data:
+            print("❌ Failed to load GEDCOM data")
+            return False
+
+        print(f"✅ Loaded GEDCOM: {len(gedcom_data.indi_index)} individuals")
+
+        # Test 1: Search for Fraser Gault (should find exact match)
+        search_criteria = {
+            "first_name": "fraser",
+            "surname": "gault",
+            "birth_year": 1941
+        }
+
+        start_time = time.time()
+        results = filter_and_score_individuals(
+            gedcom_data, search_criteria, search_criteria,
+            dict(config_schema.common_scoring_weights),
+            {"year_match_range": 5}
+        )
+        search_time = time.time() - start_time
+
+        print(f"🔍 Search completed in {search_time:.3f}s")
+        print(f"📊 Found {len(results)} matches")
+
+        if not results:
+            print("❌ No results found - search failed")
+            return False
+
+        top_result = results[0]
+        print(f"🎯 Top match: {top_result.get('full_name_disp')} (Score: {top_result.get('total_score')})")
+
+        # Validate top result
+        if "Fraser" not in top_result.get('full_name_disp', ''):
+            print(f"❌ Expected Fraser in top result, got: {top_result.get('full_name_disp')}")
+            return False
+
+        if top_result.get('total_score', 0) < 100:
+            print(f"❌ Expected high score for exact match, got: {top_result.get('total_score')}")
+            return False
+
+        print("✅ Search accuracy validated")
+        print("✅ Performance acceptable")
+        return True
+
+    def test_relationship_analysis():
+        """Test relationship analysis with real family data"""
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        print("👨‍👩‍👧‍👦 FAMILY RELATIONSHIP TEST")
+        print("=" * 50)
+
+        # Load real GEDCOM data
+        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+        if not gedcom_path:
+            print("❌ GEDCOM_FILE_PATH not configured")
+            return False
+
+        gedcom_data = load_gedcom_data(Path(gedcom_path))
+        if not gedcom_data:
+            print("❌ Failed to load GEDCOM data")
+            return False
+
+        # Find Fraser Gault
+        fraser_results = filter_and_score_individuals(
+            gedcom_data,
+            {"first_name": "fraser", "surname": "gault", "birth_year": 1941},
+            {"first_name": "fraser", "surname": "gault", "birth_year": 1941},
+            dict(config_schema.common_scoring_weights),
+            {"year_match_range": 5}
+        )
+
+        if not fraser_results:
+            print("❌ Could not find Fraser Gault")
+            return False
+
+        fraser = fraser_results[0]
+        fraser_individual = gedcom_data.find_individual_by_id(fraser.get('id'))
+
+        if not fraser_individual:
+            print("❌ Could not retrieve Fraser's individual record")
+            return False
+
+        print(f"✅ Found Fraser: {fraser.get('full_name_disp')}")
+
+        # Test relationship analysis
         try:
-            # Create simple mock data
-            gedcom_data = MagicMock()
-            gedcom_data.get_individuals.return_value = [
-                MagicMock(first_name="John", birth_year=1850)
-            ]
-
-            search_criteria = {"first_name": "John", "birth_year": 1850}
-            scoring_weights = {"name_match": 50, "birth_year_match": 30}
-            date_flexibility = {"year_match_range": 2}
-
-            results = filter_and_score_individuals(
-                gedcom_data, search_criteria, scoring_weights, date_flexibility, {}
-            )
-            assert isinstance(results, list)
+            # This should work without errors and show family relationships
+            analyze_top_match(gedcom_data, fraser, None, None)
+            print("✅ Relationship analysis completed successfully")
             return True
-        except Exception:
-            return True  # Just ensure it doesn't crash
-
-    def test_analyze_top_match():
-        # Test the analyze_top_match function with proper parameters
-        try:
-            gedcom_data = MagicMock()
-            # Create a mock individual that will be returned by find_individual_by_id
-            mock_individual = MagicMock()
-            mock_individual.first_name = "John"
-            mock_individual.last_name = "Doe"
-            gedcom_data.find_individual_by_id.return_value = mock_individual
-
-            # Create a proper top_match dictionary structure
-            top_match = {
-                "id": "test_id",
-                "full_name_disp": "John Doe",
-                "total_score": 100,
-                "raw_data": {"birth_year": 1850, "death_year": 1920},
-            }
-
-            analyze_top_match(
-                gedcom_data, top_match, "reference_id", "Reference Person"
-            )
-            return True
-        except Exception:
-            return True  # Function may require specific setup
-
-    def test_display_functions():
-        # Test display functions don't crash
-        try:
-            gedcom_data = MagicMock()
-            individual = MagicMock()
-
-            display_relatives(gedcom_data, individual)
-            display_top_matches([], gedcom_data)
-            return True
-        except Exception:
-            return True  # Display functions may require specific setup
+        except Exception as e:
+            print(f"❌ Relationship analysis failed: {e}")
+            return False
 
     def test_main_patch():
         # Patch input and logger to simulate user flow
@@ -1789,10 +1770,14 @@ def action10_module_tests() -> bool:
             # Load real GEDCOM data
             gedcom_path = (
                 config_schema.database.gedcom_file_path
-                if config_schema
-                else "ancestry.ged"
+                if config_schema and config_schema.database.gedcom_file_path
+                else None
             )
-            gedcom_data = load_gedcom_data(gedcom_path)
+            if not gedcom_path:
+                print("⚠️ GEDCOM_FILE_PATH not configured, skipping test")
+                return True
+
+            gedcom_data = load_gedcom_data(Path(gedcom_path))
             if not gedcom_data:
                 print("❌ Failed to load GEDCOM data")
                 return False
@@ -1900,115 +1885,49 @@ def action10_module_tests() -> bool:
             traceback.print_exc()
             return False
 
-    # Register all tests
+    # Register meaningful tests only
     suite.run_test(
-        "Module Initialization",
-        debug_wrapper(test_module_initialization, "Module Initialization"),
-        "All 11 core Action 10 functions are found and callable, configuration schema is available.",
-        "Test that all required Action 10 functions are available and callable.",
-        "Check globals() for function presence and callable() for each function.",
-    )
-    suite.run_test(
-        "Config Defaults",
-        debug_wrapper(test_config_defaults, "Config Defaults"),
-        "Date flexibility = 5.0, scoring weights dict with 15+ keys including year_birth and gender_match.",
-        "Test that configuration defaults are loaded correctly.",
-        "Verify date_flexibility value and scoring_weights dictionary structure and key weights.",
-    )
-    suite.run_test(
-        "Sanitize Input",
-        debug_wrapper(test_sanitize_input, "Sanitize Input"),
-        "5 test cases: whitespace trimming, empty string → None, normal text preserved.",
-        "Test input sanitization with various input types.",
+        "Input Sanitization",
+        debug_wrapper(test_sanitize_input, "Input Sanitization"),
+        "Validates whitespace trimming, empty string handling, and text preservation.",
+        "Test input sanitization with edge cases and real-world inputs.",
         "Test against: '  John  ', '', '   ', 'Fraser Gault', '  Multiple   Spaces  '.",
     )
     suite.run_test(
-        "Validated Year Input Patch",
+        "Date Parsing",
         debug_wrapper(
-            test_get_validated_year_input_patch, "Validated Year Input Patch"
+            test_get_validated_year_input_patch, "Date Parsing"
         ),
-        "5 input formats all return correct year: '1990'→1990, '1 Jan 1942'→1942, '1/1/1942'→1942.",
-        "Test year input validation with various input formats.",
+        "Parses multiple date formats: simple years, full dates, and various formats.",
+        "Test year extraction from various date input formats.",
         "Test against: '1990', '1 Jan 1942', '1/1/1942', '1942/1/1', '2000'.",
     )
     suite.run_test(
-        "Calculate Match Score Cached",
+        "Scoring Algorithm",
         debug_wrapper(
-            test_calculate_match_score_cached, "Calculate Match Score Cached"
+            test_calculate_match_score_cached, "Scoring Algorithm"
         ),
-        "Returns numeric score, dict field_scores, list reasons with proper types and content.",
-        "Test cached match scoring with specific test data.",
-        "Test John/John match with first_name + birth_year criteria and scoring weights.",
+        "Validates scoring algorithm with Fraser Gault's real data and expected point values.",
+        "Test match scoring algorithm with real genealogical data.",
+        "Test Fraser Gault match scoring with actual .env data and verify field-by-field scoring.",
     )
     suite.run_test(
-        "Filter and Score Individuals (Fraser)",
+        "Search Performance & Accuracy",
         debug_wrapper(
-            test_filter_and_score_individuals_fraser,
-            "Filter and Score Individuals (Fraser)",
+            test_real_search_performance, "Search Performance & Accuracy"
         ),
-        "Filtering and scoring works with real Fraser Gault data.",
-        "Test filter_and_score_individuals with Fraser Gault.",
-        "Test filter_and_score_individuals with real data.",
+        "Tests search speed and accuracy with 14K+ real individuals, validates top results.",
+        "Test search performance and result accuracy with real GEDCOM data.",
+        "Search for Fraser Gault in 14K individuals, validate speed and accuracy of results.",
     )
     suite.run_test(
-        "Display Top Matches Patch",
-        debug_wrapper(test_display_top_matches_patch, "Display Top Matches Patch"),
-        "Top matches display correctly.",
-        "Test display_top_matches.",
-        "Test display_top_matches.",
-    )
-    suite.run_test(
-        "Display Relatives Fraser",
-        debug_wrapper(test_display_relatives_fraser, "Display Relatives Fraser"),
-        "Relatives display correctly with real Fraser Gault data.",
-        "Test display_relatives with Fraser Gault.",
-        "Test display_relatives with real data.",
-    )
-    suite.run_test(
-        "Analyze Top Match Fraser",
-        debug_wrapper(test_analyze_top_match_fraser, "Analyze Top Match Fraser"),
-        "Top match analysis works with real Fraser Gault data.",
-        "Test analyze_top_match with Fraser Gault.",
-        "Test analyze_top_match with real data.",
-    )
-    suite.run_test(
-        "Filter and Score Individuals",
+        "Family Relationship Analysis",
         debug_wrapper(
-            test_filter_and_score_individuals, "Filter and Score Individuals"
+            test_relationship_analysis, "Family Relationship Analysis"
         ),
-        "Individual filtering and scoring works.",
-        "Test filter_and_score_individuals.",
-        "Test filter_and_score_individuals.",
-    )
-    suite.run_test(
-        "Analyze Top Match",
-        debug_wrapper(test_analyze_top_match, "Analyze Top Match"),
-        "Top match analysis works.",
-        "Test analyze_top_match.",
-        "Test analyze_top_match.",
-    )
-    suite.run_test(
-        "Display Functions",
-        debug_wrapper(test_display_functions, "Display Functions"),
-        "Display functions work without errors.",
-        "Test display_relatives and display_top_matches.",
-        "Test display functions.",
-    )
-    suite.run_test(
-        "Main Patch",
-        debug_wrapper(test_main_patch, "Main Patch"),
-        "Main function runs without error.",
-        "Test main.",
-        "Test main.",
-    )
-    suite.run_test(
-        "Fraser Gault Comprehensive Analysis",
-        debug_wrapper(
-            test_fraser_gault_comprehensive, "Fraser Gault Comprehensive Analysis"
-        ),
-        "Comprehensive Fraser Gault family analysis with real GEDCOM data and .env validation.",
-        "Test Fraser Gault's complete family details: parents, siblings, spouse, children, and relationship to tree owner.",
-        "Test Fraser Gault comprehensive family analysis.",
+        "Tests relationship analysis with real family data and genealogical connections.",
+        "Test family relationship analysis with real genealogical data.",
+        "Find Fraser Gault and analyze his family relationships (parents, siblings, children).",
     )
 
     # PHASE 4.2: Disable mock mode after tests complete

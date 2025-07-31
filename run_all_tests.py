@@ -102,12 +102,84 @@ def discover_test_modules():
     return sorted(test_modules)
 
 
+def extract_module_description(module_path: str) -> str | None:
+    """Extract the first line of a module's docstring for use as description."""
+    try:
+        # Read the file and look for the module docstring
+        with open(module_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Look for triple-quoted docstring after any initial comments/shebang
+        lines = content.split('\n')
+        in_docstring = False
+        docstring_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Skip shebang and comments at the top
+            if stripped.startswith('#') or not stripped:
+                continue
+
+            # Look for start of docstring
+            if not in_docstring and '"""' in stripped:
+                in_docstring = True
+                # Extract content after opening quotes
+                after_quotes = stripped.split('"""', 1)[1].strip()
+                if after_quotes:
+                    docstring_lines.append(after_quotes)
+                continue
+
+            # If we're in docstring, collect lines until closing quotes
+            if in_docstring:
+                if '"""' in stripped:
+                    # End of docstring - extract content before closing quotes
+                    before_quotes = stripped.split('"""')[0].strip()
+                    if before_quotes:
+                        docstring_lines.append(before_quotes)
+                    break
+                else:
+                    # Regular docstring line
+                    if stripped:
+                        docstring_lines.append(stripped)
+
+        # Return the first meaningful line as description
+        if docstring_lines:
+            # Look for the first line that looks like a title/description
+            for line in docstring_lines:
+                if line and not line.startswith('=') and len(line) > 10:
+                    # Clean up common patterns
+                    module_base = module_path.replace('.py', '').replace('/', '').replace('\\', '')
+                    description = line.replace(module_base, '').strip()
+                    description = description.replace(' - ', ' - ').strip()
+
+                    # Remove leading dashes and clean up
+                    if description.startswith('-'):
+                        description = description[1:].strip()
+                    if description.startswith('.py'):
+                        description = description[3:].strip()
+
+                    # Remove redundant module name patterns
+                    words_to_remove = [module_base.lower(), 'module', 'py']
+                    for word in words_to_remove:
+                        if description.lower().startswith(word):
+                            description = description[len(word):].strip()
+                            if description.startswith('-'):
+                                description = description[1:].strip()
+
+                    return description
+
+        return None
+
+    except Exception:
+        return None
+
+
 def run_module_tests(
     module_name: str, description: str | None = None
 ) -> tuple[bool, int]:
     """Run tests for a specific module and return success status with clean output"""
-    print(f"\n🧪 Testing: {module_name}")
-    # Always show description for consistency - avoid repeating module name
+    # Show description for consistency - avoid repeating module name
     if description:
         print(f"   📝 {description}")
     else:
@@ -129,11 +201,6 @@ def run_module_tests(
             )
             print(f"   📝 Configuration {component} management")
         elif "action" in module_name:
-            action_num = (
-                module_name.split("action")[1].split("_")[0]
-                if "action" in module_name
-                else ""
-            )
             action_name = module_name.replace(".py", "").replace("_", " ").title()
             print(f"   📝 {action_name} automation")
         elif module_name.endswith("_utils.py"):
@@ -323,18 +390,20 @@ def run_module_tests(
                         if test_count != "Unknown":
                             break
 
-        # Also check output for failure indicators (be more specific to avoid false positives)
+        # Define failure indicators (be more specific to avoid false positives)
+        failure_indicators = [
+            "❌ FAILED",
+            "Status: FAILED",
+            "AssertionError:",
+            "Exception occurred:",
+            "Test failed:",
+            "❌ Failed: ",
+            "CRITICAL ERROR",
+            "FATAL ERROR",
+        ]
+
+        # Also check output for failure indicators
         if success and result.stdout:
-            failure_indicators = [
-                "❌ FAILED",
-                "Status: FAILED",
-                "AssertionError:",
-                "Exception occurred:",
-                "Test failed:",
-                "❌ Failed: ",
-                "CRITICAL ERROR",
-                "FATAL ERROR",
-            ]
             # Only mark as failed if we find actual failure indicators
             # Exclude lines that are just showing "Failed: 0" (which means 0 failures)
             stdout_lines = result.stdout.split("\n")
@@ -395,7 +464,7 @@ def run_module_tests(
 def main():
     """Main test runner with comprehensive reporting"""
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
-    print("=" * 60)
+    print("=" * 50)
     print()  # Blank line instead of subtitle
 
     # Auto-discover all test modules
@@ -411,45 +480,34 @@ def main():
         print("⚠️  No test modules discovered.")
         return False
 
-    # Create descriptions for known modules (enhanced ones get better descriptions)
-    enhanced_modules = {
-        "core/session_manager.py": "Session Manager & Component Coordination",
-        "config/credential_manager.py": "Configuration Management & Credential Storage",
-        "utils.py": "Core Utilities & Session Management",
-        "action6_gather.py": "Action 6 - Gather DNA Matches",
-        "error_handling.py": "Error Handling & Recovery Systems",
-        "database.py": "Database Models & ORM Management",
-        "api_utils.py": "API Utilities & Ancestry Integration",
-        "relationship_utils.py": "Relationship Path Processing & BFS Algorithms",
-        "gedcom_utils.py": "GEDCOM File Processing & Genealogy Parser",
-        "selenium_utils.py": "Browser Automation & Web Element Utilities",
-        "logging_config.py": "Logging Configuration & Management",
-        "action8_messaging.py": "Action 8 - Automated Messaging System",
-        "action10.py": "Action 10 - Custom Action",
-        "action11.py": "Action 11 - Custom Action",
-    }
+    # Extract descriptions from module docstrings
+    module_descriptions = {}
+    enhanced_count = 0
+
+    for module_name in discovered_modules:
+        description = extract_module_description(module_name)
+        if description:
+            module_descriptions[module_name] = description
+            enhanced_count += 1
 
     results = []
     total_start_time = time.time()
 
-    enhanced_count = sum(
-        1 for module in discovered_modules if module in enhanced_modules
-    )
     print(
-        f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced reporting)"
+        f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced descriptions)"
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'='* 50}")
     print(f"🧪 RUNNING TESTS")
-    print(f"{'='*60}")
+    print(f"{'='* 50}")
 
     total_tests_run = 0
 
     for i, module_name in enumerate(discovered_modules, 1):
-        print(f"\n[{i:2d}/{len(discovered_modules)}]", end=" ")
+        print(f"\n🧪 [{i:2d}/{len(discovered_modules)}] Testing: {module_name}")
 
-        # Use enhanced description if available, otherwise generate a basic one
-        description = enhanced_modules.get(module_name, None)
+        # Use extracted description if available, otherwise generate a basic one
+        description = module_descriptions.get(module_name, None)
 
         success, test_count = run_module_tests(module_name, description)
         total_tests_run += test_count
@@ -463,9 +521,9 @@ def main():
     failed_count = len(results) - passed_count
     success_rate = (passed_count / len(results)) * 100 if results else 0
 
-    print(f"\n{'='*60}")
+    print(f"\n{'='* 50}")
     print(f"📊 FINAL TEST SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'='* 50}")
     print(f"⏰ Duration: {total_duration:.1f}s")
     print(f"🧪 Total Tests Run: {total_tests_run}")
     print(f"✅ Passed: {passed_count}")
@@ -483,12 +541,12 @@ def main():
     enhanced_passed = sum(
         1
         for module_name, _, success in results
-        if success and module_name in enhanced_modules
+        if success and module_name in module_descriptions
     )
     enhanced_failed = sum(
         1
         for module_name, _, success in results
-        if not success and module_name in enhanced_modules
+        if not success and module_name in module_descriptions
     )
 
     print(f"\n📋 RESULTS BY CATEGORY:")
@@ -499,10 +557,10 @@ def main():
 
     if failed_count == 0:
         print(f"\n🎉 ALL {len(discovered_modules)} MODULES PASSED!")
-        print("   Enhanced detailed reporting is working perfectly.")
+        print("   Enhanced detailed reporting is working perfectly.\n\n")
     else:
         print(f"\n⚠️  {failed_count} module(s) failed.")
-        print("   Check individual test outputs above for details.")
+        print("   Check individual test outputs above for details.\n\n")
 
     return failed_count == 0
 
@@ -512,8 +570,8 @@ if __name__ == "__main__":
         success = main()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n\n⚠️  Test run interrupted by user")
+        print("\n\n⚠️  Test run interrupted by user!\n\n")
         sys.exit(130)
     except Exception as e:
-        print(f"\n💥 Unexpected error in test runner: {e}")
+        print(f"\n💥 Unexpected error in test runner: {e}\n\n")
         sys.exit(1)

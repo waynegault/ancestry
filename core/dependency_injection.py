@@ -808,7 +808,7 @@ class TestDIContainer(unittest.TestCase):
 
 def run_comprehensive_tests():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(TestDIContainer))
+    suite.addTest(unittest.TestLoader().loadTestsFromTestCase(TestDIContainer))
     runner = unittest.TextTestRunner()
     runner.run(suite)
 

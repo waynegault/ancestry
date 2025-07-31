@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""
-Unified Credential Manager for Ancestry Project
-Replaces: setup_security.py, setup_credentials_interactive.py, setup_credentials_helper.py
 
-This is the single entry point for all credential management tasks.
-Usage: python credentials.py
+"""
+Unified Credential Manager - Secure Authentication Setup
+
+Provides comprehensive credential management for the Ancestry automation project,
+including interactive setup, validation, and secure storage of authentication
+credentials with encryption and environment variable management.
 """
 
 # === CORE INFRASTRUCTURE ===

@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 """
-ms_graph_utils.py - Microsoft Graph API Interaction Utilities
+Microsoft Graph Integration - Office 365 Task Management
 
-Provides functions for authenticating with Microsoft Graph using MSAL (Microsoft
-Authentication Library) via the device code flow, managing a persistent token cache,
-finding To-Do list IDs, and creating tasks within a specified list. Reads client ID
-and tenant ID configuration from environment variables.
+Provides Microsoft Graph API integration for task management with MSAL authentication,
+persistent token caching, To-Do list management, and automated task creation for
+genealogical research workflow integration with Office 365 productivity tools.
 """
 
 # === CORE INFRASTRUCTURE ===

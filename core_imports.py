@@ -1,19 +1,11 @@
+#!/usr/bin/env python3
+
 """
-Unified Import & Function Registry System
+Core Import System - Unified Module and Function Registry
 
-This module consolidates all import management and function registry functionality
-into a single, high-performance system that eliminates the dual-system overhead
-found throughout the codebase.
-
-Key improvements:
-- Consolidates path_manager.py and core_imports.py functionality
-- Eliminates duplicate function registries and import systems
-- Provides unified, consistent import patterns across all modules
-- Single source of truth for all imports and function management
-- Optimized performance with caching and minimal overhead
-- Advanced error handling and recovery mechanisms
-- Performance monitoring and statistics
-- Thread-safe operations for concurrent access
+Provides centralized import management, function registry, and module coordination
+with high-performance caching, thread-safe operations, and comprehensive error
+handling for the entire Ancestry automation project infrastructure.
 """
 
 import os

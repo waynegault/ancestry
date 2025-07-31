@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Test Program Executor - Safe Testing Protocol Implementation
-Implements the comprehensive testing program for ancestry research automation.
-SAFETY: Only sends test messages to Frances McHardy (nee Milne).
+Test Program Executor - Safe Automation Testing
+
+Implements comprehensive testing protocols for ancestry research automation with
+built-in safety controls, AI integration testing, and controlled message workflows
+ensuring safe testing environments with restricted recipient targeting.
 """
 
 # === CORE INFRASTRUCTURE ===

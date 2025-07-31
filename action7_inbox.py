@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 
-# action7_inbox.py
-
 """
-action7_inbox.py - Process Ancestry Inbox Messages
+Action 7: Ancestry Inbox Message Processing
 
-Fetches conversations from the Ancestry inbox API, compares them with the local
-database (`conversation_log`), identifies new incoming messages, classifies their
-intent using AI (via `ai_interface.py`), and updates the database accordingly.
-Uses batch processing, pagination (cursors), rate limiting, and handles potential
-session invalidity.
+Automates processing of Ancestry inbox messages with AI-powered intent classification,
+database synchronization, and intelligent conversation management including batch
+processing, pagination, and comprehensive message analysis workflows.
 """
 
 # === CORE INFRASTRUCTURE ===

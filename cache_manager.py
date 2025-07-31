@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 """
-cache_manager.py - Cache Management Functionality
+Cache Manager - Centralized Cache Operations
 
-Provides cache operations with comprehensive testing and cache management utilities.
+Provides comprehensive cache management, monitoring, and maintenance operations
+with intelligent cache lifecycle management, performance optimization, and
+automated cleanup for efficient memory and disk usage across all cache systems.
 """
 
 # === CORE INFRASTRUCTURE ===
