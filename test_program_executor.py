@@ -17,9 +17,9 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import text
 
 try:
-    from utils import SessionManager  # Use utils.SessionManager for AI/model functions
+    from core.session_manager import SessionManager  # Use core.SessionManager as primary
 except ImportError:
-    from core.session_manager import SessionManager
+    from utils import SessionManager  # Fallback to utils.SessionManager if needed
 from database import Person, DnaMatch, FamilyTree, ConversationLog, MessageDirectionEnum
 from ai_interface import classify_message_intent, extract_genealogical_entities
 from person_search import search_gedcom_persons
@@ -34,16 +34,8 @@ class SafeTestingProtocol:
     """Implements safe testing protocol with Frances McHardy only."""
 
     def __init__(self, session_manager: SessionManager):
-        # Always use utils.SessionManager for AI/model functions
-        try:
-            from utils import SessionManager as UtilsSessionManager
-
-            if not isinstance(session_manager, UtilsSessionManager):
-                self.session_manager = UtilsSessionManager()
-            else:
-                self.session_manager = session_manager
-        except Exception:
-            self.session_manager = session_manager
+        # Use the provided SessionManager (now core.SessionManager)
+        self.session_manager = session_manager
         self.test_start_time = datetime.now(timezone.utc)
         self.approved_patterns = ["frances", "fran", "mchardy", "milne"]
         self.test_results = {}
@@ -243,17 +235,8 @@ class SafeTestingProtocol:
 
         results = []
 
-        # Always use utils.SessionManager for AI/model functions
-        try:
-            from utils import SessionManager as UtilsSessionManager
-
-            ai_session_manager = (
-                self.session_manager
-                if isinstance(self.session_manager, UtilsSessionManager)
-                else UtilsSessionManager()
-            )
-        except Exception:
-            ai_session_manager = self.session_manager
+        # Use the core SessionManager for AI/model functions
+        ai_session_manager = self.session_manager
 
         for i, message in enumerate(test_messages):
             try:

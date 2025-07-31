@@ -84,7 +84,7 @@ except ImportError:
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
-from utils import SessionManager
+from core.session_manager import SessionManager
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from core.system_cache import cached_api_call, get_system_cache_stats

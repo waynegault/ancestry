@@ -78,8 +78,8 @@ from database import (
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
+from core.session_manager import SessionManager
 from utils import (
-    SessionManager,  # Import SessionManager for type hints and usage
     _api_req,  # API request helper
     format_name,  # Name formatting utility
     ordinal_case,  # Ordinal case formatting

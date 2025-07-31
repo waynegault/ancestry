@@ -178,7 +178,8 @@ API_UTILS_AVAILABLE = True
 
 
 # --- Import General Utilities ---
-from utils import SessionManager, format_name, ordinal_case
+from core.session_manager import SessionManager
+from utils import format_name, ordinal_case
 
 logger.debug("Successfully imported required components from utils.")
 CORE_UTILS_AVAILABLE = True

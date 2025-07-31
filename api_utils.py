@@ -73,7 +73,8 @@ from config import config_schema
 from database import Person
 from gedcom_utils import _parse_date, _clean_display_date
 from logging_config import setup_logging
-from utils import SessionManager, _api_req, format_name
+from core.session_manager import SessionManager
+from utils import _api_req, format_name
 
 # --- Test framework imports ---
 try:
