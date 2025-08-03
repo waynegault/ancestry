@@ -166,11 +166,19 @@ def _navigate_and_get_initial_page_data(
     my_uuid = session_manager.my_uuid
 
     # Detect the correct base URL from the browser's current URL
-    # Force US site for API compatibility
-    # The UK site (ancestry.co.uk) doesn't seem to have the same API endpoints
-    # So we'll force the US site (ancestry.com) for DNA match gathering
-    actual_base_url = "https://www.ancestry.com/"
-    logger.debug("Forcing US Ancestry site (ancestry.com) for API compatibility")
+    # Use the same domain as the browser is currently on
+    current_url = driver.current_url
+    logger.debug(f"_navigate_to_matches_page: Current browser URL: {current_url}")
+    if "ancestry.co.uk" in current_url:
+        actual_base_url = "https://www.ancestry.co.uk/"
+        logger.debug("_navigate_to_matches_page: Using UK Ancestry site (ancestry.co.uk) to match browser domain")
+    elif "ancestry.com" in current_url:
+        actual_base_url = "https://www.ancestry.com/"
+        logger.debug("_navigate_to_matches_page: Using US Ancestry site (ancestry.com) to match browser domain")
+    else:
+        # Fallback to configured base URL
+        actual_base_url = config_schema.api.base_url
+        logger.debug(f"_navigate_to_matches_page: Using configured base URL: {actual_base_url}")
 
     target_matches_url_base = urljoin(
         actual_base_url, f"discoveryui-matches/list/{my_uuid}"
@@ -2663,8 +2671,14 @@ def get_matches(
         )
         return None
 
-    # Force US site for API compatibility
-    actual_base_url = "https://www.ancestry.com/"
+    # Use the same domain as the browser is currently on
+    current_url = driver.current_url
+    if "ancestry.co.uk" in current_url:
+        actual_base_url = "https://www.ancestry.co.uk/"
+    elif "ancestry.com" in current_url:
+        actual_base_url = "https://www.ancestry.com/"
+    else:
+        actual_base_url = config_schema.api.base_url
 
     match_list_url = urljoin(
         actual_base_url,
@@ -2684,7 +2698,7 @@ def get_matches(
         f"Headers being passed to _api_req for Match List: {match_list_headers}"
     )
 
-    # First try with redirects disabled to see the redirect location
+    # Allow redirects as the working version from 2 months ago did
     api_response = _api_req(
         url=match_list_url,
         driver=driver,
@@ -2693,29 +2707,8 @@ def get_matches(
         headers=match_list_headers,
         use_csrf_token=False,
         api_description="Match List API",
-        allow_redirects=False,  # Disable redirects to see where it wants to redirect
+        allow_redirects=True,  # Enable redirects like the working version
     )
-
-    # If we get a 303 redirect, try to follow it manually
-    if api_response and hasattr(api_response, 'status_code') and api_response.status_code == 303:
-        redirect_location = api_response.headers.get('Location')
-        logger.debug(f"Got 303 redirect, Location header: {redirect_location}")
-
-        if redirect_location:
-            logger.debug(f"Following redirect to: {redirect_location}")
-            # Try the redirected URL
-            api_response = _api_req(
-                url=redirect_location,
-                driver=driver,
-                session_manager=session_manager,
-                method="GET",
-                headers=match_list_headers,
-                use_csrf_token=False,
-                api_description="Match List API (Redirected)",
-                allow_redirects=True,
-            )
-        else:
-            logger.warning("303 redirect received but no Location header provided")
 
 
     total_pages: Optional[int] = None
@@ -3795,8 +3788,22 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 
     my_uuid = session_manager.my_uuid
 
-    # Force US site for API compatibility
-    actual_base_url = "https://www.ancestry.com/"
+    # Use the same domain as the browser is currently on
+    if driver:
+        current_url = driver.current_url
+        logger.debug(f"nav_to_list: Current browser URL: {current_url}")
+        if "ancestry.co.uk" in current_url:
+            actual_base_url = "https://www.ancestry.co.uk/"
+            logger.debug("nav_to_list: Using UK domain")
+        elif "ancestry.com" in current_url:
+            actual_base_url = "https://www.ancestry.com/"
+            logger.debug("nav_to_list: Using US domain")
+        else:
+            actual_base_url = config_schema.api.base_url
+            logger.debug(f"nav_to_list: Using configured domain: {actual_base_url}")
+    else:
+        actual_base_url = config_schema.api.base_url
+        logger.debug(f"nav_to_list: No driver, using configured domain: {actual_base_url}")
 
     target_url = urljoin(
         actual_base_url, f"discoveryui-matches/list/{my_uuid}"
