@@ -33,7 +33,6 @@ import time
 from typing import Optional, Dict
 
 # === THIRD-PARTY IMPORTS ===
-import undetected_chromedriver as uc
 from selenium.common.exceptions import (
     NoSuchElementException,
     TimeoutException,
@@ -53,7 +52,7 @@ from config import config_schema
 
 
 @safe_execute(default_return=False, log_errors=True)
-def force_user_agent(driver: Optional[uc.Chrome], user_agent: str):
+def force_user_agent(driver: Optional[WebDriver], user_agent: str):
     """
     Attempts to force the browser's User-Agent string using Chrome DevTools Protocol.
     Now with unified error handling via safe_execute decorator.

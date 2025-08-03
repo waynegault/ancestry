@@ -721,6 +721,98 @@ def _reconstruct_path(
     return full_path
 
 
+def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Dict, id_to_children: Dict) -> bool:
+    """Validate inputs for bidirectional BFS search."""
+    if start_id == end_id:
+        return True
+    if id_to_parents is None or id_to_children is None:
+        logger.error("[FastBiBFS] Relationship maps are None.")
+        return False
+    if not start_id or not end_id:
+        logger.error("[FastBiBFS] Start or end ID is missing.")
+        return False
+    return True
+
+
+def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple:
+    """Initialize BFS queues and visited sets for bidirectional search."""
+    # Initialize BFS queues and visited sets
+    # Forward queue from start_id
+    queue_fwd = deque([(start_id, 0, [start_id])])  # (id, depth, path)
+    # Backward queue from end_id
+    queue_bwd = deque([(end_id, 0, [end_id])])  # (id, depth, path)
+
+    # Track visited nodes and their paths
+    visited_fwd = {start_id: (0, [start_id])}  # {id: (depth, path)}
+    visited_bwd = {end_id: (0, [end_id])}  # {id: (depth, path)}
+
+    return queue_fwd, queue_bwd, visited_fwd, visited_bwd
+
+
+def _expand_forward_node(current_id: str, depth: int, path: List[str],
+                        visited_fwd: Dict, queue_fwd: deque,
+                        id_to_parents: Dict, id_to_children: Dict, max_depth: int):
+    """Expand a node in the forward direction during BFS."""
+    # Stop expanding if we've reached max depth
+    if depth >= max_depth:
+        return
+
+    # Expand to parents (direct relationship)
+    for parent_id in id_to_parents.get(current_id, set()):
+        if parent_id not in visited_fwd:
+            new_path = path + [parent_id]
+            visited_fwd[parent_id] = (depth + 1, new_path)
+            queue_fwd.append((parent_id, depth + 1, new_path))
+
+    # Expand to children (direct relationship)
+    for child_id in id_to_children.get(current_id, set()):
+        if child_id not in visited_fwd:
+            new_path = path + [child_id]
+            visited_fwd[child_id] = (depth + 1, new_path)
+            queue_fwd.append((child_id, depth + 1, new_path))
+
+    # Expand to siblings (through parent)
+    for parent_id in id_to_parents.get(current_id, set()):
+        for sibling_id in id_to_children.get(parent_id, set()):
+            if sibling_id != current_id and sibling_id not in visited_fwd:
+                # Include parent in path for proper relationship context
+                new_path = path + [parent_id, sibling_id]
+                visited_fwd[sibling_id] = (depth + 2, new_path)
+                queue_fwd.append((sibling_id, depth + 2, new_path))
+
+
+def _expand_backward_node(current_id: str, depth: int, path: List[str],
+                         visited_bwd: Dict, queue_bwd: deque,
+                         id_to_parents: Dict, id_to_children: Dict, max_depth: int):
+    """Expand a node in the backward direction during BFS."""
+    # Stop expanding if we've reached max depth
+    if depth >= max_depth:
+        return
+
+    # Expand to parents (direct relationship)
+    for parent_id in id_to_parents.get(current_id, set()):
+        if parent_id not in visited_bwd:
+            new_path = [parent_id] + path
+            visited_bwd[parent_id] = (depth + 1, new_path)
+            queue_bwd.append((parent_id, depth + 1, new_path))
+
+    # Expand to children (direct relationship)
+    for child_id in id_to_children.get(current_id, set()):
+        if child_id not in visited_bwd:
+            new_path = [child_id] + path
+            visited_bwd[child_id] = (depth + 1, new_path)
+            queue_bwd.append((child_id, depth + 1, new_path))
+
+    # Expand to siblings (through parent)
+    for parent_id in id_to_parents.get(current_id, set()):
+        for sibling_id in id_to_children.get(parent_id, set()):
+            if sibling_id != current_id and sibling_id not in visited_bwd:
+                # Include parent in path for proper relationship context
+                new_path = [sibling_id, parent_id] + path
+                visited_bwd[sibling_id] = (depth + 2, new_path)
+                queue_bwd.append((sibling_id, depth + 2, new_path))
+
+
 def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
@@ -741,14 +833,13 @@ def fast_bidirectional_bfs(
     The algorithm prioritizes shorter paths with direct relationships over longer paths.
     """
     start_time = time.time()
+
+    # Validate inputs
+    if not _validate_bfs_inputs(start_id, end_id, id_to_parents, id_to_children):
+        return []
+
     if start_id == end_id:
         return [start_id]
-    if id_to_parents is None or id_to_children is None:
-        logger.error("[FastBiBFS] Relationship maps are None.")
-        return []
-    if not start_id or not end_id:
-        logger.error("[FastBiBFS] Start or end ID is missing.")
-        return []
 
     # First try to find a direct relationship (parent, child, sibling)
     # This is a quick check before running the full BFS
@@ -759,20 +850,11 @@ def fast_bidirectional_bfs(
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
         return direct_path
 
-    # Initialize BFS queues and visited sets
-    # Forward queue from start_id
-    queue_fwd = deque([(start_id, 0, [start_id])])  # (id, depth, path)
-    # Backward queue from end_id
-    queue_bwd = deque([(end_id, 0, [end_id])])  # (id, depth, path)
-
-    # Track visited nodes and their paths
-    visited_fwd = {start_id: (0, [start_id])}  # {id: (depth, path)}
-    visited_bwd = {end_id: (0, [end_id])}  # {id: (depth, path)}
+    # Initialize BFS data structures
+    queue_fwd, queue_bwd, visited_fwd, visited_bwd = _initialize_bfs_queues(start_id, end_id)
 
     # Track all complete paths found
     all_paths = []
-
-    # Process nodes until we find paths or exhaust the search
     processed = 0
     logger.debug(f"[FastBiBFS] Starting BFS: {start_id} <-> {end_id}")
 
@@ -803,32 +885,9 @@ def fast_bidirectional_bfs(
                 )
                 continue
 
-            # Stop expanding if we've reached max depth
-            if depth >= max_depth:
-                continue
-
-            # Expand to parents (direct relationship)
-            for parent_id in id_to_parents.get(current_id, set()):
-                if parent_id not in visited_fwd:
-                    new_path = path + [parent_id]
-                    visited_fwd[parent_id] = (depth + 1, new_path)
-                    queue_fwd.append((parent_id, depth + 1, new_path))
-
-            # Expand to children (direct relationship)
-            for child_id in id_to_children.get(current_id, set()):
-                if child_id not in visited_fwd:
-                    new_path = path + [child_id]
-                    visited_fwd[child_id] = (depth + 1, new_path)
-                    queue_fwd.append((child_id, depth + 1, new_path))
-
-            # Expand to siblings (through parent)
-            for parent_id in id_to_parents.get(current_id, set()):
-                for sibling_id in id_to_children.get(parent_id, set()):
-                    if sibling_id != current_id and sibling_id not in visited_fwd:
-                        # Include parent in path for proper relationship context
-                        new_path = path + [parent_id, sibling_id]
-                        visited_fwd[sibling_id] = (depth + 2, new_path)
-                        queue_fwd.append((sibling_id, depth + 2, new_path))
+            # Expand this node in forward direction
+            _expand_forward_node(current_id, depth, path, visited_fwd, queue_fwd,
+                                id_to_parents, id_to_children, max_depth)
 
         # Process backward queue (from end)
         if queue_bwd:
@@ -847,33 +906,17 @@ def fast_bidirectional_bfs(
                 )
                 continue
 
-            # Stop expanding if we've reached max depth
-            if depth >= max_depth:
-                continue
+            # Expand this node in backward direction
+            _expand_backward_node(current_id, depth, path, visited_bwd, queue_bwd,
+                                 id_to_parents, id_to_children, max_depth)
 
-            # Expand to parents (direct relationship)
-            for parent_id in id_to_parents.get(current_id, set()):
-                if parent_id not in visited_bwd:
-                    new_path = [parent_id] + path
-                    visited_bwd[parent_id] = (depth + 1, new_path)
-                    queue_bwd.append((parent_id, depth + 1, new_path))
+    # Select the best path from found paths
+    return _select_best_path(all_paths, start_id, end_id, id_to_parents, id_to_children)
 
-            # Expand to children (direct relationship)
-            for child_id in id_to_children.get(current_id, set()):
-                if child_id not in visited_bwd:
-                    new_path = [child_id] + path
-                    visited_bwd[child_id] = (depth + 1, new_path)
-                    queue_bwd.append((child_id, depth + 1, new_path))
 
-            # Expand to siblings (through parent)
-            for parent_id in id_to_parents.get(current_id, set()):
-                for sibling_id in id_to_children.get(parent_id, set()):
-                    if sibling_id != current_id and sibling_id not in visited_bwd:
-                        # Include parent in path for proper relationship context
-                        new_path = [sibling_id, parent_id] + path
-                        visited_bwd[sibling_id] = (depth + 2, new_path)
-                        queue_bwd.append((sibling_id, depth + 2, new_path))
-
+def _select_best_path(all_paths: List[List[str]], start_id: str, end_id: str,
+                     id_to_parents: Dict, id_to_children: Dict) -> List[str]:
+    """Select the best path from a list of found paths based on relationship directness."""
     # If we found paths, select the best one
     if all_paths:
         # Score paths based on directness of relationships
@@ -1781,6 +1824,8 @@ class GedcomData:
             logger.error(
                 "[Cache Build] Skipping map build and data pre-processing due to empty INDI index."
             )
+
+
 
     def _build_indi_index(self):
         """Builds a dictionary mapping normalized IDs to Individual records."""

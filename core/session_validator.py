@@ -70,6 +70,7 @@ class SessionValidator:
         self,
         browser_manager,
         api_manager,
+        session_manager,
         action_name: Optional[str] = None,
         max_attempts: int = 3,
     ) -> bool:
@@ -79,6 +80,7 @@ class SessionValidator:
         Args:
             browser_manager: BrowserManager instance
             api_manager: APIManager instance
+            session_manager: SessionManager instance for login checks
             action_name: Optional name of the action for logging
             max_attempts: Maximum number of attempts
 
@@ -96,7 +98,7 @@ class SessionValidator:
             try:
                 # Check login status and attempt relogin if needed
                 login_success, login_error = self._check_login_and_attempt_relogin(
-                    browser_manager, attempt
+                    browser_manager, session_manager, attempt
                 )
                 if not login_success:
                     last_check_error = login_error
@@ -168,7 +170,7 @@ class SessionValidator:
         return False
 
     def _check_login_and_attempt_relogin(
-        self, browser_manager, attempt: int
+        self, browser_manager, session_manager, attempt: int
     ) -> Tuple[bool, Optional[str]]:
         """
         Check login status and attempt relogin if needed.
@@ -185,11 +187,10 @@ class SessionValidator:
             from utils import login_status
 
             logger.debug(f"Checking login status (attempt {attempt})...")
-            # Get session manager from browser manager
-            session_manager = getattr(browser_manager, "session_manager", None)
+            # Use the session manager parameter directly
             if not session_manager:
-                logger.error("No session manager available for login status check")
-                return False, "No session manager available"
+                logger.error("No session manager provided for login status check")
+                return False, "No session manager provided"
 
             login_ok = login_status(
                 session_manager, disable_ui_fallback=True
@@ -204,7 +205,7 @@ class SessionValidator:
                 )
 
                 # Attempt relogin
-                relogin_success = self._attempt_relogin(browser_manager)
+                relogin_success = self._attempt_relogin(browser_manager, session_manager)
                 if relogin_success:
                     logger.info("Relogin successful.")
                     return True, None
@@ -222,12 +223,13 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _attempt_relogin(self, browser_manager) -> bool:
+    def _attempt_relogin(self, browser_manager, session_manager) -> bool:
         """
         Attempt to relogin the user.
 
         Args:
             browser_manager: BrowserManager instance
+            session_manager: SessionManager instance
 
         Returns:
             bool: True if relogin successful, False otherwise
@@ -237,10 +239,9 @@ class SessionValidator:
             from utils import log_in
 
             logger.debug("Attempting relogin...")
-            # Get session manager from browser manager
-            session_manager = getattr(browser_manager, "session_manager", None)
+            # Use the session manager parameter directly
             if not session_manager:
-                logger.error("No session manager available for relogin")
+                logger.error("No session manager provided for relogin")
                 return False
 
             login_result = log_in(session_manager)  # Pass session manager
@@ -412,12 +413,13 @@ class SessionValidator:
             logger.error(f"Error validating session cookies: {e}", exc_info=True)
             return False
 
-    def verify_login_status(self, api_manager) -> bool:
+    def verify_login_status(self, api_manager, session_manager=None) -> bool:
         """
         Verify login status using multiple methods.
 
         Args:
             api_manager: APIManager instance
+            session_manager: Optional SessionManager for cookie syncing
 
         Returns:
             bool: True if logged in, False otherwise
@@ -425,8 +427,8 @@ class SessionValidator:
         logger.debug("Verifying login status...")
 
         try:
-            # Try API-based verification first
-            api_login_status = api_manager.verify_api_login_status()
+            # Try API-based verification first (with cookie syncing if session_manager provided)
+            api_login_status = api_manager.verify_api_login_status(session_manager)
 
             if api_login_status is True:
                 logger.debug("Login verification successful (API method).")

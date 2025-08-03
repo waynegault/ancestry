@@ -50,11 +50,8 @@ from typing import Any, Dict, List, Optional
 # === THIRD-PARTY IMPORTS ===
 import psutil
 import json
-import undetected_chromedriver as uc
-from selenium import webdriver  # Standard Selenium WebDriver
+import undetected_chromedriver as uc  # Anti-bot detection bypass
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import (
     WebDriverException,
     NoSuchElementException,
@@ -207,14 +204,16 @@ def close_tabs(driver):
 
 def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
     """
-    V1.3 REVISED: Added specific TypeError handling around uc.Chrome call.
-    Initializes undetected_chromedriver and minimizes the window if not headless.
+    V2.0 MODERNIZED: Uses standard Selenium WebDriver with automatic ChromeDriver management.
+    Initializes standard Chrome WebDriver and minimizes the window if not headless.
     """
     config = config_schema.selenium  # Use selenium config instance
 
     # --- 1. Pre-Initialization Cleanup ---
     cleanup_webdrv()  # Kill existing processes
-    reset_preferences_file()  # Reset Chrome preferences    # --- Retry Loop ---
+    reset_preferences_file()  # Reset Chrome preferences
+
+    # --- Retry Loop ---
     max_init_retries = config.chrome_max_retries
     retry_delay = config.chrome_retry_delay
     driver = None
@@ -279,83 +278,43 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 
         # --- Attempt Driver Initialization ---
         try:
-            # Self-patching: Let undetected_chromedriver (uc) auto-manage ChromeDriver version.
-            # Do not pass Service or executable_path unless overriding auto-management.
-            # chrome_kwargs = {"options": options} # Original line
+            # Use standard Selenium WebDriver with automatic ChromeDriver management
             logger.debug(
-                "Letting undetected_chromedriver auto-manage ChromeDriver version (self-patching mode)."
+                "Using standard Selenium WebDriver with automatic ChromeDriver management."
             )
             try:
                 logger.debug(
-                    f"[init_webdvr] Attempting uc.Chrome() self-patching (attempt {attempt_num})..."
+                    f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})..."
                 )
                 start_time = time.time()
-                # driver = uc.Chrome(**chrome_kwargs) # Original line
-                driver = uc.Chrome(options=options)  # Corrected line
+
+                # Use undetected_chromedriver for anti-bot protection
+                # Target Chrome v138 specifically for compatibility
+                driver = uc.Chrome(options=options, version_main=138)
+
                 logger.debug(
-                    f"[init_webdvr] uc.Chrome() self-patching succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})"
+                    f"[init_webdvr] Chrome WebDriver initialization succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})"
                 )
                 logger.debug(
-                    f"WebDriver instance object potentially created (attempt {attempt_num})."
-                )  # Changed log slightly
-            except Exception as uc_exc:
+                    f"WebDriver instance object created successfully (attempt {attempt_num})."
+                )
+            except Exception as chrome_exc:
                 logger.error(
-                    f"[init_webdvr] uc.Chrome() self-patching failed on attempt {attempt_num}: {uc_exc}",
+                    f"[init_webdvr] Chrome WebDriver initialization failed on attempt {attempt_num}: {chrome_exc}",
                     exc_info=True,
                 )
                 if (
-                    "cannot connect to chrome" in str(uc_exc).lower()
-                    or "chrome not reachable" in str(uc_exc).lower()
+                    "cannot connect to chrome" in str(chrome_exc).lower()
+                    or "chrome not reachable" in str(chrome_exc).lower()
                 ):
                     logger.warning(
                         "[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary."
                     )
-                # Fallback: Try manual path if available
-                driver_path_obj = config.chrome_driver_path
-                if driver_path_obj:
-                    driver_path_str = str(driver_path_obj.resolve())
-                    if os.path.exists(driver_path_str):
-                        logger.debug(
-                            f"[init_webdvr] Falling back to manual ChromeDriver path: {driver_path_str}"
-                        )
-                        try:
-                            from selenium.webdriver.chrome.service import Service
-
-                            # FRESH ChromeOptions for fallback!
-                            fallback_options = uc.ChromeOptions()
-                            # Copy all arguments and settings from original options
-                            for arg in options.arguments:
-                                fallback_options.add_argument(arg)
-                            fallback_options.binary_location = options.binary_location
-                            # chrome_kwargs_fallback = { # Original lines
-                            #     "options": fallback_options,
-                            #     "service": Service(executable_path=driver_path_str),
-                            # }
-                            start_time_fallback = time.time()
-                            # driver = uc.Chrome(**chrome_kwargs_fallback) # Original line
-                            driver = uc.Chrome(
-                                options=fallback_options,
-                                service=Service(executable_path=driver_path_str),
-                            )  # Corrected line
-                            logger.debug(
-                                f"[init_webdvr] Fallback uc.Chrome() with manual path succeeded in {time.time() - start_time_fallback:.2f}s (attempt {attempt_num})"
-                            )
-                        except Exception as fallback_exc:
-                            logger.error(
-                                f"[init_webdvr] Fallback uc.Chrome() with manual path also failed: {fallback_exc}",
-                                exc_info=True,
-                            )
-                            driver = None
-                    else:
-                        logger.error(
-                            f"[init_webdvr] Manual ChromeDriver path not found: {driver_path_str}. No further fallback possible."
-                        )
-                        driver = None
-                else:
-                    logger.error(
-                        "[init_webdvr] No manual ChromeDriver path configured. No further fallback possible."
-                    )
-                    driver = None
+                # undetected_chromedriver handles driver management automatically
+                logger.error(
+                    "[init_webdvr] undetected_chromedriver failed to initialize. Check Chrome installation and version compatibility."
+                )
+                driver = None
 
             # Only proceed with driver setup if driver is not None
             if driver is not None:
@@ -409,7 +368,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 except Exception:
                     pass
             driver = None
-        except WebDriverException as e:  # Catches errors before/during uc.Chrome call
+        except WebDriverException as e:  # Catches errors before/during webdriver.Chrome call
             err_str = str(e).lower()
             if "cannot connect to chrome" in err_str or "failed to start" in err_str:
                 logger.error(
@@ -786,6 +745,27 @@ def test_webdriver_initialization():
         init_func = get_function("initialize_chrome_driver")
         assert callable(init_func)
 
+def test_chrome_options_creation():
+    """Test that undetected_chromedriver ChromeOptions can be created without NameError."""
+    try:
+        # This should work with undetected_chromedriver
+        options = uc.ChromeOptions()
+        assert options is not None, "undetected_chromedriver ChromeOptions creation should succeed"
+
+        # Test basic option setting
+        options.add_argument("--headless=new")
+        assert "--headless=new" in options.arguments, "Should be able to add arguments"
+
+        logger.debug("undetected_chromedriver ChromeOptions creation test passed")
+        return True
+    except NameError as e:
+        if "'uc' is not defined" in str(e):
+            raise AssertionError(f"NameError indicates missing undetected_chromedriver import: {e}")
+        else:
+            raise AssertionError(f"Unexpected NameError: {e}")
+    except Exception as e:
+        raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}")
+
 
 def chromedriver_module_tests() -> bool:
     """
@@ -820,6 +800,12 @@ def chromedriver_module_tests() -> bool:
         "WebDriver Initialization",
         test_webdriver_initialization,
         "WebDriver initialization functions are available and callable",
+    )
+
+    suite.run_test(
+        "undetected_chromedriver ChromeOptions Creation",
+        test_chrome_options_creation,
+        "undetected_chromedriver ChromeOptions can be created without NameError (tests for missing imports)",
     )
 
     return suite.finish_suite()

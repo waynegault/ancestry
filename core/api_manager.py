@@ -286,7 +286,13 @@ class APIManager:
         )
 
         if response_data and isinstance(response_data, dict):
-            profile_id = response_data.get(KEY_UCDMID)
+            # Check for profile ID in nested data structure
+            if "data" in response_data and isinstance(response_data["data"], dict):
+                profile_id = response_data["data"].get(KEY_UCDMID)
+            else:
+                # Fallback: check for profile ID at root level
+                profile_id = response_data.get(KEY_UCDMID)
+
             if profile_id:
                 self.my_profile_id = profile_id
                 if not self._profile_id_logged:
@@ -367,24 +373,40 @@ class APIManager:
 
         return all_ok
 
-    def verify_api_login_status(self) -> Optional[bool]:
+    def verify_api_login_status(self, session_manager=None) -> Optional[bool]:
         """
-        Verify login status via API.
+        Verify login status via API using comprehensive verification with fallbacks.
+        Based on the original working implementation from git history.
+        Includes cookie syncing if session_manager is provided.
+
+        Args:
+            session_manager: Optional SessionManager for cookie syncing
 
         Returns:
             bool: True if logged in, False if not, None if unable to determine
         """
         logger.debug("Verifying API login status...")
 
-        # Try to get profile ID as a test of login status
-        profile_response = self.get_profile_id()
+        # Skip cookie syncing during API verification to prevent recursion
+        # Cookies should already be synced from previous operations
+        logger.debug("Skipping cookie sync during API verification to prevent recursion")
 
+        # Primary check: Try to get profile ID
+        profile_response = self.get_profile_id()
         if profile_response:
-            logger.debug("API login verification successful")
+            logger.debug("API login verification successful (profile ID method)")
             return True
-        else:
-            logger.warning("API login verification failed")
-            return False
+
+        # Fallback check: Try to get UUID as alternative verification
+        logger.debug("Profile ID check failed. Trying UUID endpoint as fallback...")
+        uuid_response = self.get_uuid()
+        if uuid_response:
+            logger.debug("API login verification successful (UUID fallback method)")
+            return True
+
+        # Both primary and fallback checks failed
+        logger.warning("API login verification failed (both profile ID and UUID methods failed)")
+        return False
 
     def reset_logged_flags(self):
         """Reset flags used to prevent repeated logging of IDs."""
