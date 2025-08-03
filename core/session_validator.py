@@ -275,13 +275,10 @@ class SessionValidator:
             current_url = browser_manager.driver.current_url
             logger.debug(f"Current URL: {current_url}")
 
-            # Check if we're on a valid Ancestry page (either .com or .co.uk)
-            is_on_ancestry = current_url and ("ancestry.com" in current_url or "ancestry.co.uk" in current_url)
-            if not is_on_ancestry:
+            # Check if we're on a valid Ancestry page
+            base_url = config_schema.api.base_url or "https://www.ancestry.com"
+            if not current_url or not current_url.startswith(base_url):
                 logger.warning(f"Not on Ancestry domain. Navigating to base URL...")
-
-                # Use configured base URL as fallback
-                base_url = config_schema.api.base_url or "https://www.ancestry.com"
 
                 # Import nav_to_page here to avoid circular imports
                 from utils import nav_to_page

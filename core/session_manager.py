@@ -203,9 +203,7 @@ class SessionManager:
     def _get_cached_api_manager(self) -> "APIManager":
         """Get cached APIManager instance"""
         logger.debug("Creating/retrieving APIManager from cache")
-        api_manager = APIManager()
-        api_manager.session_manager = self  # Pass reference for domain detection
-        return api_manager
+        return APIManager()
 
     @cached_session_validator()
     def _get_cached_session_validator(self) -> "SessionValidator":

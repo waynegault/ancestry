@@ -2879,25 +2879,9 @@ def nav_to_page(
         return False
     # End of try/except
 
-    # Detect the correct base URL from the browser's current domain
-    try:
-        current_url = driver.current_url
-        if "ancestry.co.uk" in current_url:
-            effective_base_url = "https://www.ancestry.co.uk/"
-            logger.debug("nav_to_page: Using UK domain for navigation")
-        elif "ancestry.com" in current_url:
-            effective_base_url = "https://www.ancestry.com/"
-            logger.debug("nav_to_page: Using US domain for navigation")
-        else:
-            effective_base_url = config_schema.api.base_url
-            logger.debug(f"nav_to_page: Using configured domain: {effective_base_url}")
-    except Exception:
-        effective_base_url = config_schema.api.base_url
-        logger.debug(f"nav_to_page: Error detecting domain, using configured: {effective_base_url}")
-
     # Define common problematic URLs/selectors
-    signin_page_url_base = urljoin(effective_base_url, "account/signin").rstrip("/")
-    mfa_page_url_base = urljoin(effective_base_url, "account/signin/mfa/").rstrip("/")
+    signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip("/")
+    mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")
     # Selectors for known 'unavailable' pages
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),  # type: ignore # Selector : (action, wait_seconds)
