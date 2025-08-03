@@ -77,8 +77,8 @@ if not CLIENT_ID:
 else:
     # Step 3: Construct Authority URL based on Tenant ID
     AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-    logger.info(f"MS Graph Config: Client ID = {CLIENT_ID}")
-    logger.info(f"MS Graph Config: Authority URL = {AUTHORITY}")
+    logger.debug(f"MS Graph Config: Client ID = {CLIENT_ID}")
+    logger.debug(f"MS Graph Config: Authority URL = {AUTHORITY}")
 
 # Step 4: Define required API scopes (permissions)
 SCOPES = [
@@ -171,7 +171,7 @@ if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
             authority=AUTHORITY,
             token_cache=persistent_cache,  # Link the persistent cache
         )
-        logger.info(
+        logger.debug(
             "Initialized shared MSAL PublicClientApplication with persistent cache."
         )
     except Exception as msal_init_e:

@@ -22,9 +22,6 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
     retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
     error_context,
     AncestryException,
     RetryableError,
@@ -77,6 +74,7 @@ from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
 from core.session_manager import SessionManager
 from utils import (
+    log_in,
     login_status,
     nav_to_page,
 )
@@ -243,9 +241,9 @@ def exec_actn(
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
 
-    logger.info("\n------------------------------------------")
+    logger.info("------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("------------------------------------------\n")
+    logger.info("------------------------------------------")
 
     action_result = None
     action_exception = None  # Store exception if one occurs
@@ -268,7 +266,11 @@ def exec_actn(
     required_state = "none"  # Default for actions that don't need any special state
 
     if requires_browser:
-        required_state = "session_ready"  # Full session with browser
+        # Special case for check_login_actn: only needs driver, not full session
+        if action_name == "check_login_actn":
+            required_state = "driver_ready"  # Browser started, but no login required
+        else:
+            required_state = "session_ready"  # Full session with browser
     else:
         required_state = "db_ready"  # Database-only session
 
@@ -277,6 +279,9 @@ def exec_actn(
         state_ok = True
         if required_state == "db_ready":
             state_ok = session_manager.ensure_db_ready()
+        elif required_state == "driver_ready":
+            # For check_login_actn: only ensure browser is started, no login attempts
+            state_ok = session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
         elif required_state == "session_ready":
             state_ok = session_manager.ensure_session_ready(
                 action_name=f"{action_name} - Setup"
@@ -383,20 +388,20 @@ def exec_actn(
                 f"Action {choice} ({action_name}) failed due to exception: {type(action_exception).__name__}."
             )
 
+        # --- Return Action Result ---
+        # Return True only if action completed without exception AND didn't return False explicitly
+        final_outcome = action_result is not False and action_exception is None
+        logger.debug(
+            f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n"
+        )
+
         logger.info("------------------------------------------")
         logger.info(f"Action {choice} ({action_name}) finished.")
         logger.info(f"Duration: {formatted_duration}")
         logger.info(mem_log)
         logger.info("------------------------------------------\n")
 
-    # --- Return Action Result ---
-    # Return True only if action completed without exception AND didn't return False explicitly
-    final_outcome = action_result is not False and action_exception is None
-    logger.debug(
-        f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}"
-    )
     return final_outcome
-
 
 # End of exec_actn
 
@@ -416,8 +421,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
     # Define the specific profile ID to keep from config (ensure it's uppercase for comparison)
     profile_id_to_keep = config.test.test_profile_id
     if not profile_id_to_keep:
-        logger.error(
-            "TESTING_PROFILE_ID is not configured. Cannot determine which profile to keep."
+        logger.error(            "TESTING_PROFILE_ID is not configured. Cannot determine which profile to keep."
         )
         return False
     profile_id_to_keep = profile_id_to_keep.upper()
@@ -769,14 +773,14 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
         logger.debug(f"Attempting to delete database file: {db_path}...")
         try:
-            # Instead of using delete_database, we'll truncate all tables
-            # This is a safer approach that doesn't require deleting the file
-            logger.debug("Creating a temporary session manager to truncate tables...")
-            temp_truncate_manager = SessionManager()
-            truncate_session = temp_truncate_manager.get_db_conn()
+            # Streamlined database reset using single temporary SessionManager
+            logger.debug("Creating temporary session manager for database reset...")
+            temp_manager = SessionManager()
 
+            # Step 1: Truncate all tables
+            logger.debug("Truncating all tables...")
+            truncate_session = temp_manager.get_db_conn()
             if truncate_session:
-                logger.debug("Truncating all tables...")
                 with db_transn(truncate_session) as sess:
                     # Delete all records from tables in reverse order of dependencies
                     sess.query(ConversationLog).delete(synchronize_session=False)
@@ -784,36 +788,23 @@ def reset_db_actn(session_manager: SessionManager, *_):
                     sess.query(FamilyTree).delete(synchronize_session=False)
                     sess.query(Person).delete(synchronize_session=False)
                     # Keep MessageType table intact
-
-                # Close the temporary session manager
-                temp_truncate_manager.cls_db_conn(keep_db=False)
+                temp_manager.return_session(truncate_session)
                 logger.debug("All tables truncated successfully.")
             else:
-                logger.critical(
-                    "Failed to get session for truncating tables. Reset aborted."
-                )
+                logger.critical("Failed to get session for truncating tables. Reset aborted.")
                 return False
-        except Exception:
-            logger.critical(
-                f"Failed to reset database tables. Reset aborted.",
-                exc_info=True,
-            )
-            return False  # Critical failure if deletion fails
 
-        # --- 3. Re-initialize DB Schema ---
-        logger.debug("Re-initializing database schema...")
-        # Use a temporary SessionManager to handle recreation
-        temp_manager = SessionManager()
-        try:
+            # Step 2: Re-initialize database schema (reuse same temp_manager)
+            logger.debug("Re-initializing database schema...")
             # This will create a new engine and session factory pointing to the file path
-            temp_manager._initialize_db_engine_and_session()
-            if not temp_manager.engine or not temp_manager.Session:
+            temp_manager.db_manager._initialize_engine_and_session()
+            if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
                 raise SQLAlchemyError(
                     "Failed to initialize DB engine/session for recreation!"
                 )
 
             # This will recreate the tables in the existing file
-            Base.metadata.create_all(temp_manager.engine)
+            Base.metadata.create_all(temp_manager.db_manager.engine)
             logger.debug("Database schema recreated successfully.")
 
             # --- Seed MessageType Table ---
@@ -983,10 +974,10 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
 # Action 5 (check_login_actn)
 def check_login_actn(session_manager: SessionManager, *_) -> bool:
     """
-    REVISED V7: Checks login status using login_status and provides clear user feedback.
-    Relies on exec_actn to ensure driver is live (Phase 1) if needed.
-    Does NOT attempt login itself. Does NOT trigger ensure_session_ready. Keeps session open.
-    Improved error handling and user feedback.
+    REVISED V12: Checks login status and attempts login if needed.
+    This action starts a browser session and checks login status.
+    If not logged in, it attempts to log in using stored credentials.
+    Provides clear user feedback about the final login state.
     """
     if not session_manager:
         logger.error("SessionManager required for check_login_actn.")
@@ -1005,7 +996,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
     print("\nChecking login status...")
 
-    # Call login_status directly to check
+    # Call login_status directly to check initial status
     try:
         status = login_status(
             session_manager, disable_ui_fallback=False
@@ -1021,19 +1012,48 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
             return True
         elif status is False:
             print("\n✗ You are NOT currently logged in to Ancestry.")
-            print("  Select option 1, 6, 7, 8, 9, or 11 to trigger automatic login.")
-            return False
+            print("  Attempting to log in with stored credentials...")
+
+            # Attempt login using the session manager's login functionality
+            try:
+                login_result = log_in(session_manager)
+
+                if login_result:
+                    print("✓ Login successful!")
+                    # Check status again after login
+                    final_status = login_status(session_manager, disable_ui_fallback=False)
+                    if final_status is True:
+                        print("✓ Login verification confirmed.")
+                        # Display session info if available
+                        if session_manager.my_profile_id:
+                            print(f"  Profile ID: {session_manager.my_profile_id}")
+                        if session_manager.tree_owner_name:
+                            print(f"  Account: {session_manager.tree_owner_name}")
+                        return True
+                    else:
+                        print("⚠️  Login appeared successful but verification failed.")
+                        return False
+                else:
+                    print("✗ Login failed. Please check your credentials.")
+                    print("  You can update credentials using the 'sec' option in the main menu.")
+                    return False
+
+            except Exception as login_e:
+                logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
+                print(f"✗ Login failed with error: {login_e}")
+                print("  You can update credentials using the 'sec' option in the main menu.")
+                return False
+
         else:  # Status is None
             print("\n? Unable to determine login status due to a technical error.")
-            print(
-                "  Try selecting option 1, 6, 7, 8, 9, or 11 to trigger automatic login."
-            )
+            print("  This may indicate a browser or network issue.")
             logger.warning("Login status check returned None (ambiguous result).")
             return False
+
     except Exception as e:
         logger.error(f"Exception during login status check: {e}", exc_info=True)
         print(f"\n! Error checking login status: {e}")
-        print("  Try selecting option 1, 6, 7, 8, 9, or 11 to trigger automatic login.")
+        print("  This may indicate a browser or network issue.")
         return False
 
 
@@ -1341,9 +1361,6 @@ def main():
                 elif choice == "2":
                     # Confirmation handled above
                     exec_actn(reset_db_actn, session_manager, choice)
-                    # Recreate manager after full reset
-                    session_manager.close_sess(keep_db=False)
-                    session_manager = SessionManager()
                 elif choice == "3":
                     exec_actn(
                         backup_db_actn, session_manager, choice
@@ -1351,9 +1368,6 @@ def main():
                 elif choice == "4":
                     # Confirmation handled above
                     exec_actn(restore_db_actn, session_manager, choice)
-                    # Recreate manager after restore
-                    session_manager.close_sess(keep_db=False)
-                    session_manager = SessionManager()
 
             # --- Browser-required actions ---
             elif choice == "1":
@@ -1367,7 +1381,7 @@ def main():
                     close_sess_after=True,
                 )  # Close after full sequence
             elif choice == "5":
-                exec_actn(check_login_actn, session_manager, choice)  # Keep open
+                exec_actn(check_login_actn, session_manager, choice)  # API-only check
             elif choice.startswith("6"):
                 parts = choice.split()
                 start_val = 1
@@ -1701,6 +1715,7 @@ def main_module_tests() -> bool:
         """Test database operation functions"""
         assert callable(backup_database), "backup_database should be callable"
         assert callable(db_transn), "db_transn should be callable"
+        assert callable(reset_db_actn), "reset_db_actn should be callable"
 
         # Test database models are available
         assert Person is not None, "Person model should be available"
@@ -1708,6 +1723,30 @@ def main_module_tests() -> bool:
         assert DnaMatch is not None, "DnaMatch model should be available"
         assert FamilyTree is not None, "FamilyTree model should be available"
         assert MessageType is not None, "MessageType enum should be available"
+
+    def test_reset_db_actn_integration():
+        """Test reset_db_actn function integration and method availability"""
+        # Test that reset_db_actn can be called without AttributeError
+        try:
+            # Create a test SessionManager to verify method availability
+            test_sm = SessionManager()
+
+            # Verify that the required methods exist on the SessionManager and DatabaseManager
+            assert hasattr(test_sm, 'db_manager'), "SessionManager should have db_manager attribute"
+            assert hasattr(test_sm.db_manager, '_initialize_engine_and_session'), \
+                "DatabaseManager should have _initialize_engine_and_session method"
+            assert hasattr(test_sm.db_manager, 'engine'), "DatabaseManager should have engine attribute"
+            assert hasattr(test_sm.db_manager, 'Session'), "DatabaseManager should have Session attribute"
+
+            # Test that reset_db_actn doesn't fail with AttributeError on method calls
+            # Note: We don't actually run the reset to avoid affecting the test database
+            logger.debug("reset_db_actn integration test: All required methods and attributes verified")
+
+        except AttributeError as e:
+            assert False, f"reset_db_actn integration test failed with AttributeError: {e}"
+        except Exception as e:
+            # Other exceptions are acceptable for this test (we're only checking for AttributeError)
+            logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")
 
     # EDGE CASE TESTS
     def test_edge_case_handling():
@@ -1965,6 +2004,14 @@ def main_module_tests() -> bool:
             test_description="Database operation functions and model availability",
             method_description="Testing database functions and model imports",
             expected_behavior="Database operations and models are properly available",
+        )
+
+        suite.run_test(
+            test_name="reset_db_actn() integration and method availability",
+            test_func=test_reset_db_actn_integration,
+            test_description="Database reset function integration and required method verification",
+            method_description="Testing reset_db_actn function for proper SessionManager and DatabaseManager method access",
+            expected_behavior="reset_db_actn can access all required methods without AttributeError",
         )
 
         # EDGE CASE TESTS

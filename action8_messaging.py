@@ -256,7 +256,7 @@ def load_message_templates() -> Dict[str, str]:
             return {}
 
         # Step 6: Log success and return templates
-        logger.info(
+        logger.debug(
             f"Message templates loaded and validated successfully ({len(templates)} total templates)."
         )
         return templates

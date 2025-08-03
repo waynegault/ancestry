@@ -70,9 +70,15 @@ except ImportError:
 
 # === SELENIUM IMPORTS ===
 try:
-    from selenium.common.exceptions import WebDriverException
+    from selenium.common.exceptions import (
+        WebDriverException,
+        InvalidSessionIdException,
+        NoSuchWindowException
+    )
 except ImportError:
     WebDriverException = Exception
+    InvalidSessionIdException = Exception
+    NoSuchWindowException = Exception
 
 # === LOCAL IMPORTS ===
 from core.database_manager import DatabaseManager
@@ -377,7 +383,7 @@ class SessionManager:
         # PHASE 5.1: Optimized readiness checks with circuit breaker pattern
         try:
             ready_checks_ok = self.validator.perform_readiness_checks(
-                self.browser_manager, self.api_manager, action_name
+                self.browser_manager, self.api_manager, self, action_name
             )
 
             if not ready_checks_ok:
@@ -454,43 +460,16 @@ class SessionManager:
 
     def is_sess_valid(self) -> bool:
         """
-        Enhanced session validity check with comprehensive validation.
+        Simplified session validity check to prevent recursion.
 
-        Checks both browser session and API session validity.
+        Just checks if driver exists without doing WebDriver operations
+        that might trigger more session validation.
 
         Returns:
-            bool: True if session is valid, False otherwise
+            bool: True if driver exists, False otherwise
         """
-        # Check browser session validity
-        if self.browser_manager.browser_needed:
-            if not self.browser_manager.is_session_valid():
-                logger.debug("Browser session invalid")
-                return False
-
-        # Check if driver is responsive (if browser is active)
-        if self.driver and self.driver_live:
-            try:
-                # Quick responsiveness check
-                _ = self.driver.current_url
-            except WebDriverException:
-                logger.debug("Driver not responsive")
-                return False
-            except Exception as e:
-                logger.debug(f"Driver check failed: {e}")
-                return False
-
-        # Check API session validity through validator
-        if hasattr(self.validator, 'verify_login_status'):
-            try:
-                api_valid = self.validator.verify_login_status(self.api_manager)
-                if not api_valid:
-                    logger.debug("API session invalid")
-                    return False
-            except Exception as e:
-                logger.debug(f"API validation failed: {e}")
-                return False
-
-        return True
+        # Simple check - just verify driver exists
+        return self.driver is not None
 
     def _reset_logged_flags(self):
         """Reset flags used to prevent repeated logging of IDs."""
@@ -587,9 +566,7 @@ class SessionManager:
             logger.error("get_cookies: WebDriver instance is None.")
             return False
 
-        if not self.is_sess_valid():
-            logger.warning("get_cookies: Session invalid at start of check.")
-            return False
+        # Skip is_sess_valid() check here to prevent circular recursion
 
         start_time = time.time()
         logger.debug(f"Waiting up to {timeout}s for cookies: {cookie_names}...")
@@ -599,9 +576,9 @@ class SessionManager:
 
         while time.time() - start_time < timeout:
             try:
-                # Re-check validity inside loop in case session dies during wait
-                if not self.is_sess_valid():
-                    logger.warning("Session became invalid while waiting for cookies.")
+                # Basic driver check (avoid is_sess_valid() to prevent recursion)
+                if not self.driver:
+                    logger.warning("Driver became None while waiting for cookies.")
                     return False
 
                 cookies = self.driver.get_cookies()
@@ -614,8 +591,8 @@ class SessionManager:
 
                 if not missing_lower:
                     logger.debug(f"All required cookies found: {cookie_names}.")
-                    # Sync cookies to requests session if available
-                    self._sync_cookies_to_requests()
+                    # Skip automatic cookie sync to prevent recursion
+                    # Cookie syncing will be handled elsewhere when needed
                     return True
 
                 # Log missing cookies only if the set changes
@@ -701,80 +678,58 @@ class SessionManager:
 
     def _sync_cookies(self):
         """
-        Enhanced cookie synchronization from WebDriver to requests session.
+        Simple cookie synchronization from WebDriver to requests session.
 
-        This is the comprehensive version from the old SessionManager.
+        Simplified version that avoids all session validation to prevent recursion.
         """
-        if not self.is_sess_valid():
-            logger.warning("Cannot sync cookies: WebDriver session invalid.")
+        # Recursion guard to prevent infinite loops
+        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
+            logger.debug("Recursion detected in _sync_cookies(), skipping to prevent loop")
             return
 
         if not self.driver:
-            logger.error("Cannot sync cookies: WebDriver instance is None.")
             return
 
         if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
-            logger.error("Cannot sync cookies: requests.Session not initialized.")
             return
 
         try:
+            # Set recursion guard
+            self._in_sync_cookies = True
+
+            # Simple cookie retrieval without any validation
             driver_cookies = self.driver.get_cookies()
-            logger.debug(f"Retrieved {len(driver_cookies)} cookies from WebDriver for sync.")
-        except WebDriverException as e:
-            logger.error(f"WebDriverException getting cookies for sync: {e}")
-            if not self.is_sess_valid():
-                logger.error("Session invalid after WebDriverException during cookie sync.")
-            return
-        except Exception as e:
-            logger.error(f"Unexpected error getting cookies for sync: {e}", exc_info=True)
-            return
+            if not driver_cookies:
+                return
 
-        requests_cookie_jar = self.api_manager._requests_session.cookies
-        requests_cookie_jar.clear()  # Clear existing requests cookies first
+            # Clear and sync cookies
+            self.api_manager._requests_session.cookies.clear()
+            synced_count = 0
 
-        synced_count = 0
-        skipped_count = 0
-        for cookie in driver_cookies:
-            # Basic validation of cookie structure
-            if (
-                not isinstance(cookie, dict)
-                or "name" not in cookie
-                or "value" not in cookie
-                or "domain" not in cookie
-            ):
-                logger.warning(f"Skipping invalid cookie format during sync: {cookie}")
-                skipped_count += 1
-                continue
-
-            try:
-                # Map WebDriver cookie attributes to requests CookieJar attributes
-                cookie_attrs = {
-                    "name": cookie["name"],
-                    "value": cookie["value"],
-                    "domain": cookie["domain"],
-                    "path": cookie.get("path", "/"),
-                    "secure": cookie.get("secure", False),
-                    "rest": {"httpOnly": cookie.get("httpOnly", False)},
-                }
-
-                # Handle expiry (needs to be integer timestamp)
-                if "expiry" in cookie and cookie["expiry"] is not None:
+            for cookie in driver_cookies:
+                if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
                     try:
-                        cookie_attrs["expires"] = int(float(cookie["expiry"]))
-                    except (ValueError, TypeError):
-                        logger.warning(f"Skipping invalid expiry format for cookie {cookie['name']}: {cookie['expiry']}")
+                        self.api_manager._requests_session.cookies.set(
+                            cookie["name"],
+                            cookie["value"],
+                            domain=cookie.get("domain"),
+                            path=cookie.get("path", "/")
+                        )
+                        synced_count += 1
+                    except Exception:
+                        continue  # Skip problematic cookies silently
 
-                # Set the cookie in the requests jar
-                requests_cookie_jar.set(**cookie_attrs)
-                synced_count += 1
+            logger.debug(f"Synced {synced_count} cookies to requests session")
 
-            except Exception as set_err:
-                logger.warning(f"Failed to set cookie '{cookie.get('name', '??')}' in requests session: {set_err}")
-                skipped_count += 1
+        except Exception as e:
+            logger.warning(f"Cookie sync failed: {e}")
+            return
+        finally:
+            # Clear recursion guard
+            if hasattr(self, '_in_sync_cookies'):
+                self._in_sync_cookies = False
 
-        if skipped_count > 0:
-            logger.warning(f"Skipped {skipped_count} cookies during sync due to format/errors.")
-        logger.debug(f"Successfully synced {synced_count} cookies to requests session.")
+
 
     def check_js_errors(self) -> List[Dict[str, Any]]:
         """

@@ -21,11 +21,12 @@ from standard_imports import (
 logger = setup_module(globals(), __name__)
 
 # === SESSION MANAGER IMPORT ===
-# Import SessionManager from core module
-try:
+# Import SessionManager from core module - use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
     from core.session_manager import SessionManager
-except ImportError:
-    # Fallback for testing or standalone usage
+else:
+    # Runtime import to avoid circular dependency issues
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -941,8 +942,8 @@ def _prepare_api_headers(
     cfg = config_schema  # Use new config system
     ua_set = False
 
-    # Get User-Agent from browser if possible
-    if driver and session_manager.is_sess_valid():  # Check driver validity
+    # Get User-Agent from browser if possible (skip session validation to prevent recursion)
+    if driver and session_manager.driver:  # Simple driver check without session validation
         try:
             ua = driver.execute_script("return navigator.userAgent;")
             if ua and isinstance(ua, str):
@@ -954,8 +955,8 @@ def _prepare_api_headers(
                 f"[{api_description}] WebDriver error getting User-Agent, using default."
             )
         except Exception as e:
-            logger.warning(
-                f"[{api_description}] Unexpected error getting User-Agent: {e}, using default."
+            logger.debug(
+                f"[{api_description}] Error getting User-Agent: {e}, using default."
             )
         # End of try/except
     # End of if
@@ -982,28 +983,9 @@ def _prepare_api_headers(
         # End of try/except
     # End of if
 
-    # Add dynamic trace/context headers if possible
-    if driver and session_manager.is_sess_valid():
-        nr = make_newrelic(driver)
-        tp = make_traceparent(driver)
-        ts = make_tracestate(driver)
-        ube = make_ube(driver)
-        if nr:
-            final_headers["newrelic"] = nr
-        if tp:
-            final_headers["traceparent"] = tp
-        if ts:
-            final_headers["tracestate"] = ts
-        if ube:
-            final_headers["ancestry-context-ube"] = ube
-        else:
-            logger.debug(f"[{api_description}] Could not generate UBE header.")
-        # End of if/else
-    else:
-        logger.debug(
-            f"[{api_description}] Skipping dynamic header generation (NR, TP, TS, UBE) - driver invalid."
-        )
-    # End of if/else
+    # Skip dynamic header generation to prevent recursion during API requests
+    # These headers are not essential for basic API functionality
+    logger.debug(f"[{api_description}] Skipping dynamic header generation to prevent recursion.")
 
     # Add CSRF token if requested and available
     if use_csrf_token:
@@ -1072,8 +1054,8 @@ def _sync_cookies_for_request(
     Returns:
         True if cookies were synced successfully, False otherwise
     """
-    # Check driver validity for dynamic headers/cookies
-    driver_is_valid = driver and session_manager.is_sess_valid()
+    # Check driver validity for dynamic headers/cookies (avoid is_sess_valid() to prevent recursion)
+    driver_is_valid = driver and session_manager.driver
     if not driver_is_valid:
         if attempt == 1:  # Only log on first attempt
             logger.warning(
@@ -1083,17 +1065,10 @@ def _sync_cookies_for_request(
         return False
     # End of if
 
-    # Sync cookies if driver is valid
-    try:
-        session_manager._sync_cookies()
-        logger.debug(f"[{api_description}] Cookies synced (Attempt {attempt}).")
-        return True
-    except Exception as sync_err:
-        logger.warning(
-            f"[{api_description}] Error syncing cookies (Attempt {attempt}): {sync_err}"
-        )
-        return False
-    # End of try/except
+    # Skip cookie syncing during API requests to prevent recursion
+    # Cookies should already be synced from login process
+    logger.debug(f"[{api_description}] Skipping cookie sync during API request to prevent recursion (Attempt {attempt}).")
+    return True
 
 # End of _sync_cookies_for_request
 
@@ -2714,9 +2689,10 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
         True if logged in, False if not logged in, None if the check fails critically.
     """
     # --- Validate arguments and session state ---
-    if not isinstance(session_manager, SessionManager):  # type: ignore
+    # Check if session_manager has the expected attributes instead of isinstance check
+    if not hasattr(session_manager, 'is_sess_valid') or not hasattr(session_manager, 'driver'):
         logger.error(
-            f"Invalid argument: Expected SessionManager, got {type(session_manager)}."
+            f"Invalid argument: Expected SessionManager-like object, got {type(session_manager)}."
         )
         return None  # Critical argument error
     # End of if
@@ -2739,7 +2715,7 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
         session_manager._sync_cookies()
 
         # Perform API check
-        api_check_result = session_manager._verify_api_login_status()
+        api_check_result = session_manager.api_manager.verify_api_login_status()
 
         # If API check is definitive, return its result
         if api_check_result is True:

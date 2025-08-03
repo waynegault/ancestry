@@ -276,10 +276,141 @@ def create_mock_data():
     }
 
 
+def create_standardized_test_data():
+    """Create standardized test data that can be used across all modules."""
+    return {
+        "mock_data": create_mock_data(),
+        "test_person": {
+            "first_name": "Fraser",
+            "last_name": "Gault",
+            "birth_year": 1941,
+            "birth_place": "Banff",
+            "gender": "M"
+        },
+        "test_gedcom_individual": {
+            "id": "@I1@",
+            "first_name": "John",
+            "surname": "Smith",
+            "gender_norm": "M",
+            "birth_year": 1850,
+            "birth_place_disp": "New York",
+        },
+        "test_environment": {
+            "use_real_data": False,  # Default to mock data for safety
+            "skip_external_apis": True,  # Skip external API calls in tests
+            "use_cache": True,  # Use caching for performance
+        }
+    }
+
+
+def get_test_mode():
+    """Determine if tests should use real data or mock data."""
+    import os
+    # Check environment variable or config to determine test mode
+    return os.getenv("ANCESTRY_TEST_MODE", "mock").lower() in ["real", "integration"]
+
+
+def create_test_data_factory(use_real_data=None):
+    """Create appropriate test data based on test mode."""
+    if use_real_data is None:
+        use_real_data = get_test_mode()
+
+    base_data = create_standardized_test_data()
+    base_data["test_environment"]["use_real_data"] = use_real_data
+
+    if use_real_data:
+        # For real data tests, load from environment variables
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        base_data["test_person"] = {
+            "first_name": os.getenv("TEST_PERSON_FIRST_NAME", "Fraser"),
+            "last_name": os.getenv("TEST_PERSON_LAST_NAME", "Gault"),
+            "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
+            "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
+            "gender": os.getenv("TEST_PERSON_GENDER", "M")
+        }
+        base_data["test_environment"]["skip_external_apis"] = False
+
+    return base_data
+
+
 def assert_valid_function(func: Any, func_name: str):
     """Assert that a function exists and is callable."""
     assert func is not None, f"Function {func_name} should exist"
     assert callable(func), f"Function {func_name} should be callable"
+
+
+def standardized_test_wrapper(test_func, test_name, cleanup_func=None):
+    """Standardized test wrapper that provides consistent test execution patterns."""
+    def wrapper():
+        test_data = create_test_data_factory()
+
+        try:
+            # Setup phase
+            if test_data["test_environment"]["use_real_data"]:
+                print(f"🔍 {test_name}: Using real data")
+            else:
+                print(f"🧪 {test_name}: Using mock data")
+
+            # Execute test with standardized data
+            result = test_func(test_data)
+
+            # Validation phase
+            if result is None:
+                result = True  # Assume success if no explicit return
+
+            return result
+
+        except Exception as e:
+            print(f"❌ {test_name} failed: {e}")
+            raise
+        finally:
+            # Cleanup phase
+            if cleanup_func:
+                try:
+                    cleanup_func()
+                except Exception as cleanup_error:
+                    print(f"⚠️ Cleanup failed for {test_name}: {cleanup_error}")
+
+    return wrapper
+
+
+def create_isolated_test_environment():
+    """Create an isolated test environment with proper resource management."""
+    return {
+        "temp_files": [],
+        "mock_objects": [],
+        "original_env_vars": {},
+        "cleanup_functions": []
+    }
+
+
+def cleanup_test_environment(env):
+    """Clean up test environment and resources."""
+    # Clean up temporary files
+    import os
+    for temp_file in env.get("temp_files", []):
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except Exception:
+            pass
+
+    # Restore environment variables
+    for var, value in env.get("original_env_vars", {}).items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+
+    # Run cleanup functions
+    for cleanup_func in env.get("cleanup_functions", []):
+        try:
+            cleanup_func()
+        except Exception:
+            pass
 
 
 def assert_valid_config(config: Any, required_attrs: List[str]):
@@ -324,14 +455,23 @@ def test_framework_module_tests():
         assert Icons.CLOCK == "⏰"
         assert Icons.MAGNIFY == "🔍"
 
-    def test_mock_data():
+    def test_mock_data(test_data):
         """Test mock data creation functionality."""
-        data = create_mock_data()
+        data = test_data["mock_data"]
         assert isinstance(data, dict)
         assert "mock_session_manager" in data
         assert "sample_dna_data" in data
         assert data["sample_dna_data"]["cM_DNA"] == 85
         assert isinstance(data["mock_session_manager"], MagicMock)
+        return True
+
+    def test_standardized_data_factory(test_data):
+        """Test standardized test data factory."""
+        assert "test_person" in test_data
+        assert "test_environment" in test_data
+        assert test_data["test_person"]["first_name"] in ["Fraser", "John"]  # Allow both mock and real
+        assert isinstance(test_data["test_environment"]["use_real_data"], bool)
+        return True
 
     def test_test_suite_creation():
         """Test that TestSuite can be created and initialized properly."""
@@ -358,8 +498,13 @@ def test_framework_module_tests():
     )
     suite.run_test(
         "Mock data creation",
-        test_mock_data,
-        "Should create valid test data structures",
+        standardized_test_wrapper(test_mock_data, "Mock data creation"),
+        "Should create valid test data structures with standardized factory",
+    )
+    suite.run_test(
+        "Standardized data factory",
+        standardized_test_wrapper(test_standardized_data_factory, "Standardized data factory"),
+        "Should create consistent test data across different test modes",
     )
     suite.run_test(
         "TestSuite creation",
