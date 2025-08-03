@@ -342,7 +342,7 @@ class SessionManager:
 
         return True
 
-    @timeout_protection(timeout=30)  # Prevent hanging on slow operations
+    @timeout_protection(timeout=60)  # Increased timeout for complex operations
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
     def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:
@@ -364,12 +364,13 @@ class SessionManager:
         # PHASE 5.1: Check cached session state first
         session_id = f"{id(self)}_{action_name or 'default'}"
 
-        # Try to use cached readiness state
+        # Try to use cached readiness state (more aggressive caching for Action 6)
         if self._last_readiness_check is not None:
             time_since_check = time.time() - self._last_readiness_check
-            if time_since_check < 60 and self.session_ready:  # Cache for 60 seconds
+            cache_duration = 300 if action_name and "coord" in action_name else 60  # 5 min for Action 6
+            if time_since_check < cache_duration and self.session_ready:
                 logger.debug(
-                    f"Using cached session readiness (age: {time_since_check:.1f}s)"
+                    f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})"
                 )
                 return True
 
@@ -382,9 +383,33 @@ class SessionManager:
 
         # PHASE 5.1: Optimized readiness checks with circuit breaker pattern
         try:
-            ready_checks_ok = self.validator.perform_readiness_checks(
-                self.browser_manager, self.api_manager, self, action_name
-            )
+            # For Action 6 (coord), use simplified readiness checks to avoid timeouts
+            if action_name and "coord" in action_name:
+                logger.debug("Using simplified readiness checks for Action 6")
+                # Basic checks: driver live, basic login verification
+                if not self.browser_manager.is_session_valid():
+                    logger.error("Browser session invalid for Action 6")
+                    self.session_ready = False
+                    return False
+
+                # Quick login verification without extensive checks
+                try:
+                    from utils import login_status
+                    login_ok = login_status(self, disable_ui_fallback=True)
+                    if login_ok is not True:
+                        logger.error("Login verification failed for Action 6")
+                        self.session_ready = False
+                        return False
+                except Exception as login_e:
+                    logger.warning(f"Login check failed for Action 6: {login_e}")
+                    # Continue anyway for Action 6
+
+                ready_checks_ok = True  # Skip extensive checks for Action 6
+            else:
+                # Full readiness checks for other actions
+                ready_checks_ok = self.validator.perform_readiness_checks(
+                    self.browser_manager, self.api_manager, self, action_name
+                )
 
             if not ready_checks_ok:
                 logger.error("Readiness checks failed.")
@@ -397,16 +422,41 @@ class SessionManager:
             return False
 
         # PHASE 5.1: Optimized identifier retrieval with caching
-        identifiers_ok = self._retrieve_identifiers()
-        if not identifiers_ok:
-            logger.warning("Some identifiers could not be retrieved.")
+        # For Action 6, prioritize UUID retrieval since it's required
+        if action_name and "coord" in action_name:
+            logger.debug("Prioritizing UUID retrieval for Action 6")
+            # Ensure we have UUID for Action 6
+            if not self.my_uuid:
+                try:
+                    uuid_val = self.get_my_uuid()
+                    if not uuid_val:
+                        logger.error("Failed to retrieve UUID for Action 6")
+                        self.session_ready = False
+                        return False
+                except Exception as uuid_e:
+                    logger.error(f"Exception retrieving UUID for Action 6: {uuid_e}")
+                    self.session_ready = False
+                    return False
+            identifiers_ok = True  # UUID is sufficient for Action 6
+        else:
+            identifiers_ok = self._retrieve_identifiers()
+            if not identifiers_ok:
+                logger.warning("Some identifiers could not be retrieved.")
 
         # Retrieve tree owner if configured (with caching)
         owner_ok = True
         if config_schema.api.tree_name:
-            owner_ok = self._retrieve_tree_owner()
-            if not owner_ok:
-                logger.warning("Tree owner name could not be retrieved.")
+            # For Action 6, tree owner is optional - don't fail if it can't be retrieved
+            if action_name and "coord" in action_name:
+                try:
+                    self._retrieve_tree_owner()
+                except Exception as tree_e:
+                    logger.warning(f"Tree owner retrieval failed for Action 6 (continuing anyway): {tree_e}")
+                owner_ok = True  # Don't fail Action 6 for tree owner issues
+            else:
+                owner_ok = self._retrieve_tree_owner()
+                if not owner_ok:
+                    logger.warning("Tree owner name could not be retrieved.")
 
         # Set session ready status
         self.session_ready = ready_checks_ok and identifiers_ok and owner_ok

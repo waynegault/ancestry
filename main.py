@@ -317,6 +317,9 @@ def exec_actn(
             coord_args = []
             if pass_session_manager:
                 coord_args.append(session_manager)
+            # coord_action also needs config_schema
+            if action_name == "coord_action" and "config_schema" in func_sig.parameters:
+                coord_args.append(config)  # Pass the global config
             # Call with prepared positional args and keyword args
             action_result = action_func(*coord_args, **kwargs_for_action)
         else:
@@ -1061,18 +1064,19 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_schema, start=1):
+def coord_action(session_manager, config_schema=None, start=1):
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
 
     Args:
         session_manager: The SessionManager instance.
-        config_schema: The configuration schema.
+        config_schema: The configuration schema (optional, uses global config if None).
         start: The page number to start gathering from (default is 1).
-        *args: Additional arguments that might be passed by exec_actn (ignored).
-        **kwargs: Additional keyword arguments that might be passed by exec_actn (ignored).
     """
+    # Use global config if config_schema not provided
+    if config_schema is None:
+        config_schema = config
     # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
         logger.error("Cannot gather matches: Session not ready.")
@@ -1278,6 +1282,24 @@ def run_action11_wrapper(session_manager, *_):
 def main():
     global logger, session_manager  # Ensure global logger can be modified
     session_manager = None  # Initialize session_manager
+
+    # Ensure terminal window has focus on Windows
+    try:
+        if os.name == 'nt':  # Windows
+            import ctypes
+
+            # Get console window handle
+            kernel32 = ctypes.windll.kernel32
+            user32 = ctypes.windll.user32
+
+            # Get console window
+            console_window = kernel32.GetConsoleWindow()
+            if console_window:
+                # Bring console window to foreground
+                user32.SetForegroundWindow(console_window)
+                user32.ShowWindow(console_window, 9)  # SW_RESTORE
+    except Exception:
+        pass  # Silently ignore focus errors
 
     try:
         print("")
