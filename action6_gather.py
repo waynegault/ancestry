@@ -164,8 +164,16 @@ def _navigate_and_get_initial_page_data(
     """
     driver = session_manager.driver
     my_uuid = session_manager.my_uuid
+
+    # Detect the correct base URL from the browser's current URL
+    # Force US site for API compatibility
+    # The UK site (ancestry.co.uk) doesn't seem to have the same API endpoints
+    # So we'll force the US site (ancestry.com) for DNA match gathering
+    actual_base_url = "https://www.ancestry.com/"
+    logger.debug("Forcing US Ancestry site (ancestry.com) for API compatibility")
+
     target_matches_url_base = urljoin(
-        config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
+        actual_base_url, f"discoveryui-matches/list/{my_uuid}"
     )
 
     logger.debug("Ensuring browser is on the DNA matches list page...")
@@ -2655,14 +2663,17 @@ def get_matches(
         )
         return None
 
+    # Force US site for API compatibility
+    actual_base_url = "https://www.ancestry.com/"
+
     match_list_url = urljoin(
-        config_schema.api.base_url,
+        actual_base_url,
         f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
     )
     match_list_headers = {
         "x-csrf-token": specific_csrf_token,
         "Accept": "application/json",
-        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
+        "Referer": urljoin(actual_base_url, "/discoveryui-matches/list/"),
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
@@ -2672,6 +2683,8 @@ def get_matches(
     logger.debug(
         f"Headers being passed to _api_req for Match List: {match_list_headers}"
     )
+
+    # First try with redirects disabled to see the redirect location
     api_response = _api_req(
         url=match_list_url,
         driver=driver,
@@ -2680,7 +2693,30 @@ def get_matches(
         headers=match_list_headers,
         use_csrf_token=False,
         api_description="Match List API",
+        allow_redirects=False,  # Disable redirects to see where it wants to redirect
     )
+
+    # If we get a 303 redirect, try to follow it manually
+    if api_response and hasattr(api_response, 'status_code') and api_response.status_code == 303:
+        redirect_location = api_response.headers.get('Location')
+        logger.debug(f"Got 303 redirect, Location header: {redirect_location}")
+
+        if redirect_location:
+            logger.debug(f"Following redirect to: {redirect_location}")
+            # Try the redirected URL
+            api_response = _api_req(
+                url=redirect_location,
+                driver=driver,
+                session_manager=session_manager,
+                method="GET",
+                headers=match_list_headers,
+                use_csrf_token=False,
+                api_description="Match List API (Redirected)",
+                allow_redirects=True,
+            )
+        else:
+            logger.warning("303 redirect received but no Location header provided")
+
 
     total_pages: Optional[int] = None
     match_data_list: List[Dict] = []
@@ -3758,8 +3794,12 @@ def nav_to_list(session_manager: SessionManager) -> bool:
         return False
 
     my_uuid = session_manager.my_uuid
+
+    # Force US site for API compatibility
+    actual_base_url = "https://www.ancestry.com/"
+
     target_url = urljoin(
-        config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
+        actual_base_url, f"discoveryui-matches/list/{my_uuid}"
     )
     logger.debug(f"Navigating to specific match list URL: {target_url}")
 

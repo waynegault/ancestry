@@ -114,7 +114,7 @@ class SessionValidator:
 
                 # Check essential cookies
                 cookies_success, cookies_error = self._check_essential_cookies(
-                    browser_manager
+                    browser_manager, action_name
                 )
                 if not cookies_success:
                     last_check_error = cookies_error
@@ -305,17 +305,24 @@ class SessionValidator:
             logger.error(f"Unexpected error checking URL: {e}", exc_info=True)
             return False
 
-    def _check_essential_cookies(self, browser_manager) -> Tuple[bool, Optional[str]]:
+    def _check_essential_cookies(self, browser_manager, action_name: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
         Check for essential cookies.
 
         Args:
             browser_manager: BrowserManager instance
+            action_name: Optional action name for context
 
         Returns:
             Tuple of (success, error_message)
         """
         essential_cookies = ["OptanonConsent", "trees"]  # Add more as needed
+
+        # For Action 6 (DNA match gathering), cookies may not be available until visiting the matches page
+        # Skip cookie check for Action 6 since it will navigate to the correct page later
+        if action_name and "coord" in action_name:
+            logger.debug("Skipping essential cookies check for Action 6 - cookies will be available after navigation")
+            return True, None
 
         try:
             if not browser_manager.get_cookies(essential_cookies):
