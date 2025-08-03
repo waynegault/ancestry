@@ -78,9 +78,6 @@ class APIManager:
         self.my_profile_id: Optional[str] = None
         self.my_uuid: Optional[str] = None
         self.my_tree_id: Optional[str] = None
-
-        # Session manager reference for domain detection (set by session manager)
-        self.session_manager: Optional["SessionManager"] = None
         self.tree_owner_name: Optional[str] = None
 
         # Logging flags to prevent repeated logging
@@ -271,33 +268,6 @@ class APIManager:
 
         return None
 
-    def _get_effective_base_url(self) -> str:
-        """
-        Get the effective base URL based on the browser's current domain.
-        This handles cases where the user is on ancestry.co.uk vs ancestry.com.
-
-        Returns:
-            str: The appropriate base URL to use for API calls
-        """
-        # Try to detect the domain from the browser if available
-        if hasattr(self, 'session_manager') and self.session_manager and hasattr(self.session_manager, 'driver'):
-            try:
-                driver = self.session_manager.driver
-                if driver and hasattr(driver, 'current_url'):
-                    current_url = driver.current_url
-                    if "ancestry.co.uk" in current_url:
-                        logger.debug("Detected UK site, using ancestry.co.uk for API calls")
-                        return "https://www.ancestry.co.uk/"
-                    elif "ancestry.com" in current_url:
-                        logger.debug("Detected US site, using ancestry.com for API calls")
-                        return "https://www.ancestry.com/"
-            except Exception:
-                pass  # Fall back to configured URL
-
-        # Fallback to configured base URL
-        logger.debug(f"Using configured base URL: {config_schema.api.base_url}")
-        return config_schema.api.base_url
-
     def get_profile_id(self) -> Optional[str]:
         """
         Retrieve user profile ID (ucdmid) from the API.
@@ -307,8 +277,7 @@ class APIManager:
         """
         logger.debug("Retrieving profile ID (ucdmid)...")
 
-        base_url = self._get_effective_base_url()
-        url = urljoin(base_url, API_PATH_PROFILE_ID)
+        url = urljoin(config_schema.api.base_url, API_PATH_PROFILE_ID)
         response_data = self.make_api_request(
             url=url,
             method="GET",
@@ -346,8 +315,7 @@ class APIManager:
         """
         logger.debug("Retrieving UUID...")
 
-        base_url = self._get_effective_base_url()
-        url = urljoin(base_url, API_PATH_UUID)
+        url = urljoin(config_schema.api.base_url, API_PATH_UUID)
         response_data = self.make_api_request(
             url=url, method="GET", use_csrf_token=False, api_description="Get UUID"
         )
