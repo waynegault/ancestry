@@ -417,18 +417,18 @@ class APIConfig:
     # Request settings
     request_timeout: int = 30
     max_retries: int = 3
-    retry_backoff_factor: float = 0.5
+    retry_backoff_factor: float = 4.0  # Further increased from 2.0 to 4.0 for much longer waits on 429 errors
 
-    # Rate limiting
+    # Rate limiting (made very conservative to handle aggressive 429 errors)
     rate_limit_enabled: bool = True
-    requests_per_second: float = 2.0
-    burst_limit: int = 10  # Headers
+    requests_per_second: float = 0.5  # Further reduced from 1.0 to 0.5 for very conservative rate limiting
+    burst_limit: int = 3  # Further reduced from 5 to 3 for minimal bursting
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit    # Timing settings
-    initial_delay: float = 0.5  # Initial delay between requests
+    initial_delay: float = 2.0  # Further increased from 1.0 to 2.0 for very conservative rate limiting
     max_delay: float = 60.0  # Maximum delay for exponential backoff
 
     # Tree settings

@@ -96,7 +96,7 @@ from test_framework import (
 # --- Constants ---
 MATCHES_PER_PAGE: int = 20  # Default matches per page (adjust based on API response)
 CRITICAL_API_FAILURE_THRESHOLD: int = (
-    3  # Threshold for _fetch_combined_details failures
+    50  # Threshold for _fetch_combined_details failures (increased to 50 for better tolerance of transient issues)
 )
 
 # Configurable settings from config_schema
@@ -275,8 +275,16 @@ def _main_page_processing_loop(
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
     current_page_num = start_page
-    # Estimate total matches for the progress bar based on pages *this run*
-    total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
+
+    # Apply MAX_PRODUCTIVE_TO_PROCESS limit from .env file
+    max_matches_to_process = config_schema.max_productive_to_process
+    if max_matches_to_process > 0:
+        logger.info(f"Limiting processing to {max_matches_to_process} matches (MAX_PRODUCTIVE_TO_PROCESS)")
+        total_matches_estimate_this_run = min(max_matches_to_process, total_pages_in_run * MATCHES_PER_PAGE)
+    else:
+        # Estimate total matches for the progress bar based on pages *this run*
+        total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
+
     if (
         start_page == 1 and initial_matches_on_page is not None
     ):  # If first page data already exists
@@ -443,6 +451,14 @@ def _main_page_processing_loop(
                     refresh=True,
                 )
 
+                # Check if we've reached the maximum number of matches to process
+                max_matches_to_process = config_schema.max_productive_to_process
+                if max_matches_to_process > 0:
+                    total_processed = state["total_new"] + state["total_updated"] + state["total_skipped"]
+                    if total_processed >= max_matches_to_process:
+                        logger.info(f"Reached maximum matches limit ({max_matches_to_process}). Stopping processing.")
+                        break
+
                 _adjust_delay(session_manager, current_page_num)
                 session_manager.dynamic_rate_limiter.wait()
 
@@ -483,7 +499,7 @@ def _main_page_processing_loop(
 
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
-@circuit_breaker(failure_threshold=3, recovery_timeout=60)
+@circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 3 to 10 for better tolerance
 @timeout_protection(timeout=300)
 @error_context("DNA match gathering coordination")
 def coord(
@@ -1622,6 +1638,11 @@ def _do_batch(
         MaxApiFailuresExceededError: If API prefetch fails critically. This is caught
                                      by the main coord function to halt the run.
     """
+    # Apply BATCH_SIZE limit from .env file
+    batch_size_limit = config_schema.batch_size
+    if batch_size_limit > 0 and len(matches_on_page) > batch_size_limit:
+        logger.info(f"Limiting batch size to {batch_size_limit} matches (BATCH_SIZE setting)")
+        matches_on_page = matches_on_page[:batch_size_limit]
     # Step 1: Initialization
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
