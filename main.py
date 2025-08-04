@@ -65,18 +65,13 @@ def validate_action_config() -> bool:
     Prevents Action 6-style failures by ensuring conservative settings are applied.
     """
     try:
-        # Import configuration - try multiple sources
-        config = None
+        # Import configuration - use the correct import path
         try:
-            from config.config_manager import config_schema
+            from config import config_schema
             config = config_schema
         except ImportError:
-            try:
-                from config import config_schema
-                config = config_schema
-            except ImportError:
-                logger.error("Could not import config_schema from any source")
-                return False
+            logger.error("Could not import config_schema from config package")
+            return False
 
         # Check essential processing limits
         if config.api.max_pages <= 0:
@@ -234,6 +229,19 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
 
 # Global flag to track if caching has been initialized
 _caching_initialized = False
+
+
+def initialize_aggressive_caching():
+    """Initialize aggressive caching systems."""
+    try:
+        from core.system_cache import warm_system_caches
+        return warm_system_caches()
+    except ImportError:
+        logger.warning("System cache module not available")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to initialize aggressive caching: {e}")
+        return False
 
 
 def ensure_caching_initialized():
