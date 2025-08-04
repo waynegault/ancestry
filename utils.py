@@ -1065,10 +1065,23 @@ def _sync_cookies_for_request(
         return False
     # End of if
 
-    # Skip cookie syncing during API requests to prevent recursion
-    # Cookies should already be synced from login process
-    logger.debug(f"[{api_description}] Skipping cookie sync during API request to prevent recursion (Attempt {attempt}).")
-    return True
+    # Perform actual cookie synchronization like the working version
+    try:
+        logger.debug(f"[{api_description}] Syncing cookies from browser to requests session (Attempt {attempt})...")
+
+        # Use the API manager's sync_cookies_from_browser method like the working version
+        sync_success = session_manager.api_manager.sync_cookies_from_browser(session_manager.browser_manager)
+
+        if sync_success:
+            logger.debug(f"[{api_description}] Cookie sync successful (Attempt {attempt}).")
+            return True
+        else:
+            logger.warning(f"[{api_description}] Cookie sync failed (Attempt {attempt}).")
+            return False
+
+    except Exception as e:
+        logger.error(f"[{api_description}] Exception during cookie sync (Attempt {attempt}): {e}", exc_info=True)
+        return False
 
 # End of _sync_cookies_for_request
 
