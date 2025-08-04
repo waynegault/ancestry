@@ -1160,6 +1160,16 @@ class SessionManager:
         return self.browser_manager.driver
 
     @property
+    def requests_session(self):
+        """Get the requests session."""
+        return self.api_manager.requests_session
+
+    @property
+    def _requests_session(self):
+        """Get the requests session (backward compatibility)."""
+        return self.api_manager.requests_session
+
+    @property
     def driver_live(self):
         """Check if driver is live."""
         return self.browser_manager.driver_live

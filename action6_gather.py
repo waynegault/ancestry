@@ -3041,23 +3041,6 @@ def _fetch_combined_details(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     }
 
-    # Apply the same cookie sync fix that worked for Match List API
-    try:
-        logger.debug(f"Syncing cookies before Match Details API call for UUID {match_uuid}...")
-        browser_cookies = session_manager.driver.get_cookies()
-        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
-            session_manager.requests_session.cookies.clear()
-            for cookie in browser_cookies:
-                session_manager.requests_session.cookies.set(
-                    cookie['name'],
-                    cookie['value'],
-                    domain=cookie.get('domain', ''),
-                    path=cookie.get('path', '/')
-                )
-            logger.debug(f"Synced {len(browser_cookies)} cookies for Match Details API")
-    except Exception as cookie_sync_error:
-        logger.error(f"Cookie sync failed for Match Details API: {cookie_sync_error}")
-
     try:
         details_response = _api_req(
             url=details_url,
@@ -3159,23 +3142,6 @@ def _fetch_combined_details(
             "upgrade-insecure-requests": "1",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
         }
-
-        # Apply cookie sync for Profile Details API as well
-        try:
-            logger.debug(f"Syncing cookies before Profile Details API call for Profile ID {tester_profile_id_for_api}...")
-            browser_cookies = session_manager.driver.get_cookies()
-            if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
-                session_manager.requests_session.cookies.clear()
-                for cookie in browser_cookies:
-                    session_manager.requests_session.cookies.set(
-                        cookie['name'],
-                        cookie['value'],
-                        domain=cookie.get('domain', ''),
-                        path=cookie.get('path', '/')
-                    )
-                logger.debug(f"Synced {len(browser_cookies)} cookies for Profile Details API")
-        except Exception as cookie_sync_error:
-            logger.error(f"Cookie sync failed for Profile Details API: {cookie_sync_error}")
 
         try:
             profile_response = _api_req(
