@@ -1442,6 +1442,41 @@ def error_handling_module_tests() -> bool:
         cb = CircuitBreaker("timeout_test", timeout_config)
         assert cb.config.recovery_timeout == 1, "Should handle timeout configurations"
 
+    def test_failure_pattern_monitoring():
+        """Test the new check_failure_patterns() monitoring function from Action 6 lessons."""
+        # Test ErrorRecoveryManager failure pattern detection
+        recovery_manager = ErrorRecoveryManager()
+
+        # Test that the function exists and is callable
+        assert hasattr(recovery_manager, 'check_failure_patterns'), "ErrorRecoveryManager should have check_failure_patterns method"
+        assert callable(recovery_manager.check_failure_patterns), "check_failure_patterns should be callable"
+
+        # Test that it returns a dictionary
+        warnings = recovery_manager.check_failure_patterns()
+        assert isinstance(warnings, dict), "check_failure_patterns should return a dictionary"
+
+        # Test with no circuit breakers (should return empty dict)
+        assert len(warnings) == 0, "Should return empty warnings when no circuit breakers exist"
+
+    def test_failure_warning_logging():
+        """Test the new log_failure_warnings() monitoring function from Action 6 lessons."""
+        # Test ErrorRecoveryManager warning logging
+        recovery_manager = ErrorRecoveryManager()
+
+        # Test that the function exists and is callable
+        assert hasattr(recovery_manager, 'log_failure_warnings'), "ErrorRecoveryManager should have log_failure_warnings method"
+        assert callable(recovery_manager.log_failure_warnings), "log_failure_warnings should be callable"
+
+        # Test that it can be executed without errors
+        try:
+            recovery_manager.log_failure_warnings()
+            # Should not raise any exceptions
+            success = True
+        except Exception as e:
+            success = False
+
+        assert success, "log_failure_warnings should execute without errors"
+
     # === RUN ALL TESTS ===
     suite.run_test(
         "Module Imports",
@@ -1585,6 +1620,22 @@ def error_handling_module_tests() -> bool:
         "Error handling should gracefully handle timeout errors",
         "Handling of timeout errors works correctly",
         "Test safe_execute with simulated TimeoutError exception",
+    )
+
+    suite.run_test(
+        "Failure Pattern Monitoring",
+        test_failure_pattern_monitoring,
+        "Monitoring system should detect concerning failure patterns from Action 6 lessons",
+        "check_failure_patterns() function works correctly for early warning detection",
+        "Test ErrorRecoveryManager.check_failure_patterns() returns proper warnings dictionary",
+    )
+
+    suite.run_test(
+        "Failure Warning Logging",
+        test_failure_warning_logging,
+        "Monitoring system should log failure warnings from Action 6 lessons",
+        "log_failure_warnings() function works correctly for automated alerting",
+        "Test ErrorRecoveryManager.log_failure_warnings() executes without errors",
     )
 
     return suite.finish_suite()

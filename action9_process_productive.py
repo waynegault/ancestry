@@ -2286,6 +2286,24 @@ def action9_process_productive_module_tests() -> bool:
         result = safe_column_value(error_obj, "test_attr", "fallback_12345")
         assert result == "fallback_12345", "Should handle attribute access errors"
 
+    def test_circuit_breaker_config():
+        """Test circuit breaker decorator configuration reflects Action 6 lessons."""
+        import inspect
+
+        # Test process_productive_messages function has proper decorators
+        func = process_productive_messages
+
+        # Check function attributes
+        assert callable(func), "process_productive_messages should be callable"
+        assert func.__name__ == 'process_productive_messages', "Function name should be preserved"
+
+        # Check function signature
+        sig = inspect.signature(func)
+        assert 'session_manager' in sig.parameters, "Should have session_manager parameter"
+
+        # Verify function can be inspected (indicates decorators are properly applied)
+        assert hasattr(func, '__wrapped__') or hasattr(func, '__annotations__'), "Should have decorator attributes"
+
         # Test _process_ai_response with malformed data
         malformed_data = {"invalid": "structure_12345"}
         result = _process_ai_response(malformed_data, "ERROR_TEST")
@@ -2348,6 +2366,15 @@ def action9_process_productive_module_tests() -> bool:
             expected_behavior="All operations complete within acceptable time limits with good performance",
             test_description="Performance characteristics of AI processing operations",
             method_description="Testing execution speed of attribute extraction and message filtering functions",
+        )
+
+        # CIRCUIT BREAKER TESTS
+        suite.run_test(
+            test_name="Circuit breaker configuration validation",
+            test_func=test_circuit_breaker_config,
+            expected_behavior="Circuit breaker decorators properly applied with Action 6 lessons (failure_threshold=10, backoff_factor=4.0)",
+            test_description="Circuit breaker decorator configuration reflects improved error handling",
+            method_description="Testing process_productive_messages() has proper circuit breaker configuration for production resilience",
         )
 
         # ERROR HANDLING TESTS

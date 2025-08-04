@@ -1897,6 +1897,21 @@ def main_module_tests() -> bool:
             config, "__getattribute__"
         ), "config should be a proper object"
 
+    def test_validate_action_config():
+        """Test the new validate_action_config() function from Action 6 lessons"""
+        # Test that the function exists and is callable
+        assert callable(validate_action_config), "validate_action_config should be callable"
+
+        # Test that the function can be executed without errors
+        try:
+            result = validate_action_config()
+            assert isinstance(result, bool), "validate_action_config should return boolean"
+            # Function should succeed even if some warnings are generated
+            assert result is True, "validate_action_config should return True for basic validation"
+        except Exception as e:
+            # If it fails, it should be due to missing config, not function errors
+            assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
+
     def test_database_integration():
         """Test database system integration"""
         # Test database functions are available
@@ -2125,6 +2140,14 @@ def main_module_tests() -> bool:
             test_description="Configuration system integration with main application",
             method_description="Testing config availability and object structure",
             expected_behavior="Configuration system is properly integrated and accessible",
+        )
+
+        suite.run_test(
+            test_name="Configuration validation system from Action 6 lessons",
+            test_func=test_validate_action_config,
+            test_description="Configuration validation system prevents Action 6-style failures",
+            method_description="Testing validate_action_config() function validates .env settings and rate limiting",
+            expected_behavior="Configuration validation function works correctly and returns boolean result",
         )
 
         suite.run_test(
