@@ -1248,11 +1248,7 @@ class SessionManager:
         """Set browser needed flag."""
         self.browser_manager.browser_needed = value
 
-    @property
-    def scraper(self):
-        """Get the cloudscraper session (compatibility property)."""
-        # For compatibility with legacy code that expects scraper
-        return getattr(self.api_manager, 'scraper', None)
+
 
     @property
     def _requests_session(self):
