@@ -493,7 +493,41 @@ class ConfigManager:
 
         tree_id_value = os.getenv("TREE_ID")
         if tree_id_value:
-            config["api"]["tree_id"] = tree_id_value  # Load logging configuration
+            config["api"]["tree_id"] = tree_id_value
+
+        # Load processing limit configuration (Action 6 lessons)
+        max_pages_value = os.getenv("MAX_PAGES")
+        if max_pages_value:
+            try:
+                config["api"]["max_pages"] = int(max_pages_value)
+            except ValueError:
+                logger.warning(f"Invalid MAX_PAGES value: {max_pages_value}")
+
+        # Load batch size configuration
+        batch_size_value = os.getenv("BATCH_SIZE")
+        if batch_size_value:
+            try:
+                config["batch_size"] = int(batch_size_value)
+            except ValueError:
+                logger.warning(f"Invalid BATCH_SIZE value: {batch_size_value}")
+
+        # Load max productive to process configuration
+        max_productive_value = os.getenv("MAX_PRODUCTIVE_TO_PROCESS")
+        if max_productive_value:
+            try:
+                config["max_productive_to_process"] = int(max_productive_value)
+            except ValueError:
+                logger.warning(f"Invalid MAX_PRODUCTIVE_TO_PROCESS value: {max_productive_value}")
+
+        # Load max inbox configuration
+        max_inbox_value = os.getenv("MAX_INBOX")
+        if max_inbox_value:
+            try:
+                config["max_inbox"] = int(max_inbox_value)
+            except ValueError:
+                logger.warning(f"Invalid MAX_INBOX value: {max_inbox_value}")
+
+        # Load logging configuration
         logging_config = {}
         log_level_value = os.getenv("LOG_LEVEL")
         if log_level_value:
