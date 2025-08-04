@@ -571,11 +571,12 @@ def _test_webdriver_exception_handling():
     validator = SessionValidator()
     mock_browser = Mock()
     mock_api = Mock()
+    mock_session = Mock()
     with patch.object(validator, "_check_login_and_attempt_relogin") as mock_login:
         mock_login.side_effect = WebDriverException("Browser crashed")
         mock_browser.is_session_valid.return_value = True
         result = validator.perform_readiness_checks(
-            mock_browser, mock_api, max_attempts=1
+            mock_browser, mock_api, mock_session, max_attempts=1
         )
         assert result is False, "Should fail when WebDriverException occurs"
     return True

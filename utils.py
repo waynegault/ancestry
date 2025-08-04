@@ -4076,6 +4076,9 @@ if __name__ == "__main__":
 
     def test_session_manager():
         # Test SessionManager class availability and basic attributes
+        # Import SessionManager directly to avoid circular import issues
+        from core.session_manager import SessionManager
+
         sm = SessionManager()
         assert hasattr(
             sm, "driver_live"
