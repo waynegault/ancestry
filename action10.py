@@ -1058,8 +1058,8 @@ def analyze_top_match(
             logger.warning("Cannot calculate relationship path: Invalid IDs")
 
 
-@retry_on_failure(max_attempts=3, backoff_factor=2.0)
-@circuit_breaker(failure_threshold=5, recovery_timeout=300)
+@retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better error handling
+@circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=1200)  # 20 minutes for GEDCOM analysis
 @graceful_degradation(fallback_value=None)
 @error_context("action10_gedcom_analysis")

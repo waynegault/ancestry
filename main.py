@@ -58,6 +58,64 @@ from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
 from action11 import run_action11
 
+# Configuration validation
+def validate_action_config() -> bool:
+    """
+    Validate that all actions respect .env configuration limits.
+    Prevents Action 6-style failures by ensuring conservative settings are applied.
+    """
+    try:
+        # Import configuration - try multiple sources
+        config = None
+        try:
+            from config.config_manager import config_schema
+            config = config_schema
+        except ImportError:
+            try:
+                from config import config_schema
+                config = config_schema
+            except ImportError:
+                logger.error("Could not import config_schema from any source")
+                return False
+
+        # Check essential processing limits
+        if config.api.max_pages <= 0:
+            logger.warning("MAX_PAGES not set or invalid - actions may process unlimited pages")
+
+        if config.batch_size <= 0:
+            logger.warning("BATCH_SIZE not set or invalid - actions may use large batches")
+
+        if config.max_productive_to_process <= 0:
+            logger.warning("MAX_PRODUCTIVE_TO_PROCESS not set - actions may process unlimited items")
+
+        if config.max_inbox <= 0:
+            logger.warning("MAX_INBOX not set - actions may process unlimited inbox items")
+
+        # Check rate limiting settings
+        if config.api.requests_per_second > 1.0:
+            logger.warning(f"requests_per_second ({config.api.requests_per_second}) may be too aggressive - consider ≤1.0")
+
+        if config.api.retry_backoff_factor < 2.0:
+            logger.warning(f"retry_backoff_factor ({config.api.retry_backoff_factor}) may be too low - consider ≥2.0")
+
+        if config.api.initial_delay < 1.0:
+            logger.warning(f"initial_delay ({config.api.initial_delay}) may be too short - consider ≥1.0")
+
+        # Log current configuration for transparency
+        logger.info("=== ACTION CONFIGURATION VALIDATION ===")
+        logger.info(f"MAX_PAGES: {config.api.max_pages}")
+        logger.info(f"BATCH_SIZE: {config.batch_size}")
+        logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+        logger.info(f"MAX_INBOX: {config.max_inbox}")
+        logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+        logger.info("========================================")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        return False
+
 # Core modules
 from config.config_manager import ConfigManager
 from database import (
@@ -1296,6 +1354,8 @@ def main():
         logger = setup_logging()
 
         # --- Configuration Validation ---
+        # Validate action configuration to prevent Action 6-style failures
+        validate_action_config()
 
         if config is None:
             logger.critical("Configuration validation failed - unable to proceed")
