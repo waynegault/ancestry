@@ -2992,10 +2992,16 @@ def _fetch_combined_details(
         Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
         longest_shared_segment, last_logged_in_dt, contactable, etc.
     """
+    logger.debug(f"_fetch_combined_details: Starting for match_uuid={match_uuid}")
+
     my_uuid = session_manager.my_uuid
+    logger.debug(f"_fetch_combined_details: my_uuid={my_uuid}")
+
     if not my_uuid or not match_uuid:
-        logger.warning("_fetch_combined_details: Missing my_uuid or match_uuid.")
+        logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         return None
+
+    logger.debug(f"_fetch_combined_details: Checking session validity...")
     if not session_manager.is_sess_valid():
         logger.error(
             f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
@@ -3003,6 +3009,8 @@ def _fetch_combined_details(
         raise ConnectionError(
             f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
         )
+
+    logger.debug(f"_fetch_combined_details: Session valid, proceeding with API calls...")
 
     combined_data: Dict[str, Any] = {}
     details_url = urljoin(
@@ -3133,16 +3141,51 @@ def _fetch_combined_details(
         logger.debug(
             f"Fetching /profiles/details for Profile ID {tester_profile_id_for_api} (Match UUID {match_uuid})..."
         )
+
+        # Use the same headers as the working cURL command
+        profile_headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "priority": "u=0, i",
+            "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "none",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        }
+
+        # Apply cookie sync for Profile Details API as well
+        try:
+            logger.debug(f"Syncing cookies before Profile Details API call for Profile ID {tester_profile_id_for_api}...")
+            browser_cookies = session_manager.driver.get_cookies()
+            if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
+                session_manager.requests_session.cookies.clear()
+                for cookie in browser_cookies:
+                    session_manager.requests_session.cookies.set(
+                        cookie['name'],
+                        cookie['value'],
+                        domain=cookie.get('domain', ''),
+                        path=cookie.get('path', '/')
+                    )
+                logger.debug(f"Synced {len(browser_cookies)} cookies for Profile Details API")
+        except Exception as cookie_sync_error:
+            logger.error(f"Cookie sync failed for Profile Details API: {cookie_sync_error}")
+
         try:
             profile_response = _api_req(
                 url=profile_url,
                 driver=session_manager.driver,
                 session_manager=session_manager,
                 method="GET",
-                headers={},
+                headers=profile_headers,
                 use_csrf_token=False,
                 api_description="Profile Details API (Batch)",
-                referer_url=details_referer,
             )
             if profile_response and isinstance(profile_response, dict):
                 logger.debug(
