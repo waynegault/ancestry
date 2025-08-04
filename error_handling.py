@@ -1088,7 +1088,7 @@ error_recovery_manager.register_recovery_strategy(
 
 # Circuit breaker configurations for different services
 ANCESTRY_API_CONFIG = CircuitBreakerConfig(
-    failure_threshold=3, recovery_timeout=30, success_threshold=2, timeout=30
+    failure_threshold=10, recovery_timeout=30, success_threshold=2, timeout=30  # Increased from 3 to 10
 )
 
 ANCESTRY_SESSION_CONFIG = CircuitBreakerConfig(
