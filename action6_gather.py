@@ -276,14 +276,9 @@ def _main_page_processing_loop(
     """Main loop for fetching and processing pages of matches."""
     current_page_num = start_page
 
-    # Apply MAX_PRODUCTIVE_TO_PROCESS limit from .env file
-    max_matches_to_process = config_schema.max_productive_to_process
-    if max_matches_to_process > 0:
-        logger.info(f"Limiting processing to {max_matches_to_process} matches (MAX_PRODUCTIVE_TO_PROCESS)")
-        total_matches_estimate_this_run = min(max_matches_to_process, total_pages_in_run * MATCHES_PER_PAGE)
-    else:
-        # Estimate total matches for the progress bar based on pages *this run*
-        total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
+    # Estimate total matches for the progress bar based on pages *this run*
+    # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9, not Action 6
+    total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
 
     if (
         start_page == 1 and initial_matches_on_page is not None
@@ -451,13 +446,9 @@ def _main_page_processing_loop(
                     refresh=True,
                 )
 
-                # Check if we've reached the maximum number of matches to process
-                max_matches_to_process = config_schema.max_productive_to_process
-                if max_matches_to_process > 0:
-                    total_processed = state["total_new"] + state["total_updated"] + state["total_skipped"]
-                    if total_processed >= max_matches_to_process:
-                        logger.info(f"Reached maximum matches limit ({max_matches_to_process}). Stopping processing.")
-                        break
+                # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9 (Process Productive Messages)
+                # Action 6 (Gather Matches) should process all matches on the configured pages
+                # The only limit for Action 6 should be MAX_PAGES, which is handled elsewhere
 
                 _adjust_delay(session_manager, current_page_num)
                 session_manager.dynamic_rate_limiter.wait()
@@ -1638,11 +1629,8 @@ def _do_batch(
         MaxApiFailuresExceededError: If API prefetch fails critically. This is caught
                                      by the main coord function to halt the run.
     """
-    # Apply BATCH_SIZE limit from .env file
-    batch_size_limit = config_schema.batch_size
-    if batch_size_limit > 0 and len(matches_on_page) > batch_size_limit:
-        logger.info(f"Limiting batch size to {batch_size_limit} matches (BATCH_SIZE setting)")
-        matches_on_page = matches_on_page[:batch_size_limit]
+    # Note: BATCH_SIZE is for database commit batching, not for limiting matches per page
+    # Action 6 should process ALL matches on the page, then use BATCH_SIZE for DB operations
     # Step 1: Initialization
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
