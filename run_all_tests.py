@@ -17,7 +17,6 @@ Usage:
 import sys
 import time
 import subprocess
-import re
 from pathlib import Path
 
 
@@ -180,6 +179,7 @@ def run_module_tests(
     module_name: str, description: str | None = None
 ) -> tuple[bool, int]:
     """Run tests for a specific module and return success status with clean output"""
+    import re  # Ensure re is available in function scope
     # Show description for consistency - avoid repeating module name
     if description:
         print(f"   📝 {description}")
@@ -286,8 +286,6 @@ def run_module_tests(
                 failed_count = None
                 for line in stdout_lines:
                     # Remove ANSI color codes and whitespace
-                    import re
-
                     clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
 
                     if "✅ Passed:" in clean_line:
@@ -429,14 +427,12 @@ def run_module_tests(
             try:
                 # Extract number from formats like "8 tests", "24 tests", "5+ tests"
                 import re
-
+                # Extract number from formats like "8 tests", "24 tests", "5+ tests"
                 match = re.search(r"(\d+)", test_count)
                 if match:
                     numeric_test_count = int(match.group(1))
             except (ValueError, AttributeError):
                 numeric_test_count = 0
-
-        # If failed, show error details
         if not success:
             print(f"   🚨 Failure Details:")
             if result.stderr:
