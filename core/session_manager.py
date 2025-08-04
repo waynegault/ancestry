@@ -342,7 +342,7 @@ class SessionManager:
 
         return True
 
-    @timeout_protection(timeout=60)  # Increased timeout for complex operations
+    @timeout_protection(timeout=120)  # Increased timeout for complex operations like Action 7
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
     def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:

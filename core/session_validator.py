@@ -162,7 +162,7 @@ class SessionValidator:
             if attempt < max_attempts:
                 import time
 
-                time.sleep(2)
+                time.sleep(5)  # Increased from 2 to 5 seconds for better stability
 
         logger.error(
             f"All {max_attempts} readiness check attempts failed. Last Error: {last_check_error}"

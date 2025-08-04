@@ -199,7 +199,7 @@ class BrowserManager:
         logger.info(f"Starting browser session for action: {action_name}")
         return self.start_browser(action_name)
 
-    def get_cookies(self, cookie_names: list, timeout: int = 30) -> bool:
+    def get_cookies(self, cookie_names: list, timeout: int = 60) -> bool:
         """
         Check if specified cookies are present in browser session.
 

@@ -65,12 +65,19 @@ def validate_action_config() -> bool:
     Prevents Action 6-style failures by ensuring conservative settings are applied.
     """
     try:
-        # Import configuration - use the correct import path
+        # Import and validate configuration
         try:
             from config import config_schema
-            config = config_schema
-        except ImportError:
-            logger.error("Could not import config_schema from config package")
+            if config_schema is None:
+                logger.error("config_schema is None - configuration not properly initialized")
+                return False
+            config = config_schema  # Assign the loaded configuration instance
+            logger.debug("Configuration loaded successfully")
+        except ImportError as e:
+            logger.error(f"Could not import config_schema from config package: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error loading configuration: {e}")
             return False
 
         # Check essential processing limits
