@@ -3014,15 +3014,51 @@ def _fetch_combined_details(
         f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
     )
     logger.debug(f"Fetching /details API for UUID {match_uuid}...")
+
+    # Use headers from working cURL command
+    details_headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+        "cache-control": "no-cache",
+        "pragma": "no-cache",
+        "priority": "u=0, i",
+        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    }
+
+    # Apply the same cookie sync fix that worked for Match List API
+    try:
+        logger.debug(f"Syncing cookies before Match Details API call for UUID {match_uuid}...")
+        browser_cookies = session_manager.driver.get_cookies()
+        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
+            session_manager.requests_session.cookies.clear()
+            for cookie in browser_cookies:
+                session_manager.requests_session.cookies.set(
+                    cookie['name'],
+                    cookie['value'],
+                    domain=cookie.get('domain', ''),
+                    path=cookie.get('path', '/')
+                )
+            logger.debug(f"Synced {len(browser_cookies)} cookies for Match Details API")
+    except Exception as cookie_sync_error:
+        logger.error(f"Cookie sync failed for Match Details API: {cookie_sync_error}")
+
     try:
         details_response = _api_req(
             url=details_url,
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
+            headers=details_headers,
             use_csrf_token=False,
             api_description="Match Details API (Batch)",
-            referer_url=details_referer,
         )
         if details_response and isinstance(details_response, dict):
             combined_data["admin_profile_id"] = details_response.get("adminUcdmId")
@@ -3048,11 +3084,12 @@ def _fetch_combined_details(
             logger.error(
                 f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
             )
+            return None
         else:
             logger.error(
                 f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}"
             )
-        return None
+            return None
 
     except ConnectionError as conn_err:
         logger.error(
