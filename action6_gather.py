@@ -2657,12 +2657,15 @@ def get_matches(
         )
         return None
 
+    # Use the original working API endpoint from 4 weeks ago
     match_list_url = urljoin(
         config_schema.api.base_url,
         f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
     )
+    # Use the exact same simple headers that worked 6 weeks ago
+    # Note: Working version used "X-CSRF-Token" (capital X) not "x-csrf-token"
     match_list_headers = {
-        "x-csrf-token": specific_csrf_token,
+        "X-CSRF-Token": specific_csrf_token,
         "Accept": "application/json",
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
         "Sec-Fetch-Dest": "empty",
@@ -2675,7 +2678,30 @@ def get_matches(
         f"Headers being passed to _api_req for Match List: {match_list_headers}"
     )
 
-    # Allow redirects as the working version from 2 months ago did
+    # CRITICAL: Ensure cookies are synced immediately before API call
+    # This was simpler in the working version from 6 weeks ago
+    try:
+        logger.debug("Syncing browser cookies to API session before Match List API call...")
+        browser_cookies = driver.get_cookies()
+        logger.debug(f"Retrieved {len(browser_cookies)} cookies from browser")
+
+        # Clear and re-sync all cookies to ensure fresh state
+        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
+            session_manager.requests_session.cookies.clear()
+            for cookie in browser_cookies:
+                session_manager.requests_session.cookies.set(
+                    cookie['name'],
+                    cookie['value'],
+                    domain=cookie.get('domain', ''),
+                    path=cookie.get('path', '/')
+                )
+            logger.debug(f"Synced {len(browser_cookies)} cookies to requests session")
+        else:
+            logger.warning("No requests session available for cookie sync")
+    except Exception as cookie_sync_error:
+        logger.error(f"Cookie sync failed: {cookie_sync_error}")
+
+    # Call the API with fresh cookie sync
     api_response = _api_req(
         url=match_list_url,
         driver=driver,
@@ -2684,8 +2710,10 @@ def get_matches(
         headers=match_list_headers,
         use_csrf_token=False,
         api_description="Match List API",
-        allow_redirects=True,  # Enable redirects like the working version
+        allow_redirects=True,
     )
+
+
 
 
     total_pages: Optional[int] = None
@@ -2700,10 +2728,17 @@ def get_matches(
             logger.error(
                 f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
             )
+
+
         else:
             logger.error(
                 f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
             )
+            # Debug: Log the actual response content to see what we're getting
+            if isinstance(api_response, str):
+                logger.debug(f"API response content (first 500 chars): {api_response[:500]}")
+            else:
+                logger.debug(f"API response: {api_response}")
         return None
 
     total_pages_raw = api_response.get("totalPages")

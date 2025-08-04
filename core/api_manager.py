@@ -296,7 +296,7 @@ class APIManager:
             if profile_id:
                 self.my_profile_id = profile_id
                 if not self._profile_id_logged:
-                    logger.info(f"My profile ID: {profile_id}")
+                    logger.debug(f"My profile ID: {profile_id}")
                     self._profile_id_logged = True
                 return profile_id
             else:
