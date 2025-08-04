@@ -811,6 +811,12 @@ def _identify_fetch_candidates(
         f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, {skipped_count_this_batch} skipped (no change detected from list view)."
     )
 
+    # Add detailed logging about fetch candidates
+    if len(fetch_candidates_uuid) == 0:
+        logger.warning("No fetch candidates identified - all matches appear up-to-date in database")
+    else:
+        logger.info(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")  # Show first 5
+
     # Step 4: Return results
     return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
 
@@ -852,7 +858,7 @@ def _perform_api_prefetches(
     batch_relationship_prob_data: Dict[str, Optional[str]] = {}
 
     if not fetch_candidates_uuid:
-        logger.debug("No fetch candidates provided for API pre-fetch.")
+        logger.warning("_perform_api_prefetches: No fetch candidates provided for API pre-fetch - returning empty results")
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
     futures: Dict[Any, Tuple[str, str]] = {}
@@ -3042,6 +3048,10 @@ def _fetch_combined_details(
     }
 
     try:
+        logger.debug(f"_fetch_combined_details: About to call _api_req for Match Details API, UUID {match_uuid}")
+        logger.debug(f"_fetch_combined_details: details_url={details_url}")
+        logger.debug(f"_fetch_combined_details: details_headers={details_headers}")
+
         details_response = _api_req(
             url=details_url,
             driver=session_manager.driver,
@@ -3051,6 +3061,8 @@ def _fetch_combined_details(
             use_csrf_token=False,
             api_description="Match Details API (Batch)",
         )
+
+        logger.debug(f"_fetch_combined_details: _api_req returned, type={type(details_response)}, UUID {match_uuid}")
         if details_response and isinstance(details_response, dict):
             combined_data["admin_profile_id"] = details_response.get("adminUcdmId")
             combined_data["admin_username"] = details_response.get("adminDisplayName")
@@ -3084,13 +3096,13 @@ def _fetch_combined_details(
 
     except ConnectionError as conn_err:
         logger.error(
-            f"ConnectionError fetching /details for UUID {match_uuid}: {conn_err}",
+            f"_fetch_combined_details: ConnectionError fetching /details for UUID {match_uuid}: {conn_err}",
             exc_info=False,
         )
         raise
     except Exception as e:
         logger.error(
-            f"Error processing /details response for UUID {match_uuid}: {e}",
+            f"_fetch_combined_details: Exception processing /details response for UUID {match_uuid}: {e}",
             exc_info=True,
         )
         if isinstance(e, requests.exceptions.RequestException):
