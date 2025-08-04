@@ -79,17 +79,6 @@ from utils import (
     nav_to_page,
 )
 
-# Cache management
-
-# Import or define initialize_aggressive_caching
-try:
-    from utils import initialize_aggressive_caching
-except ImportError:
-    # Fallback: define a dummy function if not available
-    def initialize_aggressive_caching():
-        # Dummy implementation, always returns True
-        return True
-
 
 # Initialize config manager
 config_manager = ConfigManager()
