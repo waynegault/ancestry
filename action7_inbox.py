@@ -878,6 +878,10 @@ class InboxProcessor:
 
     # --- Main Public Methods ---
 
+    @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased backoff from 2.0 to 4.0
+    @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 5 to 10 for better tolerance
+    @timeout_protection(timeout=600)  # 10 minutes for inbox processing
+    @error_context("Action 7: Search Inbox")
     def search_inbox(self) -> bool:
         """
         Main method to search the Ancestry inbox with enhanced error handling and statistics.

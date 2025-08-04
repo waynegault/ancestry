@@ -737,11 +737,47 @@ class ErrorRecoveryManager:
         """Get statistics for all circuit breakers."""
         return {name: cb.get_stats() for name, cb in self.circuit_breakers.items()}
 
+    def check_failure_patterns(self) -> Dict[str, str]:
+        """
+        Monitor circuit breakers for concerning failure patterns.
+        Returns warnings for actions that may be approaching failure thresholds.
+        """
+        warnings = {}
+
+        for name, cb in self.circuit_breakers.items():
+            stats = cb.get_stats()
+            failure_count = stats.get('failure_count', 0)
+            threshold = cb.config.failure_threshold
+
+            # Early warning at 50% of threshold
+            if failure_count >= (threshold * 0.5) and cb.state == CircuitState.CLOSED:
+                warnings[name] = f"Approaching failure threshold: {failure_count}/{threshold} failures"
+
+            # Critical warning at 80% of threshold
+            elif failure_count >= (threshold * 0.8) and cb.state == CircuitState.CLOSED:
+                warnings[name] = f"CRITICAL: Near failure threshold: {failure_count}/{threshold} failures"
+
+            # Alert when circuit is open
+            elif cb.state == CircuitState.OPEN:
+                warnings[name] = f"CIRCUIT OPEN: Service unavailable due to {failure_count} failures"
+
+        return warnings
+
     def reset_all_circuit_breakers(self):
         """Reset all circuit breakers to CLOSED state."""
         for cb in self.circuit_breakers.values():
             cb.reset()
         logger.info("All circuit breakers reset")
+
+    def log_failure_warnings(self):
+        """Log any concerning failure patterns for monitoring."""
+        warnings = self.check_failure_patterns()
+
+        for service_name, warning_msg in warnings.items():
+            if "CRITICAL" in warning_msg or "CIRCUIT OPEN" in warning_msg:
+                logger.error(f"Circuit Breaker Alert [{service_name}]: {warning_msg}")
+            else:
+                logger.warning(f"Circuit Breaker Warning [{service_name}]: {warning_msg}")
 
 
 # Global error recovery manager instance
