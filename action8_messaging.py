@@ -121,20 +121,7 @@ from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
 
 # --- Local application imports ---
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
-
-# Standardize imports if available
-try:
-    from core_imports import standardize_module_imports
-
-    standardize_module_imports()
-except ImportError:
-    pass
+# Import standardization handled by setup_module above
 
 from cache import cache_result  # Caching utility
 from config import config_schema  # Configuration singletons

@@ -38,10 +38,7 @@ from error_handling import (
     ErrorContext,
 )
 
-# === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
 
-logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
