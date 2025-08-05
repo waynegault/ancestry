@@ -132,9 +132,7 @@ class RemoteConnectionFilter(logging.Filter):
         # Step 1: Check if log level is DEBUG
         is_debug = record.levelno == logging.DEBUG
         # Step 2: Check if the source pathname includes remote_connection.py
-        is_remote_conn = record.pathname and "remote_connection.py" in os.path.basename(
-            record.pathname
-        )
+        is_remote_conn = record.pathname and "remote_connection.py" in Path(record.pathname).name
         # Step 3: Return False (filter out) only if both conditions are True
         return not (is_debug and is_remote_conn)
 

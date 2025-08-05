@@ -84,14 +84,12 @@ CHROME_USER_DATA_DIR = (
 )
 # Handle the case where CHROME_USER_DATA_DIR might be None
 if CHROME_USER_DATA_DIR is not None:
-    DEFAULT_PROFILE_PATH = os.path.join(str(CHROME_USER_DATA_DIR), "Default")
-    PREFERENCES_FILE = os.path.join(DEFAULT_PROFILE_PATH, "Preferences")
+    DEFAULT_PROFILE_PATH = str(Path(CHROME_USER_DATA_DIR) / "Default")
+    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 else:
     # Use a default temporary directory if CHROME_USER_DATA_DIR is None
-    DEFAULT_PROFILE_PATH = os.path.join(
-        os.path.expanduser("~"), ".ancestry_temp", "Default"
-    )
-    PREFERENCES_FILE = os.path.join(DEFAULT_PROFILE_PATH, "Preferences")
+    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / "Default")
+    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 
 # --------------------------
 # Chrome Configuration

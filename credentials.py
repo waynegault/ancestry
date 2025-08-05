@@ -387,27 +387,28 @@ class UnifiedCredentialManager:
 
         # Try multiple locations for the .env file
         potential_paths = []
+        env_path = Path(env_file)
 
         # 1. Check user-provided path (absolute or relative)
-        if os.path.isabs(env_file):
-            potential_paths.append(env_file)
+        if env_path.is_absolute():
+            potential_paths.append(env_path)
         else:
             # 2. Check relative to current directory
-            potential_paths.append(os.path.join(os.getcwd(), env_file))
+            potential_paths.append(Path.cwd() / env_file)
 
             # 3. Check relative to script directory
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            potential_paths.append(os.path.join(script_dir, env_file))
+            script_dir = Path(__file__).parent.resolve()
+            potential_paths.append(script_dir / env_file)
 
             # 4. Check parent directory (project root)
-            parent_dir = os.path.dirname(script_dir)
-            potential_paths.append(os.path.join(parent_dir, env_file))
+            parent_dir = script_dir.parent
+            potential_paths.append(parent_dir / env_file)
 
         # Find the first existing file from potential paths
         env_file_path = None
         for path in potential_paths:
-            if os.path.exists(path):
-                env_file_path = path
+            if path.exists():
+                env_file_path = str(path)
                 break
 
         if not env_file_path:
