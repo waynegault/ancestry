@@ -323,17 +323,17 @@ def get_gedcom_data():
 
     # Load GEDCOM data
     try:
-        logger.info(f"Loading GEDCOM file {gedcom_path.name} (first time)...")
+        logger.debug(f"Loading GEDCOM file {gedcom_path.name} (first time)...")
         from gedcom_cache import load_gedcom_with_aggressive_caching as load_gedcom_data
 
         _CACHED_GEDCOM_DATA = load_gedcom_data(str(gedcom_path))
         if _CACHED_GEDCOM_DATA:
-            logger.info(f"GEDCOM file loaded successfully and cached for reuse.")
+            logger.debug(f"GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
-            logger.info(
+            logger.debug(
                 f"  Index size: {len(getattr(_CACHED_GEDCOM_DATA, 'indi_index', {}))}"
             )
-            logger.info(
+            logger.debug(
                 f"  Pre-processed cache size: {len(getattr(_CACHED_GEDCOM_DATA, 'processed_data_cache', {}))}"
             )
         return _CACHED_GEDCOM_DATA

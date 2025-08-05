@@ -367,12 +367,12 @@ def validate_config() -> Tuple[
     )
 
     # Log configuration
-    logger.info(
+    logger.debug(
         f"Configured TREE_OWNER_NAME: {config_schema.user_name if config_schema else 'Not Set'}"
     )
-    logger.info(f"Configured REFERENCE_PERSON_ID: {reference_person_id_raw}")
-    logger.info(f"Configured REFERENCE_PERSON_NAME: {reference_person_name}")
-    logger.info(f"Using GEDCOM file: {gedcom_file_path_config.name}")
+    logger.debug(f"Configured REFERENCE_PERSON_ID: {reference_person_id_raw}")
+    logger.debug(f"Configured REFERENCE_PERSON_NAME: {reference_person_name}")
+    logger.debug(f"Using GEDCOM file: {gedcom_file_path_config.name}")
 
     return (
         gedcom_file_path_config,
@@ -405,19 +405,19 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         return FastMockDataFactory.create_mock_gedcom_data()
 
     try:
-        logger.info("Loading, parsing, and pre-processing GEDCOM data...")
+        logger.debug("Loading, parsing, and pre-processing GEDCOM data...")
         load_start_time = time.time()
         gedcom_data = GedcomData(gedcom_path)
         load_end_time = time.time()
 
-        logger.info(
+        logger.debug(
             f"GEDCOM data loaded & processed successfully in {load_end_time - load_start_time:.2f}s."
         )
-        logger.info(f"  Index size: {len(getattr(gedcom_data, 'indi_index', {}))}")
-        logger.info(
+        logger.debug(f"  Index size: {len(getattr(gedcom_data, 'indi_index', {}))}")
+        logger.debug(
             f"  Pre-processed cache size: {len(getattr(gedcom_data, 'processed_data_cache', {}))}"
         )
-        logger.info(
+        logger.debug(
             f"  Build Times: Index={gedcom_data.indi_index_build_time:.2f}s, Maps={gedcom_data.family_maps_build_time:.2f}s, PreProcess={gedcom_data.data_processing_time:.2f}s"
         )
 
@@ -582,12 +582,29 @@ def calculate_match_score_cached(
     cache_key = (criterion_hash, candidate_hash)
 
     if cache_key not in cache:
-        cache[cache_key] = calculate_match_score(
+        # Debug logging for Fraser Gault scoring comparison
+        if "fraser" in candidate_data.get("first_name", "").lower():
+            logger.info(f"=== ACTION 10 FRASER GAULT SCORING DEBUG ===")
+            logger.info(f"Search criteria: {search_criteria}")
+            logger.info(f"Candidate data: {candidate_data}")
+            logger.info(f"Scoring weights: {scoring_weights}")
+            logger.info(f"Date flexibility: {date_flex}")
+
+        result = calculate_match_score(
             search_criteria=search_criteria,
             candidate_processed_data=candidate_data,
             scoring_weights=scoring_weights,
             date_flexibility=date_flex,
         )
+
+        # Debug logging for Fraser Gault scoring results
+        if "fraser" in candidate_data.get("first_name", "").lower():
+            logger.info(f"Score result: {result[0]}")
+            logger.info(f"Field scores: {result[1]}")
+            logger.info(f"Reasons: {result[2]}")
+            logger.info(f"=== END ACTION 10 FRASER GAULT DEBUG ===")
+
+        cache[cache_key] = result
 
     return cache[cache_key]
 
@@ -855,18 +872,8 @@ def display_top_matches(
         if death_bonus_s_disp > 0:
             dplace_with_score += f" [+{death_bonus_s_disp}]"
 
-        # Recalculate total score for display based on components shown
-        total_display_score = (
-            name_base_score
-            + name_bonus_orig
-            + gender_s
-            + birth_date_score_component
-            + bplace_s
-            + birth_bonus_s_disp
-            + death_date_score_component
-            + dplace_s
-            + death_bonus_s_disp
-        )
+        # Use the actual score from calculate_match_score instead of recalculating
+        total_display_score = int(candidate.get("total_score", 0))
 
         # Create table row
         row = [
@@ -1068,7 +1075,7 @@ def main():
     Main function for action10 GEDCOM analysis.
     Loads GEDCOM data, filters individuals, scores matches, and finds relationship paths.
     """
-    logger.info("Starting Action 10 - GEDCOM Analysis")
+    logger.debug("Starting Action 10 - GEDCOM Analysis")
     args = parse_command_line_args()
 
     try:

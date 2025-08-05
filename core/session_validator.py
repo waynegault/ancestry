@@ -73,6 +73,7 @@ class SessionValidator:
         session_manager,
         action_name: Optional[str] = None,
         max_attempts: int = 3,
+        skip_csrf: bool = False,
     ) -> bool:
         """
         Perform comprehensive readiness checks for the session.
@@ -83,6 +84,7 @@ class SessionValidator:
             session_manager: SessionManager instance for login checks
             action_name: Optional name of the action for logging
             max_attempts: Maximum number of attempts
+            skip_csrf: Skip CSRF token validation (for actions that don't need it)
 
         Returns:
             bool: True if all checks pass, False otherwise
@@ -128,14 +130,17 @@ class SessionValidator:
                     last_check_error = sync_error
                     continue
 
-                # Check CSRF token
-                csrf_success, csrf_error = self._check_csrf_token(api_manager)
-                if not csrf_success:
-                    last_check_error = csrf_error
-                    continue
+                # Check CSRF token (skip if not needed)
+                if not skip_csrf:
+                    csrf_success, csrf_error = self._check_csrf_token(api_manager)
+                    if not csrf_success:
+                        last_check_error = csrf_error
+                        continue
+                else:
+                    logger.debug("Skipping CSRF token check as requested")
 
                 # All checks passed
-                logger.info(f"Readiness checks PASSED on attempt {attempt}.")
+                logger.debug(f"Readiness checks PASSED on attempt {attempt}.")
                 return True
 
             except WebDriverException as wd_exc:

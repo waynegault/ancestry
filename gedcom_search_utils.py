@@ -229,7 +229,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
         # If it's a relative path, make it absolute relative to the project root
         original_path = gedcom_path
         gedcom_path = Path(os.path.dirname(os.path.abspath(__file__))) / gedcom_path
-        logger.info(
+        logger.debug(
             f"Converted relative path '{original_path}' to absolute path: {gedcom_path}"
         )
 
@@ -241,7 +241,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     try:
         from gedcom_cache import load_gedcom_with_aggressive_caching
 
-        logger.info("Using aggressive GEDCOM caching system")
+        logger.debug("Using aggressive GEDCOM caching system")
         _CACHED_GEDCOM_DATA = load_gedcom_with_aggressive_caching(str(gedcom_path))
     except ImportError:
         logger.debug("Aggressive caching not available, using standard loading")
@@ -251,7 +251,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
         _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
 
     if _CACHED_GEDCOM_DATA:
-        logger.info(f"GEDCOM file loaded successfully and cached for reuse.")
+        logger.debug(f"GEDCOM file loaded successfully and cached for reuse.")
 
         # Log cache statistics if available
         try:

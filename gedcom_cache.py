@@ -340,7 +340,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
     except Exception as e:
         logger.debug(f"Error checking disk cache: {e}")
 
-    logger.info(f"Loading GEDCOM file with aggressive caching: {gedcom_path}")
+    logger.debug(f"Loading GEDCOM file with aggressive caching: {gedcom_path}")
     start_time = time.time()
 
     try:
@@ -352,7 +352,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
 
         if gedcom_data:
             load_time = time.time() - start_time
-            logger.info(f"GEDCOM file loaded and cached in {load_time:.2f}s")
+            logger.debug(f"GEDCOM file loaded and cached in {load_time:.2f}s")
 
             # Store in memory cache for fastest access
             _store_in_memory_cache(memory_key, gedcom_data)

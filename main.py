@@ -256,10 +256,10 @@ def ensure_caching_initialized():
     global _caching_initialized
 
     if not _caching_initialized:
-        logger.info("Initializing caching systems on-demand...")
+        logger.debug("Initializing caching systems on-demand...")
         cache_init_success = initialize_aggressive_caching()
         if cache_init_success:
-            logger.info("Caching systems initialized successfully")
+            logger.debug("Caching systems initialized successfully")
             _caching_initialized = True
         else:
             logger.warning(
@@ -345,8 +345,10 @@ def exec_actn(
             # For check_login_actn: only ensure browser is started, no login attempts
             state_ok = session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
         elif required_state == "session_ready":
+            # Skip CSRF token validation for Action 11 (only uses Tree Ladder API)
+            skip_csrf = (choice == "11")
             state_ok = session_manager.ensure_session_ready(
-                action_name=f"{action_name} - Setup"
+                action_name=f"{action_name} - Setup", skip_csrf=skip_csrf
             )
 
         if not state_ok:
@@ -1330,7 +1332,7 @@ def run_action11_wrapper(session_manager, *_):
             logger.error("API Report reported failure.")
             return False
         else:
-            logger.info("API Report OK.")
+            logger.debug("API Report OK.")
             return True
     except Exception as e:
         logger.error(f"Error during API Report: {e}", exc_info=True)

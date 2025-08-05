@@ -124,7 +124,7 @@ class BrowserManager:
             self.browser_needed = True
             self.session_start_time = time.time()
 
-            logger.info("Browser session started successfully")
+            logger.debug("Browser session started successfully")
             return True
 
         except Exception as e:
@@ -196,7 +196,7 @@ class BrowserManager:
             logger.debug(f"Browser session is valid for action: {action_name}")
             return True
 
-        logger.info(f"Starting browser session for action: {action_name}")
+        logger.debug(f"Starting browser session for action: {action_name}")
         return self.start_browser(action_name)
 
     def get_cookies(self, cookie_names: list, timeout: int = 60) -> bool:

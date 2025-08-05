@@ -212,7 +212,7 @@ class SessionComponentCache(BaseCacheModule):
     def warm(self) -> bool:
         """Warm session cache with frequently used data"""
         try:
-            logger.info("Warming session cache...")
+            logger.debug("Warming session cache...")
 
             # Warm with session metadata using existing infrastructure
             warm_cache_with_data(
@@ -225,7 +225,7 @@ class SessionComponentCache(BaseCacheModule):
                 expire=CACHE_CONFIG.component_ttl_seconds,
             )
 
-            logger.info("Session cache warmed successfully")
+            logger.debug("Session cache warmed successfully")
             return True
         except Exception as e:
             logger.warning(f"Error warming session cache: {e}")

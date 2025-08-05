@@ -1513,7 +1513,7 @@ def call_getladder_api(
         base_url.rstrip("/") + "/", ladder_referer_path.lstrip("/")
     )
     api_timeout_val = timeout if timeout else _get_api_timeout(20)
-    logger.info(f"Attempting {api_description} call: {ladder_api_url}")
+    logger.debug(f"Attempting {api_description} call: {ladder_api_url}")
 
     try:
         relationship_data = _api_req(
@@ -1544,7 +1544,7 @@ def call_getladder_api(
                         f"GetLadder API response validation warning: {validation_err}"
                     )
 
-            logger.info(f"{api_description} call successful, received string response.")
+            logger.debug(f"{api_description} call successful, received string response.")
             return relationship_data
         elif isinstance(relationship_data, str):
             logger.warning(
