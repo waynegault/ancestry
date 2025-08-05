@@ -317,7 +317,7 @@ def exec_actn(
         "backup_db_actn",
         "restore_db_actn",
         "run_action10",  # GEDCOM Report (Local File)
-        "run_action11_wrapper",  # API Report (Ancestry Online)
+        # "run_action11_wrapper",  # API Report (Ancestry Online) - Removed: needs browser session
     ]
 
     # Set browser_needed flag based on action
@@ -1322,11 +1322,10 @@ def process_productive_messages_action(session_manager, *_):
 # Action 11 (run_action11_wrapper)
 def run_action11_wrapper(session_manager, *_):
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
-    # Note: session_manager is not used but is required for exec_actn compatibility
     logger.debug("Starting API Report...")
     try:
-        # Call the actual API Report function
-        result = run_action11()
+        # Call the actual API Report function, passing the session_manager
+        result = run_action11(session_manager)
         if result is False:
             logger.error("API Report reported failure.")
             return False
