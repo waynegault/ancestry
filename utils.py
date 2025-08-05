@@ -177,8 +177,27 @@ from test_framework import (
 
 def parse_cookie(cookie_string: str) -> Dict[str, str]:
     """
-    Parses a raw HTTP cookie string into a dictionary of key-value pairs.
-    Handles empty keys and values.
+    Parse a raw HTTP cookie string into a dictionary of key-value pairs.
+
+    Handles various cookie formats including empty keys, empty values, and
+    malformed entries. Provides robust parsing for web scraping and session
+    management scenarios.
+
+    Args:
+        cookie_string: Raw HTTP cookie string with semicolon-separated pairs.
+
+    Returns:
+        Dict[str, str]: Dictionary mapping cookie names to values.
+
+    Examples:
+        >>> parse_cookie("key1=value1; key2=value2")
+        {'key1': 'value1', 'key2': 'value2'}
+        >>> parse_cookie("key=; next=val")
+        {'key': '', 'next': 'val'}
+        >>> parse_cookie(" ; keyonly ; =valueonly")
+        {'': 'valueonly'}
+        >>> parse_cookie("malformed=part=again")
+        {'malformed': 'part=again'}
     """
     cookies: Dict[str, str] = {}
     if not isinstance(cookie_string, str):
@@ -207,9 +226,29 @@ def parse_cookie(cookie_string: str) -> Dict[str, str]:
 
 def ordinal_case(text: Union[str, int]) -> str:
     """
-    Corrects ordinal suffixes (1st, 2nd, 3rd, 4th) to lowercase within a string,
-    often used after applying title casing. Handles relationship terms simply.
-    Accepts string or integer input for numbers.
+    Convert text to title case with proper ordinal suffix handling.
+
+    Converts text to title case and ensures ordinal suffixes (1st, 2nd, 3rd, 4th)
+    are properly formatted. Handles both string and integer inputs for numbers.
+    Commonly used for relationship terms and genealogical descriptions.
+
+    Args:
+        text: The text to format, can be string or integer.
+
+    Returns:
+        str: Formatted text with proper title case and ordinal suffixes.
+
+    Examples:
+        >>> ordinal_case("first cousin once removed")
+        'First Cousin Once Removed'
+        >>> ordinal_case(1)
+        '1st'
+        >>> ordinal_case(22)
+        '22nd'
+        >>> ordinal_case(13)
+        '13th'
+        >>> ordinal_case("mother of the bride")
+        'Mother of the Bride'
     """
     if not text and text != 0:
         return str(text) if text is not None else ""
@@ -251,10 +290,31 @@ def ordinal_case(text: Union[str, int]) -> str:
 
 def format_name(name: Optional[str]) -> str:
     """
-    Formats a person's name string to title case, preserving uppercase components
-    (like initials or acronyms) and handling None/empty input gracefully.
-    Also removes GEDCOM-style slashes around surnames anywhere in the string.
-    Handles common name particles and prefixes like Mc/Mac/O' and quoted nicknames.
+    Format a person's name string with proper capitalization and GEDCOM cleanup.
+
+    Converts names to title case while preserving uppercase components like initials,
+    removes GEDCOM-style slashes around surnames, and handles common name particles
+    and prefixes correctly. Provides graceful handling of None/empty input.
+
+    Args:
+        name: The name string to format, or None.
+
+    Returns:
+        str: Formatted name string, or "Valued Relative" if input is None/empty.
+
+    Examples:
+        >>> format_name("john smith")
+        'John Smith'
+        >>> format_name("/Smith/ John")
+        'Smith John'
+        >>> format_name("McDONALD")
+        'McDonald'
+        >>> format_name("o'malley")
+        "O'Malley"
+        >>> format_name(None)
+        'Valued Relative'
+        >>> format_name("J. P. Morgan")
+        'J. P. Morgan'
     """
     if not name or not isinstance(name, str):
         return "Valued Relative"
@@ -2422,7 +2482,23 @@ def consent(driver: WebDriver) -> bool:  # type: ignore
 
 # Login Main Function
 def _check_initial_login_status(session_manager: SessionManager) -> Optional[str]:
-    """Check if user is already logged in before attempting login."""
+    """
+    Check if user is already logged in before attempting login process.
+
+    Performs a quick API-based login status check to avoid unnecessary
+    navigation and credential entry if the user is already authenticated.
+
+    Args:
+        session_manager: The SessionManager instance containing authentication state.
+
+    Returns:
+        Optional[str]: "LOGIN_SUCCEEDED" if already logged in, None otherwise.
+
+    Example:
+        >>> status = _check_initial_login_status(session_manager)
+        >>> if status == "LOGIN_SUCCEEDED":
+        ...     print("User already authenticated")
+    """
     initial_status = login_status(
         session_manager, disable_ui_fallback=True
     )  # API check only for speed
@@ -2433,7 +2509,26 @@ def _check_initial_login_status(session_manager: SessionManager) -> Optional[str
 
 
 def _navigate_to_signin_page(driver: WebDriver, session_manager: SessionManager) -> str:  # type: ignore
-    """Navigate to the sign-in page and handle redirects."""
+    """
+    Navigate to the Ancestry sign-in page and handle redirects or errors.
+
+    Attempts to navigate to the sign-in page and waits for the username input
+    field to appear. Handles cases where navigation fails or the user is
+    already logged in and gets redirected.
+
+    Args:
+        driver: The WebDriver instance for browser automation.
+        session_manager: The SessionManager instance for login status checks.
+
+    Returns:
+        str: "NAVIGATION_SUCCESS" if successful, "LOGIN_SUCCEEDED" if already
+             logged in, or "LOGIN_FAILED_NAVIGATION" if navigation fails.
+
+    Example:
+        >>> result = _navigate_to_signin_page(driver, session_manager)
+        >>> if result == "NAVIGATION_SUCCESS":
+        ...     print("Ready to enter credentials")
+    """
     signin_url = urljoin(config_schema.api.base_url, "account/signin")
 
     # Wait for username input as indication of page load
@@ -2461,7 +2556,28 @@ def _navigate_to_signin_page(driver: WebDriver, session_manager: SessionManager)
 
 
 def _handle_credential_entry(driver: WebDriver) -> str:  # type: ignore
-    """Handle credential entry and check for errors."""
+    """
+    Handle credential entry and check for authentication errors.
+
+    Attempts to enter user credentials and checks for various error conditions
+    including invalid credentials alerts and generic error messages. Provides
+    detailed error classification for troubleshooting.
+
+    Args:
+        driver: The WebDriver instance for browser automation.
+
+    Returns:
+        str: "CREDENTIALS_SUCCESS" if successful, or specific error codes like
+             "LOGIN_FAILED_BAD_CREDS", "LOGIN_FAILED_ERROR_DISPLAYED", or
+             "LOGIN_FAILED_CREDS_ENTRY" for different failure scenarios.
+
+    Example:
+        >>> result = _handle_credential_entry(driver)
+        >>> if result == "CREDENTIALS_SUCCESS":
+        ...     print("Credentials entered successfully")
+        >>> elif result == "LOGIN_FAILED_BAD_CREDS":
+        ...     print("Invalid username or password")
+    """
     if not enter_creds(driver):
         logger.error("Failed during credential entry or submission.")
         # Check for specific error messages on the page

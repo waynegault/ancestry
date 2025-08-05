@@ -113,15 +113,41 @@ from relationship_utils import (
 _MOCK_MODE_ENABLED = False
 
 
-def enable_mock_mode():
-    """Enable mock mode for ultra-fast test execution"""
+def enable_mock_mode() -> None:
+    """
+    Enable mock mode for ultra-fast test execution and development.
+
+    Activates mock data mode which bypasses GEDCOM file loading and uses
+    pre-generated test data for rapid testing and development cycles.
+    Significantly reduces execution time for testing scenarios.
+
+    Returns:
+        None: Modifies global state to enable mock mode.
+
+    Example:
+        >>> enable_mock_mode()
+        >>> print("Mock mode enabled for fast testing")
+    """
     global _MOCK_MODE_ENABLED
     _MOCK_MODE_ENABLED = True
     logger.info("🚀 Mock mode enabled for ultra-fast testing")
 
 
-def disable_mock_mode():
-    """Disable mock mode for real data processing"""
+def disable_mock_mode() -> None:
+    """
+    Disable mock mode to enable real GEDCOM data processing.
+
+    Deactivates mock data mode and returns to normal operation using actual
+    GEDCOM files and real data processing. Used when switching from testing
+    to production scenarios.
+
+    Returns:
+        None: Modifies global state to disable mock mode.
+
+    Example:
+        >>> disable_mock_mode()
+        >>> print("Mock mode disabled - using real data")
+    """
     global _MOCK_MODE_ENABLED
     _MOCK_MODE_ENABLED = False
     logger.info("🔄 Mock mode disabled - using real data")
@@ -246,7 +272,29 @@ def detailed_scoring_breakdown(
 
 # --- Helper Functions ---
 def sanitize_input(value: str) -> Optional[str]:
-    """Basic sanitization of user input."""
+    """
+    Sanitize user input for safe processing in genealogical searches.
+
+    Performs basic sanitization including whitespace trimming, length validation,
+    and removal of potentially harmful characters. Designed for genealogical
+    data input where names, places, and dates need to be cleaned.
+
+    Args:
+        value: The input string to sanitize.
+
+    Returns:
+        Optional[str]: Sanitized string, or None if input is empty/invalid.
+
+    Examples:
+        >>> sanitize_input("  John Smith  ")
+        'John Smith'
+        >>> sanitize_input("")
+        None
+        >>> sanitize_input("   ")
+        None
+        >>> sanitize_input("Mary O'Connor")
+        "Mary O'Connor"
+    """
     if not value:
         return None
     # Remove leading/trailing whitespace
@@ -749,7 +797,30 @@ def filter_and_score_individuals(
 
 
 def format_display_value(value: Any, max_width: int) -> str:
-    """Format a value for display, truncating if necessary."""
+    """
+    Format a value for display with width constraints and type handling.
+
+    Converts various data types to display-friendly strings with proper
+    truncation and formatting. Handles None values, numbers, and strings
+    appropriately for genealogical data presentation.
+
+    Args:
+        value: The value to format (any type).
+        max_width: Maximum display width in characters.
+
+    Returns:
+        str: Formatted string suitable for display, truncated if necessary.
+
+    Examples:
+        >>> format_display_value(None, 10)
+        'N/A'
+        >>> format_display_value(1985, 10)
+        '1985'
+        >>> format_display_value("Very Long Name That Exceeds Width", 10)
+        'Very Lo...'
+        >>> format_display_value(3.14159, 10)
+        '3'
+    """
     if value is None:
         display = "N/A"
     elif isinstance(value, (int, float)):
@@ -1070,10 +1141,20 @@ def analyze_top_match(
 @timeout_protection(timeout=1200)  # 20 minutes for GEDCOM analysis
 @graceful_degradation(fallback_value=None)
 @error_context("action10_gedcom_analysis")
-def main():
+def main() -> None:
     """
-    Main function for action10 GEDCOM analysis.
-    Loads GEDCOM data, filters individuals, scores matches, and finds relationship paths.
+    Main function for Action 10 GEDCOM analysis with comprehensive workflow.
+
+    Orchestrates the complete GEDCOM analysis process including data loading,
+    individual filtering, match scoring, and relationship path calculation.
+    Includes robust error handling, performance monitoring, and user interaction.
+
+    Returns:
+        None: Prints analysis results to console and logs detailed information.
+
+    Example:
+        >>> main()  # Executes complete GEDCOM analysis workflow
+        # Prompts for search criteria and displays top matches with relationships
     """
     logger.debug("Starting Action 10 - GEDCOM Analysis")
     args = parse_command_line_args()
