@@ -15,5 +15,7 @@
 
   "User_Requested_Desist": "Thank you for your message. I understand and will not contact you again regarding DNA matches. I wish you all the best!\n\nWarmest regards,\n\nWayne",
 
-  "Productive_Reply_Acknowledgement": "Subject: Thank You for Your Response!\n\nDear {name},\n\nThank you so much for your message about our DNA connection! I really appreciate you taking the time to respond and share information about our family connection.\n\nI'll review the information you've provided and get back to you if I have any questions or updates. Thanks again for connecting!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland"
+  "Productive_Reply_Acknowledgement": "Subject: Thank You for Your Response!\n\nDear {name},\n\nThank you so much for your message about our DNA connection! I really appreciate you taking the time to respond and share information about our family connection.\n\nI'll review the information you've provided and get back to you if I have any questions or updates. Thanks again for connecting!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+
+  "Automated_Genealogy_Response": "This is a placeholder template for AI-generated genealogical responses. The actual message content is generated dynamically by the AI system based on the conversation context and genealogical data."
 }
