@@ -324,6 +324,12 @@ class SessionValidator:
             logger.debug("Skipping essential cookies check for Action 6 - cookies will be available after navigation")
             return True, None
 
+        # For Action 7 (Search Inbox), cookies may not be immediately available but login verification works
+        # Skip cookie check for Action 7 since API login verification is sufficient
+        if action_name and "srch_inbox" in action_name:
+            logger.debug("Skipping essential cookies check for Action 7 - API login verification is sufficient")
+            return True, None
+
         try:
             if not browser_manager.get_cookies(essential_cookies):
                 error_msg = f"Essential cookies not found: {essential_cookies}"
