@@ -1505,6 +1505,205 @@ def _score_detailed_match(
 
 
 # Family/Relationship Display Functions
+
+def _convert_api_family_to_display_format(api_family: Dict) -> Dict:
+    """Convert API family structure to the format expected by _display_family_info."""
+    display_family = {}
+
+    # Convert parents
+    parents = api_family.get("parents", [])
+    fathers = [p for p in parents if p.get("gender") == "M"]
+    mothers = [p for p in parents if p.get("gender") == "F"]
+    display_family["Fathers"] = fathers
+    display_family["Mothers"] = mothers
+
+    # Convert siblings
+    display_family["Siblings"] = api_family.get("siblings", [])
+    display_family["HalfSiblings"] = api_family.get("half_siblings", [])
+
+    # Convert spouses
+    display_family["Spouses"] = api_family.get("spouses", [])
+
+    # Convert children
+    display_family["Children"] = api_family.get("children", [])
+
+    return display_family
+
+
+def _extract_family_from_person_facts(person_facts: List[Dict]) -> Dict:
+    """Extract family relationships from PersonFacts list."""
+    family_data = {
+        "Fathers": [],
+        "Mothers": [],
+        "Siblings": [],
+        "HalfSiblings": [],
+        "Spouses": [],
+        "Children": []
+    }
+
+    for fact in person_facts:
+        if not isinstance(fact, dict):
+            continue
+
+        fact_type = fact.get("TypeString", "")
+
+        # Extract family relationships from facts
+        if fact_type in ["Father", "Parent"] and fact.get("PersonGender") == "M":
+            family_data["Fathers"].append({
+                "name": fact.get("PersonName", "Unknown"),
+                "id": fact.get("PersonId", ""),
+                "gender": "M"
+            })
+        elif fact_type in ["Mother", "Parent"] and fact.get("PersonGender") == "F":
+            family_data["Mothers"].append({
+                "name": fact.get("PersonName", "Unknown"),
+                "id": fact.get("PersonId", ""),
+                "gender": "F"
+            })
+        elif fact_type == "Spouse":
+            family_data["Spouses"].append({
+                "name": fact.get("PersonName", "Unknown"),
+                "id": fact.get("PersonId", ""),
+                "gender": fact.get("PersonGender", "Unknown")
+            })
+        elif fact_type == "Child":
+            family_data["Children"].append({
+                "name": fact.get("PersonName", "Unknown"),
+                "id": fact.get("PersonId", ""),
+                "gender": fact.get("PersonGender", "Unknown")
+            })
+
+    return family_data
+
+
+def _fetch_family_data_alternative(person_id: str, tree_id: str) -> Dict:
+    """Fetch family data using alternative API endpoints when the main API doesn't provide family info."""
+    try:
+        from api_utils import call_treesui_list_api
+
+        # Try to get family members by searching for related people in the tree
+        family_data = {
+            "Fathers": [],
+            "Mothers": [],
+            "Siblings": [],
+            "HalfSiblings": [],
+            "Spouses": [],
+            "Children": []
+        }
+
+        # Get the person's surname to search for potential family members
+        person_surname = ""
+        try:
+            # Extract surname from the person_id by making a quick API call
+            search_params = {
+                "tree_id": tree_id,
+                "limit": 1,
+                "fields": "NAMES,EVENTS,GENDER",
+                "person_id": person_id
+            }
+
+            person_data = call_treesui_list_api(search_params)
+            if person_data and len(person_data) > 0:
+                person_surname = person_data[0].get("SurnamePart", "")
+                logger.debug(f"Extracted surname '{person_surname}' for family search")
+        except Exception as e:
+            logger.debug(f"Could not extract surname for family search: {e}")
+            return {}
+
+        if not person_surname:
+            logger.debug("No surname available for family search")
+            return {}
+
+        # Search for people with the same surname in the tree (potential family members)
+        family_search_params = {
+            "tree_id": tree_id,
+            "limit": 50,  # Get more results to find family members
+            "fields": "NAMES,EVENTS,GENDER",
+            "surname": person_surname
+        }
+
+        potential_family = call_treesui_list_api(family_search_params)
+        if not potential_family:
+            logger.debug("No potential family members found")
+            return {}
+
+        logger.debug(f"Found {len(potential_family)} potential family members with surname '{person_surname}'")
+
+        # Analyze birth years and relationships to categorize family members
+        person_birth_year = None
+        for person in potential_family:
+            if person.get("PersonId") == person_id:
+                person_birth_year = person.get("BirthYear")
+                break
+
+        if not person_birth_year:
+            logger.debug("Could not determine person's birth year for family analysis")
+            return {}
+
+        # Categorize family members based on birth year differences and naming patterns
+        for family_member in potential_family:
+            if family_member.get("PersonId") == person_id:
+                continue  # Skip the person themselves
+
+            member_birth_year = family_member.get("BirthYear")
+            member_gender = family_member.get("Gender", "").lower()
+            member_name = family_member.get("FullName", "Unknown")
+
+            if not member_birth_year:
+                continue
+
+            year_diff = person_birth_year - member_birth_year
+
+            # Parents (typically 20-40 years older)
+            if 20 <= year_diff <= 50:
+                if member_gender == "m":
+                    family_data["Fathers"].append({
+                        "name": member_name,
+                        "id": family_member.get("PersonId", ""),
+                        "gender": "M",
+                        "birth_year": member_birth_year
+                    })
+                elif member_gender == "f":
+                    family_data["Mothers"].append({
+                        "name": member_name,
+                        "id": family_member.get("PersonId", ""),
+                        "gender": "F",
+                        "birth_year": member_birth_year
+                    })
+
+            # Siblings (within 15 years of age)
+            elif -15 <= year_diff <= 15:
+                family_data["Siblings"].append({
+                    "name": member_name,
+                    "id": family_member.get("PersonId", ""),
+                    "gender": member_gender.upper(),
+                    "birth_year": member_birth_year
+                })
+
+            # Children (typically 20-40 years younger)
+            elif -50 <= year_diff <= -20:
+                family_data["Children"].append({
+                    "name": member_name,
+                    "id": family_member.get("PersonId", ""),
+                    "gender": member_gender.upper(),
+                    "birth_year": member_birth_year
+                })
+
+        # Remove empty categories
+        family_data = {k: v for k, v in family_data.items() if v}
+
+        if family_data:
+            logger.debug(f"Successfully extracted family data: {len(family_data)} categories with members")
+            return family_data
+        else:
+            logger.debug("No family relationships could be determined")
+            return {}
+
+    except Exception as e:
+        logger.error(f"Error fetching alternative family data: {e}")
+        return {}
+
+
 def _flatten_children_list(children_raw: Union[List, Dict, None]) -> List[Dict]:
     """Flattens potentially nested list of children from PersonFamily and removes duplicates."""
     children_flat_list = []
@@ -2491,16 +2690,50 @@ def _handle_supplementary_info_phase(
     # Display the header with name and years
     print(f"\n=== Family Details: {person_name}{years_display} ===")
 
-    if person_research_data and isinstance(
-        person_research_data.get("PersonFamily"), dict
-    ):
-        _display_family_info(person_research_data["PersonFamily"])
+    # Try to extract family data from the API response
+    family_data = None
+    if person_research_data:
+        # Debug: Log the available keys in the API response
+        logger.debug(f"API response keys: {list(person_research_data.keys())}")
+
+        # First try the PersonFamily structure (legacy)
+        if isinstance(person_research_data.get("PersonFamily"), dict):
+            family_data = person_research_data["PersonFamily"]
+            logger.debug("Using PersonFamily structure for family data")
+        # Then try the family structure (current API)
+        elif isinstance(person_research_data.get("family"), dict):
+            # Convert the API family structure to the expected format
+            api_family = person_research_data["family"]
+            logger.debug(f"API family structure keys: {list(api_family.keys())}")
+            family_data = _convert_api_family_to_display_format(api_family)
+            logger.debug("Using family structure for family data")
+        # Try extracting from PersonFacts if available
+        elif isinstance(person_research_data.get("PersonFacts"), list):
+            person_facts = person_research_data["PersonFacts"]
+            logger.debug(f"Found {len(person_facts)} PersonFacts entries")
+            family_data = _extract_family_from_person_facts(person_facts)
+            logger.debug("Extracted family data from PersonFacts")
+
+    if family_data and isinstance(family_data, dict):
+        _display_family_info(family_data)
     elif person_research_data is None:
         logger.debug("Cannot display family: Detail fetch failed.")
         print("  (Family details unavailable: Detail fetch failed)")
     else:
-        logger.debug("Cannot display family: 'PersonFamily' missing/invalid.")
-        print("  (Family details missing or invalid in API response)")
+        logger.debug("Cannot display family: No family data found in API response.")
+        # Try to fetch family data using alternative API endpoints
+        logger.debug("Attempting to fetch family data using alternative API calls...")
+        # Extract person_id and tree_id from the candidate data
+        candidate_person_id = selected_candidate_processed.get("raw_data", {}).get("PersonId", "")
+        candidate_tree_id = selected_candidate_processed.get("raw_data", {}).get("TreeId", "")
+        if candidate_person_id and candidate_tree_id:
+            alternative_family_data = _fetch_family_data_alternative(candidate_person_id, candidate_tree_id)
+            if alternative_family_data:
+                _display_family_info(alternative_family_data)
+            else:
+                print("  (Family details not available in API response)")
+        else:
+            print("  (Family details not available - missing person/tree ID)")
     # Removed redundant print("") here, let relationship section add space if needed
 
     # --- Prepare for Relationship Calculation ---
