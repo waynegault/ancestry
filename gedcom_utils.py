@@ -1785,7 +1785,7 @@ class GedcomData:
             logger.critical(f"GEDCOM file not found: {self.path}")
             raise FileNotFoundError(f"GEDCOM file not found: {self.path}")
         try:
-            logger.info(f"Loading GEDCOM file: {self.path}")
+            logger.debug(f"Loading GEDCOM file: {self.path}")
             load_start = time.time()
             # Initialize GedcomReader with the file path as a string
             # The constructor takes a file parameter (file name or file object)
@@ -1794,7 +1794,7 @@ class GedcomData:
             # @type: ignore is used to suppress the type checker warning
             self.reader = GedcomReader(str(self.path))  # type: ignore
             load_time = time.time() - load_start
-            logger.info(f"GEDCOM file loaded in {load_time:.2f}s.")
+            logger.debug(f"GEDCOM file loaded in {load_time:.2f}s.")
         except Exception as e:
             file_size_mb = (
                 self.path.stat().st_size / (1024 * 1024)
@@ -1833,7 +1833,7 @@ class GedcomData:
             logger.error("[Cache Build] Cannot build INDI index: GedcomReader is None.")
             return
         start_time = time.time()
-        logger.info("[Cache] Building INDI index...")
+        logger.debug("[Cache] Building INDI index...")
         self.indi_index = {}
         count = 0
         skipped = 0
@@ -1877,7 +1877,7 @@ class GedcomData:
                             f"Skipping record with no xref_id: Type={type(indi_record).__name__}"
                         )
         except StopIteration:
-            logger.info("[Cache] Finished iterating INDI records for index.")
+            logger.debug("[Cache] Finished iterating INDI records for index.")
         except Exception as e:
             # Enhanced error reporting with record context
             record_context = f"while processing record ID: {current_record_id}"
@@ -1890,7 +1890,7 @@ class GedcomData:
         elapsed = time.time() - start_time
         self.indi_index_build_time = elapsed
         if count > 0:
-            logger.info(
+            logger.debug(
                 f"[Cache] INDI index built with {count} individuals ({skipped} skipped) in {elapsed:.2f}s."
             )
         else:
@@ -1906,7 +1906,7 @@ class GedcomData:
             )
             return
         start_time = time.time()
-        logger.info("[Cache] Building family maps...")
+        logger.debug("[Cache] Building family maps...")
         self.id_to_parents = {}
         self.id_to_children = {}
         fam_count = 0
@@ -1959,7 +1959,7 @@ class GedcomData:
                             f"Skipping CHIL record in FAM {fam_id_log} with invalid format: Type={type(child_tag).__name__}"
                         )
         except StopIteration:
-            logger.info("[Cache] Finished iterating FAM records for maps.")
+            logger.debug("[Cache] Finished iterating FAM records for maps.")
         except Exception as e:
             logger.error(
                 f"[Cache Build] Unexpected error during family map build: {e}. Maps may be incomplete.",
@@ -1969,7 +1969,7 @@ class GedcomData:
         self.family_maps_build_time = elapsed
         parent_map_count = len(self.id_to_parents)
         child_map_count = len(self.id_to_children)
-        logger.info(
+        logger.debug(
             f"[Cache] Family maps built: {fam_count} FAMs processed. Added {processed_links} child-parent relationships ({skipped_links} skipped invalid links/IDs). Map sizes: {parent_map_count} child->parents entries, {child_map_count} parent->children entries in {elapsed:.2f}s."
         )
         if parent_map_count == 0 and child_map_count == 0 and fam_count > 0:
@@ -1983,7 +1983,7 @@ class GedcomData:
             logger.error("Cannot pre-process data: INDI index is not built.")
             return
         start_time = time.time()
-        logger.info("[Pre-Process] Extracting key data for individuals...")
+        logger.debug("[Pre-Process] Extracting key data for individuals...")
         self.processed_data_cache = {}
         processed_count = 0
         errors = 0
@@ -2061,7 +2061,7 @@ class GedcomData:
                 errors += 1
         elapsed = time.time() - start_time
         self.data_processing_time = elapsed
-        logger.info(
+        logger.debug(
             f"[Pre-Process] Processed data for {processed_count} individuals ({errors} errors) in {elapsed:.2f}s."
         )
         if not self.processed_data_cache:

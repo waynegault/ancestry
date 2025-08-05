@@ -345,7 +345,7 @@ class SessionManager:
     @timeout_protection(timeout=120)  # Increased timeout for complex operations like Action 7
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
-    def ensure_session_ready(self, action_name: Optional[str] = None) -> bool:
+    def ensure_session_ready(self, action_name: Optional[str] = None, skip_csrf: bool = False) -> bool:
         """
         Ensure the session is ready for operations.
 
@@ -354,6 +354,7 @@ class SessionManager:
 
         Args:
             action_name: Optional name of the action for logging
+            skip_csrf: Skip CSRF token validation (for actions that don't need it)
 
         Returns:
             bool: True if session is ready, False otherwise
@@ -398,7 +399,7 @@ class SessionManager:
         # PHASE 5.1: Optimized readiness checks with circuit breaker pattern
         try:
             ready_checks_ok = self.validator.perform_readiness_checks(
-                self.browser_manager, self.api_manager, self, action_name
+                self.browser_manager, self.api_manager, self, action_name, skip_csrf=skip_csrf
             )
 
             if not ready_checks_ok:

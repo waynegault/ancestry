@@ -609,7 +609,6 @@ def clear_system_caches() -> Dict[str, Union[int, str]]:
 def warm_system_caches() -> bool:
     """Warm system caches with frequently used data"""
     try:
-        logger.info("Warming system caches for Phase 5.2...")
 
         # Warm session cache
         from core.session_cache import warm_session_cache
@@ -631,7 +630,7 @@ def warm_system_caches() -> bool:
             expire=SYSTEM_CACHE_CONFIG.api_response_ttl,
         )
 
-        logger.info("System cache warming completed successfully")
+        logger.debug("System cache warming completed successfully")
         return True
 
     except Exception as e:
