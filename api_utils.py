@@ -157,42 +157,37 @@ KEY_OWNER = "owner"
 
 
 # --- Response Models ---
-# Simple data classes for API response validation (Pydantic-style but without dependency)
+# Modern dataclass-based models for API response validation
+
+from dataclasses import dataclass, field
 
 
+@dataclass
 class PersonSuggestResponse:
-    """Model for validating Ancestry Suggest API responses."""
+    """Dataclass model for validating Ancestry Suggest API responses."""
 
-    def __init__(self, **kwargs):
-        self.PersonId: Optional[str] = kwargs.get("PersonId")
-        self.TreeId: Optional[str] = kwargs.get("TreeId")
-        self.UserId: Optional[str] = kwargs.get("UserId")
-        self.FullName: Optional[str] = kwargs.get("FullName")
-        self.GivenName: Optional[str] = kwargs.get("GivenName")
-        self.Surname: Optional[str] = kwargs.get("Surname")
-        self.BirthYear: Optional[int] = kwargs.get("BirthYear")
-        self.BirthPlace: Optional[str] = kwargs.get("BirthPlace")
-        self.DeathYear: Optional[int] = kwargs.get("DeathYear")
-        self.DeathPlace: Optional[str] = kwargs.get("DeathPlace")
-        self.Gender: Optional[str] = kwargs.get("Gender")
-        self.IsLiving: Optional[bool] = kwargs.get("IsLiving")
+    PersonId: Optional[str] = None
+    TreeId: Optional[str] = None
+    UserId: Optional[str] = None
+    FullName: Optional[str] = None
+    GivenName: Optional[str] = None
+    Surname: Optional[str] = None
+    BirthYear: Optional[int] = None
+    BirthPlace: Optional[str] = None
+    DeathYear: Optional[int] = None
+    DeathPlace: Optional[str] = None
+    Gender: Optional[str] = None
+    IsLiving: Optional[bool] = None
 
-    def dict(self, exclude_none=False):
-        """Convert to dictionary format."""
-        result = {
-            "PersonId": self.PersonId,
-            "TreeId": self.TreeId,
-            "UserId": self.UserId,
-            "FullName": self.FullName,
-            "GivenName": self.GivenName,
-            "Surname": self.Surname,
-            "BirthYear": self.BirthYear,
-            "BirthPlace": self.BirthPlace,
-            "DeathYear": self.DeathYear,
-            "DeathPlace": self.DeathPlace,
-            "Gender": self.Gender,
-            "IsLiving": self.IsLiving,
-        }
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'PersonSuggestResponse':
+        """Create instance from dictionary data."""
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+        """Convert to dictionary format with optional None exclusion."""
+        from dataclasses import asdict
+        result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
         return result
@@ -220,65 +215,69 @@ class ProfileDetailsResponse:
         return result
 
 
+@dataclass
 class TreeOwnerResponse:
-    """Model for validating Tree Owner API responses."""
+    """Dataclass model for validating Tree Owner API responses."""
 
-    def __init__(self, **kwargs):
-        self.owner: Optional[Dict[str, Any]] = kwargs.get("owner")
-        self.displayName: Optional[str] = kwargs.get("displayName")
+    owner: Optional[Dict[str, Any]] = None
+    displayName: Optional[str] = None
 
-    def dict(self, exclude_none=False):
-        """Convert to dictionary format."""
-        result = {
-            "owner": self.owner,
-            "displayName": self.displayName,
-        }
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'TreeOwnerResponse':
+        """Create instance from dictionary data."""
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+        """Convert to dictionary format with optional None exclusion."""
+        from dataclasses import asdict
+        result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
         return result
 
 
+@dataclass
 class PersonFactsResponse:
-    """Model for validating Person Facts API responses."""
+    """Dataclass model for validating Person Facts API responses."""
 
-    def __init__(self, **kwargs):
-        self.data: Optional[Dict[str, Any]] = kwargs.get("data")
-        self.personResearch: Optional[Dict[str, Any]] = kwargs.get("personResearch")
-        self.PersonFacts: Optional[List[Dict[str, Any]]] = kwargs.get("PersonFacts")
-        self.PersonFullName: Optional[str] = kwargs.get("PersonFullName")
-        self.FirstName: Optional[str] = kwargs.get("FirstName")
-        self.LastName: Optional[str] = kwargs.get("LastName")
+    data: Optional[Dict[str, Any]] = None
+    personResearch: Optional[Dict[str, Any]] = None
+    PersonFacts: Optional[List[Dict[str, Any]]] = None
+    PersonFullName: Optional[str] = None
+    FirstName: Optional[str] = None
+    LastName: Optional[str] = None
 
-    def dict(self, exclude_none=False):
-        """Convert to dictionary format."""
-        result = {
-            "data": self.data,
-            "personResearch": self.personResearch,
-            "PersonFacts": self.PersonFacts,
-            "PersonFullName": self.PersonFullName,
-            "FirstName": self.FirstName,
-            "LastName": self.LastName,
-        }
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'PersonFactsResponse':
+        """Create instance from dictionary data."""
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+        """Convert to dictionary format with optional None exclusion."""
+        from dataclasses import asdict
+        result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
         return result
 
 
+@dataclass
 class GetLadderResponse:
-    """Model for validating GetLadder API responses."""
+    """Dataclass model for validating GetLadder API responses."""
 
-    def __init__(self, **kwargs):
-        self.data: Optional[Dict[str, Any]] = kwargs.get("data")
-        self.relationship: Optional[Dict[str, Any]] = kwargs.get("relationship")
-        self.paths: Optional[List[Dict[str, Any]]] = kwargs.get("paths")
+    data: Optional[Dict[str, Any]] = None
+    relationship: Optional[Dict[str, Any]] = None
+    paths: Optional[List[Dict[str, Any]]] = None
 
-    def dict(self, exclude_none=False):
-        """Convert to dictionary format."""
-        result = {
-            "data": self.data,
-            "relationship": self.relationship,
-            "paths": self.paths,
-        }
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'GetLadderResponse':
+        """Create instance from dictionary data."""
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+        """Convert to dictionary format with optional None exclusion."""
+        from dataclasses import asdict
+        result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
         return result
