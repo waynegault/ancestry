@@ -13,14 +13,9 @@ criteria matching for genealogical research and family tree analysis.
 # All tests pass with 100% success rate.
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-)
+from standard_imports import setup_module
+
+logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
@@ -36,9 +31,6 @@ from error_handling import (
     APIRateLimitError,
     ErrorContext,
 )
-
-standardize_module_imports()
-auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import os  # Used for path operations
@@ -64,8 +56,7 @@ from config import config_schema
 from relationship_utils import format_api_relationship_path
 from utils import SessionManager
 
-# === MODULE LOGGER ===
-logger = get_logger(__name__)
+
 
 # === MODULE CONSTANTS ===
 API_UTILS_AVAILABLE = True

@@ -66,7 +66,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from typing import Optional
 import subprocess
 from config import config_schema
-from logging_config import setup_logging, logger
+from logging_config import setup_logging
 
 # --- Test framework imports ---
 from test_framework import (
@@ -75,15 +75,7 @@ from test_framework import (
     assert_valid_function,
 )
 
-# Use centralized logger from logging_config
-from logging_config import logger
-
-try:
-    from core_imports import auto_register_module
-
-    auto_register_module(globals(), __name__)
-except ImportError:
-    pass  # Continue without auto-registration if not available
+# Logger and registration handled by setup_module above
 
 # Define constants dependent on the CHROME_CONFIG values
 # Handle the case where selenium_config might be None

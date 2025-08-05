@@ -9,15 +9,7 @@ for efficient genealogical research and family tree data processing.
 """
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    standardize_module_imports,
-    auto_register_module,
-    get_logger,
-    safe_execute,
-    register_function,
-    get_function,
-    is_function_available,
-)
+from standard_imports import setup_module
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
@@ -34,11 +26,7 @@ from error_handling import (
     ErrorContext,
 )
 
-# STEP 2: Auto-register immediately (REQUIRED)
-auto_register_module(globals(), __name__)
-
-# STEP 3: Standardize imports if needed (OPTIONAL)
-standardize_module_imports()
+logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
 import os
