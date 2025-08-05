@@ -330,6 +330,12 @@ class SessionValidator:
             logger.debug("Skipping essential cookies check for Action 7 - API login verification is sufficient")
             return True, None
 
+        # For Action 8 (Send Messages), cookies may not be immediately available but login verification works
+        # Skip cookie check for Action 8 since API login verification is sufficient
+        if action_name and "send_messages" in action_name:
+            logger.debug("Skipping essential cookies check for Action 8 - API login verification is sufficient")
+            return True, None
+
         try:
             if not browser_manager.get_cookies(essential_cookies):
                 error_msg = f"Essential cookies not found: {essential_cookies}"

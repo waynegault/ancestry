@@ -410,26 +410,6 @@ def exec_actn(
             )
             should_close = True
 
-        # Perform close if needed and possible
-        if should_close and isinstance(session_manager, SessionManager):
-            if session_manager.browser_needed and session_manager.driver_live:
-                logger.debug(f"Closing browser session...")
-                # Close browser but keep DB connections for most actions
-                session_manager.close_browser()
-                logger.debug(f"Browser session closed. DB connections kept.")
-            elif should_close and action_name in ["all_but_first_actn"]:
-                # For specific actions, close everything including DB
-                logger.debug(f"Closing all connections including database...")
-                session_manager.close_sess(keep_db=False)
-                logger.debug(f"All connections closed.")
-        # Log if session is kept open
-        elif (
-            isinstance(session_manager, SessionManager)
-            and session_manager.driver_live
-            and not should_close
-        ):
-            logger.debug(f"Keeping session live after '{action_name}'.")
-
         # --- Performance Logging ---
         duration = time.time() - start_time
         hours, remainder = divmod(duration, 3600)
@@ -465,6 +445,26 @@ def exec_actn(
         logger.info(f"Duration: {formatted_duration}")
         logger.info(mem_log)
         logger.info("------------------------------------------\n")
+
+        # Perform cleanup AFTER footer to prevent logs bleeding after completion
+        if should_close and isinstance(session_manager, SessionManager):
+            if session_manager.browser_needed and session_manager.driver_live:
+                logger.debug(f"Closing browser session...")
+                # Close browser but keep DB connections for most actions
+                session_manager.close_browser()
+                logger.debug(f"Browser session closed. DB connections kept.")
+            elif should_close and action_name in ["all_but_first_actn"]:
+                # For specific actions, close everything including DB
+                logger.debug(f"Closing all connections including database...")
+                session_manager.close_sess(keep_db=False)
+                logger.debug(f"All connections closed.")
+        # Log if session is kept open
+        elif (
+            isinstance(session_manager, SessionManager)
+            and session_manager.driver_live
+            and not should_close
+        ):
+            logger.debug(f"Keeping session live after '{action_name}'.")
 
     return final_outcome
 
