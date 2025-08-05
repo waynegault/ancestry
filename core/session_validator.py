@@ -336,6 +336,18 @@ class SessionValidator:
             logger.debug("Skipping essential cookies check for Action 8 - API login verification is sufficient")
             return True, None
 
+        # For Action 9 (Process Productive Messages), cookies may not be immediately available but login verification works
+        # Skip cookie check for Action 9 since API login verification is sufficient
+        if action_name and "process_productive" in action_name:
+            logger.debug("Skipping essential cookies check for Action 9 - API login verification is sufficient")
+            return True, None
+
+        # For Action 10 (GEDCOM Report), this is a local file operation that doesn't require cookies
+        # Skip cookie check for Action 10 since it works with local GEDCOM files
+        if action_name and ("main" in action_name or "gedcom" in action_name.lower()):
+            logger.debug("Skipping essential cookies check for Action 10 - Local file operation")
+            return True, None
+
         try:
             if not browser_manager.get_cookies(essential_cookies):
                 error_msg = f"Essential cookies not found: {essential_cookies}"
