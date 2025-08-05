@@ -1576,12 +1576,16 @@ def _extract_family_from_person_facts(person_facts: List[Dict]) -> Dict:
     return family_data
 
 
-def _fetch_family_data_alternative(person_id: str, tree_id: str) -> Dict:
+def _fetch_family_data_alternative(person_id: str, tree_id: str, session_manager_local) -> Dict:
     """Fetch family data using alternative API endpoints when the main API doesn't provide family info."""
     try:
-        from api_utils import call_treesui_list_api
+        # config_schema is already imported at the top of the file
 
-        # Try to get family members by searching for related people in the tree
+        # Validate session manager
+        if not session_manager_local:
+            logger.debug("No session manager available for family search")
+            return {}
+
         family_data = {
             "Fathers": [],
             "Mothers": [],
@@ -1591,23 +1595,35 @@ def _fetch_family_data_alternative(person_id: str, tree_id: str) -> Dict:
             "Children": []
         }
 
-        # Get the person's surname to search for potential family members
+        # Get the person's surname by searching for the specific person first
         person_surname = ""
+        person_birth_year = None
+
         try:
-            # Extract surname from the person_id by making a quick API call
-            search_params = {
-                "tree_id": tree_id,
-                "limit": 1,
-                "fields": "NAMES,EVENTS,GENDER",
-                "person_id": person_id
+            # Search for the specific person to get their details
+            person_search_criteria = {
+                "fn": "",  # Empty first name to get all results
+                "ln": "",  # We'll search by person ID if possible
+                "limit": 100
             }
 
-            person_data = call_treesui_list_api(search_params)
-            if person_data and len(person_data) > 0:
-                person_surname = person_data[0].get("SurnamePart", "")
-                logger.debug(f"Extracted surname '{person_surname}' for family search")
+            base_url = config_schema.api.base_url.rstrip("/")
+
+            # Use the existing TreesUI List API call infrastructure
+            person_results = _call_direct_treesui_list_api(
+                session_manager_local, tree_id, person_search_criteria, base_url
+            )
+
+            if person_results:
+                # Find the specific person in the results
+                for person_data in person_results:
+                    if person_data.get("PersonId") == person_id:
+                        person_surname = person_data.get("SurnamePart", "")
+                        person_birth_year = person_data.get("BirthYear")
+                        logger.debug(f"Found person data: surname='{person_surname}', birth_year={person_birth_year}")
+                        break
         except Exception as e:
-            logger.debug(f"Could not extract surname for family search: {e}")
+            logger.debug(f"Could not get person details for family search: {e}")
             return {}
 
         if not person_surname:
@@ -1615,88 +1631,87 @@ def _fetch_family_data_alternative(person_id: str, tree_id: str) -> Dict:
             return {}
 
         # Search for people with the same surname in the tree (potential family members)
-        family_search_params = {
-            "tree_id": tree_id,
-            "limit": 50,  # Get more results to find family members
-            "fields": "NAMES,EVENTS,GENDER",
-            "surname": person_surname
+        family_search_criteria = {
+            "ln": person_surname,
+            "limit": 50  # Get more results to find family members
         }
 
-        potential_family = call_treesui_list_api(family_search_params)
-        if not potential_family:
-            logger.debug("No potential family members found")
-            return {}
+        try:
+            potential_family = _call_direct_treesui_list_api(
+                session_manager_local, tree_id, family_search_criteria, base_url
+            )
 
-        logger.debug(f"Found {len(potential_family)} potential family members with surname '{person_surname}'")
+            if not potential_family:
+                logger.debug("No potential family members found")
+                return {}
 
-        # Analyze birth years and relationships to categorize family members
-        person_birth_year = None
-        for person in potential_family:
-            if person.get("PersonId") == person_id:
-                person_birth_year = person.get("BirthYear")
-                break
+            logger.debug(f"Found {len(potential_family)} potential family members with surname '{person_surname}'")
 
-        if not person_birth_year:
-            logger.debug("Could not determine person's birth year for family analysis")
-            return {}
+            if not person_birth_year:
+                logger.debug("Could not determine person's birth year for family analysis")
+                return {}
 
-        # Categorize family members based on birth year differences and naming patterns
-        for family_member in potential_family:
-            if family_member.get("PersonId") == person_id:
-                continue  # Skip the person themselves
+            # Categorize family members based on birth year differences and naming patterns
+            for family_member in potential_family:
+                if family_member.get("PersonId") == person_id:
+                    continue  # Skip the person themselves
 
-            member_birth_year = family_member.get("BirthYear")
-            member_gender = family_member.get("Gender", "").lower()
-            member_name = family_member.get("FullName", "Unknown")
+                member_birth_year = family_member.get("BirthYear")
+                member_gender = family_member.get("Gender", "").lower()
+                member_name = family_member.get("FullName", "Unknown")
 
-            if not member_birth_year:
-                continue
+                if not member_birth_year:
+                    continue
 
-            year_diff = person_birth_year - member_birth_year
+                year_diff = person_birth_year - member_birth_year
 
-            # Parents (typically 20-40 years older)
-            if 20 <= year_diff <= 50:
-                if member_gender == "m":
-                    family_data["Fathers"].append({
+                # Parents (typically 20-50 years older)
+                if 20 <= year_diff <= 50:
+                    if member_gender == "m":
+                        family_data["Fathers"].append({
+                            "name": member_name,
+                            "id": family_member.get("PersonId", ""),
+                            "gender": "M",
+                            "birth_year": member_birth_year
+                        })
+                    elif member_gender == "f":
+                        family_data["Mothers"].append({
+                            "name": member_name,
+                            "id": family_member.get("PersonId", ""),
+                            "gender": "F",
+                            "birth_year": member_birth_year
+                        })
+
+                # Siblings (within 15 years of age)
+                elif -15 <= year_diff <= 15:
+                    family_data["Siblings"].append({
                         "name": member_name,
                         "id": family_member.get("PersonId", ""),
-                        "gender": "M",
+                        "gender": member_gender.upper(),
                         "birth_year": member_birth_year
                     })
-                elif member_gender == "f":
-                    family_data["Mothers"].append({
+
+                # Children (typically 20-50 years younger)
+                elif -50 <= year_diff <= -20:
+                    family_data["Children"].append({
                         "name": member_name,
                         "id": family_member.get("PersonId", ""),
-                        "gender": "F",
+                        "gender": member_gender.upper(),
                         "birth_year": member_birth_year
                     })
 
-            # Siblings (within 15 years of age)
-            elif -15 <= year_diff <= 15:
-                family_data["Siblings"].append({
-                    "name": member_name,
-                    "id": family_member.get("PersonId", ""),
-                    "gender": member_gender.upper(),
-                    "birth_year": member_birth_year
-                })
+            # Remove empty categories
+            family_data = {k: v for k, v in family_data.items() if v}
 
-            # Children (typically 20-40 years younger)
-            elif -50 <= year_diff <= -20:
-                family_data["Children"].append({
-                    "name": member_name,
-                    "id": family_member.get("PersonId", ""),
-                    "gender": member_gender.upper(),
-                    "birth_year": member_birth_year
-                })
+            if family_data:
+                logger.debug(f"Successfully extracted family data: {len(family_data)} categories with members")
+                return family_data
+            else:
+                logger.debug("No family relationships could be determined")
+                return {}
 
-        # Remove empty categories
-        family_data = {k: v for k, v in family_data.items() if v}
-
-        if family_data:
-            logger.debug(f"Successfully extracted family data: {len(family_data)} categories with members")
-            return family_data
-        else:
-            logger.debug("No family relationships could be determined")
+        except Exception as e:
+            logger.debug(f"Error searching for family members: {e}")
             return {}
 
     except Exception as e:
@@ -2727,7 +2742,7 @@ def _handle_supplementary_info_phase(
         candidate_person_id = selected_candidate_processed.get("raw_data", {}).get("PersonId", "")
         candidate_tree_id = selected_candidate_processed.get("raw_data", {}).get("TreeId", "")
         if candidate_person_id and candidate_tree_id:
-            alternative_family_data = _fetch_family_data_alternative(candidate_person_id, candidate_tree_id)
+            alternative_family_data = _fetch_family_data_alternative(candidate_person_id, candidate_tree_id, session_manager_local)
             if alternative_family_data:
                 _display_family_info(alternative_family_data)
             else:
