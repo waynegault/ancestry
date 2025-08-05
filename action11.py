@@ -4457,7 +4457,22 @@ def _handle_supplementary_info_phase(
 
 
 def _validate_dependencies() -> bool:
-    """Validate that all required dependencies are available."""
+    """
+    Validate that all required dependencies are available for API report generation.
+
+    Checks for the availability of core utilities, API utilities, GEDCOM utilities,
+    configuration schema, and session manager. Logs detailed error messages for
+    any missing dependencies.
+
+    Returns:
+        bool: True if all dependencies are available, False otherwise.
+
+    Example:
+        >>> if _validate_dependencies():
+        ...     print("All dependencies available")
+        ... else:
+        ...     print("Missing dependencies - check logs")
+    """
     if not all(
         [
             CORE_UTILS_AVAILABLE,
@@ -4489,7 +4504,21 @@ def _validate_dependencies() -> bool:
 
 
 def _validate_browser_session() -> bool:
-    """Validate that browser session is available and ready."""
+    """
+    Validate that browser session is available and ready for API operations.
+
+    Checks that the session manager has a valid WebDriver instance and logs
+    detailed session information for debugging purposes.
+
+    Returns:
+        bool: True if browser session is valid and ready, False otherwise.
+
+    Example:
+        >>> if _validate_browser_session():
+        ...     print("Browser session ready for API calls")
+        ... else:
+        ...     print("Browser session not available")
+    """
     logger.debug("Using session initialized by action execution framework.")
     logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
     logger.debug(f"Session manager driver: {session_manager.driver}")
@@ -4505,7 +4534,22 @@ def _validate_browser_session() -> bool:
 
 
 def _refresh_cookies() -> bool:
-    """Refresh cookies from browser session to requests session."""
+    """
+    Refresh authentication cookies from browser session to requests session.
+
+    Transfers cookies from the Selenium WebDriver session to the requests session
+    to maintain authentication state for API calls. This is essential for
+    maintaining login status across different request methods.
+
+    Returns:
+        bool: True if cookies were successfully refreshed, False otherwise.
+
+    Example:
+        >>> if _refresh_cookies():
+        ...     print("Cookies refreshed successfully")
+        ... else:
+        ...     print("Failed to refresh cookies")
+    """
     if session_manager.driver:
         try:
             selenium_cookies = session_manager.driver.get_cookies()
@@ -4674,8 +4718,26 @@ def _execute_main_workflow() -> bool:
     return True
 
 
-def handle_api_report(session_manager_param=None):
-    """Orchestrates the process using only initial API data for comparison."""
+def handle_api_report(session_manager_param: Optional[Any] = None) -> bool:
+    """
+    Orchestrate the complete API report generation process.
+
+    Manages the entire workflow from dependency validation through search,
+    selection, and report generation. Handles authentication, session management,
+    and error recovery throughout the process.
+
+    Args:
+        session_manager_param: Optional SessionManager instance to use instead
+                             of the global session manager.
+
+    Returns:
+        bool: True if report generation succeeded, False otherwise.
+
+    Example:
+        >>> success = handle_api_report()
+        >>> if success:
+        ...     print("API report generated successfully")
+    """
 
     # Use the session_manager passed by the framework if available
     global session_manager
@@ -4707,8 +4769,20 @@ def handle_api_report(session_manager_param=None):
 @timeout_protection(timeout=1800)  # 30 minutes for API report generation
 @graceful_degradation(fallback_value=None)
 @error_context("action11_api_report")
-def main():
-    """Main execution flow for Action 11 (API Report)."""
+def main() -> None:
+    """
+    Main execution flow for Action 11 API Report with comprehensive error handling.
+
+    Entry point for the Action 11 module that handles session validation,
+    report generation, and error recovery. Includes circuit breaker, retry,
+    and timeout protection for robust operation.
+
+    Returns:
+        None: Prints results to console and logs detailed information.
+
+    Example:
+        >>> main()  # Executes complete API report workflow
+    """
     logger.debug("--- Action 11: API Report Starting ---")
     if not session_manager:
         # Log critical error and display to user
@@ -5021,8 +5095,26 @@ def _extract_year_from_date(date_str: str) -> Optional[int]:
     return None
 
 
-def run_action11(session_manager_param=None, *_):
-    """Wrapper function for main.py to call."""
+def run_action11(session_manager_param: Optional[Any] = None, *_: Any) -> Optional[bool]:
+    """
+    Wrapper function for main.py integration and external module calls.
+
+    Provides a standardized interface for calling Action 11 from the main
+    application framework. Handles session manager parameter passing and
+    maintains compatibility with the exec_actn system.
+
+    Args:
+        session_manager_param: Optional SessionManager instance to use.
+        *_: Additional arguments (ignored for compatibility).
+
+    Returns:
+        Optional[bool]: Result from handle_api_report, or None on error.
+
+    Example:
+        >>> result = run_action11(my_session_manager)
+        >>> if result:
+        ...     print("Action 11 completed successfully")
+    """
     # Use the session_manager passed by the framework if available
     if session_manager_param:
         return handle_api_report(session_manager_param)
@@ -5030,8 +5122,25 @@ def run_action11(session_manager_param=None, *_):
         return handle_api_report()
 
 
-def load_test_person_from_env():
-    """Load Fraser Gault test person data from environment variables."""
+def load_test_person_from_env() -> Dict[str, Any]:
+    """
+    Load Fraser Gault test person data from environment variables.
+
+    Retrieves test person information from environment variables with sensible
+    defaults for genealogical testing. Used for consistent test data across
+    different testing scenarios.
+
+    Returns:
+        Dict[str, Any]: Dictionary containing test person data including name,
+                       birth year, birth place, gender, spouse, and children.
+
+    Example:
+        >>> test_person = load_test_person_from_env()
+        >>> print(f"Testing with {test_person['name']}")
+        Testing with Fraser Gault
+        >>> print(f"Born: {test_person['birth_year']}")
+        Born: 1941
+    """
     load_dotenv()
 
     return {

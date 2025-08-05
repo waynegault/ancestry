@@ -2489,8 +2489,21 @@ def run_comprehensive_tests() -> bool:
 
 
 # Test functions for comprehensive testing
-def test_function_availability():
-    """Test that required GEDCOM functions are available with detailed verification."""
+def test_function_availability() -> bool:
+    """
+    Test that required GEDCOM functions are available with detailed verification.
+
+    Verifies the availability and callability of essential GEDCOM processing
+    functions. Provides detailed reporting on function availability and
+    descriptions of their purposes.
+
+    Returns:
+        bool: True if all required functions are available, False otherwise.
+
+    Example:
+        >>> if test_function_availability():
+        ...     print("All GEDCOM functions available")
+    """
     required_functions = [
         ("_is_individual", "Individual record detection"),
         ("_is_record", "General record validation"),
