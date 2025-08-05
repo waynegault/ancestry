@@ -246,7 +246,7 @@ if __name__ == "__main__":
         standardize_module_imports()
     except ImportError:
         # Fallback for testing environment
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
     if "--test" in sys.argv:
         print("🏗️ Running Core Package comprehensive test suite...")

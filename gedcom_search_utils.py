@@ -163,6 +163,7 @@ def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
                     logger.info("Caches built successfully")
                 except Exception as e:
                     logger.error(f"Error building caches: {e}", exc_info=True)
+                    # Continue without caches rather than failing completely
             else:
                 logger.warning("GedcomData does not have build_caches method")
 
@@ -172,7 +173,8 @@ def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
             return None
     except Exception as e:
         logger.error(f"Error loading GEDCOM file: {e}", exc_info=True)
-        return None
+        # Use exception chaining for better error context
+        raise RuntimeError(f"Failed to load GEDCOM data from {gedcom_path}") from e
 
 
 def get_gedcom_data() -> Optional[GedcomData]:
@@ -216,7 +218,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     if not gedcom_path.is_absolute():
         # If it's a relative path, make it absolute relative to the project root
         original_path = gedcom_path
-        gedcom_path = Path(os.path.dirname(os.path.abspath(__file__))) / gedcom_path
+        gedcom_path = Path(__file__).parent.resolve() / gedcom_path
         logger.debug(
             f"Converted relative path '{original_path}' to absolute path: {gedcom_path}"
         )
@@ -318,9 +320,9 @@ def search_gedcom_for_criteria(
                 gedcom_path = (
                     str(config_schema.database.gedcom_file_path)
                     if config_schema
-                    else os.path.join(os.path.dirname(__file__), "Data", "family.ged")
+                    else str(Path(__file__).parent / "Data" / "family.ged")
                 )
-            if not gedcom_path or not os.path.exists(gedcom_path):
+            if not gedcom_path or not Path(gedcom_path).exists():
                 raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
 
             # Load GEDCOM data
@@ -504,9 +506,9 @@ def get_gedcom_family_details(
                 gedcom_path = (
                     str(config_schema.database.gedcom_file_path)
                     if config_schema
-                    else os.path.join(os.path.dirname(__file__), "Data", "family.ged")
+                    else str(Path(__file__).parent / "Data" / "family.ged")
                 )
-            if not gedcom_path or not os.path.exists(gedcom_path):
+            if not gedcom_path or not Path(gedcom_path).exists():
                 raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
 
             # Load GEDCOM data
@@ -744,9 +746,9 @@ def get_gedcom_relationship_path(
                 gedcom_path = (
                     str(config_schema.database.gedcom_file_path)
                     if config_schema
-                    else os.path.join(os.path.dirname(__file__), "Data", "family.ged")
+                    else str(Path(__file__).parent / "Data" / "family.ged")
                 )
-            if gedcom_path and not os.path.exists(gedcom_path):
+            if gedcom_path and not Path(gedcom_path).exists():
                 return f"(GEDCOM file not found at {gedcom_path})"
 
             # Load GEDCOM data

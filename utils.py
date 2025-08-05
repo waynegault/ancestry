@@ -4087,18 +4087,19 @@ def safe_file_operation(file_path: Union[str, Path], mode: str = 'r', encoding: 
         file_handle = open(file_path, mode, encoding=encoding)
         yield file_handle
         logger.debug(f"File operation completed successfully: {file_path}")
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         logger.error(f"File not found: {file_path}")
-        raise
-    except PermissionError:
+        raise FileNotFoundError(f"Cannot access file: {file_path}") from e
+    except PermissionError as e:
         logger.error(f"Permission denied accessing file: {file_path}")
-        raise
+        raise PermissionError(f"Access denied to file: {file_path}") from e
     except UnicodeDecodeError as e:
         logger.error(f"Encoding error reading file {file_path}: {e}")
-        raise
+        raise UnicodeDecodeError(e.encoding, e.object, e.start, e.end,
+                               f"Encoding error in file {file_path}: {e.reason}") from e
     except Exception as e:
         logger.error(f"Unexpected error with file {file_path}: {e}")
-        raise
+        raise RuntimeError(f"Unexpected error accessing file {file_path}") from e
     finally:
         if file_handle and not file_handle.closed:
             try:

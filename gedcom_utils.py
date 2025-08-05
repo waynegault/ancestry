@@ -1798,13 +1798,14 @@ class GedcomData:
                 if self.path.exists()
                 else "unknown"
             )
-            logger.critical(
-                f"Failed to load/parse GEDCOM file {self.path} (size: {file_size_mb:.2f}MB): {e}. "
+            error_msg = (
+                f"Failed to load/parse GEDCOM file {self.path} (size: {file_size_mb:.2f}MB). "
                 f"Error type: {type(e).__name__}. This may indicate file corruption, "
-                f"unsupported GEDCOM format, or encoding issues.",
-                exc_info=True,
+                f"unsupported GEDCOM format, or encoding issues."
             )
-            raise
+            logger.critical(error_msg, exc_info=True)
+            # Use exception chaining to preserve the original error context
+            raise RuntimeError(error_msg) from e
         self.build_caches()  # Build caches upon initialization
 
     def build_caches(self):
