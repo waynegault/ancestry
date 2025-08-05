@@ -3042,8 +3042,13 @@ def _handle_supplementary_info_phase(
 # End of _handle_supplementary_info_phase
 
 
-def handle_api_report():
+def handle_api_report(session_manager_param=None):
     """Orchestrates the process using only initial API data for comparison."""
+    # Use the session_manager passed by the framework if available
+    global session_manager
+    if session_manager_param:
+        session_manager = session_manager_param
+        logger.debug("Using session_manager passed by framework.")
     # Dependency Checks...
     if not all(
         [
@@ -3076,22 +3081,23 @@ def handle_api_report():
         )
         return False
     # Session Setup...
-    # First, ensure the session is ready
-    if not session_manager.ensure_session_ready(action_name="API Report Session Init"):
-        logger.error("Failed to init session.")
-        print("\nERROR: Failed to initialize session.")
-        return False
+    # Session is already initialized by exec_actn framework
+    logger.debug("Using session initialized by action execution framework.")
 
-    # First, check if we're already logged in
+    # Check if we're already logged in
     from utils import login_status
 
-    # Start the browser if it's not already started
+    # Browser session should be started by exec_actn framework
+    logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
+    logger.debug(f"Session manager driver: {session_manager.driver}")
+    logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
+
     if not session_manager.driver:
-        logger.info("Starting browser to check login status...")
-        if not session_manager.start_browser(action_name="API Report Browser Init"):
-            logger.error("Failed to start browser session.")
-            print("\nERROR: Failed to start browser session.")
-            return False
+        logger.error(f"Browser session not available. Session manager: {session_manager}, Driver: {session_manager.driver}")
+        print("\nERROR: Browser session not available.")
+        return False
+    else:
+        logger.info("Browser session is available and ready.")
 
     # Check login status
     login_stat = login_status(session_manager, disable_ui_fallback=True)
@@ -3574,9 +3580,13 @@ def _extract_year_from_date(date_str: str) -> Optional[int]:
     return None
 
 
-def run_action11(*_):
+def run_action11(session_manager_param=None, *_):
     """Wrapper function for main.py to call."""
-    return handle_api_report()
+    # Use the session_manager passed by the framework if available
+    if session_manager_param:
+        return handle_api_report(session_manager_param)
+    else:
+        return handle_api_report()
 
 
 def load_test_person_from_env():

@@ -348,6 +348,12 @@ class SessionValidator:
             logger.debug("Skipping essential cookies check for Action 10 - Local file operation")
             return True, None
 
+        # For Action 11 (API Report), this is an API-based operation that doesn't require browser cookies
+        # Skip cookie check for Action 11 since it uses API calls for data retrieval
+        if action_name and ("run_action11" in action_name or "api_report" in action_name.lower()):
+            logger.debug("Skipping essential cookies check for Action 11 - API-based operation")
+            return True, None
+
         try:
             if not browser_manager.get_cookies(essential_cookies):
                 error_msg = f"Essential cookies not found: {essential_cookies}"
