@@ -62,6 +62,7 @@ from typing import (
     Callable,
     Type,
     Generator,
+    TextIO,
 )  # Consolidated typing imports
 import base64  # For make_ube
 import binascii  # For make_ube
@@ -4052,6 +4053,114 @@ if __name__ == "__main__":
     suite = TestSuite(
         "Core Utilities & Session Management", "utils.py"
     )  # Basic utility functions
+
+
+# === CONTEXT MANAGERS FOR RESOURCE MANAGEMENT ===
+
+@contextlib.contextmanager
+def safe_file_operation(file_path: Union[str, Path], mode: str = 'r', encoding: str = 'utf-8') -> Generator[TextIO, None, None]:
+    """
+    Context manager for safe file operations with automatic cleanup.
+
+    Provides robust file handling with automatic resource cleanup, error handling,
+    and encoding management. Ensures files are properly closed even if exceptions occur.
+
+    Args:
+        file_path: Path to the file to open.
+        mode: File open mode (e.g., 'r', 'w', 'a').
+        encoding: File encoding (default: 'utf-8').
+
+    Yields:
+        TextIO: File object for reading/writing operations.
+
+    Example:
+        >>> with safe_file_operation('data.txt', 'w') as f:
+        ...     f.write('Hello, World!')
+        >>> with safe_file_operation('data.txt', 'r') as f:
+        ...     content = f.read()
+    """
+    file_path = Path(file_path)
+    file_handle = None
+
+    try:
+        logger.debug(f"Opening file: {file_path} (mode: {mode})")
+        file_handle = open(file_path, mode, encoding=encoding)
+        yield file_handle
+        logger.debug(f"File operation completed successfully: {file_path}")
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
+        raise
+    except PermissionError:
+        logger.error(f"Permission denied accessing file: {file_path}")
+        raise
+    except UnicodeDecodeError as e:
+        logger.error(f"Encoding error reading file {file_path}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error with file {file_path}: {e}")
+        raise
+    finally:
+        if file_handle and not file_handle.closed:
+            try:
+                file_handle.close()
+                logger.debug(f"File closed successfully: {file_path}")
+            except Exception as close_error:
+                logger.warning(f"Error closing file {file_path}: {close_error}")
+
+
+@contextlib.contextmanager
+def api_session_context(session_manager: Optional['SessionManager'] = None) -> Generator[requests.Session, None, None]:
+    """
+    Context manager for API session management with automatic cleanup.
+
+    Provides a managed requests session with proper cookie handling, timeout
+    configuration, and automatic cleanup. Integrates with SessionManager for
+    authentication state management.
+
+    Args:
+        session_manager: Optional SessionManager for authentication integration.
+
+    Yields:
+        requests.Session: Configured session for API requests.
+
+    Example:
+        >>> with api_session_context(session_manager) as session:
+        ...     response = session.get('https://api.ancestry.com/endpoint')
+    """
+    session = None
+
+    try:
+        if session_manager and hasattr(session_manager, '_requests_session') and session_manager._requests_session:
+            # Use existing session from SessionManager
+            session = session_manager._requests_session
+            logger.debug("Using existing session from SessionManager")
+        else:
+            # Create new session
+            session = requests.Session()
+            session.timeout = 30  # Default timeout
+            logger.debug("Created new API session")
+
+        # Configure session headers
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+        })
+
+        yield session
+
+    except Exception as e:
+        logger.error(f"Error in API session context: {e}")
+        raise
+    finally:
+        # Only close session if we created it (not from SessionManager)
+        if session and (not session_manager or not hasattr(session_manager, '_requests_session') or session != session_manager._requests_session):
+            try:
+                session.close()
+                logger.debug("API session closed successfully")
+            except Exception as close_error:
+                logger.warning(f"Error closing API session: {close_error}")
+
 
     def test_parse_cookie():
         """Test cookie parsing with various cookie string formats"""
