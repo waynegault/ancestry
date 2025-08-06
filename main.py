@@ -146,7 +146,7 @@ try:
     from dna_gedcom_crossref import DNAGedcomCrossReferencer, DNAMatch
     from research_prioritization import IntelligentResearchPrioritizer
     from gedcom_ai_integration import GedcomAIIntegrator
-    from gedcom_search_utils import get_cached_gedcom_data, load_gedcom_data_with_caching
+    from gedcom_search_utils import get_cached_gedcom_data
     PHASE_12_AVAILABLE = True
     logger.info("Phase 12 GEDCOM AI components loaded successfully")
 except ImportError as e:
