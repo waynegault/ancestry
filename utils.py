@@ -4405,6 +4405,283 @@ async def async_batch_api_requests(
     return sorted_results
 
 
+# === ASYNC FILE I/O OPERATIONS (Phase 7.4.2) ===
+
+try:
+    import aiofiles  # For async file operations
+    AIOFILES_AVAILABLE = True
+except ImportError:
+    AIOFILES_AVAILABLE = False
+    logger.warning("aiofiles not available - async file operations will use thread pool fallback")
+
+@contextlib.asynccontextmanager
+async def async_file_context(
+    file_path: Union[str, Path],
+    mode: str = "r",
+    encoding: str = "utf-8",
+    **kwargs
+):
+    """
+    Async context manager for file operations.
+
+    Uses aiofiles if available, otherwise falls back to thread pool execution
+    of standard file operations for async compatibility.
+
+    Args:
+        file_path: Path to the file
+        mode: File open mode
+        encoding: File encoding
+        **kwargs: Additional arguments for file opening
+
+    Yields:
+        File handle for async operations
+
+    Example:
+        >>> async with async_file_context("data.json", "r") as f:
+        ...     content = await f.read()
+    """
+    file_path = Path(file_path)
+
+    if AIOFILES_AVAILABLE:
+        # Use aiofiles for true async file I/O
+        async with aiofiles.open(file_path, mode=mode, encoding=encoding, **kwargs) as f:
+            logger.debug(f"Async file opened with aiofiles: {file_path} (mode: {mode})")
+            yield f
+    else:
+        # Fallback to thread pool execution
+        loop = asyncio.get_event_loop()
+
+        def _open_file():
+            return open(file_path, mode=mode, encoding=encoding, **kwargs)
+
+        file_handle = await loop.run_in_executor(None, _open_file)
+
+        try:
+            logger.debug(f"Async file opened with thread pool: {file_path} (mode: {mode})")
+
+            # Create async wrapper for file operations
+            class AsyncFileWrapper:
+                def __init__(self, file_handle, loop):
+                    self._file = file_handle
+                    self._loop = loop
+
+                async def read(self, size=-1):
+                    return await self._loop.run_in_executor(None, self._file.read, size)
+
+                async def write(self, data):
+                    return await self._loop.run_in_executor(None, self._file.write, data)
+
+                async def readline(self):
+                    return await self._loop.run_in_executor(None, self._file.readline)
+
+                async def readlines(self):
+                    return await self._loop.run_in_executor(None, self._file.readlines)
+
+                def __getattr__(self, name):
+                    # Delegate other attributes to the underlying file
+                    return getattr(self._file, name)
+
+            yield AsyncFileWrapper(file_handle, loop)
+
+        finally:
+            await loop.run_in_executor(None, file_handle.close)
+
+
+async def async_read_json_file(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+    """
+    Read and parse a JSON file asynchronously.
+
+    Args:
+        file_path: Path to the JSON file
+
+    Returns:
+        Parsed JSON data as dictionary, or None on failure
+
+    Example:
+        >>> data = await async_read_json_file("config.json")
+        >>> if data:
+        ...     print(f"Loaded config with {len(data)} keys")
+    """
+    try:
+        async with async_file_context(file_path, "r") as f:
+            content = await f.read()
+            return json.loads(content)
+    except FileNotFoundError:
+        logger.warning(f"JSON file not found: {file_path}")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in file {file_path}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error reading JSON file {file_path}: {e}")
+        return None
+
+
+async def async_write_json_file(
+    file_path: Union[str, Path],
+    data: Dict[str, Any],
+    indent: int = 2,
+    ensure_ascii: bool = False
+) -> bool:
+    """
+    Write data to a JSON file asynchronously.
+
+    Args:
+        file_path: Path to the JSON file
+        data: Data to write
+        indent: JSON indentation
+        ensure_ascii: Whether to ensure ASCII encoding
+
+    Returns:
+        True if successful, False otherwise
+
+    Example:
+        >>> success = await async_write_json_file(
+        ...     "output.json", {"key": "value"}
+        ... )
+    """
+    try:
+        # Create parent directory if it doesn't exist
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Serialize JSON
+        json_content = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
+
+        async with async_file_context(file_path, "w") as f:
+            await f.write(json_content)
+
+        logger.debug(f"Successfully wrote JSON file: {file_path}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error writing JSON file {file_path}: {e}")
+        return False
+
+
+async def async_read_text_file(file_path: Union[str, Path]) -> Optional[str]:
+    """
+    Read a text file asynchronously.
+
+    Args:
+        file_path: Path to the text file
+
+    Returns:
+        File content as string, or None on failure
+    """
+    try:
+        async with async_file_context(file_path, "r") as f:
+            return await f.read()
+    except Exception as e:
+        logger.error(f"Error reading text file {file_path}: {e}")
+        return None
+
+
+async def async_write_text_file(file_path: Union[str, Path], content: str) -> bool:
+    """
+    Write content to a text file asynchronously.
+
+    Args:
+        file_path: Path to the text file
+        content: Content to write
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        async with async_file_context(file_path, "w") as f:
+            await f.write(content)
+
+        logger.debug(f"Successfully wrote text file: {file_path}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error writing text file {file_path}: {e}")
+        return False
+
+
+async def async_batch_file_operations(
+    operations: List[Dict[str, Any]],
+    max_concurrent: int = 10,
+    progress_callback: Optional[Callable[[int, int], None]] = None
+) -> List[bool]:
+    """
+    Execute multiple file operations concurrently.
+
+    Args:
+        operations: List of operation dictionaries with 'type', 'path', and operation-specific params
+        max_concurrent: Maximum concurrent operations
+        progress_callback: Optional progress callback
+
+    Returns:
+        List of success/failure results
+
+    Example:
+        >>> operations = [
+        ...     {"type": "read_json", "path": "file1.json"},
+        ...     {"type": "write_json", "path": "file2.json", "data": {"key": "value"}},
+        ... ]
+        >>> results = await async_batch_file_operations(operations)
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def bounded_operation(operation: Dict[str, Any], index: int) -> Tuple[int, bool]:
+        async with semaphore:
+            try:
+                op_type = operation["type"]
+                path = operation["path"]
+
+                if op_type == "read_json":
+                    result = await async_read_json_file(path)
+                    success = result is not None
+                elif op_type == "write_json":
+                    success = await async_write_json_file(path, operation["data"])
+                elif op_type == "read_text":
+                    result = await async_read_text_file(path)
+                    success = result is not None
+                elif op_type == "write_text":
+                    success = await async_write_text_file(path, operation["content"])
+                else:
+                    logger.error(f"Unknown operation type: {op_type}")
+                    success = False
+
+                if progress_callback:
+                    progress_callback(index + 1, len(operations))
+
+                return index, success
+
+            except Exception as e:
+                logger.error(f"File operation {index} failed: {e}")
+                return index, False
+
+    # Create tasks for all operations
+    tasks = [
+        bounded_operation(operation, i)
+        for i, operation in enumerate(operations)
+    ]
+
+    # Execute all tasks concurrently
+    logger.info(f"Starting {len(operations)} async file operations with max_concurrent={max_concurrent}")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Sort results by original index and extract success values
+    sorted_results = [False] * len(operations)
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Async file operation failed: {result}")
+            continue
+        index, success = result
+        sorted_results[index] = success
+
+    successful_count = sum(sorted_results)
+    logger.info(f"Completed async file operations: {successful_count}/{len(operations)} successful")
+
+    return sorted_results
+
+
     def test_parse_cookie():
         """Test cookie parsing with various cookie string formats"""
         test_cases = [
