@@ -33,6 +33,17 @@ class GenealogicalTaskGenerator:
         self.task_templates = self._load_task_templates()
         self.task_config = self._load_task_configuration()
 
+        # === PHASE 12: GEDCOM AI INTEGRATION ===
+        try:
+            from gedcom_ai_integration import GedcomAIIntegrator
+            self.gedcom_ai_integrator = GedcomAIIntegrator()
+            self.gedcom_ai_available = True
+            logger.info("GEDCOM AI integration loaded in task generator")
+        except ImportError as e:
+            logger.debug(f"GEDCOM AI integration not available in task generator: {e}")
+            self.gedcom_ai_integrator = None
+            self.gedcom_ai_available = False
+
     def _load_task_templates(self) -> Dict[str, Dict[str, str]]:
         """Load genealogical research task templates."""
         return {
@@ -111,23 +122,37 @@ class GenealogicalTaskGenerator:
         self,
         person_data: Dict[str, Any],
         extracted_data: Dict[str, Any],
-        suggested_tasks: List[str]
+        suggested_tasks: List[str],
+        gedcom_data: Any = None
     ) -> List[Dict[str, Any]]:
         """
         Generate specialized research tasks based on extracted genealogical data.
-        
+
         Args:
             person_data: Information about the person being researched
             extracted_data: Genealogical data extracted from conversations
             suggested_tasks: Basic AI-generated task suggestions
-            
+            gedcom_data: Optional GEDCOM data for AI-enhanced analysis
+
         Returns:
             List of enhanced task dictionaries with titles, descriptions, categories, and priorities
         """
         try:
             enhanced_tasks = []
-            
-            # Generate tasks based on extracted data types
+
+            # === PHASE 12: GEDCOM AI ENHANCED TASK GENERATION ===
+            if self.gedcom_ai_available and gedcom_data:
+                try:
+                    logger.debug("Generating GEDCOM AI-enhanced tasks")
+                    ai_enhanced_tasks = self.gedcom_ai_integrator.generate_enhanced_research_tasks(
+                        person_data, extracted_data, gedcom_data
+                    )
+                    enhanced_tasks.extend(ai_enhanced_tasks)
+                    logger.info(f"Generated {len(ai_enhanced_tasks)} GEDCOM AI-enhanced tasks")
+                except Exception as e:
+                    logger.warning(f"GEDCOM AI task generation failed: {e}, falling back to standard generation")
+
+            # Generate tasks based on extracted data types (standard approach)
             enhanced_tasks.extend(self._generate_vital_records_tasks(extracted_data))
             enhanced_tasks.extend(self._generate_dna_analysis_tasks(extracted_data))
             enhanced_tasks.extend(self._generate_verification_tasks(extracted_data))
@@ -136,17 +161,17 @@ class GenealogicalTaskGenerator:
             enhanced_tasks.extend(self._generate_military_tasks(extracted_data))
             enhanced_tasks.extend(self._generate_occupation_tasks(extracted_data))
             enhanced_tasks.extend(self._generate_location_tasks(extracted_data))
-            
+
             # Add fallback tasks from AI suggestions if no specific tasks generated
             if not enhanced_tasks and suggested_tasks:
                 enhanced_tasks.extend(self._create_fallback_tasks(person_data, suggested_tasks))
-            
+
             # Prioritize and limit tasks
             prioritized_tasks = self._prioritize_and_limit_tasks(enhanced_tasks)
-            
-            logger.info(f"Generated {len(prioritized_tasks)} enhanced research tasks")
+
+            logger.info(f"Generated {len(prioritized_tasks)} enhanced research tasks (GEDCOM AI: {'enabled' if self.gedcom_ai_available and gedcom_data else 'disabled'})")
             return prioritized_tasks
-            
+
         except Exception as e:
             logger.error(f"Error generating research tasks: {e}")
             return self._create_fallback_tasks(person_data, suggested_tasks)
