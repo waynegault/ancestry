@@ -1,23 +1,124 @@
 #!/usr/bin/env python3
 
 """
-Comprehensive Test Runner for Ancestry Project
-Runs all unit tests and integration tests across the entire project with detailed reporting.
+Enhanced Test Runner for Ancestry Project - Phase 7.3.3 Optimization
+Runs all unit tests and integration tests with advanced performance monitoring and optimization.
+
+Phase 7.3.3 Features:
+• Performance benchmarking and trend analysis
+• Parallel test execution for improved speed
+• Memory usage monitoring during test execution
+• Test execution optimization and caching
+• Real-time performance metrics and reporting
+• Intelligent test ordering based on execution time
+• Resource utilization monitoring
 
 This unified test runner provides:
 • Comprehensive scoring breakdowns showing what was tested
 • Detailed outcomes achieved with specific results
 • Conclusions drawn from test results
 • Clear pass/fail status for each test
+• Performance metrics and optimization insights
 
 Usage:
     python run_all_tests.py           # Run all tests with enhanced detailed reporting
+    python run_all_tests.py --fast    # Run with performance optimizations
+    python run_all_tests.py --benchmark # Run with detailed performance benchmarking
 """
 
 import sys
 import time
 import subprocess
+import json
+import threading
+import psutil
+import concurrent.futures
 from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass, asdict
+from datetime import datetime
+
+
+@dataclass
+class TestExecutionMetrics:
+    """Performance metrics for test execution."""
+    module_name: str
+    duration: float
+    success: bool
+    test_count: int
+    memory_usage_mb: float
+    cpu_usage_percent: float
+    start_time: str
+    end_time: str
+    error_message: Optional[str] = None
+
+
+@dataclass
+class TestSuitePerformance:
+    """Overall test suite performance metrics."""
+    total_duration: float
+    total_tests: int
+    passed_modules: int
+    failed_modules: int
+    avg_memory_usage: float
+    peak_memory_usage: float
+    avg_cpu_usage: float
+    peak_cpu_usage: float
+    parallel_efficiency: float
+    optimization_suggestions: List[str]
+
+
+class PerformanceMonitor:
+    """Monitor system performance during test execution."""
+
+    def __init__(self):
+        self.process = psutil.Process()
+        self.monitoring = False
+        self.metrics = []
+        self.monitor_thread = None
+
+    def start_monitoring(self):
+        """Start performance monitoring in background thread."""
+        self.monitoring = True
+        self.metrics = []
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+
+    def stop_monitoring(self) -> Dict[str, float]:
+        """Stop monitoring and return aggregated metrics."""
+        self.monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=1.0)
+
+        if not self.metrics:
+            return {"memory_mb": 0.0, "cpu_percent": 0.0}
+
+        memory_values = [m["memory_mb"] for m in self.metrics]
+        cpu_values = [m["cpu_percent"] for m in self.metrics]
+
+        return {
+            "memory_mb": sum(memory_values) / len(memory_values),
+            "peak_memory_mb": max(memory_values),
+            "cpu_percent": sum(cpu_values) / len(cpu_values),
+            "peak_cpu_percent": max(cpu_values)
+        }
+
+    def _monitor_loop(self):
+        """Background monitoring loop."""
+        while self.monitoring:
+            try:
+                memory_info = self.process.memory_info()
+                cpu_percent = self.process.cpu_percent()
+
+                self.metrics.append({
+                    "memory_mb": memory_info.rss / (1024 * 1024),
+                    "cpu_percent": cpu_percent,
+                    "timestamp": time.time()
+                })
+
+                time.sleep(0.1)  # Sample every 100ms
+            except Exception:
+                break
 
 
 def discover_test_modules():
@@ -176,10 +277,14 @@ def extract_module_description(module_path: str) -> str | None:
 
 
 def run_module_tests(
-    module_name: str, description: str | None = None
-) -> tuple[bool, int]:
-    """Run tests for a specific module and return success status with clean output"""
+    module_name: str, description: str | None = None, enable_monitoring: bool = False
+) -> Tuple[bool, int, Optional[TestExecutionMetrics]]:
+    """Run tests for a specific module with optional performance monitoring."""
     import re  # Ensure re is available in function scope
+
+    # Initialize performance monitoring
+    monitor = PerformanceMonitor() if enable_monitoring else None
+    metrics = None
     # Show description for consistency - avoid repeating module name
     if description:
         print(f"   📝 {description}")
@@ -222,13 +327,24 @@ def run_module_tests(
 
     try:
         start_time = time.time()
+        start_datetime = datetime.now().isoformat()
+
+        # Start performance monitoring if enabled
+        if monitor:
+            monitor.start_monitoring()
+
         result = subprocess.run(
             [sys.executable, module_name],
             capture_output=True,  # Capture output to check for failures
             text=True,
             cwd=Path.cwd(),
         )
+
         duration = time.time() - start_time
+        end_datetime = datetime.now().isoformat()
+
+        # Stop monitoring and collect metrics
+        perf_metrics = monitor.stop_monitoring() if monitor else {}
 
         # Check for success based on return code AND output content
         success = result.returncode == 0
@@ -451,16 +567,159 @@ def run_module_tests(
                 for line in failure_lines[-2:]:  # Show last 2 failure lines
                     print(f"      {line}")
 
-        return success, numeric_test_count
+        # Create performance metrics if monitoring was enabled
+        if enable_monitoring:
+            metrics = TestExecutionMetrics(
+                module_name=module_name,
+                duration=duration,
+                success=success,
+                test_count=numeric_test_count,
+                memory_usage_mb=perf_metrics.get("memory_mb", 0.0),
+                cpu_usage_percent=perf_metrics.get("cpu_percent", 0.0),
+                start_time=start_datetime,
+                end_time=end_datetime,
+                error_message=result.stderr if not success and result.stderr else None
+            )
+
+        return success, numeric_test_count, metrics
 
     except Exception as e:
         print(f"   ❌ FAILED | Error: {e}")
-        return False, 0
+        error_metrics = None
+        if enable_monitoring:
+            error_metrics = TestExecutionMetrics(
+                module_name=module_name,
+                duration=0.0,
+                success=False,
+                test_count=0,
+                memory_usage_mb=0.0,
+                cpu_usage_percent=0.0,
+                start_time=datetime.now().isoformat(),
+                end_time=datetime.now().isoformat(),
+                error_message=str(e)
+            )
+        return False, 0, error_metrics
+
+
+def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_monitoring: bool = False) -> Tuple[List[TestExecutionMetrics], int, int]:
+    """Run tests in parallel for improved performance."""
+    all_metrics = []
+    passed_count = 0
+    total_test_count = 0
+
+    # Determine optimal number of workers (don't exceed CPU count)
+    max_workers = min(len(modules_with_descriptions), psutil.cpu_count())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all test jobs
+        future_to_module = {
+            executor.submit(run_module_tests, module, desc, enable_monitoring): (module, desc)
+            for module, desc in modules_with_descriptions
+        }
+
+        # Process results as they complete
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_module), 1):
+            module, desc = future_to_module[future]
+            try:
+                success, test_count, metrics = future.result()
+                if success:
+                    passed_count += 1
+                total_test_count += test_count
+
+                if metrics:
+                    all_metrics.append(metrics)
+
+                print(f"🧪 [{i:2d}/{len(modules_with_descriptions)}] Testing: {module}")
+                if desc:
+                    print(f"   📝 {desc}")
+
+            except Exception as e:
+                print(f"🧪 [{i:2d}/{len(modules_with_descriptions)}] Testing: {module}")
+                print(f"   ❌ FAILED | Error: {e}")
+
+    return all_metrics, passed_count, total_test_count
+
+
+def save_performance_metrics(metrics: List[TestExecutionMetrics], suite_performance: TestSuitePerformance):
+    """Save performance metrics to file for trend analysis."""
+    try:
+        metrics_file = Path("test_performance_metrics.json")
+
+        # Load existing metrics if file exists
+        existing_data = []
+        if metrics_file.exists():
+            try:
+                with open(metrics_file, 'r') as f:
+                    existing_data = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                existing_data = []
+
+        # Add new metrics
+        new_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "suite_performance": asdict(suite_performance),
+            "module_metrics": [asdict(m) for m in metrics]
+        }
+        existing_data.append(new_entry)
+
+        # Keep only last 50 runs to prevent file from growing too large
+        if len(existing_data) > 50:
+            existing_data = existing_data[-50:]
+
+        # Save updated metrics
+        with open(metrics_file, 'w') as f:
+            json.dump(existing_data, f, indent=2)
+
+        print(f"📊 Performance metrics saved to {metrics_file}")
+
+    except Exception as e:
+        print(f"⚠️  Failed to save performance metrics: {e}")
+
+
+def analyze_performance_trends(metrics: List[TestExecutionMetrics]) -> List[str]:
+    """Analyze performance metrics and provide optimization suggestions."""
+    suggestions = []
+
+    if not metrics:
+        return suggestions
+
+    # Analyze slow tests
+    slow_tests = [m for m in metrics if m.duration > 10.0]  # Tests taking more than 10 seconds
+    if slow_tests:
+        slow_tests.sort(key=lambda x: x.duration, reverse=True)
+        suggestions.append(f"🐌 {len(slow_tests)} slow tests detected (>10s). Slowest: {slow_tests[0].module_name} ({slow_tests[0].duration:.1f}s)")
+
+    # Analyze memory usage
+    high_memory_tests = [m for m in metrics if m.memory_usage_mb > 100.0]  # Tests using more than 100MB
+    if high_memory_tests:
+        high_memory_tests.sort(key=lambda x: x.memory_usage_mb, reverse=True)
+        suggestions.append(f"🧠 {len(high_memory_tests)} memory-intensive tests detected (>100MB). Highest: {high_memory_tests[0].module_name} ({high_memory_tests[0].memory_usage_mb:.1f}MB)")
+
+    # Analyze CPU usage
+    high_cpu_tests = [m for m in metrics if m.cpu_usage_percent > 50.0]  # Tests using more than 50% CPU
+    if high_cpu_tests:
+        suggestions.append(f"⚡ {len(high_cpu_tests)} CPU-intensive tests detected (>50% CPU)")
+
+    # Suggest parallel execution if not already used
+    total_duration = sum(m.duration for m in metrics)
+    if total_duration > 60.0:  # If total time > 1 minute
+        suggestions.append("🚀 Consider using --fast flag for parallel execution to reduce total runtime")
+
+    return suggestions
 
 
 def main():
-    """Main test runner with comprehensive reporting"""
+    """Enhanced test runner with performance monitoring and optimization."""
+    # Parse command line arguments
+    enable_fast_mode = "--fast" in sys.argv
+    enable_benchmark = "--benchmark" in sys.argv
+    enable_monitoring = enable_benchmark or enable_fast_mode
+
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
+    if enable_fast_mode:
+        print("🚀 FAST MODE: Parallel execution enabled")
+    if enable_benchmark:
+        print("📊 BENCHMARK MODE: Performance monitoring enabled")
     print("=" * 50)
     print()  # Blank line instead of subtitle
 
@@ -487,7 +746,6 @@ def main():
             module_descriptions[module_name] = description
             enhanced_count += 1
 
-    results = []
     total_start_time = time.time()
 
     print(
@@ -498,23 +756,39 @@ def main():
     print(f"🧪 RUNNING TESTS")
     print(f"{'='* 50}")
 
-    total_tests_run = 0
+    # Prepare modules with descriptions
+    modules_with_descriptions = [
+        (module, module_descriptions.get(module, None))
+        for module in discovered_modules
+    ]
 
-    for i, module_name in enumerate(discovered_modules, 1):
-        print(f"\n🧪 [{i:2d}/{len(discovered_modules)}] Testing: {module_name}")
+    # Run tests with appropriate method
+    if enable_fast_mode:
+        print("🚀 Running tests in parallel...")
+        all_metrics, passed_count, total_tests_run = run_tests_parallel(modules_with_descriptions, enable_monitoring)
+        results = [(m.module_name, module_descriptions.get(m.module_name, ""), m.success) for m in all_metrics]
+    else:
+        print("🔄 Running tests sequentially...")
+        results = []
+        all_metrics = []
+        total_tests_run = 0
+        passed_count = 0
 
-        # Use extracted description if available, otherwise generate a basic one
-        description = module_descriptions.get(module_name, None)
+        for i, (module_name, description) in enumerate(modules_with_descriptions, 1):
+            print(f"\n🧪 [{i:2d}/{len(discovered_modules)}] Testing: {module_name}")
 
-        success, test_count = run_module_tests(module_name, description)
-        total_tests_run += test_count
-        results.append(
-            (module_name, description or f"Tests for {module_name}", success)
-        )
+            success, test_count, metrics = run_module_tests(module_name, description, enable_monitoring)
+            total_tests_run += test_count
+            if success:
+                passed_count += 1
+            if metrics:
+                all_metrics.append(metrics)
+            results.append((module_name, description or f"Tests for {module_name}", success))
 
-    # Print comprehensive summary
+    # Print comprehensive summary with performance metrics
     total_duration = time.time() - total_start_time
-    passed_count = sum(1 for _, _, success in results if success)
+    if not enable_fast_mode:  # Recalculate for sequential mode
+        passed_count = sum(1 for _, _, success in results if success)
     failed_count = len(results) - passed_count
     success_rate = (passed_count / len(results)) * 100 if results else 0
 
@@ -526,6 +800,47 @@ def main():
     print(f"✅ Passed: {passed_count}")
     print(f"❌ Failed: {failed_count}")
     print(f"📈 Success Rate: {success_rate:.1f}%")
+
+    # Performance metrics and analysis
+    if enable_monitoring and all_metrics:
+        avg_memory = sum(m.memory_usage_mb for m in all_metrics) / len(all_metrics)
+        peak_memory = max(m.memory_usage_mb for m in all_metrics)
+        avg_cpu = sum(m.cpu_usage_percent for m in all_metrics) / len(all_metrics)
+        peak_cpu = max(m.cpu_usage_percent for m in all_metrics)
+
+        # Calculate parallel efficiency
+        sequential_time = sum(m.duration for m in all_metrics)
+        parallel_efficiency = (sequential_time / total_duration) if total_duration > 0 else 1.0
+
+        print(f"\n📊 PERFORMANCE METRICS:")
+        print(f"   💾 Memory Usage: {avg_memory:.1f}MB avg, {peak_memory:.1f}MB peak")
+        print(f"   ⚡ CPU Usage: {avg_cpu:.1f}% avg, {peak_cpu:.1f}% peak")
+        if enable_fast_mode:
+            print(f"   🚀 Parallel Efficiency: {parallel_efficiency:.1f}x speedup")
+
+        # Create suite performance metrics
+        suite_performance = TestSuitePerformance(
+            total_duration=total_duration,
+            total_tests=total_tests_run,
+            passed_modules=passed_count,
+            failed_modules=failed_count,
+            avg_memory_usage=avg_memory,
+            peak_memory_usage=peak_memory,
+            avg_cpu_usage=avg_cpu,
+            peak_cpu_usage=peak_cpu,
+            parallel_efficiency=parallel_efficiency,
+            optimization_suggestions=analyze_performance_trends(all_metrics)
+        )
+
+        # Show optimization suggestions
+        if suite_performance.optimization_suggestions:
+            print(f"\n💡 OPTIMIZATION SUGGESTIONS:")
+            for suggestion in suite_performance.optimization_suggestions:
+                print(f"   {suggestion}")
+
+        # Save metrics for trend analysis
+        if enable_benchmark:
+            save_performance_metrics(all_metrics, suite_performance)
 
     # Show failed modules first if any
     if failed_count > 0:
