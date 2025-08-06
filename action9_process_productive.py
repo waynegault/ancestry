@@ -58,6 +58,16 @@ except ImportError as e:
     logger.warning(f"Message personalization not available in action9: {e}")
     MESSAGE_PERSONALIZATION_AVAILABLE = False
     MessagePersonalizer = None
+
+# === PHASE 10.1: GENEALOGICAL TASK TEMPLATES ===
+try:
+    from genealogical_task_templates import GenealogicalTaskGenerator
+    GENEALOGICAL_TASK_GENERATION_AVAILABLE = True
+    logger.info("Genealogical task generation system loaded in action9")
+except ImportError as e:
+    logger.warning(f"Genealogical task generation not available in action9: {e}")
+    GENEALOGICAL_TASK_GENERATION_AVAILABLE = False
+    GenealogicalTaskGenerator = None
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -900,27 +910,71 @@ class PersonProcessor:
             )
             return
 
-        logger.info(f"{log_prefix}: Creating {len(suggested_tasks)} MS To-Do tasks...")
-        for task_index, task_desc in enumerate(suggested_tasks):
-            task_title = (
-                f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
-            )
-            task_body = f"AI Suggested Task ({task_index+1}/{len(suggested_tasks)}): {task_desc}\n\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
+        # Generate enhanced tasks if genealogical task generation is available
+        enhanced_tasks = []
+        if GENEALOGICAL_TASK_GENERATION_AVAILABLE and hasattr(person, 'extracted_genealogical_data'):
+            try:
+                task_generator = GenealogicalTaskGenerator()
+                person_data = {"username": getattr(person, "username", "Unknown")}
+                extracted_data = getattr(person, 'extracted_genealogical_data', {})
 
-            task_ok = ms_graph_utils.create_todo_task(
-                self.ms_state.token,
-                self.ms_state.list_id,
-                task_title,
-                task_body,
-            )
-
-            if task_ok:
-                # This will be tracked by the caller
-                pass
-            else:
-                logger.warning(
-                    f"{log_prefix}: Failed to create MS task: '{task_desc[:100]}...'"
+                enhanced_tasks = task_generator.generate_research_tasks(
+                    person_data,
+                    extracted_data,
+                    suggested_tasks
                 )
+
+                if enhanced_tasks:
+                    logger.info(f"{log_prefix}: Generated {len(enhanced_tasks)} enhanced genealogical tasks")
+                else:
+                    logger.debug(f"{log_prefix}: No enhanced tasks generated, using standard tasks")
+
+            except Exception as e:
+                logger.warning(f"{log_prefix}: Enhanced task generation failed: {e}, using standard tasks")
+                enhanced_tasks = []
+
+        # Use enhanced tasks if available, otherwise fall back to standard tasks
+        if enhanced_tasks:
+            logger.info(f"{log_prefix}: Creating {len(enhanced_tasks)} enhanced MS To-Do tasks...")
+            for task_index, task_data in enumerate(enhanced_tasks):
+                task_title = task_data.get("title", f"Ancestry Research: {person.username or 'Unknown'}")
+                task_body = f"{task_data.get('description', 'Research task')}\n\n--- Task Details ---\nCategory: {task_data.get('category', 'general')}\nPriority: {task_data.get('priority', 'medium')}\nTemplate: {task_data.get('template_used', 'standard')}\n\n--- Match Information ---\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
+
+                task_ok = ms_graph_utils.create_todo_task(
+                    self.ms_state.token,
+                    self.ms_state.list_id,
+                    task_title,
+                    task_body,
+                )
+
+                if task_ok:
+                    logger.debug(f"{log_prefix}: Created enhanced task: {task_title[:50]}...")
+                else:
+                    logger.warning(
+                        f"{log_prefix}: Failed to create enhanced MS task: '{task_title[:100]}...'"
+                    )
+        else:
+            # Fallback to standard task creation
+            logger.info(f"{log_prefix}: Creating {len(suggested_tasks)} standard MS To-Do tasks...")
+            for task_index, task_desc in enumerate(suggested_tasks):
+                task_title = (
+                    f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
+                )
+                task_body = f"AI Suggested Task ({task_index+1}/{len(suggested_tasks)}): {task_desc}\n\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
+
+                task_ok = ms_graph_utils.create_todo_task(
+                    self.ms_state.token,
+                    self.ms_state.list_id,
+                    task_title,
+                    task_body,
+                )
+
+                if task_ok:
+                    logger.debug(f"{log_prefix}: Created standard task: {task_title[:50]}...")
+                else:
+                    logger.warning(
+                        f"{log_prefix}: Failed to create standard MS task: '{task_desc[:100]}...'"
+                    )
 
     def _initialize_ms_graph(self):
         """Initialize MS Graph authentication and list ID if needed."""

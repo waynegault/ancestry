@@ -91,45 +91,20 @@ except ImportError:
 
 # --- Lazy Loading for Large GEDCOM Datasets ---
 class LazyGedcomData:
-    """Lazy loader for large GEDCOM datasets with enhanced memory management."""
+    """Lazy loader for large GEDCOM datasets."""
     def __init__(self, gedcom_path: str):
         self.gedcom_path = gedcom_path
         self._data = None
-        self._load_attempted = False
-        self._load_error = None
 
     @lazy_property
     def data(self):
         # Only load GEDCOM data when accessed
-        if not self._load_attempted:
-            self._load_attempted = True
-            try:
-                from ged4py.parser import GedcomReader
-                self._data = GedcomReader(self.gedcom_path)
-                logger.debug(f"Lazy loaded GEDCOM data from {self.gedcom_path}")
-            except ImportError as e:
-                self._load_error = f"GedcomReader not available: {e}"
-                self._data = None
-            except Exception as e:
-                self._load_error = f"Failed to load GEDCOM: {e}"
-                self._data = None
-                logger.warning(f"Failed to lazy load GEDCOM from {self.gedcom_path}: {e}")
-        
+        try:
+            from ged4py.parser import GedcomReader
+            self._data = GedcomReader(self.gedcom_path)
+        except ImportError:
+            self._data = None
         return self._data
-    
-    def is_loaded(self) -> bool:
-        """Check if data has been loaded"""
-        return self._data is not None
-    
-    def get_load_error(self) -> Optional[str]:
-        """Get any error that occurred during loading"""
-        return self._load_error
-    
-    def reset(self):
-        """Reset the lazy loader to allow reloading"""
-        self._data = None
-        self._load_attempted = False
-        self._load_error = None
 
 
 # --- GEDCOM Cache Module Implementation ---
@@ -374,8 +349,10 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
     if cached_data is not None:
         return cached_data
 
-    # Check disk cache
+    # Initialize disk_cache_key to None
     disk_cache_key = None
+
+    # Check disk cache
     try:
         file_mtime = os.path.getmtime(gedcom_path)
         mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
@@ -392,7 +369,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
                 return disk_cached
     except Exception as e:
         logger.debug(f"Error checking disk cache: {e}")
-        disk_cache_key = None
+        disk_cache_key = None  # Reset to None if there was an error
 
     logger.debug(f"Loading GEDCOM file with aggressive caching: {gedcom_path}")
     start_time = time.time()
@@ -1102,376 +1079,7 @@ def run_comprehensive_tests() -> bool:
     """Run comprehensive GEDCOM cache tests using standardized TestSuite format."""
     return gedcom_cache_module_tests()
 
-    # INITIALIZATION TESTS
-    def test_gedcom_cache_initialization():
-        """Test GEDCOM cache module initialization."""
-        try:
-            # Test module instance
-            module_name = _gedcom_cache_module.get_module_name()
-            assert module_name == "gedcom_cache"  # Test basic cache functionality
-            if is_function_available("GedcomCache"):
-                cache_class = get_function("GedcomCache")
-                if cache_class:
-                    cache = cache_class()
-                    assert cache is not None
-                    assert hasattr(cache, "load")
-                    assert hasattr(cache, "save")
-                    assert hasattr(cache, "invalidate")
 
-            return True
-        except Exception:
-            return False
-
-    suite.run_test(
-        "GEDCOM Cache Module Initialization",
-        test_gedcom_cache_initialization,
-        "Cache module initializes with proper interface and required methods",
-        "Initialization",
-        "Initialize GEDCOM cache module and verify basic structure",
-    )
-
-    def test_memory_cache_operations():
-        """Test basic memory cache operations."""
-        try:
-            test_key = "test_operation_key"
-            test_data = {"test": "data", "timestamp": time.time()}
-
-            # Store in memory cache
-            _store_in_memory_cache(test_key, test_data)
-
-            # Retrieve from memory cache
-            retrieved = _get_from_memory_cache(test_key)
-
-            # Clean up
-            if test_key in _MEMORY_CACHE:
-                del _MEMORY_CACHE[test_key]
-
-            return retrieved == test_data
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Memory Cache Operations",
-        test_memory_cache_operations,
-        "Memory cache stores and retrieves data correctly",
-        "Initialization",
-        "Store and retrieve data from memory cache",
-    )
-
-    # CORE FUNCTIONALITY TESTS
-    def test_gedcom_parsing_caching():
-        """Test GEDCOM file parsing and caching."""
-        try:
-            if is_function_available("parse_and_cache_gedcom"):
-                parser = get_function("parse_and_cache_gedcom")
-
-                # Mock GEDCOM content
-                mock_gedcom_content = """
-                0 HEAD
-                1 SOUR Test
-                1 GEDC
-                2 VERS 5.5.1
-                0 @I1@ INDI
-                1 NAME John /Doe/
-                1 BIRT
-                2 DATE 1 JAN 1950
-                0 TRLR
-                """
-
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".ged", delete=False
-                ) as temp_file:
-                    temp_file.write(mock_gedcom_content)
-                    temp_file.flush()
-
-                    if parser:
-                        result = parser(temp_file.name)
-                        return result is not None
-
-            return True  # Pass if function doesn't exist
-        except Exception:
-            return False
-
-    suite.run_test(
-        "GEDCOM File Parsing and Caching",
-        test_gedcom_parsing_caching,
-        "GEDCOM file parses successfully and caches processed data",
-        "Core",
-        "Parse mock GEDCOM file and cache the processed data",
-    )
-
-    def test_cached_data_retrieval():
-        """Test cached GEDCOM data retrieval."""
-        try:
-            if is_function_available("get_cached_gedcom_data"):
-                retriever = get_function("get_cached_gedcom_data")
-
-                # Test with mock file path
-                test_file_path = "/path/to/test.ged"
-                if retriever:
-                    cached_data = retriever(test_file_path)
-                    # May return None if no cache exists, which is valid
-                    return cached_data is None or isinstance(cached_data, dict)
-
-            return True  # Pass if function doesn't exist
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cached Data Retrieval",
-        test_cached_data_retrieval,
-        "Cache retrieval returns None or valid dictionary data structure",
-        "Core",
-        "Retrieve previously cached GEDCOM data",
-    )
-
-    def test_cache_key_generation():
-        """Test cache key generation consistency."""
-        try:
-            if not (
-                config_schema and hasattr(config_schema.database, "gedcom_file_path")
-            ):
-                return True  # Skip if no GEDCOM configured
-
-            gedcom_path = config_schema.database.gedcom_file_path
-            if not gedcom_path or not Path(gedcom_path).exists():
-                return True  # Skip if file doesn't exist
-
-            key1 = _get_memory_cache_key(str(gedcom_path), "test_operation")
-            key2 = _get_memory_cache_key(str(gedcom_path), "test_operation")
-
-            return key1 == key2  # Keys should be consistent
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cache Key Generation",
-        test_cache_key_generation,
-        "Cache key generation produces consistent keys for identical inputs",
-        "Core",
-        "Generate cache keys for same inputs and verify consistency",
-    )
-
-    # EDGE CASE TESTS
-    def test_memory_cache_expiration():
-        """Test memory cache expiration mechanism."""
-        try:
-            test_key = "expiration_test_key"
-            test_data = "expiration_test_data"
-
-            # Store with expired timestamp
-            _MEMORY_CACHE[test_key] = (test_data, time.time() - _CACHE_MAX_AGE - 1)
-
-            # Should be invalid due to age
-            is_valid = _is_memory_cache_valid(test_key)
-
-            # Clean up
-            if test_key in _MEMORY_CACHE:
-                del _MEMORY_CACHE[test_key]
-
-            return not is_valid  # Should be expired
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Memory Cache Expiration",
-        test_memory_cache_expiration,
-        "Expired cache entries are correctly identified as invalid",
-        "Edge",
-        "Store data with expired timestamp and verify expiration detection",
-    )
-
-    def test_cache_invalidation_file_modification():
-        """Test cache invalidation based on file modification."""
-        try:
-            if is_function_available("check_file_modification"):
-                mod_checker = get_function("check_file_modification")
-
-                with tempfile.NamedTemporaryFile() as temp_file:
-                    # Test modification time checking
-                    initial_time = time.time() - 3600  # 1 hour ago
-                    if mod_checker:
-                        is_modified = mod_checker(temp_file.name, initial_time)
-                        return isinstance(is_modified, bool)
-
-            return True  # Pass if function doesn't exist
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cache Invalidation on File Modification",
-        test_cache_invalidation_file_modification,
-        "File modification detection works correctly for cache management",
-        "Edge",
-        "Check file modification detection for cache invalidation",
-    )
-
-    # INTEGRATION TESTS
-    def test_cache_statistics_collection():
-        """Test cache statistics collection."""
-        try:
-            stats = _gedcom_cache_module.get_stats()
-            required_fields = [
-                "module_name",
-                "memory_cache_entries",
-                "cache_max_age_seconds",
-            ]
-            return all(field in stats for field in required_fields)
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cache Statistics Collection",
-        test_cache_statistics_collection,
-        "Statistics collection returns all required fields",
-        "Integration",
-        "Collect comprehensive cache statistics",
-    )
-
-    def test_cache_health_status():
-        """Test cache health status checking."""
-        try:
-            health = _gedcom_cache_module.get_health_status()
-            required_fields = [
-                "overall_health",
-                "memory_cache_health",
-                "gedcom_file_health",
-            ]
-            return all(field in health for field in required_fields)
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cache Health Status Check",
-        test_cache_health_status,
-        "Health status returns comprehensive system health information",
-        "Integration",
-        "Check overall cache health and component status",
-    )
-
-    # PERFORMANCE TESTS
-    def test_cache_performance_metrics():
-        """Test cache performance metrics collection."""
-        try:
-            if is_function_available("get_cache_performance_stats"):
-                stats_func = get_function("get_cache_performance_stats")
-                if stats_func:
-                    stats = stats_func()
-
-                    if isinstance(stats, dict):
-                        # Check for common performance metrics
-                        expected_metrics = [
-                            "hit_rate",
-                            "miss_rate",
-                            "cache_size",
-                            "average_load_time",
-                        ]
-                    for metric in expected_metrics:
-                        if metric in stats:
-                            assert isinstance(stats[metric], (int, float))
-
-                return True
-
-            return True  # Pass if function doesn't exist
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cache Performance Metrics",
-        test_cache_performance_metrics,
-        "Performance metrics collection provides valid numeric data",
-        "Performance",
-        "Collect and validate cache performance statistics",
-    )
-
-    def test_multifile_cache_management():
-        """Test multi-file cache management capabilities."""
-        try:
-            if is_function_available("manage_multiple_gedcom_caches"):
-                manager = get_function("manage_multiple_gedcom_caches")
-
-                # Test with multiple file paths
-                test_files = [
-                    "/path/to/family1.ged",
-                    "/path/to/family2.ged",
-                    "/path/to/research.ged",
-                ]
-
-                if manager:
-                    result = manager(test_files)
-                    return isinstance(result, (dict, list, bool))
-
-            return True  # Pass if function doesn't exist
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Multi-file Cache Management",
-        test_multifile_cache_management,
-        "Multi-file cache management handles multiple files efficiently",
-        "Performance",
-        "Manage caches for multiple GEDCOM files simultaneously",
-    )
-
-    # ERROR HANDLING TESTS
-    def test_memory_management_cleanup():
-        """Test memory management and cleanup operations."""
-        try:
-            cleanup_functions = [
-                "cleanup_cache_memory",
-                "optimize_cache_size",
-                "free_unused_cache",
-            ]
-
-            for func_name in cleanup_functions:
-                if func_name in globals():
-                    cleanup_func = globals()[func_name]
-                    result = cleanup_func()
-                    if not isinstance(result, (bool, int)):
-                        return False
-
-            return True
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Memory Management and Cleanup",
-        test_memory_management_cleanup,
-        "Memory management functions execute without errors",
-        "Error",
-        "Test cache memory cleanup and optimization functions",
-    )
-
-    def test_cache_validation_integrity():
-        """Test cache validation and integrity checking."""
-        try:
-            if is_function_available("validate_cache_integrity"):
-                validator = get_function("validate_cache_integrity")
-
-                # Test with mock cache data
-                mock_cache = {
-                    "individuals": {"I1": {"name": "John Doe"}},
-                    "checksum": "mock_checksum",
-                    "version": "1.0",
-                }
-
-                if validator:
-                    is_valid = validator(mock_cache)
-                    return isinstance(is_valid, bool)
-
-            return True  # Pass if function doesn't exist
-        except Exception:
-            return False
-
-    suite.run_test(
-        "Cache Validation and Integrity",
-        test_cache_validation_integrity,
-        "Cache validation properly checks data integrity",
-        "Error",
-        "Validate cache data integrity and detect corruption",
-    )
-
-    return suite.finish_suite()
 
 
 # --- Main Execution ---
