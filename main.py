@@ -2462,27 +2462,34 @@ def run_dna_gedcom_crossref():
         # Get DNA matches from database
         print("🧬 Loading DNA match data...")
         session_manager = SessionManager()
-        session = session_manager.get_session()
+        session = session_manager.get_db_conn()
 
         try:
-            dna_matches_db = session.query(DnaMatch).limit(10).all()
+            if not session:
+                print("❌ Could not get database session for DNA match data.")
+                print("ℹ️  DNA cross-reference will proceed without DNA match data.")
+                dna_matches = []
+            else:
+                dna_matches_db = session.query(DnaMatch).limit(10).all()
 
-            # Convert to Phase 12 format
-            dna_matches = []
-            for match in dna_matches_db:
-                dna_match = DNAMatch(
-                    match_id=str(match.id),
-                    match_name=match.username or "Unknown",
-                    estimated_relationship="unknown",
-                    shared_dna_cm=None,
-                    testing_company="Ancestry"
-                )
-                dna_matches.append(dna_match)
+                # Convert to Phase 12 format
+                dna_matches = []
+                for match in dna_matches_db:
+                    from dna_gedcom_crossref import DNAMatch
+                    dna_match = DNAMatch(
+                        match_id=str(match.id),
+                        match_name=match.username or "Unknown",
+                        estimated_relationship="unknown",
+                        shared_dna_cm=None,
+                        testing_company="Ancestry"
+                    )
+                    dna_matches.append(dna_match)
 
-            print(f"📊 Found {len(dna_matches)} DNA matches to analyze")
+                print(f"📊 Found {len(dna_matches)} DNA matches to analyze")
 
         finally:
-            session_manager.return_session(session)
+            if session:
+                session_manager.return_session(session)
 
         if not dna_matches:
             print("❌ No DNA matches available for analysis.")
@@ -2491,6 +2498,7 @@ def run_dna_gedcom_crossref():
 
         # Initialize cross-referencer
         print("🔍 Initializing DNA-GEDCOM Cross-Referencer...")
+        from dna_gedcom_crossref import DNAGedcomCrossReferencer
         crossref = DNAGedcomCrossReferencer()
 
         # Perform analysis
@@ -2543,6 +2551,7 @@ def run_research_prioritization():
     try:
         # First run GEDCOM intelligence analysis
         print("🧠 Running GEDCOM intelligence analysis...")
+        from gedcom_search_utils import get_cached_gedcom_data
         gedcom_data = get_cached_gedcom_data()
 
         if not gedcom_data:
@@ -2550,11 +2559,13 @@ def run_research_prioritization():
             input("\nPress Enter to continue...")
             return
 
+        from gedcom_intelligence import GedcomIntelligenceAnalyzer
         analyzer = GedcomIntelligenceAnalyzer()
         gedcom_analysis = analyzer.analyze_gedcom_data(gedcom_data)
 
         # Initialize prioritizer
         print("📊 Initializing Research Prioritizer...")
+        from research_prioritization import IntelligentResearchPrioritizer
         prioritizer = IntelligentResearchPrioritizer()
 
         # Perform prioritization
@@ -2635,6 +2646,7 @@ def run_comprehensive_gedcom_ai():
     try:
         # Load GEDCOM data
         print("📁 Loading GEDCOM data...")
+        from gedcom_search_utils import get_cached_gedcom_data
         gedcom_data = get_cached_gedcom_data()
 
         if not gedcom_data:
@@ -2645,24 +2657,30 @@ def run_comprehensive_gedcom_ai():
         # Get DNA matches
         print("🧬 Loading DNA match data...")
         session_manager = SessionManager()
-        session = session_manager.get_session()
+        session = session_manager.get_db_conn()
 
         dna_matches_data = []
         try:
-            dna_matches_db = session.query(DnaMatch).limit(10).all()
-            for match in dna_matches_db:
-                dna_matches_data.append({
-                    "match_id": str(match.id),
-                    "match_name": match.username or "Unknown",
-                    "estimated_relationship": "unknown",
-                    "shared_dna_cm": None,
-                    "testing_company": "Ancestry"
-                })
+            if not session:
+                print("❌ Could not get database session for DNA match data.")
+                print("ℹ️  Comprehensive analysis will proceed without DNA match data.")
+            else:
+                dna_matches_db = session.query(DnaMatch).limit(10).all()
+                for match in dna_matches_db:
+                    dna_matches_data.append({
+                        "match_id": str(match.id),
+                        "match_name": match.username or "Unknown",
+                        "estimated_relationship": "unknown",
+                        "shared_dna_cm": None,
+                        "testing_company": "Ancestry"
+                    })
         finally:
-            session_manager.return_session(session)
+            if session:
+                session_manager.return_session(session)
 
         # Initialize comprehensive integrator
         print("🤖 Initializing GEDCOM AI Integrator...")
+        from gedcom_ai_integration import GedcomAIIntegrator
         integrator = GedcomAIIntegrator()
 
         # Perform comprehensive analysis
