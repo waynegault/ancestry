@@ -9,27 +9,13 @@ messaging, and genealogical research tools.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-    register_function,
-    get_function,
-    is_function_available,
-)
+from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
+# Error handling imports available if needed
 
 # === STANDARD LIBRARY IMPORTS ===
 import gc
@@ -142,16 +128,13 @@ from utils import (
 
 # === PHASE 12: GEDCOM AI INTEGRATION ===
 try:
-    from gedcom_intelligence import GedcomIntelligenceAnalyzer
-    from dna_gedcom_crossref import DNAGedcomCrossReferencer, DNAMatch
-    from research_prioritization import IntelligentResearchPrioritizer
-    from gedcom_ai_integration import GedcomAIIntegrator
     from gedcom_search_utils import get_cached_gedcom_data
     PHASE_12_AVAILABLE = True
     logger.info("Phase 12 GEDCOM AI components loaded successfully")
 except ImportError as e:
     logger.warning(f"Phase 12 GEDCOM AI components not available: {e}")
     PHASE_12_AVAILABLE = False
+    get_cached_gedcom_data = None
 
 # Initialize config manager
 config_manager = ConfigManager()
@@ -1054,6 +1037,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
 def backup_db_actn(
     session_manager: Optional[SessionManager] = None, *_
 ):  # Added session_manager parameter for exec_actn compatibility
+    _ = session_manager  # Mark as intentionally unused
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
@@ -1965,7 +1949,7 @@ def main_module_tests() -> bool:
     def test_edge_case_handling():
         """Test edge cases and error conditions"""
         # Test with None config
-        original_config = config
+        _ = config  # Mark as intentionally unused
 
         # Test imports are properly structured
         import sys
@@ -1984,7 +1968,7 @@ def main_module_tests() -> bool:
     def test_import_error_handling():
         """Test import error scenarios"""
         # Test that essential modules are imported
-        import inspect
+        _ = inspect  # Mark as intentionally unused
 
         # Check that main module has all required imports
         module_globals = globals()
@@ -2013,7 +1997,7 @@ def main_module_tests() -> bool:
         import inspect
 
         sm_methods = inspect.getmembers(SessionManager, predicate=inspect.ismethod)
-        method_names = [method[0] for method in sm_methods]
+        _ = [method[0] for method in sm_methods]  # Mark as intentionally unused
 
         # Should have key methods for session management
         assert hasattr(
@@ -2126,7 +2110,7 @@ def main_module_tests() -> bool:
         # Test that basic function calls are fast
         start_time = time.time()
 
-        for i in range(1000):
+        for _ in range(1000):
             # Test a simple function call
             result = callable(menu)
             assert result is True, "menu should be callable"
@@ -2452,6 +2436,10 @@ def run_dna_gedcom_crossref():
     try:
         # Load GEDCOM data
         print("📁 Loading GEDCOM data...")
+        if get_cached_gedcom_data is None:
+            print("❌ GEDCOM functionality not available.")
+            return
+
         gedcom_data = get_cached_gedcom_data()
 
         if not gedcom_data:
