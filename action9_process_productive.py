@@ -39,6 +39,7 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
@@ -68,6 +69,20 @@ except ImportError as e:
     logger.warning(f"Genealogical task generation not available in action9: {e}")
     GENEALOGICAL_TASK_GENERATION_AVAILABLE = False
     GenealogicalTaskGenerator = None
+
+# === PHASE 11.1: ADAPTIVE RATE LIMITING & PERFORMANCE MONITORING ===
+try:
+    from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor, ConfigurationOptimizer
+    from performance_dashboard import PerformanceDashboard
+    ADAPTIVE_SYSTEMS_AVAILABLE = True
+    logger.info("Adaptive rate limiting and performance monitoring loaded in action9")
+except ImportError as e:
+    logger.warning(f"Adaptive systems not available in action9: {e}")
+    ADAPTIVE_SYSTEMS_AVAILABLE = False
+    AdaptiveRateLimiter = None
+    SmartBatchProcessor = None
+    ConfigurationOptimizer = None
+    PerformanceDashboard = None
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -1496,9 +1511,39 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
     # Initialize state objects
     state = ProcessingState()
     ms_state = MSGraphState(list_name=config_schema.ms_todo_list_name)
+
+    # === PHASE 11.1: ADAPTIVE BATCH PROCESSING ===
+    adaptive_batch_size = config_schema.batch_size
+    if ADAPTIVE_SYSTEMS_AVAILABLE:
+        try:
+            # Initialize adaptive systems
+            smart_batch_processor = SmartBatchProcessor(
+                initial_batch_size=config_schema.batch_size,
+                min_batch_size=1,
+                max_batch_size=min(20, config_schema.max_productive_to_process or 20)
+            )
+
+            performance_dashboard = PerformanceDashboard("action9_performance.json")
+            performance_dashboard.record_session_start({
+                "action": "action9_process_productive",
+                "initial_batch_size": config_schema.batch_size,
+                "max_productive": config_schema.max_productive_to_process
+            })
+
+            adaptive_batch_size = smart_batch_processor.get_next_batch_size()
+            logger.info(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize adaptive systems: {e}, using standard batch processing")
+            smart_batch_processor = None
+            performance_dashboard = None
+    else:
+        smart_batch_processor = None
+        performance_dashboard = None
+
     db_state = DatabaseState(
-        batch_size=max(1, config_schema.batch_size),
-        commit_threshold=max(1, config_schema.batch_size),
+        batch_size=max(1, adaptive_batch_size),
+        commit_threshold=max(1, adaptive_batch_size),
     )
     msg_config = MessageConfig()
 
@@ -1542,6 +1587,14 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         )
         return False
     finally:
+        # === PHASE 11.1: FINALIZE PERFORMANCE MONITORING ===
+        if 'performance_dashboard' in locals() and performance_dashboard:
+            try:
+                performance_dashboard.finalize_session()
+                logger.info("Performance monitoring session finalized")
+            except Exception as e:
+                logger.warning(f"Failed to finalize performance monitoring: {e}")
+
         # Cleanup
         if db_state.session:
             session_manager.return_session(db_state.session)
@@ -1737,9 +1790,45 @@ def _process_candidates(
             # Check for batch commit
             if commit_manager.should_commit():
                 state.batch_num += 1
+
+                # === PHASE 11.1: BATCH PERFORMANCE MONITORING ===
+                batch_start_time = time.time()
+                current_batch_size = len(db_state.logs_to_add or []) + len(db_state.person_updates or [])
+
                 commit_success, logs_committed, persons_updated = (
                     commit_manager.commit_batch(state.batch_num)
                 )
+
+                # Record batch performance for adaptive processing
+                if smart_batch_processor and performance_dashboard:
+                    try:
+                        batch_processing_time = time.time() - batch_start_time
+                        batch_success_rate = 1.0 if commit_success else 0.0
+
+                        smart_batch_processor.record_batch_performance(
+                            batch_size=current_batch_size,
+                            processing_time=batch_processing_time,
+                            success_rate=batch_success_rate
+                        )
+
+                        performance_dashboard.record_batch_processing_metrics({
+                            "batch_number": state.batch_num,
+                            "batch_size": current_batch_size,
+                            "processing_time": batch_processing_time,
+                            "success_rate": batch_success_rate,
+                            "logs_committed": logs_committed,
+                            "persons_updated": persons_updated
+                        })
+
+                        # Get updated batch size recommendation
+                        recommended_batch_size = smart_batch_processor.get_next_batch_size()
+                        if recommended_batch_size != db_state.batch_size:
+                            logger.info(f"Adaptive batch size adjustment: {db_state.batch_size} → {recommended_batch_size}")
+                            db_state.batch_size = recommended_batch_size
+                            db_state.commit_threshold = recommended_batch_size
+
+                    except Exception as e:
+                        logger.warning(f"Batch performance monitoring failed: {e}")
 
                 if not commit_success:
                     logger.critical(f"Critical: Batch {state.batch_num} commit failed!")

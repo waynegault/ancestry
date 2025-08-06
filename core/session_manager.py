@@ -166,6 +166,43 @@ class SessionManager:
         except ImportError:
             self.dynamic_rate_limiter = None
 
+        # === PHASE 11.1: ADAPTIVE RATE LIMITING ===
+        try:
+            from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor
+
+            # Initialize adaptive rate limiter with current config settings
+            api_config = getattr(config_schema, 'api', None)
+            if api_config:
+                initial_rps = getattr(api_config, 'requests_per_second', 0.5)
+                initial_delay = getattr(api_config, 'initial_delay', 2.0)
+            else:
+                initial_rps = 0.5
+                initial_delay = 2.0
+
+            self.adaptive_rate_limiter = AdaptiveRateLimiter(
+                initial_rps=initial_rps,
+                min_rps=0.1,
+                max_rps=2.0,
+                initial_delay=initial_delay,
+                min_delay=0.5,
+                max_delay=10.0
+            )
+
+            # Initialize smart batch processor
+            batch_size = getattr(config_schema, 'batch_size', 5)
+            self.smart_batch_processor = SmartBatchProcessor(
+                initial_batch_size=min(batch_size, 10),
+                min_batch_size=1,
+                max_batch_size=20
+            )
+
+            logger.info("Adaptive rate limiting and smart batch processing initialized")
+
+        except ImportError as e:
+            logger.warning(f"Adaptive rate limiting not available: {e}")
+            self.adaptive_rate_limiter = None
+            self.smart_batch_processor = None
+
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
