@@ -293,6 +293,82 @@ def ensure_caching_initialized():
 # End of ensure_caching_initialized
 
 
+def ensure_gedcom_loaded_and_cached():
+    """
+    Ensure GEDCOM file is loaded and cached before GEDCOM operations.
+
+    Returns:
+        bool: True if GEDCOM data is available, False otherwise
+    """
+    try:
+        # First ensure caching is initialized
+        ensure_caching_initialized()
+
+        # Check if GEDCOM data is already cached
+        if PHASE_12_AVAILABLE:
+            from gedcom_search_utils import get_cached_gedcom_data
+            cached_data = get_cached_gedcom_data()
+            if cached_data:
+                logger.info("GEDCOM data already cached and available")
+                return True
+
+        # Try to load GEDCOM data
+        print("\n📁 GEDCOM data not found in cache. Loading GEDCOM file...")
+
+        # Check if GEDCOM path is configured
+        try:
+            from config.config_manager import ConfigManager
+            config_manager = ConfigManager()
+            config = config_manager.get_config()
+            gedcom_path = getattr(config.database, 'gedcom_file_path', None)
+
+            if not gedcom_path:
+                print("❌ GEDCOM file path not configured.")
+                print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
+                return False
+
+        except Exception as e:
+            logger.debug(f"Error getting GEDCOM path from config: {e}")
+            print("❌ GEDCOM file path not configured.")
+            print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
+            return False
+
+        # Try to load the GEDCOM file
+        from pathlib import Path
+        gedcom_file = Path(gedcom_path)
+
+        if not gedcom_file.exists():
+            print(f"❌ GEDCOM file not found: {gedcom_path}")
+            print("Please check the file path or run option 10 to load a different file.")
+            return False
+
+        print(f"📂 Loading GEDCOM file: {gedcom_file.name}")
+
+        if PHASE_12_AVAILABLE:
+            from gedcom_search_utils import load_gedcom_data, set_cached_gedcom_data
+
+            # Load the GEDCOM data
+            gedcom_data = load_gedcom_data(gedcom_file)
+
+            if gedcom_data:
+                # Cache the loaded data
+                set_cached_gedcom_data(gedcom_data)
+                print(f"✅ GEDCOM file loaded and cached successfully!")
+                print(f"   📊 Individuals: {len(getattr(gedcom_data, 'indi_index', {}))}")
+                return True
+            else:
+                print("❌ Failed to load GEDCOM data from file.")
+                return False
+        else:
+            print("❌ Phase 12 components not available for GEDCOM loading.")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error ensuring GEDCOM loaded and cached: {e}")
+        print(f"❌ Error loading GEDCOM file: {e}")
+        return False
+
+
 def exec_actn(
     action_func,
     session_manager: SessionManager,
@@ -1520,9 +1596,19 @@ def main():
                     process_productive_messages_action, session_manager, choice
                 )  # Keep open
             elif choice == "10":
-                # Initialize caching for GEDCOM operations
+                # Initialize caching for GEDCOM operations and load GEDCOM data
                 ensure_caching_initialized()
                 exec_actn(run_action10, session_manager, choice)
+                # After running action 10, try to cache the GEDCOM data for future use
+                try:
+                    print("\n📁 Caching GEDCOM data for Phase 12 AI analysis...")
+                    if ensure_gedcom_loaded_and_cached():
+                        print("✅ GEDCOM data cached successfully! Phase 12 AI analysis now available.")
+                    else:
+                        print("ℹ️  GEDCOM data not cached. Phase 12 AI analysis may require manual loading.")
+                except Exception as e:
+                    logger.debug(f"Error caching GEDCOM data after action 10: {e}")
+                    print("ℹ️  GEDCOM data caching skipped. Phase 12 AI analysis may require manual loading.")
             elif choice == "11":
                 # Initialize caching for GEDCOM operations
                 ensure_caching_initialized()
@@ -1530,13 +1616,25 @@ def main():
                 exec_actn(run_action11_wrapper, session_manager, choice)
             # === PHASE 12: GEDCOM AI INTELLIGENCE ===
             elif choice == "12":
-                run_gedcom_intelligence_analysis()
+                if ensure_gedcom_loaded_and_cached():
+                    run_gedcom_intelligence_analysis()
+                else:
+                    input("\nPress Enter to continue...")
             elif choice == "13":
-                run_dna_gedcom_crossref()
+                if ensure_gedcom_loaded_and_cached():
+                    run_dna_gedcom_crossref()
+                else:
+                    input("\nPress Enter to continue...")
             elif choice == "14":
-                run_research_prioritization()
+                if ensure_gedcom_loaded_and_cached():
+                    run_research_prioritization()
+                else:
+                    input("\nPress Enter to continue...")
             elif choice == "15":
-                run_comprehensive_gedcom_ai()
+                if ensure_gedcom_loaded_and_cached():
+                    run_comprehensive_gedcom_ai()
+                else:
+                    input("\nPress Enter to continue...")
             # --- Test Options ---
             elif choice == "test":
                 # Run Main.py Internal Tests
@@ -2285,18 +2383,13 @@ def run_gedcom_intelligence_analysis():
         return
 
     try:
-        # Load GEDCOM data
-        print("📁 Loading GEDCOM data...")
+        # Get cached GEDCOM data (already loaded by menu handler)
+        from gedcom_search_utils import get_cached_gedcom_data
         gedcom_data = get_cached_gedcom_data()
-
-        if not gedcom_data:
-            print("❌ No GEDCOM data available.")
-            print("Please ensure GEDCOM file is loaded and cached.")
-            input("\nPress Enter to continue...")
-            return
 
         # Initialize analyzer
         print("🔍 Initializing GEDCOM Intelligence Analyzer...")
+        from gedcom_intelligence import GedcomIntelligenceAnalyzer
         analyzer = GedcomIntelligenceAnalyzer()
 
         # Perform analysis
