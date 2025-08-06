@@ -140,6 +140,19 @@ from utils import (
 )
 
 
+# === PHASE 12: GEDCOM AI INTEGRATION ===
+try:
+    from gedcom_intelligence import GedcomIntelligenceAnalyzer
+    from dna_gedcom_crossref import DNAGedcomCrossReferencer, DNAMatch
+    from research_prioritization import IntelligentResearchPrioritizer
+    from gedcom_ai_integration import GedcomAIIntegrator
+    from gedcom_search_utils import get_cached_gedcom_data, load_gedcom_data_with_caching
+    PHASE_12_AVAILABLE = True
+    logger.info("Phase 12 GEDCOM AI components loaded successfully")
+except ImportError as e:
+    logger.warning(f"Phase 12 GEDCOM AI components not available: {e}")
+    PHASE_12_AVAILABLE = False
+
 # Initialize config manager
 config_manager = ConfigManager()
 config = config_manager.get_config()
@@ -180,6 +193,12 @@ def menu():
     print("9. Process Productive Messages")
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
+    print("")
+    print("=== PHASE 12: GEDCOM AI INTELLIGENCE ===")
+    print("12. GEDCOM Intelligence Analysis")
+    print("13. DNA-GEDCOM Cross-Reference")
+    print("14. Research Prioritization")
+    print("15. Comprehensive GEDCOM AI Analysis")
     print("")
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
@@ -1509,6 +1528,15 @@ def main():
                 ensure_caching_initialized()
                 # Use the wrapper function to run Action 11 through exec_actn
                 exec_actn(run_action11_wrapper, session_manager, choice)
+            # === PHASE 12: GEDCOM AI INTELLIGENCE ===
+            elif choice == "12":
+                run_gedcom_intelligence_analysis()
+            elif choice == "13":
+                run_dna_gedcom_crossref()
+            elif choice == "14":
+                run_research_prioritization()
+            elif choice == "15":
+                run_comprehensive_gedcom_ai()
             # --- Test Options ---
             elif choice == "test":
                 # Run Main.py Internal Tests
@@ -2241,6 +2269,359 @@ def run_comprehensive_tests() -> bool:
 
 
 # --- Entry Point ---
+
+# === PHASE 12: GEDCOM AI FUNCTIONS ===
+
+def run_gedcom_intelligence_analysis():
+    """Run GEDCOM Intelligence Analysis (Phase 12.1)."""
+    print("\n" + "="*60)
+    print("🧠 GEDCOM INTELLIGENCE ANALYSIS")
+    print("="*60)
+
+    if not PHASE_12_AVAILABLE:
+        print("❌ Phase 12 GEDCOM AI components not available.")
+        print("Please ensure all Phase 12 modules are properly installed.")
+        input("\nPress Enter to continue...")
+        return
+
+    try:
+        # Load GEDCOM data
+        print("📁 Loading GEDCOM data...")
+        gedcom_data = get_cached_gedcom_data()
+
+        if not gedcom_data:
+            print("❌ No GEDCOM data available.")
+            print("Please ensure GEDCOM file is loaded and cached.")
+            input("\nPress Enter to continue...")
+            return
+
+        # Initialize analyzer
+        print("🔍 Initializing GEDCOM Intelligence Analyzer...")
+        analyzer = GedcomIntelligenceAnalyzer()
+
+        # Perform analysis
+        print("🧠 Analyzing family tree data...")
+        analysis_result = analyzer.analyze_gedcom_data(gedcom_data)
+
+        # Display results
+        print("\n" + "="*50)
+        print("📊 ANALYSIS RESULTS")
+        print("="*50)
+
+        summary = analysis_result.get("summary", {})
+        print(f"👥 Individuals Analyzed: {analysis_result.get('individuals_analyzed', 0)}")
+        print(f"🔍 Gaps Identified: {summary.get('total_gaps', 0)}")
+        print(f"⚠️  Conflicts Found: {summary.get('total_conflicts', 0)}")
+        print(f"🎯 Research Opportunities: {summary.get('total_opportunities', 0)}")
+        print(f"🔥 High Priority Items: {summary.get('high_priority_items', 0)}")
+
+        # Show top gaps
+        gaps = analysis_result.get("gaps_identified", [])
+        if gaps:
+            print(f"\n🔍 TOP GAPS IDENTIFIED:")
+            for i, gap in enumerate(gaps[:5], 1):
+                print(f"{i}. {gap.get('description', 'Unknown gap')} (Priority: {gap.get('priority', 'unknown')})")
+
+        # Show top conflicts
+        conflicts = analysis_result.get("conflicts_identified", [])
+        if conflicts:
+            print(f"\n⚠️  TOP CONFLICTS FOUND:")
+            for i, conflict in enumerate(conflicts[:3], 1):
+                print(f"{i}. {conflict.get('description', 'Unknown conflict')} (Severity: {conflict.get('severity', 'unknown')})")
+
+        # Show AI insights
+        ai_insights = analysis_result.get("ai_insights", {})
+        tree_completeness = ai_insights.get("tree_completeness", {})
+        if tree_completeness:
+            completeness = tree_completeness.get("completeness_percentage", 0)
+            print(f"\n🌳 Tree Completeness: {completeness:.1f}%")
+
+        print(f"\n✅ Analysis completed successfully!")
+
+    except Exception as e:
+        print(f"❌ Error during GEDCOM intelligence analysis: {e}")
+        logger.error(f"GEDCOM intelligence analysis error: {e}")
+
+    input("\nPress Enter to continue...")
+
+
+def run_dna_gedcom_crossref():
+    """Run DNA-GEDCOM Cross-Reference Analysis (Phase 12.2)."""
+    print("\n" + "="*60)
+    print("🧬 DNA-GEDCOM CROSS-REFERENCE ANALYSIS")
+    print("="*60)
+
+    if not PHASE_12_AVAILABLE:
+        print("❌ Phase 12 GEDCOM AI components not available.")
+        input("\nPress Enter to continue...")
+        return
+
+    try:
+        # Load GEDCOM data
+        print("📁 Loading GEDCOM data...")
+        gedcom_data = get_cached_gedcom_data()
+
+        if not gedcom_data:
+            print("❌ No GEDCOM data available.")
+            input("\nPress Enter to continue...")
+            return
+
+        # Get DNA matches from database
+        print("🧬 Loading DNA match data...")
+        session_manager = SessionManager()
+        session = session_manager.get_session()
+
+        try:
+            dna_matches_db = session.query(DnaMatch).limit(10).all()
+
+            # Convert to Phase 12 format
+            dna_matches = []
+            for match in dna_matches_db:
+                dna_match = DNAMatch(
+                    match_id=str(match.id),
+                    match_name=match.username or "Unknown",
+                    estimated_relationship="unknown",
+                    shared_dna_cm=None,
+                    testing_company="Ancestry"
+                )
+                dna_matches.append(dna_match)
+
+            print(f"📊 Found {len(dna_matches)} DNA matches to analyze")
+
+        finally:
+            session_manager.return_session(session)
+
+        if not dna_matches:
+            print("❌ No DNA matches available for analysis.")
+            input("\nPress Enter to continue...")
+            return
+
+        # Initialize cross-referencer
+        print("🔍 Initializing DNA-GEDCOM Cross-Referencer...")
+        crossref = DNAGedcomCrossReferencer()
+
+        # Perform analysis
+        print("🧬 Cross-referencing DNA matches with GEDCOM data...")
+        analysis_result = crossref.analyze_dna_gedcom_connections(dna_matches, gedcom_data)
+
+        # Display results
+        print("\n" + "="*50)
+        print("📊 CROSS-REFERENCE RESULTS")
+        print("="*50)
+
+        summary = analysis_result.get("summary", {})
+        print(f"🧬 DNA Matches Analyzed: {analysis_result.get('dna_matches_analyzed', 0)}")
+        print(f"👥 GEDCOM People Analyzed: {analysis_result.get('gedcom_people_analyzed', 0)}")
+        print(f"🔗 Cross-References Found: {summary.get('total_cross_references', 0)}")
+        print(f"⭐ High Confidence Matches: {summary.get('high_confidence_matches', 0)}")
+        print(f"⚠️  Conflicts Identified: {summary.get('conflicts_found', 0)}")
+        print(f"✅ Verification Opportunities: {summary.get('verification_opportunities', 0)}")
+
+        # Show top matches
+        crossref_matches = analysis_result.get("cross_reference_matches", [])
+        if crossref_matches:
+            print(f"\n🔗 TOP CROSS-REFERENCE MATCHES:")
+            for i, match in enumerate(crossref_matches[:5], 1):
+                confidence = match.get('confidence_score', 0)
+                dna_name = match.get('dna_match_name', 'Unknown')
+                match_type = match.get('match_type', 'unknown')
+                print(f"{i}. {dna_name} - {match_type} (Confidence: {confidence:.1%})")
+
+        print(f"\n✅ Cross-reference analysis completed!")
+
+    except Exception as e:
+        print(f"❌ Error during DNA-GEDCOM cross-reference: {e}")
+        logger.error(f"DNA-GEDCOM cross-reference error: {e}")
+
+    input("\nPress Enter to continue...")
+
+
+def run_research_prioritization():
+    """Run Research Prioritization Analysis (Phase 12.3)."""
+    print("\n" + "="*60)
+    print("📊 INTELLIGENT RESEARCH PRIORITIZATION")
+    print("="*60)
+
+    if not PHASE_12_AVAILABLE:
+        print("❌ Phase 12 GEDCOM AI components not available.")
+        input("\nPress Enter to continue...")
+        return
+
+    try:
+        # First run GEDCOM intelligence analysis
+        print("🧠 Running GEDCOM intelligence analysis...")
+        gedcom_data = get_cached_gedcom_data()
+
+        if not gedcom_data:
+            print("❌ No GEDCOM data available.")
+            input("\nPress Enter to continue...")
+            return
+
+        analyzer = GedcomIntelligenceAnalyzer()
+        gedcom_analysis = analyzer.analyze_gedcom_data(gedcom_data)
+
+        # Initialize prioritizer
+        print("📊 Initializing Research Prioritizer...")
+        prioritizer = IntelligentResearchPrioritizer()
+
+        # Perform prioritization
+        print("🎯 Analyzing research priorities...")
+        prioritization_result = prioritizer.prioritize_research_tasks(gedcom_analysis, {})
+
+        # Display results
+        print("\n" + "="*50)
+        print("📊 PRIORITIZATION RESULTS")
+        print("="*50)
+
+        print(f"🎯 Total Priorities Identified: {prioritization_result.get('total_priorities_identified', 0)}")
+
+        # Show family line analysis
+        family_lines = prioritization_result.get("family_line_analysis", [])
+        if family_lines:
+            print(f"\n👨‍👩‍👧‍👦 FAMILY LINE ANALYSIS:")
+            for line in family_lines[:3]:
+                surname = line.get('surname', 'Unknown')
+                completeness = line.get('completeness_percentage', 0)
+                generations = line.get('generations_back', 0)
+                print(f"• {surname} Line: {completeness:.1f}% complete, {generations} generations back")
+
+        # Show location clusters
+        clusters = prioritization_result.get("location_clusters", [])
+        if clusters:
+            print(f"\n🌍 RESEARCH CLUSTERS:")
+            for cluster in clusters[:3]:
+                location = cluster.get('location', 'Unknown')
+                people_count = cluster.get('people_count', 0)
+                efficiency = cluster.get('research_efficiency_score', 0)
+                print(f"• {location}: {people_count} people (Efficiency: {efficiency:.1%})")
+
+        # Show top priority tasks
+        tasks = prioritization_result.get("prioritized_tasks", [])
+        if tasks:
+            print(f"\n🔥 TOP PRIORITY RESEARCH TASKS:")
+            for i, task in enumerate(tasks[:5], 1):
+                description = task.get('description', 'Unknown task')
+                priority_score = task.get('priority_score', 0)
+                urgency = task.get('urgency', 'unknown')
+                print(f"{i}. {description[:60]}... (Score: {priority_score:.1f}, Urgency: {urgency})")
+
+        # Show recommendations
+        recommendations = prioritization_result.get("research_recommendations", [])
+        if recommendations:
+            print(f"\n💡 AI RECOMMENDATIONS:")
+            for i, rec in enumerate(recommendations[:3], 1):
+                print(f"{i}. {rec}")
+
+        # Show next steps
+        next_steps = prioritization_result.get("next_steps", [])
+        if next_steps:
+            print(f"\n🚀 IMMEDIATE NEXT STEPS:")
+            for i, step in enumerate(next_steps[:3], 1):
+                print(f"{i}. {step}")
+
+        print(f"\n✅ Research prioritization completed!")
+
+    except Exception as e:
+        print(f"❌ Error during research prioritization: {e}")
+        logger.error(f"Research prioritization error: {e}")
+
+    input("\nPress Enter to continue...")
+
+
+def run_comprehensive_gedcom_ai():
+    """Run Comprehensive GEDCOM AI Analysis (All Phase 12 components)."""
+    print("\n" + "="*60)
+    print("🤖 COMPREHENSIVE GEDCOM AI ANALYSIS")
+    print("="*60)
+
+    if not PHASE_12_AVAILABLE:
+        print("❌ Phase 12 GEDCOM AI components not available.")
+        input("\nPress Enter to continue...")
+        return
+
+    try:
+        # Load GEDCOM data
+        print("📁 Loading GEDCOM data...")
+        gedcom_data = get_cached_gedcom_data()
+
+        if not gedcom_data:
+            print("❌ No GEDCOM data available.")
+            input("\nPress Enter to continue...")
+            return
+
+        # Get DNA matches
+        print("🧬 Loading DNA match data...")
+        session_manager = SessionManager()
+        session = session_manager.get_session()
+
+        dna_matches_data = []
+        try:
+            dna_matches_db = session.query(DnaMatch).limit(10).all()
+            for match in dna_matches_db:
+                dna_matches_data.append({
+                    "match_id": str(match.id),
+                    "match_name": match.username or "Unknown",
+                    "estimated_relationship": "unknown",
+                    "shared_dna_cm": None,
+                    "testing_company": "Ancestry"
+                })
+        finally:
+            session_manager.return_session(session)
+
+        # Initialize comprehensive integrator
+        print("🤖 Initializing GEDCOM AI Integrator...")
+        integrator = GedcomAIIntegrator()
+
+        # Perform comprehensive analysis
+        print("🧠 Running comprehensive GEDCOM AI analysis...")
+        comprehensive_result = integrator.perform_comprehensive_analysis(
+            gedcom_data, dna_matches_data
+        )
+
+        # Display results
+        print("\n" + "="*50)
+        print("📊 COMPREHENSIVE ANALYSIS RESULTS")
+        print("="*50)
+
+        summary = comprehensive_result.get("summary", {})
+        print(f"👥 Individuals Analyzed: {summary.get('gedcom_individuals_analyzed', 0)}")
+        print(f"🔍 Gaps Identified: {summary.get('total_gaps_identified', 0)}")
+        print(f"⚠️  Conflicts Found: {summary.get('total_conflicts_identified', 0)}")
+        print(f"🎯 Research Priorities: {summary.get('research_priorities_generated', 0)}")
+
+        if dna_matches_data:
+            print(f"🧬 DNA Matches Analyzed: {summary.get('dna_matches_analyzed', 0)}")
+            print(f"🔗 DNA Cross-References: {summary.get('dna_crossref_matches', 0)}")
+
+        # Show integrated insights
+        insights = comprehensive_result.get("integrated_insights", {})
+        if insights:
+            print(f"\n🧠 INTEGRATED AI INSIGHTS:")
+            tree_health = insights.get('tree_health_score', 0)
+            print(f"🌳 Tree Health Score: {tree_health}/100")
+
+            dna_potential = insights.get('dna_verification_potential', 'Unknown')
+            print(f"🧬 DNA Verification Potential: {dna_potential}")
+
+            data_quality = insights.get('data_quality_assessment', 'Unknown')
+            print(f"📊 Data Quality Assessment: {data_quality}")
+
+        # Show actionable recommendations
+        recommendations = comprehensive_result.get("actionable_recommendations", [])
+        if recommendations:
+            print(f"\n💡 ACTIONABLE RECOMMENDATIONS:")
+            for i, rec in enumerate(recommendations[:5], 1):
+                print(f"{i}. {rec}")
+
+        print(f"\n✅ Comprehensive GEDCOM AI analysis completed!")
+        print(f"📄 Full analysis results available in system logs.")
+
+    except Exception as e:
+        print(f"❌ Error during comprehensive GEDCOM AI analysis: {e}")
+        logger.error(f"Comprehensive GEDCOM AI analysis error: {e}")
+
+    input("\nPress Enter to continue...")
+
 
 if __name__ == "__main__":
     main()
