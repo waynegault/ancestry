@@ -441,15 +441,18 @@
 
 ---
 
-### PHASE 7.3 IMPLEMENTATION WORKFLOW
-1. Run `python run_all_tests.py` to confirm baseline.
-2. Commit current codebase to git (excluding cache files).
-3. Implement all above optimizations systematically across all relevant modules.
-4. Verify completeness: ensure all modules received the changes.
-5. Run comprehensive tests and validate performance improvements.
-6. Fix any issues or revert to previous stable commit if needed.
-7. Update `IMPLEMENTATION_PLAN.md` with progress and lessons learned.
-8. Commit phase completion with detailed message.
+
+### PHASE 7.3 IMPLEMENTATION WORKFLOW & PROGRESS TRACKING
+1. ✅ Baseline validated: All tests passing (44/44 modules, 100% success).
+2. ⏳ Codebase committed (see previous step).
+3. ⏳ Begin implementation: Memory & Caching Optimization (Step 7.3.1)
+   - Expand lazy loading, object pooling, multi-level caching, cache invalidation, and warming.
+   - Target modules: memory_optimizer.py, gedcom_cache.py, performance_cache.py, api_cache.py, cache_manager.py, core/system_cache.py, gedcom_utils.py
+4. ⏳ Track and validate changes in each module. Ensure thoroughness and test coverage.
+5. ⏳ After memory & caching optimization, proceed to Database & Test Optimization (Step 7.3.2)
+6. ⏳ Finalize with Monitoring & Validation (Step 7.3.3)
+7. ⏳ After each step, run all tests and update this plan with results and lessons learned.
+8. ⏳ Commit phase completion with detailed message and update readme.md.
 
 ---
 
