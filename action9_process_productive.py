@@ -933,10 +933,22 @@ class PersonProcessor:
                 person_data = {"username": getattr(person, "username", "Unknown")}
                 extracted_data = getattr(person, 'extracted_genealogical_data', {})
 
+                # === PHASE 12: GEDCOM DATA INTEGRATION ===
+                gedcom_data = None
+                try:
+                    # Try to load GEDCOM data for enhanced task generation
+                    from gedcom_search_utils import get_cached_gedcom_data
+                    gedcom_data = get_cached_gedcom_data()
+                    if gedcom_data:
+                        logger.debug(f"{log_prefix}: Using GEDCOM data for enhanced task generation")
+                except Exception as e:
+                    logger.debug(f"{log_prefix}: GEDCOM data not available for task generation: {e}")
+
                 enhanced_tasks = task_generator.generate_research_tasks(
                     person_data,
                     extracted_data,
-                    suggested_tasks
+                    suggested_tasks,
+                    gedcom_data
                 )
 
                 if enhanced_tasks:
