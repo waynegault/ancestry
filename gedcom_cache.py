@@ -79,6 +79,33 @@ _MEMORY_CACHE: Dict[str, Tuple[Any, float]] = {}  # In-memory cache with timesta
 _CACHE_MAX_AGE = 3600  # 1 hour default for memory cache
 _GEDCOM_CACHE_PREFIX = "gedcom_data"
 
+# --- Memory-Efficient Object Pool for GEDCOM Data ---
+from memory_optimizer import ObjectPool, lazy_property
+
+# Pool for GedcomReader objects (if available)
+try:
+    from ged4py.parser import GedcomReader
+    gedcom_pool = ObjectPool(lambda: GedcomReader, max_size=5)
+except ImportError:
+    gedcom_pool = None
+
+# --- Lazy Loading for Large GEDCOM Datasets ---
+class LazyGedcomData:
+    """Lazy loader for large GEDCOM datasets."""
+    def __init__(self, gedcom_path: str):
+        self.gedcom_path = gedcom_path
+        self._data = None
+
+    @lazy_property
+    def data(self):
+        # Only load GEDCOM data when accessed
+        try:
+            from ged4py.parser import GedcomReader
+            self._data = GedcomReader(self.gedcom_path)
+        except ImportError:
+            self._data = None
+        return self._data
+
 
 # --- GEDCOM Cache Module Implementation ---
 

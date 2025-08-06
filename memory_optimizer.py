@@ -28,6 +28,37 @@ from dataclasses import dataclass
 # === TYPE DEFINITIONS ===
 T = TypeVar('T')
 
+# === OBJECT POOLING UTILITY ===
+class ObjectPool:
+    """Generic object pool for memory-efficient reuse of objects."""
+    def __init__(self, factory: Callable[[], object], max_size: int = 100):
+        self._factory = factory
+        self._pool: list = []
+        self._max_size = max_size
+
+    def acquire(self) -> object:
+        if self._pool:
+            return self._pool.pop()
+        return self._factory()
+
+    def release(self, obj: object):
+        if len(self._pool) < self._max_size:
+            self._pool.append(obj)
+
+    def size(self) -> int:
+        return len(self._pool)
+
+# === LAZY PROPERTY DECORATOR (IMPROVED) ===
+def lazy_property(func: Callable) -> property:
+    """Decorator for lazy-loaded property with memory optimization."""
+    attr_name = f"_lazy_{func.__name__}"
+    @property
+    def _lazy(self):
+        if not hasattr(self, attr_name):
+            setattr(self, attr_name, func(self))
+        return getattr(self, attr_name)
+    return _lazy
+
 
 @dataclass
 class MemoryStats:
@@ -343,6 +374,31 @@ def run_comprehensive_tests() -> bool:
         "Lazy List",
         test_lazy_list,
         "Test lazy list implementation"
+    )
+
+    def test_object_pool():
+        """Test object pooling utility for memory efficiency."""
+        class Dummy:
+            def __init__(self):
+                self.value = 42
+
+        pool = ObjectPool(Dummy, max_size=2)
+        obj1 = pool.acquire()
+        obj2 = pool.acquire()
+        assert isinstance(obj1, Dummy)
+        assert isinstance(obj2, Dummy)
+        pool.release(obj1)
+        pool.release(obj2)
+        assert pool.size() == 2
+        obj3 = pool.acquire()
+        assert isinstance(obj3, Dummy)
+        assert pool.size() == 1
+        return True
+
+    suite.run_test(
+        "Object Pool",
+        test_object_pool,
+        "Test object pooling utility for memory efficiency"
     )
     
     return suite.finish_suite()
