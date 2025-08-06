@@ -774,6 +774,192 @@ def generate_with_custom_prompt(
 
 # End of generate_with_custom_prompt
 
+# --- Specialized Genealogical Analysis Functions ---
+
+
+def analyze_dna_match_conversation(
+    context_history: str, session_manager: SessionManager
+) -> Optional[Dict[str, Any]]:
+    """
+    Analyzes conversations about DNA matches using specialized DNA analysis prompt.
+    Returns structured data focused on DNA match information and genetic genealogy.
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    default_empty_result = {"extracted_data": {}, "suggested_tasks": []}
+
+    if not ai_provider:
+        logger.error("analyze_dna_match_conversation: AI_PROVIDER not configured.")
+        return default_empty_result
+
+    if not context_history:
+        logger.warning(
+            "analyze_dna_match_conversation: Empty context. Returning empty structure."
+        )
+        return default_empty_result
+
+    # Get DNA match analysis prompt
+    system_prompt = "Analyze this DNA match conversation for genetic genealogy information."
+    if USE_JSON_PROMPTS:
+        try:
+            loaded_prompt = get_prompt("dna_match_analysis")
+            if loaded_prompt:
+                system_prompt = loaded_prompt
+            else:
+                logger.warning(
+                    "Failed to load 'dna_match_analysis' prompt from JSON, using fallback."
+                )
+        except Exception as e:
+            logger.warning(
+                f"Error loading 'dna_match_analysis' prompt: {e}, using fallback."
+            )
+
+    start_time = time.time()
+    ai_response_str = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=system_prompt,
+        user_content=context_history,
+        session_manager=session_manager,
+        max_tokens=1500,
+        temperature=0.2,
+        response_format_type="json_object",
+    )
+    duration = time.time() - start_time
+
+    if ai_response_str:
+        try:
+            ai_response = json.loads(ai_response_str)
+            logger.info(f"DNA match analysis successful. (Took {duration:.2f}s)")
+            return ai_response
+        except json.JSONDecodeError as e:
+            logger.error(f"DNA match analysis JSON parsing failed: {e}")
+            return default_empty_result
+    else:
+        logger.error(f"DNA match analysis failed. (Took {duration:.2f}s)")
+        return default_empty_result
+
+
+def verify_family_tree_connections(
+    context_history: str, session_manager: SessionManager
+) -> Optional[Dict[str, Any]]:
+    """
+    Analyzes conversations for family tree verification needs and conflicts.
+    Returns structured data focused on verification requirements and conflict resolution.
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    default_empty_result = {"extracted_data": {}, "suggested_tasks": []}
+
+    if not ai_provider:
+        logger.error("verify_family_tree_connections: AI_PROVIDER not configured.")
+        return default_empty_result
+
+    if not context_history:
+        logger.warning(
+            "verify_family_tree_connections: Empty context. Returning empty structure."
+        )
+        return default_empty_result
+
+    # Get family tree verification prompt
+    system_prompt = "Analyze this conversation for family tree verification needs."
+    if USE_JSON_PROMPTS:
+        try:
+            loaded_prompt = get_prompt("family_tree_verification")
+            if loaded_prompt:
+                system_prompt = loaded_prompt
+            else:
+                logger.warning(
+                    "Failed to load 'family_tree_verification' prompt from JSON, using fallback."
+                )
+        except Exception as e:
+            logger.warning(
+                f"Error loading 'family_tree_verification' prompt: {e}, using fallback."
+            )
+
+    start_time = time.time()
+    ai_response_str = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=system_prompt,
+        user_content=context_history,
+        session_manager=session_manager,
+        max_tokens=1500,
+        temperature=0.2,
+        response_format_type="json_object",
+    )
+    duration = time.time() - start_time
+
+    if ai_response_str:
+        try:
+            ai_response = json.loads(ai_response_str)
+            logger.info(f"Family tree verification analysis successful. (Took {duration:.2f}s)")
+            return ai_response
+        except json.JSONDecodeError as e:
+            logger.error(f"Family tree verification JSON parsing failed: {e}")
+            return default_empty_result
+    else:
+        logger.error(f"Family tree verification analysis failed. (Took {duration:.2f}s)")
+        return default_empty_result
+
+
+def generate_record_research_strategy(
+    context_history: str, session_manager: SessionManager
+) -> Optional[Dict[str, Any]]:
+    """
+    Analyzes conversations to suggest specific genealogical record research strategies.
+    Returns structured data focused on record search opportunities and research plans.
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    default_empty_result = {"extracted_data": {}, "suggested_tasks": []}
+
+    if not ai_provider:
+        logger.error("generate_record_research_strategy: AI_PROVIDER not configured.")
+        return default_empty_result
+
+    if not context_history:
+        logger.warning(
+            "generate_record_research_strategy: Empty context. Returning empty structure."
+        )
+        return default_empty_result
+
+    # Get record research guidance prompt
+    system_prompt = "Analyze this conversation for genealogical record research opportunities."
+    if USE_JSON_PROMPTS:
+        try:
+            loaded_prompt = get_prompt("record_research_guidance")
+            if loaded_prompt:
+                system_prompt = loaded_prompt
+            else:
+                logger.warning(
+                    "Failed to load 'record_research_guidance' prompt from JSON, using fallback."
+                )
+        except Exception as e:
+            logger.warning(
+                f"Error loading 'record_research_guidance' prompt: {e}, using fallback."
+            )
+
+    start_time = time.time()
+    ai_response_str = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=system_prompt,
+        user_content=context_history,
+        session_manager=session_manager,
+        max_tokens=1500,
+        temperature=0.2,
+        response_format_type="json_object",
+    )
+    duration = time.time() - start_time
+
+    if ai_response_str:
+        try:
+            ai_response = json.loads(ai_response_str)
+            logger.info(f"Record research strategy generation successful. (Took {duration:.2f}s)")
+            return ai_response
+        except json.JSONDecodeError as e:
+            logger.error(f"Record research strategy JSON parsing failed: {e}")
+            return default_empty_result
+    else:
+        logger.error(f"Record research strategy generation failed. (Took {duration:.2f}s)")
+        return default_empty_result
+
+
 # --- Self-Test Functions ---
 
 
@@ -1072,6 +1258,36 @@ def test_ai_functionality(session_manager: SessionManager) -> bool:
             logger.warning(
                 f"⚠️ Reply generation returned unexpected result: {reply_result}"
             )
+
+        # Test specialized genealogical analysis functions
+        logger.info("Testing specialized genealogical analysis functions...")
+
+        # Test DNA match analysis
+        dna_test_context = "SCRIPT: Hello! I'm researching DNA matches.\nUSER: I have a DNA match showing 150 cM shared with someone named Sarah Johnson. AncestryDNA estimates we're 2nd cousins. We seem to share ancestors from Ireland in the 1800s."
+        dna_result = analyze_dna_match_conversation(dna_test_context, session_manager)
+
+        if dna_result and isinstance(dna_result, dict):
+            logger.info("✅ DNA match analysis function working")
+        else:
+            logger.warning("⚠️ DNA match analysis returned unexpected result")
+
+        # Test family tree verification
+        verification_test_context = "SCRIPT: Hello! I'm verifying family connections.\nUSER: I'm not sure if William Smith is really my great-grandfather. I have conflicting information about his birth year - some records say 1850, others say 1855."
+        verification_result = verify_family_tree_connections(verification_test_context, session_manager)
+
+        if verification_result and isinstance(verification_result, dict):
+            logger.info("✅ Family tree verification function working")
+        else:
+            logger.warning("⚠️ Family tree verification returned unexpected result")
+
+        # Test record research strategy
+        research_test_context = "SCRIPT: Hello! I need research help.\nUSER: I'm looking for birth records for my ancestor Mary O'Brien who was born around 1870 in County Cork, Ireland. She immigrated to Boston around 1890."
+        research_result = generate_record_research_strategy(research_test_context, session_manager)
+
+        if research_result and isinstance(research_result, dict):
+            logger.info("✅ Record research strategy function working")
+        else:
+            logger.warning("⚠️ Record research strategy returned unexpected result")
 
         logger.info("✅ All AI functionality tests completed successfully")
         return True
