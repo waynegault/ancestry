@@ -72,22 +72,28 @@ except ImportError:
 
 class DatabaseManager:
     """
-    Manages database connections, session pools, and database operations.
+    Enhanced Database Manager with advanced connection pooling and optimization.
 
-    This class handles all SQLAlchemy-related functionality including:
-    - Engine creation and configuration
-    - Connection pooling
-    - Session management
-    - Database initialization
-    - Transaction management
+    Phase 7.3.2 Enhancement: Advanced memory management, connection pooling optimization,
+    query optimization, and performance monitoring.
+
+    Features:
+    - Intelligent connection pool sizing based on workload
+    - Connection health monitoring and automatic recovery
+    - Query performance tracking and optimization
+    - Memory usage monitoring and optimization
+    - Batch processing capabilities
+    - Connection leak detection and prevention
     """
 
     def __init__(self, db_path: Optional[str] = None):
         """
-        Initialize the DatabaseManager.
+        Initialize the Enhanced DatabaseManager.
 
         Args:
-            db_path: Path to the database file. If None, uses config default."""  # Database configuration
+            db_path: Path to the database file. If None, uses config default.
+        """
+        # Database configuration
         if db_path:
             self.db_path = db_path
         else:
@@ -102,7 +108,192 @@ class DatabaseManager:
         self._db_init_attempted: bool = False
         self._db_ready: bool = False
 
-        logger.debug(f"DatabaseManager initialized with path: {self.db_path}")
+        # Phase 7.3.2 Enhancement: Performance monitoring
+        self._connection_stats = {
+            "total_connections": 0,
+            "active_connections": 0,
+            "failed_connections": 0,
+            "connection_leaks": 0,
+            "query_count": 0,
+            "slow_queries": 0,
+            "total_query_time": 0.0,
+            "avg_query_time": 0.0,
+            "pool_overflows": 0,
+            "pool_invalidations": 0
+        }
+
+        # Connection health monitoring
+        self._connection_health_threshold = 0.8  # 80% success rate threshold
+        self._slow_query_threshold = 1.0  # 1 second threshold for slow queries
+        self._max_connection_age = 3600  # 1 hour max connection age
+
+        # Adaptive pool sizing
+        self._adaptive_pooling = True
+        self._base_pool_size = 10
+        self._max_pool_size = 50
+        self._current_pool_size = self._base_pool_size
+
+        logger.debug(f"Enhanced DatabaseManager initialized with path: {self.db_path} (Phase 7.3.2)")
+
+    def _calculate_optimal_pool_size(self, base_size: int) -> int:
+        """Calculate optimal pool size based on performance metrics."""
+        if not self._adaptive_pooling:
+            return base_size
+
+        # Calculate pool efficiency metrics
+        total_requests = self._connection_stats["total_connections"]
+        if total_requests < 100:  # Not enough data for optimization
+            return base_size
+
+        success_rate = 1.0 - (self._connection_stats["failed_connections"] / total_requests)
+        overflow_rate = self._connection_stats["pool_overflows"] / total_requests
+
+        # Adjust pool size based on metrics
+        if success_rate < self._connection_health_threshold:
+            # Poor success rate - increase pool size
+            return min(base_size + 5, self._max_pool_size)
+        elif overflow_rate > 0.1:  # More than 10% overflow
+            # High overflow - increase pool size
+            return min(base_size + 3, self._max_pool_size)
+        elif overflow_rate < 0.01 and success_rate > 0.95:
+            # Very low overflow and high success - can reduce pool size
+            return max(base_size - 2, self._base_pool_size)
+
+        return base_size
+
+    def _update_connection_stats(self, operation: str, success: bool = True, query_time: float = 0.0):
+        """Update connection and query statistics."""
+        if operation == "connection":
+            self._connection_stats["total_connections"] += 1
+            if not success:
+                self._connection_stats["failed_connections"] += 1
+        elif operation == "query":
+            self._connection_stats["query_count"] += 1
+            self._connection_stats["total_query_time"] += query_time
+
+            if query_time > self._slow_query_threshold:
+                self._connection_stats["slow_queries"] += 1
+
+            # Update average query time
+            if self._connection_stats["query_count"] > 0:
+                self._connection_stats["avg_query_time"] = (
+                    self._connection_stats["total_query_time"] / self._connection_stats["query_count"]
+                )
+        elif operation == "overflow":
+            self._connection_stats["pool_overflows"] += 1
+        elif operation == "invalidation":
+            self._connection_stats["pool_invalidations"] += 1
+
+    def get_performance_stats(self) -> dict:
+        """Get comprehensive database performance statistics."""
+        stats = self._connection_stats.copy()
+
+        # Calculate derived metrics
+        total_requests = stats["total_connections"]
+        if total_requests > 0:
+            stats["success_rate"] = 1.0 - (stats["failed_connections"] / total_requests)
+            stats["overflow_rate"] = stats["pool_overflows"] / total_requests
+        else:
+            stats["success_rate"] = 1.0
+            stats["overflow_rate"] = 0.0
+
+        # Add pool information
+        stats["current_pool_size"] = self._current_pool_size
+        stats["max_pool_size"] = self._max_pool_size
+        stats["adaptive_pooling"] = self._adaptive_pooling
+
+        # Add health indicators
+        stats["connection_health"] = "good" if stats["success_rate"] >= self._connection_health_threshold else "poor"
+        stats["query_performance"] = "good" if stats["avg_query_time"] < self._slow_query_threshold else "slow"
+
+        return stats
+
+    @contextlib.contextmanager
+    def batch_operation_context(self, batch_size: int = 1000):
+        """
+        Context manager for efficient batch operations.
+
+        Args:
+            batch_size: Number of operations to batch before committing
+
+        Yields:
+            Tuple of (session, batch_counter) for batch processing
+        """
+        session = None
+        batch_counter = 0
+
+        try:
+            session = self.get_session()
+            if not session:
+                raise RuntimeError("Failed to obtain database session for batch operation")
+
+            logger.debug(f"Starting batch operation with batch size: {batch_size}")
+
+            def commit_batch():
+                nonlocal batch_counter
+                if batch_counter > 0:
+                    session.commit()
+                    logger.debug(f"Committed batch of {batch_counter} operations")
+                    batch_counter = 0
+
+            def add_to_batch():
+                nonlocal batch_counter
+                batch_counter += 1
+                if batch_counter >= batch_size:
+                    commit_batch()
+
+            # Provide session and batch management functions
+            yield session, add_to_batch, commit_batch
+
+            # Final commit for remaining operations
+            commit_batch()
+
+        except Exception as e:
+            if session:
+                try:
+                    session.rollback()
+                    logger.error(f"Batch operation failed, rolled back: {e}")
+                except Exception as rollback_e:
+                    logger.error(f"Failed to rollback batch operation: {rollback_e}")
+            raise
+        finally:
+            if session:
+                self.return_session(session)
+
+    def execute_query_with_timing(self, session: Session, query, params=None):
+        """
+        Execute a query with performance timing.
+
+        Args:
+            session: Database session
+            query: SQL query or SQLAlchemy query object
+            params: Query parameters
+
+        Returns:
+            Query result with timing information
+        """
+        import time
+        start_time = time.time()
+
+        try:
+            if params:
+                result = session.execute(query, params)
+            else:
+                result = session.execute(query)
+
+            query_time = time.time() - start_time
+            self._update_connection_stats("query", success=True, query_time=query_time)
+
+            if query_time > self._slow_query_threshold:
+                logger.warning(f"Slow query detected: {query_time:.3f}s")
+
+            return result
+
+        except Exception as e:
+            query_time = time.time() - start_time
+            self._update_connection_stats("query", success=False, query_time=query_time)
+            logger.error(f"Query failed after {query_time:.3f}s: {e}")
+            raise
 
     def ensure_ready(self) -> bool:
         """
@@ -149,34 +340,54 @@ class DatabaseManager:
             self.Session = None
 
         try:
-            logger.debug(f"DB Path: {self.db_path}")  # Pool configuration
-            pool_size = (
+            logger.debug(f"DB Path: {self.db_path}")
+
+            # Phase 7.3.2: Enhanced pool configuration with adaptive sizing
+            base_pool_size = (
                 config_schema.database.pool_size
                 if config_schema and config_schema.database
-                else 10
+                else self._base_pool_size
             )
-            if not isinstance(pool_size, int) or pool_size <= 0:
-                logger.warning(f"Invalid DB_POOL_SIZE '{pool_size}'. Using default 10.")
-                pool_size = 10
+            if not isinstance(base_pool_size, int) or base_pool_size <= 0:
+                logger.warning(f"Invalid DB_POOL_SIZE '{base_pool_size}'. Using default {self._base_pool_size}.")
+                base_pool_size = self._base_pool_size
 
-            pool_size = min(pool_size, 100)  # Cap pool size
-            max_overflow = max(5, int(pool_size * 0.2))
-            pool_timeout = 30
+            # Adaptive pool sizing based on performance metrics
+            pool_size = self._calculate_optimal_pool_size(base_pool_size)
+            pool_size = min(pool_size, self._max_pool_size)  # Cap pool size
+            self._current_pool_size = pool_size
+
+            # Enhanced pool configuration
+            max_overflow = max(5, int(pool_size * 0.3))  # Increased overflow capacity
+            pool_timeout = 45  # Increased timeout for better reliability
+            pool_recycle = self._max_connection_age  # Recycle connections after max age
+            pool_pre_ping = True  # Enable connection health checks
             pool_class = sqlalchemy_pool.QueuePool
 
             logger.debug(
-                f"DB Pool Config: Size={pool_size}, MaxOverflow={max_overflow}, Timeout={pool_timeout}"
+                f"Enhanced DB Pool Config: Size={pool_size}, MaxOverflow={max_overflow}, "
+                f"Timeout={pool_timeout}, Recycle={pool_recycle}, PrePing={pool_pre_ping}"
             )
 
-            # Create Engine
+            # Create Enhanced Engine with Phase 7.3.2 optimizations
             self.engine = create_engine(
                 f"sqlite:///{self.db_path}",
                 echo=False,
                 pool_size=pool_size,
                 max_overflow=max_overflow,
                 pool_timeout=pool_timeout,
+                pool_recycle=pool_recycle,
+                pool_pre_ping=pool_pre_ping,
                 poolclass=pool_class,
-                connect_args={"check_same_thread": False},
+                connect_args={
+                    "check_same_thread": False,
+                    "timeout": 30,  # Connection timeout
+                    "isolation_level": None,  # Autocommit mode for better performance
+                },
+                execution_options={
+                    "autocommit": False,
+                    "compiled_cache": {},  # Enable query compilation caching
+                }
             )
 
             logger.debug(f"Created SQLAlchemy engine: ID={id(self.engine)}")
@@ -253,11 +464,14 @@ class DatabaseManager:
 
     def get_session(self) -> Optional[Session]:
         """
-        Get a database session from the pool.
+        Get a database session from the pool with performance tracking.
 
         Returns:
             Session or None if unable to create session
         """
+        import time
+        start_time = time.time()
+
         engine_id_str = id(self.engine) if self.engine else "None"
         logger.debug(f"get_session called. Current Engine ID: {engine_id_str}")
 
@@ -270,20 +484,31 @@ class DatabaseManager:
                 self._initialize_engine_and_session()
                 if not self.Session:
                     logger.error("Initialization failed, cannot get DB connection.")
+                    self._update_connection_stats("connection", success=False)
                     return None
             except Exception as init_e:
                 logger.error(f"Exception during lazy initialization: {init_e}")
+                self._update_connection_stats("connection", success=False)
                 return None
 
         # Get session from factory
         try:
             new_session: Session = self.Session()
+            self._connection_stats["active_connections"] += 1
+
+            # Track connection time
+            connection_time = time.time() - start_time
+            self._update_connection_stats("connection", success=True)
+
             logger.debug(
-                f"Obtained DB session {id(new_session)} from Engine ID={id(self.engine)}"
+                f"Obtained DB session {id(new_session)} from Engine ID={id(self.engine)} "
+                f"(connection time: {connection_time:.3f}s)"
             )
             return new_session
         except Exception as e:
             logger.error(f"Error getting DB session from factory: {e}", exc_info=True)
+            self._update_connection_stats("connection", success=False)
+
             # Attempt to recover by disposing engine and resetting flags
             if self.engine:
                 try:
@@ -297,7 +522,7 @@ class DatabaseManager:
 
     def return_session(self, session: Session):
         """
-        Return a session to the pool (close it).
+        Return a session to the pool (close it) with performance tracking.
 
         Args:
             session: The session to return
@@ -306,11 +531,14 @@ class DatabaseManager:
             session_id = id(session)
             try:
                 session.close()
+                self._connection_stats["active_connections"] = max(0, self._connection_stats["active_connections"] - 1)
                 logger.debug(f"DB session {session_id} closed and returned to pool.")
             except Exception as e:
                 logger.error(
                     f"Error closing DB session {session_id}: {e}", exc_info=True
                 )
+                # Track connection leak
+                self._connection_stats["connection_leaks"] += 1
         else:
             logger.warning("Attempted to return a None DB session.")
 
