@@ -48,6 +48,16 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, joinedload
+
+# === PHASE 9.1: MESSAGE PERSONALIZATION ===
+try:
+    from message_personalization import MessagePersonalizer
+    MESSAGE_PERSONALIZATION_AVAILABLE = True
+    logger.info("Message personalization system loaded in action9")
+except ImportError as e:
+    logger.warning(f"Message personalization not available in action9: {e}")
+    MESSAGE_PERSONALIZATION_AVAILABLE = False
+    MessagePersonalizer = None
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -848,6 +858,13 @@ class PersonProcessor:
             f"Extracted entities for {person.username}: {json.dumps(entity_counts)}"
         )
 
+        # Store extracted data on person object for message personalization
+        try:
+            setattr(person, 'extracted_genealogical_data', extracted_data)
+            logger.debug(f"Stored extracted genealogical data on person object for {person.username}")
+        except Exception as e:
+            logger.warning(f"Failed to store extracted data on person object: {e}")
+
         return extracted_data, suggested_tasks
 
     def _create_ms_tasks(
@@ -1087,19 +1104,50 @@ class PersonProcessor:
                 # Generate summary
                 summary_for_ack = _generate_ack_summary(extracted_data)
 
-                # Format message using template
-                if (
-                    self.msg_config.templates
-                    and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates
-                ):
-                    message_text = self.msg_config.templates[
-                        ACKNOWLEDGEMENT_MESSAGE_TYPE
-                    ].format(name=name_to_use, summary=summary_for_ack)
-                else:
-                    user_name = getattr(config_schema, "user_name", "Tree Owner")
-                    message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
+                # Try enhanced personalized message formatting first
+                message_text = None
+                if MESSAGE_PERSONALIZATION_AVAILABLE and hasattr(person, 'extracted_genealogical_data'):
+                    try:
+                        from message_personalization import MessagePersonalizer
+                        personalizer = MessagePersonalizer()
+
+                        # Check if we have an enhanced productive reply template
+                        enhanced_template_key = "Enhanced_Productive_Reply"
+                        if enhanced_template_key in personalizer.templates:
+                            logger.debug(f"Using enhanced productive reply template for {log_prefix}")
+
+                            extracted_data = getattr(person, 'extracted_genealogical_data', {})
+                            person_data = {"username": getattr(person, "username", "Unknown")}
+                            base_format_data = {"name": name_to_use, "summary": summary_for_ack}
+
+                            message_text = personalizer.create_personalized_message(
+                                enhanced_template_key,
+                                person_data,
+                                extracted_data,
+                                base_format_data
+                            )
+                            logger.info(f"Successfully created personalized productive reply for {log_prefix}")
+                        else:
+                            logger.debug(f"Enhanced template '{enhanced_template_key}' not available")
+                    except Exception as e:
+                        logger.warning(f"Enhanced productive reply formatting failed for {log_prefix}: {e}, falling back to standard")
+                        message_text = None
+
+                # Fallback to standard template formatting
+                if not message_text:
+                    if (
+                        self.msg_config.templates
+                        and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates
+                    ):
+                        message_text = self.msg_config.templates[
+                            ACKNOWLEDGEMENT_MESSAGE_TYPE
+                        ].format(name=name_to_use, summary=summary_for_ack)
+                    else:
+                        user_name = getattr(config_schema, "user_name", "Tree Owner")
+                        message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
+                    logger.info(f"{log_prefix}: Using standard acknowledgement template.")
+
                 message_type_id = self.msg_config.ack_msg_type_id
-                logger.info(f"{log_prefix}: Using standard acknowledgement template.")
 
             return message_text, message_type_id or 1  # Provide default
 

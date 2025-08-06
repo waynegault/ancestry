@@ -29,6 +29,16 @@ from error_handling import (
     ErrorContext,
 )
 
+# === PHASE 9.1: MESSAGE PERSONALIZATION ===
+try:
+    from message_personalization import MessagePersonalizer
+    MESSAGE_PERSONALIZATION_AVAILABLE = True
+    logger.info("Message personalization system loaded successfully")
+except ImportError as e:
+    logger.warning(f"Message personalization not available: {e}")
+    MESSAGE_PERSONALIZATION_AVAILABLE = False
+    MessagePersonalizer = None
+
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
@@ -273,6 +283,16 @@ if not MESSAGE_TEMPLATES or not all(
     )
     # Optionally: sys.exit(1) here if running standalone or want hard failure
     # For now, allow script to potentially continue but log critical error.
+
+# Initialize message personalizer
+MESSAGE_PERSONALIZER: Optional[MessagePersonalizer] = None
+if MESSAGE_PERSONALIZATION_AVAILABLE:
+    try:
+        MESSAGE_PERSONALIZER = MessagePersonalizer()
+        logger.info("Message personalizer initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize message personalizer: {e}")
+        MESSAGE_PERSONALIZER = None
 
 
 # ------------------------------------------------------------------------------
@@ -1152,19 +1172,48 @@ def _process_single_person(
             ),
             "total_rows": total_rows_in_tree,
         }
-        try:
-            message_text = message_template.format(**format_data)
-        except KeyError as ke:
-            logger.error(
-                f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}"
-            )
-            raise StopIteration("error (template_format)")
-        except Exception as e:
-            logger.error(
-                f"Unexpected template formatting error for {log_prefix}: {e}",
-                exc_info=True,
-            )
-            raise StopIteration("error (template_format)")
+
+        # Try enhanced personalized message formatting first
+        message_text = None
+        if MESSAGE_PERSONALIZER and hasattr(person, 'extracted_genealogical_data'):
+            try:
+                # Check if we have an enhanced template available
+                enhanced_template_key = f"Enhanced_{message_to_send_key}"
+                if enhanced_template_key in MESSAGE_TEMPLATES:
+                    logger.debug(f"Using enhanced template '{enhanced_template_key}' for {log_prefix}")
+
+                    # Get extracted data from person object (if available)
+                    extracted_data = getattr(person, 'extracted_genealogical_data', {})
+                    person_data = {"username": getattr(person, "username", "Unknown")}
+
+                    message_text = MESSAGE_PERSONALIZER.create_personalized_message(
+                        enhanced_template_key,
+                        person_data,
+                        extracted_data,
+                        format_data
+                    )
+                    logger.info(f"Successfully created personalized message for {log_prefix}")
+                else:
+                    logger.debug(f"Enhanced template '{enhanced_template_key}' not available, using standard template")
+            except Exception as e:
+                logger.warning(f"Enhanced message formatting failed for {log_prefix}: {e}, falling back to standard")
+                message_text = None
+
+        # Fallback to standard template formatting
+        if not message_text:
+            try:
+                message_text = message_template.format(**format_data)
+            except KeyError as ke:
+                logger.error(
+                    f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}"
+                )
+                raise StopIteration("error (template_format)")
+            except Exception as e:
+                logger.error(
+                    f"Unexpected template formatting error for {log_prefix}: {e}",
+                    exc_info=True,
+                )
+                raise StopIteration("error (template_format)")
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
         app_mode = config_schema.environment
