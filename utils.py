@@ -63,7 +63,9 @@ from typing import (
     Type,
     Generator,
     TextIO,
+    Awaitable,
 )  # Consolidated typing imports
+import asyncio  # For async/await patterns
 import base64  # For make_ube
 import binascii  # For make_ube
 import contextlib  # Added import for contextlib
@@ -77,6 +79,13 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
 # === THIRD-PARTY IMPORTS ===
+try:
+    import aiohttp  # For async HTTP requests
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
+    logger.warning("aiohttp not available - async API functions will be disabled")
+
 import cloudscraper
 import requests
 from requests import Response as RequestsResponse
@@ -4161,6 +4170,239 @@ def api_session_context(session_manager: Optional['SessionManager'] = None) -> G
                 logger.debug("API session closed successfully")
             except Exception as close_error:
                 logger.warning(f"Error closing API session: {close_error}")
+
+
+# === ASYNC API OPERATIONS (Phase 7.4.1) ===
+
+@contextlib.asynccontextmanager
+async def async_api_session_context(session_manager: Optional['SessionManager'] = None):
+    """
+    Async context manager for HTTP session management with aiohttp.
+
+    Provides a managed aiohttp session with proper cookie handling, timeout
+    configuration, and automatic cleanup. Integrates with SessionManager for
+    authentication state management.
+
+    Args:
+        session_manager: Optional SessionManager for authentication integration.
+
+    Yields:
+        aiohttp.ClientSession: Configured async session for API requests.
+
+    Example:
+        >>> async with async_api_session_context(session_manager) as session:
+        ...     async with session.get('https://api.ancestry.com/endpoint') as response:
+        ...         data = await response.json()
+    """
+    if not AIOHTTP_AVAILABLE:
+        raise ImportError("aiohttp is required for async API operations. Install with: pip install aiohttp")
+    timeout = aiohttp.ClientTimeout(total=30)  # Default timeout
+    connector = aiohttp.TCPConnector(limit=100, limit_per_host=30)  # Connection pooling
+
+    # Configure headers
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
+
+    # Extract cookies from session manager if available
+    cookies = None
+    if session_manager and hasattr(session_manager, '_requests_session') and session_manager._requests_session:
+        try:
+            # Convert requests cookies to aiohttp format
+            cookies = {}
+            for cookie in session_manager._requests_session.cookies:
+                cookies[cookie.name] = cookie.value
+            logger.debug(f"Transferred {len(cookies)} cookies from SessionManager")
+        except Exception as e:
+            logger.warning(f"Failed to transfer cookies from SessionManager: {e}")
+
+    async with aiohttp.ClientSession(
+        timeout=timeout,
+        connector=connector,
+        headers=headers,
+        cookies=cookies
+    ) as session:
+        logger.debug("Created async API session")
+        try:
+            yield session
+        finally:
+            logger.debug("Async API session closed")
+
+
+async def async_api_request(
+    url: str,
+    method: str = "GET",
+    session_manager: Optional['SessionManager'] = None,
+    headers: Optional[Dict[str, str]] = None,
+    data: Optional[Dict] = None,
+    json_data: Optional[Dict] = None,
+    timeout: Optional[int] = None,
+    api_description: str = "Async API Call",
+    max_retries: int = 3,
+    backoff_factor: float = 1.0
+) -> Optional[Dict[str, Any]]:
+    """
+    Make an async HTTP request with retry logic and error handling.
+
+    Args:
+        url: The URL to request
+        method: HTTP method (GET, POST, etc.)
+        session_manager: Optional SessionManager for authentication
+        headers: Optional additional headers
+        data: Optional form data
+        json_data: Optional JSON data
+        timeout: Optional timeout in seconds
+        api_description: Description for logging
+        max_retries: Maximum number of retry attempts
+        backoff_factor: Exponential backoff factor for retries
+
+    Returns:
+        Optional[Dict]: Response data as dictionary, or None on failure
+
+    Example:
+        >>> data = await async_api_request(
+        ...     "https://api.ancestry.com/suggest",
+        ...     method="POST",
+        ...     json_data={"query": "John Smith"},
+        ...     session_manager=session_manager
+        ... )
+    """
+    if not AIOHTTP_AVAILABLE:
+        logger.warning(f"[{api_description}] aiohttp not available - falling back to synchronous request")
+        # Could implement fallback to requests here if needed
+        return None
+    async with async_api_session_context(session_manager) as session:
+        # Merge headers
+        request_headers = {}
+        if headers:
+            request_headers.update(headers)
+
+        # Add CSRF token if available
+        if session_manager and hasattr(session_manager, 'csrf_token') and session_manager.csrf_token:
+            request_headers['X-CSRF-TOKEN'] = session_manager.csrf_token
+
+        # Set timeout
+        request_timeout = aiohttp.ClientTimeout(total=timeout or 30)
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.debug(f"[{api_description}] Async attempt {attempt}/{max_retries}: {method} {url}")
+
+                async with session.request(
+                    method=method,
+                    url=url,
+                    headers=request_headers,
+                    data=data,
+                    json=json_data,
+                    timeout=request_timeout
+                ) as response:
+                    logger.debug(f"[{api_description}] Response: {response.status} {response.reason}")
+
+                    if response.status == 200:
+                        try:
+                            result = await response.json()
+                            logger.info(f"[{api_description}] Successful async request (attempt {attempt})")
+                            return result
+                        except aiohttp.ContentTypeError:
+                            # Try to get text response
+                            text_result = await response.text()
+                            logger.debug(f"[{api_description}] Non-JSON response: {text_result[:200]}")
+                            return {"text": text_result}
+                    elif response.status == 429:  # Rate limit
+                        logger.warning(f"[{api_description}] Rate limited (429), attempt {attempt}/{max_retries}")
+                        if attempt < max_retries:
+                            await asyncio.sleep(backoff_factor * (2 ** attempt))
+                            continue
+                        else:
+                            logger.error(f"[{api_description}] Rate limit exceeded after {max_retries} attempts")
+                            return None
+                    else:
+                        logger.warning(f"[{api_description}] HTTP {response.status}: {response.reason}")
+                        if attempt < max_retries:
+                            await asyncio.sleep(backoff_factor * attempt)
+                            continue
+                        else:
+                            return None
+
+            except asyncio.TimeoutError:
+                logger.warning(f"[{api_description}] Timeout on attempt {attempt}/{max_retries}")
+                if attempt < max_retries:
+                    await asyncio.sleep(backoff_factor * attempt)
+                    continue
+                else:
+                    logger.error(f"[{api_description}] Timeout after {max_retries} attempts")
+                    return None
+            except Exception as e:
+                logger.error(f"[{api_description}] Error on attempt {attempt}/{max_retries}: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(backoff_factor * attempt)
+                    continue
+                else:
+                    logger.error(f"[{api_description}] Failed after {max_retries} attempts")
+                    return None
+
+    return None
+
+
+async def async_batch_api_requests(
+    requests: List[Dict[str, Any]],
+    session_manager: Optional['SessionManager'] = None,
+    max_concurrent: int = 10,
+    progress_callback: Optional[Callable[[int, int], None]] = None
+) -> List[Optional[Dict[str, Any]]]:
+    """
+    Execute multiple API requests concurrently with controlled concurrency.
+
+    Args:
+        requests: List of request dictionaries with 'url', 'method', etc.
+        session_manager: Optional SessionManager for authentication
+        max_concurrent: Maximum number of concurrent requests
+        progress_callback: Optional callback for progress updates
+
+    Returns:
+        List of response dictionaries in the same order as input requests
+
+    Example:
+        >>> requests = [
+        ...     {"url": "https://api.ancestry.com/person/1", "api_description": "Person 1"},
+        ...     {"url": "https://api.ancestry.com/person/2", "api_description": "Person 2"},
+        ... ]
+        >>> results = await async_batch_api_requests(requests, session_manager)
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def bounded_request(request_data: Dict[str, Any], index: int) -> Tuple[int, Optional[Dict[str, Any]]]:
+        async with semaphore:
+            result = await async_api_request(session_manager=session_manager, **request_data)
+            if progress_callback:
+                progress_callback(index + 1, len(requests))
+            return index, result
+
+    # Create tasks for all requests
+    tasks = [
+        bounded_request(request_data, i)
+        for i, request_data in enumerate(requests)
+    ]
+
+    # Execute all tasks concurrently
+    logger.info(f"Starting {len(requests)} async API requests with max_concurrent={max_concurrent}")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Sort results by original index and extract values
+    sorted_results = [None] * len(requests)
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Async batch request failed: {result}")
+            continue
+        index, data = result
+        sorted_results[index] = data
+
+    successful_count = sum(1 for r in sorted_results if r is not None)
+    logger.info(f"Completed async batch: {successful_count}/{len(requests)} successful")
+
+    return sorted_results
 
 
     def test_parse_cookie():

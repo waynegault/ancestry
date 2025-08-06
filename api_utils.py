@@ -39,6 +39,7 @@ from error_handling import (
 )
 
 # === STANDARD LIBRARY IMPORTS ===
+import asyncio
 import json
 import logging
 import re
@@ -46,7 +47,7 @@ import time
 import traceback
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast, Awaitable
 from urllib.parse import quote, urlencode, urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -2616,6 +2617,152 @@ def _sc_print_summary(
 
 
 # End of _sc_print_summary
+
+
+# === ASYNC API FUNCTIONS (Phase 7.4.1) ===
+
+async def async_call_suggest_api(
+    session_manager: "SessionManager",
+    owner_tree_id: str,
+    owner_profile_id: Optional[str],
+    base_url: str,
+    search_criteria: Dict[str, Any],
+    timeout: Optional[int] = None,
+) -> Optional[List[PersonSuggestResponse]]:
+    """
+    Async version of call_suggest_api for concurrent person suggestions.
+
+    Args:
+        session_manager: SessionManager for authentication
+        owner_tree_id: Tree ID for the search
+        owner_profile_id: Profile ID (kept for compatibility)
+        base_url: Base URL for the API
+        search_criteria: Search parameters
+        timeout: Optional timeout in seconds
+
+    Returns:
+        List of PersonSuggestResponse objects or None on failure
+
+    Example:
+        >>> suggestions = await async_call_suggest_api(
+        ...     session_manager, tree_id, profile_id, base_url,
+        ...     {"name": "John Smith", "birth_year": 1900}
+        ... )
+    """
+    from utils import async_api_request
+
+    # Build request URL and data (same logic as sync version)
+    suggest_url = urljoin(base_url, "suggest")
+
+    # Prepare request data
+    request_data = {
+        "treeId": owner_tree_id,
+        **search_criteria
+    }
+
+    try:
+        logger.debug(f"Async Suggest API call for tree {owner_tree_id}")
+
+        response_data = await async_api_request(
+            url=suggest_url,
+            method="POST",
+            session_manager=session_manager,
+            json_data=request_data,
+            timeout=timeout or 180,
+            api_description="Ancestry Suggest API (Async)"
+        )
+
+        if not response_data:
+            logger.warning("Async Suggest API returned no data")
+            return None
+
+        # Parse response into PersonSuggestResponse objects
+        suggestions = []
+        if isinstance(response_data, list):
+            for item in response_data:
+                if isinstance(item, dict):
+                    suggestions.append(PersonSuggestResponse.from_dict(item))
+        elif isinstance(response_data, dict) and "suggestions" in response_data:
+            for item in response_data["suggestions"]:
+                if isinstance(item, dict):
+                    suggestions.append(PersonSuggestResponse.from_dict(item))
+
+        logger.info(f"Async Suggest API returned {len(suggestions)} suggestions")
+        return suggestions
+
+    except Exception as e:
+        logger.error(f"Async Suggest API error: {e}")
+        return None
+
+
+async def async_batch_person_lookup(
+    session_manager: "SessionManager",
+    person_ids: List[str],
+    tree_id: str,
+    base_url: str,
+    max_concurrent: int = 5,
+    progress_callback: Optional[Callable[[int, int], None]] = None
+) -> Dict[str, Optional[PersonFactsResponse]]:
+    """
+    Perform concurrent person fact lookups for multiple persons.
+
+    Args:
+        session_manager: SessionManager for authentication
+        person_ids: List of person IDs to look up
+        tree_id: Tree ID for all lookups
+        base_url: Base URL for the API
+        max_concurrent: Maximum concurrent requests
+        progress_callback: Optional progress callback
+
+    Returns:
+        Dictionary mapping person IDs to PersonFactsResponse objects
+
+    Example:
+        >>> results = await async_batch_person_lookup(
+        ...     session_manager, ["person1", "person2"], tree_id, base_url
+        ... )
+        >>> for person_id, facts in results.items():
+        ...     if facts:
+        ...         print(f"Got facts for {person_id}")
+    """
+    from utils import async_batch_api_requests
+
+    # Prepare batch requests
+    requests = []
+    for person_id in person_ids:
+        facts_url = urljoin(base_url, f"trees/{tree_id}/persons/{person_id}/facts")
+        requests.append({
+            "url": facts_url,
+            "method": "GET",
+            "api_description": f"Facts for {person_id}"
+        })
+
+    logger.info(f"Starting async batch person lookup for {len(person_ids)} persons")
+
+    # Execute batch requests
+    results = await async_batch_api_requests(
+        requests=requests,
+        session_manager=session_manager,
+        max_concurrent=max_concurrent,
+        progress_callback=progress_callback
+    )
+
+    # Parse results into PersonFactsResponse objects
+    parsed_results = {}
+    for i, (person_id, response_data) in enumerate(zip(person_ids, results)):
+        if response_data:
+            try:
+                parsed_results[person_id] = PersonFactsResponse.from_dict(response_data)
+            except Exception as e:
+                logger.warning(f"Failed to parse facts for {person_id}: {e}")
+                parsed_results[person_id] = None
+        else:
+            parsed_results[person_id] = None
+
+    successful_count = sum(1 for v in parsed_results.values() if v is not None)
+    logger.info(f"Async batch person lookup completed: {successful_count}/{len(person_ids)} successful")
+
+    return parsed_results
 
 
 def api_utils_module_tests() -> bool:
