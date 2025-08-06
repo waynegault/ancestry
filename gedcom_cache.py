@@ -91,20 +91,45 @@ except ImportError:
 
 # --- Lazy Loading for Large GEDCOM Datasets ---
 class LazyGedcomData:
-    """Lazy loader for large GEDCOM datasets."""
+    """Lazy loader for large GEDCOM datasets with enhanced memory management."""
     def __init__(self, gedcom_path: str):
         self.gedcom_path = gedcom_path
         self._data = None
+        self._load_attempted = False
+        self._load_error = None
 
     @lazy_property
     def data(self):
         # Only load GEDCOM data when accessed
-        try:
-            from ged4py.parser import GedcomReader
-            self._data = GedcomReader(self.gedcom_path)
-        except ImportError:
-            self._data = None
+        if not self._load_attempted:
+            self._load_attempted = True
+            try:
+                from ged4py.parser import GedcomReader
+                self._data = GedcomReader(self.gedcom_path)
+                logger.debug(f"Lazy loaded GEDCOM data from {self.gedcom_path}")
+            except ImportError as e:
+                self._load_error = f"GedcomReader not available: {e}"
+                self._data = None
+            except Exception as e:
+                self._load_error = f"Failed to load GEDCOM: {e}"
+                self._data = None
+                logger.warning(f"Failed to lazy load GEDCOM from {self.gedcom_path}: {e}")
+        
         return self._data
+    
+    def is_loaded(self) -> bool:
+        """Check if data has been loaded"""
+        return self._data is not None
+    
+    def get_load_error(self) -> Optional[str]:
+        """Get any error that occurred during loading"""
+        return self._load_error
+    
+    def reset(self):
+        """Reset the lazy loader to allow reloading"""
+        self._data = None
+        self._load_attempted = False
+        self._load_error = None
 
 
 # --- GEDCOM Cache Module Implementation ---
@@ -350,6 +375,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
         return cached_data
 
     # Check disk cache
+    disk_cache_key = None
     try:
         file_mtime = os.path.getmtime(gedcom_path)
         mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
@@ -366,6 +392,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
                 return disk_cached
     except Exception as e:
         logger.debug(f"Error checking disk cache: {e}")
+        disk_cache_key = None
 
     logger.debug(f"Loading GEDCOM file with aggressive caching: {gedcom_path}")
     start_time = time.time()
@@ -387,7 +414,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
             # Store in disk cache for persistence - but don't cache the reader object
             # The GedcomReader contains BinaryFileCR objects that cannot be pickled
             try:
-                if cache is not None:
+                if cache is not None and disk_cache_key is not None:
                     # Create a serializable version without the reader
                     cache_data = {
                         "path": str(gedcom_data.path),

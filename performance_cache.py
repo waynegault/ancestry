@@ -29,7 +29,7 @@ import pickle
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Optional, Callable, Tuple
+from typing import Any, Dict, Optional, Callable, Tuple, List
 import weakref
 
 # === PERFORMANCE CACHE CLASSES ===
@@ -49,17 +49,41 @@ class PerformanceCache:
     """
     High-performance cache specifically designed for GEDCOM analysis optimization.
     Addresses the 98.64s action10 bottleneck with intelligent caching strategies.
+
+    Phase 7.3.1 Enhancement: Advanced memory management, cache warming, and performance monitoring.
+    Features:
+    - Intelligent cache invalidation with dependency tracking
+    - Adaptive cache sizing based on memory pressure
+    - Cache warming strategies for frequently accessed data
+    - Advanced LRU with frequency-based eviction
+    - Memory pressure monitoring and automatic adjustment
     """
 
-    def __init__(self, max_memory_cache_size: int = 100):
+    def __init__(self, max_memory_cache_size: int = 500):  # Increased cache size for better performance
         self._memory_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_timestamps: Dict[str, float] = {}
+        self._cache_hit_counts: Dict[str, int] = {}  # Track cache hit frequency
+        self._cache_access_times: Dict[str, float] = {}  # Track access times for LRU
+        self._cache_dependencies: Dict[str, List[str]] = {}  # Track cache dependencies
+        self._cache_sizes: Dict[str, int] = {}  # Track individual cache entry sizes
         self._max_size = max_memory_cache_size
+        self._adaptive_sizing = True  # Enable adaptive cache sizing
+        self._memory_pressure_threshold = 0.8  # Trigger cleanup at 80% capacity
         self._disk_cache_dir = Path("Cache/performance")
         self._disk_cache_dir.mkdir(parents=True, exist_ok=True)
         self._cacheable_pool = cacheable_pool
+        self._cache_stats = {
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
+            "disk_hits": 0,
+            "total_size_mb": 0.0,
+            "memory_pressure_cleanups": 0,
+            "adaptive_resizes": 0,
+            "dependency_invalidations": 0
+        }
         logger.debug(
-            f"Performance cache initialized with max size {max_memory_cache_size}"
+            f"Performance cache initialized with max size {max_memory_cache_size} (Phase 7.3.1 Enhanced)"
         )
 
     @lazy_property
@@ -69,32 +93,148 @@ class PerformanceCache:
             "memory_cache_size": len(self._memory_cache),
             "disk_cache_dir": str(self._disk_cache_dir),
             "max_size": self._max_size,
+            "memory_usage_mb": self._calculate_memory_usage(),
+            "memory_pressure": self._calculate_memory_pressure(),
         }
+
+    def _calculate_memory_usage(self) -> float:
+        """Calculate approximate memory usage in MB."""
+        try:
+            import sys
+            total_size = 0
+            for key, value in self._memory_cache.items():
+                total_size += sys.getsizeof(key) + sys.getsizeof(value)
+            return total_size / (1024 * 1024)  # Convert to MB
+        except Exception:
+            return 0.0
+
+    def _calculate_memory_pressure(self) -> float:
+        """Calculate memory pressure as a ratio (0.0 to 1.0)."""
+        if self._max_size == 0:
+            return 0.0
+        return len(self._memory_cache) / self._max_size
+
+    def _should_trigger_cleanup(self) -> bool:
+        """Determine if cleanup should be triggered based on memory pressure."""
+        pressure = self._calculate_memory_pressure()
+        return pressure >= self._memory_pressure_threshold
+
+    def _adaptive_resize(self):
+        """Adaptively resize cache based on usage patterns."""
+        if not self._adaptive_sizing:
+            return
+
+        hit_rate = self._cache_stats["hits"] / max(1, self._cache_stats["hits"] + self._cache_stats["misses"])
+
+        # If hit rate is very high (>90%), consider increasing cache size
+        if hit_rate > 0.9 and len(self._memory_cache) >= self._max_size * 0.9:
+            old_size = self._max_size
+            self._max_size = min(self._max_size * 1.2, 1000)  # Cap at 1000 entries
+            if self._max_size != old_size:
+                self._cache_stats["adaptive_resizes"] += 1
+                logger.debug(f"Adaptive resize: increased cache size from {old_size} to {self._max_size}")
+
+        # If hit rate is low (<50%) and cache is large, consider shrinking
+        elif hit_rate < 0.5 and self._max_size > 100:
+            old_size = self._max_size
+            self._max_size = max(self._max_size * 0.8, 100)  # Minimum 100 entries
+            if self._max_size != old_size:
+                self._cache_stats["adaptive_resizes"] += 1
+                logger.debug(f"Adaptive resize: decreased cache size from {old_size} to {self._max_size}")
+                # Trigger cleanup to match new size
+                self._cleanup_old_entries()
 
     def _generate_cache_key(self, *args, **kwargs) -> str:
         """Generate a unique cache key from function arguments"""
         key_data = str(args) + str(sorted(kwargs.items()))
         return hashlib.md5(key_data.encode()).hexdigest()
 
-    def _cleanup_old_entries(self):
-        """Remove old entries if cache is getting too large"""
-        if len(self._memory_cache) > self._max_size:
-            # Remove oldest 20% of entries
-            num_to_remove = max(1, len(self._memory_cache) // 5)
-            oldest_keys = sorted(
-                self._cache_timestamps.keys(), key=lambda k: self._cache_timestamps[k]
+    def _cleanup_old_entries(self, force_cleanup: bool = False):
+        """Remove old entries if cache is getting too large using enhanced LRU strategy"""
+        should_cleanup = force_cleanup or len(self._memory_cache) > self._max_size or self._should_trigger_cleanup()
+
+        if should_cleanup:
+            # Enhanced LRU eviction strategy with dependency awareness
+            target_size = int(self._max_size * 0.8)  # Clean to 80% capacity
+            num_to_remove = max(1, len(self._memory_cache) - target_size)
+
+            if self._should_trigger_cleanup():
+                self._cache_stats["memory_pressure_cleanups"] += 1
+
+            # Sort by combination of access time, hit count, and size (LRU with frequency and size bias)
+            sorted_keys = sorted(
+                self._cache_timestamps.keys(),
+                key=lambda k: (
+                    self._cache_access_times.get(k, 0),  # Last access time (primary)
+                    self._cache_hit_counts.get(k, 0),    # Hit frequency (secondary)
+                    -self._cache_sizes.get(k, 0)         # Size (larger items evicted first, hence negative)
+                )
             )[:num_to_remove]
 
-            for key in oldest_keys:
-                self._memory_cache.pop(key, None)
-                self._cache_timestamps.pop(key, None)
+            # Remove entries and their dependencies
+            removed_count = 0
+            for key in sorted_keys:
+                removed_count += self._remove_cache_entry(key)
 
-            logger.debug(f"Cleaned up {len(oldest_keys)} old cache entries")
+            logger.debug(f"Cleaned up {removed_count} cache entries using enhanced LRU (target: {num_to_remove})")
+
+            # Trigger adaptive resize check
+            self._adaptive_resize()
+
+    def _remove_cache_entry(self, key: str) -> int:
+        """Remove a cache entry and handle dependencies."""
+        if key not in self._memory_cache:
+            return 0
+
+        removed_count = 1
+
+        # Remove the entry
+        self._memory_cache.pop(key, None)
+        self._cache_timestamps.pop(key, None)
+        self._cache_hit_counts.pop(key, None)
+        self._cache_access_times.pop(key, None)
+        self._cache_sizes.pop(key, None)
+
+        # Handle dependencies
+        dependencies = self._cache_dependencies.pop(key, [])
+        for dep_key in dependencies:
+            if dep_key in self._memory_cache:
+                removed_count += self._remove_cache_entry(dep_key)
+                self._cache_stats["dependency_invalidations"] += 1
+
+        # Remove this key from other entries' dependencies
+        for deps in self._cache_dependencies.values():
+            if key in deps:
+                deps.remove(key)
+
+        self._cache_stats["evictions"] += 1
+        return removed_count
+
+    def invalidate_dependencies(self, pattern: str):
+        """Invalidate cache entries matching a pattern or dependency."""
+        invalidated = 0
+        keys_to_remove = []
+
+        for key in self._memory_cache.keys():
+            if pattern in key or any(pattern in dep for dep in self._cache_dependencies.get(key, [])):
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            invalidated += self._remove_cache_entry(key)
+
+        if invalidated > 0:
+            logger.debug(f"Invalidated {invalidated} cache entries matching pattern: {pattern}")
+
+        return invalidated
 
     def get(self, cache_key: str) -> Optional[Any]:
         """Get item from cache (memory first, then disk)"""
         # Check memory cache first
         if cache_key in self._memory_cache:
+            # Update access statistics for LRU
+            self._cache_hit_counts[cache_key] = self._cache_hit_counts.get(cache_key, 0) + 1
+            self._cache_access_times[cache_key] = time.time()
+            self._cache_stats["hits"] += 1
             logger.debug(f"Cache HIT (memory): {cache_key[:12]}...")
             return self._memory_cache[cache_key]
 
@@ -107,19 +247,37 @@ class PerformanceCache:
                     # Move to memory cache for faster access
                     self._memory_cache[cache_key] = data
                     self._cache_timestamps[cache_key] = time.time()
+                    self._cache_access_times[cache_key] = time.time()
+                    self._cache_hit_counts[cache_key] = 1
+                    self._cache_stats["disk_hits"] += 1
                     logger.debug(f"Cache HIT (disk): {cache_key[:12]}...")
                     return data
             except Exception as e:
                 logger.warning(f"Failed to load disk cache {cache_key}: {e}")
 
+        self._cache_stats["misses"] += 1
         logger.debug(f"Cache MISS: {cache_key[:12]}...")
         return None
 
-    def set(self, cache_key: str, value: Any, disk_cache: bool = True):
-        """Store item in cache"""
+    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: Optional[List[str]] = None):
+        """Store item in cache with optional dependency tracking"""
+        # Calculate and store entry size
+        try:
+            import sys
+            entry_size = sys.getsizeof(value)
+            self._cache_sizes[cache_key] = entry_size
+        except Exception:
+            self._cache_sizes[cache_key] = 0
+
         # Store in memory
         self._memory_cache[cache_key] = value
         self._cache_timestamps[cache_key] = time.time()
+        self._cache_access_times[cache_key] = time.time()
+        self._cache_hit_counts[cache_key] = 0
+
+        # Store dependencies
+        if dependencies:
+            self._cache_dependencies[cache_key] = dependencies.copy()
 
         # Store on disk if requested and serializable
         if disk_cache:
@@ -279,6 +437,8 @@ def clear_performance_cache():
     global _performance_cache
     _performance_cache._memory_cache.clear()
     _performance_cache._cache_timestamps.clear()
+    _performance_cache._cache_hit_counts.clear()
+    _performance_cache._cache_access_times.clear()
 
     # Clear disk cache
     try:
@@ -293,12 +453,117 @@ def clear_performance_cache():
     logger.info("Performance cache cleared")
 
 
+def warm_performance_cache(gedcom_paths: Optional[List[str]] = None, warm_strategies: Optional[List[str]] = None):
+    """
+    Intelligent cache warming with multiple strategies.
+
+    Args:
+        gedcom_paths: List of GEDCOM file paths to warm
+        warm_strategies: List of warming strategies ('metadata', 'common_queries', 'relationships')
+    """
+    if not gedcom_paths:
+        return
+
+    if warm_strategies is None:
+        warm_strategies = ['metadata', 'common_queries']
+
+    logger.info(f"Warming performance cache with {len(gedcom_paths)} GEDCOM files using strategies: {warm_strategies}")
+
+    for gedcom_path in gedcom_paths:
+        try:
+            path = Path(gedcom_path)
+            if not path.exists():
+                logger.warning(f"GEDCOM file not found for warming: {gedcom_path}")
+                continue
+
+            # Strategy 1: Metadata warming
+            if 'metadata' in warm_strategies:
+                _warm_metadata_cache(gedcom_path, path)
+
+            # Strategy 2: Common queries warming
+            if 'common_queries' in warm_strategies:
+                _warm_common_queries_cache(gedcom_path)
+
+            # Strategy 3: Relationship data warming
+            if 'relationships' in warm_strategies:
+                _warm_relationships_cache(gedcom_path)
+
+        except Exception as e:
+            logger.warning(f"Failed to warm cache for {gedcom_path}: {e}")
+
+
+def _warm_metadata_cache(gedcom_path: str, path: Path):
+    """Warm cache with file metadata."""
+    cache_key = _performance_cache._generate_cache_key("gedcom_metadata", gedcom_path)
+    if cache_key not in _performance_cache._memory_cache:
+        metadata = {
+            "size": path.stat().st_size,
+            "modified": path.stat().st_mtime,
+            "loaded_at": time.time(),
+            "size_mb": path.stat().st_size / (1024 * 1024)
+        }
+        _performance_cache.set(cache_key, metadata, disk_cache=True)
+        logger.debug(f"Warmed metadata cache for {gedcom_path}")
+
+
+def _warm_common_queries_cache(gedcom_path: str):
+    """Warm cache with common query patterns."""
+    common_patterns = [
+        ("surname_index", gedcom_path),
+        ("birth_year_index", gedcom_path),
+        ("gender_index", gedcom_path),
+        ("location_index", gedcom_path)
+    ]
+
+    for pattern, path in common_patterns:
+        cache_key = _performance_cache._generate_cache_key(pattern, path)
+        if cache_key not in _performance_cache._memory_cache:
+            # Create placeholder data for common indexes
+            placeholder_data = {
+                "pattern": pattern,
+                "path": path,
+                "warmed_at": time.time(),
+                "placeholder": True
+            }
+            _performance_cache.set(cache_key, placeholder_data, disk_cache=True)
+
+    logger.debug(f"Warmed common queries cache for {gedcom_path}")
+
+
+def _warm_relationships_cache(gedcom_path: str):
+    """Warm cache with relationship data patterns."""
+    relationship_patterns = [
+        ("parent_child_map", gedcom_path),
+        ("spouse_map", gedcom_path),
+        ("sibling_map", gedcom_path)
+    ]
+
+    for pattern, path in relationship_patterns:
+        cache_key = _performance_cache._generate_cache_key(pattern, path)
+        if cache_key not in _performance_cache._memory_cache:
+            placeholder_data = {
+                "pattern": pattern,
+                "path": path,
+                "warmed_at": time.time(),
+                "placeholder": True
+            }
+            # Set dependencies for relationship data
+            dependencies = [_performance_cache._generate_cache_key("gedcom_metadata", path)]
+            _performance_cache.set(cache_key, placeholder_data, disk_cache=True, dependencies=dependencies)
+
+    logger.debug(f"Warmed relationships cache for {gedcom_path}")
+
+
 def get_cache_stats() -> Dict[str, Any]:
-    """Get cache statistics for monitoring"""
-    return {
+    """Get comprehensive cache statistics for monitoring and optimization"""
+    stats = {
         "memory_entries": len(_performance_cache._memory_cache),
         "disk_cache_dir": str(_performance_cache._disk_cache_dir),
         "max_size": _performance_cache._max_size,
+        "memory_usage_mb": _performance_cache._calculate_memory_usage(),
+        "memory_pressure": _performance_cache._calculate_memory_pressure(),
+        "adaptive_sizing_enabled": _performance_cache._adaptive_sizing,
+        "dependency_entries": len(_performance_cache._cache_dependencies),
         "oldest_entry": (
             min(_performance_cache._cache_timestamps.values())
             if _performance_cache._cache_timestamps
@@ -310,6 +575,74 @@ def get_cache_stats() -> Dict[str, Any]:
             else None
         ),
     }
+
+    # Add performance statistics
+    stats.update(_performance_cache._cache_stats)
+
+    # Calculate hit rates and efficiency metrics
+    total_requests = stats["hits"] + stats["misses"]
+    if total_requests > 0:
+        stats["hit_rate"] = stats["hits"] / total_requests
+        stats["disk_hit_rate"] = stats["disk_hits"] / total_requests
+        stats["memory_hit_rate"] = (stats["hits"] - stats["disk_hits"]) / total_requests
+    else:
+        stats["hit_rate"] = 0.0
+        stats["disk_hit_rate"] = 0.0
+        stats["memory_hit_rate"] = 0.0
+
+    # Calculate cache efficiency metrics
+    if stats["memory_entries"] > 0:
+        stats["avg_hit_count"] = sum(_performance_cache._cache_hit_counts.values()) / stats["memory_entries"]
+        stats["cache_turnover_rate"] = stats["evictions"] / max(1, stats["memory_entries"])
+    else:
+        stats["avg_hit_count"] = 0.0
+        stats["cache_turnover_rate"] = 0.0
+
+    # Add cache health indicators
+    stats["cache_health"] = _calculate_cache_health(stats)
+
+    return stats
+
+
+def _calculate_cache_health(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """Calculate cache health indicators."""
+    health = {
+        "overall_score": 0.0,
+        "memory_health": "good",
+        "hit_rate_health": "good",
+        "turnover_health": "good",
+        "recommendations": []
+    }
+
+    # Memory health
+    if stats["memory_pressure"] > 0.9:
+        health["memory_health"] = "critical"
+        health["recommendations"].append("Consider increasing cache size or reducing memory pressure")
+    elif stats["memory_pressure"] > 0.8:
+        health["memory_health"] = "warning"
+        health["recommendations"].append("Monitor memory usage closely")
+
+    # Hit rate health
+    if stats["hit_rate"] < 0.3:
+        health["hit_rate_health"] = "poor"
+        health["recommendations"].append("Cache hit rate is low - consider cache warming or TTL adjustment")
+    elif stats["hit_rate"] < 0.6:
+        health["hit_rate_health"] = "fair"
+        health["recommendations"].append("Cache hit rate could be improved")
+
+    # Turnover health
+    if stats["cache_turnover_rate"] > 2.0:
+        health["turnover_health"] = "high"
+        health["recommendations"].append("High cache turnover - consider increasing cache size")
+
+    # Calculate overall score
+    memory_score = max(0, 1 - stats["memory_pressure"])
+    hit_rate_score = stats["hit_rate"]
+    turnover_score = max(0, 1 - min(1, stats["cache_turnover_rate"] / 2))
+
+    health["overall_score"] = (memory_score + hit_rate_score + turnover_score) / 3
+
+    return health
 
 
 # === MOCK DATA FACTORY FOR TESTS ===
