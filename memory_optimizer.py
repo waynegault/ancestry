@@ -35,18 +35,38 @@ class ObjectPool:
         self._factory = factory
         self._pool: list = []
         self._max_size = max_size
+        self._created_count = 0
+        self._reused_count = 0
 
     def acquire(self) -> object:
         if self._pool:
+            self._reused_count += 1
             return self._pool.pop()
+        self._created_count += 1
         return self._factory()
 
     def release(self, obj: object):
         if len(self._pool) < self._max_size:
+            # Reset object state if it has a reset method
+            if hasattr(obj, 'reset') and callable(getattr(obj, 'reset')):
+                try:
+                    getattr(obj, 'reset')()
+                except Exception:
+                    pass  # Ignore reset failures
             self._pool.append(obj)
 
     def size(self) -> int:
         return len(self._pool)
+    
+    def stats(self) -> Dict[str, Union[int, float]]:
+        """Get pool statistics"""
+        return {
+            "pool_size": len(self._pool),
+            "max_size": self._max_size,
+            "created_count": self._created_count,
+            "reused_count": self._reused_count,
+            "reuse_rate": self._reused_count / max(self._created_count + self._reused_count, 1)
+        }
 
 # === LAZY PROPERTY DECORATOR (IMPROVED) ===
 def lazy_property(func: Callable) -> property:
@@ -215,26 +235,12 @@ def memory_profile(func: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-def lazy_property(func: Callable[..., T]) -> property:
-    """Decorator to create a lazy-loaded property."""
-    attr_name = f'_lazy_{func.__name__}'
-    
-    @property
-    @wraps(func)
-    def wrapper(self) -> T:
-        if not hasattr(self, attr_name):
-            setattr(self, attr_name, func(self))
-        return getattr(self, attr_name)
-    
-    return wrapper
-
-
 class LazyList:
     """Memory-efficient lazy list implementation."""
     
-    def __init__(self, generator_func: Callable[[], List[T]]):
+    def __init__(self, generator_func: Callable[[], List[Any]]):
         self._generator_func = generator_func
-        self._data: Optional[List[T]] = None
+        self._data: Optional[List[Any]] = None
         self._loaded = False
     
     def _ensure_loaded(self):
