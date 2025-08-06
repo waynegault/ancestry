@@ -40,16 +40,17 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 
 # === STANDARD LIBRARY IMPORTS ===
+import asyncio
 import contextlib
 import logging
 import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Optional, Generator
+from typing import Optional, Generator, Awaitable, AsyncGenerator, Dict, Any, List
 
 # === THIRD-PARTY IMPORTS ===
-from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
+from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -294,6 +295,113 @@ class DatabaseManager:
             self._update_connection_stats("query", success=False, query_time=query_time)
             logger.error(f"Query failed after {query_time:.3f}s: {e}")
             raise
+
+    # === ASYNC DATABASE OPERATIONS (Phase 7.4.2) ===
+
+    @contextlib.asynccontextmanager
+    async def async_session_context(self) -> AsyncGenerator[Session, None]:
+        """
+        Async context manager for database session management.
+
+        Provides an async-compatible database session with proper transaction
+        handling and automatic cleanup. Uses thread pool for database operations
+        to maintain async compatibility with SQLite.
+
+        Yields:
+            Session: Database session for async operations
+
+        Example:
+            >>> async with db_manager.async_session_context() as session:
+            ...     result = await db_manager.async_execute_query(
+            ...         session, "SELECT * FROM people LIMIT 10"
+            ...     )
+        """
+        session = None
+        loop = asyncio.get_event_loop()
+
+        try:
+            # Get session in thread pool to avoid blocking
+            session = await loop.run_in_executor(None, self.get_session)
+
+            if not session:
+                raise RuntimeError("Failed to obtain database session for async operation")
+
+            logger.debug("Async database session acquired")
+            yield session
+
+            # Commit in thread pool
+            await loop.run_in_executor(None, session.commit)
+            logger.debug("Async database session committed")
+
+        except Exception as e:
+            if session:
+                try:
+                    await loop.run_in_executor(None, session.rollback)
+                    logger.error(f"Async database session rolled back due to error: {e}")
+                except Exception as rollback_e:
+                    logger.error(f"Failed to rollback async session: {rollback_e}")
+            raise
+        finally:
+            if session:
+                await loop.run_in_executor(None, self.return_session, session)
+
+    async def async_execute_query(
+        self,
+        session: Session,
+        query: str,
+        params: Optional[Dict[str, Any]] = None,
+        fetch_results: bool = True
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Execute a database query asynchronously.
+
+        Args:
+            session: Database session
+            query: SQL query string
+            params: Optional query parameters
+            fetch_results: Whether to fetch and return results
+
+        Returns:
+            List of result dictionaries or None
+
+        Example:
+            >>> async with db_manager.async_session_context() as session:
+            ...     results = await db_manager.async_execute_query(
+            ...         session, "SELECT * FROM people WHERE name = :name",
+            ...         {"name": "John Smith"}
+            ...     )
+        """
+        loop = asyncio.get_event_loop()
+
+        def _execute_query():
+            try:
+                # Convert string query to SQLAlchemy text object
+                sql_query = text(query) if isinstance(query, str) else query
+
+                if params:
+                    result = session.execute(sql_query, params)
+                else:
+                    result = session.execute(sql_query)
+
+                if fetch_results:
+                    # Convert result to list of dictionaries
+                    rows = result.fetchall()
+                    if rows:
+                        columns = result.keys()
+                        return [dict(zip(columns, row)) for row in rows]
+                    return []
+                else:
+                    return None
+
+            except Exception as e:
+                logger.error(f"Async query execution failed: {e}")
+                raise
+
+        try:
+            return await loop.run_in_executor(None, _execute_query)
+        except Exception as e:
+            logger.error(f"Async database query failed: {e}")
+            return None
 
     def ensure_ready(self) -> bool:
         """
