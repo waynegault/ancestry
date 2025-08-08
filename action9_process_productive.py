@@ -43,6 +43,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
+import hashlib
+import re
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -756,6 +758,12 @@ class PersonProcessor:
                 return False, "ai_error"
 
             extracted_data, suggested_tasks = ai_results
+
+            # Log-only: assess suggested_tasks quality before any task creation (no behavior change)
+            try:
+                _log_suggested_tasks_quality(suggested_tasks, extracted_data, log_prefix)
+            except Exception as e:
+                logger.debug(f"{log_prefix}: Task quality audit unavailable: {e}")
 
             # Create MS Graph tasks
             self._create_ms_tasks(person, suggested_tasks, log_prefix, progress_bar)
@@ -1914,6 +1922,94 @@ def _log_summary(state: ProcessingState):
 #####################################################
 # Helper Functions (Missing from refactored version)
 #####################################################
+
+
+def _normalize_task_text(task: str) -> str:
+    """Create a normalized representation of a task string for hashing/dedup logs.
+
+    - Lowercase
+    - Collapse whitespace
+    - Strip leading/trailing punctuation
+    - Remove repeated punctuation
+    """
+    if not isinstance(task, str):
+        return ""
+    t = task.lower()
+    t = re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"[\s\-_,.;:!]+$", "", t)  # strip trailing punctuation clusters
+    t = re.sub(r"^[\s\-_,.;:!]+", "", t)  # strip leading punctuation clusters
+    t = re.sub(r"[!?.]{2,}", ".", t)
+    return t
+
+
+def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dict[str, Any], log_prefix: str) -> None:
+    """Log-only audit of suggested task quality; does not modify behavior.
+
+    Metrics logged:
+    - total vs unique (normalized) count
+    - average/median length and counts of very short/very long tasks
+    - coverage hints: whether tasks reference extracted names/locations/dates
+    - idempotency hashes for potential future de-duplication
+    - presence of action verbs
+    """
+    try:
+        tasks = suggested_tasks or []
+        if not tasks:
+            logger.debug(f"{log_prefix}: No suggested_tasks to audit.")
+            return
+
+        # Normalize and hash
+        norm = [_normalize_task_text(t) for t in tasks if isinstance(t, str) and t.strip()]
+        unique_norm = list({n for n in norm if n})
+        dup_count = max(0, len(norm) - len(unique_norm))
+        hashes = [hashlib.sha1(n.encode("utf-8")).hexdigest()[:12] for n in unique_norm]
+
+        # Length stats
+        lengths = [len(t) for t in tasks if isinstance(t, str)]
+        avg_len = sum(lengths) / len(lengths) if lengths else 0
+        short_count = sum(1 for l in lengths if l < 25)
+        long_count = sum(1 for l in lengths if l > 220)
+
+        # Action verbs heuristic
+        ACTION_VERBS = [
+            "search", "check", "look", "compare", "review", "request",
+            "contact", "verify", "order", "compile", "analyze", "map",
+            "triangulate", "confirm", "document",
+        ]
+        verb_hits = sum(1 for n in norm for v in ACTION_VERBS if f" {v} " in f" {n} ")
+
+        # Names/locations coverage (best-effort; extracted_data structure may vary)
+        names = set()
+        try:
+            for nd in (extracted_data.get("structured_names") or []):
+                full = nd.get("full_name") if isinstance(nd, dict) else None
+                if full:
+                    names.add(full.lower())
+        except Exception:
+            pass
+        locations = set()
+        try:
+            for loc in (extracted_data.get("locations") or []):
+                place = loc.get("place") if isinstance(loc, dict) else None
+                if place:
+                    locations.add(place.lower())
+        except Exception:
+            pass
+
+        names_refs = sum(1 for n in norm if any(name in n for name in names)) if names else 0
+        loc_refs = sum(1 for n in norm if any(place in n for place in locations)) if locations else 0
+
+        logger.info(
+            f"{log_prefix}: Task audit — total={len(tasks)}, unique_norm={len(unique_norm)}, dupes={dup_count}, "
+            f"avg_len={avg_len:.1f}, short(<25)={short_count}, long(>220)={long_count}, verbs={verb_hits}, "
+            f"name_refs={names_refs}, location_refs={loc_refs}"
+        )
+        # Log a compact preview of normalized tasks and their hashes
+        preview = [f"{i+1}:{unique_norm[i][:70]} # {hashes[i]}" for i in range(min(3, len(unique_norm)))]
+        if preview:
+            logger.debug(f"{log_prefix}: Task audit sample: {preview}")
+    except Exception as e:
+        logger.debug(f"{log_prefix}: Task audit failed: {e}")
 
 
 def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
