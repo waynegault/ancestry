@@ -39,6 +39,14 @@ Notes on existing preferences already respected in codebase:
 - Conservative processing limits remain unchanged; we do not alter .env in this revision
 - Readme consolidation will be addressed at the end of the phases per request
 
+### Phase 1 — Progress Log (2025-08-08)
+- Baseline tests passed (52 modules, 418 tests)
+- Created genealogical_normalization.py with normalize_ai_response()/normalize_extracted_data()
+- Integrated normalization into action9 _process_ai_response after Pydantic validation/salvage
+- All tests green post-change (52 modules, 418 tests)
+- Next: Plan Phase 2 instrumentation (no behavior change), then implement
+
+
 
 ## Status: 🚀 PHASE 7 READY - COMPREHENSIVE OPTIMIZATION & MODERNIZATION
 
