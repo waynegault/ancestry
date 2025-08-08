@@ -60,9 +60,11 @@ Phases:
    - Verified: MessagePersonalizer provides safe defaults for enhanced placeholders
    - Status: Tests green (52 modules, 418 tests); no behavior changes
 
-- Phase 4: Task Enrichment & De‑duplication (Planned)
-   - Normalize and de‑dup suggested_tasks; enrich titles/bodies with structured context when available
-   - Optional idempotency hash per session to avoid near-duplicates (no behavior change in dry_run)
+- Phase 4: Task Enrichment & De‑duplication (Active)
+   - 4.1 Completed (2025-08-08; logging-only): Added suggested_tasks quality audit in Action 9 before MS To‑Do creation. Logs uniqueness, length stats, action verbs, and references to extracted names/locations; computes stable idempotency preview hashes. No behavior changes.
+   - 4.2 Planned (logging-only): Add dry_run de‑dup preview and idempotency-hash grouping summary to estimate real-world impact without changing behavior.
+   - 4.3 Planned (guarded rollout): Optional de‑duplication when app_mode == testing; then generalize behind a config flag.
+   - 4.4 Planned: Enrich task titles/bodies using structured context when enhanced templates apply; keep graceful fallback.
 
 Notes respected:
 - Logging honors log level; no user-visible behavior changes until explicitly stated
