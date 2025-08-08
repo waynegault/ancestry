@@ -404,6 +404,7 @@ class SessionValidator:
     def _check_csrf_token(self, api_manager) -> Tuple[bool, Optional[str]]:
         """
         Check and retrieve CSRF token if needed.
+        Uses smart caching to avoid repeated fetches.
 
         Args:
             api_manager: APIManager instance
@@ -413,7 +414,7 @@ class SessionValidator:
         """
         try:
             if not api_manager.csrf_token:
-                logger.debug("CSRF token not available. Attempting to retrieve...")
+                logger.debug("CSRF token not available. Attempting to retrieve (once per session)...")
                 csrf_token = api_manager.get_csrf_token()
 
                 if not csrf_token:
@@ -421,9 +422,8 @@ class SessionValidator:
                     logger.warning("Failed to retrieve CSRF token (non-critical).")
                     return True, None  # Continue anyway
 
-                logger.debug("CSRF token retrieved successfully.")
-            else:
-                logger.debug("CSRF token already available.")
+                logger.debug("CSRF token retrieved and cached successfully.")
+            # No need to log "already available" - reduces noise
 
             return True, None
 

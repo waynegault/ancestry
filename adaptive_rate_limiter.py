@@ -105,7 +105,7 @@ class AdaptiveRateLimiter:
         self.last_adaptation_time = time.time()
         self.adaptation_cooldown = 30.0  # Seconds between adaptations
         
-        logger.info(f"Initialized adaptive rate limiter: {initial_rps} RPS, {initial_delay}s delay")
+        logger.debug(f"Initialized adaptive rate limiter: {initial_rps} RPS, {initial_delay}s delay")
 
     def wait(self) -> float:
         """
@@ -194,37 +194,54 @@ class AdaptiveRateLimiter:
         # Determine adaptation strategy
         adaptation_made = False
         
-        # Decrease RPS if too many rate limit errors
-        if rate_limit_rate > self.rate_limit_threshold:
-            new_rps = max(self.min_rps, self.current_rps * 0.7)
+        # Simple rate limiting response
+        if rate_limit_rate > 0.02:  # More than 2% rate limiting
+            new_rps = max(self.min_rps, self.current_rps * 0.5)
             if new_rps != self.current_rps:
-                logger.info(f"Decreasing RPS due to rate limit errors: {self.current_rps:.2f} → {new_rps:.2f}")
+                logger.info(f"Decreasing RPS due to rate limiting: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
-                self.current_delay = min(self.max_delay, self.current_delay * 1.5)
+                self.current_delay = min(self.max_delay, self.current_delay * 2.0)
                 adaptation_made = True
         
-        # Increase RPS if success rate is high and response times are good
+        # Increase RPS more aggressively if performance is excellent
+        elif success_rate > 0.98 and avg_response_time < 1.0 and rate_limit_rate == 0:
+            # Aggressive increase for excellent performance
+            new_rps = min(self.max_rps, self.current_rps * 1.4)
+            if new_rps != self.current_rps:
+                logger.info(f"Aggressively increasing RPS due to excellent performance: {self.current_rps:.2f} → {new_rps:.2f}")
+                self.current_rps = new_rps
+                self.current_delay = max(self.min_delay, self.current_delay * 0.7)
+                adaptation_made = True
+
+        # Moderate increase for good performance
         elif success_rate > self.success_threshold and avg_response_time < 2.0:
-            new_rps = min(self.max_rps, self.current_rps * 1.1)
+            new_rps = min(self.max_rps, self.current_rps * 1.2)  # Increased from 1.1 to 1.2
             if new_rps != self.current_rps:
                 logger.info(f"Increasing RPS due to good performance: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
-                self.current_delay = max(self.min_delay, self.current_delay * 0.9)
+                self.current_delay = max(self.min_delay, self.current_delay * 0.85)  # More aggressive decrease
                 adaptation_made = True
         
-        # Decrease RPS if success rate is low
-        elif success_rate < 0.8:
-            new_rps = max(self.min_rps, self.current_rps * 0.8)
+        # Decrease RPS if success rate is low (more conservative threshold)
+        elif success_rate < 0.9:  # Increased threshold from 0.8 to 0.9 for earlier intervention
+            new_rps = max(self.min_rps, self.current_rps * 0.7)  # More aggressive reduction from 0.8 to 0.7
             if new_rps != self.current_rps:
                 logger.info(f"Decreasing RPS due to low success rate: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
-                self.current_delay = min(self.max_delay, self.current_delay * 1.2)
+                self.current_delay = min(self.max_delay, self.current_delay * 1.5)  # Increased from 1.2 to 1.5
                 adaptation_made = True
         
         if adaptation_made:
             self.stats.adaptive_adjustments += 1
             self.last_adaptation_time = current_time
-            logger.debug(f"Adaptive rate limiting: RPS={self.current_rps:.2f}, Delay={self.current_delay:.2f}s, "
+
+            # Simple cooldown adjustment
+            if rate_limit_rate > 0:
+                self.adaptation_cooldown = min(30.0, self.adaptation_cooldown * 1.2)
+            elif success_rate > 0.95:
+                self.adaptation_cooldown = max(10.0, self.adaptation_cooldown * 0.9)
+
+            logger.debug(f"⚡ Adaptive rate limiting: RPS={self.current_rps:.2f}, Delay={self.current_delay:.2f}s, "
                         f"Success={success_rate:.2%}, RateLimit={rate_limit_rate:.2%}")
 
     def get_current_settings(self) -> Dict[str, float]:
@@ -257,6 +274,11 @@ class AdaptiveRateLimiter:
         """Disable adaptive rate limiting."""
         self.adaptation_enabled = False
         logger.info("Disabled adaptive rate limiting")
+
+    def record_rate_limit(self):
+        """Simple rate limit recording - just increase delay."""
+        self.current_delay = min(self.max_delay, self.current_delay * 2.0)
+        logger.info(f"Rate limit detected, increasing delay to {self.current_delay:.1f}s")
 
     def is_throttled(self) -> bool:
         """Check if currently throttled due to rate limiting."""
@@ -327,7 +349,7 @@ class SmartBatchProcessor:
         self.last_adaptation_time = time.time()
         self.adaptation_cooldown = 60.0  # Seconds between batch size adaptations
         
-        logger.info(f"Initialized smart batch processor: {initial_batch_size} batch size")
+        logger.debug(f"Initialized smart batch processor: {initial_batch_size} batch size")
 
     def get_next_batch_size(self) -> int:
         """Get the recommended batch size for the next batch."""
@@ -631,8 +653,54 @@ def test_configuration_optimizer():
     return True
 
 
+def adaptive_rate_limiter_module_tests() -> bool:
+    """
+    Comprehensive test suite for adaptive_rate_limiter.py with real functionality testing.
+    Tests adaptive rate limiting, smart batch processing, and configuration optimization.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Adaptive Rate Limiting & Optimization", "adaptive_rate_limiter.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "Adaptive rate limiter system",
+            test_adaptive_rate_limiter,
+            "Dynamic rate limiting with automatic adjustment based on response times",
+            "Test adaptive rate limiter with response time monitoring and adjustment",
+            "Test AdaptiveRateLimiter with initial_rps=1.0, min_rps=0.5, max_rps=2.0",
+        )
+
+        suite.run_test(
+            "Smart batch processor system",
+            test_smart_batch_processor,
+            "Intelligent batch processing with dynamic size optimization",
+            "Test smart batch processor with adaptive batch sizing",
+            "Test SmartBatchProcessor with initial_batch_size=5, min=1, max=10",
+        )
+
+        suite.run_test(
+            "Configuration optimizer system",
+            test_configuration_optimizer,
+            "Configuration optimization with performance analysis and recommendations",
+            "Test configuration optimizer with performance metrics and suggestions",
+            "Test ConfigurationOptimizer with performance analysis and optimization recommendations",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive adaptive rate limiter tests using standardized TestSuite format."""
+    return adaptive_rate_limiter_module_tests()
+
+
 if __name__ == "__main__":
-    """Test suite for adaptive_rate_limiter.py"""
-    test_adaptive_rate_limiter()
-    test_smart_batch_processor()
-    test_configuration_optimizer()
+    """
+    Execute comprehensive adaptive rate limiter tests when run directly.
+    Tests adaptive rate limiting, smart batch processing, and configuration optimization.
+    """
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)

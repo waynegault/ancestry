@@ -256,15 +256,20 @@ class APIManager:
         )
 
         if response_data and isinstance(response_data, dict):
-            csrf_token = response_data.get("token")
+            # Try multiple possible field names for CSRF token
+            csrf_token = (
+                response_data.get("token") or
+                response_data.get("csrfToken") or
+                response_data.get("csrf_token")
+            )
             if csrf_token:
                 self.csrf_token = csrf_token
                 logger.debug("CSRF token retrieved successfully")
                 return csrf_token
             else:
-                logger.error("CSRF token not found in response")
+                logger.debug("CSRF token not found in response (non-critical)")
         else:
-            logger.error("Failed to retrieve CSRF token")
+            logger.debug("Failed to retrieve CSRF token (non-critical)")
 
         return None
 

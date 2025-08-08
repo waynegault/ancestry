@@ -922,10 +922,14 @@ def create_or_update_dna_match(
         # Required fields
         validated_data["compare_link"] = match_data["compare_link"]
         validated_data["predicted_relationship"] = match_data["predicted_relationship"]
-        cm_dna_val = int(match_data["cM_DNA"])
-        if cm_dna_val < 0:
-            raise ValueError("cM cannot be negative")
-        validated_data["cM_DNA"] = cm_dna_val
+        try:
+            cm_dna_val = int(float(match_data["cM_DNA"]))  # Handle float strings
+            if cm_dna_val < 0:
+                raise ValueError("cM cannot be negative")
+            validated_data["cM_DNA"] = cm_dna_val
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid cM_DNA value '{match_data.get('cM_DNA')}' for {log_ref}: {e}")
+            raise ValueError(f"Invalid cM_DNA value: {e}")
     except (KeyError, ValueError, TypeError) as e:
         logger.error(
             f"create_or_update_dna_match: Missing/Invalid required data for {log_ref}: {e}"
@@ -1870,6 +1874,8 @@ def commit_bulk_data(
                 existing_logs_dict: Dict[
                     Tuple[str, MessageDirectionEnum], ConversationLog
                 ] = {}
+                # Initialize the map that will be used later
+                existing_logs_map: Dict[str, ConversationLog] = {}
                 if log_keys_to_check:
                     existing_logs = (
                         sess.query(ConversationLog)
@@ -1881,8 +1887,7 @@ def commit_bulk_data(
                         )
                         .all()
                     )
-                    # Define as Dict[str, ConversationLog] to use string keys
-                    existing_logs_map: Dict[str, ConversationLog] = {}
+                    # Populate the existing_logs_map that was initialized earlier
                     for log in existing_logs:
                         # Convert SQLAlchemy Column objects to Python types
                         conv_id = (
@@ -1905,11 +1910,15 @@ def commit_bulk_data(
                                 continue
 
                         # Add to map with proper types - use a string key to avoid type issues
-                        direction_value = (
-                            direction.value
-                            if hasattr(direction, "value")
-                            else str(direction)
-                        )
+                        try:
+                            direction_value = (
+                                direction.value
+                                if hasattr(direction, "value")
+                                else str(direction)
+                            )
+                        except (AttributeError, TypeError):
+                            logger.warning(f"{log_prefix}Could not extract direction value from {direction}")
+                            continue
                         key = f"{conv_id}:{direction_value}"
                         existing_logs_map[key] = log
                     logger.debug(

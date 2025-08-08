@@ -682,6 +682,38 @@ def test_research_prioritization():
     return True
 
 
+def research_prioritization_module_tests() -> bool:
+    """
+    Comprehensive test suite for research_prioritization.py with real functionality testing.
+    Tests intelligent research prioritization, clustering, and recommendation systems.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Intelligent Research Prioritization", "research_prioritization.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "Research prioritization system",
+            test_research_prioritization,
+            "Complete research prioritization workflow with clustering and recommendations",
+            "Test intelligent research prioritization system with real data processing",
+            "Test IntelligentResearchPrioritizer with sample DNA matches, clustering, and priority scoring",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive research prioritization tests using standardized TestSuite format."""
+    return research_prioritization_module_tests()
+
+
 if __name__ == "__main__":
-    """Test suite for research_prioritization.py"""
-    test_research_prioritization()
+    """
+    Execute comprehensive research prioritization tests when run directly.
+    Tests intelligent research prioritization, clustering, and recommendation systems.
+    """
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)

@@ -820,7 +820,7 @@ def _identify_fetch_candidates(
 
     # Add detailed logging about fetch candidates
     if len(fetch_candidates_uuid) == 0:
-        logger.warning("No fetch candidates identified - all matches appear up-to-date in database")
+        logger.debug("No fetch candidates identified - all matches appear up-to-date in database")
     else:
         logger.info(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")  # Show first 5
 
@@ -865,7 +865,7 @@ def _perform_api_prefetches(
     batch_relationship_prob_data: Dict[str, Optional[str]] = {}
 
     if not fetch_candidates_uuid:
-        logger.warning("_perform_api_prefetches: No fetch candidates provided for API pre-fetch - returning empty results")
+        logger.debug("_perform_api_prefetches: No fetch candidates provided for API pre-fetch - returning empty results")
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
     futures: Dict[Any, Tuple[str, str]] = {}

@@ -606,6 +606,38 @@ def test_dna_gedcom_crossref():
     return True
 
 
+def dna_gedcom_crossref_module_tests() -> bool:
+    """
+    Comprehensive test suite for dna_gedcom_crossref.py with real functionality testing.
+    Tests DNA-GEDCOM cross-referencing, conflict detection, and resolution systems.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("DNA-GEDCOM Cross-Reference Analysis", "dna_gedcom_crossref.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "DNA-GEDCOM cross-reference system",
+            test_dna_gedcom_crossref,
+            "Complete DNA-GEDCOM cross-referencing with conflict detection and resolution",
+            "Test DNA-GEDCOM cross-reference system with real data analysis",
+            "Test DNAGedcomCrossReferencer with sample DNA matches and GEDCOM data integration",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive DNA-GEDCOM cross-reference tests using standardized TestSuite format."""
+    return dna_gedcom_crossref_module_tests()
+
+
 if __name__ == "__main__":
-    """Test suite for dna_gedcom_crossref.py"""
-    test_dna_gedcom_crossref()
+    """
+    Execute comprehensive DNA-GEDCOM cross-reference tests when run directly.
+    Tests DNA-GEDCOM cross-referencing, conflict detection, and resolution systems.
+    """
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)
