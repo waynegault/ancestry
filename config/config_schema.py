@@ -426,8 +426,13 @@ class APIConfig:
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
+    # Concurrency (controls ThreadPoolExecutor workers in Action 6)
+    max_concurrency: int = 2  # Conservative default while 429s persist
+
     # Pagination settings
-    max_pages: int = 0  # 0 means no limit    # Timing settings
+    max_pages: int = 0  # 0 means no limit
+
+    # Timing settings
     initial_delay: float = 2.0  # Further increased from 1.0 to 2.0 for very conservative rate limiting
     max_delay: float = 60.0  # Maximum delay for exponential backoff
 

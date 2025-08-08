@@ -96,12 +96,19 @@ from test_framework import (
 # --- Constants ---
 MATCHES_PER_PAGE: int = 20  # Default matches per page (adjust based on API response)
 CRITICAL_API_FAILURE_THRESHOLD: int = (
-    50  # Threshold for _fetch_combined_details failures (increased to 50 for better tolerance of transient issues)
+    6  # Slightly higher threshold to avoid premature batch aborts on transient 429s
 )
 
 # Configurable settings from config_schema
 DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
-THREAD_POOL_WORKERS: int = 5  # Concurrent API workers
+# Make concurrency configurable via environment-backed config if present
+try:
+    from config import config_schema as _cfg
+    THREAD_POOL_WORKERS: int = getattr(getattr(_cfg, 'api', None), 'max_concurrency', 1)
+    if not isinstance(THREAD_POOL_WORKERS, int) or THREAD_POOL_WORKERS <= 0:
+        THREAD_POOL_WORKERS = 1
+except Exception:
+    THREAD_POOL_WORKERS = 1  # More conservative default to reduce 429s
 
 
 # --- Custom Exceptions ---
@@ -275,11 +282,8 @@ def _main_page_processing_loop(
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
     current_page_num = start_page
-
     # Estimate total matches for the progress bar based on pages *this run*
-    # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9, not Action 6
     total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
-
     if (
         start_page == 1 and initial_matches_on_page is not None
     ):  # If first page data already exists
@@ -446,12 +450,10 @@ def _main_page_processing_loop(
                     refresh=True,
                 )
 
-                # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9 (Process Productive Messages)
-                # Action 6 (Gather Matches) should process all matches on the configured pages
-                # The only limit for Action 6 should be MAX_PAGES, which is handled elsewhere
-
                 _adjust_delay(session_manager, current_page_num)
-                session_manager.dynamic_rate_limiter.wait()
+                limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+                if limiter is not None and hasattr(limiter, "wait"):
+                    limiter.wait()
 
                 matches_on_page_for_batch = (
                     None  # CRITICAL: Clear for the next iteration
@@ -490,7 +492,7 @@ def _main_page_processing_loop(
 
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
-@circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 3 to 10 for better tolerance
+@circuit_breaker(failure_threshold=3, recovery_timeout=60)
 @timeout_protection(timeout=300)
 @error_context("DNA match gathering coordination")
 def coord(
@@ -651,19 +653,19 @@ def _lookup_existing_persons(
     # Step 3: Query the database
     try:
         logger.debug(f"Querying DB for {len(uuids_on_page)} existing Person records...")
-        # Convert incoming UUIDs to uppercase for consistent matching
-        uuids_upper = {uuid_val.upper() for uuid_val in uuids_on_page}
+        # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
+        uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
 
         existing_persons = (
             session.query(Person)
-            # Eager load related tables to avoid N+1 queries later
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            # Filter by the list of uppercase UUIDs and exclude soft-deleted records
-            .filter(Person.uuid.in_(uuids_upper), Person.deleted_at == None).all()  # type: ignore
+            .filter(Person.deleted_at == None)  # type: ignore  # Exclude soft-deleted
+            .filter(Person.uuid.in_(uuids_norm))  # type: ignore
+            .all()
         )
         # Step 4: Populate the result map (key by UUID)
         existing_persons_map: Dict[str, Person] = {
-            str(person.uuid): person
+            str(person.uuid).upper(): person
             for person in existing_persons
             if person.uuid is not None
         }
@@ -818,12 +820,6 @@ def _identify_fetch_candidates(
         f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, {skipped_count_this_batch} skipped (no change detected from list view)."
     )
 
-    # Add detailed logging about fetch candidates
-    if len(fetch_candidates_uuid) == 0:
-        logger.debug("No fetch candidates identified - all matches appear up-to-date in database")
-    else:
-        logger.info(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")  # Show first 5
-
     # Step 4: Return results
     return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
 
@@ -865,7 +861,7 @@ def _perform_api_prefetches(
     batch_relationship_prob_data: Dict[str, Optional[str]] = {}
 
     if not fetch_candidates_uuid:
-        logger.debug("_perform_api_prefetches: No fetch candidates provided for API pre-fetch - returning empty results")
+        logger.debug("No fetch candidates provided for API pre-fetch.")
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
     futures: Dict[Any, Tuple[str, str]] = {}
@@ -891,12 +887,16 @@ def _perform_api_prefetches(
 
     with ThreadPoolExecutor(max_workers=THREAD_POOL_WORKERS) as executor:
         for uuid_val in fetch_candidates_uuid:
-            _ = session_manager.dynamic_rate_limiter.wait()
+            limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+            if limiter is not None and hasattr(limiter, "wait"):
+                limiter.wait()
             futures[
                 executor.submit(_fetch_combined_details, session_manager, uuid_val)
             ] = ("combined_details", uuid_val)
 
-            _ = session_manager.dynamic_rate_limiter.wait()
+            limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+            if limiter is not None and hasattr(limiter, "wait"):
+                limiter.wait()
             max_labels = 2
             futures[
                 executor.submit(
@@ -908,7 +908,9 @@ def _perform_api_prefetches(
             ] = ("relationship_prob", uuid_val)
 
         for uuid_val in uuids_for_tree_badge_ladder:
-            _ = session_manager.dynamic_rate_limiter.wait()
+            limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+            if limiter is not None and hasattr(limiter, "wait"):
+                limiter.wait()
             futures[
                 executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
             ] = ("badge_details", uuid_val)
@@ -997,7 +999,9 @@ def _perform_api_prefetches(
                     f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs..."
                 )
                 for cfpid_item in cfpid_list_for_ladder:
-                    _ = session_manager.dynamic_rate_limiter.wait()
+                    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+                    if limiter is not None and hasattr(limiter, "wait"):
+                        limiter.wait()
                     ladder_futures[
                         executor.submit(
                             _fetch_batch_ladder, session_manager, cfpid_item, my_tree_id
@@ -1310,10 +1314,26 @@ def _execute_bulk_db_operations(
                 f"Preparing {len(person_creates_filtered)} Person records for bulk insert..."
             )
             # Prepare list of dictionaries for bulk_insert_mappings
-            insert_data = [
+            insert_data_raw = [
                 {k: v for k, v in p.items() if not k.startswith("_")}
                 for p in person_creates_filtered
             ]
+            # De-duplicate by UUID within this batch and drop any that already exist in DB map
+            seen_uuids: Set[str] = set()
+            insert_data: List[Dict[str, Any]] = []
+            for item in insert_data_raw:
+                uuid_val = str(item.get("uuid") or "").upper()
+                if not uuid_val:
+                    continue
+                if uuid_val in seen_uuids:
+                    logger.warning(f"Skipping duplicate Person create in insert list (UUID: {uuid_val})")
+                    continue
+                if uuid_val in existing_persons_map:
+                    logger.info(f"Skipping Person create for existing UUID {uuid_val}; will treat as update if needed.")
+                    continue
+                seen_uuids.add(uuid_val)
+                item["uuid"] = uuid_val
+                insert_data.append(item)
             # Convert status Enum to its value for bulk insertion
             for item_data in insert_data:
                 if "status" in item_data and isinstance(
@@ -1629,8 +1649,6 @@ def _do_batch(
         MaxApiFailuresExceededError: If API prefetch fails critically. This is caught
                                      by the main coord function to halt the run.
     """
-    # Note: BATCH_SIZE is for database commit batching, not for limiting matches per page
-    # Action 6 should process ALL matches on the page, then use BATCH_SIZE for DB operations
     # Step 1: Initialization
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
@@ -2114,6 +2132,10 @@ def _prepare_dna_match_operation_data(
     api_predicted_rel_for_comp = (
         predicted_relationship if predicted_relationship is not None else "N/A"
     )
+    # Also ensure we never try to INSERT a NULL into a NOT NULL column in DB
+    safe_predicted_relationship = (
+        predicted_relationship if predicted_relationship is not None else "N/A"
+    )
 
     if existing_dna_match is None:
         needs_dna_create_or_update = True
@@ -2192,8 +2214,8 @@ def _prepare_dna_match_operation_data(
             "uuid": match_uuid.upper(),
             "compare_link": match.get("compare_link"),
             "cM_DNA": int(match.get("cM_DNA", 0)),
-            # Store predicted_relationship as is (can be None); DB schema should allow NULL
-            "predicted_relationship": predicted_relationship,
+            # Store non-null string; DB schema requires NOT NULL
+            "predicted_relationship": safe_predicted_relationship,
             "_operation": "create",  # This operation hint is for the bulk operation logic
         }
         if prefetched_combined_details:
@@ -2695,26 +2717,12 @@ def get_matches(
 
     # CRITICAL: Ensure cookies are synced immediately before API call
     # This was simpler in the working version from 6 weeks ago
+    # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
     try:
-        logger.debug("Syncing browser cookies to API session before Match List API call...")
-        browser_cookies = driver.get_cookies()
-        logger.debug(f"Retrieved {len(browser_cookies)} cookies from browser")
-
-        # Clear and re-sync all cookies to ensure fresh state
-        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
-            session_manager.requests_session.cookies.clear()
-            for cookie in browser_cookies:
-                session_manager.requests_session.cookies.set(
-                    cookie['name'],
-                    cookie['value'],
-                    domain=cookie.get('domain', ''),
-                    path=cookie.get('path', '/')
-                )
-            logger.debug(f"Synced {len(browser_cookies)} cookies to requests session")
-        else:
-            logger.warning("No requests session available for cookie sync")
+        if hasattr(session_manager, '_sync_cookies_to_requests'):
+            session_manager._sync_cookies_to_requests()
     except Exception as cookie_sync_error:
-        logger.error(f"Cookie sync failed: {cookie_sync_error}")
+        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
     # Call the API with fresh cookie sync
     api_response = _api_req(
@@ -3056,11 +3064,15 @@ def _fetch_combined_details(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     }
 
+    # Apply the same cookie sync fix that worked for Match List API
+    # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
     try:
-        logger.debug(f"_fetch_combined_details: About to call _api_req for Match Details API, UUID {match_uuid}")
-        logger.debug(f"_fetch_combined_details: details_url={details_url}")
-        logger.debug(f"_fetch_combined_details: details_headers={details_headers}")
+        if hasattr(session_manager, '_sync_cookies_to_requests'):
+            session_manager._sync_cookies_to_requests()
+    except Exception as cookie_sync_error:
+        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
+    try:
         details_response = _api_req(
             url=details_url,
             driver=session_manager.driver,
@@ -3070,8 +3082,6 @@ def _fetch_combined_details(
             use_csrf_token=False,
             api_description="Match Details API (Batch)",
         )
-
-        logger.debug(f"_fetch_combined_details: _api_req returned, type={type(details_response)}, UUID {match_uuid}")
         if details_response and isinstance(details_response, dict):
             combined_data["admin_profile_id"] = details_response.get("adminUcdmId")
             combined_data["admin_username"] = details_response.get("adminDisplayName")
@@ -3105,13 +3115,13 @@ def _fetch_combined_details(
 
     except ConnectionError as conn_err:
         logger.error(
-            f"_fetch_combined_details: ConnectionError fetching /details for UUID {match_uuid}: {conn_err}",
+            f"ConnectionError fetching /details for UUID {match_uuid}: {conn_err}",
             exc_info=False,
         )
         raise
     except Exception as e:
         logger.error(
-            f"_fetch_combined_details: Exception processing /details response for UUID {match_uuid}: {e}",
+            f"Error processing /details response for UUID {match_uuid}: {e}",
             exc_info=True,
         )
         if isinstance(e, requests.exceptions.RequestException):
@@ -3163,6 +3173,14 @@ def _fetch_combined_details(
             "upgrade-insecure-requests": "1",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
         }
+
+        # Apply cookie sync for Profile Details API as well
+        # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
+        try:
+            if hasattr(session_manager, '_sync_cookies_to_requests'):
+                session_manager._sync_cookies_to_requests()
+        except Exception as cookie_sync_error:
+            logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
         try:
             profile_response = _api_req(
@@ -3594,51 +3612,23 @@ def _fetch_batch_relationship_prob(
     csrf_token_val: Optional[str] = None
     csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
+        # Ensure session-level cookie sync occurs once
+        if hasattr(session_manager, '_sync_cookies_to_requests'):
+            session_manager._sync_cookies_to_requests()
         driver_cookies_list = driver.get_cookies()
-        if driver_cookies_list:
-            logger.debug(
-                f"Syncing {len(driver_cookies_list)} WebDriver cookies to shared scraper for {api_description}..."
-            )
-            if hasattr(scraper, "cookies") and isinstance(
-                scraper.cookies, RequestsCookieJar  # type: ignore
-            ):
-                scraper.cookies.clear()
-                for cookie in driver_cookies_list:
-                    if "name" in cookie and "value" in cookie:
-                        scraper.cookies.set(
-                            cookie["name"],
-                            cookie["value"],
-                            domain=cookie.get("domain"),
-                            path=cookie.get("path", "/"),
-                            secure=cookie.get("secure", False),
-                        )
-            else:
-                logger.warning("Scraper cookie jar not accessible for update.")
-
-            driver_cookies_dict = {
-                c["name"]: c["value"]
-                for c in driver_cookies_list
-                if "name" in c and "value" in c
-            }
-            for name in csrf_cookie_names:
-                if name in driver_cookies_dict and driver_cookies_dict[name]:
-                    csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-                    rel_headers["X-CSRF-Token"] = csrf_token_val
-                    logger.debug(
-                        f"Using fresh CSRF token '{name}' from driver cookies for {api_description}."
-                    )
-                    break
-        else:
-            logger.warning(
-                f"driver.get_cookies() returned empty list during {api_description} prep."
-            )
-    except WebDriverException as csrf_wd_e:
-        logger.warning(
-            f"WebDriverException getting/setting cookies for {api_description}: {csrf_wd_e}"
-        )
-        raise ConnectionError(
-            f"WebDriver error getting/setting cookies for CSRF: {csrf_wd_e}"
-        ) from csrf_wd_e
+        driver_cookies_dict = {
+            c["name"]: c["value"]
+            for c in driver_cookies_list
+            if isinstance(c, dict) and "name" in c and "value" in c
+        }
+        for name in csrf_cookie_names:
+            if name in driver_cookies_dict and driver_cookies_dict[name]:
+                csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
+                rel_headers["X-CSRF-Token"] = csrf_token_val
+                logger.debug(
+                    f"Using CSRF token '{name}' from driver cookies for {api_description}."
+                )
+                break
     except Exception as csrf_e:
         logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
 
@@ -3655,55 +3645,37 @@ def _fetch_batch_relationship_prob(
             return None  # Changed from "N/A (Error - Missing CSRF)"
 
     try:
-        logger.debug(
-            f"Making {api_description} POST request to {rel_url} using shared scraper..."
-        )
-        response_rel = scraper.post(
-            rel_url,
+        # Strengthen headers for AJAX-style call and allow redirects
+        rel_headers["X-Requested-With"] = "XMLHttpRequest"
+
+        # Prefer the unified API helper which follows redirects and syncs cookies/headers
+        api_resp = _api_req(
+            url=rel_url,
+            driver=driver,
+            session_manager=session_manager,
+            method="POST",
             headers=rel_headers,
-            json={},
-            allow_redirects=False,
+            referer_url=referer_url,
+            api_description=api_description,
             timeout=config_schema.selenium.api_timeout,
+            allow_redirects=True,
+            use_csrf_token=False,
+            json={},
         )
-        logger.debug(
-            f"<-- {api_description} Response Status: {response_rel.status_code} {response_rel.reason}"
-        )
 
-        if not response_rel.ok:
-            status_code = response_rel.status_code
-            logger.warning(
-                f"{api_description} failed for {sample_id_upper}. Status: {status_code}, Reason: {response_rel.reason}"
-            )
-            try:
-                logger.debug(f"  Response Body: {response_rel.text[:500]}")
-            except Exception:
-                pass
-            response_rel.raise_for_status()
-            return None  # Fallback if raise_for_status doesn't trigger retry
-
-        try:
-            if not response_rel.content:
-                logger.warning(
-                    f"{api_description}: OK ({response_rel.status_code}), but response body EMPTY."
+        def _parse_probability(data_obj: Dict[str, Any]) -> Optional[str]:
+            if "matchProbabilityToSampleId" not in data_obj:
+                logger.debug(
+                    f"{api_description}: Unexpected structure for {sample_id_upper}. Keys: {list(data_obj.keys())[:5]}"
                 )
-                return None  # Changed from "N/A (Empty Response)"
-
-            data = response_rel.json()
-
-            if "matchProbabilityToSampleId" not in data:
-                logger.warning(
-                    f"Invalid data structure from {api_description} for {sample_id_upper}. Resp: {data}"
-                )
-                return None  # Changed from "N/A (Invalid Data Structure)"
-
-            prob_data = data["matchProbabilityToSampleId"]
+                return None
+            prob_data = data_obj.get("matchProbabilityToSampleId", {})
             predictions = prob_data.get("relationships", {}).get("predictions", [])
             if not predictions:
                 logger.debug(
                     f"No relationship predictions found for {sample_id_upper}. Marking as Distant."
                 )
                 return "Distant relationship?"
-
             valid_preds = [
                 p
                 for p in predictions
@@ -3712,47 +3684,109 @@ def _fetch_batch_relationship_prob(
                 and "pathsToMatch" in p
             ]
             if not valid_preds:
-                logger.warning(
-                    f"No valid prediction paths found for {sample_id_upper}."
+                logger.debug(
+                    f"{api_description}: No valid prediction paths for {sample_id_upper}."
                 )
-                return None  # Changed from "N/A (No Valid Paths)"
-
+                return None
             best_pred = max(
                 valid_preds, key=lambda x: x.get("distributionProbability", 0.0)
             )
-            # Store the original decimal value (not multiplied by 100)
             top_prob = best_pred.get("distributionProbability", 0.0)
-            # For display purposes only, calculate percentage
             top_prob_display = top_prob * 100.0
             paths = best_pred.get("pathsToMatch", [])
             labels = [
                 p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
             ]
-
             if not labels:
-                logger.warning(
-                    f"Prediction found for {sample_id_upper}, but no labels in paths. Top prob: {top_prob_display:.1f}%"
+                logger.debug(
+                    f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob_display:.1f}%"
                 )
-                # Return None if no labels, instead of a string that implies partial success
                 return None
-
             final_labels = labels[:max_labels_param]
             relationship_str = " or ".join(map(str, final_labels))
-            # Format the string with the percentage for display, but store the original decimal value
             return f"{relationship_str} [{top_prob_display:.1f}%]"
 
-        except json.JSONDecodeError as json_err:
-            logger.error(
-                f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}"
+        # Case 1: Parsed JSON returned directly
+        if isinstance(api_resp, dict):
+            parsed = _parse_probability(api_resp)
+            if parsed:
+                return parsed
+        # Case 2: Non-JSON Response object or text; try alternative methods
+        if isinstance(api_resp, requests.Response):
+            status = api_resp.status_code
+            # If redirect happened despite allow_redirects (edge), try GET fallback
+            if 300 <= status < 400:
+                logger.debug(f"{api_description}: Redirect {status}. Retrying with GET...")
+            elif not api_resp.ok:
+                logger.debug(
+                    f"{api_description}: Non-OK {status}. Will attempt CSRF refresh + retry."
+                )
+
+        # If we reached here, attempt GET fallback (some builds accept GET)
+        get_resp = _api_req(
+            url=rel_url,
+            driver=driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=rel_headers,
+            referer_url=referer_url,
+            api_description=f"{api_description} (GET Fallback)",
+            timeout=config_schema.selenium.api_timeout,
+            allow_redirects=True,
+            use_csrf_token=False,
+        )
+        if isinstance(get_resp, dict):
+            parsed = _parse_probability(get_resp)
+            if parsed:
+                return parsed
+
+        # CSRF refresh fallback once, then retry POST via helper
+        try:
+            fresh_csrf = session_manager.get_csrf()
+            if fresh_csrf:
+                rel_headers["X-CSRF-Token"] = fresh_csrf
+                logger.debug("Refreshed CSRF token. Retrying POST for probability...")
+                api_resp2 = _api_req(
+                    url=rel_url,
+                    driver=driver,
+                    session_manager=session_manager,
+                    method="POST",
+                    headers=rel_headers,
+                    referer_url=referer_url,
+                    api_description=f"{api_description} (Retry with fresh CSRF)",
+                    timeout=config_schema.selenium.api_timeout,
+                    allow_redirects=True,
+                    use_csrf_token=False,
+                    json={},
+                )
+                if isinstance(api_resp2, dict):
+                    parsed = _parse_probability(api_resp2)
+                    if parsed:
+                        return parsed
+        except Exception as csrf_refresh_err:
+            logger.debug(f"{api_description}: CSRF refresh attempt failed: {csrf_refresh_err}")
+
+        # Last resort: use cloudscraper directly with redirects enabled
+        try:
+            logger.debug(
+                f"{api_description}: Falling back to cloudscraper with redirects enabled..."
             )
-            logger.debug(f"Response text: {response_rel.text[:500]}")
-            raise RequestException("JSONDecodeError") from json_err
-        except Exception as e:
-            logger.error(
-                f"{api_description}: Error processing successful response for {sample_id_upper}: {e}",
-                exc_info=True,
+            cs_resp = scraper.post(
+                rel_url,
+                headers=rel_headers,
+                json={},
+                allow_redirects=True,
+                timeout=config_schema.selenium.api_timeout,
             )
-            raise RequestException("Response Processing Error") from e
+            if cs_resp.ok and cs_resp.headers.get("content-type", "").lower().startswith("application/json"):
+                data = cs_resp.json()
+                return _parse_probability(data)
+        except Exception as cs_e:
+            logger.debug(f"{api_description}: Cloudscraper fallback failed: {cs_e}")
+
+        # If all attempts fail, return None quietly (optional data)
+        logger.debug(f"{api_description}: Unable to retrieve probability data for {sample_id_upper}.")
+        return None
 
     except cloudscraper.exceptions.CloudflareException as cf_e:  # type: ignore
         logger.error(
@@ -3824,18 +3858,22 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
         session_manager: The active SessionManager instance.
         current_page: The page number just processed (for logging context).
     """
-    if session_manager.dynamic_rate_limiter.is_throttled():
+    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+    if limiter is None:
+        return
+    if hasattr(limiter, "is_throttled") and limiter.is_throttled():
         logger.debug(
             f"Rate limiter was throttled during processing before/during page {current_page}. Delay remains increased."
         )
     else:
-        previous_delay = session_manager.dynamic_rate_limiter.current_delay
-        session_manager.dynamic_rate_limiter.decrease_delay()
-        new_delay = session_manager.dynamic_rate_limiter.current_delay
+        previous_delay = getattr(limiter, "current_delay", None)
+        if hasattr(limiter, "decrease_delay"):
+            limiter.decrease_delay()
+        new_delay = getattr(limiter, "current_delay", None)
         if (
+            previous_delay is not None and new_delay is not None and
             abs(previous_delay - new_delay) > 0.01
-            and new_delay
-            > config_schema.api.initial_delay  # Check against initial_delay
+            and new_delay > getattr(config_schema.api, "initial_delay", 0.5)
         ):
             logger.debug(
                 f"Decreased rate limit base delay to {new_delay:.2f}s after page {current_page}."

@@ -511,6 +511,17 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid BATCH_SIZE value: {batch_size_value}")
 
+        # Load optional concurrency override for Action 6
+        max_concurrency_value = os.getenv("MAX_CONCURRENCY")
+        if max_concurrency_value:
+            try:
+                # Mirror under API scope since APIConfig owns concurrency affecting API calls
+                if "api" not in config:
+                    config["api"] = {}
+                config["api"]["max_concurrency"] = int(max_concurrency_value)
+            except ValueError:
+                logger.warning(f"Invalid MAX_CONCURRENCY value: {max_concurrency_value}")
+
         # Load max productive to process configuration
         max_productive_value = os.getenv("MAX_PRODUCTIVE_TO_PROCESS")
         if max_productive_value:
