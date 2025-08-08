@@ -285,6 +285,73 @@ if not MESSAGE_TEMPLATES or not all(
     # Optionally: sys.exit(1) here if running standalone or want hard failure
     # For now, allow script to potentially continue but log critical error.
 
+# ------------------------------------------------------------------------------
+# Log-only: Audit template placeholders to ensure safe coverage of Enhanced_* keys
+# ------------------------------------------------------------------------------
+
+def _audit_template_placeholders(templates: Dict[str, str]) -> None:
+    """Log-only audit: warn if templates contain unknown placeholders."""
+    try:
+        formatter = Formatter()
+        base_keys = {
+            "name",
+            "predicted_relationship",
+            "actual_relationship",
+            "relationship_path",
+            "total_rows",
+        }
+        enhanced_keys = {
+            # Keys created by MessagePersonalizer._create_enhanced_format_data
+            "shared_ancestors",
+            "ancestors_details",
+            "genealogical_context",
+            "research_focus",
+            "specific_questions",
+            "geographic_context",
+            "location_context",
+            "research_suggestions",
+            "specific_research_questions",
+            "mentioned_people",
+            "research_context",
+            "personalized_response",
+            "research_insights",
+            "follow_up_questions",
+            "estimated_relationship",
+            "shared_dna_amount",
+            "dna_context",
+            "shared_ancestor_information",
+            "research_collaboration_request",
+            "research_topic",
+            "specific_research_needs",
+            "collaboration_proposal",
+        }
+        allowed = base_keys | enhanced_keys
+        for key, tmpl in templates.items():
+            # Only audit Enhanced_* aggressively; others will mostly use base_keys
+            fields = {
+                fname for (_, fname, _, _) in formatter.parse(tmpl) if fname
+            }
+            if key.startswith("Enhanced_"):
+                unknown = sorted(f for f in fields if f not in allowed)
+                if unknown:
+                    logger.warning(
+                        f"Template audit: Template '{key}' has unknown placeholders: {unknown}"
+                    )
+            else:
+                # For standard templates, just note uncommon placeholders
+                uncommon = sorted(f for f in fields if f not in base_keys)
+                if uncommon:
+                    logger.debug(
+                        f"Template audit: Template '{key}' uses non-base placeholders: {uncommon}"
+                    )
+    except Exception as _audit_err:
+        logger.debug(f"Template audit skipped due to error: {_audit_err}")
+
+
+# Run a one-time audit of the loaded templates (log-only)
+if MESSAGE_TEMPLATES:
+    _audit_template_placeholders(MESSAGE_TEMPLATES)
+
 # Initialize message personalizer
 from typing import Any as _Any  # alias to avoid conflicts in type annotations
 MESSAGE_PERSONALIZER: Optional[_Any] = None
