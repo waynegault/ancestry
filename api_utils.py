@@ -229,8 +229,23 @@ class TreeOwnerResponse:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TreeOwnerResponse':
-        """Create instance from dictionary data."""
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        """Create instance from dictionary data, safely handling aliases and extras.
+        - Maps legacy 'treeMembersCount' to 'peopleCount' if present.
+        - Ignores unknown fields to avoid constructor errors.
+        """
+        if not isinstance(data, dict):
+            data = {}
+        normalized = dict(data)
+        # Alias mapping: treeMembersCount -> peopleCount (if peopleCount missing)
+        if "peopleCount" not in normalized and "treeMembersCount" in normalized:
+            try:
+                normalized["peopleCount"] = int(normalized.get("treeMembersCount") or 0)
+            except Exception:
+                # Fallback to raw if not int-coercible
+                normalized["peopleCount"] = normalized.get("treeMembersCount")
+        # Filter to known fields only
+        filtered = {k: normalized[k] for k in cls.__dataclass_fields__.keys() if k in normalized}
+        return cls(**filtered)
 
     def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
@@ -2381,7 +2396,7 @@ def call_tree_owner_api(
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
-                    validated_response = TreeOwnerResponse(**response_data)
+                    validated_response = TreeOwnerResponse.from_dict(response_data)
                     logger.debug("Tree Owner API response validation successful")
                 except Exception as validation_err:
                     logger.warning(

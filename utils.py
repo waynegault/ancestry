@@ -52,6 +52,7 @@ import logging
 import re
 import sys
 import time
+import threading
 from typing import (
     Optional,
     Dict,
@@ -775,37 +776,40 @@ class DynamicRateLimiter:
         token_fill_rate: Optional[float] = None,
     ):
         cfg = config_schema  # Use new config system
+        api = getattr(cfg, "api", None)
+        # Use APIConfig-backed values to ensure .env is respected
         self.initial_delay = (
             initial_delay
             if initial_delay is not None
-            else getattr(cfg, "INITIAL_DELAY", 0.5)
+            else (getattr(api, "initial_delay", 2.0) if api else 2.0)
         )
         self.MAX_DELAY = (
-            max_delay if max_delay is not None else getattr(cfg, "MAX_DELAY", 60.0)
+            max_delay if max_delay is not None else (getattr(api, "max_delay", 60.0) if api else 60.0)
         )
         self.backoff_factor = (
             backoff_factor
             if backoff_factor is not None
-            else getattr(cfg, "BACKOFF_FACTOR", 1.8)
+            else (getattr(api, "retry_backoff_factor", 4.0) if api else 4.0)
         )
         self.decrease_factor = (
             decrease_factor
             if decrease_factor is not None
-            else getattr(cfg, "DECREASE_FACTOR", 0.98)
+            else 0.98
         )
         self.current_delay = self.initial_delay
         self.last_throttled = False
-        # Token Bucket parameters
+        # Token Bucket parameters (capacity=burst_limit, fill_rate=requests_per_second)
         self.capacity = float(
             token_capacity
             if token_capacity is not None
-            else getattr(cfg, "TOKEN_BUCKET_CAPACITY", 10.0)
+            else (getattr(api, "burst_limit", 3.0) if api else 3.0)
         )
         self.fill_rate = float(
             token_fill_rate
             if token_fill_rate is not None
-            else getattr(cfg, "TOKEN_BUCKET_FILL_RATE", 2.0)
+            else (getattr(api, "requests_per_second", 0.5) if api else 0.5)
         )
+        self._lock = threading.Lock()
         if self.fill_rate <= 0:
             logger.warning(
                 f"Token fill rate ({self.fill_rate}) must be positive. Setting to 1.0."
@@ -830,39 +834,40 @@ class DynamicRateLimiter:
     # End of _refill_tokens
 
     def wait(self) -> float:
-        self._refill_tokens()
-        # requested_at = time.monotonic() # Less critical now
-        sleep_duration = 0.0
+        # Serialize token accounting to ensure correctness under concurrency
+        with self._lock:
+            self._refill_tokens()
+            sleep_duration = 0.0
 
-        if self.tokens >= 1.0:
-            self.tokens -= 1.0
-            # Apply base delay even if token is available
-            jitter_factor = random.uniform(0.8, 1.2)
-            base_sleep = self.current_delay
-            sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
-            sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-            logger.debug(
-                f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
-            )
-        else:
-            # Token bucket empty, wait for a token to generate
-            wait_needed = (1.0 - self.tokens) / self.fill_rate
-            jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
-            sleep_duration = wait_needed + jitter_amount
-            sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
-            sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-            logger.debug(
-                f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
-            )
-        # End of if/else
+            if self.tokens >= 1.0:
+                self.tokens -= 1.0
+                # Apply base delay even if token is available
+                jitter_factor = random.uniform(0.8, 1.2)
+                base_sleep = self.current_delay
+                sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
+                sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
+                logger.debug(
+                    f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
+                )
+            else:
+                # Token bucket empty, wait for a token to generate
+                wait_needed = (1.0 - self.tokens) / self.fill_rate
+                jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
+                sleep_duration = wait_needed + jitter_amount
+                sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
+                sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
+                logger.debug(
+                    f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
+                )
+        # End of with
 
-        # Perform the sleep
+        # Perform the sleep outside the lock
         if sleep_duration > 0:
             time.sleep(sleep_duration)
-        # End of if
 
-        # Refill again *after* sleeping
-        self._refill_tokens()
+        # After sleeping, do a quick refill under lock to update state
+        with self._lock:
+            self._refill_tokens()
 
         return sleep_duration
 
