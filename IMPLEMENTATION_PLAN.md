@@ -1,5 +1,45 @@
 # IMPLEMENTATION PLAN - High-Impact Optimization & Modernization
 
+## AUGMENT REVISION — 2025-08-08 (Focused, Low‑Risk Improvement Plan)
+
+Goal: Improve data extraction fidelity, data interrogation quality, message personalization, and MS To‑Do task specificity with minimal, reversible changes. We will implement in very small phases, validating after each.
+
+Operating Procedure (for every phase):
+1) Run baseline tests with run_all_tests.py (no flags) to confirm green
+2) Create a git checkpoint commit (exclude Cache/, __pycache__/, WAL/SHM)
+3) Implement the phase across the codebase (complete, not partial)
+4) Verify completeness (grep/search, targeted checks)
+5) Run run_all_tests.py; if many failures, immediately revert to prior checkpoint
+6) Update this plan with progress/results
+7) Commit the phase with a descriptive message
+
+Phased Recommendations (this revision):
+- Phase 1: Extraction Normalization & Schema Guards (Active)
+  - Add a normalization layer that converts any partial/legacy keys (e.g., mentioned_* flat fields) to the structured schema used by downstream features (structured_names, vital_records, relationships, locations, occupations, research_questions, documents_mentioned, dna_information)
+  - Deduplicate and sanitize string lists; enforce list-of-strings for suggested_tasks
+  - Integrate post-parse normalization in action9_process_productive._process_ai_response so both validated and salvaged AI responses converge on the structured shape consumed by messaging and task generation
+  - Success criteria: no test regressions; extracted_data always contains the structured keys; downstream message/task generators see richer data when flat inputs occur
+
+- Phase 2: Data Interrogation & QA Metrics (Planning)
+  - Lightweight scoring of extracted_data completeness (names/locations/dates present, relationship count, doc mentions)
+  - Add simple conflict/consistency checks (e.g., impossible dates, empty place strings) with debug-level logs only
+  - Provide a compact summary helper for logging inside action7/8/9 to keep output within header/footer blocks and respect log level
+
+- Phase 3: Message Personalization Coverage & Quality Gates (Planning)
+  - Audit templates and placeholders; ensure every key used by MessagePersonalizer has a safe default and leverages normalized structured fields when available
+  - Add a pre-send quality gate that checks basic personalization score before sending; log-only in dry_run
+
+- Phase 4: Task Enrichment, Deduplication, and Prioritization (Planning)
+  - Normalize suggested_tasks (dedupe/trim), enrich with structured context (name, date, location) when available
+  - Provide a simple dedup hash to avoid creating near-identical tasks in the same session; keep dry_run preview verbose, actual creation unchanged
+
+Notes on existing preferences already respected in codebase:
+- Logging honors log level and test runner contains output under clear sections
+- Cookie/CSRF syncing already optimized to once-per-session via SessionManager._sync_cookies_to_requests
+- Conservative processing limits remain unchanged; we do not alter .env in this revision
+- Readme consolidation will be addressed at the end of the phases per request
+
+
 ## Status: 🚀 PHASE 7 READY - COMPREHENSIVE OPTIMIZATION & MODERNIZATION
 
 ### 📊 CURRENT STATUS (August 5, 2025):

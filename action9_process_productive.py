@@ -1908,124 +1908,60 @@ def _log_summary(state: ProcessingState):
 
 def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
     """
-    Processes and validates the AI response using Pydantic models for robust parsing.
+    Processes and validates the AI response using Pydantic models for robust parsing,
+    then normalizes the structure to the enriched schema used downstream.
 
-    This function takes the raw AI response and attempts to validate it against the
-    expected schema using Pydantic models. It handles various error cases gracefully
-    and always returns a valid structure even if the input is malformed.
-
-    Args:
-        ai_response: The raw AI response from extract_genealogical_entities
-        log_prefix: A string prefix for log messages (usually includes person info)
-
-    Returns:
-        A dictionary with 'extracted_data' and 'suggested_tasks' keys, properly
-        structured and validated, with empty lists as fallbacks for invalid data.
+    Always returns a dict with keys: 'extracted_data' and 'suggested_tasks'.
     """
-    # Initialize default result structure
-    result = {
-        "extracted_data": {
-            "mentioned_names": [],
-            "mentioned_locations": [],
-            "mentioned_dates": [],
-            "potential_relationships": [],
-            "key_facts": [],
-        },
+    # Lazy import to avoid circulars at module import time
+    try:
+        from genealogical_normalization import normalize_ai_response
+    except Exception:
+        normalize_ai_response = None  # type: ignore
+
+    # Default minimal fallback
+    result: Dict[str, Any] = {
+        "extracted_data": {},
         "suggested_tasks": [],
     }
 
-    # Early return if response is None or not a dict
-    if not ai_response or not isinstance(ai_response, dict):
-        logger.warning(
-            f"{log_prefix}: AI response is None or not a dictionary. Using default empty structure."
+    if not isinstance(ai_response, dict):
+        logger.warning(f"{log_prefix}: AI response is not a dict; applying defaults.")
+        normalized = (
+            normalize_ai_response({}) if callable(normalize_ai_response) else result
         )
-        return result
+        return normalized
 
     logger.debug(f"{log_prefix}: Processing AI response...")
 
     try:
         # First attempt: Try direct validation with Pydantic
         validated_response = AIResponse.model_validate(ai_response)
-
-        # If validation succeeds, convert to dict and return
         result = validated_response.model_dump()
-        logger.debug(
-            f"{log_prefix}: AI response successfully validated with Pydantic schema."
-        )
-        return result
-
+        logger.debug(f"{log_prefix}: AI response validated with Pydantic schema.")
     except ValidationError as ve:
-        # Log validation error details
         logger.warning(f"{log_prefix}: AI response validation failed: {ve}")
-
-        # Second attempt: Try to salvage partial data with more defensive approach
+        # Salvage minimal content before normalization
+        minimal = {"extracted_data": {}, "suggested_tasks": []}
         try:
-            # Process extracted_data if it exists
-            if "extracted_data" in ai_response and isinstance(
-                ai_response["extracted_data"], dict
-            ):
-                extracted_data_raw = ai_response["extracted_data"]
-
-                # Process each expected key
-                for key in result["extracted_data"].keys():
-                    # Get value with fallback to empty list
-                    value = extracted_data_raw.get(key, [])
-
-                    # Ensure it's a list and contains only strings
-                    if isinstance(value, list):
-                        # Filter and convert items to strings
-                        result["extracted_data"][key] = [
-                            str(item)
-                            for item in value
-                            if item is not None and isinstance(item, (str, int, float))
-                        ]
-                    else:
-                        logger.warning(
-                            f"{log_prefix}: AI response 'extracted_data.{key}' is not a list. Using empty list."
-                        )
-            else:
-                logger.warning(
-                    f"{log_prefix}: AI response missing 'extracted_data' dictionary. Using defaults."
-                )
-
-            # Process suggested_tasks if it exists
-            if "suggested_tasks" in ai_response:
-                tasks_raw = ai_response["suggested_tasks"]
-
-                # Ensure it's a list and contains only strings
-                if isinstance(tasks_raw, list):
-                    result["suggested_tasks"] = [
-                        str(item)
-                        for item in tasks_raw
-                        if item is not None and isinstance(item, (str, int, float))
-                    ]
-                else:
-                    logger.warning(
-                        f"{log_prefix}: AI response 'suggested_tasks' is not a list. Using empty list."
-                    )
-            else:
-                logger.warning(
-                    f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list."
-                )
-
-            logger.debug(
-                f"{log_prefix}: Salvaged partial data from AI response after validation failure."
-            )
-
+            if isinstance(ai_response.get("extracted_data"), dict):
+                minimal["extracted_data"] = dict(ai_response["extracted_data"])  # shallow copy
+            if isinstance(ai_response.get("suggested_tasks"), list):
+                minimal["suggested_tasks"] = list(ai_response["suggested_tasks"])  # shallow copy
         except Exception as e:
-            # If even the defensive parsing fails, log and return defaults
-            logger.error(
-                f"{log_prefix}: Failed to salvage data from AI response: {e}",
-                exc_info=True,
-            )
-
+            logger.debug(f"{log_prefix}: Defensive salvage failed: {e}")
+        result = minimal
     except Exception as e:
-        # Catch any other unexpected errors
-        logger.error(
-            f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True
-        )
+        logger.error(f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True)
+        result = {"extracted_data": {}, "suggested_tasks": []}
 
-    # Return the result (either default or partially salvaged)
+    # Normalize to ensure structured keys exist and legacy fields are promoted
+    if callable(normalize_ai_response):
+        try:
+            result = normalize_ai_response(result)
+        except Exception as e:
+            logger.warning(f"{log_prefix}: Normalization failed, using unnormalized result: {e}")
+
     return result
 
 
