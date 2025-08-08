@@ -1842,9 +1842,7 @@ def main_module_tests() -> bool:
         assert (
             "InboxProcessor" in menu_globals
         ), "menu should have access to InboxProcessor"
-        assert (, set up an 
-            "send_messages_to_matches" in menu_globals
-        ), "menu should have access to send_messages_to_matches"
+        assert "send_messages_to_matches" in menu_globals, "menu should have access to send_messages_to_matches"
         assert (
             "process_productive_messages" in menu_globals
         ), "menu should have access to process_productive_messages"
