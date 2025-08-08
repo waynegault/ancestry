@@ -46,7 +46,7 @@ class MessagePersonalizer:
             with messages_path.open("r", encoding="utf-8") as f:
                 templates = json.load(f)
             
-            logger.info(f"Loaded {len(templates)} message templates")
+            logger.debug(f"Loaded {len(templates)} message templates")
             return templates
             
         except Exception as e:
@@ -540,6 +540,38 @@ def test_message_personalization():
     return success
 
 
+def message_personalization_module_tests() -> bool:
+    """
+    Comprehensive test suite for message_personalization.py with real functionality testing.
+    Tests message personalization, template generation, and intelligent messaging systems.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Message Personalization & Template Generation", "message_personalization.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "Message personalization system",
+            test_message_personalization,
+            "Complete message personalization with template generation and intelligent messaging",
+            "Test message personalization system with real template processing",
+            "Test MessagePersonalizer with sample DNA match data and personalized message generation",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive message personalization tests using standardized TestSuite format."""
+    return message_personalization_module_tests()
+
+
 if __name__ == "__main__":
-    """Test suite for message_personalization.py"""
-    test_message_personalization()
+    """
+    Execute comprehensive message personalization tests when run directly.
+    Tests message personalization, template generation, and intelligent messaging systems.
+    """
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)

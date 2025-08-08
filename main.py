@@ -66,37 +66,25 @@ def validate_action_config() -> bool:
             logger.error(f"Unexpected error loading configuration: {e}")
             return False
 
-        # Check essential processing limits
-        if config.api.max_pages <= 0:
-            logger.warning("MAX_PAGES not set or invalid - actions may process unlimited pages")
-
-        if config.batch_size <= 0:
-            logger.warning("BATCH_SIZE not set or invalid - actions may use large batches")
-
+        # Check essential processing limits (only warn about critical issues)
+        warnings = []
         if config.max_productive_to_process <= 0:
-            logger.warning("MAX_PRODUCTIVE_TO_PROCESS not set - actions may process unlimited items")
-
+            warnings.append("MAX_PRODUCTIVE_TO_PROCESS not set")
         if config.max_inbox <= 0:
-            logger.warning("MAX_INBOX not set - actions may process unlimited inbox items")
+            warnings.append("MAX_INBOX not set")
+        # Remove RPS warning since 0.25 is actually conservative
 
-        # Check rate limiting settings
-        if config.api.requests_per_second > 1.0:
-            logger.warning(f"requests_per_second ({config.api.requests_per_second}) may be too aggressive - consider ≤1.0")
-
-        if config.api.retry_backoff_factor < 2.0:
-            logger.warning(f"retry_backoff_factor ({config.api.retry_backoff_factor}) may be too low - consider ≥2.0")
-
-        if config.api.initial_delay < 1.0:
-            logger.warning(f"initial_delay ({config.api.initial_delay}) may be too short - consider ≥1.0")
+        if warnings:
+            logger.info(f"Configuration notes: {'; '.join(warnings)}")
 
         # Log current configuration for transparency
-        logger.info("=== ACTION CONFIGURATION VALIDATION ===")
-        logger.info(f"MAX_PAGES: {config.api.max_pages}")
-        logger.info(f"BATCH_SIZE: {config.batch_size}")
-        logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
-        logger.info(f"MAX_INBOX: {config.max_inbox}")
-        logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
-        logger.info("========================================")
+        logger.debug("=== ACTION CONFIGURATION VALIDATION ===")
+        logger.debug(f"MAX_PAGES: {config.api.max_pages}")
+        logger.debug(f"BATCH_SIZE: {config.batch_size}")
+        logger.debug(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+        logger.debug(f"MAX_INBOX: {config.max_inbox}")
+        logger.debug(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+        logger.debug("========================================")
 
         return True
 
@@ -130,7 +118,7 @@ from utils import (
 try:
     from gedcom_search_utils import get_cached_gedcom_data
     PHASE_12_AVAILABLE = True
-    logger.info("Phase 12 GEDCOM AI components loaded successfully")
+    logger.debug("Phase 12 GEDCOM AI components loaded successfully")
 except ImportError as e:
     logger.warning(f"Phase 12 GEDCOM AI components not available: {e}")
     PHASE_12_AVAILABLE = False
@@ -516,9 +504,6 @@ def exec_actn(
         # --- Return Action Result ---
         # Return True only if action completed without exception AND didn't return False explicitly
         final_outcome = action_result is not False and action_exception is None
-        logger.debug(
-            f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n"
-        )
 
         logger.info("------------------------------------------")
         logger.info(f"Action {choice} ({action_name}) finished.")
@@ -538,13 +523,6 @@ def exec_actn(
                 logger.debug(f"Closing all connections including database...")
                 session_manager.close_sess(keep_db=False)
                 logger.debug(f"All connections closed.")
-        # Log if session is kept open
-        elif (
-            isinstance(session_manager, SessionManager)
-            and session_manager.driver_live
-            and not should_close
-        ):
-            logger.debug(f"Keeping session live after '{action_name}'.")
 
     return final_outcome
 
@@ -720,8 +698,6 @@ def run_core_workflow_action(session_manager, *_):
         run_action6 = config.include_action6_in_workflow
         if run_action6:
             logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-            print("Starting DNA match gathering from page 1...")
-            # Call the coord_action function which wraps the coord function
             gather_result = coord_action(session_manager, config, start=1)
             if gather_result is False:
                 logger.error("Action 6 FAILED.")
@@ -729,7 +705,6 @@ def run_core_workflow_action(session_manager, *_):
                 return False
             else:
                 logger.info("Action 6 OK.")
-                print("✓ Match gathering completed successfully.")
 
         # --- Action 7 ---
         logger.info("--- Running Action 7: Search Inbox ---")
@@ -1236,7 +1211,6 @@ def coord_action(session_manager, config_schema=None, start=1):
             return False
         else:
             logger.info("Gathering matches OK.")
-            print("✓ Match gathering completed successfully.")
             return True
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
@@ -1261,13 +1235,11 @@ def srch_inbox_actn(session_manager, *_):
         # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
-            logger.warning("session_ready not set, initializing based on driver_live")
+            logger.debug("Initializing session_ready based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.warning(
-                "session_ready and driver_live not set, initializing to False"
-            )
+            logger.debug("Initializing session_ready to False")
             session_manager.session_ready = False
             session_ready = False
 
@@ -1308,13 +1280,11 @@ def send_messages_action(session_manager, *_):
         # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
-            logger.warning("session_ready not set, initializing based on driver_live")
+            logger.debug("Initializing session_ready based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.warning(
-                "session_ready and driver_live not set, initializing to False"
-            )
+            logger.debug("Initializing session_ready to False")
             session_manager.session_ready = False
             session_ready = False
 
@@ -1367,13 +1337,11 @@ def process_productive_messages_action(session_manager, *_):
         # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
-            logger.warning("session_ready not set, initializing based on driver_live")
+            logger.debug("Initializing session_ready based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.warning(
-                "session_ready and driver_live not set, initializing to False"
-            )
+            logger.debug("Initializing session_ready to False")
             session_manager.session_ready = False
             session_ready = False
 
@@ -1559,7 +1527,6 @@ def main():
                         logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
                         print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
 
-                print(f"Starting DNA match gathering from page {start_val}...")
                 # Call exec_actn with the correct parameters
                 exec_actn(
                     coord_action,
@@ -1875,7 +1842,7 @@ def main_module_tests() -> bool:
         assert (
             "InboxProcessor" in menu_globals
         ), "menu should have access to InboxProcessor"
-        assert (
+        assert (, set up an 
             "send_messages_to_matches" in menu_globals
         ), "menu should have access to send_messages_to_matches"
         assert (

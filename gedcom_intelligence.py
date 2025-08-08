@@ -612,6 +612,38 @@ def test_gedcom_intelligence():
     return True
 
 
+def gedcom_intelligence_module_tests() -> bool:
+    """
+    Comprehensive test suite for gedcom_intelligence.py with real functionality testing.
+    Tests GEDCOM intelligence analysis, pattern detection, and research opportunity identification.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("GEDCOM Intelligence Analysis", "gedcom_intelligence.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "GEDCOM intelligence analyzer",
+            test_gedcom_intelligence,
+            "Complete GEDCOM intelligence analysis with pattern detection and research opportunities",
+            "Test GEDCOM intelligence analyzer with real genealogical data analysis",
+            "Test GedcomIntelligenceAnalyzer with sample GEDCOM data and pattern recognition",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive GEDCOM intelligence tests using standardized TestSuite format."""
+    return gedcom_intelligence_module_tests()
+
+
 if __name__ == "__main__":
-    """Test suite for gedcom_intelligence.py"""
-    test_gedcom_intelligence()
+    """
+    Execute comprehensive GEDCOM intelligence tests when run directly.
+    Tests GEDCOM intelligence analysis, pattern detection, and research opportunity identification.
+    """
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)

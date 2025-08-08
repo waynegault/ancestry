@@ -196,7 +196,7 @@ class BrowserManager:
             logger.debug(f"Browser session is valid for action: {action_name}")
             return True
 
-        logger.debug(f"Starting browser session for action: {action_name}")
+        # Removed duplicate logging - start_browser will log the action
         return self.start_browser(action_name)
 
     def get_cookies(self, cookie_names: list, timeout: int = 60) -> bool:

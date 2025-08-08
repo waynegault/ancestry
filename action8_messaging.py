@@ -33,7 +33,7 @@ from error_handling import (
 try:
     from message_personalization import MessagePersonalizer
     MESSAGE_PERSONALIZATION_AVAILABLE = True
-    logger.info("Message personalization system loaded successfully")
+    logger.debug("Message personalization system loaded successfully")
 except ImportError as e:
     logger.warning(f"Message personalization not available: {e}")
     MESSAGE_PERSONALIZATION_AVAILABLE = False
@@ -289,7 +289,7 @@ MESSAGE_PERSONALIZER: Optional[MessagePersonalizer] = None
 if MESSAGE_PERSONALIZATION_AVAILABLE:
     try:
         MESSAGE_PERSONALIZER = MessagePersonalizer()
-        logger.info("Message personalizer initialized successfully")
+        logger.debug("Message personalizer initialized successfully")
     except Exception as e:
         logger.warning(f"Failed to initialize message personalizer: {e}")
         MESSAGE_PERSONALIZER = None

@@ -222,6 +222,10 @@ class TreeOwnerResponse:
 
     owner: Optional[Dict[str, Any]] = None
     displayName: Optional[str] = None
+    id: Optional[str] = None  # Add missing 'id' field
+    peopleCount: Optional[int] = None  # Add missing 'peopleCount' field
+    photoCount: Optional[int] = None  # Add missing 'photoCount' field
+    membership: Optional[Dict[str, Any]] = None  # Add missing 'membership' field
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TreeOwnerResponse':

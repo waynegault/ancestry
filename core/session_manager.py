@@ -196,7 +196,7 @@ class SessionManager:
                 max_batch_size=20
             )
 
-            logger.info("Adaptive rate limiting and smart batch processing initialized")
+            logger.debug("Adaptive rate limiting and smart batch processing initialized")
 
         except ImportError as e:
             logger.warning(f"Adaptive rate limiting not available: {e}")
@@ -397,7 +397,7 @@ class SessionManager:
             bool: True if session is ready, False otherwise
         """
         start_time = time.time()
-        logger.debug(f"Ensuring session ready for: {action_name or 'Unknown Action'}")
+        # Removed duplicate logging - browser_manager will log the action
 
         # PHASE 5.1: Check cached session state first
         session_id = f"{id(self)}_{action_name or 'default'}"
@@ -513,16 +513,77 @@ class SessionManager:
 
     def is_sess_valid(self) -> bool:
         """
-        Simplified session validity check to prevent recursion.
+        Enhanced session validity check with recovery capabilities.
 
-        Just checks if driver exists without doing WebDriver operations
-        that might trigger more session validation.
+        Checks if driver exists and is responsive, with automatic recovery
+        for invalid sessions during long-running operations.
 
         Returns:
-            bool: True if driver exists, False otherwise
+            bool: True if driver exists and is responsive, False otherwise
         """
-        # Simple check - just verify driver exists
-        return self.driver is not None
+        # Simple check - verify driver exists
+        if self.driver is None:
+            return False
+
+        # Enhanced check - verify driver is responsive
+        try:
+            # Quick responsiveness test
+            _ = self.driver.current_url
+            return True
+        except Exception as e:
+            logger.warning(f"🔌 WebDriver session appears invalid: {e}")
+            # Attempt session recovery for long-running operations
+            if self._should_attempt_recovery():
+                logger.info("🔄 Attempting automatic session recovery...")
+                if self._attempt_session_recovery():
+                    logger.info("✅ Session recovery successful")
+                    return True
+                else:
+                    logger.error("❌ Session recovery failed")
+            else:
+                logger.debug("⏭️  Skipping session recovery (not in long-running operation)")
+            return False
+
+    def _should_attempt_recovery(self) -> bool:
+        """
+        Determine if session recovery should be attempted.
+
+        Returns:
+            bool: True if recovery should be attempted
+        """
+        # Only attempt recovery if session was previously working
+        # and we're in a long-running operation
+        return (self.session_ready and
+                self.session_start_time and
+                time.time() - self.session_start_time > 300)  # 5 minutes
+
+    def _attempt_session_recovery(self) -> bool:
+        """
+        Attempt to recover an invalid WebDriver session.
+
+        Returns:
+            bool: True if recovery successful, False otherwise
+        """
+        try:
+            logger.debug("Closing invalid browser session...")
+            self.close_browser()
+
+            logger.debug("Starting new browser session...")
+            if self.start_browser("session_recovery"):
+                logger.debug("Browser recovery successful, re-authenticating...")
+
+                # Re-authenticate if needed
+                from utils import login_status
+                if login_status(self, disable_ui_fallback=False):
+                    logger.info("Session recovery and re-authentication successful")
+                    return True
+                else:
+                    logger.error("Re-authentication failed after browser recovery")
+
+        except Exception as e:
+            logger.error(f"Session recovery failed: {e}", exc_info=True)
+
+        return False
 
     def _reset_logged_flags(self):
         """Reset flags used to prevent repeated logging of IDs."""
@@ -698,11 +759,13 @@ class SessionManager:
     def _sync_cookies_to_requests(self):
         """
         Synchronize cookies from WebDriver to requests session.
-
-        This ensures that API calls made through requests.Session
-        have the same authentication cookies as the browser session.
+        Only syncs once per session unless forced due to auth errors.
         """
         if not self.driver or not hasattr(self.api_manager, '_requests_session'):
+            return
+
+        # Check if already synced for this session
+        if hasattr(self, '_session_cookies_synced') and self._session_cookies_synced:
             return
 
         try:
@@ -717,17 +780,23 @@ class SessionManager:
             for cookie in driver_cookies:
                 if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
                     self.api_manager._requests_session.cookies.set(
-                        cookie["name"],
-                        cookie["value"],
-                        domain=cookie.get("domain"),
-                        path=cookie.get("path", "/")
+                        cookie["name"], cookie["value"],
+                        domain=cookie.get("domain"), path=cookie.get("path", "/")
                     )
                     synced_count += 1
 
-            logger.debug(f"Synced {synced_count} cookies from WebDriver to requests session")
+            self._session_cookies_synced = True
+            logger.debug(f"Synced {synced_count} cookies from WebDriver to requests session (once per session)")
 
         except Exception as e:
             logger.error(f"Failed to sync cookies to requests session: {e}")
+
+    def force_cookie_resync(self):
+        """Force a cookie resync when authentication errors occur."""
+        if hasattr(self, '_session_cookies_synced'):
+            delattr(self, '_session_cookies_synced')
+        self._sync_cookies_to_requests()
+        logger.debug("Forced session cookie resync due to authentication error")
 
     def _sync_cookies(self):
         """
@@ -1045,7 +1114,10 @@ class SessionManager:
             str: UUID if successful, None otherwise
         """
         if not self.is_sess_valid():
-            logger.error("get_my_uuid: Session invalid.")
+            # Reduce log spam during shutdown - only log once per minute
+            if not hasattr(self, '_last_uuid_error_time') or time.time() - self._last_uuid_error_time > 60:
+                logger.error("get_my_uuid: Session invalid.")
+                self._last_uuid_error_time = time.time()
             return None
 
         from urllib.parse import urljoin
@@ -1246,12 +1318,9 @@ class SessionManager:
 
     @property
     def csrf_token(self):
-        """Get the CSRF token."""
-        # Try to get from API manager first, then retrieve if needed
-        csrf = self.api_manager.csrf_token
-        if not csrf:
-            csrf = self.get_csrf()
-        return csrf
+        """Get the CSRF token with smart caching."""
+        # Return cached token from API manager if available
+        return self.api_manager.csrf_token
 
     # Public properties
     @property

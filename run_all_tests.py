@@ -608,7 +608,8 @@ def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_
     total_test_count = 0
 
     # Determine optimal number of workers (don't exceed CPU count)
-    max_workers = min(len(modules_with_descriptions), psutil.cpu_count())
+    cpu_count = psutil.cpu_count() or 1  # Fallback to 1 if cpu_count() returns None
+    max_workers = min(len(modules_with_descriptions), cpu_count)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all test jobs
@@ -758,7 +759,7 @@ def main():
 
     # Prepare modules with descriptions
     modules_with_descriptions = [
-        (module, module_descriptions.get(module, None))
+        (module, module_descriptions.get(module, ""))
         for module in discovered_modules
     ]
 

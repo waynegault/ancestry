@@ -54,7 +54,7 @@ from sqlalchemy.orm import Session as DbSession, joinedload
 try:
     from message_personalization import MessagePersonalizer
     MESSAGE_PERSONALIZATION_AVAILABLE = True
-    logger.info("Message personalization system loaded in action9")
+    logger.debug("Message personalization system loaded in action9")
 except ImportError as e:
     logger.warning(f"Message personalization not available in action9: {e}")
     MESSAGE_PERSONALIZATION_AVAILABLE = False
@@ -64,7 +64,7 @@ except ImportError as e:
 try:
     from genealogical_task_templates import GenealogicalTaskGenerator
     GENEALOGICAL_TASK_GENERATION_AVAILABLE = True
-    logger.info("Genealogical task generation system loaded in action9")
+    logger.debug("Genealogical task generation system loaded in action9")
 except ImportError as e:
     logger.warning(f"Genealogical task generation not available in action9: {e}")
     GENEALOGICAL_TASK_GENERATION_AVAILABLE = False
@@ -75,7 +75,7 @@ try:
     from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor, ConfigurationOptimizer
     from performance_dashboard import PerformanceDashboard
     ADAPTIVE_SYSTEMS_AVAILABLE = True
-    logger.info("Adaptive rate limiting and performance monitoring loaded in action9")
+    logger.debug("Adaptive rate limiting and performance monitoring loaded in action9")
 except ImportError as e:
     logger.warning(f"Adaptive systems not available in action9: {e}")
     ADAPTIVE_SYSTEMS_AVAILABLE = False
@@ -1543,7 +1543,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             })
 
             adaptive_batch_size = smart_batch_processor.get_next_batch_size()
-            logger.info(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
+            logger.debug(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
 
         except Exception as e:
             logger.warning(f"Failed to initialize adaptive systems: {e}, using standard batch processing")
