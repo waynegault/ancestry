@@ -75,6 +75,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 # === LOCAL IMPORTS ===
 from ai_interface import classify_message_intent
 from config import config_schema
+from extraction_quality import summarize_extracted_data  # Debug-only QA summaries
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -517,7 +518,8 @@ class InboxProcessor:
         # Step 3: Make API call and apply rate limiting wait first
         try:
             # Apply rate limit wait *before* the call
-            wait_time = self.dynamic_rate_limiter.wait()
+            limiter = cast(Any, getattr(self, "dynamic_rate_limiter", None))
+            wait_time = limiter.wait() if limiter is not None else 0.0
             # Optional: log wait time if significant
             # if wait_time > 0.1: logger.debug(f"Rate limit wait for context fetch: {wait_time:.2f}s")
 
@@ -1343,6 +1345,19 @@ class InboxProcessor:
                         )
                         continue  # Cannot proceed without person record
                     people_id = safe_column_value(person, "id")
+
+                    # --- Debug-only: log quality summary of any extracted genealogical data on the person ---
+                    try:
+                        if hasattr(person, 'extracted_genealogical_data'):
+                            extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
+                            summary = summarize_extracted_data(extracted_data)
+                            logger.debug(
+                                f"Quality summary for ConvID {api_conv_id} / PersonID {people_id}: {summary}"
+                            )
+                    except Exception as qa_log_err:
+                        logger.debug(
+                            f"Skipped quality summary logging for ConvID {api_conv_id} due to: {qa_log_err}"
+                        )
 
                     # --- Process Fetched Context Messages ---
                     latest_ctx_in: Optional[Dict] = None

@@ -48,10 +48,11 @@ Phases:
    - Integrated post-parse normalization in action9 _process_ai_response so both validated and salvaged AI responses converge on the structured shape
    - Status: Integrated; tests green (52 modules, 418 tests)
 
-- Phase 2: Data Interrogation & QA Metrics (Active; logging-only, no behavior change)
-   - Use extraction_quality.summarize_extracted_data to log counts/flags at debug level in action7/8/9
-   - Add minimal consistency checks (e.g., empty strings, implausible dates) as log messages only
-   - Deliverables: debug logs; no changes to DB, messages, or task creation
+- Phase 2: Data Interrogation & QA Metrics (Completed 2025-08-08; logging-only, no behavior change)
+   - Implemented debug-level QA summaries via extraction_quality.summarize_extracted_data in action7_inbox.py and action8_messaging.py (mirroring existing action9 behavior)
+   - Added defensive guards around optional components to satisfy static analysis without changing runtime behavior
+   - Full test suite green: 52 modules, 418 tests; zero regressions
+   - Deliverables: debug logs only; no changes to DB writes, messaging, or task creation
 
 - Phase 3: Message Personalization Coverage & Quality Gates (Planned)
    - Audit templates/placeholders; guarantee safe defaults for all MessagePersonalizer keys

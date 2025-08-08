@@ -285,8 +285,9 @@ if not MESSAGE_TEMPLATES or not all(
     # For now, allow script to potentially continue but log critical error.
 
 # Initialize message personalizer
-MESSAGE_PERSONALIZER: Optional[MessagePersonalizer] = None
-if MESSAGE_PERSONALIZATION_AVAILABLE:
+from typing import Any as _Any  # alias to avoid conflicts in type annotations
+MESSAGE_PERSONALIZER: Optional[_Any] = None
+if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     try:
         MESSAGE_PERSONALIZER = MessagePersonalizer()
         logger.debug("Message personalizer initialized successfully")
@@ -932,6 +933,17 @@ def _process_single_person(
     min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
 
     logger.debug(f"--- Processing Person: {log_prefix} ---")
+    # Debug-only: log a quality summary of any extracted genealogical data attached to the person
+    try:
+        # Import locally to avoid module-level dependency if file moves
+        from extraction_quality import summarize_extracted_data  # type: ignore
+        if hasattr(person, 'extracted_genealogical_data'):
+            extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
+            qa_summary = summarize_extracted_data(extracted_data)
+            logger.debug(f"Quality summary for {log_prefix}: {qa_summary}")
+    except Exception as _qa_err:
+        # Best-effort logging only; never fail processing due to QA summary issues
+        logger.debug(f"Skipped quality summary logging for {log_prefix}: {_qa_err}")
     # Optional: Log latest log details for debugging
     # if latest_in_log: logger.debug(f"  Latest IN: {latest_in_log.latest_timestamp} ({latest_in_log.ai_sentiment})") else: logger.debug("  Latest IN: None")
     # if latest_out_log: logger.debug(f"  Latest OUT: {latest_out_log.latest_timestamp} ({getattr(latest_out_log.message_type, 'type_name', 'N/A')}, {latest_out_log.script_message_status})") else: logger.debug("  Latest OUT: None")
