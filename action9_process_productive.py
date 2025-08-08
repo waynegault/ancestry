@@ -882,6 +882,16 @@ class PersonProcessor:
         logger.debug(
             f"Extracted entities for {person.username}: {json.dumps(entity_counts)}"
         )
+        # Debug-only quality summary for interrogation
+        try:
+            from extraction_quality import summarize_extracted_data
+            quality = summarize_extracted_data(extracted_data)
+            logger.debug(
+                f"Quality summary for {person.username}: "
+                f"counts={quality.get('counts')}, flags={quality.get('flags')}"
+            )
+        except Exception as e:
+            logger.debug(f"Quality summary unavailable: {e}")
 
         # Store extracted data on person object for message personalization
         try:
