@@ -49,6 +49,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urljoin
+from string import Formatter
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -294,6 +295,91 @@ if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     except Exception as e:
         logger.warning(f"Failed to initialize message personalizer: {e}")
         MESSAGE_PERSONALIZER = None
+
+
+# ------------------------------------------------------------------------------
+# Log-only: Personalization sanity checker for enhanced templates
+# ------------------------------------------------------------------------------
+
+def _log_personalization_sanity_for_template(
+    template_key: str,
+    template_str: str,
+    extracted_data: Dict[str, Any],
+    log_prefix: str,
+) -> None:
+    """
+    Estimate how well an enhanced template can be personalized from extracted_data.
+    This is LOG-ONLY and does not affect behavior.
+
+    Heuristic: parse the template to find placeholder field names, then score
+    each field based on presence of the underlying data in extracted_data.
+    """
+    try:
+        # Collect placeholders used by this template
+        formatter = Formatter()
+        fields_used = set(
+            fname for (_, fname, _, _) in formatter.parse(template_str) if fname
+        )
+
+        # Map of placeholder -> function that checks if data likely exists
+        def has_list(d: Dict[str, Any], key: str) -> bool:
+            v = d.get(key)
+            return isinstance(v, list) and len(v) > 0
+
+        def nonempty_str(s: Optional[str]) -> bool:
+            return isinstance(s, str) and bool(s.strip())
+
+        checks = {
+            # Genealogical context fields
+            "shared_ancestors": lambda d: has_list(d, "structured_names"),
+            "ancestors_details": lambda d: has_list(d, "vital_records"),
+            "genealogical_context": lambda d: has_list(d, "locations") or has_list(d, "occupations"),
+            "research_focus": lambda d: has_list(d, "research_questions"),
+            "specific_questions": lambda d: has_list(d, "research_questions") or has_list(d, "locations"),
+            "geographic_context": lambda d: has_list(d, "locations"),
+            "location_context": lambda d: has_list(d, "locations"),
+            "research_suggestions": lambda d: has_list(d, "structured_names") or has_list(d, "research_questions"),
+            "specific_research_questions": lambda d: has_list(d, "research_questions"),
+            "mentioned_people": lambda d: has_list(d, "structured_names"),
+            "research_context": lambda d: has_list(d, "research_questions") or has_list(d, "locations"),
+            # DNA-related
+            "estimated_relationship": lambda d: has_list(d, "dna_information"),
+            "shared_dna_amount": lambda d: has_list(d, "dna_information"),
+            # Often defaulted; considered neutral
+            "dna_context": lambda d: True,
+            "shared_ancestor_information": lambda d: True,
+            "research_collaboration_request": lambda d: True,
+            "personalized_response": lambda d: True,
+            "research_insights": lambda d: has_list(d, "vital_records") or has_list(d, "relationships"),
+            "follow_up_questions": lambda d: has_list(d, "research_questions"),
+            "research_topic": lambda d: has_list(d, "research_questions"),
+            "specific_research_needs": lambda d: True,
+            "collaboration_proposal": lambda d: True,
+            # Standard/base placeholders are handled elsewhere; ignore here
+            "name": lambda d: True,
+            "predicted_relationship": lambda d: True,
+            "actual_relationship": lambda d: True,
+            "relationship_path": lambda d: True,
+            "total_rows": lambda d: True,
+        }
+
+        scored_fields = [f for f in fields_used if f in checks]
+        if not scored_fields:
+            logger.debug(
+                f"Personalization sanity for {log_prefix}: Template '{template_key}' has no scorable fields."
+            )
+            return
+
+        score = sum(1 for f in scored_fields if checks[f](extracted_data))
+        total = len(scored_fields)
+        pct = (score / total) * 100 if total else 100.0
+        logger.debug(
+            f"Personalization sanity for {log_prefix}: Template '{template_key}' — coverage {score}/{total} ({pct:.0f}%). Fields: {sorted(scored_fields)}"
+        )
+    except Exception as _ps_err:
+        logger.debug(
+            f"Skipped personalization sanity check for {log_prefix} (template '{template_key}'): {_ps_err}"
+        )
 
 
 # ------------------------------------------------------------------------------
@@ -1197,6 +1283,17 @@ def _process_single_person(
                     # Get extracted data from person object (if available)
                     extracted_data = getattr(person, 'extracted_genealogical_data', {})
                     person_data = {"username": getattr(person, "username", "Unknown")}
+
+                    # Log-only: estimate personalization coverage
+                    try:
+                        _log_personalization_sanity_for_template(
+                            enhanced_template_key,
+                            MESSAGE_TEMPLATES[enhanced_template_key],
+                            extracted_data or {},
+                            log_prefix,
+                        )
+                    except Exception:
+                        pass
 
                     message_text = MESSAGE_PERSONALIZER.create_personalized_message(
                         enhanced_template_key,
