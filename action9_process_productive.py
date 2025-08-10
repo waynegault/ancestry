@@ -762,6 +762,7 @@ class PersonProcessor:
             # Log-only: assess suggested_tasks quality before any task creation (no behavior change)
             try:
                 _log_suggested_tasks_quality(suggested_tasks, extracted_data, log_prefix)
+                _log_task_dedup_preview(suggested_tasks, log_prefix)
             except Exception as e:
                 logger.debug(f"{log_prefix}: Task quality audit unavailable: {e}")
 
@@ -2010,6 +2011,51 @@ def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dic
             logger.debug(f"{log_prefix}: Task audit sample: {preview}")
     except Exception as e:
         logger.debug(f"{log_prefix}: Task audit failed: {e}")
+
+
+    def _log_task_dedup_preview(suggested_tasks: List[str], log_prefix: str) -> None:
+        """Phase 4.2 (log-only): Preview potential task de-duplication impact.
+
+        Groups tasks by normalized core text (after stripping trailing qualifiers).
+        Logs cluster sizes and a consolidation estimate WITHOUT modifying the list.
+        """
+        try:
+            tasks = suggested_tasks or []
+            if len(tasks) < 2:
+                return
+            # Lightweight normalization reuse
+            core_map: Dict[str, List[int]] = {}
+            for idx, raw in enumerate(tasks):
+                if not isinstance(raw, str) or not raw.strip():
+                    continue
+                norm = _normalize_task_text(raw)
+                # Remove parenthetical clarifiers & counts for grouping
+                core = re.sub(r"\([^)]*\)", "", norm)
+                core = re.sub(r"\b(\d{4}s?)\b", r"YEAR", core)  # Generalize years
+                core = re.sub(r"\b(census|record|records)\b", "record", core)
+                core = re.sub(r"\s+", " ", core).strip()
+                if not core:
+                    continue
+                core_map.setdefault(core, []).append(idx)
+
+            duplicate_clusters = {k: v for k, v in core_map.items() if len(v) > 1}
+            if not duplicate_clusters:
+                logger.debug(f"{log_prefix}: De-dup preview: no duplicate clusters detected")
+                return
+
+            potential_savings = sum(len(v) - 1 for v in duplicate_clusters.values())
+            logger.info(
+                f"{log_prefix}: De-dup preview — clusters={len(duplicate_clusters)}, "
+                f"potential_savings={potential_savings} (would reduce {len(tasks)}→{len(tasks)-potential_savings})"
+            )
+            sample = []
+            for core_text, idxs in list(duplicate_clusters.items())[:3]:
+                hash_prefix = hashlib.sha1(core_text.encode('utf-8')).hexdigest()[:10]
+                sample.append(f"{hash_prefix}:{len(idxs)}:'{core_text[:55]}'")
+            if sample:
+                logger.debug(f"{log_prefix}: De-dup cluster samples: {sample}")
+        except Exception as e:
+            logger.debug(f"{log_prefix}: De-dup preview failed: {e}")
 
 
 def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
