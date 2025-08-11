@@ -691,6 +691,7 @@ def db_transn(session: Session):
 
             # Determine if error is retryable
             if isinstance(e, (sqlite3.OperationalError, sqlite3.DatabaseError)):
+                # Pass recovery_hint only once via kwargs supported by DatabaseConnectionError
                 raise DatabaseConnectionError(
                     f"Database operation failed: {e}",
                     context={
@@ -701,6 +702,7 @@ def db_transn(session: Session):
                     recovery_hint="Database may be temporarily unavailable, retry after delay",
                 )
             else:
+                # Avoid passing duplicate keyword args; RetryableError accepts context via kwargs only
                 raise RetryableError(
                     f"Transaction failed: {e}",
                     context={

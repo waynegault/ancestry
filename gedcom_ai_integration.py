@@ -51,9 +51,23 @@ class GedcomAIIntegrator:
         self.research_prioritizer = None
         
         if GEDCOM_AI_AVAILABLE:
-            self.intelligence_analyzer = GedcomIntelligenceAnalyzer()
-            self.dna_crossref = DNAGedcomCrossReferencer()
-            self.research_prioritizer = IntelligentResearchPrioritizer()
+            try:
+                if all([
+                    GedcomIntelligenceAnalyzer is not None,
+                    DNAGedcomCrossReferencer is not None,
+                    IntelligentResearchPrioritizer is not None,
+                ]):
+                    self.intelligence_analyzer = GedcomIntelligenceAnalyzer()  # type: ignore[operator]
+                    self.dna_crossref = DNAGedcomCrossReferencer()  # type: ignore[operator]
+                    self.research_prioritizer = IntelligentResearchPrioritizer()  # type: ignore[operator]
+                else:
+                    raise RuntimeError("AI component classes not loaded (None)")
+            except Exception as init_err:
+                logger.warning(f"Failed initializing GEDCOM AI components, falling back: {init_err}")
+                self.intelligence_analyzer = None
+                self.dna_crossref = None
+                self.research_prioritizer = None
+                globals()["GEDCOM_AI_AVAILABLE"] = False
             logger.info("GEDCOM AI integrator initialized successfully")
         else:
             logger.warning("GEDCOM AI integrator initialized without AI components")
@@ -83,19 +97,24 @@ class GedcomAIIntegrator:
             
             # Step 1: GEDCOM Intelligence Analysis
             logger.debug("Performing GEDCOM intelligence analysis...")
+            if self.intelligence_analyzer is None:
+                return self._unavailable_analysis_result()
             gedcom_analysis = self.intelligence_analyzer.analyze_gedcom_data(gedcom_data)
             
             # Step 2: DNA-GEDCOM Cross-Reference (if DNA data available)
             dna_analysis = {}
             if dna_matches_data:
                 logger.debug("Performing DNA-GEDCOM cross-reference analysis...")
-                dna_matches = self._convert_to_dna_matches(dna_matches_data)
-                dna_analysis = self.dna_crossref.analyze_dna_gedcom_connections(
-                    dna_matches, gedcom_data, tree_owner_info
-                )
+                if self.dna_crossref is not None:
+                    dna_matches = self._convert_to_dna_matches(dna_matches_data)
+                    dna_analysis = self.dna_crossref.analyze_dna_gedcom_connections(
+                        dna_matches, gedcom_data, tree_owner_info
+                    )
             
             # Step 3: Research Prioritization
             logger.debug("Performing research prioritization...")
+            if self.research_prioritizer is None:
+                return self._unavailable_analysis_result()
             prioritization_analysis = self.research_prioritizer.prioritize_research_tasks(
                 gedcom_analysis, dna_analysis
             )
@@ -205,6 +224,8 @@ class GedcomAIIntegrator:
                 return {"insights": "GEDCOM AI analysis not available"}
             
             # Perform analysis
+            if self.intelligence_analyzer is None:
+                return {"insights": "GEDCOM AI analysis not available"}
             analysis = self.intelligence_analyzer.analyze_gedcom_data(gedcom_data)
             
             # Extract person-specific insights
@@ -228,6 +249,8 @@ class GedcomAIIntegrator:
         dna_matches = []
         
         for match_data in dna_matches_data:
+            if DNAMatch is None:
+                continue
             try:
                 dna_match = DNAMatch(
                     match_id=match_data.get("match_id", "unknown"),
@@ -539,6 +562,77 @@ def test_gedcom_ai_integration():
         return False
 
 
+def test_fallback_research_tasks():
+    """When components unavailable, fallback tasks should be returned."""
+    integrator = GedcomAIIntegrator()
+    # Force fallback by simulating unavailable components
+    if not GEDCOM_AI_AVAILABLE:
+        tasks = integrator.generate_enhanced_research_tasks({"username": "Tester"}, {"structured_names": []}, gedcom_data=None)
+        assert tasks and tasks[0]["template_used"] == "fallback"
+    else:
+        # Temporarily monkey patch availability to simulate fallback
+        original_flag = globals().get("GEDCOM_AI_AVAILABLE")
+        globals()["GEDCOM_AI_AVAILABLE"] = False
+        try:
+            tasks = integrator.generate_enhanced_research_tasks({"username": "Tester"}, {"structured_names": []}, gedcom_data=None)
+            assert tasks and tasks[0]["template_used"] == "fallback"
+        finally:
+            globals()["GEDCOM_AI_AVAILABLE"] = original_flag
+
+
+def test_enhanced_task_description_formatting():
+    """Ensure enhanced task description includes key metrics and steps."""
+    integrator = GedcomAIIntegrator()
+    sample_task = {
+        "description": "Resolve data conflict",
+        "priority_score": 72.5,
+        "success_probability": 0.65,
+        "estimated_effort": "low",
+        "research_steps": ["Check census", "Locate vital record", "Compare trees"],
+        "expected_outcomes": ["Resolved conflict"]
+    }
+    desc = integrator._format_enhanced_task_description(sample_task)
+    for token in ["Priority Score", "Success Probability", "AI-Recommended Steps", "Expected Outcomes"]:
+        assert token in desc, f"Description missing {token}"
+
+
+def test_comprehensive_analysis_structure_with_stubs():
+    """Test perform_comprehensive_analysis returns combined structure using stub analyzers when available."""
+    if not GEDCOM_AI_AVAILABLE:
+        # Skip if components not available; availability is already tested elsewhere
+        return True
+    integrator = GedcomAIIntegrator()
+
+    # Create minimal stub gedcom data object
+    stub = type('StubGedcom', (), {
+        'indi_index': {'I1': type('Person', (), {'name': ['Jane Doe']})()},
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+
+    result = integrator.perform_comprehensive_analysis(stub, dna_matches_data=[{"match_id": "m1", "match_name": "Jane Doe", "estimated_relationship": "2nd cousin", "shared_dna_cm": 150}], tree_owner_info={})
+    for key in ["gedcom_intelligence", "dna_crossref", "research_prioritization", "integrated_insights", "summary"]:
+        assert key in result, f"Comprehensive analysis missing {key}"
+    assert result["summary"].get("analysis_completeness") in ["comprehensive", "gedcom_only"]
+
+
+def test_person_specific_insights_fallback():
+    """Person insights should provide indicative structure even with minimal data."""
+    integrator = GedcomAIIntegrator()
+    if not GEDCOM_AI_AVAILABLE:
+        insights = integrator.get_gedcom_insights_for_person("Jane", None)
+        assert "insights" in insights or "error" in insights
+        return True
+    stub = type('StubGedcom', (), {
+        'indi_index': {'I1': type('Person', (), {'name': ['Jane Example']})()},
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+    insights = integrator.get_gedcom_insights_for_person("Jane", stub)
+    for key in ["relevant_gaps", "relevant_conflicts", "research_opportunities", "family_context", "ai_recommendations"]:
+        assert key in insights
+
+
 def gedcom_ai_integration_module_tests() -> bool:
     """
     Comprehensive test suite for gedcom_ai_integration.py with real functionality testing.
@@ -551,11 +645,39 @@ def gedcom_ai_integration_module_tests() -> bool:
 
     with suppress_logging():
         suite.run_test(
-            "GEDCOM AI integration system",
+            "Integration availability",
             test_gedcom_ai_integration,
-            "Complete GEDCOM AI integration with intelligent analysis and processing",
-            "Test GEDCOM AI integration system with real genealogical data processing",
-            "Test GedcomAIIntegrator with sample GEDCOM data and AI-powered analysis",
+            "Integrator instantiates and components reflect availability flag",
+            "Instantiate GedcomAIIntegrator and validate component presence",
+            "Validate basic integrator availability state",
+        )
+        suite.run_test(
+            "Fallback research tasks",
+            test_fallback_research_tasks,
+            "Fallback task returned when components unavailable",
+            "Force unavailable state and generate tasks",
+            "Validate _fallback_research_tasks path",
+        )
+        suite.run_test(
+            "Enhanced task description formatting",
+            test_enhanced_task_description_formatting,
+            "Description includes metrics, steps, and outcomes",
+            "Format a synthetic priority task",
+            "Validate _format_enhanced_task_description output",
+        )
+        suite.run_test(
+            "Comprehensive analysis structure",
+            test_comprehensive_analysis_structure_with_stubs,
+            "Combined analysis includes required sections",
+            "Run perform_comprehensive_analysis with stub data",
+            "Validate comprehensive analysis keys",
+        )
+        suite.run_test(
+            "Person-specific insights",
+            test_person_specific_insights_fallback,
+            "Person insight call returns structured keys",
+            "Invoke get_gedcom_insights_for_person with stub",
+            "Validate person insights extraction",
         )
 
     return suite.finish_suite()

@@ -49,6 +49,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urljoin
+from string import Formatter
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -284,15 +285,168 @@ if not MESSAGE_TEMPLATES or not all(
     # Optionally: sys.exit(1) here if running standalone or want hard failure
     # For now, allow script to potentially continue but log critical error.
 
+# ------------------------------------------------------------------------------
+# Log-only: Audit template placeholders to ensure safe coverage of Enhanced_* keys
+# ------------------------------------------------------------------------------
+
+def _audit_template_placeholders(templates: Dict[str, str]) -> None:
+    """Log-only audit: warn if templates contain unknown placeholders."""
+    try:
+        formatter = Formatter()
+        base_keys = {
+            "name",
+            "predicted_relationship",
+            "actual_relationship",
+            "relationship_path",
+            "total_rows",
+        }
+        enhanced_keys = {
+            # Keys created by MessagePersonalizer._create_enhanced_format_data
+            "shared_ancestors",
+            "ancestors_details",
+            "genealogical_context",
+            "research_focus",
+            "specific_questions",
+            "geographic_context",
+            "location_context",
+            "research_suggestions",
+            "specific_research_questions",
+            "mentioned_people",
+            "research_context",
+            "personalized_response",
+            "research_insights",
+            "follow_up_questions",
+            "estimated_relationship",
+            "shared_dna_amount",
+            "dna_context",
+            "shared_ancestor_information",
+            "research_collaboration_request",
+            "research_topic",
+            "specific_research_needs",
+            "collaboration_proposal",
+        }
+        allowed = base_keys | enhanced_keys
+        for key, tmpl in templates.items():
+            # Only audit Enhanced_* aggressively; others will mostly use base_keys
+            fields = {
+                fname for (_, fname, _, _) in formatter.parse(tmpl) if fname
+            }
+            if key.startswith("Enhanced_"):
+                unknown = sorted(f for f in fields if f not in allowed)
+                if unknown:
+                    logger.warning(
+                        f"Template audit: Template '{key}' has unknown placeholders: {unknown}"
+                    )
+            else:
+                # For standard templates, just note uncommon placeholders
+                uncommon = sorted(f for f in fields if f not in base_keys)
+                if uncommon:
+                    logger.debug(
+                        f"Template audit: Template '{key}' uses non-base placeholders: {uncommon}"
+                    )
+    except Exception as _audit_err:
+        logger.debug(f"Template audit skipped due to error: {_audit_err}")
+
+
+# Run a one-time audit of the loaded templates (log-only)
+if MESSAGE_TEMPLATES:
+    _audit_template_placeholders(MESSAGE_TEMPLATES)
+
 # Initialize message personalizer
-MESSAGE_PERSONALIZER: Optional[MessagePersonalizer] = None
-if MESSAGE_PERSONALIZATION_AVAILABLE:
+from typing import Any as _Any  # alias to avoid conflicts in type annotations
+MESSAGE_PERSONALIZER: Optional[_Any] = None
+if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     try:
         MESSAGE_PERSONALIZER = MessagePersonalizer()
         logger.debug("Message personalizer initialized successfully")
     except Exception as e:
         logger.warning(f"Failed to initialize message personalizer: {e}")
         MESSAGE_PERSONALIZER = None
+
+
+# ------------------------------------------------------------------------------
+# Log-only: Personalization sanity checker for enhanced templates
+# ------------------------------------------------------------------------------
+
+def _log_personalization_sanity_for_template(
+    template_key: str,
+    template_str: str,
+    extracted_data: Dict[str, Any],
+    log_prefix: str,
+) -> None:
+    """
+    Estimate how well an enhanced template can be personalized from extracted_data.
+    This is LOG-ONLY and does not affect behavior.
+
+    Heuristic: parse the template to find placeholder field names, then score
+    each field based on presence of the underlying data in extracted_data.
+    """
+    try:
+        # Collect placeholders used by this template
+        formatter = Formatter()
+        fields_used = set(
+            fname for (_, fname, _, _) in formatter.parse(template_str) if fname
+        )
+
+        # Map of placeholder -> function that checks if data likely exists
+        def has_list(d: Dict[str, Any], key: str) -> bool:
+            v = d.get(key)
+            return isinstance(v, list) and len(v) > 0
+
+        def nonempty_str(s: Optional[str]) -> bool:
+            return isinstance(s, str) and bool(s.strip())
+
+        checks = {
+            # Genealogical context fields
+            "shared_ancestors": lambda d: has_list(d, "structured_names"),
+            "ancestors_details": lambda d: has_list(d, "vital_records"),
+            "genealogical_context": lambda d: has_list(d, "locations") or has_list(d, "occupations"),
+            "research_focus": lambda d: has_list(d, "research_questions"),
+            "specific_questions": lambda d: has_list(d, "research_questions") or has_list(d, "locations"),
+            "geographic_context": lambda d: has_list(d, "locations"),
+            "location_context": lambda d: has_list(d, "locations"),
+            "research_suggestions": lambda d: has_list(d, "structured_names") or has_list(d, "research_questions"),
+            "specific_research_questions": lambda d: has_list(d, "research_questions"),
+            "mentioned_people": lambda d: has_list(d, "structured_names"),
+            "research_context": lambda d: has_list(d, "research_questions") or has_list(d, "locations"),
+            # DNA-related
+            "estimated_relationship": lambda d: has_list(d, "dna_information"),
+            "shared_dna_amount": lambda d: has_list(d, "dna_information"),
+            # Often defaulted; considered neutral
+            "dna_context": lambda d: True,
+            "shared_ancestor_information": lambda d: True,
+            "research_collaboration_request": lambda d: True,
+            "personalized_response": lambda d: True,
+            "research_insights": lambda d: has_list(d, "vital_records") or has_list(d, "relationships"),
+            "follow_up_questions": lambda d: has_list(d, "research_questions"),
+            "research_topic": lambda d: has_list(d, "research_questions"),
+            "specific_research_needs": lambda d: True,
+            "collaboration_proposal": lambda d: True,
+            # Standard/base placeholders are handled elsewhere; ignore here
+            "name": lambda d: True,
+            "predicted_relationship": lambda d: True,
+            "actual_relationship": lambda d: True,
+            "relationship_path": lambda d: True,
+            "total_rows": lambda d: True,
+        }
+
+        scored_fields = [f for f in fields_used if f in checks]
+        if not scored_fields:
+            logger.debug(
+                f"Personalization sanity for {log_prefix}: Template '{template_key}' has no scorable fields."
+            )
+            return
+
+        score = sum(1 for f in scored_fields if checks[f](extracted_data))
+        total = len(scored_fields)
+        pct = (score / total) * 100 if total else 100.0
+        logger.debug(
+            f"Personalization sanity for {log_prefix}: Template '{template_key}' — coverage {score}/{total} ({pct:.0f}%). Fields: {sorted(scored_fields)}"
+        )
+    except Exception as _ps_err:
+        logger.debug(
+            f"Skipped personalization sanity check for {log_prefix} (template '{template_key}'): {_ps_err}"
+        )
 
 
 # ------------------------------------------------------------------------------
@@ -932,6 +1086,17 @@ def _process_single_person(
     min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
 
     logger.debug(f"--- Processing Person: {log_prefix} ---")
+    # Debug-only: log a quality summary of any extracted genealogical data attached to the person
+    try:
+        # Import locally to avoid module-level dependency if file moves
+        from extraction_quality import summarize_extracted_data  # type: ignore
+        if hasattr(person, 'extracted_genealogical_data'):
+            extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
+            qa_summary = summarize_extracted_data(extracted_data)
+            logger.debug(f"Quality summary for {log_prefix}: {qa_summary}")
+    except Exception as _qa_err:
+        # Best-effort logging only; never fail processing due to QA summary issues
+        logger.debug(f"Skipped quality summary logging for {log_prefix}: {_qa_err}")
     # Optional: Log latest log details for debugging
     # if latest_in_log: logger.debug(f"  Latest IN: {latest_in_log.latest_timestamp} ({latest_in_log.ai_sentiment})") else: logger.debug("  Latest IN: None")
     # if latest_out_log: logger.debug(f"  Latest OUT: {latest_out_log.latest_timestamp} ({getattr(latest_out_log.message_type, 'type_name', 'N/A')}, {latest_out_log.script_message_status})") else: logger.debug("  Latest OUT: None")
@@ -1185,6 +1350,17 @@ def _process_single_person(
                     # Get extracted data from person object (if available)
                     extracted_data = getattr(person, 'extracted_genealogical_data', {})
                     person_data = {"username": getattr(person, "username", "Unknown")}
+
+                    # Log-only: estimate personalization coverage
+                    try:
+                        _log_personalization_sanity_for_template(
+                            enhanced_template_key,
+                            MESSAGE_TEMPLATES[enhanced_template_key],
+                            extracted_data or {},
+                            log_prefix,
+                        )
+                    except Exception:
+                        pass
 
                     message_text = MESSAGE_PERSONALIZER.create_personalized_message(
                         enhanced_template_key,

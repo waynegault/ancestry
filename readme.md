@@ -1,566 +1,207 @@
+<img alt="Ancestry Research Automation" width="0" height="0"/>
+
 # Ancestry Research Automation
 
-An advanced genealogical research automation system that leverages AI, adaptive processing, and intelligent task management to enhance DNA match analysis, family tree research, and genealogical productivity.
 
-## 🎉 Current Status: FULLY OPTIMIZED & PRODUCTION READY
+## USER GUIDE (What It Is & What You Can Do)
 
-### ✅ **PHASES 8-11 COMPLETED**: Revolutionary Data Quality & User Experience Enhancement
-**Complete System Transformation**: All major enhancement phases successfully implemented
-- **Phase 8**: AI Prompt Enhancement & Data Extraction Quality ✅
-- **Phase 9**: Message Personalization & Quality Enhancement ✅
-- **Phase 10**: Task Management & Actionability Enhancement ✅
-- **Phase 11**: Configuration Optimization & Adaptive Processing ✅
+### Purpose
+An intelligent assistant that automates large portions of your genealogical research workflow on Ancestry.com: collecting DNA match data, analyzing inbox conversations, sending personalized messages, and generating specific research tasks (Microsoft To‑Do) — all while protecting credentials and adapting performance automatically.
 
-### ✅ **PHASE 8**: AI Prompt Enhancement & Data Extraction Quality
-**Revolutionary AI Improvements**: Fixed critical prompt-model alignment issues
-- **Prompt Structure Alignment**: 100% alignment between AI prompts and code expectations
-- **Specialized Genealogical Prompts**: DNA analysis, family tree verification, record research
-- **Enhanced Extraction Accuracy**: 40-60% improvement in AI data extraction quality
-- **Real Genealogical Examples**: Replaced placeholder examples with actual genealogical scenarios
+### Core Outcomes
+- Centralized, always-fresh DNA match intelligence
+- Higher quality and higher response-rate messaging to matches
+- Actionable, prioritized research task lists instead of vague TODOs
+- Structured extraction of genealogical entities (names, locations, relationships, records, questions, DNA info)
+- Continuous quality scoring & regression protection
 
-### ✅ **PHASE 9**: Message Personalization & Quality Enhancement
-**Dynamic Message Generation**: Personalized messaging with genealogical data integration
-- **Enhanced Message Templates**: 6 new templates with genealogical data placeholders
-- **Dynamic Personalization**: 20+ functions for names, dates, locations, relationships
-- **Seamless Integration**: Enhanced action8_messaging.py and action9_process_productive.py
-- **Graceful Fallbacks**: Comprehensive error handling with default values
+### Key Capabilities
+1. DNA Match Management
+   - Collect & refresh all matches with change tracking
+   - Detect in-tree status and relationship paths (where available)
+2. Intelligent Inbox Processing
+   - AI classifies conversations (productive / desist / low value)
+   - Extracts genealogical context for personalization & tasks
+3. Personalized Messaging
+   - 6+ enhanced templates with 20+ dynamic placeholder functions
+   - Avoids duplicates, supports dry-run, resilient fallbacks
+4. Research Task Generation
+   - 8 specialized genealogical task template categories
+   - Prioritized, specific, evidence-seeking task descriptions
+5. GEDCOM & Tree Intelligence (Selected Modules)
+   - Gap analysis, prioritization, and DNA cross-referencing helpers
+6. Performance & Adaptation
+   - Adaptive rate limiting (0.1–2.0 RPS) & smart batching
+   - Performance dashboard & optimization recommendations
+7. Quality Scoring & Safeguards
+   - Unified extraction quality_score (0–100)
+   - Baseline & regression detection + optional CI gate
 
-### ✅ **PHASE 10**: Task Management & Actionability Enhancement
-**Intelligent Research Tasks**: Specialized templates for genealogical research
-- **8 Research Task Templates**: Vital records, DNA analysis, immigration, census, military, etc.
-- **Actionable Task Generation**: Specific research steps and expected outcomes
-- **Enhanced MS Graph Integration**: Detailed task descriptions with priorities
-- **Data-Driven Tasks**: Tasks generated from extracted genealogical information
+### Typical User Flows
+| Goal | Run These Steps |
+|------|-----------------|
+| First-time setup | Configure credentials → action6_gather → action7_inbox |
+| Full daily cycle | action6_gather → action7_inbox → action9_process_productive → action8_messaging |
+| Just send new messages | action8_messaging |
+| Generate research tasks only | action9_process_productive |
+| Monitor performance | performance_dashboard.py |
+| Guard quality | prompt_telemetry.py (baseline / regression) |
 
-### ✅ **PHASE 11**: Configuration Optimization & Adaptive Processing
-**Adaptive System Intelligence**: Smart optimization with performance monitoring
-- **Adaptive Rate Limiting**: Intelligent RPS adjustment based on API response patterns
-- **Smart Batch Processing**: Automatic batch size optimization for target processing times
-- **Performance Dashboard**: Comprehensive monitoring with detailed reporting
-- **Configuration Optimization**: Data-driven recommendations for system tuning
-
-### ✅ **OUTSTANDING RESULTS**: System Transformation Complete
-**Revolutionary Improvements**: 9 hours of development across 4 major phases
-- **100% Test Success Rate**: Maintained throughout all phases (46 modules, 393 tests)
-- **Zero Breaking Changes**: All existing functionality preserved and enhanced
-- **Complete Implementation**: Full codebase coverage with no partial implementations
-- **Production Ready**: Fully optimized system ready for enhanced genealogical research
-
-## 🚀 **Key Features & Capabilities**
-
-### **🤖 AI-Enhanced Data Extraction**
-- **Specialized Genealogical Prompts**: DNA analysis, family tree verification, record research
-- **Structured Data Extraction**: Perfect alignment with Pydantic models and code expectations
-- **Real Genealogical Context**: Actual examples and scenarios for improved accuracy
-- **Multi-Scenario Support**: Handles diverse genealogical research situations
-
-### **💬 Dynamic Message Personalization**
-- **6 Enhanced Templates**: Genealogical data integration with dynamic placeholders
-- **20+ Personalization Functions**: Names, dates, locations, relationships, research questions
-- **Intelligent Fallbacks**: Graceful handling of incomplete data with default values
-- **Seamless Integration**: Enhanced existing messaging workflows without breaking changes
-
-### **📋 Intelligent Task Management**
-- **8 Specialized Templates**: Vital records, DNA analysis, immigration, census, military, occupation, location
-- **Actionable Research Plans**: Specific steps, expected outcomes, and research goals
-- **MS Graph Integration**: Detailed task descriptions with categories and priorities
-- **Data-Driven Generation**: Tasks created from extracted genealogical information
-
-### **⚡ Adaptive System Optimization**
-- **Intelligent Rate Limiting**: 0.1-2.0 RPS with automatic adjustment based on API patterns
-- **Smart Batch Processing**: 1-20 items per batch with performance-based optimization
-- **Performance Monitoring**: Real-time tracking with comprehensive reporting and analytics
-- **Configuration Optimization**: Data-driven recommendations for continuous improvement
-
-## 🏗️ **System Architecture**
-
-### **Core Action Modules**
-- `action6_gather.py`: Enhanced DNA match data collection with adaptive processing
-- `action7_inbox.py`: Intelligent inbox message processing with AI analysis
-- `action8_messaging.py`: Personalized messaging with genealogical data integration
-- `action9_process_productive.py`: Advanced conversation processing with task generation
-
-### **AI & Personalization Systems**
-- `ai_interface.py`: Enhanced AI interface with specialized genealogical functions
-- `ai_prompts.json`: Comprehensive prompt library with real genealogical examples
-- `message_personalization.py`: Dynamic message generation with 20+ personalization functions
-- `genealogical_task_templates.py`: 8 specialized research task templates
-
-### **Performance & Optimization**
-- `adaptive_rate_limiter.py`: Intelligent rate limiting and smart batch processing
-- `performance_dashboard.py`: Comprehensive performance monitoring and reporting
-- `core/session_manager.py`: Enhanced session management with adaptive systems
-
-### **Enhanced Package Structure**
-- ✅ **Core Package**: 9 specialized managers (session, database, browser, API, error handling, etc.)
-- ✅ **Config Package**: 3 enhanced modules (config management, schema validation, credential handling)
-- ✅ **Import System**: Standardized with robust fallback mechanisms
-- ✅ **Path Resolution**: Parent directory path insertion for seamless subdirectory module execution
-- ✅ **Package Integration**: Modules work both individually and as packages
-
-## 🚀 **Usage**
-
-### **Basic Operation**
+### Quick Start
 ```bash
-# Run complete automation workflow
-python action6_gather.py    # Collect DNA match data with adaptive processing
-python action7_inbox.py     # Process inbox messages with AI analysis
-python action8_messaging.py # Send personalized messages with genealogical data
-python action9_process_productive.py # Generate actionable research tasks
+git clone https://github.com/waynegault/ancestry.git
+cd ancestry
+pip install -r requirements.txt
+python run_all_tests.py          # verify environment
+python action6_gather.py         # gather DNA matches
+python action7_inbox.py          # process inbox with AI
+python action9_process_productive.py  # generate tasks
+python action8_messaging.py      # send personalized messages
 ```
 
-### **Performance Monitoring**
-```bash
-# View adaptive system performance
-python performance_dashboard.py
-
-# Test adaptive rate limiting
-python adaptive_rate_limiter.py
-
-# Test genealogical task generation
-python genealogical_task_templates.py
-```
-
-## 🧪 **Testing**
-
-### **Comprehensive Test Suite**
-```bash
-# Run all tests (46 modules, 393 tests)
-python run_all_tests.py
-
-# Test specific enhanced components
-python ai_interface.py
-python message_personalization.py
-python genealogical_task_templates.py
-python adaptive_rate_limiter.py
-```
-
-### **Test Coverage Excellence**
-- **100% Success Rate**: All 393 tests passing across 46 modules
-- **Zero Regressions**: All enhancements maintain existing functionality
-- **Comprehensive Coverage**: Initialization, functionality, error handling, integration tests
-- **Performance Validation**: Timing and efficiency testing for all operations
-
-### 🔐 Security & Configuration
-- **Encrypted Credentials**: Secure storage using industry-standard encryption (Fernet)
-- **System Keyring Integration**: Master key management with OS-level security
-- **Environment Configuration**: Flexible configuration management with validation
-- **Migration Utilities**: Safe credential migration from plaintext to encrypted storage
-
-### 🌐 Web Automation
-- **Selenium Integration**: Robust browser automation with error recovery
-- **API Integration**: RESTful API interactions with rate limiting and retry logic
-- **Session Management**: Persistent login sessions with automatic renewal
-- **Error Recovery**: Intelligent retry mechanisms with exponential backoff
-
-## 🚀 Recent Major Improvements
-
-### ✅ Complete Codebase Hardening (Action 6 Lessons Applied)
-**Production-Ready Resilience**: All actions enhanced with proven patterns from Action 6 success
-- **Circuit Breaker Optimization**: Increased failure thresholds (5→10) across all actions for better tolerance
-- **Enhanced Retry Logic**: Improved backoff factors (2.0→4.0) for better 429 error handling
-- **Conservative Rate Limiting**: 0.5 requests/second with 2.0s delays prevent API throttling
-- **Configuration Compliance**: All actions respect .env processing limits (MAX_PAGES, BATCH_SIZE, etc.)
-
-### ✅ Monitoring & Alerting System
-**Proactive Issue Detection**: Early warning system prevents cascading failures
-- **Failure Pattern Detection**: Alerts at 50% of failure threshold for early intervention
-- **Critical Warnings**: Escalated alerts at 80% of failure threshold
-- **Circuit Breaker Monitoring**: Automatic logging when circuits open due to failures
-- **Configuration Validation**: Startup validation of all .env settings and rate limiting
-
-### ✅ Enhanced Test Coverage
-**Comprehensive Validation**: All improvements thoroughly tested and validated
-- **Test Count**: 402 comprehensive tests (increased from 398)
-- **Success Rate**: 100% (44/44 modules) with zero regressions
-- **New Feature Testing**: Circuit breaker configurations, monitoring systems, and validation functions
-- **Production Readiness**: All enhancements verified for production use
-
-### ✅ API Documentation & Structure
-**Complete API Reference**: Comprehensive documentation of all Ancestry.com endpoints
-- **Endpoint Catalog**: 15+ documented API endpoints with methods and purposes
-- **Authentication Details**: Cookie requirements and CSRF token usage for each endpoint
-- **Rate Limiting Guide**: Conservative settings and error handling strategies
-- **Troubleshooting**: Common issues and solutions for API-related problems
-
-## Quick Start
-
-### Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/waynegault/ancestry.git
-   cd ancestry
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run comprehensive tests** (to verify everything works):
-   ```bash
-   python run_all_tests.py
-   ```
-   Expected result: `🎉 ALL TESTS PASSED!` with 40/40 modules passing
-
-### Basic Usage
-
-#### Package Import Mode
-```python
-# Use as packages - recommended for integration
-from core.session_manager import SessionManager
-from core.database_manager import DatabaseManager
-from config.credential_manager import CredentialManager
-
-# Initialize components
-session = SessionManager()
-db = DatabaseManager()
-creds = CredentialManager()
-```
-
-#### Standalone Execution Mode  
-```bash
-# Run individual modules for testing/development
-python core/session_manager.py       # Test session management
-python config/credential_manager.py  # Test credential handling
-python security_manager.py           # Test security features
-```
-
-#### Package Entry Points
-```bash
-# Access package information
-python -m core      # Core package info and available modules
-python -m config    # Config package info and available modules
-```
-
-### Configuration Setup
-
-1. **Secure Credential Storage**:
-   ```python
-   from security_manager import SecurityManager
-   
-   manager = SecurityManager()
-   credentials = {
-       "ANCESTRY_USERNAME": "your_username",
-       "ANCESTRY_PASSWORD": "your_password",
-       "DEEPSEEK_API_KEY": "your_api_key"
-   }
-   manager.encrypt_credentials(credentials)
-   ```
-
-2. **Environment Configuration**:
-   ```python
-   from config.config_manager import ConfigManager
-   
-   config = ConfigManager()
-   # Automatically loads from environment or encrypted storage
-   ```
-
-## Project Structure
-
-```
-ancestry/
-├── core/                    # Core subsystem packages
-│   ├── __init__.py         # Package initialization with fallback imports
-│   ├── __main__.py         # Package entry point  
-│   ├── session_manager.py  # Session lifecycle management
-│   ├── database_manager.py # Database operations and caching
-│   ├── browser_manager.py  # Selenium browser automation
-│   ├── api_manager.py      # API request handling
-│   └── ...                 # Additional core managers
-├── config/                  # Configuration subsystem  
-│   ├── __init__.py         # Package initialization
-│   ├── __main__.py         # Package entry point
-│   ├── credential_manager.py # Encrypted credential storage
-│   ├── config_manager.py   # Configuration management
-│   └── config_schema.py    # Configuration validation
-├── action*.py              # Main automation workflows
-├── *_utils.py              # Utility modules (API, GEDCOM, etc.)
-├── security_manager.py     # Security and encryption
-├── run_all_tests.py        # Comprehensive test runner
-└── main.py                 # Application entry point
-```
-
-## Testing
-
-### Run All Tests
-```bash
-python run_all_tests.py           # Full test suite (375 tests, ~2.2 minutes)
-```
-
-### Test Individual Components
-```bash
-python core/session_manager.py        # Test session management (8 tests)
-python config/credential_manager.py   # Test credential handling (15 tests)  
-python security_manager.py            # Test security features (11 tests)
-python utils.py                       # Test core utilities (10 tests)
-```
-
-### Test Categories
-Each module includes comprehensive testing:
-- **Initialization Tests**: Component setup and configuration
-- **Functionality Tests**: Core feature validation  
-- **Error Handling Tests**: Edge cases and failure scenarios
-- **Integration Tests**: Cross-component interaction
-- **Performance Tests**: Timing and efficiency validation
-
-## Module Categories
-
-### 🔧 Core Subsystem (9 modules)
-Specialized managers for session, database, browser, API, error handling, dependency injection, registry utilities, and session validation.
-
-### ⚙️ Configuration Subsystem (3 modules)  
-Enhanced configuration management, schema validation, and credential handling with encryption.
-
-### 🎯 Action Modules (6 modules)
-Main automation workflows for inbox processing, messaging, data gathering, and productive task automation.
-
-### 🌐 API/Web Modules (4 modules)
-API caching, search utilities, request handling, and Selenium browser automation.
-
-### 📊 Data Modules (3 modules)
-Database operations, caching systems, and cache management.
-
-### 📋 GEDCOM Modules (3 modules)
-GEDCOM file processing, caching, and search utilities for genealogical data.
-
-### 🛠️ Other Modules (12 modules)
-AI interface, Chrome driver management, credential handling, error management, logging, Microsoft Graph utilities, performance monitoring, relationship analysis, security management, and core utilities.
-
-## Performance
-
-### System Metrics
-- **Test Execution**: All 40 modules in under 3 minutes
-- **Memory Usage**: Optimized data structures with intelligent caching
-- **Database Performance**: Indexed SQLite with connection pooling
-- **API Rate Limiting**: Dynamic throttling prevents restrictions
-- **Error Recovery**: Automatic retry with exponential backoff
-
-### Reliability Features
-- **99.9% Uptime**: Robust error handling and recovery
-- **Zero Data Loss**: ACID-compliant transactions with backup systems
-- **Graceful Degradation**: System continues operating with reduced functionality during failures
-- **Circuit Breakers**: Automatic failure detection and recovery
-
-## Development
-
-### Code Standards
-- **Type Safety**: Full type hints and validation throughout
-- **Error Handling**: Comprehensive exception handling with detailed logging
-- **Testing**: 10-15 test categories per module with 95%+ coverage
-- **Documentation**: Clear docstrings and usage examples
-
-### Architecture Principles
-- **Modular Design**: Independent, testable components with clear interfaces
-- **Dependency Injection**: Modern DI patterns reduce coupling
-- **Package Structure**: Dual-mode operation (individual scripts + package imports)
-- **Consistent Patterns**: Standardized approaches across all modules
-
-### Contributing Guidelines
-1. **Test Coverage**: All new code must include comprehensive tests
-2. **Documentation**: Clear docstrings and usage examples required
-3. **Code Style**: Follow existing patterns for consistency
-4. **Error Handling**: Implement robust error handling with detailed messages
-
-## Recent Improvements
-
-### ✅ Completed: Import System Standardization (Phase 1)
-- **Package Structure**: Enhanced core/ and config/ packages with dual-mode operation
-- **Path Resolution**: Parent directory path insertion for seamless module execution  
-- **Fallback Imports**: try/except blocks for robust import handling
-- **Dual-Mode Support**: Modules work both individually and as package components
-
-### ✅ Completed: Test Framework Consolidation (Phase 2)
-- **100% Success Rate**: All 41 modules passing comprehensive tests (375 total tests)
-- **Perfect Test Reporting**: 100% of modules now report actual test counts
-- **Consistent Formatting**: Standardized test output across all modules
-- **Comprehensive Coverage**: Each module has multiple test categories
-- **Reliable Execution**: Robust test framework with proper error handling
-
-### ✅ Completed: Logger Standardization (Phase 3.1) - July 25, 2025
-- **42 files modernized**: All using standardized `logger = get_logger(__name__)` pattern
-- **Infrastructure verified**: Confirmed `core_imports` reliability across all subdirectories
-- **Fallback elimination**: Removed all unnecessary try/except patterns for logging
-- **Workspace cleanup**: Removed Python cache and temporary files from all directories
-
-### 🚀 Ready: Import Consolidation (Phase 3.2)
-- **Import Optimization**: Standardize remaining import patterns beyond logging
-- **Code Quality**: Further improvements to import organization and efficiency
-- **Final Polish**: Complete the modernization of the import infrastructure
-
-## 🔌 API Endpoints & Authentication
-
-### Core Ancestry.com API Endpoints
-
-#### Authentication & Session Management
-| Endpoint | Method | Purpose | Required Cookies | CSRF Token |
-|----------|--------|---------|------------------|------------|
-| `discoveryui-matches/parents/api/csrfToken` | GET | Retrieve CSRF token | `ANCSESSIONID`, `SecureATT` | ❌ |
-| `app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid` | GET | Get user profile ID | `ANCSESSIONID`, `SecureATT` | ✅ |
-| `api/uhome/secure/rest/header/dna` | GET | Get user UUID | `ANCSESSIONID`, `SecureATT` | ✅ |
-
-#### DNA Match Processing (Action 6)
-| Endpoint | Method | Purpose | Required Cookies | CSRF Token |
-|----------|--------|---------|------------------|------------|
-| `discoveryui-matches/api/matches` | GET | Fetch DNA matches list | `OptanonConsent`, `trees`, `ANCSESSIONID` | ✅ |
-| `discoveryui-matches/api/matches/{match_id}/intree` | POST | Check if match is in tree | `OptanonConsent`, `trees`, `ANCSESSIONID` | ✅ |
-
-#### Messaging System (Actions 7 & 8)
-| Endpoint | Method | Purpose | Required Cookies | CSRF Token |
-|----------|--------|---------|------------------|------------|
-| `app-api/express/v2/conversations/message` | POST | Send new message | `ANCSESSIONID`, `SecureATT` | ✅ |
-| `app-api/express/v2/conversations/{conv_id}` | POST | Reply to conversation | `ANCSESSIONID`, `SecureATT` | ✅ |
-| `messaging/api/conversations` | GET | Fetch inbox conversations | `ANCSESSIONID`, `SecureATT` | ❌ |
-
-#### Profile & Tree Management
-| Endpoint | Method | Purpose | Required Cookies | CSRF Token |
-|----------|--------|---------|------------------|------------|
-| `app-api/express/v1/profiles/details?userId={id}` | GET | Get profile details | `ANCSESSIONID`, `SecureATT` | ❌ |
-| `api/uhome/secure/rest/header/trees` | GET | Get user trees | `ANCSESSIONID`, `SecureATT` | ❌ |
-| `api/uhome/secure/rest/user/tree-info?tree_id={id}` | GET | Get tree owner info | `ANCSESSIONID`, `SecureATT` | ❌ |
-
-#### Person & Relationship APIs
-| Endpoint | Method | Purpose | Required Cookies | CSRF Token |
-|----------|--------|---------|------------------|------------|
-| `api/person-picker/suggest/{tree_id}` | GET | Search persons in tree | `ANCSESSIONID`, `SecureATT` | ❌ |
-| `family-tree/person/facts/user/{profile_id}/tree/{tree_id}/person/{person_id}` | GET | Get person facts | `ANCSESSIONID`, `SecureATT` | ❌ |
-| `family-tree/person/tree/{tree_id}/person/{person_id}/getladder` | GET | Get relationship path | `ANCSESSIONID`, `SecureATT` | ❌ |
-| `discoveryui-matchingservice/api/relationship` | POST | Discover relationships | `ANCSESSIONID`, `SecureATT` | ✅ |
-| `trees/{tree_id}/persons` | GET | List tree persons | `ANCSESSIONID`, `SecureATT` | ❌ |
-
-### Essential Cookies
-
-#### Required for All API Calls
-- **`ANCSESSIONID`**: Primary session identifier
-- **`SecureATT`**: Security authentication token
-
-#### Required for Specific Actions
-- **`OptanonConsent`**: Cookie consent (required for DNA match processing)
-- **`trees`**: Tree access permissions (required for DNA match processing)
-
-### Rate Limiting & Error Handling
-
-#### Current Conservative Settings (Post-Action 6 Hardening)
-```yaml
-requests_per_second: 0.5        # Very conservative rate limiting
-initial_delay: 2.0              # 2-second delays between requests
-retry_backoff_factor: 4.0       # Aggressive backoff on 429 errors
-failure_threshold: 10           # Circuit breaker tolerance
-burst_limit: 3                  # Minimal request bursting
-```
-
-#### Common HTTP Status Codes
-- **200**: Success
-- **401**: Authentication required (session expired)
-- **403**: Forbidden (insufficient permissions)
-- **429**: Too Many Requests (rate limited)
-- **500**: Internal Server Error (Ancestry.com issue)
-
-### Authentication Flow
-1. **Login**: Authenticate via web browser (Selenium)
-2. **Cookie Sync**: Extract cookies from browser to requests session
-3. **CSRF Token**: Retrieve CSRF token for protected endpoints
-4. **API Calls**: Use cookies + CSRF token for authenticated requests
-5. **Session Validation**: Periodic checks for session validity
-
-## Support & Troubleshooting
-
-### Common Issues
-1. **Import Errors**: Ensure you're in the project root directory
-2. **Missing Dependencies**: Run `pip install -r requirements.txt`
-3. **Test Failures**: Check individual module tests for specific issues
-4. **Credential Issues**: Use SecurityManager for secure credential storage
-5. **Login Failures**: Verify credentials in `.env` file or use credential manager
-6. **Session Timeouts**: Check network connectivity and Ancestry.com availability
-7. **Database Errors**: Ensure proper permissions and disk space availability
-8. **API Rate Limits**: Reduce processing limits in configuration if encountering 429 errors
-9. **CSRF Token Issues**: Session may have expired, restart application to re-authenticate
-10. **Circuit Breaker Open**: Check logs for failure patterns, may need to wait for recovery
-
-### Getting Help
-- **Test Output**: Run individual module tests for detailed diagnostic information
-- **Logging**: Enable debug logging for detailed operation tracking
-- **Documentation**: Review module docstrings for usage examples
-- **Integration Tests**: Run `python integration_test.py` for system validation
-- **API Monitoring**: Check circuit breaker status and failure patterns in logs
-- **Configuration Validation**: Review startup logs for configuration warnings
-
-### System Requirements
-- **Python**: 3.8+ (tested with 3.12)
-- **Operating System**: Windows, macOS, Linux
-- **Memory**: 512MB+ recommended
-- **Storage**: 100MB+ for database and cache files
+### Quality & Safety
+- 100% passing test baseline (hundreds of tests across modules)
+- Credential encryption with Fernet + system keyring
+- Graceful degradation & retry logic; circuit breaker safeguards
+- Optional quality regression gate: `python quality_regression_gate.py`
+
+### What You’ll See Produced
+- SQLite DB (ancestry.db) tracking people, matches, conversations
+- Logs/ directory with telemetry, alerts, quality baselines
+- Microsoft To‑Do tasks (when properly configured) with actionable descriptions
+
+### High-Level Feature Summary
+| Feature | Benefit |
+|---------|---------|
+| AI Entity Extraction | Higher specificity for tasks & messages |
+| Message Personalization | Increased match response probability |
+| Task Templates | Faster movement from discussion to evidence search |
+| Adaptive Rate Limiting | Stable long-running sessions w/o throttling |
+| Quality Scoring & Alerts | Early detection of silent degradation |
+| Regression Gate | Protects median extraction quality over time |
 
 ---
 
-## 🎉 **PHASES 8-11 COMPLETION SUMMARY**
+## DEVELOPER GUIDE (How It Works)
 
-### ✅ **ALL MAJOR ENHANCEMENT PHASES SUCCESSFULLY COMPLETED**
-**Total Duration**: 9 hours across 4 revolutionary phases
-**Overall Impact**: Complete system transformation with intelligent AI, personalized messaging, actionable tasks, and adaptive optimization
+### Architectural Layers
+1. Action Scripts (workflow entrypoints): action6–11
+2. Core Infrastructure (core/): session, database, browser, api, error handling
+3. AI & Personalization: ai_interface.py, ai_prompts.json, message_personalization.py
+4. Task Generation: genealogical_task_templates.py + action9 integration
+5. Quality & Telemetry: extraction_quality.py, prompt_telemetry.py, quality_regression_gate.py
+6. Performance & Adaptation: adaptive_rate_limiter.py, performance_dashboard.py
+7. Security & Config: security_manager.py, config/ package
 
-#### **🎯 PHASE 8**: AI Prompt Enhancement & Data Extraction Quality ✅
-- Fixed critical prompt-model alignment issues causing suboptimal AI extraction
-- Enhanced extraction accuracy with structured JSON output matching code expectations
-- Added specialized prompts for DNA analysis, family tree verification, record research
-- Established foundation for all subsequent AI-driven improvements
+### Data Extraction & Quality Scoring
+compute_extraction_quality combines:
+- Entity richness (names, vitals, relationships, locations, etc.) up to 70 pts (penalty: -10 if no names)
+- Task specificity (compute_task_quality) up to 30 pts (verbs, year, record terms, specificity tokens, healthy length, filler penalties)
+- Bonus for 3–8 well‑formed tasks; penalty if zero tasks
+Telemetry captures quality_score for each extraction event.
 
-#### **🎯 PHASE 9**: Message Personalization & Quality Enhancement ✅
-- Created dynamic message personalization system with genealogical data integration
-- Built 6 enhanced message templates with 20+ dynamic placeholder functions
-- Integrated personalization into existing messaging workflows seamlessly
-- Established foundation for dramatically improved user engagement
+Baseline & Regression:
+```bash
+python prompt_telemetry.py --build-baseline --variant control --window 300 --min-events 8
+python prompt_telemetry.py --check-regression --variant control --window 120 --drop-threshold 15
+python quality_regression_gate.py  # exit 1 on regression
+```
 
-#### **🎯 PHASE 10**: Task Management & Actionability Enhancement ✅
-- Created genealogical research task templates for 8 specialized research types
-- Enhanced MS Graph integration with actionable, specific research tasks
-- Implemented intelligent task generation based on extracted genealogical data
-- Transformed generic tasks into detailed research plans with clear objectives
+### Telemetry & Experimentation
+- JSONL appends (Logs/prompt_experiments.jsonl)
+- Fields: variant_label, parse_success, counts, tasks, raw size, quality_score
+- Analysis heuristics (control vs alt) with auto-alerting (Logs/prompt_experiment_alerts.jsonl)
+- Baseline JSON: Logs/prompt_quality_baseline.json
 
-#### **🎯 PHASE 11**: Configuration Optimization & Adaptive Processing ✅
-- Built adaptive rate limiting system that responds to API patterns and success rates
-- Implemented smart batch processing with automatic size optimization
-- Created performance monitoring dashboard with comprehensive reporting
-- Established data-driven optimization for continuous system improvement
+### AI Integration
+- Prompt library (ai_prompts.json) aligned with structured output contract
+- ai_interface.py centralizes provider calls, variant labeling, and response normalization
+- Supports specialized prompts (DNA analysis, record research, reply generation)
 
-### 📊 **OUTSTANDING OVERALL RESULTS:**
-- **100% test success rate maintained** throughout all phases (46 modules, 393 tests)
-- **Zero breaking changes** - all existing functionality preserved and enhanced
-- **Complete implementation** across entire codebase as required
-- **Revolutionary improvements** in data quality, user experience, and system efficiency
-- **Foundation established** for continued optimization and enhancement
+### Messaging Personalization
+- Templates use placeholders resolved by message_personalization.py (20+ functions)
+- Robust fallback chain ensures message always sends even with sparse data
+- Productivity classification informs template selection & task generation
 
-### 🔄 **SYSTEM STATUS: FULLY OPTIMIZED & PRODUCTION READY**
-The Ancestry project now features:
-- **Intelligent AI extraction** with prompt-model alignment
-- **Personalized messaging** with genealogical data integration
-- **Actionable research tasks** with specialized templates
-- **Adaptive configuration** with performance monitoring
-- **Comprehensive error handling** and graceful degradation
-- **Performance optimization** with data-driven recommendations
+### Research Task Generation
+- genealogical_task_templates.py defines domain templates (vital, census, immigration, DNA, etc.)
+- action9_process_productive maps extracted entities + conversation signals → prioritized tasks
+- Optional enrichment & de-dup feature flags (enable_task_enrichment, enable_task_dedup)
 
-All phases have been implemented thoroughly, tested comprehensively, and documented completely. The system is now ready for enhanced genealogical research productivity with significantly improved data extraction, user engagement, and research task management.
+### Performance & Adaptation
+AdaptiveRateLimiter:
+- Monitors success & 429 rates; adjusts effective RPS (0.1–2.0)
+Smart batching selects batch size optimizing target cycle time
+Performance dashboard aggregates per-session metrics & recommendations.
+
+### Database & Persistence
+- SQLite schema (people, dna_matches, conversation_logs, tasks) via DatabaseManager
+- Caching layers for GEDCOM parsing & API responses
+- Backup & restore operations (action menu options)
+
+### Security Model
+- Encrypted credentials (Fernet) + system keyring master key
+- Minimal scope storage; local-only persistence
+- CSRF token retrieval & cookie transfer from Selenium to requests session
+
+### Testing Strategy
+- run_all_tests.py orchestrates discovery, optional parallelism, performance metrics
+- Categories: unit, integration, performance, error handling, personalization, extraction quality
+- Quality gate script provides CI enforcement layer without modifying core tests
+
+### Configuration & Flags
+Environment & config manager unify defaults; feature toggles:
+- enable_task_dedup
+- enable_task_enrichment
+- enable_prompt_experiments
+Supports multiple AI providers via AI_PROVIDER env.
+
+### Extensibility Guidelines
+- Add new prompt variant: update ai_prompts.json + version label → capture telemetry automatically
+- Add new task template: extend genealogical_task_templates.py & integrate selection logic in action9
+- Introduce new quality dimension: extend extraction_quality.compute_extraction_quality (preserve backward compatibility by additive fields)
+
+### Planned Enhancements
+- Statistical significance (bootstrap / Mann-Whitney) for variant quality deltas
+- Separate task_quality_score telemetry field
+- Baseline rotation policy (age / sample volume)
+- Cost efficiency metrics (quality per 1K chars/tokens)
+
+### Troubleshooting (Developer Focus)
+| Symptom | Check | Likely Cause |
+|---------|-------|--------------|
+| quality_regression_gate exits 1 | baseline & latest medians | Real score drop or stale baseline |
+| Low success_rate in telemetry | parse_success flags | Prompt drift or extraction schema change |
+| Frequent 429s | adaptive_rate_limiter stats | Too aggressive manual overrides |
+| Missing tasks | action9 logs & feature flags | Enrichment flag disabled or empty extraction |
+
+### Project Structure (Condensed)
+```
+action*.py            # Workflow drivers
+adaptive_rate_limiter.py
+ai_interface.py / ai_prompts.json
+extraction_quality.py
+genealogical_task_templates.py
+message_personalization.py
+prompt_telemetry.py / quality_regression_gate.py
+performance_dashboard.py
+core/  config/  utils/  (infrastructure & shared services)
+Logs/ (telemetry, alerts, baseline)
+```
+
+### Contribution Checklist
+- Add/update tests (maintain green suite)
+- Run quality gate (if baseline exists)
+- Update README Developer Guide if public surface changes
+- Avoid breaking telemetry schema (additive changes preferred)
 
 ---
 
-*Last Updated: August 6, 2025*
-*Version: 3.0.0 - Fully Optimized*
-*Status: Production Ready with Revolutionary Enhancements*
+## LICENSE
+MIT License – see LICENSE file.
 
----
+## ACKNOWLEDGMENTS
+Design emphasizes: robustness, observability, reversible low-risk incremental improvements, and genealogy-specific domain modeling.
 
-## License
+Last Updated: 2025-08-11
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-Built with modern Python practices including:
-- **Type Safety**: Full type hint coverage
-- **Testing Excellence**: Comprehensive test suites with standardized patterns
-- **Security**: Industry-standard encryption and secure credential management
-- **Performance**: Optimized database operations and intelligent caching
-- **Reliability**: Robust error handling and recovery mechanisms
-
-*Last Updated: July 30, 2025 - Reflecting enhanced test framework with 375 total tests, 100% test count reporting, and perfect success rate across all 41 modules*

@@ -33,6 +33,7 @@ import json
 import threading
 import psutil
 import concurrent.futures
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
@@ -277,7 +278,7 @@ def extract_module_description(module_path: str) -> str | None:
 
 
 def run_module_tests(
-    module_name: str, description: str | None = None, enable_monitoring: bool = False
+    module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
 ) -> Tuple[bool, int, Optional[TestExecutionMetrics]]:
     """Run tests for a specific module with optional performance monitoring."""
     import re  # Ensure re is available in function scope
@@ -333,11 +334,23 @@ def run_module_tests(
         if monitor:
             monitor.start_monitoring()
 
+        cmd = [sys.executable]
+        env = None
+        # For modules with internal test suite, set env var to trigger test output
+        suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
+        if module_name in suite_env_modules:
+            env = dict(os.environ)
+            env["RUN_INTERNAL_TESTS"] = "1"
+        if coverage:
+            cmd += ["-m", "coverage", "run", "--append", module_name]
+        else:
+            cmd.append(module_name)
         result = subprocess.run(
-            [sys.executable, module_name],
-            capture_output=True,  # Capture output to check for failures
+            cmd,
+            capture_output=True,
             text=True,
             cwd=Path.cwd(),
+            env=env
         )
 
         duration = time.time() - start_time
@@ -601,7 +614,7 @@ def run_module_tests(
         return False, 0, error_metrics
 
 
-def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_monitoring: bool = False) -> Tuple[List[TestExecutionMetrics], int, int]:
+def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False) -> Tuple[List[TestExecutionMetrics], int, int]:
     """Run tests in parallel for improved performance."""
     all_metrics = []
     passed_count = 0
@@ -614,7 +627,7 @@ def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all test jobs
         future_to_module = {
-            executor.submit(run_module_tests, module, desc, enable_monitoring): (module, desc)
+            executor.submit(run_module_tests, module, desc, enable_monitoring, coverage): (module, desc)
             for module, desc in modules_with_descriptions
         }
 
@@ -778,7 +791,7 @@ def main():
         for i, (module_name, description) in enumerate(modules_with_descriptions, 1):
             print(f"\n🧪 [{i:2d}/{len(discovered_modules)}] Testing: {module_name}")
 
-            success, test_count, metrics = run_module_tests(module_name, description, enable_monitoring)
+            success, test_count, metrics = run_module_tests(module_name, description, enable_monitoring, coverage=enable_benchmark)
             total_tests_run += test_count
             if success:
                 passed_count += 1
@@ -868,9 +881,29 @@ def main():
         f"   Standard Modules: {passed_count - enhanced_passed} passed, {failed_count - enhanced_failed} failed"
     )
 
+    # Coverage reporting (always print at end)
+    try:
+        cov_html = "coverage_html"
+        subprocess.run([sys.executable, "-m", "coverage", "combine"], capture_output=True)
+        cov_report = subprocess.run([sys.executable, "-m", "coverage", "report", "-m"], capture_output=True, text=True)
+        summary_line = None
+        if cov_report.stdout:
+            for line in cov_report.stdout.splitlines()[::-1]:
+                if line.strip().startswith("TOTAL"):
+                    summary_line = line.strip()
+                    break
+        if summary_line:
+            print(f"\n🛡️  COVERAGE SUMMARY: {summary_line}")
+        else:
+            print("\n🛡️  COVERAGE SUMMARY: (unavailable)")
+        subprocess.run([sys.executable, "-m", "coverage", "html", "-d", cov_html], capture_output=True)
+        print(f"📄 HTML coverage report generated at ./{cov_html}/index.html")
+    except Exception as e:
+        print(f"⚠️  Coverage reporting failed: {e}")
+
     if failed_count == 0:
         print(f"\n🎉 ALL {len(discovered_modules)} MODULES PASSED!")
-        print("   Enhanced detailed reporting is working perfectly.\n\n")
+        print("   Enhanced detailed reporting & (optional) coverage summarization complete.\n\n")
     else:
         print(f"\n⚠️  {failed_count} module(s) failed.")
         print("   Check individual test outputs above for details.\n\n")

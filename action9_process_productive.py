@@ -43,6 +43,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
+import hashlib
+import re
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -738,8 +740,13 @@ class PersonProcessor:
         log_prefix = f"Productive: {person.username} #{person.id}"
 
         try:
-            # Apply rate limiting
-            self.session_manager.dynamic_rate_limiter.wait()
+            # Apply rate limiting (defensive: dynamic_rate_limiter may be None in some contexts)
+            try:
+                rl = getattr(self.session_manager, "dynamic_rate_limiter", None)
+                if rl is not None:
+                    rl.wait()
+            except Exception as e:
+                logger.debug(f"{log_prefix}: Rate limiter unavailable or failed: {e}")
 
             # Get message context
             context_logs = self._get_context_logs(person, log_prefix)
@@ -756,6 +763,13 @@ class PersonProcessor:
                 return False, "ai_error"
 
             extracted_data, suggested_tasks = ai_results
+
+            # Log-only: assess suggested_tasks quality before any task creation (no behavior change)
+            try:
+                _log_suggested_tasks_quality(suggested_tasks, extracted_data, log_prefix)
+                _log_task_dedup_preview(suggested_tasks, log_prefix)
+            except Exception as e:
+                logger.debug(f"{log_prefix}: Task quality audit unavailable: {e}")
 
             # Create MS Graph tasks
             self._create_ms_tasks(person, suggested_tasks, log_prefix, progress_bar)
@@ -927,6 +941,36 @@ class PersonProcessor:
             )
             return
 
+        # Optional guarded de-duplication (Phase 4.3) — only in testing mode and when flag enabled
+        if (
+            config_schema.app_mode == "testing"
+            and getattr(config_schema, "enable_task_dedup", False)
+            and len(suggested_tasks) > 1
+        ):
+            try:
+                original_count = len(suggested_tasks)
+                dedup_map = {}
+                for t in suggested_tasks:
+                    core = _normalize_task_text(t)
+                    # Reuse same core transform as preview (lightweight subset)
+                    core = re.sub(r"\([^)]*\)", "", core)
+                    core = re.sub(r"\b(\d{4}s?)\b", "YEAR", core)
+                    core = re.sub(r"\b(census|record|records)\b", "record", core)
+                    core = re.sub(r"\s+", " ", core).strip()
+                    if core:
+                        dedup_map.setdefault(core, []).append(t)
+                # Keep first occurrence per core group
+                deduped = [vals[0] for vals in dedup_map.values()]
+                if len(deduped) < original_count:
+                    logger.info(
+                        f"{log_prefix}: Guarded de-dup (testing) reduced tasks {original_count}→{len(deduped)}"
+                    )
+                    suggested_tasks = deduped
+                else:
+                    logger.debug(f"{log_prefix}: Guarded de-dup found no reductions")
+            except Exception as e:
+                logger.debug(f"{log_prefix}: Guarded de-dup failed: {e}")
+
         # Create tasks
         app_mode = config_schema.app_mode
         if app_mode == "dry_run":
@@ -937,9 +981,14 @@ class PersonProcessor:
 
         # Generate enhanced tasks if genealogical task generation is available
         enhanced_tasks = []
-        if GENEALOGICAL_TASK_GENERATION_AVAILABLE and hasattr(person, 'extracted_genealogical_data'):
+        if (
+            GENEALOGICAL_TASK_GENERATION_AVAILABLE
+            and getattr(config_schema, "enable_task_enrichment", False)
+            and hasattr(person, 'extracted_genealogical_data')
+            and callable(GenealogicalTaskGenerator)
+        ):
             try:
-                task_generator = GenealogicalTaskGenerator()
+                task_generator = GenealogicalTaskGenerator()  # type: ignore[call-arg]
                 person_data = {"username": getattr(person, "username", "Unknown")}
                 extracted_data = getattr(person, 'extracted_genealogical_data', {})
 
@@ -963,6 +1012,30 @@ class PersonProcessor:
 
                 if enhanced_tasks:
                     logger.info(f"{log_prefix}: Generated {len(enhanced_tasks)} enhanced genealogical tasks")
+                    # Log a small debug sample mapping original suggested tasks to enhanced outputs (Phase 4.4 completion instrumentation)
+                    try:
+                        sample_count = min(2, len(enhanced_tasks))
+                        original_preview = suggested_tasks[:sample_count]
+                        enrichment_sample = []
+                        for i in range(sample_count):
+                            et = enhanced_tasks[i]
+                            enrichment_sample.append(
+                                {
+                                    "orig": original_preview[i] if i < len(original_preview) else None,
+                                    "title": et.get("title", ""),
+                                    "category": et.get("category", ""),
+                                    "priority": et.get("priority", ""),
+                                    "template": et.get("template_used", ""),
+                                }
+                            )
+                        # Use json dumps to keep single-line structured debug output
+                        try:
+                            import json as _json
+                            logger.debug(f"{log_prefix}: Task enrichment sample: {_json.dumps(enrichment_sample, ensure_ascii=False)}")
+                        except Exception:
+                            logger.debug(f"{log_prefix}: Task enrichment sample (fallback repr): {enrichment_sample}")
+                    except Exception as e:
+                        logger.debug(f"{log_prefix}: Failed to log enrichment sample: {e}")
                 else:
                     logger.debug(f"{log_prefix}: No enhanced tasks generated, using standard tasks")
 
@@ -970,8 +1043,8 @@ class PersonProcessor:
                 logger.warning(f"{log_prefix}: Enhanced task generation failed: {e}, using standard tasks")
                 enhanced_tasks = []
 
-        # Use enhanced tasks if available, otherwise fall back to standard tasks
-        if enhanced_tasks:
+        # Use enhanced tasks if available and enrichment flag enabled, otherwise fall back to standard tasks
+        if enhanced_tasks and getattr(config_schema, "enable_task_enrichment", False):
             logger.info(f"{log_prefix}: Creating {len(enhanced_tasks)} enhanced MS To-Do tasks...")
             for task_index, task_data in enumerate(enhanced_tasks):
                 task_title = task_data.get("title", f"Ancestry Research: {person.username or 'Unknown'}")
@@ -1536,24 +1609,26 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
     # === PHASE 11.1: ADAPTIVE BATCH PROCESSING ===
     adaptive_batch_size = config_schema.batch_size
+    smart_batch_processor = None  # initialize for type checkers
+    performance_dashboard = None
     if ADAPTIVE_SYSTEMS_AVAILABLE:
         try:
-            # Initialize adaptive systems
-            smart_batch_processor = SmartBatchProcessor(
-                initial_batch_size=config_schema.batch_size,
-                min_batch_size=1,
-                max_batch_size=min(20, config_schema.max_productive_to_process or 20)
-            )
-
-            performance_dashboard = PerformanceDashboard("action9_performance.json")
-            performance_dashboard.record_session_start({
-                "action": "action9_process_productive",
-                "initial_batch_size": config_schema.batch_size,
-                "max_productive": config_schema.max_productive_to_process
-            })
-
-            adaptive_batch_size = smart_batch_processor.get_next_batch_size()
-            logger.debug(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
+            # Initialize adaptive systems only if classes loaded
+            if callable(SmartBatchProcessor):
+                smart_batch_processor = SmartBatchProcessor(
+                    initial_batch_size=config_schema.batch_size,
+                    min_batch_size=1,
+                    max_batch_size=min(20, config_schema.max_productive_to_process or 20)
+                )
+                adaptive_batch_size = smart_batch_processor.get_next_batch_size()
+                logger.debug(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
+            if callable(PerformanceDashboard):
+                performance_dashboard = PerformanceDashboard("action9_performance.json")
+                performance_dashboard.record_session_start({
+                    "action": "action9_process_productive",
+                    "initial_batch_size": config_schema.batch_size,
+                    "max_productive": config_schema.max_productive_to_process
+                })
 
         except Exception as e:
             logger.warning(f"Failed to initialize adaptive systems: {e}, using standard batch processing")
@@ -1822,18 +1897,20 @@ def _process_candidates(
                 )
 
                 # Record batch performance for adaptive processing
-                if smart_batch_processor and performance_dashboard:
+                _sbp = locals().get('smart_batch_processor')
+                _pd = locals().get('performance_dashboard')
+                if ADAPTIVE_SYSTEMS_AVAILABLE and _sbp is not None and _pd is not None:
                     try:
                         batch_processing_time = time.time() - batch_start_time
                         batch_success_rate = 1.0 if commit_success else 0.0
 
-                        smart_batch_processor.record_batch_performance(
+                        _sbp.record_batch_performance(
                             batch_size=current_batch_size,
                             processing_time=batch_processing_time,
                             success_rate=batch_success_rate
                         )
 
-                        performance_dashboard.record_batch_processing_metrics({
+                        _pd.record_batch_processing_metrics({
                             "batch_number": state.batch_num,
                             "batch_size": current_batch_size,
                             "processing_time": batch_processing_time,
@@ -1843,7 +1920,7 @@ def _process_candidates(
                         })
 
                         # Get updated batch size recommendation
-                        recommended_batch_size = smart_batch_processor.get_next_batch_size()
+                        recommended_batch_size = _sbp.get_next_batch_size()
                         if recommended_batch_size != db_state.batch_size:
                             logger.info(f"Adaptive batch size adjustment: {db_state.batch_size} → {recommended_batch_size}")
                             db_state.batch_size = recommended_batch_size
@@ -1914,6 +1991,139 @@ def _log_summary(state: ProcessingState):
 #####################################################
 # Helper Functions (Missing from refactored version)
 #####################################################
+
+
+def _normalize_task_text(task: str) -> str:
+    """Create a normalized representation of a task string for hashing/dedup logs.
+
+    - Lowercase
+    - Collapse whitespace
+    - Strip leading/trailing punctuation
+    - Remove repeated punctuation
+    """
+    if not isinstance(task, str):
+        return ""
+    t = task.lower()
+    t = re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"[\s\-_,.;:!]+$", "", t)  # strip trailing punctuation clusters
+    t = re.sub(r"^[\s\-_,.;:!]+", "", t)  # strip leading punctuation clusters
+    t = re.sub(r"[!?.]{2,}", ".", t)
+    return t
+
+
+def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dict[str, Any], log_prefix: str) -> None:
+    """Log-only audit of suggested task quality; does not modify behavior.
+
+    Metrics logged:
+    - total vs unique (normalized) count
+    - average/median length and counts of very short/very long tasks
+    - coverage hints: whether tasks reference extracted names/locations/dates
+    - idempotency hashes for potential future de-duplication
+    - presence of action verbs
+    """
+    try:
+        tasks = suggested_tasks or []
+        if not tasks:
+            logger.debug(f"{log_prefix}: No suggested_tasks to audit.")
+            return
+
+        # Normalize and hash
+        norm = [_normalize_task_text(t) for t in tasks if isinstance(t, str) and t.strip()]
+        unique_norm = list({n for n in norm if n})
+        dup_count = max(0, len(norm) - len(unique_norm))
+        hashes = [hashlib.sha1(n.encode("utf-8")).hexdigest()[:12] for n in unique_norm]
+
+        # Length stats
+        lengths = [len(t) for t in tasks if isinstance(t, str)]
+        avg_len = sum(lengths) / len(lengths) if lengths else 0
+        short_count = sum(1 for l in lengths if l < 25)
+        long_count = sum(1 for l in lengths if l > 220)
+
+        # Action verbs heuristic
+        ACTION_VERBS = [
+            "search", "check", "look", "compare", "review", "request",
+            "contact", "verify", "order", "compile", "analyze", "map",
+            "triangulate", "confirm", "document",
+        ]
+        verb_hits = sum(1 for n in norm for v in ACTION_VERBS if f" {v} " in f" {n} ")
+
+        # Names/locations coverage (best-effort; extracted_data structure may vary)
+        names = set()
+        try:
+            for nd in (extracted_data.get("structured_names") or []):
+                full = nd.get("full_name") if isinstance(nd, dict) else None
+                if full:
+                    names.add(full.lower())
+        except Exception:
+            pass
+        locations = set()
+        try:
+            for loc in (extracted_data.get("locations") or []):
+                place = loc.get("place") if isinstance(loc, dict) else None
+                if place:
+                    locations.add(place.lower())
+        except Exception:
+            pass
+
+        names_refs = sum(1 for n in norm if any(name in n for name in names)) if names else 0
+        loc_refs = sum(1 for n in norm if any(place in n for place in locations)) if locations else 0
+
+        logger.info(
+            f"{log_prefix}: Task audit — total={len(tasks)}, unique_norm={len(unique_norm)}, dupes={dup_count}, "
+            f"avg_len={avg_len:.1f}, short(<25)={short_count}, long(>220)={long_count}, verbs={verb_hits}, "
+            f"name_refs={names_refs}, location_refs={loc_refs}"
+        )
+        # Log a compact preview of normalized tasks and their hashes
+        preview = [f"{i+1}:{unique_norm[i][:70]} # {hashes[i]}" for i in range(min(3, len(unique_norm)))]
+        if preview:
+            logger.debug(f"{log_prefix}: Task audit sample: {preview}")
+    except Exception as e:
+        logger.debug(f"{log_prefix}: Task audit failed: {e}")
+
+
+def _log_task_dedup_preview(suggested_tasks: List[str], log_prefix: str) -> None:
+        """Phase 4.2 (log-only): Preview potential task de-duplication impact.
+
+        Groups tasks by normalized core text (after stripping trailing qualifiers).
+        Logs cluster sizes and a consolidation estimate WITHOUT modifying the list.
+        """
+        try:
+            tasks = suggested_tasks or []
+            if len(tasks) < 2:
+                return
+            # Lightweight normalization reuse
+            core_map: Dict[str, List[int]] = {}
+            for idx, raw in enumerate(tasks):
+                if not isinstance(raw, str) or not raw.strip():
+                    continue
+                norm = _normalize_task_text(raw)
+                # Remove parenthetical clarifiers & counts for grouping
+                core = re.sub(r"\([^)]*\)", "", norm)
+                core = re.sub(r"\b(\d{4}s?)\b", r"YEAR", core)  # Generalize years
+                core = re.sub(r"\b(census|record|records)\b", "record", core)
+                core = re.sub(r"\s+", " ", core).strip()
+                if not core:
+                    continue
+                core_map.setdefault(core, []).append(idx)
+
+            duplicate_clusters = {k: v for k, v in core_map.items() if len(v) > 1}
+            if not duplicate_clusters:
+                logger.debug(f"{log_prefix}: De-dup preview: no duplicate clusters detected")
+                return
+
+            potential_savings = sum(len(v) - 1 for v in duplicate_clusters.values())
+            logger.info(
+                f"{log_prefix}: De-dup preview — clusters={len(duplicate_clusters)}, "
+                f"potential_savings={potential_savings} (would reduce {len(tasks)}→{len(tasks)-potential_savings})"
+            )
+            sample = []
+            for core_text, idxs in list(duplicate_clusters.items())[:3]:
+                hash_prefix = hashlib.sha1(core_text.encode('utf-8')).hexdigest()[:10]
+                sample.append(f"{hash_prefix}:{len(idxs)}:'{core_text[:55]}'")
+            if sample:
+                logger.debug(f"{log_prefix}: De-dup cluster samples: {sample}")
+        except Exception as e:
+            logger.debug(f"{log_prefix}: De-dup preview failed: {e}")
 
 
 def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
