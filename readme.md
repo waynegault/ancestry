@@ -2,9 +2,6 @@
 
 # Ancestry Research Automation
 
-Unified README (2025-08-11): Consolidated user & developer documentation from prior separate files.
-
----
 
 ## USER GUIDE (What It Is & What You Can Do)
 
