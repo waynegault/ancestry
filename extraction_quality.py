@@ -277,3 +277,119 @@ def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
         return ""
 
 
+# === Internal Test Suite (Added per repository standard) ===
+def extraction_quality_module_tests() -> bool:  # pragma: no cover - invoked by master test harness
+    """Lightweight internal tests ensuring core quality helpers behave consistently.
+
+    Categories (mirrors standard pattern): Initialization, Core, Edge, Consistency, Performance (micro), Error Handling.
+    Focus: user experience & stability — no artificial heavy loads.
+    """
+    try:
+        from test_framework import TestSuite, suppress_logging
+    except Exception:  # Fallback minimal harness
+        print("test_framework unavailable; skipping extraction_quality tests")
+        return True
+
+    with suppress_logging():
+        suite = TestSuite("Extraction Quality & Anomaly Metrics", "extraction_quality.py")
+        suite.start_suite()
+
+    # === INIT ===
+    def test_module_symbols():
+        assert callable(summarize_extracted_data)
+        assert callable(compute_task_quality)
+        assert callable(compute_extraction_quality)
+        assert callable(compute_anomaly_summary)
+
+    # === CORE ===
+    def test_basic_summary_counts():
+        sample = {
+            "structured_names": [{"full_name": "John Smith"}],
+            "vital_records": [{"date": "1900"}],
+            "relationships": [],
+            "locations": [{"place": "Boston"}],
+            "occupations": [],
+            "research_questions": ["Where born?"],
+            "documents_mentioned": [],
+            "dna_information": [],
+        }
+        summary = summarize_extracted_data(sample)
+        assert summary["counts"]["names"] == 1
+        assert summary["flags"]["has_any_data"] is True
+
+    def test_task_quality_scoring():
+        tasks = [
+            "Search 1900 census for John Smith in Boston",
+            "Verify birth record 1899 Massachusetts",
+            "Look for obituary 'John A. Smith' 1955",
+        ]
+        score = compute_task_quality(tasks)
+        assert 10 <= score <= 30
+
+    def test_extraction_quality_integration():
+        extraction = {
+            "extracted_data": {
+                "structured_names": [{"full_name": "Jane Doe"}],
+                "vital_records": [{"date": "1888"}],
+                "relationships": [{"person1": "Jane Doe", "person2": "John Doe"}],
+                "locations": [{"place": "New York"}],
+            },
+            "suggested_tasks": ["Search 1900 census for Jane Doe"],
+        }
+        quality = compute_extraction_quality(extraction)
+        assert 5 <= quality <= 100
+
+    # === EDGE / ANOMALY ===
+    def test_anomaly_detection():
+        extraction = {
+            "extracted_data": {
+                "vital_records": [{"date": "19AB"}],
+                "relationships": [{"person1": "Only One"}],
+                "locations": [{"context": "residence", "time_period": "1900"}],
+                "structured_names": ["Jane Doe", "Jane Doe"],
+            },
+            "suggested_tasks": ["", "Search census"],
+        }
+        s = compute_anomaly_summary(extraction)
+        # Expect at least one anomaly token present
+        assert s != ""
+        assert any(tok.startswith("invalid_years") or tok.startswith("rel_missing") for tok in s.split(";"))
+
+    def test_no_anomalies():
+        clean = {
+            "extracted_data": {
+                "vital_records": [{"date": "1900"}],
+                "relationships": [{"person1": "A", "person2": "B"}],
+                "locations": [{"place": "Paris"}],
+                "structured_names": ["A", "B"],
+            },
+            "suggested_tasks": ["Search 1900 census"],
+        }
+        assert compute_anomaly_summary(clean) == ""
+
+    # === ERROR HANDLING ===
+    def test_defensive_inputs():
+        assert compute_anomaly_summary(None) == ""  # type: ignore
+        assert compute_extraction_quality(None) == 0  # type: ignore
+        assert compute_task_quality([None, 123]) == 0  # invalid entries ignored
+
+    suite.run_test("Module Symbols", test_module_symbols, "Core functions exposed", "Verify functions are callable", "summarize_extracted_data, compute_task_quality, compute_extraction_quality, compute_anomaly_summary accessible")
+    suite.run_test("Summary Counts", test_basic_summary_counts, "Counts + flags computed", "Basic summarization works", "names count & has_any_data flag")
+    suite.run_test("Task Quality Scoring", test_task_quality_scoring, "Task quality returns mid/high score", "Scoring heuristics active", "Expect 10-30 range for rich tasks")
+    suite.run_test("Extraction Quality Integration", test_extraction_quality_integration, "Composite quality computed", "Integration of entity + task scoring", "Expect non-zero score")
+    suite.run_test("Anomaly Detection", test_anomaly_detection, "Anomaly tokens produced", "Detect invalid patterns", "Expect invalid_years or rel_missing")
+    suite.run_test("No Anomalies", test_no_anomalies, "Clean extraction yields empty summary", "No false positives", "Expect empty string")
+    suite.run_test("Defensive Inputs", test_defensive_inputs, "Graceful handling of invalid inputs", "Return safe defaults", "Empty summary or zero scores")
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:  # pragma: no cover
+    return extraction_quality_module_tests()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import sys
+    ok = run_comprehensive_tests()
+    sys.exit(0 if ok else 1)
+
+

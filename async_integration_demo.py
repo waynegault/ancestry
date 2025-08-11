@@ -364,6 +364,50 @@ def test_async_integration():
         return False
 
 
+def test_api_benchmark_skip_or_run():
+    """Test API benchmark handles aiohttp presence/absence gracefully."""
+    benchmark = AsyncPerformanceBenchmark()
+
+    async def run():
+        return await benchmark.benchmark_api_operations(num_requests=2)
+
+    results = asyncio.run(run())
+    assert "async_time" in results or results.get("skipped"), "Benchmark should return timing or skipped flag"
+    if not results.get("skipped"):
+        assert results["num_requests"] == 2
+        assert results["async_successful"] <= 2
+        assert results["async_time"] >= 0
+
+
+def test_file_benchmark_creates_and_cleans_files():
+    """Test file benchmark writes expected number of files and cleans them up."""
+    benchmark = AsyncPerformanceBenchmark()
+
+    async def run():
+        return await benchmark.benchmark_file_operations(num_files=5)
+
+    results = asyncio.run(run())
+    assert results["num_files"] == 5
+    assert results["async_successful"] == 5, "All file writes should succeed"
+    # Directory should no longer exist after cleanup
+    from pathlib import Path as _P
+    assert not _P("temp_async_test").exists(), "Temp directory should be cleaned up"
+
+
+def test_comprehensive_benchmark_structure():
+    """Test the comprehensive benchmark aggregates component benchmarks correctly."""
+    benchmark = AsyncPerformanceBenchmark()
+
+    async def run():
+        return await benchmark.run_comprehensive_benchmark()
+
+    results = asyncio.run(run())
+    for key in ["api_benchmark", "database_benchmark", "file_benchmark", "benchmark_duration"]:
+        assert key in results, f"Comprehensive results missing {key}"
+    assert isinstance(results["async_capabilities"], dict)
+    assert results["benchmark_duration"] >= 0
+
+
 def async_integration_demo_module_tests() -> bool:
     """
     Comprehensive test suite for async_integration_demo.py with real functionality testing.
@@ -376,11 +420,32 @@ def async_integration_demo_module_tests() -> bool:
 
     with suppress_logging():
         suite.run_test(
-            "Async integration system",
+            "Async core availability",
             test_async_integration,
-            "Complete async integration with concurrent processing and workflow management",
-            "Test async integration system with real asynchronous operations",
-            "Test async integration with aiohttp, aiofiles, and concurrent processing capabilities",
+            "Async libs and event loop basic functionality work",
+            "Verify aiohttp/aiofiles imports and simple coroutine execution",
+            "Basic async import and coroutine smoke test",
+        )
+        suite.run_test(
+            "API benchmark skip/run",
+            test_api_benchmark_skip_or_run,
+            "API benchmark either runs or reports skipped cleanly",
+            "Execute small API benchmark with 2 requests",
+            "Validate benchmark_api_operations behavior",
+        )
+        suite.run_test(
+            "File benchmark + cleanup",
+            test_file_benchmark_creates_and_cleans_files,
+            "File benchmark writes 5 files and cleans directory",
+            "Run file benchmark with 5 files then verify cleanup",
+            "Validate benchmark_file_operations correctness & cleanup",
+        )
+        suite.run_test(
+            "Comprehensive benchmark aggregation",
+            test_comprehensive_benchmark_structure,
+            "Composite benchmark includes all sections & duration",
+            "Run run_comprehensive_benchmark and inspect keys",
+            "Validate comprehensive benchmark structure",
         )
 
     return suite.finish_suite()

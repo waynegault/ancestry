@@ -373,6 +373,49 @@ def test_performance_dashboard():
         return False
 
 
+def test_session_and_metric_recording():
+    """Verify session start, metric recording, and session summary structure."""
+    dash = PerformanceDashboard(":memory:")
+    dash.record_session_start({"purpose": "unit_test"})
+    dash.record_rate_limiting_metrics({"current_rps": 5, "success_rate": 0.95, "error_rate": 0.02})
+    dash.record_batch_processing_metrics({"current_batch_size": 10, "average_processing_time": 12, "average_success_rate": 0.99})
+    summary = dash.get_current_session_summary()
+    assert summary.get("metrics_recorded", 0) >= 2
+
+
+def test_report_recommendations_variants():
+    """Trigger different recommendation branches (low success vs good)."""
+    dash = PerformanceDashboard(":memory:")
+    dash.record_rate_limiting_metrics({"success_rate": 0.85, "error_rate": 0.05})
+    dash.record_batch_processing_metrics({"average_processing_time": 70})
+    report1 = dash.generate_performance_report(hours_back=1)
+    assert "Low success rate" in report1 or "low success rate" in report1.lower()
+    dash.record_rate_limiting_metrics({"success_rate": 0.99, "error_rate": 0.0})
+    dash.record_batch_processing_metrics({"average_processing_time": 5})
+    report2 = dash.generate_performance_report(hours_back=1)
+    assert "Excellent performance" in report2 or "Fast batch processing" in report2
+
+
+def test_export_and_cleanup():
+    """Test data export and cleanup_old_data does not raise and trims entries."""
+    dash = PerformanceDashboard("temp_perf_data.json")
+    dash.record_rate_limiting_metrics({"success_rate": 0.95})
+    assert dash.export_data("temp_perf_export.json")
+    # Inject an old entry
+    old_timestamp = (datetime.now() - timedelta(days=40)).isoformat()
+    dash.performance_data["rate_limiting_history"].append({"timestamp": old_timestamp, "type": "rate_limiting", "metrics": {}})
+    before = len(dash.performance_data["rate_limiting_history"])
+    dash.cleanup_old_data(days_to_keep=30)
+    after = len(dash.performance_data["rate_limiting_history"])
+    assert after < before
+    # Cleanup files
+    for fn in ["temp_perf_data.json", "temp_perf_export.json"]:
+        try:
+            Path(fn).unlink()
+        except Exception:
+            pass
+
+
 def performance_dashboard_module_tests() -> bool:
     """
     Comprehensive test suite for performance_dashboard.py with real functionality testing.
@@ -385,11 +428,32 @@ def performance_dashboard_module_tests() -> bool:
 
     with suppress_logging():
         suite.run_test(
-            "Performance dashboard system",
+            "Dashboard basic smoke",
             test_performance_dashboard,
-            "Complete performance monitoring with metrics collection and dashboard visualization",
-            "Test performance dashboard system with real metrics tracking",
-            "Test PerformanceDashboard with in-memory database and performance metrics collection",
+            "Instantiate and generate basic report",
+            "Create PerformanceDashboard and call generate_performance_report",
+            "Basic instantiation + report",
+        )
+        suite.run_test(
+            "Session + metric recording",
+            test_session_and_metric_recording,
+            "Session summary reflects recorded metrics",
+            "Start session and record metrics then inspect summary",
+            "Session summary correctness",
+        )
+        suite.run_test(
+            "Recommendation variants",
+            test_report_recommendations_variants,
+            "Report contains variant recommendations for different performance states",
+            "Record contrasting metrics then generate reports",
+            "Recommendation branch coverage",
+        )
+        suite.run_test(
+            "Export + cleanup",
+            test_export_and_cleanup,
+            "Export succeeds and cleanup removes old entries",
+            "Inject old data then cleanup",
+            "Export and retention maintenance",
         )
 
     return suite.finish_suite()

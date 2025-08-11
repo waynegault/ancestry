@@ -539,6 +539,46 @@ def test_message_personalization():
     logger.info(f"Message personalization test: {'✅ PASSED' if success else '❌ FAILED'}")
     return success
 
+def test_fallback_template_path():
+    """Ensure an unknown template key triggers safe fallback without exception."""
+    personalizer = MessagePersonalizer()
+    # Force empty templates to guarantee fallback path
+    personalizer.templates = {"In_Tree-Initial": "Hello {name}!"}
+    msg = personalizer.create_personalized_message(
+        "Totally_Unknown_Template",
+        {"username": "UserX"},
+        {},
+        {"name": "UserX"}
+    )
+    # Either fallback message or resolved fallback template must appear
+    return ("UserX" in msg) and len(msg) > 10
+
+def test_shared_ancestors_formatting():
+    """Validate proper Oxford-comma style formatting for multiple ancestors."""
+    p = MessagePersonalizer()
+    data = {"structured_names": [
+        {"full_name": "Alice Brown"},
+        {"full_name": "Robert Clark"},
+        {"full_name": "Sarah Davis"},
+    ]}
+    formatted = p._format_shared_ancestors(data)
+    # Expect: "Alice Brown, Robert Clark, and Sarah Davis"
+    return formatted.count(",") == 2 and formatted.endswith("Sarah Davis") and " and " in formatted
+
+def test_location_context_limit():
+    """Ensure location context respects max_locations_to_mention constraint."""
+    p = MessagePersonalizer()
+    p.personalization_config["max_locations_to_mention"] = 2
+    data = {"locations": [
+        {"place": "Aberdeen"},
+        {"place": "Glasgow"},
+        {"place": "Edinburgh"},
+    ]}
+    ctx = p._format_location_context(data)
+    # Should include only two locations and the word 'and' between them
+    # Pattern: ' Aberdeen and Glasgow' (order preserved, third excluded)
+    return ctx.strip().count(" ") <= 2 and "Edinburgh" not in ctx and "and" in ctx
+
 
 def message_personalization_module_tests() -> bool:
     """
@@ -557,6 +597,27 @@ def message_personalization_module_tests() -> bool:
             "Complete message personalization with template generation and intelligent messaging",
             "Test message personalization system with real template processing",
             "Test MessagePersonalizer with sample DNA match data and personalized message generation",
+        )
+        suite.run_test(
+            "Fallback template path",
+            test_fallback_template_path,
+            "Fallback handling when template key missing",
+            "Unknown template key -> safe fallback",
+            "Ensures graceful degradation without exceptions",
+        )
+        suite.run_test(
+            "Shared ancestors formatting",
+            test_shared_ancestors_formatting,
+            "Comma & conjunction formatting for multiple ancestors",
+            "Formatting correctness for 3 names",
+            "Prevents awkward grammar in personalized output",
+        )
+        suite.run_test(
+            "Location context limiting",
+            test_location_context_limit,
+            "Respect max_locations_to_mention setting",
+            "Avoids overlong geographic context strings",
+            "Guarantees UX brevity rule for location mentions",
         )
 
     return suite.finish_suite()
