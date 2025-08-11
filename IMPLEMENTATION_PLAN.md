@@ -1,4 +1,49 @@
-# IMPLEMENTATION PLAN - High-Impact Optimization & Modernization
+# IMPLEMENTATION PLAN - High-Impact Optimization & Modernization (Updated 2025-08-11)
+
+## Phase Refocus (2025-08-11)
+This update introduces a careful incremental improvement cycle targeting four areas the user requested: (1) data extraction breadth & fidelity, (2) interrogation / QA of extracted data, (3) message quality/personalization depth, (4) task specificity & action quality. We proceed with extremely low-risk, additive changes—telemetry & instrumentation first, guarded feature flags second, then controlled functional enhancements only after measurement confirms stability.
+
+### Phase 1 (Completed 2025-08-11): Extraction Component Coverage Telemetry
+Objective: Add a quantitative breadth indicator (component_coverage) to each extraction event without altering existing logic paths.
+Implemented:
+- Added component_coverage (0–1 float) to prompt telemetry events in `prompt_telemetry.py`.
+- Computed coverage in `ai_interface.extract_genealogical_entities` for both validated and salvaged structures (ratio of non-empty structured keys across: structured_names, vital_records, relationships, locations, occupations, research_questions, documents_mentioned, dna_information).
+- No behavioral changes; purely additive metric for future gating.
+Validation:
+- Full test suite (435 tests) remains 100% green post-change.
+- Backwards compatible: existing telemetry consumers ignore unknown field; additive JSON key only.
+
+Planned Next Phases (to be executed sequentially, each with baseline test + commit + completeness check + tests):
+1. Phase 2 – Data Interrogation Enhancements (Non-invasive):
+   - Add lightweight per-extraction anomaly flags (e.g., improbable date formats, empty-but-related pairs like relationships without names) computed only in debug logging & optional telemetry extension (anomaly_summary string) – no runtime branching.
+   - Provide helper in `extraction_quality.py` (compute_anomaly_summary). Telemetry field added only if function returns non-empty.
+2. Phase 3 – Message Personalization Gap Audit (Instrumentation Only):
+   - Measure placeholder utilization ratio per enhanced template (placeholders resolved / total). Log + optional telemetry (message_placeholder_utilization) before sending.
+   - No template content changes yet.
+3. Phase 4 – Task Quality Refinement (Guarded Functional Adjustments):
+   - Introduce optional flag `enable_task_quality_filters` (default False). When enabled, prune low-quality tasks (below heuristic threshold) and cap duplicates by normalized core.
+   - Add telemetry comparing pre/post filter counts (task_filter_delta).
+4. Phase 5 – Guided Extraction Assist (Prompt-Level, Flagged):
+   - Experimental secondary prompt pass (opt-in) to fill ONLY missing structured categories with “explicitly present?” confirmations—aborts if model attempts to add new fabricated data. Results merged only for categories currently empty AND verified by substring presence check in original conversation context (defensive guard).
+5. Phase 6 – Consolidation & README Finalization:
+   - Remove legacy duplicate markdown files (`readme-user.md`, `readme-technical.md`) leaving unified `readme.md` per user instruction.
+   - Document new metrics (component_coverage, anomaly flags, placeholder utilization).
+
+Risk Controls:
+- Every phase starts from green baseline commit.
+- Only one conceptual change per phase (avoid partial cross-file drift).
+- Telemetry / logging first before any pruning or enrichment is activated.
+- Feature flags default to OFF ensuring production parity until explicitly enabled.
+
+Success Metrics Tracking Outline:
+- component_coverage (Phase 1) – breadth of extraction.
+- anomaly_summary presence rate (Phase 2) – quality interrogation coverage (informational only).
+- message_placeholder_utilization (Phase 3) – personalization depth indicator.
+- task_filter_delta & task_quality_distribution (Phase 4) – action list improvement while preserving count ≥ baseline median - 1.
+- fill_rate_improvement for structured keys (Phase 5) – delta in non-empty categories without drop in quality_score (>−5 tolerance).
+
+Next Action: Execute Phase 2 (add anomaly summary helper + instrumentation) following operational procedure.
+
 
 ## AUGMENT REVISION — 2025-08-08 (Focused, Low‑Risk Improvement Plan)
 
