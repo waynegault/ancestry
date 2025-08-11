@@ -35,7 +35,7 @@ def _stable_hash(value: Optional[str]) -> Optional[str]:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
-def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: Optional[str], parse_success: bool, extracted_data: Optional[Dict[str, Any]] = None, suggested_tasks: Optional[Iterable[Any]] = None, raw_response_text: Optional[str] = None, user_id: Optional[str] = None, error: Optional[str] = None, quality_score: Optional[float] = None, component_coverage: Optional[float] = None) -> None:
+def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: Optional[str], parse_success: bool, extracted_data: Optional[Dict[str, Any]] = None, suggested_tasks: Optional[Iterable[Any]] = None, raw_response_text: Optional[str] = None, user_id: Optional[str] = None, error: Optional[str] = None, quality_score: Optional[float] = None, component_coverage: Optional[float] = None, anomaly_summary: Optional[str] = None) -> None:
     """Append a single telemetry event (best effort).
 
     Added (Phase 1 - 2025-08-11): component_coverage → proportion (0-1) of
@@ -63,6 +63,7 @@ def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, p
             "user_hash": _stable_hash(user_id),
             "quality_score": round(float(quality_score), 2) if isinstance(quality_score, (int, float)) else None,
             "component_coverage": round(float(component_coverage), 3) if isinstance(component_coverage, (int, float)) else None,
+            "anomaly_summary": anomaly_summary or None,
         }
         with open(TELEMETRY_FILE, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")

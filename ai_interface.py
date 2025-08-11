@@ -558,7 +558,7 @@ def extract_genealogical_entities(
                 try:  # pragma: no cover - instrumentation
                     from ai_prompt_utils import get_prompt_version
                     from prompt_telemetry import record_extraction_experiment_event
-                    from extraction_quality import compute_extraction_quality
+                    from extraction_quality import compute_extraction_quality, compute_anomaly_summary
                     # Determine variant label heuristically (control vs alt)
                     variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
                     quality_score = compute_extraction_quality(parsed_json)
@@ -582,6 +582,11 @@ def extract_genealogical_entities(
                         parsed_json["quality_score"] = quality_score
                     except Exception:
                         pass
+                    anomaly_summary = None
+                    try:
+                        anomaly_summary = compute_anomaly_summary(parsed_json)
+                    except Exception:
+                        anomaly_summary = None
                     record_extraction_experiment_event(
                         variant_label=variant_label,
                         prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
@@ -593,6 +598,7 @@ def extract_genealogical_entities(
                         user_id=getattr(session_manager, "user_id", None),
                         quality_score=quality_score,
                         component_coverage=component_coverage,
+                        anomaly_summary=anomaly_summary,
                     )
                 except Exception:
                     pass
@@ -656,7 +662,7 @@ def extract_genealogical_entities(
                 try:  # Telemetry salvage event
                     from ai_prompt_utils import get_prompt_version
                     from prompt_telemetry import record_extraction_experiment_event
-                    from extraction_quality import compute_extraction_quality
+                    from extraction_quality import compute_extraction_quality, compute_anomaly_summary
                     variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
                     quality_score = compute_extraction_quality(salvaged)
                     try:
@@ -678,6 +684,11 @@ def extract_genealogical_entities(
                         salvaged["quality_score"] = quality_score
                     except Exception:
                         pass
+                    anomaly_summary = None
+                    try:
+                        anomaly_summary = compute_anomaly_summary(salvaged)
+                    except Exception:
+                        anomaly_summary = None
                     record_extraction_experiment_event(
                         variant_label=variant_label,
                         prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
@@ -690,6 +701,7 @@ def extract_genealogical_entities(
                         error="structure_salvaged",
                         quality_score=quality_score,
                         component_coverage=component_coverage,
+                        anomaly_summary=anomaly_summary,
                     )
                 except Exception:
                     pass
