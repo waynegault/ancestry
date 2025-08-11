@@ -177,3 +177,103 @@ def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
     return int(round(total))
 
 
+# === Phase 2 (2025-08-11): Anomaly & Consistency Summary (debug / telemetry only) ===
+def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
+    """Return a concise anomaly summary string or "" if no notable issues.
+
+    Non-invasive heuristic checks (no exceptions raised):
+      - vital record dates with clearly invalid year patterns (non-numeric where numeric expected)
+      - relationships missing one side of person1/person2
+      - locations entries lacking place but having context/time_period
+      - duplicate full_name occurrences (case-insensitive)
+      - task list present but empty strings included
+    Output format: semicolon-separated tokens (e.g., "invalid_years=2;rel_missing=1;dup_names=1").
+    Designed for lightweight interrogation & trend analysis; does not alter runtime behavior.
+    """
+    try:
+        if not isinstance(extraction, dict):
+            return ""
+        raw_extracted = extraction.get("extracted_data")
+        extracted_data: Dict[str, Any] = raw_extracted if isinstance(raw_extracted, dict) else {}
+        raw_tasks = extraction.get("suggested_tasks")
+        suggested_tasks: List[Any] = raw_tasks if isinstance(raw_tasks, list) else []
+        issues: Dict[str, int] = {}
+
+        # Vital record date anomalies
+        invalid_years = 0
+        vitals_raw = extracted_data.get("vital_records")
+        vitals: List[Any] = vitals_raw if isinstance(vitals_raw, list) else []
+        for rec in vitals:
+            if isinstance(rec, dict):
+                date = str(rec.get("date", "")).strip()
+                if date:
+                    if len(date) == 4 and not date.isdigit():
+                        invalid_years += 1
+                    if re.match(r"^[0-9]{2,4}[A-Za-z]+[0-9]*$", date):
+                        invalid_years += 1
+        if invalid_years:
+            issues["invalid_years"] = invalid_years
+
+        # Relationships missing one side
+        rel_missing = 0
+        rels_raw = extracted_data.get("relationships")
+        rels: List[Any] = rels_raw if isinstance(rels_raw, list) else []
+        for rel in rels:
+            if isinstance(rel, dict):
+                p1 = str(rel.get("person1", "")).strip()
+                p2 = str(rel.get("person2", "")).strip()
+                if (p1 and not p2) or (p2 and not p1):
+                    rel_missing += 1
+        if rel_missing:
+            issues["rel_missing"] = rel_missing
+
+        # Incomplete locations
+        loc_incomplete = 0
+        locs_raw = extracted_data.get("locations")
+        locs: List[Any] = locs_raw if isinstance(locs_raw, list) else []
+        for loc in locs:
+            if isinstance(loc, dict):
+                place = str(loc.get("place", "")).strip()
+                ctx = str(loc.get("context", "")).strip()
+                tp = str(loc.get("time_period", "")).strip()
+                if not place and (ctx or tp):
+                    loc_incomplete += 1
+        if loc_incomplete:
+            issues["loc_incomplete"] = loc_incomplete
+
+        # Duplicate names
+        names_raw = extracted_data.get("structured_names")
+        names: List[Any] = names_raw if isinstance(names_raw, list) else []
+        seen_lower: set[str] = set()
+        dups_lower: set[str] = set()
+        for n in names:
+            full = ""
+            if isinstance(n, dict):
+                full = str(n.get("full_name", "")).strip()
+            elif isinstance(n, str):
+                full = n.strip()
+            if not full:
+                continue
+            low = full.lower()
+            if low in seen_lower:
+                dups_lower.add(low)
+            else:
+                seen_lower.add(low)
+        if dups_lower:
+            issues["dup_names"] = len(dups_lower)
+
+        # Empty task strings
+        empty_tasks = 0
+        for t in suggested_tasks:
+            if isinstance(t, str) and not t.strip():
+                empty_tasks += 1
+        if empty_tasks:
+            issues["empty_tasks"] = empty_tasks
+
+        if not issues:
+            return ""
+        return ";".join(f"{k}={v}" for k, v in sorted(issues.items()))
+    except Exception:
+        return ""
+
+

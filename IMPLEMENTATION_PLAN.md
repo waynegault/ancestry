@@ -6,15 +6,15 @@ This update introduces a careful incremental improvement cycle targeting four ar
 ### Phase 1 (Completed 2025-08-11): Extraction Component Coverage Telemetry
 Objective: Add a quantitative breadth indicator (component_coverage) to each extraction event without altering existing logic paths.
 Implemented:
-- Added component_coverage (0–1 float) to prompt telemetry events in `prompt_telemetry.py`.
-- Computed coverage in `ai_interface.extract_genealogical_entities` for both validated and salvaged structures (ratio of non-empty structured keys across: structured_names, vital_records, relationships, locations, occupations, research_questions, documents_mentioned, dna_information).
-- No behavioral changes; purely additive metric for future gating.
 Validation:
-- Full test suite (435 tests) remains 100% green post-change.
-- Backwards compatible: existing telemetry consumers ignore unknown field; additive JSON key only.
 
 Planned Next Phases (to be executed sequentially, each with baseline test + commit + completeness check + tests):
-1. Phase 2 – Data Interrogation Enhancements (Non-invasive):
+
+Implemented Metrics:
+- component_coverage (Phase 1)
+- anomaly_summary (Phase 2) – compact semicolon-delimited key=value counts (e.g., "invalid_years=2;dup_names=1"). Empty string when no anomalies.
+
+Next Validation Use: Allows later correlation (Phase 3/4) of anomaly prevalence with quality_score and task generation outcomes without reprocessing historical raw responses.
    - Add lightweight per-extraction anomaly flags (e.g., improbable date formats, empty-but-related pairs like relationships without names) computed only in debug logging & optional telemetry extension (anomaly_summary string) – no runtime branching.
    - Provide helper in `extraction_quality.py` (compute_anomaly_summary). Telemetry field added only if function returns non-empty.
 2. Phase 3 – Message Personalization Gap Audit (Instrumentation Only):
