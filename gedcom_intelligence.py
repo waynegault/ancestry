@@ -612,6 +612,46 @@ def test_gedcom_intelligence():
     return True
 
 
+def test_gap_detection_with_mocked_birth_year():
+    """Mock birth year extraction to trigger missing parents gap logic (>1800)."""
+    analyzer = GedcomIntelligenceAnalyzer()
+    mock_gedcom = type('MockGedcom', (), {
+        'indi_index': {'I1': type('Person', (), {'name': ['Alice Example']})()},
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+    # Monkey patch birth year extractor
+    analyzer._extract_birth_year = lambda person_record: 1865  # type: ignore
+    analyzer._extract_birth_place = lambda person_record: None  # ensure place gap  # type: ignore
+    analyzer._extract_person_name = lambda person_record: 'Alice Example'  # type: ignore
+    result = analyzer.analyze_gedcom_data(mock_gedcom)
+    gap_types = {g['gap_type'] for g in result['gaps_identified']}
+    assert 'missing_parents' in gap_types or 'missing_parents' in ''.join(gap_types), "Should include missing parents gap"
+    assert any('Missing birth location' in g['description'] for g in result['gaps_identified']), "Should include missing place gap"
+
+
+def test_ai_insights_structure():
+    """Ensure ai_insights include expected nested keys even with placeholder implementations."""
+    analyzer = GedcomIntelligenceAnalyzer()
+    mock_gedcom = type('MockGedcom', (), {
+        'indi_index': {'I1': type('Person', (), {'name': ['John Smith']})()},
+        'id_to_parents': {'I1': []},
+        'id_to_children': {}
+    })()
+    insights = analyzer._generate_ai_insights(mock_gedcom)
+    for key in ["tree_completeness", "research_priorities", "family_patterns", "recommendations"]:
+        assert key in insights, f"ai_insights missing {key}"
+
+
+def test_recommendation_balance_logic():
+    """Recommendation logic should switch message based on gaps vs conflicts count."""
+    analyzer = GedcomIntelligenceAnalyzer()
+    analyzer.gaps_identified = []
+    analyzer.conflicts_identified = []
+    r = analyzer._generate_ai_recommendations()
+    assert isinstance(r, list) and len(r) >= 2
+
+
 def gedcom_intelligence_module_tests() -> bool:
     """
     Comprehensive test suite for gedcom_intelligence.py with real functionality testing.
@@ -629,6 +669,28 @@ def gedcom_intelligence_module_tests() -> bool:
             "Complete GEDCOM intelligence analysis with pattern detection and research opportunities",
             "Test GEDCOM intelligence analyzer with real genealogical data analysis",
             "Test GedcomIntelligenceAnalyzer with sample GEDCOM data and pattern recognition",
+        )
+        # Add additional existing tests to ensure multi-test coverage is reported
+        suite.run_test(
+            "Gap detection w/ mocked birth year",
+            test_gap_detection_with_mocked_birth_year,
+            "Analyzer identifies missing parents & birth location gaps when birth year > 1800",
+            "Monkey-patch _extract_birth_year to trigger gap logic and run full analysis",
+            "Validate gap identification pathways",
+        )
+        suite.run_test(
+            "AI insights structure",
+            test_ai_insights_structure,
+            "ai_insights dict contains core structural keys",
+            "Directly invoke _generate_ai_insights on minimal mock dataset",
+            "Validate ai_insights nested structure",
+        )
+        suite.run_test(
+            "Recommendation balance logic",
+            test_recommendation_balance_logic,
+            "Recommendation list adapts based on gaps vs conflicts counts (basic smoke)",
+            "Invoke _generate_ai_recommendations on empty analyzer state",
+            "Validate recommendation generation logic",
         )
 
     return suite.finish_suite()

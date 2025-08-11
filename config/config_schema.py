@@ -426,8 +426,13 @@ class APIConfig:
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
+    # Concurrency (controls ThreadPoolExecutor workers in Action 6)
+    max_concurrency: int = 2  # Conservative default while 429s persist
+
     # Pagination settings
-    max_pages: int = 0  # 0 means no limit    # Timing settings
+    max_pages: int = 0  # 0 means no limit
+
+    # Timing settings
     initial_delay: float = 2.0  # Further increased from 1.0 to 2.0 for very conservative rate limiting
     max_delay: float = 60.0  # Maximum delay for exponential backoff
 
@@ -608,6 +613,9 @@ class ConfigSchema:
     message_truncation_length: int = 1000
     app_mode: str = "development"
     custom_response_enabled: bool = True
+    enable_task_dedup: bool = False  # Guard flag for Phase 4.3 de-dup rollout (testing mode only initially)
+    enable_task_enrichment: bool = False  # Guard flag for Phase 4.4 enriched task generation rollout
+    enable_prompt_experiments: bool = False  # Guard flag for Phase 8.2 prompt A/B experimentation rollout
 
     # AI settings
     ai_provider: str = ""  # "deepseek", "gemini", or ""

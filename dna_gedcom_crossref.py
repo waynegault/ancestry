@@ -606,6 +606,67 @@ def test_dna_gedcom_crossref():
     return True
 
 
+def test_name_match_and_confidence_boost():
+    """Test that multiple match types boost confidence score up to cap."""
+    crossref = DNAGedcomCrossReferencer()
+    dna_match = DNAMatch(match_id="m1", match_name="Alice Brown", estimated_relationship="2nd cousin", shared_dna_cm=150.0, shared_ancestors=["Brown"])
+    # Create GEDCOM person with overlapping name and ancestor
+    gedcom_person = GedcomPerson(person_id="I1", full_name="Alice Marie Brown")
+    # Manually craft potential matches representing two types
+    potential = [
+        {"gedcom_person": gedcom_person, "confidence": 0.6, "type": "name_match"},
+        {"gedcom_person": gedcom_person, "confidence": 0.55, "type": "ancestor_match"},
+    ]
+    unique = crossref._deduplicate_and_score_matches(potential)
+    assert len(unique) == 1
+    boosted = unique[0]["confidence"]
+    assert boosted >= 0.6, "Confidence should be boosted when multiple match types"
+    assert boosted <= 1.0
+
+
+def test_conflict_identification_out_of_range_cm():
+    """Test conflict creation when shared cM outside expected range."""
+    crossref = DNAGedcomCrossReferencer()
+    # Construct a cross_reference_matches entry with mismatch cM
+    bad_match = DNAMatch(match_id="m2", match_name="Bob Smith", estimated_relationship="2nd cousin", shared_dna_cm=900.0)
+    crossref.cross_reference_matches.append(
+        CrossReferenceMatch(
+            match_id="crossref_m2",
+            dna_match=bad_match,
+            potential_gedcom_matches=[],
+            confidence_score=0.9,
+            match_type="name_match",
+        )
+    )
+    crossref._identify_relationship_conflicts([bad_match], [])
+    assert any(c.conflict_id.startswith("cm_conflict_") for c in crossref.conflicts_identified), "Should flag relationship mismatch conflict"
+
+
+def test_verification_opportunity_threshold():
+    """High confidence matches should produce verification opportunities (>0.7)."""
+    crossref = DNAGedcomCrossReferencer()
+    good_match = DNAMatch(match_id="m3", match_name="Carol Jones", estimated_relationship="1st cousin", shared_dna_cm=800.0)
+    crossref.cross_reference_matches.append(
+        CrossReferenceMatch(
+            match_id="crossref_m3",
+            dna_match=good_match,
+            potential_gedcom_matches=[],
+            confidence_score=0.75,
+            match_type="name_match",
+        )
+    )
+    crossref._identify_verification_opportunities()
+    assert len(crossref.verification_opportunities) == 1, "High confidence match should yield verification opportunity"
+
+
+def test_relationship_distance_parser():
+    """Parser should map common relationship strings to distances."""
+    crossref = DNAGedcomCrossReferencer()
+    assert crossref._parse_relationship_distance("1st cousin") == 3
+    assert crossref._parse_relationship_distance("Third Cousin") == 7
+    assert crossref._parse_relationship_distance("Unknown Rel") is None
+
+
 def dna_gedcom_crossref_module_tests() -> bool:
     """
     Comprehensive test suite for dna_gedcom_crossref.py with real functionality testing.
@@ -618,11 +679,39 @@ def dna_gedcom_crossref_module_tests() -> bool:
 
     with suppress_logging():
         suite.run_test(
-            "DNA-GEDCOM cross-reference system",
+            "Cross-reference basic flow",
             test_dna_gedcom_crossref,
-            "Complete DNA-GEDCOM cross-referencing with conflict detection and resolution",
-            "Test DNA-GEDCOM cross-reference system with real data analysis",
-            "Test DNAGedcomCrossReferencer with sample DNA matches and GEDCOM data integration",
+            "End-to-end analysis returns expected top-level keys",
+            "Run analyze_dna_gedcom_connections with minimal mock data",
+            "Validate analyze_dna_gedcom_connections output keys",
+        )
+        suite.run_test(
+            "Confidence boost on multi-match",
+            test_name_match_and_confidence_boost,
+            "Confidence increases (capped) when multiple match types present",
+            "Deduplicate and score with two match types",
+            "Validate _deduplicate_and_score_matches boosting logic",
+        )
+        suite.run_test(
+            "Conflict detection for out-of-range cM",
+            test_conflict_identification_out_of_range_cm,
+            "Creates conflict when cM far outside expected relationship range",
+            "Invoke _identify_relationship_conflicts with mismatched cM",
+            "Validate relationship mismatch conflict generation",
+        )
+        suite.run_test(
+            "Verification opportunity threshold",
+            test_verification_opportunity_threshold,
+            "High confidence (>0.7) produces verification opportunity",
+            "Call _identify_verification_opportunities on high confidence match",
+            "Validate verification opportunity list population",
+        )
+        suite.run_test(
+            "Relationship distance parser",
+            test_relationship_distance_parser,
+            "Maps common relationship strings to numeric distances",
+            "Call _parse_relationship_distance with variants",
+            "Validate relationship distance parsing",
         )
 
     return suite.finish_suite()

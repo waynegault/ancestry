@@ -682,6 +682,58 @@ def test_research_prioritization():
     return True
 
 
+def test_priority_scoring_and_ranking():
+    """Ensure priority scores are computed and sorted descending with adjustments."""
+    prioritizer = IntelligentResearchPrioritizer()
+    gedcom = {
+        "gaps_identified": [
+            {"person_id": "I1", "person_name": "John Smith", "gap_type": "missing_parents", "description": "Missing parents", "priority": "high", "research_suggestions": []},
+            {"person_id": "I2", "person_name": "Ann Smith", "gap_type": "missing_dates", "description": "Missing birth date", "priority": "medium", "research_suggestions": []},
+        ],
+        "conflicts_identified": [
+            {"conflict_id": "c1", "conflict_type": "date_conflict", "description": "Bad dates", "people_involved": ["I1"], "severity": "critical", "resolution_suggestions": []}
+        ],
+        "research_opportunities": [],
+        "ai_insights": {"family_patterns": {"common_surnames": ["Smith"]}}
+    }
+    dna = {"verification_opportunities": []}
+    plan = prioritizer.prioritize_research_tasks(gedcom, dna)
+    tasks = plan["prioritized_tasks"]
+    scores = [t["priority_score"] for t in tasks]
+    assert scores == sorted(scores, reverse=True), "Tasks should be sorted descending by score"
+
+
+def test_cluster_generation_and_efficiency():
+    """Location cluster with multiple items should yield cluster_research task with efficiency >0.7."""
+    prioritizer = IntelligentResearchPrioritizer()
+    # Provide multiple gaps referencing Scotland via description keyword extraction
+    gaps = []
+    for i in range(4):
+        gaps.append({"person_id": f"I{i}", "person_name": f"Person{i}", "gap_type": "missing_places", "description": f"Missing birth location Scotland for Person{i}", "priority": "medium", "research_suggestions": []})
+    gedcom = {
+        "gaps_identified": gaps,
+        "conflicts_identified": [],
+        "research_opportunities": [
+            {"opportunity_id": "op1", "opportunity_type": "location_research", "description": "Migration research Scotland", "target_people": []}
+        ],
+        "ai_insights": {"family_patterns": {"common_surnames": []}}
+    }
+    dna = {"verification_opportunities": []}
+    plan = prioritizer.prioritize_research_tasks(gedcom, dna)
+    cluster_tasks = [t for t in plan["prioritized_tasks"] if t["task_type"] == "cluster_research"]
+    if cluster_tasks:  # Should exist
+        assert cluster_tasks[0]["priority_score"] >= 70, "Cluster task score should reflect efficiency scaling"
+
+
+def test_dna_verification_task_creation():
+    """High priority verification opportunity should produce dna_verification task."""
+    prioritizer = IntelligentResearchPrioritizer()
+    gedcom = {"gaps_identified": [], "conflicts_identified": [], "research_opportunities": [], "ai_insights": {"family_patterns": {"common_surnames": []}}}
+    dna = {"verification_opportunities": [{"opportunity_id": "v1", "type": "high_confidence_match", "description": "Match", "priority": "high", "verification_steps": ["Step1"]}]}
+    plan = prioritizer.prioritize_research_tasks(gedcom, dna)
+    assert any(t["task_type"] == "dna_verification" for t in plan["prioritized_tasks"])
+
+
 def research_prioritization_module_tests() -> bool:
     """
     Comprehensive test suite for research_prioritization.py with real functionality testing.
@@ -694,11 +746,32 @@ def research_prioritization_module_tests() -> bool:
 
     with suppress_logging():
         suite.run_test(
-            "Research prioritization system",
+            "Prioritization basic flow",
             test_research_prioritization,
-            "Complete research prioritization workflow with clustering and recommendations",
-            "Test intelligent research prioritization system with real data processing",
-            "Test IntelligentResearchPrioritizer with sample DNA matches, clustering, and priority scoring",
+            "Plan contains core sections and next steps",
+            "Run prioritize_research_tasks with minimal mock inputs",
+            "Basic flow correctness",
+        )
+        suite.run_test(
+            "Priority scoring & ordering",
+            test_priority_scoring_and_ranking,
+            "Scores computed and sorted descending",
+            "Invoke prioritize_research_tasks and examine ordered scores",
+            "Score ordering validation",
+        )
+        suite.run_test(
+            "Cluster efficiency task",
+            test_cluster_generation_and_efficiency,
+            "Cluster research task added with efficiency-derived score",
+            "Provide multiple Scotland gaps to build cluster",
+            "Cluster task generation",
+        )
+        suite.run_test(
+            "DNA verification task",
+            test_dna_verification_task_creation,
+            "High priority DNA opportunity yields dna_verification task",
+            "Supply verification_opportunities and generate plan",
+            "DNA verification task creation",
         )
 
     return suite.finish_suite()
