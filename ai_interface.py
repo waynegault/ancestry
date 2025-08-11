@@ -112,6 +112,12 @@ try:
 except ImportError:
     logger.warning("ai_prompt_utils module not available, using fallback prompts")
     USE_JSON_PROMPTS = False
+    # Provide minimal fallback stubs so later references are defined
+    from typing import Optional as _Optional
+    def get_prompt(prompt_key: str) -> _Optional[str]:  # type: ignore
+        return None
+    def load_prompts():  # type: ignore
+        return {"prompts": {}}
 
 # Based on the prompt from the original ai_interface.py (and updated with more categories from ai_prompts.json example)
 EXPECTED_INTENT_CATEGORIES = {
@@ -232,15 +238,21 @@ def _call_ai_model(
         f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}"
     )
 
-    # Apply rate limiting
-    if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-        wait_time = session_manager.dynamic_rate_limiter.wait()  # Call the wait method
-        if wait_time > 0.1:  # Log only significant waits
-            logger.debug(f"AI API rate limit wait: {wait_time:.2f}s for {provider}")
-    else:
-        logger.warning(
-            "_call_ai_model: SessionManager or rate limiter not available. Proceeding without rate limiting."
-        )
+    # Apply rate limiting (guarded)
+    wait_time = None
+    try:
+        if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
+            drl = getattr(session_manager, "dynamic_rate_limiter", None)
+            if drl is not None and hasattr(drl, "wait"):
+                wait_time = drl.wait()
+                if isinstance(wait_time, (int, float)) and wait_time > 0.1:
+                    logger.debug(f"AI API rate limit wait: {float(wait_time):.2f}s for {provider}")
+        else:
+            logger.warning(
+                "_call_ai_model: SessionManager or rate limiter not available. Proceeding without rate limiting."
+            )
+    except Exception:
+        logger.debug("Rate limiter invocation failed; proceeding without enforced wait.")
 
     ai_response_text: Optional[str] = None
 
@@ -291,14 +303,20 @@ def _call_ai_model(
                     "_call_ai_model: Google GenerativeAI library not available for Gemini."
                 )
                 return None
-            api_key = config_schema.api.google_api_key
-            model_name = config_schema.api.google_ai_model
+            api_key = getattr(config_schema.api, "google_api_key", None)
+            model_name = getattr(config_schema.api, "google_ai_model", None)
             if not api_key or not model_name:
                 logger.error("_call_ai_model: Gemini configuration incomplete.")
                 return None
-
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(model_name)
+            if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
+                logger.error("_call_ai_model: Gemini library missing expected interfaces.")
+                return None
+            try:
+                genai.configure(api_key=api_key)  # type: ignore[attr-defined]
+                model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+            except Exception as e:
+                logger.error(f"_call_ai_model: Failed initializing Gemini model: {e}")
+                return None
             # Gemini prefers the system prompt to be part of the main prompt content
             # or handled through specific parts if using more complex multi-turn chat.
             # For simplicity here, we'll prepend system prompt to user content.
@@ -307,28 +325,41 @@ def _call_ai_model(
             )
 
             # Create a proper GenerationConfig object instead of a dictionary
-            generation_config = genai.GenerationConfig(
-                candidate_count=1,
-                max_output_tokens=max_tokens,
-                temperature=temperature,
-            )
+            generation_config = None
+            if hasattr(genai, "GenerationConfig"):
+                try:
+                    generation_config = genai.GenerationConfig(  # type: ignore[attr-defined]
+                        candidate_count=1,
+                        max_output_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                except Exception:
+                    generation_config = None
             # Gemini's way of requesting JSON is less direct, often relies on prompt engineering.
             # If `response_format_type` is 'json_object', ensure the prompt strongly requests JSON.
 
-            response = model.generate_content(
-                full_prompt, generation_config=generation_config
-            )
-            if response.candidates and response.text:
-                ai_response_text = response.text.strip()
+            response = None
+            if hasattr(model, "generate_content"):
+                try:
+                    response = model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
+                except Exception as e:
+                    logger.error(f"Gemini generation failed: {e}")
+                    response = None
+            if response is not None and getattr(response, "text", None):
+                ai_response_text = getattr(response, "text", "").strip()
             else:
                 block_reason_msg = "Unknown"
-                if hasattr(response, "prompt_feedback") and response.prompt_feedback:
-                    try:
-                        block_reason_msg = response.prompt_feedback.block_reason.name
-                    except (
-                        AttributeError
-                    ):  # Handle cases where block_reason might not be an enum
-                        block_reason_msg = str(response.prompt_feedback.block_reason)
+                try:
+                    if response is not None and hasattr(response, "prompt_feedback"):
+                        pf = getattr(response, "prompt_feedback", None)
+                        if pf and hasattr(pf, "block_reason"):
+                            br = getattr(pf, "block_reason", None)
+                            if hasattr(br, "name"):
+                                block_reason_msg = getattr(br, "name", "Unknown")
+                            elif br is not None:
+                                block_reason_msg = str(br)
+                except Exception:
+                    pass
                 logger.error(
                     f"Gemini returned an empty or blocked response. Reason: {block_reason_msg}"
                 )
@@ -341,7 +372,12 @@ def _call_ai_model(
     except RateLimitError as e:  # type: ignore
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
         if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-            session_manager.dynamic_rate_limiter.increase_delay()
+            try:
+                drl = getattr(session_manager, "dynamic_rate_limiter", None)
+                if drl is not None and hasattr(drl, "increase_delay"):
+                    drl.increase_delay()
+            except Exception:
+                pass
     except APIConnectionError as e:  # type: ignore
         logger.error(f"AI Connection Error ({provider}): {e}")
     except APIError as e:  # type: ignore
@@ -353,7 +389,12 @@ def _call_ai_model(
     except google_exceptions.ResourceExhausted as e:  # type: ignore
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
         if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-            session_manager.dynamic_rate_limiter.increase_delay()
+            try:
+                drl = getattr(session_manager, "dynamic_rate_limiter", None)
+                if drl is not None and hasattr(drl, "increase_delay"):
+                    drl.increase_delay()
+            except Exception:
+                pass
     except google_exceptions.GoogleAPIError as e:  # type: ignore
         logger.error(f"Google API Error (Gemini): {e}")
     except AttributeError as ae:
@@ -463,22 +504,23 @@ def extract_genealogical_entities(
         )
         return default_empty_result
 
-    system_prompt = (
-        get_fallback_extraction_prompt()  # Dynamic prompt with configurable user name
-    )
+    system_prompt = (get_fallback_extraction_prompt())  # Dynamic default
     if USE_JSON_PROMPTS:
         try:
-            loaded_prompt = get_prompt("extraction_task")
+            # If experimentation utilities available, attempt variant selection
+            try:
+                from ai_prompt_utils import get_prompt_with_experiment  # local import to avoid circular at module import
+                # Variants mapping (control vs alt). Additional variants can be added safely.
+                variants = {"control": "extraction_task", "alt": "extraction_task_alt"}
+                loaded_prompt = get_prompt_with_experiment("extraction_task", variants=variants, user_id=getattr(session_manager, "user_id", None))
+            except Exception:
+                loaded_prompt = get_prompt("extraction_task")
             if loaded_prompt:
                 system_prompt = loaded_prompt
             else:
-                logger.warning(
-                    "Failed to load 'extraction_task' prompt from JSON, using fallback."
-                )
+                logger.warning("Failed to load 'extraction_task' (any variant) prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(
-                f"Error loading 'extraction_task' prompt: {e}, using fallback."
-            )
+            logger.warning(f"Error loading 'extraction_task' prompt (experiments path): {e}, using fallback.")
 
     start_time = time.time()
     ai_response_str = _call_ai_model(
@@ -512,6 +554,31 @@ def extract_genealogical_entities(
                 and isinstance(parsed_json["suggested_tasks"], list)
             ):
                 logger.info(f"AI extraction successful. (Took {duration:.2f}s)")
+                # Telemetry
+                try:  # pragma: no cover - instrumentation
+                    from ai_prompt_utils import get_prompt_version
+                    from prompt_telemetry import record_extraction_experiment_event
+                    from extraction_quality import compute_extraction_quality
+                    # Determine variant label heuristically (control vs alt)
+                    variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
+                    quality_score = compute_extraction_quality(parsed_json)
+                    try:
+                        parsed_json["quality_score"] = quality_score
+                    except Exception:
+                        pass
+                    record_extraction_experiment_event(
+                        variant_label=variant_label,
+                        prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
+                        prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
+                        parse_success=True,
+                        extracted_data=parsed_json.get("extracted_data"),
+                        suggested_tasks=parsed_json.get("suggested_tasks"),
+                        raw_response_text=cleaned_response_str,
+                        user_id=getattr(session_manager, "user_id", None),
+                        quality_score=quality_score,
+                    )
+                except Exception:
+                    pass
                 return parsed_json
             else:
                 logger.warning(
@@ -569,14 +636,73 @@ def extract_genealogical_entities(
                             f"Successfully transformed flat structure to nested. Extracted {len(extracted_data.get('mentioned_names', []))} names, {len(extracted_data.get('mentioned_locations', []))} locations, {len(extracted_data.get('mentioned_dates', []))} dates"
                         )
 
+                try:  # Telemetry salvage event
+                    from ai_prompt_utils import get_prompt_version
+                    from prompt_telemetry import record_extraction_experiment_event
+                    from extraction_quality import compute_extraction_quality
+                    variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
+                    quality_score = compute_extraction_quality(salvaged)
+                    try:
+                        salvaged["quality_score"] = quality_score
+                    except Exception:
+                        pass
+                    record_extraction_experiment_event(
+                        variant_label=variant_label,
+                        prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
+                        prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
+                        parse_success=False,
+                        extracted_data=salvaged.get("extracted_data"),
+                        suggested_tasks=salvaged.get("suggested_tasks"),
+                        raw_response_text=cleaned_response_str,
+                        user_id=getattr(session_manager, "user_id", None),
+                        error="structure_salvaged",
+                        quality_score=quality_score,
+                    )
+                except Exception:
+                    pass
                 return salvaged
         except json.JSONDecodeError as e:
             logger.error(
                 f"AI extraction response was not valid JSON: {e}. Response: {ai_response_str[:500]}"
             )
+            try:  # Telemetry parse failure
+                from ai_prompt_utils import get_prompt_version
+                from prompt_telemetry import record_extraction_experiment_event
+                variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
+                record_extraction_experiment_event(
+                    variant_label=variant_label,
+                    prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
+                    prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
+                    parse_success=False,
+                    extracted_data=None,
+                    suggested_tasks=None,
+                    raw_response_text=ai_response_str,
+                    user_id=getattr(session_manager, "user_id", None),
+                    error=str(e)[:120],
+                )
+            except Exception:
+                pass
             return default_empty_result
     else:
         logger.error(f"AI extraction failed or returned empty. (Took {duration:.2f}s)")
+        try:  # Telemetry empty failure
+            from ai_prompt_utils import get_prompt_version
+            from prompt_telemetry import record_extraction_experiment_event
+            variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
+            record_extraction_experiment_event(
+                variant_label=variant_label,
+                prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
+                prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
+                parse_success=False,
+                extracted_data=None,
+                suggested_tasks=None,
+                raw_response_text=None,
+                user_id=getattr(session_manager, "user_id", None),
+                error="empty_response",
+                quality_score=None,
+            )
+        except Exception:
+            pass
         return default_empty_result
 
 

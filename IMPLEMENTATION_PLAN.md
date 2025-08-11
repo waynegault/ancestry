@@ -63,8 +63,8 @@ Phases:
 - Phase 4: Task Enrichment & De‑duplication (Active)
    - 4.1 Completed (2025-08-08; logging-only): Added suggested_tasks quality audit in Action 9 before MS To‑Do creation. Logs uniqueness, length stats, action verbs, and references to extracted names/locations; computes stable idempotency preview hashes. No behavior changes.
    - 4.2 Completed (2025-08-10; logging-only): Added de‑dup preview clustering (Action 9) with normalization + core text grouping (year abstraction, record term unification). Logs cluster count, potential savings, sample hashes. Tests green (52 modules, 418 tests). No behavior changes.
-   - 4.3 Planned (guarded rollout): Optional de‑duplication when app_mode == testing; then generalize behind a config flag.
-   - 4.4 Planned: Enrich task titles/bodies using structured context when enhanced templates apply; keep graceful fallback.
+   - 4.3 Completed (2025-08-11; guarded functional change): Implemented optional in-memory suggested_tasks de‑duplication in Action 9 under dual gate (app_mode==testing AND enable_task_dedup flag). Reuses preview normalization subset; retains first representative per normalized core cluster. Logs reduction stats. Default flag False → production behavior unchanged. Full test suite green (52 modules, 418 tests).
+   - 4.4 Completed (2025-08-11; guarded enrichment): Added enable_task_enrichment flag & gating in Action 9. Enhanced genealogical tasks (template-generated titles/descriptions) only created when flag enabled; otherwise falls back to standard AI suggested tasks. Added debug sample logging (first 1–2 mappings of original→enhanced) to verify enrichment quality. Reversible via config; no change when flag disabled. Full test suite green (52 modules, 418 tests).
 
 Notes respected:
 - Logging honors log level; no user-visible behavior changes until explicitly stated
@@ -681,12 +681,27 @@ All phases have been implemented thoroughly, tested comprehensively, and documen
 
 ---
 
-*Last Updated: August 6, 2025*
-*Current Status: ✅ ALL PHASES COMPLETED - System Fully Optimized & Production Ready*
-*Final Status: 100% test success rate maintained (46 modules, 393 tests passing)*
-*Achievement: Revolutionary improvements across data extraction, user engagement, task management, and system optimization*
-*Duration: 9 hours across 4 major phases (8-11) with complete codebase coverage*
-*Result: Ancestry project transformed with intelligent AI, personalized messaging, actionable tasks, and adaptive configuration*
+## Added: Quality Baseline & Regression Gating (2025-08-11)
+
+A lightweight quality safeguarding layer has been introduced:
+- Baseline creation: `python prompt_telemetry.py --build-baseline --variant control --window 300 --min-events 8`
+- Regression check: `python prompt_telemetry.py --check-regression --variant control --window 120 --drop-threshold 15`
+- CI/Local gate script: `python quality_regression_gate.py` (exit code 1 on regression)
+
+Heuristics:
+- Baseline median quality vs current median over recent window
+- Regression flagged when median drop >= threshold (default 15.0)
+- Lenient pass when no baseline yet (first run bootstrap)
+
+Planned Enhancements (future):
+- Statistical significance test (bootstrap / Mann-Whitney) for quality deltas
+- Separate task_quality vs overall quality telemetry fields
+- Automated baseline refresh policy (time / volume based)
+
+Scoring Rubric (Current):
+- Entity richness (names, vital_records, relationships, locations, occupations, research_questions, documents, dna) → up to 70 points with penalties (e.g., -10 if no names)
+- Task quality (action verbs, years, record keywords, specificity heuristics) → compute_task_quality maps to 0–30 with bonuses (healthy task count + specificity) and penalties (no tasks)
+- Total capped 0–100.
 
 
 

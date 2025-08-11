@@ -613,6 +613,9 @@ class ConfigSchema:
     message_truncation_length: int = 1000
     app_mode: str = "development"
     custom_response_enabled: bool = True
+    enable_task_dedup: bool = False  # Guard flag for Phase 4.3 de-dup rollout (testing mode only initially)
+    enable_task_enrichment: bool = False  # Guard flag for Phase 4.4 enriched task generation rollout
+    enable_prompt_experiments: bool = False  # Guard flag for Phase 8.2 prompt A/B experimentation rollout
 
     # AI settings
     ai_provider: str = ""  # "deepseek", "gemini", or ""
