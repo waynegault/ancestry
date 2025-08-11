@@ -27,8 +27,8 @@ executing==2.2.0
 fastjsonschema==2.21.1
 filelock==3.18.0
 frozenlist==1.5.0
-ged4py==0.4.5
-google-ai-generativelanguage==0.6.17
+ged4py==0.5.2
+google-ai-generativelanguage==0.6.15  # aligned with google-generativeai 0.8.4 dependency
 google-api-core==2.24.2
 google-api-python-client==2.167.0
 google-auth==2.39.0
@@ -74,7 +74,7 @@ pluggy==1.5.0
 prompt_toolkit==3.0.50
 propcache==0.3.1
 proto-plus==1.26.1
-protobuf==6.30.2
+protobuf>=3.20.3,<6.0.0  # downgraded range: google-ai-generativelanguage 0.6.15 requires protobuf <6
 psutil==7.0.0
 pure_eval==0.2.3
 pyasn1==0.6.1

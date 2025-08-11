@@ -31,6 +31,31 @@ from pathlib import Path
 
 from typing import Any
 
+# === TEST FRAMEWORK IMPORTS ===
+try:  # Prefer the full framework when available
+    from test_framework import TestSuite, suppress_logging
+except ImportError:  # Lightweight fallback to keep tests runnable
+    class DummySuite:
+        def __init__(self, *a, **k):
+            self.failed = False
+        def start_suite(self):
+            print("\n==============================\nFallback Test Suite\n==============================")
+        def run_test(self, name, func, *a, **k):
+            try:
+                func()
+                print(f"[PASS] {name}")
+            except Exception as e:  # pragma: no cover - fallback path
+                self.failed = True
+                print(f"[FAIL] {name}: {e}")
+        def finish_suite(self):
+            print("All fallback tests complete")
+            return not self.failed
+    TestSuite = DummySuite  # type: ignore
+    from contextlib import contextmanager
+    @contextmanager
+    def suppress_logging():  # type: ignore
+        yield
+
 
 class SafeTestingProtocol:
     """Implements safe testing protocol with Frances McHardy only."""
@@ -522,56 +547,73 @@ Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 
 def run_comprehensive_tests() -> bool:
-    """Main function to run comprehensive testing program."""
-    logger.info("🚀 Starting Comprehensive Testing Program...")
-
+    """Run comprehensive tests with detailed per-phase assertions using TestSuite."""
+    logger.info("🚀 Starting Comprehensive Testing Program (Structured Tests)...")
+    suite = TestSuite("Program Executor Safety & AI Workflow", "test_program_executor.py")
+    suite.start_suite()
+    session_manager = None
     try:
-        # Initialize session manager
+        # Initialize session and protocol
         session_manager = SessionManager()
-        if not session_manager.start_sess("Testing Program"):
-            logger.error("Failed to start session for testing")
-            return False
+        assert session_manager.start_sess("Testing Program"), "Session should start for testing"
+        protocol = SafeTestingProtocol(session_manager)
 
-        # Initialize testing protocol
-        test_protocol = SafeTestingProtocol(session_manager)
+        # Test definitions
+        def test_phase1_db_analysis():
+            r = protocol.analyze_current_state()
+            assert isinstance(r, dict) and "match_inventory" in r and "status_breakdown" in r
 
-        # Generate and display report
-        report = test_protocol.generate_test_report()
-        print(report)
+        def test_phase2_ai_processing():
+            r = protocol.test_ai_processing()
+            assert isinstance(r, dict) and "test_results" in r and "success_rate" in r
+            if not r.get("skipped"):
+                assert r.get("total_tests", 0) == len(r.get("test_results", []))
 
-        # Report test counts in detectable format
-        # Count total tests across all phases
-        phase2_results = test_protocol.test_results.get("phase2_ai_processing", {})
-        if phase2_results.get("skipped"):
-            phase2_tests = 0  # No AI tests run when skipped
-        else:
-            phase2_tests = phase2_results.get("total_tests", 5)
+        def test_phase3_tree_integration():
+            r = protocol.test_tree_integration()
+            assert isinstance(r, dict) and "success" in r
 
-        total_phases = 4  # 4 test phases
-        total_tests = phase2_tests + total_phases - 1  # AI tests + other phase tests
+        def test_phase4_safety_validation():
+            r = protocol.validate_safety_guards()
+            assert isinstance(r, dict) and r.get("safety_guards_active") is True
 
-        print(f"\n✅ Passed: {total_tests}")
-        print(f"❌ Failed: 0")
+        def test_generate_report():
+            report = protocol.generate_test_report()
+            assert "ANCESTRY AUTOMATION TESTING REPORT" in report
 
-        # Save report to file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        logs_dir = Path(__file__).parent / "Logs"
-        logs_dir.mkdir(exist_ok=True)
-        report_file = logs_dir / f"test_report_{timestamp}.md"
-        with open(report_file, "w", encoding="utf-8") as f:
-            f.write(report)
+        # Execute tests using framework
+        with suppress_logging():
+            suite.run_test("Phase 1 database analysis", test_phase1_db_analysis,
+                           "Database queries execute and return structured inventory",
+                           "Run analyze_current_state()",
+                           "Validate inventory & breakdown keys")
+            suite.run_test("Phase 2 AI processing", test_phase2_ai_processing,
+                           "AI processing runs or cleanly skips on empty DB",
+                           "Run test_ai_processing()",
+                           "Validate test & result counts")
+            suite.run_test("Phase 3 tree integration", test_phase3_tree_integration,
+                           "GEDCOM search executes",
+                           "Run test_tree_integration()",
+                           "Validate presence of success key")
+            suite.run_test("Phase 4 safety validation", test_phase4_safety_validation,
+                           "Safety guards active and validation flag present",
+                           "Run validate_safety_guards()",
+                           "Validate safety flags")
+            suite.run_test("Report generation", test_generate_report,
+                           "Markdown report generated including header",
+                           "Run generate_test_report()",
+                           "Validate report header text")
 
-        logger.info(f"📄 Test report saved to: {report_file}")
-        logger.info("✅ Comprehensive testing completed successfully")
-
-        return True
-
+        return suite.finish_suite()
     except Exception as e:
-        logger.error(f"Error running comprehensive tests: {e}", exc_info=True)
+        logger.error(f"Error during structured tests: {e}", exc_info=True)
         return False
     finally:
-        if "session_manager" in locals():
-            session_manager.close_sess()
+        if session_manager is not None:
+            try:
+                session_manager.close_sess()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

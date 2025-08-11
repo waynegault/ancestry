@@ -1,163 +1,68 @@
-# IMPLEMENTATION PLAN - High-Impact Optimization & Modernization (Updated 2025-08-11)
+## User Experience Roadmap (Concise Edition) – Updated 2025-08-11
 
-## Phase Refocus (2025-08-11)
-This update introduces a careful incremental improvement cycle targeting four areas the user requested: (1) data extraction breadth & fidelity, (2) interrogation / QA of extracted data, (3) message quality/personalization depth, (4) task specificity & action quality. We proceed with extremely low-risk, additive changes—telemetry & instrumentation first, guarded feature flags second, then controlled functional enhancements only after measurement confirms stability.
+Purpose: Help a genealogist move from raw conversation / match context → trustworthy facts → focused tasks → effective outreach with the least friction and zero surprises.
 
-### Phase 1 (Completed 2025-08-11): Extraction Component Coverage Telemetry
-Objective: Add a quantitative breadth indicator (component_coverage) to each extraction event without altering existing logic paths.
-Implemented:
-Validation:
+### Core UX Principles
+Trust (show quality + gaps) | Clarity (stable, compact phrasing) | Momentum (each step unlocks next) | Frictionless Defaults | Safe Rollback (feature‑flag first).
 
-Planned Next Phases (to be executed sequentially, each with baseline test + commit + completeness check + tests):
+### What Already Works (Baseline)
+- Structured extraction + normalization (names, relationships, locations, etc.)
+- Telemetry: component_coverage + anomaly_summary (internal only)
+- Dynamic message personalization engine (fallback safe)
+- Research task templating & adaptive rate limiting
+- Full green internal test network (acts as guardrail)
 
-Implemented Metrics:
-- component_coverage (Phase 1)
-- anomaly_summary (Phase 2) – compact semicolon-delimited key=value counts (e.g., "invalid_years=2;dup_names=1"). Empty string when no anomalies.
+### User‑Facing Outcome Metrics (Plain Language)
+- Coverage: “Did we capture enough breadth?” (coverage ≥ 0.6 target)
+- Cleanliness: “Any obvious data issues?” (empty anomaly_summary desired)
+- Task Signal Quality: Kept / Suggested ratio
+- Message Personalization Depth: (filled_placeholders / available)
+- Time to First Action: Input → first valid task list timestamp
+- Gap Closure Efficiency: Iterations to fill missing key categories
 
-Next Validation Use: Allows later correlation (Phase 3/4) of anomaly prevalence with quality_score and task generation outcomes without reprocessing historical raw responses.
-   - Add lightweight per-extraction anomaly flags (e.g., improbable date formats, empty-but-related pairs like relationships without names) computed only in debug logging & optional telemetry extension (anomaly_summary string) – no runtime branching.
-   - Provide helper in `extraction_quality.py` (compute_anomaly_summary). Telemetry field added only if function returns non-empty.
-2. Phase 3 – Message Personalization Gap Audit (Instrumentation Only):
-   - Measure placeholder utilization ratio per enhanced template (placeholders resolved / total). Log + optional telemetry (message_placeholder_utilization) before sending.
-   - No template content changes yet.
-3. Phase 4 – Task Quality Refinement (Guarded Functional Adjustments):
-   - Introduce optional flag `enable_task_quality_filters` (default False). When enabled, prune low-quality tasks (below heuristic threshold) and cap duplicates by normalized core.
-   - Add telemetry comparing pre/post filter counts (task_filter_delta).
-4. Phase 5 – Guided Extraction Assist (Prompt-Level, Flagged):
-   - Experimental secondary prompt pass (opt-in) to fill ONLY missing structured categories with “explicitly present?” confirmations—aborts if model attempts to add new fabricated data. Results merged only for categories currently empty AND verified by substring presence check in original conversation context (defensive guard).
-5. Phase 6 – Consolidation & README Finalization:
-   - Remove legacy duplicate markdown files (`readme-user.md`, `readme-technical.md`) leaving unified `readme.md` per user instruction.
-   - Document new metrics (component_coverage, anomaly flags, placeholder utilization).
+### Incremental UX Ladder (Only advance when previous rung stable)
+1. Measure (DONE) – Quiet metrics: coverage + anomalies.
+2. Reveal (DONE internal) – Anomaly summary captured for future hints.
+3. Snapshot (NEXT) – Optional one‑line extraction snapshot (names, rels, locs, gaps, anomalies) when flag show_extraction_snapshot on.
+4. Confident Personalization – Guard: suppress “enriched” message if data sparsity (enable_personalization_guard).
+5. Task Focus – Preview removal of vague / duplicate tasks (enable_task_quality_filters) BEFORE auto‑prune.
+6. Guided Clarification – Offer a single, targeted follow‑up question only when it meaningfully improves coverage (enable_gap_questions).
+7. Explainability – On‑demand “why” notes (sources, anomaly fixes) (enable_explanations).
+8. First‑Run Smoothness – One scroll Quick Start + first‑run checklist (cached).
+9. Perceived Performance – Progress ticks + graceful slow-response message.
 
-Risk Controls:
-- Every phase starts from green baseline commit.
-- Only one conceptual change per phase (avoid partial cross-file drift).
-- Telemetry / logging first before any pruning or enrichment is activated.
-- Feature flags default to OFF ensuring production parity until explicitly enabled.
+### Feature Flags (All Default Off)
+show_extraction_snapshot | enable_personalization_guard | enable_task_quality_filters | enable_gap_questions | enable_explanations
 
-Success Metrics Tracking Outline:
-- component_coverage (Phase 1) – breadth of extraction.
-- anomaly_summary presence rate (Phase 2) – quality interrogation coverage (informational only).
-- message_placeholder_utilization (Phase 3) – personalization depth indicator.
-- task_filter_delta & task_quality_distribution (Phase 4) – action list improvement while preserving count ≥ baseline median - 1.
-- fill_rate_improvement for structured keys (Phase 5) – delta in non-empty categories without drop in quality_score (>−5 tolerance).
+### Thin Slice Next (Phase: Snapshot)
+Deliver: log-only Extraction Snapshot string + unit tests + flag gating.
+Ship Criteria: No baseline behavior change with flag off; <30 lines net code; tests green; revert = delete one helper + flag reference.
 
-Next Action: Execute Phase 2 (add anomaly summary helper + instrumentation) following operational procedure.
+### Risk & Rollback Pattern
+Every change: (a) Flagged (b) Purely additive first (c) Observed via telemetry (d) Promoted only after stable window.
+Rollback = toggle flag false (no code removal needed) OR remove isolated helper.
 
+### Quality Gates (Per Increment)
+1. All tests green (module + global)
+2. New code path covered by at least 1 internal test
+3. No increase in anomaly_summary rate
+4. Snapshot of chosen metric posted (human-readable)
 
-## AUGMENT REVISION — 2025-08-08 (Focused, Low‑Risk Improvement Plan)
+### Near-Term Sequence (Concrete)
+1. Implement Extraction Snapshot helper + tests
+2. Add personalization placeholder utilization metric (telemetry only)
+3. Implement personalization guard (flag) + tests (sparse vs rich data)
+4. Add task quality heuristics (score only) + tests
+5. Introduce preview prune report (no deletion) -> allow opt‑in prune
 
-Goal: Improve data extraction fidelity, data interrogation quality, message personalization, and MS To‑Do task specificity with minimal, reversible changes. We will implement in very small phases, validating after each.
+### Done Definition (Per UX Feature)
+Flag default off; docs mention flag + purpose + fallback; tests assert off=unchanged; minimal log line proves on‑state.
 
-Operating Procedure (for every phase):
-1) Run baseline tests with run_all_tests.py (no flags) to confirm green
-2) Create a git checkpoint commit (exclude Cache/, __pycache__/, WAL/SHM)
-3) Implement the phase across the codebase (complete, not partial)
-4) Verify completeness (grep/search, targeted checks)
-5) Run run_all_tests.py; if many failures, immediately revert to prior checkpoint
-6) Update this plan with progress/results
-7) Commit the phase with a descriptive message
+### Out of Scope (For Now)
+Heavy UI surfaces, statistical significance testing, automated baseline refresh, advanced clustering of anomalies. All deferred until core ladder stable through Explainability.
 
-Phased Recommendations (this revision):
-- Phase 1: Extraction Normalization & Schema Guards (Active)
-  - Add a normalization layer that converts any partial/legacy keys (e.g., mentioned_* flat fields) to the structured schema used by downstream features (structured_names, vital_records, relationships, locations, occupations, research_questions, documents_mentioned, dna_information)
-  - Deduplicate and sanitize string lists; enforce list-of-strings for suggested_tasks
-  - Integrate post-parse normalization in action9_process_productive._process_ai_response so both validated and salvaged AI responses converge on the structured shape consumed by messaging and task generation
-  - Success criteria: no test regressions; extracted_data always contains the structured keys; downstream message/task generators see richer data when flat inputs occur
-
-- Phase 2: Data Interrogation & QA Metrics (Planning)
-  - Lightweight scoring of extracted_data completeness (names/locations/dates present, relationship count, doc mentions)
-  - Add simple conflict/consistency checks (e.g., impossible dates, empty place strings) with debug-level logs only
-  - Provide a compact summary helper for logging inside action7/8/9 to keep output within header/footer blocks and respect log level
-
-- Phase 3: Message Personalization Coverage & Quality Gates (Planning)
-# IMPLEMENTATION PLAN - Focused, Low-Risk Improvements (2025-08-08)
-
-Goal: Improve data extraction fidelity, data interrogation quality, message personalization, and MS To‑Do task specificity with minimal, reversible changes. Implement in very small phases, validating after each.
-
-Operating Procedure (each phase):
-1) Run baseline tests with run_all_tests.py
-2) Create a git checkpoint commit (exclude Cache/, __pycache__/, WAL/SHM, DB files)
-3) Implement the phase across the codebase (complete, not partial)
-4) Verify completeness (search/grep, targeted checks)
-5) Re-run tests; if failures spike, revert to prior checkpoint
-6) Update this plan with progress/results
-7) Commit the phase with a descriptive message
-
-Current Baseline (2025-08-08): 52 modules, 418 tests, all passing.
-
-Phases:
-- Phase 1: Extraction Normalization & Schema Guards (Completed)
-   - Ensured legacy/flat keys are promoted to structured schema: structured_names, vital_records, relationships, locations, occupations, research_questions, documents_mentioned, dna_information
-   - Enforced list-of-strings for suggested_tasks; de-duplicated/sanitized lists
-   - Integrated post-parse normalization in action9 _process_ai_response so both validated and salvaged AI responses converge on the structured shape
-   - Status: Integrated; tests green (52 modules, 418 tests)
-
-- Phase 2: Data Interrogation & QA Metrics (Completed 2025-08-08; logging-only, no behavior change)
-   - Implemented debug-level QA summaries via extraction_quality.summarize_extracted_data in action7_inbox.py and action8_messaging.py (mirroring existing action9 behavior)
-   - Added defensive guards around optional components to satisfy static analysis without changing runtime behavior
-   - Full test suite green: 52 modules, 418 tests; zero regressions
-   - Deliverables: debug logs only; no changes to DB writes, messaging, or task creation
-
-- Phase 3: Message Personalization Coverage & Quality Gates (Completed 2025-08-08; logging-only)
-   - Implemented: log-only template placeholder audit in Action 8
-   - Implemented: log-only personalization sanity coverage logging in Action 8
-   - Verified: MessagePersonalizer provides safe defaults for enhanced placeholders
-   - Status: Tests green (52 modules, 418 tests); no behavior changes
-
-- Phase 4: Task Enrichment & De‑duplication (Active)
-   - 4.1 Completed (2025-08-08; logging-only): Added suggested_tasks quality audit in Action 9 before MS To‑Do creation. Logs uniqueness, length stats, action verbs, and references to extracted names/locations; computes stable idempotency preview hashes. No behavior changes.
-   - 4.2 Completed (2025-08-10; logging-only): Added de‑dup preview clustering (Action 9) with normalization + core text grouping (year abstraction, record term unification). Logs cluster count, potential savings, sample hashes. Tests green (52 modules, 418 tests). No behavior changes.
-   - 4.3 Completed (2025-08-11; guarded functional change): Implemented optional in-memory suggested_tasks de‑duplication in Action 9 under dual gate (app_mode==testing AND enable_task_dedup flag). Reuses preview normalization subset; retains first representative per normalized core cluster. Logs reduction stats. Default flag False → production behavior unchanged. Full test suite green (52 modules, 418 tests).
-   - 4.4 Completed (2025-08-11; guarded enrichment): Added enable_task_enrichment flag & gating in Action 9. Enhanced genealogical tasks (template-generated titles/descriptions) only created when flag enabled; otherwise falls back to standard AI suggested tasks. Added debug sample logging (first 1–2 mappings of original→enhanced) to verify enrichment quality. Reversible via config; no change when flag disabled. Full test suite green (52 modules, 418 tests).
-
-Notes respected:
-- Logging honors log level; no user-visible behavior changes until explicitly stated
-- Session/cookie handling unchanged; conservative processing limits retained; .env untouched
-- Readme consolidation to a single readme.md will be done after phases complete
-
-Phase 1 — Progress Log (2025-08-08)
-- Baseline tests passed (52 modules, 418 tests)
-- Normalization integrated via genealogical_normalization.py and action9 processing
-- Post-change tests green (52 modules, 418 tests)
-- Next: Implement Phase 2 instrumentation (non-invasive logging) and re-run tests
-
-Phase 3 — Progress Log (2025-08-08)
-- Added log-only template placeholder audit to validate Enhanced_* templates (Action 8)
-- Added log-only personalization sanity checker to estimate coverage from extracted data (Action 8)
-- Confirmed safe default values for all enhanced placeholders via MessagePersonalizer
-- No behavior changes; tests green (52 modules, 418 tests)
-
-Last updated: 2025-08-08
-- ✅ Improved resource management with automatic cleanup
-
-**Task 7.2.2: Pathlib & Error Handling Modernization** ✅
-- ✅ Completed migration from os.path to pathlib.Path across all modules
-- ✅ Implemented exception chaining for better error context
-- ✅ Enhanced cross-platform compatibility
-- ✅ Improved error debugging and traceability
-
-#### **📊 PHASE 7.2 RESULTS:**
-- **Test Success Rate**: Maintained 100% (44/44 modules, 392 tests)
-- **Code Modernization**: Complete pathlib adoption across codebase
-- **Resource Management**: Enhanced with context managers
-- **Error Handling**: Improved with exception chaining
-- **Type Safety**: Enhanced with dataclasses and comprehensive type hints
-
-### ✅ PHASE 7.3 COMPLETED: Performance Optimization
-**Status**: ✅ **COMPLETED** (August 5, 2025)
-**Duration**: 2 hours
-**Impact**: Revolutionary performance improvements with measurable results
-
-#### **✅ COMPLETED TASKS:**
-
-**Task 7.3.1: Advanced Caching Strategy Enhancement** ✅
-- ✅ Enhanced PerformanceCache with intelligent features (adaptive sizing, dependency tracking)
-- ✅ Implemented advanced cache warming strategies with multi-strategy support
-- ✅ Added comprehensive cache health monitoring with actionable recommendations
-- ✅ Memory pressure monitoring and automatic cleanup optimization
-
-**Task 7.3.2: Memory Management & Database Optimization** ✅
+---
+This lean plan is intentionally user‑value first, minimal ceremony: Ship the smallest reversible step that increases user confidence or reduces effort.
 - ✅ Enhanced DatabaseManager with adaptive connection pooling
 - ✅ Implemented connection health monitoring and automatic recovery
 - ✅ Added query performance tracking with slow query detection
