@@ -2747,12 +2747,37 @@ def get_matches(
         )
         return [], None
     if not isinstance(api_response, dict):
+        # Handle 303 See Other: retry with redirect
         if isinstance(api_response, requests.Response):
-            logger.error(
-                f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
-            )
-
-
+            status = api_response.status_code
+            location = api_response.headers.get('Location')
+            if status == 303 and location:
+                logger.warning(
+                    f"Match List API received 303 See Other. Retrying with redirect to {location}."
+                )
+                # Retry once with the new location
+                api_response_redirect = _api_req(
+                    url=location,
+                    driver=driver,
+                    session_manager=session_manager,
+                    method="GET",
+                    headers=match_list_headers,
+                    use_csrf_token=False,
+                    api_description="Match List API (redirected)",
+                    allow_redirects=False,
+                )
+                if isinstance(api_response_redirect, dict):
+                    api_response = api_response_redirect
+                else:
+                    logger.error(
+                        f"Redirected Match List API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
+                    )
+                    return None
+            else:
+                logger.error(
+                    f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
+                )
+                return None
         else:
             logger.error(
                 f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
@@ -2762,7 +2787,7 @@ def get_matches(
                 logger.debug(f"API response content (first 500 chars): {api_response[:500]}")
             else:
                 logger.debug(f"API response: {api_response}")
-        return None
+            return None
 
     total_pages_raw = api_response.get("totalPages")
     if total_pages_raw is not None:

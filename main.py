@@ -179,6 +179,7 @@ def menu():
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
     print("q. Exit")
+    print("settings. Review/Edit .env Settings")
     choice = input("\nEnter choice: ").strip().lower()
     return choice
 
@@ -1679,6 +1680,59 @@ def main():
                 except Exception as e:
                     logger.error(f"Error running credential manager: {e}")
                     print(f"Error running credential manager: {e}")
+                print("\nReturning to main menu...")
+                input("Press Enter to continue...")
+            elif choice == "settings":
+                # Review/Edit .env Settings
+                try:
+                    env_path = Path(__file__).parent / ".env"
+                    if not env_path.exists():
+                        print(".env file not found.")
+                        input("Press Enter to continue...")
+                        continue
+                    # Read .env file
+                    with open(env_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    # Filter out comments and blank lines
+                    # Build a list of (line_index, setting_line) for settings only
+                    settings = [(i, line.strip()) for i, line in enumerate(lines) if line.strip() and not line.strip().startswith("#")]
+                    print("\nCurrent .env Settings:")
+                    for idx, (line_idx, setting) in enumerate(settings, 1):
+                        print(f"{idx}. {setting}")
+                    print("\nEnter the number of the setting to edit, or 'q' to cancel.")
+                    sel = input("Select setting: ").strip().lower()
+                    if sel == "q":
+                        continue
+                    try:
+                        sel_idx = int(sel) - 1
+                        if sel_idx < 0 or sel_idx >= len(settings):
+                            print("Invalid selection.")
+                            input("Press Enter to continue...")
+                            continue
+                    except ValueError:
+                        print("Invalid input.")
+                        input("Press Enter to continue...")
+                        continue
+                    line_idx, orig_setting = settings[sel_idx]
+                    key, eq, value = orig_setting.partition("=")
+                    if not eq:
+                        print("Selected line is not a valid setting.")
+                        input("Press Enter to continue...")
+                        continue
+                    print(f"Current value for {key}: {value}")
+                    new_value = input(f"Enter new value for {key} (or leave blank to cancel): ").strip()
+                    if not new_value:
+                        print("No change made.")
+                        input("Press Enter to continue...")
+                        continue
+                    # Update the line in the original lines list
+                    lines[line_idx] = f"{key}={new_value}\n"
+                    # Write back to .env
+                    with open(env_path, "w", encoding="utf-8") as f:
+                        f.writelines(lines)
+                    print(f"Updated {key} in .env.")
+                except Exception as e:
+                    print(f"Error editing .env: {e}")
                 print("\nReturning to main menu...")
                 input("Press Enter to continue...")
             elif choice == "s":
