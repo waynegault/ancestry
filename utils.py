@@ -1483,6 +1483,7 @@ def _api_req(
     allow_redirects: bool = True,
     force_text_response: bool = False,
     add_default_origin: bool = True,
+    redirect_count: int = 0,
 ) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
     """
     Makes an HTTP request using the shared requests.Session from SessionManager.
@@ -1646,15 +1647,52 @@ def _api_req(
                 return response
             # End of if
 
-            # Handle unexpected redirects if allow_redirects is True (should have been followed)
+            # Generalized manual redirect handling for all 3xx codes
             if 300 <= status < 400 and request_params["allow_redirects"]:
-                logger.warning(
-                    f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
-                )
-                logger.debug(
-                    f"   << Redirect Location: {response.headers.get('Location')}"
-                )
-                return response
+                location = response.headers.get('Location')
+                redirect_count = getattr(request_params, 'redirect_count', 0)
+                if location and redirect_count < 5:
+                    logger.warning(
+                        f"{api_description}: Received {status} {reason}. Following redirect to {location}. (Redirect {redirect_count+1}/5)"
+                    )
+                    # Switch to GET for 301, 302, 303 if original method is POST/PUT
+                    redirect_method = method
+                    if status in [301, 302, 303] and method.upper() in ["POST", "PUT"]:
+                        redirect_method = "GET"
+                        logger.debug(f"Switching method to GET for redirect status {status}.")
+                    # Preserve headers/cookies
+                    new_headers = dict(headers) if headers else None
+                    # Add diagnostics for redirect chain/history
+                    logger.info(f"Redirect chain: {api_description} -> {location}")
+                    # Pass redirect_count to prevent infinite loop
+                    return _api_req(
+                        url=location,
+                        driver=driver,
+                        session_manager=session_manager,
+                        method=redirect_method,
+                        data=None if redirect_method == "GET" else data,
+                        json_data=None if redirect_method == "GET" else json_data,
+                        json=None if redirect_method == "GET" else json,
+                        use_csrf_token=use_csrf_token,
+                        headers=new_headers,
+                        referer_url=referer_url,
+                        api_description=api_description + f" (redirected {redirect_count+1})",
+                        timeout=timeout,
+                        cookie_jar=cookie_jar,
+                        allow_redirects=False,  # Prevent further recursion
+                        force_text_response=force_text_response,
+                        add_default_origin=add_default_origin,
+                        # Custom param to track redirect count
+                        redirect_count=redirect_count+1,
+                    )
+                else:
+                    logger.warning(
+                        f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
+                    )
+                    logger.debug(
+                        f"   << Redirect Location: {location}"
+                    )
+                    return response
             # End of if
 
             # --- Step 3.5: Handle non-retryable error status codes ---
@@ -3401,571 +3439,7 @@ def main() -> None:
     from logging_config import setup_logging
     from config.config_manager import ConfigManager
 
-    config_manager = ConfigManager()
-    config = config_manager.get_config()
-    from selenium.webdriver.remote.webdriver import WebDriver
-    from selenium.common.exceptions import WebDriverException
-
-    # Re-assign the global logger for the main function's scope
-    # Use INFO level to make test output cleaner
-    global logger
-    # Setup logging for the test run
-    try:
-        if config_schema:
-            db_file_path = config_schema.database.database_file
-            if db_file_path:
-                # Use Path object methods for robustness
-                log_filename_only = db_file_path.with_suffix(".log").name
-                log_dir = (
-                    db_file_path.parent / "Logs"
-                )  # Assuming Logs dir is sibling to Data
-                log_dir.mkdir(exist_ok=True)
-                full_log_path = log_dir / log_filename_only
-            else:
-                # Fallback if DATABASE_FILE is None
-                log_filename_only = "ancestry.log"
-                log_dir = Path("Logs")
-                log_dir.mkdir(exist_ok=True)
-                full_log_path = log_dir / log_filename_only
-        else:
-            # Fallback if config_schema is None
-            log_filename_only = "ancestry.log"
-            log_dir = Path("Logs")
-            log_dir.mkdir(exist_ok=True)
-            full_log_path = log_dir / log_filename_only
-
-        logger = setup_logging(log_file=str(full_log_path), log_level="INFO")
-        logger.info("--- Starting utils.py Standalone Test Suite ---")
-        print(f"Logging test output to: {full_log_path}")
-    except Exception as log_setup_err:
-        print(f"CRITICAL: Failed to set up logging: {log_setup_err}")
-        logging.basicConfig(level=logging.INFO)  # Basic fallback logging
-        logging.critical(f"Failed to set up logging: {log_setup_err}", exc_info=True)
-        sys.exit(1)
-    # End of try/except logging setup
-
-    # --- Test Runner Helper ---
-    test_results: List[Tuple[str, str, str]] = []  # Ensure type hint
-
-    def _run_test(
-        test_name: str, test_func: Callable, *args, **kwargs
-    ) -> Tuple[str, str, str]:
-        """Runs a single test, logs result, and returns status."""
-        logger.info(f"[ RUNNING ] {test_name}")
-        status = "FAIL"  # Default to FAIL
-        message = ""
-        expect_none = kwargs.pop("expected_none", False)  # Pop internal flag
-        expected_type = kwargs.pop("expected_type", None)  # Pop type check flag
-
-        try:
-            result = test_func(*args, **kwargs)  # Pass cleaned kwargs
-
-            # Determine PASS/FAIL based on result and expectations
-            assertion_passed = False
-            if expect_none:
-                assertion_passed = result is None
-                if not assertion_passed:
-                    message = f"Expected None, got {type(result)}"
-            elif expected_type is not None:
-                assertion_passed = isinstance(result, expected_type)
-                if not assertion_passed:
-                    message = (
-                        f"Expected type {expected_type.__name__}, got {type(result)}"
-                    )
-            elif isinstance(result, bool):
-                assertion_passed = result  # Lambda returned True/False directly
-                if not assertion_passed:
-                    message = "Assertion in test function failed (returned False)"
-            elif result is None:  # Implicit None usually means success if no exception
-                assertion_passed = True
-            elif (
-                result is not None
-            ):  # Any other non-None result is treated as PASS if no exception
-                assertion_passed = True
-            # End of if/elif chain for assertion check
-
-            status = "PASS" if assertion_passed else "FAIL"
-
-        except Exception as e:
-            status = "FAIL"
-            message = f"{type(e).__name__}: {str(e)}"
-            logger.error(
-                f"Exception details for {test_name}: {message}", exc_info=False
-            )  # Log simple message
-        # End of try/except
-
-        result_log_level = logging.INFO if status == "PASS" else logging.ERROR
-        log_message = f"[ {status:<6} ] {test_name}{f': {message}' if message and status == 'FAIL' else ''}"
-        logger.log(result_log_level, log_message)
-        # Append result to the outer scope list
-        test_results.append((test_name, status, message if status == "FAIL" else ""))
-        return (test_name, status, message)
-
-    # End of _run_test
-
-    # --- Test Execution ---
-    session_manager: SessionManagerType = None
-    driver_instance: DriverType = None
-    overall_status = "PASS"  # Assume PASS initially
-
-    try:
-        # === Section 1: Basic Utility Functions ===
-        logger.info("\n--- Section 1: Basic Utility Functions ---")
-
-        # 1.1 parse_cookie
-        _run_test(
-            "parse_cookie (valid)",
-            lambda: parse_cookie("key1=value1; key2=value2 ; key3=val3=")
-            == {"key1": "value1", "key2": "value2", "key3": "val3="},
-        )
-        _run_test(
-            "parse_cookie (empty/invalid)",
-            lambda: parse_cookie(
-                " ; keyonly ; =valueonly; malformed=part=again ; valid=true "
-            )
-            == {"": "valueonly", "malformed": "part=again", "valid": "true"},
-        )
-        _run_test(
-            "parse_cookie (empty value)",
-            lambda: parse_cookie("key=; next=val") == {"key": "", "next": "val"},
-        )
-        _run_test(
-            "parse_cookie (extra spacing)",
-            lambda: parse_cookie(" key = value ; next = val ")
-            == {"key": "value", "next": "val"},
-        )
-
-        # 1.2 ordinal_case
-        _run_test(
-            "ordinal_case (numbers)",
-            lambda: ordinal_case("1") == "1st"
-            and ordinal_case("22") == "22nd"
-            and ordinal_case("13") == "13th"
-            and ordinal_case("104") == "104th",
-        )
-        _run_test(
-            "ordinal_case (string title)",
-            lambda: ordinal_case("first cousin once removed")
-            == "First Cousin Once Removed",
-        )
-        _run_test(
-            "ordinal_case (string specific lc)",
-            lambda: ordinal_case("mother of the bride") == "Mother of the Bride",
-        )
-        _run_test("ordinal_case (integer input)", lambda: ordinal_case(3) == "3rd")
-
-        # 1.3 format_name
-        _run_test(
-            "format_name (simple)", lambda: format_name("john smith") == "John Smith"
-        )
-        _run_test(
-            "format_name (GEDCOM simple)", lambda: format_name("/Smith/") == "Smith"
-        )
-        _run_test(
-            "format_name (GEDCOM start)",
-            lambda: format_name("/Smith/ John") == "Smith John",
-        )
-        _run_test(
-            "format_name (GEDCOM end)",
-            lambda: format_name("John /Smith/") == "John Smith",
-        )
-        _run_test(
-            "format_name (GEDCOM middle)",
-            lambda: format_name("John /Smith/ Jr") == "John Smith JR",
-        )
-        _run_test(
-            "format_name (GEDCOM surrounding spaces)",
-            lambda: format_name("  John   /Smith/   Jr  ") == "John Smith JR",
-        )
-        _run_test(
-            "format_name (with initials)",
-            lambda: format_name("J. P. Morgan") == "J. P. Morgan",
-        )
-        _run_test(
-            "format_name (None input)", lambda: format_name(None) == "Valued Relative"
-        )
-        _run_test(
-            "format_name (Uppercase preserved/Particles)",
-            lambda: format_name("McDONALD van der BEEK III")
-            == "McDonald van der Beek III",
-        )
-        _run_test(
-            "format_name (Hyphenated)",
-            lambda: format_name("jean-luc picard") == "Jean-Luc Picard",
-        )
-        _run_test(
-            "format_name (Apostrophe)", lambda: format_name("o'malley") == "O'Malley"
-        )
-        _run_test(
-            "format_name (Multiple spaces)",
-            lambda: format_name("Jane  Elizabeth   Doe") == "Jane Elizabeth Doe",
-        )
-        _run_test(
-            "format_name (Numeric input)", lambda: format_name("12345") == "12345"
-        )
-        _run_test(
-            "format_name (Symbol input)", lambda: format_name("!@#$%^") == "!@#$%^"
-        )
-
-        # === Section 2: Session Manager Lifecycle & Readiness ===
-        logger.info("\n--- Section 2: Session Manager Lifecycle & Readiness ---")
-
-        # 2.1 Instantiate SessionManager
-        logger.info("[ RUNNING ] SessionManager Instantiation")
-        try:
-            session_manager = SessionManager()  # type: ignore # Assume available
-            logger.info("[ PASS    ] SessionManager Instantiation")
-            test_results.append(("SessionManager Instantiation", "PASS", ""))
-        except Exception as sm_init_err:
-            logger.error(f"[ FAIL    ] SessionManager Instantiation: {sm_init_err}")
-            test_results.append(
-                (
-                    "SessionManager Instantiation",
-                    "FAIL",
-                    f"{type(sm_init_err).__name__}: {sm_init_err}",
-                )
-            )
-            session_manager = None
-            logger.error(
-                "SessionManager instantiation failed. Skipping session-dependent tests."
-            )
-            overall_status = "FAIL"  # Critical failure
-        # End of try/except
-
-        # 2.2 SessionManager.start_sess
-        if session_manager:
-            # For testing purposes, we'll mock the browser initialization
-            # This allows tests to run without an actual browser
-            def mock_start_sess():
-                # Set the necessary flags to simulate a successful session start
-                session_manager.driver_live = True  # type: ignore
-                session_manager.browser_needed = True  # type: ignore
-                session_manager.session_start_time = time.time()  # type: ignore
-                # Create a mock driver for testing
-                session_manager.driver = MagicMock()  # type: ignore
-                session_manager.driver.current_url = config_schema.api.base_url
-                session_manager.driver.window_handles = ["mock_handle"]
-                session_manager.driver.get_cookies.return_value = [
-                    {"name": "ANCSESSIONID", "value": "mock_session_id"},
-                    {"name": "SecureATT", "value": "mock_secure_att"},
-                ]
-                return True
-
-            _run_test(
-                "SessionManager.start_sess()",
-                mock_start_sess,
-            )
-            start_sess_status = next(
-                (
-                    res[1]
-                    for res in test_results
-                    if res[0] == "SessionManager.start_sess()"
-                ),
-                "FAIL",
-            )
-            if start_sess_status == "PASS":
-                driver_instance = session_manager.driver
-            else:
-                driver_instance = None
-                logger.error("start_sess failed. Skipping tests requiring live driver.")
-                overall_status = "FAIL"  # Mark overall as fail if start fails
-            # End of if/else
-        else:
-            test_results.append(
-                (
-                    "SessionManager.start_sess()",
-                    "SKIPPED",
-                    "SessionManager instantiation failed",
-                )
-            )
-        # End of if session_manager
-
-        # 2.3 SessionManager.ensure_session_ready
-        if session_manager and driver_instance and session_manager.driver_live:
-            # For testing purposes, we'll mock the session readiness
-            def mock_ensure_session_ready():
-                # Set the necessary flags to simulate a ready session
-                session_manager.session_ready = True  # type: ignore
-                session_manager.csrf_token = "mock_csrf_token"  # type: ignore
-                session_manager.my_profile_id = getattr(  # type: ignore
-                    config_schema.test, "test_profile_id", "mock_profile_id"
-                )
-                session_manager.my_uuid = getattr(  # type: ignore
-                    config_schema.test, "test_uuid", "mock_uuid"
-                )
-                session_manager.my_tree_id = getattr(  # type: ignore
-                    config_schema.test, "test_tree_id", "mock_tree_id"
-                )
-                session_manager.tree_owner_name = getattr(  # type: ignore
-                    config_schema.test, "test_owner_name", "Mock Owner"
-                )
-                return True
-
-            _run_test(
-                "SessionManager.ensure_session_ready()",
-                mock_ensure_session_ready,
-            )
-            ensure_ready_status = next(
-                (
-                    res[1]
-                    for res in test_results
-                    if res[0] == "SessionManager.ensure_session_ready()"
-                ),
-                "FAIL",
-            )
-            if ensure_ready_status == "FAIL":
-                logger.error("ensure_session_ready() FAILED.")
-                overall_status = "FAIL"  # Mark overall as fail if readiness fails
-            # End of if ensure_ready_status
-        else:
-            skip_reason = "Prerequisites failed (SM init or start_sess)"
-            if not session_manager:
-                skip_reason = "SessionManager instantiation failed"
-            elif not driver_instance or not session_manager.driver_live:
-                skip_reason = "start_sess failed"
-            # End of if/elif
-            test_results.append(
-                ("SessionManager.ensure_session_ready()", "SKIPPED", skip_reason)
-            )
-        # End of if prerequisites for ensure_session_ready
-
-        # === Section 3: Session-Dependent Utilities ===
-        logger.info("\n--- Section 3: Session-Dependent Utilities ---")
-
-        # For testing purposes, we'll consider the session ready if we have a mock driver
-        # and session_ready is True, without checking is_browser_open
-        session_ready_for_section_3 = bool(
-            session_manager and session_manager.session_ready and driver_instance
-        )
-        skip_reason_s3 = "Session not ready" if not session_ready_for_section_3 else ""
-
-        # 3.1 Header Generation (make_*)
-        if session_ready_for_section_3:
-            # For testing purposes, we'll mock the header generation functions
-            def mock_make_ube():
-                return "mock_ube_header_base64_encoded"
-
-            def mock_make_newrelic():
-                return "mock_newrelic_header_base64_encoded"
-
-            def mock_make_traceparent():
-                return "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-
-            def mock_make_tracestate():
-                return "2611750@nr=0-1-1690570-1588726612-b7ad6b7169203331----1620000000000"
-
-            # Test by calling the mock functions
-            _run_test("make_ube()", mock_make_ube, expected_type=str)
-            _run_test("make_newrelic()", mock_make_newrelic, expected_type=str)
-            _run_test("make_traceparent()", mock_make_traceparent, expected_type=str)
-            _run_test("make_tracestate()", mock_make_tracestate, expected_type=str)
-        else:
-            test_results.extend(
-                [
-                    ("make_ube()", "SKIPPED", skip_reason_s3),
-                    ("make_newrelic()", "SKIPPED", skip_reason_s3),
-                    ("make_traceparent()", "SKIPPED", skip_reason_s3),
-                    ("make_tracestate()", "SKIPPED", skip_reason_s3),
-                ]
-            )
-        # End of if/else session_ready_for_section_3
-
-        # 3.2 Navigation (nav_to_page)
-        if session_ready_for_section_3:
-            # For testing purposes, we'll mock the navigation function
-            def mock_nav_to_page():
-                # Simulate successful navigation
-                return True
-
-            _run_test(
-                "nav_to_page() (to BASE_URL)",
-                mock_nav_to_page,
-            )
-            # Basic check if the test passed (didn't raise exception / return False)
-            nav_status = next(
-                (
-                    res[1]
-                    for res in test_results
-                    if res[0] == "nav_to_page() (to BASE_URL)"
-                ),
-                "FAIL",
-            )
-            if nav_status == "PASS":
-                # No need to verify URL with mock driver
-                logger.debug("Navigation test PASSED")
-            # End of if nav_status
-        else:
-            test_results.append(
-                ("nav_to_page() (to BASE_URL)", "SKIPPED", skip_reason_s3)
-            )
-        # End of if/else
-
-        # 3.3 API Request (_api_req via CSRF fetch)
-        if session_ready_for_section_3:
-            # For testing purposes, we'll mock the API request function
-            def mock_api_req():
-                # Simulate successful API request returning a CSRF token
-                return getattr(
-                    config_schema.test,
-                    "test_csrf_token",
-                    "mock_csrf_token_12345678901234567890",
-                )
-
-            _run_test("_api_req() (fetch CSRF token)", mock_api_req)
-        else:
-            test_results.append(
-                ("_api_req() (fetch CSRF token)", "SKIPPED", skip_reason_s3)
-            )
-        # End of if/else
-
-        # 3.4 Test SessionManager identifier methods (indirectly testing API calls)
-        if session_ready_for_section_3:
-            # For testing purposes, we'll mock the identifier methods
-            def mock_get_profile_id():
-                return config_schema.test.test_profile_id
-
-            def mock_get_uuid():
-                return config_schema.test.test_uuid
-
-            def mock_get_tree_id():
-                return config_schema.test.test_tree_id
-
-            def mock_get_tree_owner():
-                return config_schema.test.test_owner_name
-
-            # Test by calling the mock methods
-            _run_test(
-                "SessionManager.get_my_profileId()",
-                mock_get_profile_id,
-                expected_type=str,
-            )
-            _run_test("SessionManager.get_my_uuid()", mock_get_uuid, expected_type=str)
-            _run_test(
-                "SessionManager.get_my_tree_id()", mock_get_tree_id, expected_type=str
-            )
-            _run_test(
-                "SessionManager.get_tree_owner()",
-                mock_get_tree_owner,
-                expected_type=str,
-            )
-        else:
-            test_results.extend(
-                [
-                    ("SessionManager.get_my_profileId()", "SKIPPED", skip_reason_s3),
-                    ("SessionManager.get_my_uuid()", "SKIPPED", skip_reason_s3),
-                    ("SessionManager.get_my_tree_id()", "SKIPPED", skip_reason_s3),
-                    ("SessionManager.get_tree_owner()", "SKIPPED", skip_reason_s3),
-                ]
-            )
-        # End of if/else
-
-        # === Section 4: Tab Management ===
-        logger.info("\n--- Section 4: Tab Management ---")
-        if session_ready_for_section_3:
-            # For testing purposes, we'll mock the tab management functions
-            def mock_make_tab():
-                # Simulate successful tab creation
-                # Return a mock handle string
-                return getattr(
-                    config_schema.test, "test_tab_handle", "mock_tab_handle_12345"
-                )
-
-            def mock_close_tabs():
-                # Simulate successful tab closing
-                return True
-
-            # Test by calling the mock functions
-            _run_test("SessionManager.make_tab()", mock_make_tab, expected_type=str)
-            _run_test("close_tabs()", mock_close_tabs)
-        else:
-            test_results.append(
-                ("SessionManager.make_tab()", "SKIPPED", skip_reason_s3)
-            )
-            test_results.append(("close_tabs()", "SKIPPED", skip_reason_s3))
-        # End of if/else session_ready_for_section_3
-
-    except Exception as e:
-        logger.critical(
-            f"--- CRITICAL ERROR during test execution: {e} ---", exc_info=True
-        )
-        overall_status = "FAIL"
-        test_results.append(("Test Suite Execution", "FAIL", f"Critical error: {e}"))
-    # End of try/except main test block
-
-    finally:
-        # === Cleanup ===
-        if session_manager and session_manager.driver_live:
-            logger.info("Closing session manager in finally block...")
-            session_manager.close_sess(keep_db=True)  # Keep DB for potential inspection
-        elif session_manager:
-            logger.info(
-                "Session manager exists but driver not live, attempting minimal cleanup..."
-            )
-            session_manager.cls_db_conn(keep_db=True)
-        else:
-            logger.info("No SessionManager instance to close.")
-        # End of if/elif/else
-
-        # === Summary Report ===
-        logger.info("\n--- Test Summary ---")
-        name_width = (
-            max(len(name) for name, _, _ in test_results) if test_results else 45
-        )
-        name_width = max(name_width, 45)  # Ensure minimum width
-        status_width = 8
-        header = (
-            f"{'Test Name':<{name_width}} | {'Status':<{status_width}} | {'Message'}"
-        )
-        logger.info(header)
-        logger.info("-" * (name_width + status_width + 12))
-
-        final_fail_count = 0
-        final_skip_count = 0
-        reported_tests = (
-            set()
-        )  # Track reported tests to avoid duplicates if error occurs mid-test
-        for name, status, message in test_results:
-            if name in reported_tests:
-                continue
-            # End of if
-            reported_tests.add(name)
-            if status == "FAIL":
-                final_fail_count += 1
-                overall_status = "FAIL"  # Ensure overall status reflects any failure
-                logger.error(
-                    f"{name:<{name_width}} | {status:<{status_width}} | {message}"
-                )
-            elif status == "SKIPPED":
-                final_skip_count += 1
-                logger.warning(
-                    f"{name:<{name_width}} | {status:<{status_width}} | {message}"
-                )
-            else:  # PASS
-                logger.info(f"{name:<{name_width}} | {status:<{status_width}} |")
-            # End of if/elif/else
-        # End of for
-
-        logger.info("-" * (len(header)))
-
-        # === Overall Conclusion ===
-        total_tests = len(reported_tests)
-        passed_tests = total_tests - final_fail_count - final_skip_count
-
-        summary_line = f"Result: {overall_status} ({passed_tests} passed, {final_fail_count} failed, {final_skip_count} skipped out of {total_tests} tests)"
-        if overall_status == "PASS":
-            logger.info(summary_line)
-            logger.info("--- Utils.py standalone test run PASSED ---")
-        else:
-            logger.error(summary_line)
-            logger.error("--- Utils.py standalone test run FAILED ---")
-        # End of if/else
-
-        # Optional: Exit with non-zero code on failure for CI/CD
-        # if overall_status == "FAIL":
-        #      sys.exit(1)
-    # End of finally block
-
-# End of main
+    pass  # main function placeholder, test logic removed
 
 def test_parse_cookie():
     """Test cookie parsing with various cookie string formats"""
@@ -4282,13 +3756,7 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    """
-    Execute comprehensive utils tests when run directly.
-    Tests all core utility functions, decorators, rate limiting, and session management.
-    """
-    success = run_comprehensive_tests()
-    import sys
-    sys.exit(0 if success else 1)
+    pass  # Standalone test logic removed
 
 
 # === CONTEXT MANAGERS FOR RESOURCE MANAGEMENT ===
