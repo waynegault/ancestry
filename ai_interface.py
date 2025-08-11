@@ -562,6 +562,22 @@ def extract_genealogical_entities(
                     # Determine variant label heuristically (control vs alt)
                     variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
                     quality_score = compute_extraction_quality(parsed_json)
+                    # Component coverage: fraction of structured keys that are non-empty
+                    try:
+                        extracted_component = parsed_json.get("extracted_data", {}) if isinstance(parsed_json, dict) else {}
+                        structured_keys = [
+                            "structured_names","vital_records","relationships","locations","occupations",
+                            "research_questions","documents_mentioned","dna_information"
+                        ]
+                        non_empty = 0
+                        total_keys = len(structured_keys)
+                        for k in structured_keys:
+                            v = extracted_component.get(k)
+                            if isinstance(v, list) and len(v) > 0:
+                                non_empty += 1
+                        component_coverage = (non_empty / total_keys) if total_keys else 0.0
+                    except Exception:
+                        component_coverage = None
                     try:
                         parsed_json["quality_score"] = quality_score
                     except Exception:
@@ -576,6 +592,7 @@ def extract_genealogical_entities(
                         raw_response_text=cleaned_response_str,
                         user_id=getattr(session_manager, "user_id", None),
                         quality_score=quality_score,
+                        component_coverage=component_coverage,
                     )
                 except Exception:
                     pass
@@ -643,6 +660,21 @@ def extract_genealogical_entities(
                     variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
                     quality_score = compute_extraction_quality(salvaged)
                     try:
+                        extracted_component = salvaged.get("extracted_data", {}) if isinstance(salvaged, dict) else {}
+                        structured_keys = [
+                            "structured_names","vital_records","relationships","locations","occupations",
+                            "research_questions","documents_mentioned","dna_information"
+                        ]
+                        non_empty = 0
+                        total_keys = len(structured_keys)
+                        for k in structured_keys:
+                            v = extracted_component.get(k)
+                            if isinstance(v, list) and len(v) > 0:
+                                non_empty += 1
+                        component_coverage = (non_empty / total_keys) if total_keys else 0.0
+                    except Exception:
+                        component_coverage = None
+                    try:
                         salvaged["quality_score"] = quality_score
                     except Exception:
                         pass
@@ -657,6 +689,7 @@ def extract_genealogical_entities(
                         user_id=getattr(session_manager, "user_id", None),
                         error="structure_salvaged",
                         quality_score=quality_score,
+                        component_coverage=component_coverage,
                     )
                 except Exception:
                     pass
