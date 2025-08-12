@@ -1038,7 +1038,7 @@ class SessionManager:
                 csrf_token_val = response_data.strip()
                 if csrf_token_val and len(csrf_token_val) > 20:
                     logger.debug(f"CSRF token successfully retrieved (Length: {len(csrf_token_val)}).")
-                    self.csrf_token = csrf_token_val
+                    self.api_manager.csrf_token = csrf_token_val
                     return csrf_token_val
                 else:
                     logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
