@@ -42,14 +42,6 @@ from test_framework import (
     assert_valid_function,
 )
 
-# --- Test framework imports ---
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
-
 
 class CircuitState(Enum):
     """Circuit breaker states."""
