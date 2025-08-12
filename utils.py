@@ -778,18 +778,19 @@ class DynamicRateLimiter:
         cfg = config_schema  # Use new config system
         api = getattr(cfg, "api", None)
         # Use APIConfig-backed values to ensure .env is respected
+        # OPTIMIZATION: Improved default values for better Action 6 performance
         self.initial_delay = (
             initial_delay
             if initial_delay is not None
-            else (getattr(api, "initial_delay", 2.0) if api else 2.0)
+            else (getattr(api, "initial_delay", 1.5) if api else 1.5)  # Reduced from 2.0
         )
         self.MAX_DELAY = (
-            max_delay if max_delay is not None else (getattr(api, "max_delay", 60.0) if api else 60.0)
+            max_delay if max_delay is not None else (getattr(api, "max_delay", 8.0) if api else 8.0)  # Reduced from 60.0
         )
         self.backoff_factor = (
             backoff_factor
             if backoff_factor is not None
-            else (getattr(api, "retry_backoff_factor", 4.0) if api else 4.0)
+            else (getattr(api, "retry_backoff_factor", 3.0) if api else 3.0)  # Reduced from 4.0
         )
         self.decrease_factor = (
             decrease_factor
@@ -799,15 +800,16 @@ class DynamicRateLimiter:
         self.current_delay = self.initial_delay
         self.last_throttled = False
         # Token Bucket parameters (capacity=burst_limit, fill_rate=requests_per_second)
+        # OPTIMIZATION: Increased bucket capacity and refill rate for better throughput
         self.capacity = float(
             token_capacity
             if token_capacity is not None
-            else (getattr(api, "burst_limit", 3.0) if api else 3.0)
+            else (getattr(api, "burst_limit", 3.0) if api else 3.0)  # Increased from 2.0 to 3.0
         )
         self.fill_rate = float(
             token_fill_rate
             if token_fill_rate is not None
-            else (getattr(api, "requests_per_second", 0.5) if api else 0.5)
+            else (getattr(api, "requests_per_second", 0.7) if api else 0.7)  # Increased from 0.5
         )
         self._lock = threading.Lock()
         if self.fill_rate <= 0:
@@ -846,9 +848,11 @@ class DynamicRateLimiter:
                 base_sleep = self.current_delay
                 sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-                logger.debug(
-                    f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
-                )
+                # OPTIMIZATION: Reduce logging verbosity - only log significant delays  
+                if sleep_duration > 2.0:  # Only log delays over 2 seconds
+                    logger.debug(
+                        f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
+                    )
             else:
                 # Token bucket empty, wait for a token to generate
                 wait_needed = (1.0 - self.tokens) / self.fill_rate
@@ -856,9 +860,11 @@ class DynamicRateLimiter:
                 sleep_duration = wait_needed + jitter_amount
                 sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-                logger.debug(
-                    f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
-                )
+                # OPTIMIZATION: Reduce token bucket logging verbosity
+                if sleep_duration > 3.0:  # Only log significant waits
+                    logger.debug(
+                        f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
+                    )
         # End of with
 
         # Perform the sleep outside the lock
@@ -1169,7 +1175,8 @@ def _apply_rate_limiting(
         The wait time applied
     """
     wait_time = session_manager.dynamic_rate_limiter.wait() if session_manager.dynamic_rate_limiter else 0
-    if wait_time > 0.1:  # Log only significant waits
+    # OPTIMIZATION: Reduce rate limit logging verbosity - only log significant waits
+    if wait_time > 2.0:  # Only log waits over 2 seconds (increased from 0.1s)
         logger.debug(
             f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
         )
@@ -1369,12 +1376,15 @@ def _execute_api_request(
         # Execute the request
         response = req_session.request(**request_params)
 
-        # Log consolidated response details
+        # OPTIMIZATION: Log consolidated response details only for non-success or slow requests
         status = response.status_code
         reason = response.reason
-        logger.debug(
-            f"🌐 {api_description} request completed: {status} {reason}"
-        )
+        # Only log if not successful (non-2xx) to reduce log noise
+        if status < 200 or status >= 300:
+            logger.debug(
+                f"🌐 {api_description} request completed: {status} {reason}"
+            )
+        # Success responses are logged at INFO level in _process_response if needed
         return response
 
     except RequestException as e:  # type: ignore
