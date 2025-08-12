@@ -934,6 +934,7 @@ def _lookup_existing_persons(
             for person in existing_persons
             if person.uuid is not None
         }
+        
         logger.debug(
             f"Found {len(existing_persons_map)} existing Person records for this batch."
         )
@@ -1593,8 +1594,29 @@ def _execute_bulk_db_operations(
             # De-duplicate by UUID within this batch and drop any that already exist in DB map
             seen_uuids: Set[str] = set()
             insert_data: List[Dict[str, Any]] = []
+            
+            # Additional check: query DB for existing profile_ids to prevent constraint violations
+            profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw 
+                                   if item.get("profile_id")}
+            existing_profile_ids: Set[str] = set()
+            
+            if profile_ids_to_check:
+                try:
+                    logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
+                    existing_records = session.query(Person.profile_id).filter(
+                        Person.profile_id.in_(profile_ids_to_check),
+                        Person.deleted_at == None
+                    ).all()
+                    existing_profile_ids = {record.profile_id for record in existing_records}
+                    if existing_profile_ids:
+                        logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
+                except Exception as e:
+                    logger.warning(f"Failed to check existing profile IDs: {e}")
+            
             for item in insert_data_raw:
                 uuid_val = str(item.get("uuid") or "").upper()
+                profile_id = item.get("profile_id")
+                
                 if not uuid_val:
                     continue
                 if uuid_val in seen_uuids:
@@ -1603,6 +1625,10 @@ def _execute_bulk_db_operations(
                 if uuid_val in existing_persons_map:
                     logger.info(f"Skipping Person create for existing UUID {uuid_val}; will treat as update if needed.")
                     continue
+                if profile_id and profile_id in existing_profile_ids:
+                    logger.info(f"Skipping Person create for existing profile ID {profile_id} (UUID: {uuid_val})")
+                    continue
+                    
                 seen_uuids.add(uuid_val)
                 item["uuid"] = uuid_val
                 insert_data.append(item)
@@ -3000,26 +3026,25 @@ def get_matches(
         )
         return None
 
-    # Use the original working API endpoint from 4 weeks ago
+    # Use the working API endpoint pattern that matches other working API calls (like matchProbabilityData, badges, etc.)
     match_list_url = urljoin(
         config_schema.api.base_url,
         f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
     )
-    # Use the exact same simple headers that worked 6 weeks ago
-    # Note: Working version used "X-CSRF-Token" (capital X) not "x-csrf-token"
+    # Use simplified headers that were working earlier
     match_list_headers = {
         "X-CSRF-Token": specific_csrf_token,
         "Accept": "application/json",
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "priority": "u=1, i",
     }
     logger.debug(f"Calling Match List API for page {current_page}...")
     logger.debug(
         f"Headers being passed to _api_req for Match List: {match_list_headers}"
     )
+    
+    # Additional debug logging for troubleshooting 303 redirects
+    logger.debug(f"Match List URL: {match_list_url}")
+    logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
 
     # CRITICAL: Ensure cookies are synced immediately before API call
     # This was simpler in the working version from 6 weeks ago
@@ -3053,32 +3078,89 @@ def get_matches(
         )
         return [], None
     if not isinstance(api_response, dict):
-        # Handle 303 See Other: retry with redirect
+        # Handle 303 See Other: retry with redirect or session refresh
         if isinstance(api_response, requests.Response):
             status = api_response.status_code
             location = api_response.headers.get('Location')
-            if status == 303 and location:
-                logger.warning(
-                    f"Match List API received 303 See Other. Retrying with redirect to {location}."
-                )
-                # Retry once with the new location
-                api_response_redirect = _api_req(
-                    url=location,
-                    driver=driver,
-                    session_manager=session_manager,
-                    method="GET",
-                    headers=match_list_headers,
-                    use_csrf_token=False,
-                    api_description="Match List API (redirected)",
-                    allow_redirects=False,
-                )
-                if isinstance(api_response_redirect, dict):
-                    api_response = api_response_redirect
-                else:
-                    logger.error(
-                        f"Redirected Match List API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
+            
+            if status == 303:
+                if location:
+                    logger.warning(
+                        f"Match List API received 303 See Other. Retrying with redirect to {location}."
                     )
-                    return None
+                    # Retry once with the new location
+                    api_response_redirect = _api_req(
+                        url=location,
+                        driver=driver,
+                        session_manager=session_manager,
+                        method="GET",
+                        headers=match_list_headers,
+                        use_csrf_token=False,
+                        api_description="Match List API (redirected)",
+                        allow_redirects=False,
+                    )
+                    if isinstance(api_response_redirect, dict):
+                        api_response = api_response_redirect
+                    else:
+                        logger.error(
+                            f"Redirected Match List API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
+                        )
+                        return None
+                else:
+                    # 303 with no location usually means session expired - try session refresh
+                    logger.warning(
+                        "Match List API received 303 See Other with no redirect location. "
+                        "This usually indicates session expiration. Attempting session refresh with cache clear."
+                    )
+                    try:
+                        # Clear session cache for complete fresh start
+                        try:
+                            cleared_count = session_manager.clear_session_caches()
+                            logger.debug(f"🧹 Cleared {cleared_count} session cache entries before refresh")
+                        except Exception as cache_err:
+                            logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
+                        
+                        # Force clear readiness check cache to ensure fresh validation
+                        session_manager._last_readiness_check = None
+                        logger.debug("🔄 Cleared session readiness cache to force fresh validation")
+                        
+                        # Force session refresh with cleared cache
+                        fresh_success = session_manager.ensure_session_ready(action_name="DNA Match Collection")
+                        if not fresh_success:
+                            logger.error("❌ Session refresh failed after cache clear")
+                            return None
+                        
+                        # Force cookie sync and CSRF token refresh
+                        session_manager._sync_cookies_to_requests()
+                        fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
+                        if fresh_csrf_token:
+                            # Update headers with fresh token and retry
+                            match_list_headers['X-CSRF-Token'] = fresh_csrf_token
+                            logger.info("✅ Retrying Match List API with refreshed session, cleared cache, and fresh CSRF token.")
+                            logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
+                            logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
+                            
+                            api_response_refresh = _api_req(
+                                url=match_list_url,
+                                driver=driver,
+                                session_manager=session_manager,
+                                method="GET",
+                                headers=match_list_headers,
+                                use_csrf_token=False,
+                                api_description="Match List API (Session Refreshed)",
+                                allow_redirects=True,
+                            )
+                            if isinstance(api_response_refresh, dict):
+                                api_response = api_response_refresh
+                            else:
+                                logger.error("Match List API still failing after session refresh. Aborting.")
+                                return None
+                        else:
+                            logger.error("Could not obtain fresh CSRF token for session refresh.")
+                            return None
+                    except Exception as refresh_err:
+                        logger.error(f"Error during session refresh: {refresh_err}")
+                        return None
             else:
                 logger.error(
                     f"Match List API did not return dict. Type: {type(api_response).__name__}, "
