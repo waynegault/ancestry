@@ -117,14 +117,14 @@ CRITICAL_API_FAILURE_THRESHOLD: int = (
 
 # Configurable settings from config_schema
 DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
-# Make concurrency configurable via environment-backed config if present
+# OPTIMIZATION: Make concurrency configurable with improved defaults for performance
 try:
     from config import config_schema as _cfg
-    THREAD_POOL_WORKERS: int = getattr(getattr(_cfg, 'api', None), 'max_concurrency', 1)
+    THREAD_POOL_WORKERS: int = getattr(getattr(_cfg, 'api', None), 'max_concurrency', 3)  # Increased from 1 to 3
     if not isinstance(THREAD_POOL_WORKERS, int) or THREAD_POOL_WORKERS <= 0:
-        THREAD_POOL_WORKERS = 1
+        THREAD_POOL_WORKERS = 3  # Increased default for better performance
 except Exception:
-    THREAD_POOL_WORKERS = 1  # More conservative default to reduce 429s
+    THREAD_POOL_WORKERS = 3  # Optimized default instead of conservative 1
 
 
 # --- Custom Exceptions ---
@@ -135,6 +135,22 @@ class MaxApiFailuresExceededError(Exception):
 
 
 # End of MaxApiFailuresExceededError
+
+# OPTIMIZATION: Profile caching to avoid redundant API calls for same profile IDs
+_profile_cache = {}  # Cache for profile details keyed by profile_id
+_profile_cache_max_size = 500  # Limit cache size to prevent memory issues
+
+def _get_cached_profile(profile_id: str) -> Optional[Dict]:
+    """Get profile from cache if available."""
+    return _profile_cache.get(profile_id)
+
+def _cache_profile(profile_id: str, profile_data: Dict) -> None:
+    """Cache profile data with size limit."""
+    if len(_profile_cache) >= _profile_cache_max_size:
+        # Remove oldest entry (simple LRU approximation)
+        oldest_key = next(iter(_profile_cache))
+        del _profile_cache[oldest_key]
+    _profile_cache[profile_id] = profile_data
 
 
 # ------------------------------------------------------------------------------
@@ -1111,6 +1127,19 @@ def _perform_api_prefetches(
     )
 
     with ThreadPoolExecutor(max_workers=THREAD_POOL_WORKERS) as executor:
+        # OPTIMIZATION: Conditional relationship probability fetching
+        # Only fetch relationship probability for significant matches (>20 cM)
+        # to reduce API overhead for distant matches
+        high_priority_uuids = set()
+        for match_data in matches_to_process_later:
+            uuid_val = match_data.get("uuid")
+            if uuid_val and uuid_val in fetch_candidates_uuid:
+                cm_value = int(match_data.get("cM_DNA", 0))
+                if cm_value > 20:  # Only fetch probability for matches >20 cM
+                    high_priority_uuids.add(uuid_val)
+                else:
+                    logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM)")
+
         for uuid_val in fetch_candidates_uuid:
             limiter = getattr(session_manager, "dynamic_rate_limiter", None)
             if limiter is not None and hasattr(limiter, "wait"):
@@ -1119,18 +1148,20 @@ def _perform_api_prefetches(
                 executor.submit(_fetch_combined_details, session_manager, uuid_val)
             ] = ("combined_details", uuid_val)
 
-            limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-            if limiter is not None and hasattr(limiter, "wait"):
-                limiter.wait()
-            max_labels = 2
-            futures[
-                executor.submit(
-                    _fetch_batch_relationship_prob,
-                    session_manager,
-                    uuid_val,
-                    max_labels,
-                )
-            ] = ("relationship_prob", uuid_val)
+            # OPTIMIZATION: Only fetch relationship probability for high-priority matches
+            if uuid_val in high_priority_uuids:
+                limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+                if limiter is not None and hasattr(limiter, "wait"):
+                    limiter.wait()
+                max_labels = 2
+                futures[
+                    executor.submit(
+                        _fetch_batch_relationship_prob,
+                        session_manager,
+                        uuid_val,
+                        max_labels,
+                    )
+                ] = ("relationship_prob", uuid_val)
 
         for uuid_val in uuids_for_tree_badge_ladder:
             limiter = getattr(session_manager, "dynamic_rate_limiter", None)
@@ -3428,99 +3459,123 @@ def _fetch_combined_details(
             f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id_for_api})"
         )
     else:
-        profile_url = urljoin(
-            config_schema.api.base_url,
-            f"/app-api/express/v1/profiles/details?userId={tester_profile_id_for_api.upper()}",
-        )
-        logger.debug(
-            f"Fetching /profiles/details for Profile ID {tester_profile_id_for_api} (Match UUID {match_uuid})..."
-        )
-
-        # Use the same headers as the working cURL command
-        profile_headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "cache-control": "no-cache",
-            "pragma": "no-cache",
-            "priority": "u=0, i",
-            "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "document",
-            "sec-fetch-mode": "navigate",
-            "sec-fetch-site": "none",
-            "sec-fetch-user": "?1",
-            "upgrade-insecure-requests": "1",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-        }
-
-        # Apply cookie sync for Profile Details API as well
-        # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
-        try:
-            if hasattr(session_manager, '_sync_cookies_to_requests'):
-                session_manager._sync_cookies_to_requests()
-        except Exception as cookie_sync_error:
-            logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
-
-        try:
-            profile_response = _api_req(
-                url=profile_url,
-                driver=session_manager.driver,
-                session_manager=session_manager,
-                method="GET",
-                headers=profile_headers,
-                use_csrf_token=False,
-                api_description="Profile Details API (Batch)",
+        # OPTIMIZATION: Check cache first to avoid redundant API calls
+        cached_profile = _get_cached_profile(tester_profile_id_for_api)
+        if cached_profile is not None:
+            logger.debug(f"Using cached profile data for Profile ID {tester_profile_id_for_api}")
+            # Apply cached profile data to combined_data
+            combined_data["last_logged_in_dt"] = cached_profile.get("last_logged_in_dt")
+            combined_data["contactable"] = cached_profile.get("contactable", False)
+        else:
+            # Cache miss - need to fetch from API
+            profile_url = urljoin(
+                config_schema.api.base_url,
+                f"/app-api/express/v1/profiles/details?userId={tester_profile_id_for_api.upper()}",
             )
-            if profile_response and isinstance(profile_response, dict):
-                logger.debug(
-                    f"Successfully fetched /profiles/details for {tester_profile_id_for_api}."
+            logger.debug(
+                f"Fetching /profiles/details for Profile ID {tester_profile_id_for_api} (Match UUID {match_uuid})..."
+            )
+
+            # Use the same headers as the working cURL command
+            profile_headers = {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+                "cache-control": "no-cache",
+                "pragma": "no-cache",
+                "priority": "u=0, i",
+                "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "none",
+                "sec-fetch-user": "?1",
+                "upgrade-insecure-requests": "1",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            }
+
+            # Apply cookie sync for Profile Details API as well
+            # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
+            try:
+                if hasattr(session_manager, '_sync_cookies_to_requests'):
+                    session_manager._sync_cookies_to_requests()
+            except Exception as cookie_sync_error:
+                logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
+
+            try:
+                profile_response = _api_req(
+                    url=profile_url,
+                    driver=session_manager.driver,
+                    session_manager=session_manager,
+                    method="GET",
+                    headers=profile_headers,
+                    use_csrf_token=False,
+                    api_description="Profile Details API (Batch)",
                 )
-                last_login_str = profile_response.get("LastLoginDate")
-                if last_login_str:
-                    try:
-                        if last_login_str.endswith("Z"):
-                            dt_aware = datetime.fromisoformat(
-                                last_login_str.replace("Z", "+00:00")
+                if profile_response and isinstance(profile_response, dict):
+                    logger.debug(
+                        f"Successfully fetched /profiles/details for {tester_profile_id_for_api}."
+                    )
+                    
+                    # Parse last login date
+                    last_login_dt = None
+                    last_login_str = profile_response.get("LastLoginDate")
+                    if last_login_str:
+                        try:
+                            if last_login_str.endswith("Z"):
+                                last_login_dt = datetime.fromisoformat(
+                                    last_login_str.replace("Z", "+00:00")
+                                )
+                            else:  # Assuming it might be naive or already have offset
+                                dt_naive_or_aware = datetime.fromisoformat(last_login_str)
+                                last_login_dt = (
+                                    dt_naive_or_aware.replace(tzinfo=timezone.utc)
+                                    if dt_naive_or_aware.tzinfo is None
+                                    else dt_naive_or_aware.astimezone(timezone.utc)
+                                )
+                        except (ValueError, TypeError) as date_parse_err:
+                            logger.warning(
+                                f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id_for_api}: {date_parse_err}"
                             )
-                        else:  # Assuming it might be naive or already have offset
-                            dt_naive_or_aware = datetime.fromisoformat(last_login_str)
-                            dt_aware = (
-                                dt_naive_or_aware.replace(tzinfo=timezone.utc)
-                                if dt_naive_or_aware.tzinfo is None
-                                else dt_naive_or_aware.astimezone(timezone.utc)
-                            )
-                        combined_data["last_logged_in_dt"] = dt_aware
-                    except (ValueError, TypeError) as date_parse_err:
-                        logger.warning(
-                            f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id_for_api}: {date_parse_err}"
-                        )
-                contactable_val = profile_response.get("IsContactable")
-                combined_data["contactable"] = (
-                    bool(contactable_val) if contactable_val is not None else False
-                )
-            elif isinstance(profile_response, requests.Response):
-                logger.warning(
-                    f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
-                )
-            else:
-                logger.warning(
-                    f"Failed /profiles/details fetch for UUID {match_uuid} (Invalid response: {type(profile_response)})."
-                )
+                    
+                    # Parse contactable status
+                    contactable_val = profile_response.get("IsContactable")
+                    is_contactable = (
+                        bool(contactable_val) if contactable_val is not None else False
+                    )
+                    
+                    # Update combined_data with fetched values
+                    combined_data["last_logged_in_dt"] = last_login_dt
+                    combined_data["contactable"] = is_contactable
+                    
+                    # OPTIMIZATION: Cache the successful response for future use
+                    _cache_profile(tester_profile_id_for_api, {
+                        "last_logged_in_dt": last_login_dt,
+                        "contactable": is_contactable
+                    })
+                    
+                elif isinstance(profile_response, requests.Response):
+                    logger.warning(
+                        f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
+                    )
+                else:
+                    logger.warning(
+                        f"Failed /profiles/details fetch for UUID {match_uuid} (Invalid response: {type(profile_response)})."
+                    )
 
-        except ConnectionError as conn_err:
-            logger.error(
-                f"ConnectionError fetching /profiles/details for {tester_profile_id_for_api}: {conn_err}",
-                exc_info=False,
-            )
-            raise
-        except Exception as e:
-            logger.error(
-                f"Error processing /profiles/details for {tester_profile_id_for_api}: {e}",
-                exc_info=True,
-            )
-            if isinstance(e, requests.exceptions.RequestException):
+            except ConnectionError as conn_err:
+                logger.error(
+                    f"ConnectionError fetching /profiles/details for {tester_profile_id_for_api}: {conn_err}",
+                    exc_info=False,
+                )
                 raise
+            except Exception as e:
+                logger.error(
+                    f"Error processing /profiles/details for {tester_profile_id_for_api}: {e}",
+                    exc_info=True,
+                )
+                if isinstance(e, requests.exceptions.RequestException):
+                    raise
 
     return combined_data if combined_data else None
 
