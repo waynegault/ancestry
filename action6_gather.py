@@ -12,7 +12,6 @@ Handles pagination, rate limiting, caching (via utils/cache.py decorators used
 within helpers), error handling, and concurrent API fetches using ThreadPoolExecutor.
 """
 
-import time
 from typing import Dict, Any
 
 # Performance monitoring helper
@@ -171,6 +170,14 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
         logger.warning(f"Error caching profile data for {profile_id}: {e}")
 
 
+# === OPTIMIZATION: Rate limiter helper to eliminate code duplication
+def _apply_rate_limiting(session_manager: SessionManager) -> None:
+    """Apply rate limiting if available on session manager."""
+    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+    if limiter is not None and hasattr(limiter, "wait"):
+        limiter.wait()
+
+
 # ------------------------------------------------------------------------------
 # Refactored coord Helpers
 # ------------------------------------------------------------------------------
@@ -279,7 +286,6 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
     Returns:
         dict or None: Successful API response or None if all retries failed
     """
-    import time
     
     for retry_attempt in range(max_retries + 1):
         if retry_attempt > 0:
@@ -1159,18 +1165,14 @@ def _perform_api_prefetches(
                     logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM)")
 
         for uuid_val in fetch_candidates_uuid:
-            limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-            if limiter is not None and hasattr(limiter, "wait"):
-                limiter.wait()
+            _apply_rate_limiting(session_manager)
             futures[
                 executor.submit(_fetch_combined_details, session_manager, uuid_val)
             ] = ("combined_details", uuid_val)
 
             # OPTIMIZATION: Only fetch relationship probability for high-priority matches
             if uuid_val in high_priority_uuids:
-                limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-                if limiter is not None and hasattr(limiter, "wait"):
-                    limiter.wait()
+                _apply_rate_limiting(session_manager)
                 max_labels = 2
                 futures[
                     executor.submit(
@@ -1182,9 +1184,7 @@ def _perform_api_prefetches(
                 ] = ("relationship_prob", uuid_val)
 
         for uuid_val in uuids_for_tree_badge_ladder:
-            limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-            if limiter is not None and hasattr(limiter, "wait"):
-                limiter.wait()
+            _apply_rate_limiting(session_manager)
             futures[
                 executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
             ] = ("badge_details", uuid_val)
@@ -1273,9 +1273,7 @@ def _perform_api_prefetches(
                     f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs..."
                 )
                 for cfpid_item in cfpid_list_for_ladder:
-                    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-                    if limiter is not None and hasattr(limiter, "wait"):
-                        limiter.wait()
+                    _apply_rate_limiting(session_manager)
                     ladder_futures[
                         executor.submit(
                             _fetch_batch_ladder, session_manager, cfpid_item, my_tree_id
@@ -4478,7 +4476,6 @@ def action6_gather_module_tests() -> bool:
     # PERFORMANCE TESTS
     def test_performance():
         """Test performance of data processing operations"""
-        import time
 
         # Test _initialize_gather_state performance
         start_time = time.time()
