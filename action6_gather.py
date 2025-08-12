@@ -136,21 +136,39 @@ class MaxApiFailuresExceededError(Exception):
 
 # End of MaxApiFailuresExceededError
 
-# OPTIMIZATION: Profile caching to avoid redundant API calls for same profile IDs
-_profile_cache = {}  # Cache for profile details keyed by profile_id
-_profile_cache_max_size = 500  # Limit cache size to prevent memory issues
-
+# OPTIMIZATION: Profile caching using existing global cache infrastructure
 def _get_cached_profile(profile_id: str) -> Optional[Dict]:
-    """Get profile from cache if available."""
-    return _profile_cache.get(profile_id)
+    """Get profile from persistent cache if available."""
+    if global_cache is None:
+        return None
+    
+    cache_key = f"profile_details_{profile_id}"
+    try:
+        cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+        if cached_data is not ENOVAL and isinstance(cached_data, dict):
+            logger.debug(f"Cache hit for profile {profile_id}")
+            return cached_data
+    except Exception as e:
+        logger.warning(f"Error reading profile cache for {profile_id}: {e}")
+    return None
 
 def _cache_profile(profile_id: str, profile_data: Dict) -> None:
-    """Cache profile data with size limit."""
-    if len(_profile_cache) >= _profile_cache_max_size:
-        # Remove oldest entry (simple LRU approximation)
-        oldest_key = next(iter(_profile_cache))
-        del _profile_cache[oldest_key]
-    _profile_cache[profile_id] = profile_data
+    """Cache profile data using the global persistent cache."""
+    if global_cache is None:
+        return
+    
+    cache_key = f"profile_details_{profile_id}"
+    try:
+        # Cache profile data with a reasonable TTL (24 hours - profiles don't change often)
+        global_cache.set(
+            cache_key,
+            profile_data,
+            expire=86400,  # 24 hours in seconds
+            retry=True
+        )
+        logger.debug(f"Cached profile data for {profile_id}")
+    except Exception as e:
+        logger.warning(f"Error caching profile data for {profile_id}: {e}")
 
 
 # ------------------------------------------------------------------------------
