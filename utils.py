@@ -3756,7 +3756,9 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    pass  # Standalone test logic removed
+    print("🔧 Running Utils comprehensive test suite...")
+    success = run_comprehensive_tests()
+    exit(0 if success else 1)
 
 
 # === CONTEXT MANAGERS FOR RESOURCE MANAGEMENT ===
