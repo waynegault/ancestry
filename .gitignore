@@ -60,3 +60,5 @@ IMPLEMENTATION_PLAN.md
 /ai_prompts.bak.*
 ancestry.db-shm
 ancestry.db-wal
+Data/ancestry_backup.db
+ancestry.db
