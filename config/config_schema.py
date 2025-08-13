@@ -434,7 +434,7 @@ class APIConfig:
     max_pages: int = 0  # 0 means no limit
 
     # Timing settings
-    initial_delay: float = 1.5  # Reduced from 2.0 to 1.5 based on successful performance analysis
+    initial_delay: float = 1.0  # Further reduced from 1.5 to 1.0 based on successful 3.0 RPS performance
     max_delay: float = 60.0  # Maximum delay for exponential backoff
 
     # Tree settings
@@ -628,7 +628,7 @@ class ConfigSchema:
     user_location: str = ""
 
     # Batch processing settings
-    batch_size: int = 100
+    batch_size: int = 10  # Updated to match .env BATCH_SIZE=10
     max_productive_to_process: int = 50
     max_inbox: int = 100
 

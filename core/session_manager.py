@@ -1148,7 +1148,7 @@ class SessionManager:
                     # Store in API manager
                     self.api_manager.my_uuid = my_uuid_val
                     if not self._uuid_logged:
-                        logger.info(f"My uuid: {my_uuid_val}")
+                        logger.debug(f"My uuid: {my_uuid_val}")
                         self._uuid_logged = True
                     return my_uuid_val
                 else:
@@ -1194,7 +1194,7 @@ class SessionManager:
                 # Store in API manager
                 self.api_manager.my_tree_id = my_tree_id_val
                 if not self._tree_id_logged:
-                    logger.info(f"My tree id: {my_tree_id_val}")
+                    logger.debug(f"My tree id: {my_tree_id_val}")
                     self._tree_id_logged = True
                 return my_tree_id_val
             else:
@@ -1240,7 +1240,7 @@ class SessionManager:
                 # Store in API manager
                 self.api_manager.tree_owner_name = owner_name
                 if not self._owner_logged:
-                    logger.info(f"Tree owner name: {owner_name}")
+                    logger.info(f"Tree owner name: {owner_name}\n")
                     self._owner_logged = True
                 return owner_name
             else:

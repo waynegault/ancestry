@@ -57,13 +57,13 @@ class AdaptiveRateLimiter:
 
     def __init__(
         self,
-        initial_rps: float = 0.5,
-        min_rps: float = 0.1,
-        max_rps: float = 2.0,
-        initial_delay: float = 2.0,
-        min_delay: float = 0.5,
+        initial_rps: float = 1.0,  # Increased from 0.5 - start more aggressively
+        min_rps: float = 0.2,  # Increased from 0.1 
+        max_rps: float = 4.0,  # Increased from 2.0 - log shows 3.0 worked flawlessly
+        initial_delay: float = 1.0,  # Reduced from 2.0 - faster startup
+        min_delay: float = 0.25,  # Reduced from 0.5 - allow higher speeds
         max_delay: float = 10.0,
-        adaptation_window: int = 50,
+        adaptation_window: int = 30,  # Reduced from 50 - adapt faster
         success_threshold: float = 0.95,
         rate_limit_threshold: float = 0.02
     ):
@@ -198,7 +198,7 @@ class AdaptiveRateLimiter:
         if rate_limit_rate > 0.02:  # More than 2% rate limiting
             new_rps = max(self.min_rps, self.current_rps * 0.5)
             if new_rps != self.current_rps:
-                logger.info(f"Decreasing RPS due to rate limiting: {self.current_rps:.2f} → {new_rps:.2f}")
+                logger.debug(f"Decreasing RPS due to rate limiting: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
                 self.current_delay = min(self.max_delay, self.current_delay * 2.0)
                 adaptation_made = True
@@ -208,7 +208,7 @@ class AdaptiveRateLimiter:
             # Aggressive increase for excellent performance
             new_rps = min(self.max_rps, self.current_rps * 1.4)
             if new_rps != self.current_rps:
-                logger.info(f"Aggressively increasing RPS due to excellent performance: {self.current_rps:.2f} → {new_rps:.2f}")
+                logger.debug(f"Aggressively increasing RPS due to excellent performance: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
                 self.current_delay = max(self.min_delay, self.current_delay * 0.7)
                 adaptation_made = True
@@ -217,7 +217,7 @@ class AdaptiveRateLimiter:
         elif success_rate > self.success_threshold and avg_response_time < 2.0:
             new_rps = min(self.max_rps, self.current_rps * 1.2)  # Increased from 1.1 to 1.2
             if new_rps != self.current_rps:
-                logger.info(f"Increasing RPS due to good performance: {self.current_rps:.2f} → {new_rps:.2f}")
+                logger.debug(f"Increasing RPS due to good performance: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
                 self.current_delay = max(self.min_delay, self.current_delay * 0.85)  # More aggressive decrease
                 adaptation_made = True
@@ -226,7 +226,7 @@ class AdaptiveRateLimiter:
         elif success_rate < 0.9:  # Increased threshold from 0.8 to 0.9 for earlier intervention
             new_rps = max(self.min_rps, self.current_rps * 0.7)  # More aggressive reduction from 0.8 to 0.7
             if new_rps != self.current_rps:
-                logger.info(f"Decreasing RPS due to low success rate: {self.current_rps:.2f} → {new_rps:.2f}")
+                logger.debug(f"Decreasing RPS due to low success rate: {self.current_rps:.2f} → {new_rps:.2f}")
                 self.current_rps = new_rps
                 self.current_delay = min(self.max_delay, self.current_delay * 1.5)  # Increased from 1.2 to 1.5
                 adaptation_made = True
