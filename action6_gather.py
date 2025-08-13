@@ -1952,7 +1952,6 @@ def _execute_bulk_db_operations(
     bulk_start_time = time.time()
     num_items = len(prepared_bulk_data)
     if num_items == 0:
-        logger.debug("No prepared data found for bulk DB operations.")
         return True  # Nothing to do, considered success
 
     logger.debug(f"--- Starting Bulk DB Operations ({num_items} prepared items) ---")
@@ -2177,7 +2176,7 @@ def _execute_bulk_db_operations(
             else:
                 logger.warning("No UUIDs available in insert_data to query back IDs.")
         else:
-            logger.debug("No unique Person records to bulk insert.")
+            pass  # No unique Person records to bulk insert
 
         # --- Step 4: Person Updates ---
         if person_updates:
@@ -2308,7 +2307,7 @@ def _execute_bulk_db_operations(
                 )
                 session.bulk_insert_mappings(DnaMatch, dna_insert_data)  # type: ignore
             else:
-                logger.debug("No new DnaMatch records to insert.")
+                pass  # No new DnaMatch records to insert
 
             # Perform Bulk Update
             if dna_update_mappings:
@@ -2318,7 +2317,7 @@ def _execute_bulk_db_operations(
                 session.bulk_update_mappings(DnaMatch, dna_update_mappings)  # type: ignore
                 logger.debug("Bulk update DnaMatches called.")
             else:
-                logger.debug("No existing DnaMatch records to update.")
+                pass  # No existing DnaMatch records to update
         else:
             logger.debug("No DnaMatch operations prepared.")
 
@@ -2352,7 +2351,7 @@ def _execute_bulk_db_operations(
                 )
                 session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
             else:
-                logger.debug("No valid FamilyTree records to insert.")
+                pass  # No valid FamilyTree records to insert
         else:
             logger.debug("No FamilyTree creates prepared.")
 
@@ -2424,8 +2423,7 @@ def _execute_bulk_db_operations(
                     
                     logger.info(f"Successfully inserted {successful_inserts} of {len(insert_data)} records after handling duplicates")
                 else:
-                    logger.debug("No insert_data available for retry")
-                
+                    pass  # No insert_data available for retry
                 return True  # Continue processing - this is not a fatal error
             except Exception as rollback_err:
                 logger.error(f"Failed to handle UNIQUE constraint violation gracefully: {rollback_err}", exc_info=True)
@@ -4028,7 +4026,6 @@ def _fetch_combined_details(
             combined_data["from_my_mothers_side"] = bool(
                 details_response.get("mothersSide", False)
             )
-            logger.debug(f"Successfully fetched /details for UUID {match_uuid}.")
         elif isinstance(details_response, requests.Response):
             logger.error(
                 f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
@@ -4078,7 +4075,6 @@ def _fetch_combined_details(
         # OPTIMIZATION: Check cache first to avoid redundant API calls
         cached_profile = _get_cached_profile(tester_profile_id_for_api)
         if cached_profile is not None:
-            logger.debug(f"Using cached profile data for Profile ID {tester_profile_id_for_api}")
             # Apply cached profile data to combined_data
             combined_data["last_logged_in_dt"] = cached_profile.get("last_logged_in_dt")
             combined_data["contactable"] = cached_profile.get("contactable", False)
@@ -4269,9 +4265,6 @@ def _fetch_batch_badge_details(
                 "their_lastname": person_badged.get("lastName", "Unknown"),
                 "their_birth_year": person_badged.get("birthYear"),
             }
-            logger.debug(
-                f"Successfully fetched /badgedetails for UUID {match_uuid} (CFPID: {their_cfpid})."
-            )
             return result_data
         elif isinstance(badge_response, requests.Response):
             logger.warning(
