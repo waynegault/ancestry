@@ -66,6 +66,50 @@ from typing import (
     IO,
 )  # Consolidated typing imports
 import asyncio  # For async/await patterns
+
+# PHASE 1: Utility function to get configured concurrency across the codebase
+def get_configured_concurrency(default: int = 8) -> int:
+    """
+    Get the configured concurrency value from environment variables or config.
+    Prioritizes THREAD_POOL_WORKERS, then MAX_CONCURRENCY, then provided default.
+    
+    Args:
+        default: Default concurrency if no configuration found
+        
+    Returns:
+        Configured concurrency value
+    """
+    import os
+    
+    # Check environment variables first (highest priority)
+    thread_pool_workers = os.getenv("THREAD_POOL_WORKERS")
+    if thread_pool_workers:
+        try:
+            return max(1, int(thread_pool_workers))
+        except ValueError:
+            pass
+    
+    max_concurrency = os.getenv("MAX_CONCURRENCY")
+    if max_concurrency:
+        try:
+            return max(1, int(max_concurrency))
+        except ValueError:
+            pass
+    
+    # Try config schema as fallback
+    try:
+        from config import config_schema
+        thread_pool_setting = getattr(getattr(config_schema, 'api', None), 'thread_pool_workers', None)
+        if thread_pool_setting is not None:
+            return max(1, thread_pool_setting)
+            
+        concurrency_setting = getattr(getattr(config_schema, 'api', None), 'max_concurrency', None)
+        if concurrency_setting is not None:
+            return max(1, concurrency_setting)
+    except Exception:
+        pass
+    
+    return max(1, default)
 import base64  # For make_ube
 import binascii  # For make_ube
 import contextlib  # Added import for contextlib
@@ -1164,7 +1208,7 @@ def _apply_rate_limiting(
     attempt: int = 1,
 ) -> float:
     """
-    Applies rate limiting wait time.
+    Applies rate limiting wait time using both DynamicRateLimiter and AdaptiveRateLimiter.
 
     Args:
         session_manager: The session manager instance
@@ -1174,16 +1218,58 @@ def _apply_rate_limiting(
     Returns:
         The wait time applied
     """
-    wait_time = session_manager.dynamic_rate_limiter.wait() if session_manager.dynamic_rate_limiter else 0
+    # Use both rate limiters - take the maximum delay for safety
+    dynamic_wait = session_manager.dynamic_rate_limiter.wait() if session_manager.dynamic_rate_limiter else 0
+    adaptive_wait = 0.0
+    
+    # Use adaptive rate limiter if available
+    if hasattr(session_manager, 'adaptive_rate_limiter') and session_manager.adaptive_rate_limiter:
+        adaptive_wait = session_manager.adaptive_rate_limiter.wait()
+    
+    # Take the maximum wait time from both systems for safety
+    wait_time = max(dynamic_wait, adaptive_wait)
+    
     # OPTIMIZATION: Reduce rate limit logging verbosity - only log significant waits
     if wait_time > 2.0:  # Only log waits over 2 seconds (increased from 0.1s)
         logger.debug(
-            f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
+            f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Dynamic: {dynamic_wait:.2f}s, Adaptive: {adaptive_wait:.2f}s) (Attempt {attempt})"
         )
+    elif adaptive_wait > 0 and adaptive_wait < dynamic_wait:
+        # Log when adaptive system is being more aggressive than dynamic system
+        logger.debug(f"⚡ Adaptive rate limiter optimizing: {adaptive_wait:.2f}s vs {dynamic_wait:.2f}s")
     # End of if
     return wait_time
 
 # End of _apply_rate_limiting
+
+def _record_adaptive_response(
+    session_manager: SessionManager,
+    success: bool,
+    response_time: float,
+    status_code: Optional[int] = None,
+    error_type: Optional[str] = None
+) -> None:
+    """
+    Records an API response for adaptive rate limiting learning.
+    
+    Args:
+        session_manager: The session manager instance
+        success: Whether the request was successful
+        response_time: Time taken for the request
+        status_code: HTTP status code
+        error_type: Type of error if request failed
+    """
+    if hasattr(session_manager, 'adaptive_rate_limiter') and session_manager.adaptive_rate_limiter:
+        try:
+            session_manager.adaptive_rate_limiter.record_response(
+                success=success,
+                response_time=response_time,
+                status_code=status_code,
+                error_type=error_type
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record adaptive response: {e}")
+# End of _record_adaptive_response
 
 def _log_request_details(
     api_description: str,
@@ -1625,10 +1711,30 @@ def _api_req(
                         current_delay * (backoff_factor ** (attempt - 1)), max_delay
                     ) + random.uniform(0, 0.2)
                     sleep_time = max(0.1, sleep_time)
+                    
+                    # Handle rate limiting feedback
                     if status == 429:  # Too Many Requests
                         if session_manager.dynamic_rate_limiter:
                             session_manager.dynamic_rate_limiter.increase_delay()
-                    # End of if
+                            
+                        # Record rate limit error for adaptive learning
+                        _record_adaptive_response(
+                            session_manager=session_manager,
+                            success=False,
+                            response_time=2.0,  # Approximate - we know it was slow
+                            status_code=status,
+                            error_type="rate limit"
+                        )
+                    else:
+                        # Record other failure types for adaptive learning
+                        _record_adaptive_response(
+                            session_manager=session_manager,
+                            success=False,
+                            response_time=1.0,  # Approximate response time
+                            status_code=status,
+                            error_type=f"http_error_{status}"
+                        )
+                    # End of if/else status == 429
                     logger.warning(
                         f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
                     )
@@ -1747,8 +1853,17 @@ def _api_req(
 
             # --- Step 3.6: Process successful response ---
             if response.ok:
+                # Update DynamicRateLimiter (existing system)
                 if session_manager.dynamic_rate_limiter:
                     session_manager.dynamic_rate_limiter.decrease_delay()  # Success, decrease future delay
+                
+                # Record success for adaptive learning
+                _record_adaptive_response(
+                    session_manager=session_manager,
+                    success=True,
+                    response_time=1.0,  # Approximate - successful responses are generally fast
+                    status_code=response.status_code
+                )
 
                 # Process the response
                 return _process_api_response(
@@ -4055,7 +4170,7 @@ async def async_api_request(
 async def async_batch_api_requests(
     requests: List[Dict[str, Any]],
     session_manager: Optional['SessionManager'] = None,
-    max_concurrent: int = 10,
+    max_concurrent: Optional[int] = None,  # PHASE 1: Allow None to use configured value
     progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> List[Optional[Dict[str, Any]]]:
     """
@@ -4077,6 +4192,10 @@ async def async_batch_api_requests(
         ... ]
         >>> results = await async_batch_api_requests(requests, session_manager)
     """
+    # PHASE 1: Use configured concurrency if not explicitly provided
+    if max_concurrent is None:
+        max_concurrent = get_configured_concurrency(default=10)
+    
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def bounded_request(request_data: Dict[str, Any], index: int) -> Tuple[int, Optional[Dict[str, Any]]]:
@@ -4313,7 +4432,7 @@ async def async_write_text_file(file_path: Union[str, Path], content: str) -> bo
 
 async def async_batch_file_operations(
     operations: List[Dict[str, Any]],
-    max_concurrent: int = 10,
+    max_concurrent: Optional[int] = None,  # PHASE 1: Allow None to use configured value
     progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> List[bool]:
     """
@@ -4334,6 +4453,10 @@ async def async_batch_file_operations(
         ... ]
         >>> results = await async_batch_file_operations(operations)
     """
+    # PHASE 1: Use configured concurrency if not explicitly provided
+    if max_concurrent is None:
+        max_concurrent = get_configured_concurrency(default=10)
+    
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def bounded_operation(operation: Dict[str, Any], index: int) -> Tuple[int, bool]:
