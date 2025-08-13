@@ -1408,23 +1408,46 @@ def main():
     global logger, session_manager  # Ensure global logger can be modified
     session_manager = None  # Initialize session_manager
 
-    # Ensure terminal window has focus on Windows
+    # Ensure terminal window has focus (Windows & VS Code)
     try:
         if os.name == 'nt':  # Windows
             import ctypes
+            import time
 
             # Get console window handle
             kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
 
-            # Get console window
+            # Method 1: Try to focus console window (for regular terminals)
             console_window = kernel32.GetConsoleWindow()
             if console_window:
                 # Bring console window to foreground
                 user32.SetForegroundWindow(console_window)
                 user32.ShowWindow(console_window, 9)  # SW_RESTORE
-    except Exception:
-        pass  # Silently ignore focus errors
+            
+            # Method 2: For VS Code integrated terminal, try to focus current window
+            # Get the currently active window
+            current_window = user32.GetForegroundWindow()
+            if current_window and current_window != console_window:
+                # This might be VS Code - try to ensure it stays focused
+                user32.SetForegroundWindow(current_window)
+                user32.BringWindowToTop(current_window)
+                
+                # Also try to send a focus message to ensure terminal panel is active
+                # This is a gentle nudge that shouldn't disrupt the user
+                user32.SetActiveWindow(current_window)
+                
+            # Small delay to ensure focus operations complete
+            time.sleep(0.05)
+            
+    except Exception as focus_error:
+        # Silently ignore focus errors but log for debugging if logger is available
+        try:
+            # Check if logger exists and is available (logging is already imported at top)
+            if 'logger' in globals() and logger and hasattr(logger, 'debug'):
+                logger.debug(f"Terminal focus attempt failed (non-critical): {focus_error}")
+        except:
+            pass  # Even logging failed, continue silently
 
     try:
         print("")
