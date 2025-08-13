@@ -206,6 +206,11 @@ class SessionManager:
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
+        
+        # CSRF token caching for performance optimization
+        self._cached_csrf_token: Optional[str] = None
+        self._csrf_cache_time: float = 0
+        self._csrf_cache_duration: float = 300  # 5 minutes
 
         # Initialize enhanced requests session with advanced configuration
         self._initialize_enhanced_requests_session()
@@ -1263,6 +1268,18 @@ class SessionManager:
         self.db_manager.close_connections(
             dispose_engine=not keep_db
         )  # Browser delegation methods
+
+    def _is_csrf_token_valid(self) -> bool:
+        """Check if cached CSRF token is still valid (not expired)."""
+        import time
+        if not self._cached_csrf_token:
+            return False
+        return (time.time() - self._csrf_cache_time) < self._csrf_cache_duration
+
+    def invalidate_csrf_cache(self):
+        """Invalidate cached CSRF token (useful on auth errors)."""
+        self._cached_csrf_token = None
+        self._csrf_cache_time = 0
 
     @property
     def driver(self):
