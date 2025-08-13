@@ -117,6 +117,13 @@ try:
 except ImportError:
     MATCHES_PER_PAGE: int = 20
 
+# Get DNA match probability threshold from environment, fallback to 10 cM
+try:
+    import os
+    DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = int(os.getenv('DNA_MATCH_PROBABILITY_THRESHOLD_CM', '10'))
+except (ValueError, TypeError):
+    DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = 10
+
 CRITICAL_API_FAILURE_THRESHOLD: int = (
     6  # Slightly higher threshold to avoid premature batch aborts on transient 429s
 )
@@ -561,6 +568,12 @@ def _main_page_processing_loop(
             total_matches_estimate_this_run, len(initial_matches_on_page)
         )
 
+    # Ensure we always have a valid total for the progress bar
+    if total_matches_estimate_this_run <= 0:
+        total_matches_estimate_this_run = MATCHES_PER_PAGE  # Default to one page worth
+    
+    logger.debug(f"Progress bar total set to: {total_matches_estimate_this_run} matches")
+
     loop_final_success = True  # Success flag for this loop's execution
 
     with logging_redirect_tqdm():
@@ -568,7 +581,7 @@ def _main_page_processing_loop(
             total=total_matches_estimate_this_run,
             desc="",
             unit=" match",
-            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
+            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
             file=sys.stderr,
             leave=True,
             dynamic_ncols=True,
@@ -748,8 +761,15 @@ def _main_page_processing_loop(
                     if remaining_to_mark_error > 0:
                         progress_bar.update(remaining_to_mark_error)
                         # No need to update total_errors here, already done by specific error handling
-                progress_bar.close()
-                print("", file=sys.stderr)  # Newline after bar
+                try:
+                    # Set final status before closing
+                    progress_bar.set_description("Complete")
+                    progress_bar.refresh()  # Force update before close
+                    progress_bar.close()
+                finally:
+                    # Ensure clean output after progress bar with multiple newlines
+                    print("\n", file=sys.stderr, flush=True)  # Double newline with flush
+                    sys.stderr.flush()  # Additional flush to ensure output
 
     return loop_final_success
 
@@ -1154,17 +1174,17 @@ def _perform_api_prefetches(
 
     with ThreadPoolExecutor(max_workers=THREAD_POOL_WORKERS) as executor:
         # OPTIMIZATION: Conditional relationship probability fetching
-        # Only fetch relationship probability for significant matches (>20 cM)
+        # Only fetch relationship probability for significant matches (configurable threshold)
         # to reduce API overhead for distant matches
         high_priority_uuids = set()
         for match_data in matches_to_process_later:
             uuid_val = match_data.get("uuid")
             if uuid_val and uuid_val in fetch_candidates_uuid:
                 cm_value = int(match_data.get("cM_DNA", 0))
-                if cm_value > 20:  # Only fetch probability for matches >20 cM
+                if cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM:  # Use configurable threshold
                     high_priority_uuids.add(uuid_val)
                 else:
-                    logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM)")
+                    logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold)")
 
         for uuid_val in fetch_candidates_uuid:
             _apply_rate_limiting(session_manager)
@@ -2104,16 +2124,16 @@ def _prepare_person_insert_data(
         if not uuid_val:
             continue
         if uuid_val in seen_uuids:
-            logger.warning(f"Skipping duplicate Person create in insert list (UUID: {uuid_val})")
+            logger.debug(f"Duplicate Person in batch (UUID: {uuid_val}) - skipping duplicate.")
             continue
         if uuid_val in existing_persons_map:
-            logger.info(f"Skipping Person create for existing UUID {uuid_val}; will treat as update if needed.")
+            logger.debug(f"Person exists for UUID {uuid_val}; will handle as update if changes detected.")
             continue
         if uuid_val in existing_uuids:
-            logger.info(f"Skipping Person create for existing UUID in DB {uuid_val}")
+            logger.debug(f"Person exists in DB for UUID {uuid_val}; will handle as update if needed.")
             continue
         if profile_id and profile_id in existing_profile_ids:
-            logger.info(f"Skipping Person create for existing profile ID {profile_id} (UUID: {uuid_val})")
+            logger.debug(f"Person exists with profile ID {profile_id} (UUID: {uuid_val}); will handle as update if needed.")
             continue
             
         seen_uuids.add(uuid_val)
@@ -2442,8 +2462,8 @@ def _execute_bulk_db_operations(
                     insert_dict.pop("uuid", None)  # Remove uuid before insert
                     tree_insert_data.append(insert_dict)
                 else:
-                    logger.warning(
-                        f"Skipping FamilyTree create op (UUID {person_uuid}): Person ID not found."
+                    logger.debug(
+                        f"Skipping FamilyTree create op (UUID {person_uuid}): Corresponding Person not created in this batch."
                     )
             if tree_insert_data:
                 logger.debug(
@@ -3719,7 +3739,7 @@ def get_matches(
                         logger.debug("🔄 Cleared session readiness cache to force fresh validation")
                         
                         # Force session refresh with cleared cache
-                        fresh_success = session_manager.ensure_session_ready(action_name="DNA Match Collection")
+                        fresh_success = session_manager.ensure_session_ready(action_name="coord_action - Session Refresh")
                         if not fresh_success:
                             logger.error("❌ Session refresh failed after cache clear")
                             return None
