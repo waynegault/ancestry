@@ -67,6 +67,7 @@ try:
 
     HAS_DATABASE_BASE = True
 except ImportError:
+    Base = None  # Define Base as None to satisfy pylance
     HAS_DATABASE_BASE = False
     logger.warning("Could not import Base from database module")
 
@@ -101,7 +102,10 @@ class DatabaseManager:
             if config_schema and config_schema.database.database_file:
                 self.db_path = str(config_schema.database.database_file.resolve())
             else:
-                self.db_path = "ancestry.db"  # Default fallback
+                # Ensure fallback also uses Data folder
+                fallback_path = Path("Data/ancestry.db")
+                fallback_path.parent.mkdir(parents=True, exist_ok=True)
+                self.db_path = str(fallback_path)  # Default fallback to Data folder
 
         # SQLAlchemy components
         self.engine = None
@@ -557,7 +561,7 @@ class DatabaseManager:
                 logger.debug(f"Database already exists with tables: {existing_tables}")
             else:
                 # Create tables only if the database is empty
-                if HAS_DATABASE_BASE:
+                if HAS_DATABASE_BASE and Base is not None:
                     Base.metadata.create_all(self.engine)
                     logger.debug("DB tables created successfully.")
                 else:
