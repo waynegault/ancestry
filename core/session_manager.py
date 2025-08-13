@@ -85,15 +85,10 @@ from core.database_manager import DatabaseManager
 from core.browser_manager import BrowserManager
 from core.api_manager import APIManager
 from core.session_validator import SessionValidator
-from config.config_manager import ConfigManager
+from config import config_schema
 
 # === MODULE CONSTANTS ===
-config_manager = ConfigManager()
-config_schema = config_manager.get_config()
-
-# Initialize config
-config_manager = ConfigManager()
-config_schema = config_manager.get_config()
+# Use global cached config instance
 
 
 class SessionManager:

@@ -43,11 +43,9 @@ from typing import List, Optional, Tuple
 from selenium.common.exceptions import WebDriverException
 
 # === LOCAL IMPORTS ===
-from config.config_manager import ConfigManager
+from config import config_schema
 
-# Initialize config
-config_manager = ConfigManager()
-config_schema = config_manager.get_config()
+# Use global cached config instance
 
 
 class SessionValidator:

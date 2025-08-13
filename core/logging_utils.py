@@ -141,3 +141,57 @@ def suppress_external_loggers() -> None:
 def get_app_logger() -> logging.Logger:
     """Get the main application logger."""
     return get_logger()
+
+
+# =============================================================================
+# Performance Optimized Logging
+# =============================================================================
+
+from functools import wraps
+from typing import Callable
+
+def debug_if_enabled(logger: logging.Logger):
+    """
+    Decorator to only execute debug logging if debug level is enabled.
+    Prevents expensive f-string formatting when debug logging is disabled.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if logger.isEnabledFor(logging.DEBUG):
+                return func(*args, **kwargs)
+            return None
+        return wrapper
+    return decorator
+
+
+class OptimizedLogger:
+    """
+    Logger wrapper that optimizes debug logging performance.
+    Prevents expensive string formatting when debug logging is disabled.
+    """
+    
+    def __init__(self, logger: logging.Logger):
+        self._logger = logger
+    
+    @property
+    def logger(self) -> logging.Logger:
+        """Access the underlying logger for compatibility."""
+        return self._logger
+    
+    def debug_lazy(self, msg_func: Callable[[], str]) -> None:
+        """
+        Only execute the message function if debug logging is enabled.
+        
+        Usage: 
+            logger.debug_lazy(lambda: f"Expensive {expensive_calculation()}")
+        
+        Args:
+            msg_func: Function that returns the debug message string
+        """
+        if self._logger.isEnabledFor(logging.DEBUG):
+            self._logger.debug(msg_func())
+    
+    def __getattr__(self, name):
+        """Delegate all other logger methods to the underlying logger."""
+        return getattr(self._logger, name)

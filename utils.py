@@ -158,6 +158,13 @@ KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
 KEY_DATA = "data"
 
+# Pre-compiled regex patterns for performance
+JSONP_PATTERN = re.compile(r'^\s*(?:[a-zA-Z_$][a-zA-Z0-9_$]*\s*\()?\s*(.+?)\s*\)?\s*;?\s*$', re.DOTALL)
+RELATIONSHIP_PATTERN = re.compile(r'(\d+)(?:st|nd|rd|th)?\s+(?:great-?)?(?:grand)?(?:parent|child|cousin|aunt|uncle|nephew|niece)', re.IGNORECASE)
+UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+NUMERIC_PATTERN = re.compile(r'(\d+)')
+CM_VALUE_PATTERN = re.compile(r'(\d+(?:\.\d+)?)\s*cM', re.IGNORECASE)
+
 # --- Third-party and local imports ---
 # Keep the warning for optional dependencies, but don't define dummies.
 # If essential ones fail, other parts of the code will raise errors.
@@ -225,6 +232,57 @@ from test_framework import (
     assert_valid_function,
     MagicMock,
 )
+
+# ------------------------------------------------------------------------------------
+# Performance Optimization Functions
+# ------------------------------------------------------------------------------------
+
+def fast_json_loads(json_str: str) -> Any:
+    """
+    Fast JSON loading with fallback to standard library.
+    Uses orjson if available, otherwise standard json.
+    
+    Args:
+        json_str: JSON string to parse
+        
+    Returns:
+        Parsed JSON object
+    """
+    try:
+        # Dynamic import to handle missing orjson gracefully
+        orjson = __import__('orjson')
+        return orjson.loads(json_str)
+    except (ImportError, ModuleNotFoundError):
+        return json.loads(json_str)
+
+def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool = False) -> str:
+    """
+    Fast JSON serialization with fallback to standard library.
+    Uses orjson if available, otherwise standard json.
+    
+    Args:
+        obj: Object to serialize
+        indent: Optional indentation for pretty printing
+        ensure_ascii: Whether to escape non-ASCII characters
+        
+    Returns:
+        JSON string
+    """
+    try:
+        # Dynamic import to handle missing orjson gracefully
+        orjson = __import__('orjson')
+        if indent:
+            # orjson doesn't support indent, fall back to json for pretty printing
+            return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
+        else:
+            # Fast compact serialization
+            return orjson.dumps(obj).decode('utf-8')
+    except (ImportError, ModuleNotFoundError):
+        if indent:
+            return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
+        else:
+            # Optimized compact serialization
+            return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
 
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)
@@ -1111,7 +1169,7 @@ def _prepare_api_headers(
             # Handle potential JSON structure in token (legacy?)
             if isinstance(csrf_token, str) and csrf_token.strip().startswith("{"):
                 try:
-                    token_obj = json.loads(csrf_token)
+                    token_obj = fast_json_loads(csrf_token)
                     raw_token_val = token_obj.get("csrfToken", csrf_token)
                 except json.JSONDecodeError:
                     logger.warning(
@@ -1970,7 +2028,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
 
     # Encode the payload
     try:
-        json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
+        json_payload = fast_json_dumps(ube_data).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
         return encoded_payload
     except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
@@ -2007,7 +2065,7 @@ def make_newrelic(driver: DriverType) -> Optional[str]:
                 "tk": license_key_part,
             },
         }
-        json_payload = json.dumps(newrelic_data, separators=(",", ":")).encode("utf-8")
+        json_payload = fast_json_dumps(newrelic_data).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
         return encoded_payload
     except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
@@ -4307,7 +4365,7 @@ async def async_read_json_file(file_path: Union[str, Path]) -> Optional[Dict[str
     try:
         async with async_file_context(file_path, "r") as f:
             content = await f.read()
-            return json.loads(content)
+            return fast_json_loads(content)
     except FileNotFoundError:
         logger.warning(f"JSON file not found: {file_path}")
         return None
@@ -4348,7 +4406,7 @@ async def async_write_json_file(
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Serialize JSON
-        json_content = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
+        json_content = fast_json_dumps(data, indent=indent, ensure_ascii=ensure_ascii)
 
         async with async_file_context(file_path, "w") as f:
             await f.write(json_content)

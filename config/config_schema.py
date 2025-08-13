@@ -629,6 +629,7 @@ class ConfigSchema:
 
     # Batch processing settings
     batch_size: int = 10  # Updated to match .env BATCH_SIZE=10
+    matches_per_page: int = 20  # Number of matches displayed per page by Ancestry
     max_productive_to_process: int = 50
     max_inbox: int = 100
 
