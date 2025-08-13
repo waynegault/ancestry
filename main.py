@@ -301,8 +301,7 @@ def ensure_gedcom_loaded_and_cached():
 
         except Exception as e:
             logger.debug(f"Error getting GEDCOM path from config: {e}")
-            # GEDCOM file path not configured
-            print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
+            # GEDCOM file path not configured - please set GEDCOM_FILE_PATH in .env or run option 10
             return False
 
         # Try to load the GEDCOM file
@@ -819,11 +818,11 @@ def run_core_workflow_action(session_manager, *_):
 
             if send_result is False:
                 logger.error("Action 8 FAILED - Message sending returned failure.")
-                print("ERROR: Message sending failed. Check logs for details.")
+                # Message sending failure logged above
                 return False
             else:
                 logger.info("Action 8 OK.")
-                print("✓ Message sending completed successfully.")
+                # Message sending completed successfully
         except Exception as message_error:
             logger.error(
                 f"Action 8 FAILED with exception: {message_error}", exc_info=True
