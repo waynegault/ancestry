@@ -86,10 +86,7 @@ class SessionComponentCache(BaseCacheModule):
     def _get_config_hash(self) -> str:
         """Generate hash of current configuration for cache validation"""
         try:
-            from config.config_manager import ConfigManager
-
-            config_manager = ConfigManager()
-            config_schema = config_manager.get_config()
+            from config import config_schema
 
             # Create hash from relevant config values
             config_data = {

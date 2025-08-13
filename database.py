@@ -80,12 +80,10 @@ from sqlalchemy.orm import (
 )
 
 # === LOCAL IMPORTS ===
-from config.config_manager import ConfigManager
+from config import config_schema
 
 # === MODULE CONFIGURATION ===
-# Initialize config
-config_manager = ConfigManager()
-config_schema = config_manager.get_config()
+# Use global cached config instance
 
 # Note: SessionManager imported locally when needed to avoid circular imports
 from test_framework import (

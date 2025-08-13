@@ -511,6 +511,14 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid BATCH_SIZE value: {batch_size_value}")
 
+        # Load matches per page configuration
+        matches_per_page_value = os.getenv("MATCHES_PER_PAGE")
+        if matches_per_page_value:
+            try:
+                config["matches_per_page"] = int(matches_per_page_value)
+            except ValueError:
+                logger.warning(f"Invalid MATCHES_PER_PAGE value: {matches_per_page_value}")
+
         # Load optional concurrency override for Action 6
         max_concurrency_value = os.getenv("MAX_CONCURRENCY")
         if max_concurrency_value:

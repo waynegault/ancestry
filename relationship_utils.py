@@ -36,8 +36,11 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
+# === PERFORMANCE OPTIMIZATIONS ===
+from utils import fast_json_loads
+
 # --- Try to import BeautifulSoup ---
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 BS4_AVAILABLE = True
 
@@ -541,7 +544,7 @@ def format_api_relationship_path(
         if jsonp_match:
             try:
                 json_str = jsonp_match.group(1)
-                json_data = json.loads(json_str)
+                json_data = fast_json_loads(json_str)
                 html_content_raw = (
                     json_data.get("html") if json_data is not None else None
                 )
@@ -640,10 +643,15 @@ def format_api_relationship_path(
         # Extract relationship information
         relationship_data = []
         for item in list_items:
-            # Skip icon items
+            # Skip icon items - check if item is a Tag first
             try:
+                if not isinstance(item, Tag):
+                    continue  # Skip non-Tag elements
+                    
                 is_hidden = item.get("aria-hidden") == "true"
-                item_classes = item.get("class", [])
+                item_classes = item.get("class")
+                if item_classes is None:
+                    item_classes = []
                 has_icon_class = (
                     isinstance(item_classes, list) and "icon" in item_classes
                 )
@@ -655,7 +663,7 @@ def format_api_relationship_path(
 
             # Extract name, relationship, and lifespan
             try:
-                name_elem = item.find("b") if hasattr(item, "find") else None
+                name_elem = item.find("b") if isinstance(item, Tag) else None
                 name = (
                     name_elem.get_text(strip=True)  # Added strip=True
                     if name_elem and hasattr(name_elem, "get_text")
@@ -671,7 +679,7 @@ def format_api_relationship_path(
 
             # Extract relationship description
             try:
-                rel_elem = item.find("i") if hasattr(item, "find") else None
+                rel_elem = item.find("i") if isinstance(item, Tag) else None
                 relationship_desc = (  # Renamed to avoid conflict
                     rel_elem.get_text(strip=True)  # Added strip=True
                     if rel_elem and hasattr(rel_elem, "get_text")

@@ -30,8 +30,18 @@ from typing import Dict, Any
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
+# === PERFORMANCE OPTIMIZATIONS ===
+from utils import (
+    fast_json_loads,
+    fast_json_dumps,
+    JSONP_PATTERN,
+    CM_VALUE_PATTERN,
+)
+from core.logging_utils import OptimizedLogger
+
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+raw_logger = setup_module(globals(), __name__)
+logger = OptimizedLogger(raw_logger)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
@@ -113,7 +123,7 @@ from test_framework import (
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
 try:
     from config import config_schema as _cfg_temp
-    MATCHES_PER_PAGE: int = getattr(_cfg_temp, 'batch_size', 20)
+    MATCHES_PER_PAGE: int = getattr(_cfg_temp, 'matches_per_page', 20)
 except ImportError:
     MATCHES_PER_PAGE: int = 20
 
@@ -581,11 +591,13 @@ def _main_page_processing_loop(
             total=total_matches_estimate_this_run,
             desc="",
             unit=" match",
-            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
+            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
             file=sys.stderr,
             leave=True,
             dynamic_ncols=True,
             ascii=False,
+            mininterval=0.1,
+            maxinterval=1.0,
         )
         try:
             matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = (
@@ -768,7 +780,7 @@ def _main_page_processing_loop(
                     progress_bar.close()
                 finally:
                     # Ensure clean output after progress bar with multiple newlines
-                    print("\n", file=sys.stderr, flush=True)  # Double newline with flush
+                    print("", file=sys.stderr, flush=True)  # Newline to separate from any following log output
                     sys.stderr.flush()  # Additional flush to ensure output
 
     return loop_final_success
@@ -1459,7 +1471,7 @@ def _prepare_bulk_db_data(
                     prefetched_combined,  # Pass prefetched_combined_details correctly
                     prefetched_tree,  # Pass prefetched_tree_data correctly
                     config_schema,
-                    logger,  # Pass logger_instance correctly
+                    raw_logger,  # Pass underlying logger instance for compatibility
                 )
 
             # Step 2f: Tally status based on _do_match result
@@ -1673,11 +1685,9 @@ async def _async_batch_api_prefetch(
 def _get_configured_batch_size() -> int:
     """Get batch size from configuration system, respecting .env BATCH_SIZE setting."""
     try:
-        from config.config_manager import ConfigManager
-        config_manager = ConfigManager()
-        config = config_manager.get_config()
-        batch_size = getattr(config, 'batch_size', 10)  # Default to 10 if not found
-        logger.debug(f"Using configured batch size: {batch_size}")
+        from config import config_schema
+        batch_size = getattr(config_schema, 'batch_size', 10)  # Default to 10 if not found
+        logger.debug(f"Using configured batch size: {batch_size} (from cached config)")
         return batch_size
     except Exception as e:
         logger.warning(f"Failed to get configured batch size: {e}, using default 10")
@@ -4458,9 +4468,7 @@ def _fetch_batch_ladder(
             return None
 
         response_text = api_result
-        match_jsonp = re.match(
-            r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE
-        )
+        match_jsonp = JSONP_PATTERN.match(response_text)
         if not match_jsonp:
             logger.error(
                 f"Could not parse JSONP format for CFPID {cfpid}. Response: {response_text[:200]}..."
@@ -4472,7 +4480,7 @@ def _fetch_batch_ladder(
             if not json_string or json_string in ('""', "''"):
                 logger.warning(f"Empty JSON content within JSONP for CFPID {cfpid}.")
                 return None
-            ladder_json = json.loads(json_string)
+            ladder_json = fast_json_loads(json_string)
 
             if isinstance(ladder_json, dict) and "html" in ladder_json:
                 html_content = ladder_json["html"]
