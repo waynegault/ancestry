@@ -153,7 +153,6 @@ def _get_cached_profile(profile_id: str) -> Optional[Dict]:
     try:
         cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
         if cached_data is not ENOVAL and isinstance(cached_data, dict):
-            logger.debug(f"Cache hit for profile {profile_id}")
             return cached_data
     except Exception as e:
         logger.warning(f"Error reading profile cache for {profile_id}: {e}")
@@ -173,7 +172,6 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
             expire=86400,  # 24 hours in seconds
             retry=True
         )
-        logger.debug(f"Cached profile data for {profile_id}")
     except Exception as e:
         logger.warning(f"Error caching profile data for {profile_id}: {e}")
 
@@ -239,7 +237,6 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
     try:
         # If force refresh requested, try to get fresh token from API first
         if force_api_refresh:
-            logger.debug("Attempting to get fresh CSRF token from API...")
             try:
                 if hasattr(session_manager, 'api_manager') and hasattr(session_manager.api_manager, 'get_csrf_token'):
                     fresh_token = session_manager.api_manager.get_csrf_token()
@@ -267,7 +264,6 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
         for cookie_name in csrf_cookie_names:
             for cookie in cookies:
                 if cookie['name'] == cookie_name:
-                    logger.debug(f"Found CSRF token in cookie '{cookie_name}'")
                     return cookie['value']
         
         logger.warning("No CSRF token found in cookies")
@@ -416,12 +412,10 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
         # Force cookie sync to requests session
         if hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
-            logger.debug("Forced cookie sync after base page navigation")
         
         # Check if we're currently on a matches page, if so just refresh it
         current_url = session_manager.driver.current_url
         if "discoveryui-matches" in current_url:
-            logger.debug("Currently on matches page, refreshing to update session")
             session_manager.driver.refresh()
             time.sleep(2)
         
@@ -450,17 +444,14 @@ def _navigate_and_get_initial_page_data(
         config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
     )
 
-    logger.debug("Ensuring browser is on the DNA matches list page...")
     try:
         current_url = driver.current_url  # type: ignore
         if not current_url.startswith(target_matches_url_base):
-            logger.debug("Not on match list page. Navigating...")
             if not nav_to_list(session_manager):
                 logger.error(
                     "Failed to navigate to DNA match list page. Exiting initial fetch."
                 )
                 return None, None, False
-            logger.debug("Successfully navigated to DNA matches page.")
         else:
             logger.debug(f"Already on correct DNA matches page: {current_url}")
     except WebDriverException as nav_e:
@@ -872,7 +863,6 @@ def coord(
         state["final_success"] = False
     finally:
         # Step 7: Final Summary Logging (uses updated state from the loop)
-        logger.debug("Entering finally block in coord...")
         _log_coord_summary(
             state["total_pages_processed"],
             state["total_new"],
@@ -886,7 +876,6 @@ def coord(
             logger.info("Re-raising KeyboardInterrupt after cleanup.")
             if exc_info_tuple[1] is not None:
                 raise exc_info_tuple[1].with_traceback(exc_info_tuple[2])
-        logger.debug("Exiting finally block in coord.")
 
     return state["final_success"]
 
@@ -1001,8 +990,6 @@ def _identify_fetch_candidates(
     skipped_count_this_batch = 0
     matches_to_process_later: List[Dict[str, Any]] = []
     invalid_uuid_count = 0
-
-    logger.debug("Identifying fetch candidates vs. skipped matches...")
 
     # Step 2: Iterate through matches fetched from the current page
     for match_api_data in matches_on_page:
@@ -1792,7 +1779,7 @@ def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dic
 def _smart_batch_processing(
     matches: List[Dict[str, Any]], 
     session_manager: SessionManager,
-    batch_size: int = None  # Now gets configured batch size
+    batch_size: Optional[int] = None  # Now gets configured batch size
 ) -> List[Dict[str, Any]]:
     """
     Phase 3: Smart batch processing with adaptive sizing based on match priority.
@@ -2043,10 +2030,14 @@ def _execute_bulk_db_operations(
             seen_uuids: Set[str] = set()
             insert_data: List[Dict[str, Any]] = []
             
-            # Additional check: query DB for existing profile_ids to prevent constraint violations
+            # Additional check: query DB for existing profile_ids AND UUIDs to prevent constraint violations
             profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw 
                                    if item.get("profile_id")}
+            uuids_to_check = {str(item.get("uuid") or "").upper() for item in insert_data_raw 
+                             if item.get("uuid")}
+            
             existing_profile_ids: Set[str] = set()
+            existing_uuids: Set[str] = set()
             
             if profile_ids_to_check:
                 try:
@@ -2061,6 +2052,19 @@ def _execute_bulk_db_operations(
                 except Exception as e:
                     logger.warning(f"Failed to check existing profile IDs: {e}")
             
+            if uuids_to_check:
+                try:
+                    logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
+                    existing_uuid_records = session.query(Person.uuid).filter(
+                        Person.uuid.in_(uuids_to_check),
+                        Person.deleted_at == None
+                    ).all()
+                    existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
+                    if existing_uuids:
+                        logger.info(f"Found {len(existing_uuids)} existing UUIDs that will be skipped")
+                except Exception as e:
+                    logger.warning(f"Failed to check existing UUIDs: {e}")
+            
             for item in insert_data_raw:
                 uuid_val = str(item.get("uuid") or "").upper()
                 profile_id = item.get("profile_id")
@@ -2072,6 +2076,9 @@ def _execute_bulk_db_operations(
                     continue
                 if uuid_val in existing_persons_map:
                     logger.info(f"Skipping Person create for existing UUID {uuid_val}; will treat as update if needed.")
+                    continue
+                if uuid_val in existing_uuids:
+                    logger.info(f"Skipping Person create for existing UUID in DB {uuid_val}")
                     continue
                 if profile_id and profile_id in existing_profile_ids:
                     logger.info(f"Skipping Person create for existing profile ID {profile_id} (UUID: {uuid_val})")
@@ -2116,11 +2123,9 @@ def _execute_bulk_db_operations(
             # Perform bulk insert
             logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
             session.bulk_insert_mappings(Person, insert_data)  # type: ignore
-            logger.debug("Bulk insert Persons called.")
 
             # --- Get newly created IDs ---
             session.flush()
-            logger.debug("Session flushed to assign Person IDs.")
             inserted_uuids = [
                 p_data["uuid"] for p_data in insert_data if p_data.get("uuid")
             ]
@@ -2302,7 +2307,6 @@ def _execute_bulk_db_operations(
                     f"Bulk inserting {len(dna_insert_data)} DnaMatch records..."
                 )
                 session.bulk_insert_mappings(DnaMatch, dna_insert_data)  # type: ignore
-                logger.debug("Bulk insert DnaMatches called.")
             else:
                 logger.debug("No new DnaMatch records to insert.")
 
@@ -2347,7 +2351,6 @@ def _execute_bulk_db_operations(
                     f"Bulk inserting {len(tree_insert_data)} FamilyTree records..."
                 )
                 session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
-                logger.debug("Bulk insert FamilyTrees called.")
             else:
                 logger.debug("No valid FamilyTree records to insert.")
         else:
@@ -2394,7 +2397,39 @@ def _execute_bulk_db_operations(
             logger.warning(f"UNIQUE constraint violation during bulk insert - some records already exist: {integrity_err}")
             # This is expected behavior when records already exist - don't fail the entire batch
             logger.info("Continuing with database operations despite duplicate records...")
-            return True  # Continue processing - this is not a fatal error
+            
+            # CRITICAL FIX: We need to rollback the failed transaction and start fresh
+            try:
+                session.rollback()  # Clear the failed transaction
+                logger.debug("Rolled back failed transaction due to UNIQUE constraint violation")
+                
+                # Re-attempt with individual inserts to identify problem records only if data exists
+                if 'insert_data' in locals() and insert_data:
+                    logger.debug(f"Retrying with individual inserts for {len(insert_data)} records")
+                    successful_inserts = 0
+                    for item in insert_data:
+                        try:
+                            # Try individual insert
+                            individual_person = Person(**{k: v for k, v in item.items() if hasattr(Person, k)})
+                            session.add(individual_person)
+                            session.flush()  # Force insert attempt
+                            successful_inserts += 1
+                        except IntegrityError as individual_err:
+                            # This specific record already exists - skip it
+                            logger.debug(f"Skipping duplicate record UUID {item.get('uuid', 'unknown')}: {individual_err}")
+                            session.rollback()  # Clear this specific failure
+                        except Exception as individual_exc:
+                            logger.warning(f"Failed to insert individual record UUID {item.get('uuid', 'unknown')}: {individual_exc}")
+                            session.rollback()  # Clear this specific failure
+                    
+                    logger.info(f"Successfully inserted {successful_inserts} of {len(insert_data)} records after handling duplicates")
+                else:
+                    logger.debug("No insert_data available for retry")
+                
+                return True  # Continue processing - this is not a fatal error
+            except Exception as rollback_err:
+                logger.error(f"Failed to handle UNIQUE constraint violation gracefully: {rollback_err}", exc_info=True)
+                return False
         else:
             logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
             return False  # Other integrity errors should still fail
@@ -3913,16 +3948,12 @@ def _fetch_combined_details(
         Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
         longest_shared_segment, last_logged_in_dt, contactable, etc.
     """
-    logger.debug(f"_fetch_combined_details: Starting for match_uuid={match_uuid}")
-
     my_uuid = session_manager.my_uuid
-    logger.debug(f"_fetch_combined_details: my_uuid={my_uuid}")
 
     if not my_uuid or not match_uuid:
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         return None
 
-    logger.debug(f"_fetch_combined_details: Checking session validity...")
     if not session_manager.is_sess_valid():
         logger.error(
             f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
@@ -3930,8 +3961,6 @@ def _fetch_combined_details(
         raise ConnectionError(
             f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
         )
-
-    logger.debug(f"_fetch_combined_details: Session valid, proceeding with API calls...")
 
     combined_data: Dict[str, Any] = {}
     details_url = urljoin(
