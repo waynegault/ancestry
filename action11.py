@@ -409,7 +409,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
 
 # Simple scoring fallback (Uses 'gender_match' key)
 def _run_simple_suggestion_scoring(
-    search_criteria: Dict[str, Any], candidate_data_dict: Dict[str, Any]
+    search_criteria: Dict[str, Any], candidate_data_dict: Dict[str, Any], weights: Optional[Dict[str, Any]] = None
 ) -> Tuple[float, Dict, List[str]]:
     """Performs simple fallback scoring based on hardcoded rules. Uses 'gender_match' key."""
     logger.warning("Using simple fallback scoring for suggestion.")
@@ -612,6 +612,7 @@ def _process_and_score_suggestions(
         person_id = raw_candidate.get("PersonId", f"Unknown_{idx}")
         first_name_cand = None
         surname_cand = None
+        parts = []  # Initialize parts
         if full_name_disp != "Unknown":
             parts = full_name_disp.split()
         if parts:
@@ -1299,6 +1300,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
     logger.info(f"Final Extracted Detail Name: {best_name}")
     # Gender
     gender_str = person_research_data.get("PersonGender")
+    gender_fact = None
     if not gender_str:
         gender_fact = next(
             (
@@ -1460,6 +1462,11 @@ def _score_detailed_match(
         logger.debug(
             f"Calculating detailed score using {getattr(scoring_func, '__name__', 'Unknown')}..."
         )
+        # Initialize default values
+        score = 0
+        field_scores = {}
+        reasons = []
+        
         if (
             GEDCOM_SCORING_AVAILABLE
             and scoring_func == calculate_match_score
@@ -1983,12 +1990,16 @@ def _fetch_html_facts_page_data(person_id: str, tree_id: str, session_manager_lo
 
         # Get the HTML content
         html_content = ""
-        if hasattr(response, 'text'):
-            html_content = response.text
-        elif isinstance(response, str):
-            html_content = response
-        else:
-            logger.debug(f"Unexpected response type for HTML facts page: {type(response)}")
+        try:
+            if hasattr(response, 'text'):
+                html_content = str(response.text)  # type: ignore
+            elif isinstance(response, str):
+                html_content = response
+            else:
+                logger.debug(f"Unexpected response type for HTML facts page: {type(response)}")
+                return {}
+        except AttributeError:
+            logger.debug(f"Response object doesn't have expected text attribute: {type(response)}")
             return {}
 
         if not html_content:
@@ -2119,8 +2130,13 @@ def _extract_json_from_script_tags(html_content: str, person_id: str, tree_id: s
         ]
 
         for i, script in enumerate(script_tags):
-            if script.string:
-                script_content = script.string.strip()
+            try:
+                if hasattr(script, 'string') and getattr(script, 'string', None):
+                    script_content = str(getattr(script, 'string', '')).strip()
+                else:
+                    continue
+            except AttributeError:
+                continue
 
                 for pattern in json_patterns:
                     matches = re.findall(pattern, script_content, re.DOTALL | re.IGNORECASE)
@@ -2260,11 +2276,13 @@ def _extract_microdata_family_info(html_content: str, person_id: str) -> Dict:
         json_ld_scripts = soup.find_all('script', type='application/ld+json')
         for script in json_ld_scripts:
             try:
-                structured_data = json.loads(script.string)
-                family_members = _extract_family_from_json_ld(structured_data, person_id)
-                if family_members:
-                    _merge_family_data(family_data, family_members)
-            except (json.JSONDecodeError, AttributeError):
+                script_content = getattr(script, 'string', None)
+                if script_content:
+                    structured_data = json.loads(str(script_content))
+                    family_members = _extract_family_from_json_ld(structured_data, person_id)
+                    if family_members:
+                        _merge_family_data(family_data, family_members)
+            except (json.JSONDecodeError, AttributeError, TypeError):
                 continue
 
         return family_data if any(family_data.values()) else {}
@@ -2416,8 +2434,18 @@ def _extract_family_from_navigation_data(html_content: str, person_id: str) -> D
                 # Look for links that might be family members
                 links = nav_element.find_all('a', href=True)
                 for link in links:
-                    href = link.get('href', '')
-                    text = link.get_text(strip=True)
+                    try:
+                        href = getattr(link, 'get', lambda x, default='': default)('href', '')
+                        if not href and hasattr(link, 'attrs'):
+                            href = link.attrs.get('href', '')  # type: ignore
+                        href = str(href) if href else ''
+                    except (AttributeError, TypeError):
+                        href = ''
+                    
+                    try:
+                        text = link.get_text(strip=True) if hasattr(link, 'get_text') else str(link)
+                    except AttributeError:
+                        text = str(link)
 
                     # Check if this looks like a family member link
                     if _is_family_member_link(href, text, person_id):
@@ -2619,7 +2647,7 @@ def _extract_person_from_microdata(element) -> Dict:
         return {}
 
 
-def _determine_relationship_from_context(element, person_id: str) -> str:
+def _determine_relationship_from_context(element, person_id: str) -> Optional[str]:
     """
     Determine family relationship from element context.
     """
@@ -2792,7 +2820,7 @@ def _is_family_member_link(href: str, text: str, person_id: str) -> bool:
         return False
 
 
-def _determine_relationship_from_link(href: str, text: str, nav_element) -> str:
+def _determine_relationship_from_link(href: str, text: str, nav_element) -> Optional[str]:
     """
     Determine relationship type from link context.
     """
@@ -2815,7 +2843,7 @@ def _determine_relationship_from_link(href: str, text: str, nav_element) -> str:
         return None
 
 
-def _extract_person_id_from_link(href: str) -> str:
+def _extract_person_id_from_link(href: str) -> Optional[str]:
     """
     Extract person ID from a link href.
     """
@@ -2827,7 +2855,7 @@ def _extract_person_id_from_link(href: str) -> str:
         return None
 
 
-def _extract_birth_year_from_element(element, name: str) -> int:
+def _extract_birth_year_from_element(element, name: str) -> Optional[int]:
     """
     Extract birth year from element context.
     """
@@ -2838,7 +2866,7 @@ def _extract_birth_year_from_element(element, name: str) -> int:
         return None
 
 
-def _extract_death_year_from_element(element, name: str) -> int:
+def _extract_death_year_from_element(element, name: str) -> Optional[int]:
     """
     Extract death year from element context.
     """
@@ -2849,7 +2877,7 @@ def _extract_death_year_from_element(element, name: str) -> int:
         return None
 
 
-def _extract_year_from_text(text: str, context: str = None) -> int:
+def _extract_year_from_text(text: str, context: Optional[str] = None) -> Optional[int]:
     """
     Extract year from text using various patterns.
     """
@@ -3432,8 +3460,8 @@ def _handle_search_phase(
         config_tree_id = getattr(config_schema.api, "tree_id", None)
         if config_tree_id:
             owner_tree_id = config_tree_id
-            # Update the session manager with the tree ID from config
-            session_manager_local.my_tree_id = owner_tree_id
+            # Update the session manager's API manager with the tree ID from config
+            session_manager_local.api_manager.my_tree_id = owner_tree_id
             logger.info(f"Using tree ID from configuration: {owner_tree_id}")
         else:
             # Try to get tree ID from session manager's API call
@@ -3447,8 +3475,8 @@ def _handle_search_phase(
                     owner_tree_id = session_manager_local.get_my_tree_id()
                     if owner_tree_id:
                         logger.info(f"Successfully retrieved tree ID: {owner_tree_id}")
-                        # Update the session manager with the retrieved tree ID
-                        session_manager_local.my_tree_id = owner_tree_id
+                        # Update the session manager's API manager with the retrieved tree ID
+                        session_manager_local.api_manager.my_tree_id = owner_tree_id
                     else:
                         logger.warning(
                             f"Failed to retrieve tree ID for tree name: {tree_name}"
@@ -3463,8 +3491,8 @@ def _handle_search_phase(
             user_tree_id = input("Tree ID: ").strip()
             if user_tree_id:
                 owner_tree_id = user_tree_id
-                # Update the session manager with the user-provided tree ID
-                session_manager_local.my_tree_id = owner_tree_id
+                # Update the session manager's API manager with the user-provided tree ID
+                session_manager_local.api_manager.my_tree_id = owner_tree_id
                 logger.info(f"Using user-provided tree ID: {owner_tree_id}")
             else:
                 # Log error and display to user
@@ -3617,6 +3645,16 @@ def _parse_treesui_list_response(
                         death_events.append(event)
 
                 # Process birth events - prioritize based on completeness and non-alternate status
+                # Define the place detail scoring function for both birth and death events
+                def place_detail_score(event):
+                    place = event.get("p", "")
+                    if not place:
+                        return 0
+                    # Count commas as a simple measure of detail level
+                    comma_count = place.count(",")
+                    # Add 1 to avoid zero scores for places without commas
+                    return comma_count + 1
+                
                 if birth_events:
                     # Sort birth events by priority:
                     # 1. Non-alternate events (pa=false) over alternate events (pa=true)
@@ -3632,15 +3670,6 @@ def _parse_treesui_list_response(
                     )
 
                     # Then prioritize by place detail (count commas as a simple heuristic for detail)
-                    def place_detail_score(event):
-                        place = event.get("p", "")
-                        if not place:
-                            return 0
-                        # Count commas as a simple measure of detail level
-                        comma_count = place.count(",")
-                        # Add 1 to avoid zero scores for places without commas
-                        return comma_count + 1
-
                     # Sort by place detail (higher score first)
                     births_to_process.sort(key=place_detail_score, reverse=True)
 
@@ -3819,7 +3848,7 @@ def _handle_details_phase(
         if env_profile_id:
             owner_profile_id = env_profile_id
             # Update the session manager with the profile ID from environment
-            session_manager_local.my_profile_id = owner_profile_id
+            session_manager_local.api_manager.my_profile_id = owner_profile_id
             logger.info(
                 f"Using profile ID from environment variables: {owner_profile_id}"
             )
@@ -3878,7 +3907,7 @@ def _handle_supplementary_info_phase(
         if config_tree_id:
             owner_tree_id = config_tree_id
             # Update the session manager with the tree ID from config
-            session_manager_local.my_tree_id = owner_tree_id
+            session_manager_local.api_manager.my_tree_id = owner_tree_id
             logger.info(f"Using tree ID from configuration: {owner_tree_id}")
 
     # Check if owner_profile_id is missing and try to get it from environment variables
@@ -3887,7 +3916,7 @@ def _handle_supplementary_info_phase(
         if env_profile_id:
             owner_profile_id = env_profile_id
             # Update the session manager with the profile ID from environment
-            session_manager_local.my_profile_id = owner_profile_id
+            session_manager_local.api_manager.my_profile_id = owner_profile_id
             logger.info(
                 f"Using profile ID from environment variables: {owner_profile_id}"
             )
@@ -3901,7 +3930,7 @@ def _handle_supplementary_info_phase(
         ):  # Don't use generic default
             owner_name = config_owner_name
             # Update the session manager with the owner name from config
-            session_manager_local.tree_owner_name = owner_name
+            session_manager_local.api_manager.tree_owner_name = owner_name
             logger.info(f"Using tree owner name from configuration: {owner_name}")
         else:
             # If not in config, try alternative config location
@@ -3911,7 +3940,7 @@ def _handle_supplementary_info_phase(
                     config_schema, "reference_person_name", None
                 )
                 owner_name = config_owner_name if config_owner_name else "Tree Owner"
-                session_manager_local.tree_owner_name = owner_name
+                session_manager_local.api_manager.tree_owner_name = owner_name
                 logger.info(f"Using tree owner name from config/default: {owner_name}")
 
     # --- Skip Family Details Section ---
@@ -4168,22 +4197,35 @@ def _handle_supplementary_info_phase(
                                     list_items = soup.find_all("li")
                                     for item in list_items:
                                         # Skip icon items
-                                        if item.get("aria-hidden") == "true":
+                                        try:
+                                            is_hidden = getattr(item, 'get', lambda x, default='': default)('aria-hidden', '') == "true"
+                                        except (AttributeError, TypeError):
+                                            is_hidden = False
+                                        
+                                        if is_hidden:
                                             continue
 
                                         # Extract name, relationship, and lifespan
-                                        name_elem = item.find("b")
-                                        name = (
-                                            name_elem.get_text()
-                                            if name_elem
-                                            else item.get_text()
-                                        )
+                                        try:
+                                            name_elem = getattr(item, 'find', lambda x: None)("b")
+                                            if name_elem and hasattr(name_elem, 'get_text'):
+                                                name = name_elem.get_text()
+                                            elif hasattr(item, 'get_text'):
+                                                name = item.get_text()
+                                            else:
+                                                name = str(item)
+                                        except (AttributeError, TypeError):
+                                            name = str(item)
 
                                         # Extract relationship description
-                                        rel_elem = item.find("i")
-                                        relationship = (
-                                            rel_elem.get_text() if rel_elem else ""
-                                        )
+                                        try:
+                                            rel_elem = getattr(item, 'find', lambda x: None)("i")
+                                            if rel_elem and hasattr(rel_elem, 'get_text'):
+                                                relationship = rel_elem.get_text()
+                                            else:
+                                                relationship = ""
+                                        except (AttributeError, TypeError):
+                                            relationship = ""
 
                                         # Extract lifespan
                                         text = item.get_text()

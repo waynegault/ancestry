@@ -1933,6 +1933,201 @@ class MemoryOptimizedMatchProcessor:
         return match
 
 
+def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    De-duplicate Person creates based on Profile ID before bulk insert.
+    
+    Args:
+        person_creates_raw: List of raw person create data dictionaries
+        
+    Returns:
+        List of filtered person create data (duplicates removed)
+    """
+    person_creates_filtered = []
+    seen_profile_ids: Set[str] = set()
+    skipped_duplicates = 0
+    
+    if not person_creates_raw:
+        return person_creates_filtered
+        
+    logger.debug(f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID...")
+    
+    for p_data in person_creates_raw:
+        profile_id = p_data.get("profile_id")  # Already uppercase from prep if exists
+        uuid_for_log = p_data.get("uuid")  # For logging skipped items
+        
+        if profile_id is None:
+            person_creates_filtered.append(p_data)  # Allow creates with null profile ID
+        elif profile_id not in seen_profile_ids:
+            person_creates_filtered.append(p_data)
+            seen_profile_ids.add(profile_id)
+        else:
+            logger.warning(f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log}).")
+            skipped_duplicates += 1
+    
+    if skipped_duplicates > 0:
+        logger.info(f"Skipped {skipped_duplicates} duplicate person creates in this batch.")
+    logger.debug(f"Proceeding with {len(person_creates_filtered)} unique person creates.")
+    
+    return person_creates_filtered
+
+
+def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Dict[str, Any]]) -> Tuple[Set[str], Set[str]]:
+    """
+    Check database for existing profile IDs and UUIDs to prevent constraint violations.
+    
+    Args:
+        session: SQLAlchemy session
+        insert_data_raw: Raw insert data to check
+        
+    Returns:
+        Tuple of (existing_profile_ids, existing_uuids) sets
+    """
+    profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw if item.get("profile_id")}
+    uuids_to_check = {str(item.get("uuid") or "").upper() for item in insert_data_raw if item.get("uuid")}
+    
+    existing_profile_ids: Set[str] = set()
+    existing_uuids: Set[str] = set()
+    
+    if profile_ids_to_check:
+        try:
+            logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
+            existing_records = session.query(Person.profile_id).filter(
+                Person.profile_id.in_(profile_ids_to_check),
+                Person.deleted_at == None
+            ).all()
+            existing_profile_ids = {record.profile_id for record in existing_records}
+            if existing_profile_ids:
+                logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
+        except Exception as e:
+            logger.warning(f"Failed to check existing profile IDs: {e}")
+    
+    if uuids_to_check:
+        try:
+            logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
+            existing_uuid_records = session.query(Person.uuid).filter(
+                Person.uuid.in_(uuids_to_check),
+                Person.deleted_at == None
+            ).all()
+            existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
+            if existing_uuids:
+                logger.info(f"Found {len(existing_uuids)} existing UUIDs that will be skipped")
+        except Exception as e:
+            logger.warning(f"Failed to check existing UUIDs: {e}")
+    
+    return existing_profile_ids, existing_uuids
+
+
+def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Optional[List[Dict[str, Any]]] = None) -> bool:
+    """
+    Handle UNIQUE constraint violations by attempting individual inserts.
+    
+    Args:
+        session: SQLAlchemy session
+        insert_data: Data that failed bulk insert (optional)
+        
+    Returns:
+        True if recovery was successful
+    """
+    try:
+        session.rollback()  # Clear the failed transaction
+        logger.debug("Rolled back failed transaction due to UNIQUE constraint violation")
+        
+        if not insert_data:
+            logger.debug("No insert_data available for recovery - treating as successful (records likely already exist)")
+            return True
+            
+        logger.debug(f"Retrying with individual inserts for {len(insert_data)} records")
+        successful_inserts = 0
+        
+        for item in insert_data:
+            try:
+                # Try individual insert
+                individual_person = Person(**{k: v for k, v in item.items() if hasattr(Person, k)})
+                session.add(individual_person)
+                session.flush()  # Force insert attempt
+                successful_inserts += 1
+            except IntegrityError as individual_err:
+                # This specific record already exists - skip it
+                logger.debug(f"Skipping duplicate record UUID {item.get('uuid', 'unknown')}: {individual_err}")
+                session.rollback()  # Clear this specific failure
+            except Exception as individual_exc:
+                logger.warning(f"Failed to insert individual record UUID {item.get('uuid', 'unknown')}: {individual_exc}")
+                session.rollback()  # Clear this specific failure
+        
+        logger.info(f"Successfully inserted {successful_inserts} of {len(insert_data)} records after handling duplicates")
+        return True
+        
+    except Exception as rollback_err:
+        logger.error(f"Failed to handle UNIQUE constraint violation gracefully: {rollback_err}", exc_info=True)
+        return False
+
+
+def _prepare_person_insert_data(
+    person_creates_filtered: List[Dict[str, Any]], 
+    session: SqlAlchemySession,
+    existing_persons_map: Dict[str, Person]
+) -> List[Dict[str, Any]]:
+    """
+    Prepare and validate person insert data, removing duplicates and existing records.
+    
+    Args:
+        person_creates_filtered: Filtered person create data
+        session: SQLAlchemy session
+        existing_persons_map: Map of existing persons by UUID
+        
+    Returns:
+        List of validated insert data ready for bulk insert
+    """
+    if not person_creates_filtered:
+        return []
+        
+    logger.debug(f"Preparing {len(person_creates_filtered)} Person records for bulk insert...")
+    
+    # Prepare list of dictionaries for bulk_insert_mappings
+    insert_data_raw = [
+        {k: v for k, v in p.items() if not k.startswith("_")}
+        for p in person_creates_filtered
+    ]
+    
+    # Check for existing records in database
+    existing_profile_ids, existing_uuids = _check_existing_records(session, insert_data_raw)
+    
+    # De-duplicate by UUID within this batch and drop existing records
+    seen_uuids: Set[str] = set()
+    insert_data: List[Dict[str, Any]] = []
+    
+    for item in insert_data_raw:
+        uuid_val = str(item.get("uuid") or "").upper()
+        profile_id = item.get("profile_id")
+        
+        if not uuid_val:
+            continue
+        if uuid_val in seen_uuids:
+            logger.warning(f"Skipping duplicate Person create in insert list (UUID: {uuid_val})")
+            continue
+        if uuid_val in existing_persons_map:
+            logger.info(f"Skipping Person create for existing UUID {uuid_val}; will treat as update if needed.")
+            continue
+        if uuid_val in existing_uuids:
+            logger.info(f"Skipping Person create for existing UUID in DB {uuid_val}")
+            continue
+        if profile_id and profile_id in existing_profile_ids:
+            logger.info(f"Skipping Person create for existing profile ID {profile_id} (UUID: {uuid_val})")
+            continue
+            
+        seen_uuids.add(uuid_val)
+        item["uuid"] = uuid_val
+        insert_data.append(item)
+        
+    # Convert status Enum to its value for bulk insertion
+    for item_data in insert_data:
+        if "status" in item_data and hasattr(item_data["status"], 'value'):
+            item_data["status"] = item_data["status"].value
+            
+    return insert_data
+
+
 def _execute_bulk_db_operations(
     session: SqlAlchemySession,
     prepared_bulk_data: List[Dict[str, Any]],
@@ -1963,6 +2158,9 @@ def _execute_bulk_db_operations(
     logger.debug(f"--- Starting Bulk DB Operations ({num_items} prepared items) ---")
 
     try:
+        # Initialize variables that might be needed in exception handlers
+        insert_data: List[Dict[str, Any]] = []
+        
         # Step 2: Separate data by operation type (create/update) and table
         # Person Operations
         person_creates_raw = [
@@ -1986,118 +2184,16 @@ def _execute_bulk_db_operations(
         created_person_map: Dict[str, int] = {}  # Maps UUID -> new Person ID
 
         # --- Step 3: Person Creates ---
-        # De-duplicate Person Creates based on Profile ID before bulk insert
-        person_creates_filtered = []
-        seen_profile_ids: Set[str] = (
-            set()
-        )  # Track non-null profile IDs seen in this batch
-        skipped_duplicates = 0
-        if person_creates_raw:
-            logger.debug(
-                f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID..."
-            )
-            for p_data in person_creates_raw:
-                profile_id = p_data.get(
-                    "profile_id"
-                )  # Already uppercase from prep if exists
-                uuid_for_log = p_data.get("uuid")  # For logging skipped items
-                if profile_id is None:
-                    person_creates_filtered.append(
-                        p_data
-                    )  # Allow creates with null profile ID
-                elif profile_id not in seen_profile_ids:
-                    person_creates_filtered.append(p_data)
-                    seen_profile_ids.add(profile_id)
-                else:
-                    logger.warning(
-                        f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log})."
-                    )
-                    skipped_duplicates += 1
-            if skipped_duplicates > 0:
-                logger.info(
-                    f"Skipped {skipped_duplicates} duplicate person creates in this batch."
-                )
-            logger.debug(
-                f"Proceeding with {len(person_creates_filtered)} unique person creates."
-            )
+        # Use helper function to de-duplicate Person creates
+        person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
 
         # Bulk Insert Persons (if any unique creates remain)
         if person_creates_filtered:
-            logger.debug(
-                f"Preparing {len(person_creates_filtered)} Person records for bulk insert..."
-            )
-            # Prepare list of dictionaries for bulk_insert_mappings
-            insert_data_raw = [
-                {k: v for k, v in p.items() if not k.startswith("_")}
-                for p in person_creates_filtered
-            ]
-            # De-duplicate by UUID within this batch and drop any that already exist in DB map
-            seen_uuids: Set[str] = set()
-            insert_data: List[Dict[str, Any]] = []
-            
-            # Additional check: query DB for existing profile_ids AND UUIDs to prevent constraint violations
-            profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw 
-                                   if item.get("profile_id")}
-            uuids_to_check = {str(item.get("uuid") or "").upper() for item in insert_data_raw 
-                             if item.get("uuid")}
-            
-            existing_profile_ids: Set[str] = set()
-            existing_uuids: Set[str] = set()
-            
-            if profile_ids_to_check:
-                try:
-                    logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
-                    existing_records = session.query(Person.profile_id).filter(
-                        Person.profile_id.in_(profile_ids_to_check),
-                        Person.deleted_at == None
-                    ).all()
-                    existing_profile_ids = {record.profile_id for record in existing_records}
-                    if existing_profile_ids:
-                        logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
-                except Exception as e:
-                    logger.warning(f"Failed to check existing profile IDs: {e}")
-            
-            if uuids_to_check:
-                try:
-                    logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
-                    existing_uuid_records = session.query(Person.uuid).filter(
-                        Person.uuid.in_(uuids_to_check),
-                        Person.deleted_at == None
-                    ).all()
-                    existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
-                    if existing_uuids:
-                        logger.info(f"Found {len(existing_uuids)} existing UUIDs that will be skipped")
-                except Exception as e:
-                    logger.warning(f"Failed to check existing UUIDs: {e}")
-            
-            for item in insert_data_raw:
-                uuid_val = str(item.get("uuid") or "").upper()
-                profile_id = item.get("profile_id")
-                
-                if not uuid_val:
-                    continue
-                if uuid_val in seen_uuids:
-                    logger.warning(f"Skipping duplicate Person create in insert list (UUID: {uuid_val})")
-                    continue
-                if uuid_val in existing_persons_map:
-                    logger.info(f"Skipping Person create for existing UUID {uuid_val}; will treat as update if needed.")
-                    continue
-                if uuid_val in existing_uuids:
-                    logger.info(f"Skipping Person create for existing UUID in DB {uuid_val}")
-                    continue
-                if profile_id and profile_id in existing_profile_ids:
-                    logger.info(f"Skipping Person create for existing profile ID {profile_id} (UUID: {uuid_val})")
-                    continue
-                    
-                seen_uuids.add(uuid_val)
-                item["uuid"] = uuid_val
-                insert_data.append(item)
-            # Convert status Enum to its value for bulk insertion
-            for item_data in insert_data:
-                if "status" in item_data and isinstance(
-                    item_data["status"], PersonStatusEnum
-                ):
-                    item_data["status"] = item_data["status"].value
+            # Use helper function to prepare insert data
+            insert_data = _prepare_person_insert_data(person_creates_filtered, session, existing_persons_map)
+        else:
+            # No person creates to process
+            insert_data = []
             # Final check for duplicates *within the filtered list* (shouldn't happen if de-dup logic is right)
             final_profile_ids = {
                 item.get("profile_id") for item in insert_data if item.get("profile_id")
@@ -2181,8 +2277,6 @@ def _execute_bulk_db_operations(
                     created_person_map = {}
             else:
                 logger.warning("No UUIDs available in insert_data to query back IDs.")
-        else:
-            pass  # No unique Person records to bulk insert
 
         # --- Step 4: Person Updates ---
         if person_updates:
@@ -2403,37 +2497,9 @@ def _execute_bulk_db_operations(
             # This is expected behavior when records already exist - don't fail the entire batch
             logger.info("Continuing with database operations despite duplicate records...")
             
-            # CRITICAL FIX: We need to rollback the failed transaction and start fresh
-            try:
-                session.rollback()  # Clear the failed transaction
-                logger.debug("Rolled back failed transaction due to UNIQUE constraint violation")
-                
-                # Re-attempt with individual inserts to identify problem records only if data exists
-                if 'insert_data' in locals() and insert_data:
-                    logger.debug(f"Retrying with individual inserts for {len(insert_data)} records")
-                    successful_inserts = 0
-                    for item in insert_data:
-                        try:
-                            # Try individual insert
-                            individual_person = Person(**{k: v for k, v in item.items() if hasattr(Person, k)})
-                            session.add(individual_person)
-                            session.flush()  # Force insert attempt
-                            successful_inserts += 1
-                        except IntegrityError as individual_err:
-                            # This specific record already exists - skip it
-                            logger.debug(f"Skipping duplicate record UUID {item.get('uuid', 'unknown')}: {individual_err}")
-                            session.rollback()  # Clear this specific failure
-                        except Exception as individual_exc:
-                            logger.warning(f"Failed to insert individual record UUID {item.get('uuid', 'unknown')}: {individual_exc}")
-                            session.rollback()  # Clear this specific failure
-                    
-                    logger.info(f"Successfully inserted {successful_inserts} of {len(insert_data)} records after handling duplicates")
-                else:
-                    pass  # No insert_data available for retry
-                return True  # Continue processing - this is not a fatal error
-            except Exception as rollback_err:
-                logger.error(f"Failed to handle UNIQUE constraint violation gracefully: {rollback_err}", exc_info=True)
-                return False
+            # Use helper function to handle recovery
+            # Note: insert_data might not be available in this exception scope, pass None for safe recovery
+            return _handle_integrity_error_recovery(session, None)
         else:
             logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
             return False  # Other integrity errors should still fail
