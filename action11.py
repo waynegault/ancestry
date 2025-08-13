@@ -301,7 +301,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
 
     if not (first_name or surname):
         logger.warning("API search needs First Name or Surname. Report cancelled.")
-        # Use logger.info instead of duplicating with print
+        # API search cancelled - logged above
         print("\nAPI search needs First Name or Surname. Report cancelled.")
         return None
 
@@ -922,7 +922,7 @@ def _display_search_results(candidates: List[Dict], max_to_display: int):
         print(tabulate(table_data, headers=headers, tablefmt="simple"))
     except Exception as tab_err:
         logger.error(f"Error formatting table: {tab_err}")
-        print("\nSearch Results (Fallback):")
+        # Search Results (Fallback) - error logged above
         print(" | ".join(headers))
         print("-" * 80)
         for row in table_data:  # Loop to print each row

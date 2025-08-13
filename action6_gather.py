@@ -110,7 +110,13 @@ from test_framework import (
 )
 
 # --- Constants ---
-MATCHES_PER_PAGE: int = 75  # PHASE 1: Increased from 20 to 75 for fewer API calls and faster processing
+# Get MATCHES_PER_PAGE from config, fallback to 20 if not available
+try:
+    from config import config_schema as _cfg_temp
+    MATCHES_PER_PAGE: int = getattr(_cfg_temp, 'batch_size', 20)
+except ImportError:
+    MATCHES_PER_PAGE: int = 20
+
 CRITICAL_API_FAILURE_THRESHOLD: int = (
     6  # Slightly higher threshold to avoid premature batch aborts on transient 429s
 )
@@ -562,7 +568,7 @@ def _main_page_processing_loop(
             total=total_matches_estimate_this_run,
             desc="",
             unit=" match",
-            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
+            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
             file=sys.stderr,
             leave=True,
             dynamic_ncols=True,
@@ -1771,7 +1777,7 @@ def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dic
     medium_priority = sum(1 for m in matches if 20 <= m.get("sharedCentimorgans", 0) <= 50)
     with_trees = sum(1 for m in matches if m.get("treeId") or m.get("hasTree", False))
     
-    logger.info(f"Phase 3: Match prioritization - High: {high_priority}, Medium: {medium_priority}, With trees: {with_trees}")
+    logger.debug(f"Match prioritization - High: {high_priority}, Medium: {medium_priority}, With trees: {with_trees}")
     
     return sorted_matches
 
@@ -2147,7 +2153,7 @@ def _execute_bulk_db_operations(
                         p_uuid: p_id for p_id, p_uuid in newly_inserted_persons
                     }
                     
-                    logger.info(f"Person ID Mapping: Queried {len(inserted_uuids)} UUIDs, mapped {len(created_person_map)} Person IDs")
+                    logger.debug(f"Person ID Mapping: Queried {len(inserted_uuids)} UUIDs, mapped {len(created_person_map)} Person IDs")
                     
                     if len(created_person_map) != len(inserted_uuids):
                         missing_count = len(inserted_uuids) - len(created_person_map)
@@ -2514,9 +2520,9 @@ def _do_batch(
 
         logger.debug(f"Batch {current_page}: Performing API Prefetches...")
         
-        # PHASE 3: Smart match prioritization and memory-optimized processing
+        # Smart match prioritization and memory-optimized processing
         if matches_to_process_later:
-            logger.info(f"Phase 3: Applying smart prioritization to {len(matches_to_process_later)} matches")
+            logger.debug(f"Applying smart prioritization to {len(matches_to_process_later)} matches")
             matches_to_process_later = _prioritize_matches_by_importance(matches_to_process_later)
             
             # Use memory-optimized processor for large batches

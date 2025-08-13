@@ -301,7 +301,7 @@ def ensure_gedcom_loaded_and_cached():
 
         except Exception as e:
             logger.debug(f"Error getting GEDCOM path from config: {e}")
-            print("❌ GEDCOM file path not configured.")
+            # GEDCOM file path not configured
             print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
             return False
 
@@ -337,7 +337,7 @@ def ensure_gedcom_loaded_and_cached():
 
     except Exception as e:
         logger.error(f"Error ensuring GEDCOM loaded and cached: {e}")
-        print(f"❌ Error loading GEDCOM file: {e}")
+        # Error loading GEDCOM file logged above
         return False
 
 
@@ -702,7 +702,7 @@ def run_core_workflow_action(session_manager, *_):
             gather_result = coord_action(session_manager, config, start=1)
             if gather_result is False:
                 logger.error("Action 6 FAILED.")
-                print("ERROR: Match gathering failed. Check logs for details.")
+                # Match gathering failure logged above
                 return False
             else:
                 logger.info("Action 6 OK.")
@@ -722,9 +722,7 @@ def run_core_workflow_action(session_manager, *_):
                 session_manager,
             ):
                 logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
-                print(
-                    "ERROR: Could not navigate to inbox page. Check network connection."
-                )
+                # Navigation error logged above
                 return False
 
             logger.debug("Navigation to inbox page successful.")
@@ -739,16 +737,16 @@ def run_core_workflow_action(session_manager, *_):
 
             if search_result is False:
                 logger.error("Action 7 FAILED - Inbox search returned failure.")
-                print("ERROR: Inbox search failed. Check logs for details.")
+                # Inbox search failure logged above
                 return False
             else:
                 logger.info("Action 7 OK.")
-                print("✓ Inbox search completed successfully.")
+                # Inbox search completed successfully
         except Exception as inbox_error:
             logger.error(
                 f"Action 7 FAILED with exception: {inbox_error}", exc_info=True
             )
-            print(f"ERROR during inbox search: {inbox_error}")
+            # Error during inbox search logged above
             return False
 
         # --- Action 9 ---
@@ -763,9 +761,7 @@ def run_core_workflow_action(session_manager, *_):
                 session_manager,
             ):
                 logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
-                print(
-                    "ERROR: Could not navigate to base URL. Check network connection."
-                )
+                # Navigation error logged above
                 return False
 
             logger.debug(
@@ -788,7 +784,7 @@ def run_core_workflow_action(session_manager, *_):
                 return False
             else:
                 logger.info("Action 9 OK.")
-                print("✓ Productive message processing completed successfully.")
+                # Productive message processing completed successfully
         except Exception as process_error:
             logger.error(
                 f"Action 9 FAILED with exception: {process_error}", exc_info=True
@@ -851,7 +847,7 @@ def run_core_workflow_action(session_manager, *_):
         return True
     except Exception as e:
         logger.error(f"Critical error during core workflow: {e}", exc_info=True)
-        print(f"CRITICAL ERROR during core workflow: {e}")
+        # Critical error during core workflow logged above
         return False
 
 
@@ -1208,14 +1204,12 @@ def coord_action(session_manager, config_schema=None, start=1):
         result = coord(session_manager, config, start=start)
         if result is False:
             logger.error("Match gathering reported failure.")
-            print("ERROR: Match gathering failed. Check logs for details.")
             return False
         else:
-            logger.info("Gathering matches OK.")
+            logger.debug("Gathering matches OK.")
             return True
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
-        print(f"ERROR: Exception during match gathering: {e}")
         return False
 
 
@@ -1813,7 +1807,7 @@ def main():
 
         # Log program finish
         logger.info("--- Main program execution finished ---")
-        print("\nExecution finished.")
+        # Execution finished
 
 
 # end main
