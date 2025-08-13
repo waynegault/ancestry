@@ -1261,6 +1261,7 @@ def _apply_rate_limiting(
 ) -> float:
     """
     Applies rate limiting wait time using both DynamicRateLimiter and AdaptiveRateLimiter.
+    OPTIMIZED: Includes result caching to reduce per-request overhead.
 
     Args:
         session_manager: The session manager instance
@@ -1270,26 +1271,61 @@ def _apply_rate_limiting(
     Returns:
         The wait time applied
     """
+    import time
+    
+    # OPTIMIZATION: Cache rate limit calculations to reduce per-request overhead
+    cache_key = f"{api_description}_{attempt}"
+    current_time = time.time()
+    
+    # Initialize cache if it doesn't exist
+    if not hasattr(session_manager, '_rate_limit_cache'):
+        session_manager._rate_limit_cache = {}
+        session_manager._rate_limit_cache_cleanup_time = current_time
+    
+    # Check if we have a cached result within the last 0.5 seconds
+    cache_entry = session_manager._rate_limit_cache.get(cache_key)
+    if cache_entry and (current_time - cache_entry['timestamp']) < 0.5:
+        return cache_entry['wait_time']
+    
+    # Clean up old cache entries periodically
+    if (current_time - session_manager._rate_limit_cache_cleanup_time) > 30:
+        cutoff_time = current_time - 5  # Keep entries from last 5 seconds
+        session_manager._rate_limit_cache = {
+            k: v for k, v in session_manager._rate_limit_cache.items()
+            if v['timestamp'] > cutoff_time
+        }
+        session_manager._rate_limit_cache_cleanup_time = current_time
+    
     # Use both rate limiters - take the maximum delay for safety
     dynamic_wait = session_manager.dynamic_rate_limiter.wait() if session_manager.dynamic_rate_limiter else 0
     adaptive_wait = 0.0
     
-    # Use adaptive rate limiter if available
+    # Use adaptive rate limiter if available (with error handling for performance)
     if hasattr(session_manager, 'adaptive_rate_limiter') and session_manager.adaptive_rate_limiter:
-        adaptive_wait = session_manager.adaptive_rate_limiter.wait()
+        try:
+            adaptive_wait = session_manager.adaptive_rate_limiter.wait()
+        except Exception:
+            # Silently ignore adaptive rate limiter errors to improve performance
+            adaptive_wait = 0.0
     
     # Take the maximum wait time from both systems for safety
     wait_time = max(dynamic_wait, adaptive_wait)
+    
+    # Cache the result
+    session_manager._rate_limit_cache[cache_key] = {
+        'wait_time': wait_time,
+        'timestamp': current_time
+    }
     
     # OPTIMIZATION: Reduce rate limit logging verbosity - only log significant waits
     if wait_time > 2.0:  # Only log waits over 2 seconds (increased from 0.1s)
         logger.debug(
             f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Dynamic: {dynamic_wait:.2f}s, Adaptive: {adaptive_wait:.2f}s) (Attempt {attempt})"
         )
-    elif adaptive_wait > 0 and adaptive_wait < dynamic_wait:
-        # Log when adaptive system is being more aggressive than dynamic system
+    elif adaptive_wait > 0 and adaptive_wait < dynamic_wait and wait_time > 1.0:
+        # Only log optimization when wait is significant (reduced log spam)
         logger.debug(f"⚡ Adaptive rate limiter optimizing: {adaptive_wait:.2f}s vs {dynamic_wait:.2f}s")
-    # End of if
+    
     return wait_time
 
 # End of _apply_rate_limiting

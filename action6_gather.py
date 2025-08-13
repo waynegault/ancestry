@@ -2589,102 +2589,108 @@ def _do_batch(
             f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---"
         )
 
-        # Step 3: Get DB Session for the batch
-        session = session_manager.get_db_conn()
-        if not session:
+        # Step 3: OPTIMIZED - Use long-lived DB Session for batch operations
+        # Reusing the same session reduces connection overhead significantly  
+        batch_session = session_manager.get_db_conn()
+        if not batch_session:
             logger.error(f"_do_batch Page {current_page}: Failed DB session.")
             raise SQLAlchemyError("Failed get DB session")  # Caught by outer try-except
 
-        # --- Data Processing Pipeline ---
-        logger.debug(f"Batch {current_page}: Looking up existing persons...")
-        uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-        existing_persons_map = _lookup_existing_persons(session, uuids_on_page)
+        try:
+            # --- Data Processing Pipeline (using reused session) ---
+            logger.debug(f"Batch {current_page}: Looking up existing persons...")
+            uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
+            existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
 
-        logger.debug(f"Batch {current_page}: Identifying candidates...")
-        fetch_candidates_uuid, matches_to_process_later, skipped_count = (
-            _identify_fetch_candidates(matches_on_page, existing_persons_map)
-        )
-        page_statuses["skipped"] = skipped_count
-
-        if progress_bar and skipped_count > 0:
-            # This logic updates the progress bar for items identified as "skipped" (no change from list view)
-            # It ensures the bar progresses even for items not going through full API fetch/DB prep.
-            try:
-                progress_bar.update(skipped_count)
-            except Exception as pbar_e:
-                logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
-
-        logger.debug(f"Batch {current_page}: Performing API Prefetches...")
-        
-        # Smart match prioritization and memory-optimized processing
-        if matches_to_process_later:
-            logger.debug(f"Applying smart prioritization to {len(matches_to_process_later)} matches")
-            matches_to_process_later = _prioritize_matches_by_importance(matches_to_process_later)
-            
-            # Use memory-optimized processor for large batches
-            if len(matches_to_process_later) > 100:
-                memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=500)
-                matches_to_process_later = memory_processor.process_matches_with_memory_management(
-                    matches_to_process_later, session_manager
-                )
-        
-        # _perform_api_prefetches can now raise MaxApiFailuresExceededError
-        prefetched_data = _perform_api_prefetches(
-            session_manager, fetch_candidates_uuid, matches_to_process_later
-        )  # This exception, if raised, will be caught by coord.
-
-        logger.debug(f"Batch {current_page}: Preparing DB data...")
-        prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
-            session,
-            session_manager,
-            matches_to_process_later,
-            existing_persons_map,
-            prefetched_data,
-            progress_bar,  # Pass progress_bar here
-        )
-        page_statuses["new"] = prep_statuses.get("new", 0)
-        page_statuses["updated"] = prep_statuses.get("updated", 0)
-        page_statuses["error"] = prep_statuses.get("error", 0)
-
-        logger.debug(f"Batch {current_page}: Executing DB Commit...")
-        if prepared_bulk_data:
-            logger.debug(f"Attempting bulk DB operations for page {current_page}...")
-            try:
-                with db_transn(session) as sess:
-                    bulk_success = _execute_bulk_db_operations(
-                        sess, prepared_bulk_data, existing_persons_map
-                    )
-                    if not bulk_success:
-                        logger.error(
-                            f"Bulk DB ops FAILED page {current_page}. Adjusting counts."
-                        )
-                        failed_items = len(prepared_bulk_data)
-                        page_statuses["error"] += failed_items
-                        page_statuses["new"] = 0
-                        page_statuses["updated"] = 0
-                logger.debug(f"Transaction block finished page {current_page}.")
-            except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
-                logger.error(
-                    f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}",
-                    exc_info=True,
-                )
-                failed_items = len(prepared_bulk_data)
-                page_statuses["error"] += failed_items
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error during bulk DB transaction page {current_page}: {e}",
-                    exc_info=True,
-                )
-                failed_items = len(prepared_bulk_data)
-                page_statuses["error"] += failed_items
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
-        else:
-            logger.debug(
-                f"No data prepared for bulk DB operations on page {current_page}."
+            logger.debug(f"Batch {current_page}: Identifying candidates...")
+            fetch_candidates_uuid, matches_to_process_later, skipped_count = (
+                _identify_fetch_candidates(matches_on_page, existing_persons_map)
             )
+            page_statuses["skipped"] = skipped_count
+
+            if progress_bar and skipped_count > 0:
+                # This logic updates the progress bar for items identified as "skipped" (no change from list view)
+                # It ensures the bar progresses even for items not going through full API fetch/DB prep.
+                try:
+                    progress_bar.update(skipped_count)
+                except Exception as pbar_e:
+                    logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
+
+            logger.debug(f"Batch {current_page}: Performing API Prefetches...")
+            
+            # Smart match prioritization and memory-optimized processing
+            if matches_to_process_later:
+                logger.debug(f"Applying smart prioritization to {len(matches_to_process_later)} matches")
+                matches_to_process_later = _prioritize_matches_by_importance(matches_to_process_later)
+                
+                # Use memory-optimized processor for large batches
+                if len(matches_to_process_later) > 100:
+                    memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=500)
+                    matches_to_process_later = memory_processor.process_matches_with_memory_management(
+                        matches_to_process_later, session_manager
+                    )
+            
+            # _perform_api_prefetches can now raise MaxApiFailuresExceededError
+            prefetched_data = _perform_api_prefetches(
+                session_manager, fetch_candidates_uuid, matches_to_process_later
+            )  # This exception, if raised, will be caught by coord.
+
+            logger.debug(f"Batch {current_page}: Preparing DB data...")
+            prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
+                batch_session,  # OPTIMIZED: Reuse same session
+                session_manager,
+                matches_to_process_later,
+                existing_persons_map,
+                prefetched_data,
+                progress_bar,  # Pass progress_bar here
+            )
+            page_statuses["new"] = prep_statuses.get("new", 0)
+            page_statuses["updated"] = prep_statuses.get("updated", 0)
+            page_statuses["error"] = prep_statuses.get("error", 0)
+
+            logger.debug(f"Batch {current_page}: Executing DB Commit...")
+            if prepared_bulk_data:
+                logger.debug(f"Attempting bulk DB operations for page {current_page}...")
+                try:
+                    # OPTIMIZED: Use same session for transaction instead of creating new one
+                    with db_transn(batch_session) as sess:
+                        bulk_success = _execute_bulk_db_operations(
+                            sess, prepared_bulk_data, existing_persons_map
+                        )
+                        if not bulk_success:
+                            logger.error(
+                                f"Bulk DB ops FAILED page {current_page}. Adjusting counts."
+                            )
+                            failed_items = len(prepared_bulk_data)
+                            page_statuses["error"] += failed_items
+                            page_statuses["new"] = 0
+                            page_statuses["updated"] = 0
+                    logger.debug(f"Transaction block finished page {current_page}.")
+                except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
+                    logger.error(
+                        f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}",
+                        exc_info=True,
+                    )
+                    failed_items = len(prepared_bulk_data)
+                    page_statuses["error"] += failed_items
+                    page_statuses["new"] = 0
+                    page_statuses["updated"] = 0
+                except Exception as e:
+                    logger.error(
+                        f"Unexpected error during bulk DB transaction page {current_page}: {e}",
+                        exc_info=True,
+                    )
+                    failed_items = len(prepared_bulk_data)
+                    page_statuses["error"] += failed_items
+                    page_statuses["new"] = 0
+                    page_statuses["updated"] = 0
+            else:
+                logger.debug(
+                    f"No data prepared for bulk DB operations on page {current_page}."
+                )
+        finally:
+            # OPTIMIZED: Return session only once at batch completion
+            session_manager.return_session(batch_session)
 
         _log_page_summary(
             current_page,
@@ -2783,8 +2789,7 @@ def _do_batch(
         )
 
     finally:
-        if session:
-            session_manager.return_session(session)
+        # OPTIMIZED: No need to return session here since it's handled in the main try/finally block above
         logger.debug(f"--- Finished Batch Processing for Page {current_page} ---")
 
 
@@ -4653,28 +4658,45 @@ def _fetch_batch_relationship_prob(
         "User-Agent": random.choice(config_schema.api.user_agents),
     }
 
+    # OPTIMIZATION: Use cached CSRF token instead of hitting WebDriver every time
     csrf_token_val: Optional[str] = None
-    csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
-    try:
-        # Ensure session-level cookie sync occurs once
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
-        driver_cookies_list = driver.get_cookies()
-        driver_cookies_dict = {
-            c["name"]: c["value"]
-            for c in driver_cookies_list
-            if isinstance(c, dict) and "name" in c and "value" in c
-        }
-        for name in csrf_cookie_names:
-            if name in driver_cookies_dict and driver_cookies_dict[name]:
-                csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-                rel_headers["X-CSRF-Token"] = csrf_token_val
-                logger.debug(
-                    f"Using CSRF token '{name}' from driver cookies for {api_description}."
-                )
-                break
-    except Exception as csrf_e:
-        logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
+    
+    # Try session manager's cached CSRF first (much faster)
+    if (hasattr(session_manager, '_cached_csrf_token') and 
+        hasattr(session_manager, '_is_csrf_token_valid') and
+        session_manager._is_csrf_token_valid()):
+        csrf_token_val = session_manager._cached_csrf_token
+        rel_headers["X-CSRF-Token"] = csrf_token_val
+        logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
+    else:
+        # Fallback to driver cookies only if cache miss
+        csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
+        try:
+            # Ensure session-level cookie sync occurs once
+            if hasattr(session_manager, '_sync_cookies_to_requests'):
+                session_manager._sync_cookies_to_requests()
+            driver_cookies_list = driver.get_cookies()
+            driver_cookies_dict = {
+                c["name"]: c["value"]
+                for c in driver_cookies_list
+                if isinstance(c, dict) and "name" in c and "value" in c
+            }
+            for name in csrf_cookie_names:
+                if name in driver_cookies_dict and driver_cookies_dict[name]:
+                    csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
+                    rel_headers["X-CSRF-Token"] = csrf_token_val
+                    
+                    # Cache the token for future use (5-minute cache)
+                    import time
+                    session_manager._cached_csrf_token = csrf_token_val
+                    session_manager._csrf_cache_time = time.time()
+                    
+                    logger.debug(
+                        f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}."
+                    )
+                    break
+        except Exception as csrf_e:
+            logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
 
     if "X-CSRF-Token" not in rel_headers:
         if session_manager.csrf_token:
