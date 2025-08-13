@@ -856,9 +856,9 @@ def run_core_workflow_action(session_manager, *_):
 # Action 2 (reset_db_actn)
 def reset_db_actn(session_manager: SessionManager, *_):
     """
-    Action to COMPLETELY reset the database by deleting the file. Browserless.
+    Action to COMPLETELY reset the database by truncating tables and recreating schema.
     - Closes main pool.
-    - Deletes the .db file.
+    - Truncates all tables (safer than file deletion).
     - Recreates schema from scratch.
     - Seeds the MessageType table.
     """
@@ -870,7 +870,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
     try:
         # --- 1. Close main pool FIRST ---
         if session_manager:
-            logger.debug("Closing main DB connections before database deletion...")
+            logger.debug("Closing main DB connections before database reset...")
             session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
             logger.debug("Main DB pool closed.")
         else:
@@ -882,46 +882,67 @@ def reset_db_actn(session_manager: SessionManager, *_):
         time.sleep(1.0)
         gc.collect()
 
-        # --- 2. Delete the Database File ---
+        # --- 2. Reset Database Content ---
         if db_path is None:
             logger.critical("DATABASE_FILE is not configured. Reset aborted.")
             return False
 
-        logger.debug(f"Attempting to delete database file: {db_path}...")
+        logger.debug("Starting database reset using table truncation...")
         try:
-            # Streamlined database reset using single temporary SessionManager
+            # Create temporary SessionManager for database reset
             logger.debug("Creating temporary session manager for database reset...")
             temp_manager = SessionManager()
 
-            # Step 1: Truncate all tables
-            logger.debug("Truncating all tables...")
+            # Step 1: Safely truncate all tables that exist
+            logger.debug("Safely truncating existing tables...")
             truncate_session = temp_manager.get_db_conn()
             if truncate_session:
                 with db_transn(truncate_session) as sess:
-                    # Delete all records from tables in reverse order of dependencies
-                    sess.query(ConversationLog).delete(synchronize_session=False)
-                    sess.query(DnaMatch).delete(synchronize_session=False)
-                    sess.query(FamilyTree).delete(synchronize_session=False)
-                    sess.query(Person).delete(synchronize_session=False)
-                    # Keep MessageType table intact
+                    # Check which tables exist and delete in safe order
+                    from sqlalchemy import inspect
+                    inspector = inspect(sess.get_bind())
+                    existing_tables = inspector.get_table_names()
+                    logger.debug(f"Found existing tables: {existing_tables}")
+                    
+                    # Delete in reverse dependency order, but only if tables exist
+                    if 'conversation_log' in existing_tables:
+                        sess.query(ConversationLog).delete(synchronize_session=False)
+                        logger.debug("Truncated conversation_log table")
+                    
+                    if 'dna_match' in existing_tables:
+                        sess.query(DnaMatch).delete(synchronize_session=False)
+                        logger.debug("Truncated dna_match table")
+                    
+                    if 'family_tree' in existing_tables:
+                        sess.query(FamilyTree).delete(synchronize_session=False)
+                        logger.debug("Truncated family_tree table")
+                    
+                    if 'people' in existing_tables:
+                        sess.query(Person).delete(synchronize_session=False)
+                        logger.debug("Truncated people table")
+                    
+                    # Clear message_types too for complete reset
+                    if 'message_types' in existing_tables:
+                        sess.query(MessageType).delete(synchronize_session=False)
+                        logger.debug("Truncated message_types table")
+
                 temp_manager.return_session(truncate_session)
-                logger.debug("All tables truncated successfully.")
+                logger.debug("All existing tables truncated successfully.")
             else:
                 logger.critical("Failed to get session for truncating tables. Reset aborted.")
                 return False
 
-            # Step 2: Re-initialize database schema (reuse same temp_manager)
-            logger.debug("Re-initializing database schema...")
-            # This will create a new engine and session factory pointing to the file path
+            # Step 2: Ensure all tables exist with proper schema
+            logger.debug("Ensuring complete database schema...")
             temp_manager.db_manager._initialize_engine_and_session()
             if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
                 raise SQLAlchemyError(
                     "Failed to initialize DB engine/session for recreation!"
                 )
 
-            # This will recreate the tables in the existing file
+            # Create any missing tables
             Base.metadata.create_all(temp_manager.db_manager.engine)
-            logger.debug("Database schema recreated successfully.")
+            logger.debug("Database schema ensured successfully.")
 
             # --- Seed MessageType Table ---
             recreation_session = temp_manager.get_db_conn()
