@@ -176,7 +176,7 @@ def menu():
     print("")
     print("sec. Credential Manager (Setup/View/Update/Import from .env)")
     print("s. Show Cache Statistics")
-    print("t. Toggle Console Log Level (INFO/DEBUG)")
+    print("t. Toggle Log Level (DEBUG → INFO → WARNING)")
     print("c. Clear Screen")
     print("q. Exit")
     print("settings. Review/Edit .env Settings")
@@ -1756,15 +1756,22 @@ def main():
                             break
                     if console_handler:
                         current_level = console_handler.level
-                        new_level = (
-                            logging.DEBUG
-                            if current_level > logging.DEBUG
-                            else logging.INFO
-                        )
-                        new_level_name = logging.getLevelName(new_level)
+                        
+                        # Cycle through DEBUG → INFO → WARNING
+                        if current_level == logging.DEBUG:
+                            new_level = logging.INFO
+                            new_level_name = "INFO"
+                        elif current_level == logging.INFO:
+                            new_level = logging.WARNING
+                            new_level_name = "WARNING"
+                        else:  # WARNING or other
+                            new_level = logging.DEBUG
+                            new_level_name = "DEBUG"
+                        
                         # Re-call setup_logging to potentially update filters etc. too
                         logger = setup_logging(log_level=new_level_name)
                         logger.info(f"Console log level toggled to: {new_level_name}")
+                        print(f"Log level changed to: {new_level_name}")
                     else:
                         logger.warning(
                             "Could not find console handler to toggle level."

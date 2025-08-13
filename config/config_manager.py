@@ -522,6 +522,17 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_CONCURRENCY value: {max_concurrency_value}")
 
+        # Load thread pool workers override for Action 6
+        thread_pool_workers_value = os.getenv("THREAD_POOL_WORKERS")
+        if thread_pool_workers_value:
+            try:
+                # Store under API scope for consistency with max_concurrency
+                if "api" not in config:
+                    config["api"] = {}
+                config["api"]["thread_pool_workers"] = int(thread_pool_workers_value)
+            except ValueError:
+                logger.warning(f"Invalid THREAD_POOL_WORKERS value: {thread_pool_workers_value}")
+
         # Load max productive to process configuration
         max_productive_value = os.getenv("MAX_PRODUCTIVE_TO_PROCESS")
         if max_productive_value:

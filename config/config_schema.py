@@ -427,7 +427,8 @@ class APIConfig:
     accept_language: str = "en-US,en;q=0.9"
 
     # Concurrency (controls ThreadPoolExecutor workers in Action 6)
-    max_concurrency: int = 2  # Conservative default while 429s persist
+    max_concurrency: int = 8  # PHASE 1: Increased from 2 to 8 for better performance
+    thread_pool_workers: int = 8  # PHASE 1: Explicit thread pool workers setting
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
