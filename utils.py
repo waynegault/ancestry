@@ -1039,10 +1039,6 @@ def _prepare_base_headers(
     if headers:
         filtered_overrides = {k: v for k, v in headers.items() if v is not None}
         base_headers.update(filtered_overrides)
-        if filtered_overrides:
-            logger.debug(
-                f"[{api_description}] Applied {len(filtered_overrides)} explicit header overrides."
-            )
         # End of if
     # End of if
 
@@ -1106,7 +1102,6 @@ def _prepare_api_headers(
 
     # Skip dynamic header generation to prevent recursion during API requests
     # These headers are not essential for basic API functionality
-    logger.debug(f"[{api_description}] Skipping dynamic header generation to prevent recursion.")
 
     # Add CSRF token if requested and available
     if use_csrf_token:
@@ -1125,7 +1120,6 @@ def _prepare_api_headers(
                 # End of try/except
             # End of if
             final_headers["X-CSRF-Token"] = str(raw_token_val)  # Ensure string
-            logger.debug(f"[{api_description}] Added X-CSRF-Token header.")
         else:
             logger.warning(
                 f"[{api_description}] CSRF token requested but not found in SessionManager."
@@ -1380,10 +1374,6 @@ def _prepare_api_request(
     effective_allow_redirects = allow_redirects
     # Note: Match List API should allow redirects (as it did in working version from 2 months ago)
 
-    logger.debug(
-        f"[{api_description}] Preparing Request: Method={http_method}, URL={url}, Timeout={request_timeout}s, AllowRedirects={effective_allow_redirects}"
-    )
-
     # Sync cookies
     _sync_cookies_for_request(
         session_manager=session_manager,
@@ -1520,13 +1510,11 @@ def _process_api_response(
 
         # Process based on content type
         content_type = response.headers.get("content-type", "").lower()
-        logger.debug(f"{api_description}: Content-Type: '{content_type}'")
 
         if "application/json" in content_type:
             try:
                 # Handle empty response body for JSON
                 json_result = response.json() if response.content else None
-                logger.debug(f"{api_description}: Successfully parsed JSON response.")
                 return json_result
             except JSONDecodeError as json_err:  # type: ignore
                 logger.error(
@@ -1589,9 +1577,6 @@ def _api_req(
     Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
              or Response object on non-retryable error/redirect disabled.
     """
-    # --- Diagnostic Log: Function Entry ---
-    logger.debug(f"[_api_req ENTRY] api_description: '{api_description}', url: {url}")
-
     # --- Step 1: Validate prerequisites ---
     if not session_manager or not session_manager._requests_session:
         logger.error(
@@ -1614,12 +1599,6 @@ def _api_req(
     max_delay = cfg.max_delay
     retry_status_codes = set(cfg.retry_status_codes)
 
-    # --- Diagnostic Log: Retry Params ---
-    logger.debug(
-        f"[_api_req PRE-LOOP] api_description: '{api_description}', max_retries: {max_retries}, "
-        f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
-    )
-
     # --- Step 3: Execute Request with Retry Loop ---
     retries_left = max_retries
     last_exception: Optional[Exception] = None
@@ -1628,10 +1607,6 @@ def _api_req(
 
     while retries_left > 0:
         attempt = max_retries - retries_left + 1
-        # --- Diagnostic Log: Loop Entry ---
-        logger.debug(
-            f"[_api_req LOOP ENTRY] api_description: '{api_description}', attempt: {attempt}/{max_retries}, retries_left: {retries_left}"
-        )
 
         try:
             # --- Step 3.1: Prepare the request ---

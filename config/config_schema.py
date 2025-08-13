@@ -434,7 +434,7 @@ class APIConfig:
     max_pages: int = 0  # 0 means no limit
 
     # Timing settings
-    initial_delay: float = 2.0  # Further increased from 1.0 to 2.0 for very conservative rate limiting
+    initial_delay: float = 1.5  # Reduced from 2.0 to 1.5 based on successful performance analysis
     max_delay: float = 60.0  # Maximum delay for exponential backoff
 
     # Tree settings
