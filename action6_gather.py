@@ -66,7 +66,8 @@ import random
 import re
 import sys
 import time
-from collections import Counter
+import threading
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio  # PHASE 2: Add asyncio for async/await patterns
 from datetime import datetime, timezone
@@ -621,6 +622,19 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
+                # SURGICAL FIX #20: Universal Session Health Monitoring via SessionManager
+                if not session_manager.check_session_health():
+                    logger.critical(
+                        f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
+                        f"Immediately halting processing to prevent cascade failures."
+                    )
+                    loop_final_success = False
+                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    if remaining_matches_estimate > 0:
+                        progress_bar.update(remaining_matches_estimate)
+                        state["total_errors"] += remaining_matches_estimate
+                    break  # Exit while loop immediately
+                
                 # Proactive session refresh to prevent 900-second timeout
                 if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
                     session_age = time.time() - session_manager.session_start_time
@@ -892,7 +906,7 @@ def coord(
             context={"session_state": "authenticated but no UUID"},
         )
 
-    # Step 2: Initialize state
+    # Step 2: Initialize state  
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
     logger.debug(
@@ -977,6 +991,7 @@ def coord(
             state["total_skipped"],
             state["total_errors"],
         )
+        
         # Re-raise KeyboardInterrupt if that was the cause
         exc_info_tuple = sys.exc_info()
         if exc_info_tuple[0] is KeyboardInterrupt:
@@ -1393,7 +1408,25 @@ def _perform_api_prefetches(
         )  # For ladder results before combining
 
         logger.debug(f"Processing {len(futures)} initially submitted API tasks...")
+        processed_tasks = 0
         for future in as_completed(futures):
+            # SURGICAL FIX #20: Universal session health check during batch processing
+            processed_tasks += 1
+            if processed_tasks % 10 == 0:  # Check every 10 processed tasks
+                if not session_manager.check_session_health():
+                    logger.critical(
+                        f"🚨 Session death detected during batch processing "
+                        f"(task {processed_tasks}/{len(futures)}). Cancelling remaining tasks."
+                    )
+                    # Cancel all remaining futures
+                    for f_cancel in futures:
+                        if not f_cancel.done():
+                            f_cancel.cancel()
+                    # Fast-fail to prevent more cascade failures
+                    raise MaxApiFailuresExceededError(
+                        f"Session death detected during batch processing - cancelled {len([f for f in futures if not f.done()])} remaining tasks"
+                    )
+            
             task_type, identifier_uuid = futures[future]
             try:
                 result = future.result()
@@ -1448,12 +1481,27 @@ def _perform_api_prefetches(
                 for f_cancel in futures:  # Iterate over original futures dict keys
                     if not f_cancel.done():
                         f_cancel.cancel()
-                logger.critical(
-                    f"Exceeded critical API failure threshold ({critical_combined_details_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) for combined_details. Halting batch."
+                
+                # SURGICAL FIX #20: Check if this is due to session death cascade (Universal approach)
+                is_session_death = False
+                if session_manager.is_session_death_cascade():
+                    is_session_death = True
+                    logger.critical(
+                        f"🚨 CRITICAL FAILURE DUE TO SESSION DEATH CASCADE: "
+                        f"Browser session died causing {critical_combined_details_failures} API failures. "
+                        f"Should have halted at session death, not after {CRITICAL_API_FAILURE_THRESHOLD} API failures."
+                    )
+                else:
+                    logger.critical(
+                        f"Exceeded critical API failure threshold ({critical_combined_details_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) for combined_details. Halting batch."
+                    )
+                    
+                error_msg = (
+                    f"Session death cascade caused {critical_combined_details_failures} API failures"
+                    if is_session_death
+                    else f"Critical API failure threshold reached for combined_details ({critical_combined_details_failures} failures)."
                 )
-                raise MaxApiFailuresExceededError(
-                    f"Critical API failure threshold reached for combined_details ({critical_combined_details_failures} failures)."
-                )
+                raise MaxApiFailuresExceededError(error_msg)
 
         cfpid_to_uuid_map: Dict[str, str] = {}
         ladder_futures = {}
@@ -2807,14 +2855,14 @@ def _do_batch(
             total_stats["error"] += errors
             
             # Log batch summary
-            logger.debug("")  # Blank line above
+            print()
             logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
             logger.debug(f"  New Person/Data: {new}")
             logger.debug(f"  Updated Person/Data: {updated}")
             logger.debug(f"  Skipped (No Change): {skipped}")
             logger.debug(f"  Errors during Prep/DB: {errors}")
-            logger.debug("---------------------------")
-            logger.debug("")  # Blank line below
+            logger.debug("---------------------------\n")
+
         
         return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
     
@@ -4400,7 +4448,18 @@ def _fetch_combined_details(
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         return None
 
+    # SURGICAL FIX #20: Universal session validation with SessionManager death detection
+    if session_manager.should_halt_operations():
+        logger.warning(f"_fetch_combined_details: Halting due to session death cascade for UUID {match_uuid}")
+        raise ConnectionError(
+            f"Session death cascade detected - halting combined details fetch (UUID: {match_uuid})"
+        )
+
+    # Traditional session check with enhanced logging
     if not session_manager.is_sess_valid():
+        # Update session health monitoring in SessionManager
+        session_manager.check_session_health()
+            
         logger.error(
             f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
         )
@@ -4689,7 +4748,19 @@ def _fetch_batch_badge_details(
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_badge_details: Missing my_uuid or match_uuid.")
         return None
+        
+    # SURGICAL FIX #20: Universal session validation with SessionManager death detection
+    if session_manager.should_halt_operations():
+        logger.warning(f"_fetch_batch_badge_details: Halting due to session death cascade for UUID {match_uuid}")
+        raise ConnectionError(
+            f"Session death cascade detected - halting badge details fetch (UUID: {match_uuid})"
+        )
+
+    # Traditional session check with enhanced logging
     if not session_manager.is_sess_valid():
+        # Update session health monitoring in SessionManager
+        session_manager.check_session_health()
+            
         logger.error(
             f"_fetch_batch_badge_details: WebDriver session invalid for UUID {match_uuid}."
         )

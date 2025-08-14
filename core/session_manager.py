@@ -54,6 +54,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
@@ -165,6 +166,19 @@ class SessionManager:
             self.dynamic_rate_limiter = DynamicRateLimiter()
         except ImportError:
             self.dynamic_rate_limiter = None
+
+        # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
+        self.session_health_monitor = {
+            'is_alive': threading.Event(),
+            'death_detected': threading.Event(),
+            'last_heartbeat': time.time(),
+            'heartbeat_interval': 30,  # Check every 30 seconds
+            'death_cascade_halt': threading.Event(),
+            'death_timestamp': None,
+            'parallel_operations': 0,
+            'death_cascade_count': 0
+        }
+        self.session_health_monitor['is_alive'].set()  # Initially alive
 
         # === PHASE 11.1: ADAPTIVE RATE LIMITING ===
         try:
@@ -586,6 +600,68 @@ class SessionManager:
             logger.error(f"Session recovery failed: {e}", exc_info=True)
 
         return False
+
+    # UNIVERSAL SESSION HEALTH MONITORING METHODS
+    def check_session_health(self) -> bool:
+        """
+        Universal session health monitoring that detects session death and prevents
+        cascade failures during long-running operations. 
+        
+        This replaces action6-specific monitoring with universal monitoring.
+        """
+        try:
+            # Quick session validation first
+            if not self.is_sess_valid():
+                if not self.session_health_monitor['death_detected'].is_set():
+                    self.session_health_monitor['death_detected'].set()
+                    self.session_health_monitor['is_alive'].clear()
+                    self.session_health_monitor['death_timestamp'] = time.time()
+                    logger.critical(
+                        f"🚨 SESSION DEATH DETECTED at {time.strftime('%H:%M:%S')}"
+                        f" - Universal session health monitoring triggered"
+                    )
+                return False
+            
+            # Update heartbeat if session is alive
+            self.session_health_monitor['last_heartbeat'] = time.time()
+            return True
+            
+        except Exception as exc:
+            logger.error(f"Session health check failed: {exc}")
+            # Assume session is dead on health check failure
+            if not self.session_health_monitor['death_detected'].is_set():
+                self.session_health_monitor['death_detected'].set()
+                self.session_health_monitor['is_alive'].clear()
+                self.session_health_monitor['death_timestamp'] = time.time()
+                logger.critical(f"🚨 SESSION HEALTH CHECK FAILED - Assuming session death")
+            return False
+
+    def is_session_death_cascade(self) -> bool:
+        """Check if we're in a session death cascade scenario."""
+        return self.session_health_monitor['death_detected'].is_set()
+
+    def should_halt_operations(self) -> bool:
+        """Determine if operations should halt due to session death."""
+        if self.is_session_death_cascade():
+            self.session_health_monitor['death_cascade_count'] += 1
+            
+            # Halt immediately if session is dead
+            logger.warning(
+                f"⚠️  Halting operation due to session death cascade "
+                f"(cascade #{self.session_health_monitor['death_cascade_count']})"
+            )
+            return True
+        return False
+
+    def reset_session_health_monitoring(self):
+        """Reset session health monitoring (used when creating new sessions)."""
+        self.session_health_monitor['is_alive'].set()
+        self.session_health_monitor['death_detected'].clear()
+        self.session_health_monitor['last_heartbeat'] = time.time()
+        self.session_health_monitor['death_timestamp'] = None
+        self.session_health_monitor['parallel_operations'] = 0
+        self.session_health_monitor['death_cascade_count'] = 0
+        logger.debug("🔄 Session health monitoring reset for new session")
 
     def _reset_logged_flags(self):
         """Reset flags used to prevent repeated logging of IDs."""
