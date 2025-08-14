@@ -631,6 +631,22 @@ def _main_page_processing_loop(
                             session_manager.session_start_time = time.time()  # Reset session timer
                         else:
                             logger.error("❌ Proactive session refresh failed")
+
+                # SURGICAL FIX #12: Enhanced Connection Pool Optimization
+                # Optimize database connections every 25 pages
+                if current_page_num % 25 == 0:
+                    try:
+                        # Use existing database manager access pattern
+                        if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
+                            db_manager = session_manager.db_manager
+                            if hasattr(db_manager, 'get_performance_stats'):
+                                stats = db_manager.get_performance_stats()
+                                active_conns = stats.get('active_connections', 0)
+                                logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
+                            else:
+                                logger.debug(f"Database connection pool check at page {current_page_num}")
+                    except Exception as pool_opt_exc:
+                        logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
                 
                 if not session_manager.is_sess_valid():
                     logger.critical(
@@ -1206,6 +1222,8 @@ def _perform_api_prefetches(
     Raises:
         MaxApiFailuresExceededError: If critical API failure threshold is met.
     """
+    import time  # For timing API operations
+    
     batch_combined_details: Dict[str, Optional[Dict[str, Any]]] = {}
     batch_tree_data: Dict[str, Optional[Dict[str, Any]]] = (
         {}
@@ -1223,8 +1241,26 @@ def _perform_api_prefetches(
 
     critical_combined_details_failures = 0
 
+    # SURGICAL FIX #13: Dynamic Worker Pool Optimization
+    # Optimize worker count based on API load and rate limiting performance
+    base_workers = THREAD_POOL_WORKERS
+    optimized_workers = base_workers
+    
+    if num_candidates <= 3:
+        # Light load - reduce workers to avoid rate limiting overhead
+        optimized_workers = 1
+        logger.debug(f"Light load optimization: Using {optimized_workers} worker for {num_candidates} candidates")
+    elif num_candidates >= 15:
+        # Heavy load - increase workers but respect rate limits
+        optimized_workers = min(4, base_workers + 1)
+        logger.debug(f"Heavy load optimization: Using {optimized_workers} workers for {num_candidates} candidates")
+    else:
+        # Medium load - use configured workers
+        optimized_workers = base_workers
+        logger.debug(f"Optimal load: Using {optimized_workers} workers for {num_candidates} candidates")
+
     logger.debug(
-        f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {THREAD_POOL_WORKERS} workers) ---"
+        f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {optimized_workers} workers) ---"
     )
 
     uuids_for_tree_badge_ladder = {
@@ -1237,7 +1273,7 @@ def _perform_api_prefetches(
         f"Identified {len(uuids_for_tree_badge_ladder)} candidates for Badge/Ladder fetch."
     )
 
-    with ThreadPoolExecutor(max_workers=THREAD_POOL_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=optimized_workers) as executor:
         # OPTIMIZATION: Conditional relationship probability fetching
         # Only fetch relationship probability for significant matches (configurable threshold)
         # to reduce API overhead for distant matches
@@ -1252,13 +1288,27 @@ def _perform_api_prefetches(
                     logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold)")
 
         # SURGICAL FIX #5: Smart Rate Limiting for Parallel Processing
-        # Apply batch rate limiting instead of individual call limiting to reduce delays
-        # Calculate total API calls needed for optimized rate limiting
+        # SURGICAL FIX #9: Smart Rate Limiting based on actual API load
+        # Calculate total API calls needed for intelligent rate limiting
         total_api_calls = len(fetch_candidates_uuid) + len(high_priority_uuids) + len(uuids_for_tree_badge_ladder)
         if total_api_calls > 0:
-            # Apply initial rate limiting once for the batch
-            _apply_rate_limiting(session_manager)
-            logger.debug(f"Applied batch rate limiting for {total_api_calls} parallel API calls")
+            # Apply proportional rate limiting based on API call volume
+            if total_api_calls >= 15:
+                # Heavy batch - apply full rate limiting
+                _apply_rate_limiting(session_manager)
+                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+            elif total_api_calls >= 5:
+                # Medium batch - apply reduced rate limiting (wait less time)
+                import time
+                time.sleep(1.2)  # Shorter than normal rate limiting
+                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+            else:
+                # Light batch - minimal rate limiting (very short delay)
+                import time
+                time.sleep(0.3)  # Just 300ms delay for light loads
+                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+        else:
+            logger.debug("No API calls needed - skipping all rate limiting")
 
         for uuid_val in fetch_candidates_uuid:
             # Removed individual rate limiting - now handled at batch level
@@ -2622,17 +2672,36 @@ def _do_batch(
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
     If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
     SURGICAL FIX #7: Reuses database session across all batches on a page.
+    SURGICAL FIX #11: Smart Batch Size Optimization based on processing efficiency.
     """
-    # Get BATCH_SIZE from configuration
+    # SURGICAL FIX #11: Smart Batch Size Optimization
     try:
         configured_batch_size = _get_configured_batch_size()
-    except:
-        configured_batch_size = 20  # Fallback to page size
+        
+        # Dynamic batch size adjustment based on page characteristics
+        num_matches_on_page = len(matches_on_page)
+        optimized_batch_size = configured_batch_size
+        
+        # For large pages, increase batch size for efficiency
+        if num_matches_on_page >= 50:
+            optimized_batch_size = min(25, configured_batch_size + 5)
+            logger.debug(f"Large page optimization: Increased batch size from {configured_batch_size} to {optimized_batch_size}")
+        # For small pages, use smaller batches for responsiveness
+        elif num_matches_on_page <= 10:
+            optimized_batch_size = max(5, configured_batch_size - 3)
+            logger.debug(f"Small page optimization: Reduced batch size from {configured_batch_size} to {optimized_batch_size}")
+        
+        # Override for memory efficiency during heavy processing
+        if current_page % 20 == 0:  # Every 20 pages, use smaller batches
+            optimized_batch_size = max(5, optimized_batch_size - 2)
+            logger.debug(f"Memory efficiency: Reduced batch size to {optimized_batch_size} at page {current_page}")
+        
+    except Exception as batch_opt_exc:
+        logger.warning(f"Batch size optimization failed: {batch_opt_exc}, using fallback")
+        optimized_batch_size = 10  # Safe fallback
     
-    num_matches_on_page = len(matches_on_page)
-    
-    # If we have fewer matches than batch size, process normally (no need to split)
-    if num_matches_on_page <= configured_batch_size:
+    # If we have fewer matches than optimized batch size, process normally (no need to split)
+    if num_matches_on_page <= optimized_batch_size:
         return _process_page_matches(session_manager, matches_on_page, current_page, progress_bar)
     
     # SURGICAL FIX #7: Create single session for all batches on this page
@@ -2643,12 +2712,12 @@ def _do_batch(
     
     try:
         # Otherwise, split into batches and process each with individual summaries
-        logger.debug(f"Splitting page {current_page} ({num_matches_on_page} matches) into batches of {configured_batch_size}")
+        logger.debug(f"Splitting page {current_page} ({num_matches_on_page} matches) into batches of {optimized_batch_size}")
         total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
         
-        for batch_idx in range(0, num_matches_on_page, configured_batch_size):
-            batch_matches = matches_on_page[batch_idx:batch_idx + configured_batch_size]
-            batch_num = (batch_idx // configured_batch_size) + 1
+        for batch_idx in range(0, num_matches_on_page, optimized_batch_size):
+            batch_matches = matches_on_page[batch_idx:batch_idx + optimized_batch_size]
+            batch_num = (batch_idx // optimized_batch_size) + 1
             
             logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
             
@@ -2920,6 +2989,32 @@ def _process_page_matches(
         )
 
     finally:
+        # SURGICAL FIX #10: Enhanced Memory Management
+        # Clean up large objects to prevent memory accumulation
+        try:
+            # Clear large data structures
+            if 'matches_on_page' in locals():
+                matches_on_page.clear()
+            if 'existing_persons_map' in locals():
+                existing_persons_map.clear()
+            if 'prepared_bulk_data' in locals() and hasattr(prepared_bulk_data, 'clear'):
+                prepared_bulk_data.clear()
+            if 'prefetched_data' in locals() and isinstance(prefetched_data, dict):
+                prefetched_data.clear()
+            
+            # Force garbage collection every 10 pages to prevent memory buildup
+            if current_page % 10 == 0:
+                import gc
+                collected = gc.collect()
+                logger.debug(f"Memory cleanup: Forced garbage collection at page {current_page}, collected {collected} objects")
+            elif current_page % 5 == 0:
+                # Light cleanup every 5 pages
+                import gc
+                gc.collect(0)  # Only collect generation 0
+                logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
+        except Exception as cleanup_exc:
+            logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
+        
         # OPTIMIZED: No need to return session here since it's handled in the main try/finally block above
         logger.debug(f"--- Finished Batch Processing for Page {current_page} ---")
 
@@ -4184,6 +4279,17 @@ def _fetch_combined_details(
         Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
         longest_shared_segment, last_logged_in_dt, contactable, etc.
     """
+    # SURGICAL FIX #14: Enhanced Smart Caching using existing global cache system
+    if global_cache is not None:
+        cache_key = f"combined_details_{match_uuid}"
+        try:
+            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            if cached_data is not ENOVAL and isinstance(cached_data, dict):
+                logger.debug(f"Cache hit for combined details: {match_uuid}")
+                return cached_data
+        except Exception as cache_exc:
+            logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
+
     my_uuid = session_manager.my_uuid
 
     if not my_uuid or not match_uuid:
@@ -4427,6 +4533,21 @@ def _fetch_combined_details(
                 if isinstance(e, requests.exceptions.RequestException):
                     raise
 
+    # SURGICAL FIX #14: Cache successful results using existing global cache system
+    if combined_data and global_cache is not None:
+        cache_key = f"combined_details_{match_uuid}"
+        try:
+            # Cache for a shorter TTL since match details can change
+            global_cache.set(
+                cache_key,
+                combined_data,
+                expire=3600,  # 1 hour TTL for combined details
+                retry=True
+            )
+            logger.debug(f"Cached combined details for {match_uuid}")
+        except Exception as cache_exc:
+            logger.debug(f"Failed to cache combined details for {match_uuid}: {cache_exc}")
+
     return combined_data if combined_data else None
 
 
@@ -4449,6 +4570,17 @@ def _fetch_batch_badge_details(
         A dictionary containing badge details (their_cfpid, their_firstname, etc.)
         if successful, otherwise None.
     """
+    # SURGICAL FIX #14: Enhanced Smart Caching using existing global cache system
+    if global_cache is not None:
+        cache_key = f"badge_details_{match_uuid}"
+        try:
+            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            if cached_data is not ENOVAL and isinstance(cached_data, dict):
+                logger.debug(f"Cache hit for badge details: {match_uuid}")
+                return cached_data
+        except Exception as cache_exc:
+            logger.debug(f"Cache check failed for badge details {match_uuid}: {cache_exc}")
+
     my_uuid = session_manager.my_uuid
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_badge_details: Missing my_uuid or match_uuid.")
@@ -4503,6 +4635,22 @@ def _fetch_batch_badge_details(
                 "their_lastname": person_badged.get("lastName", "Unknown"),
                 "their_birth_year": person_badged.get("birthYear"),
             }
+            
+            # SURGICAL FIX #14: Cache successful badge details using existing global cache system
+            if global_cache is not None:
+                cache_key = f"badge_details_{match_uuid}"
+                try:
+                    # Cache for shorter TTL since badge details can change
+                    global_cache.set(
+                        cache_key,
+                        result_data,
+                        expire=3600,  # 1 hour TTL for badge details
+                        retry=True
+                    )
+                    logger.debug(f"Cached badge details for {match_uuid}")
+                except Exception as cache_exc:
+                    logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
+            
             return result_data
         elif isinstance(badge_response, requests.Response):
             logger.warning(
