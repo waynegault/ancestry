@@ -415,27 +415,27 @@ class APIConfig:
     google_ai_model: str = "gemini-1.5-flash-latest"
 
     # Request settings
-    request_timeout: int = 30
-    max_retries: int = 3
-    retry_backoff_factor: float = 4.0  # Further increased from 2.0 to 4.0 for much longer waits on 429 errors
+    request_timeout: int = 60  # Increased from 30 to 60 seconds for slower API responses during rate limiting
+    max_retries: int = 5  # Increased from 3 to 5 for better resilience to transient rate limits
+    retry_backoff_factor: float = 6.0  # Increased from 4.0 to 6.0 for much longer exponential backoff on 429 errors
 
     # Rate limiting (made very conservative to handle aggressive 429 errors)
     rate_limit_enabled: bool = True
-    requests_per_second: float = 0.5  # Further reduced from 1.0 to 0.5 for very conservative rate limiting
-    burst_limit: int = 3  # Further reduced from 5 to 3 for minimal bursting
+    requests_per_second: float = 0.1  # Drastically reduced from 0.5 to 0.1 for ultra-conservative rate limiting
+    burst_limit: int = 1  # Reduced from 3 to 1 to prevent bursting that triggers 429s
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
     # Concurrency (controls ThreadPoolExecutor workers in Action 6)
-    max_concurrency: int = 8  # PHASE 1: Increased from 2 to 8 for better performance
-    thread_pool_workers: int = 8  # PHASE 1: Explicit thread pool workers setting
+    max_concurrency: int = 2  # Drastically reduced from 8 to 2 to prevent API rate limiting
+    thread_pool_workers: int = 2  # Reduced to match max_concurrency for conservative processing
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
 
     # Timing settings
-    initial_delay: float = 1.0  # Further reduced from 1.5 to 1.0 based on successful 3.0 RPS performance
-    max_delay: float = 60.0  # Maximum delay for exponential backoff
+    initial_delay: float = 2.0  # Increased from 1.0 to 2.0 for more conservative initial spacing
+    max_delay: float = 300.0  # Increased from 60.0 to 300.0 (5 minutes) for severe rate limiting recovery
 
     # Tree settings
     tree_name: Optional[str] = None
@@ -882,17 +882,17 @@ def run_comprehensive_tests() -> bool:
             # Test default creation
             api_config = APIConfig()
             assert api_config.base_url == "https://www.ancestry.com/"
-            assert api_config.request_timeout == 30
+            assert api_config.request_timeout == 60  # Updated to match our rate limiting fixes
             assert api_config.rate_limit_enabled is True
 
             # Test custom values
             custom_config = APIConfig(
                 base_url="https://example.com/",
-                request_timeout=60,
+                request_timeout=90,  # Updated to use higher value for testing
                 rate_limit_enabled=False,
             )
             assert custom_config.base_url == "https://example.com/"
-            assert custom_config.request_timeout == 60
+            assert custom_config.request_timeout == 90  # Updated to match
 
             # Test validation errors
             try:
@@ -1215,6 +1215,57 @@ def run_comprehensive_tests() -> bool:
             ]:
                 assert hasattr(config_class, "__dataclass_fields__")
 
+    def test_rate_limiting_configuration():
+        """Test that rate limiting configuration values are conservative for API stability."""
+        print("🚦 Testing Rate Limiting Configuration...")
+        
+        api_config = APIConfig()
+        
+        # Validate conservative settings for API rate limiting compliance
+        issues = []
+        
+        if api_config.requests_per_second > 0.2:
+            issues.append(f"requests_per_second too high: {api_config.requests_per_second}")
+        if api_config.thread_pool_workers > 4:
+            issues.append(f"thread_pool_workers too high: {api_config.thread_pool_workers}")
+        if api_config.max_concurrency > 4:
+            issues.append(f"max_concurrency too high: {api_config.max_concurrency}")
+        if api_config.burst_limit > 2:
+            issues.append(f"burst_limit too high: {api_config.burst_limit}")
+        if api_config.max_retries < 5:
+            issues.append(f"max_retries too low: {api_config.max_retries}")
+        if api_config.retry_backoff_factor < 6.0:
+            issues.append(f"retry_backoff_factor too low: {api_config.retry_backoff_factor}")
+        if api_config.request_timeout < 60:
+            issues.append(f"request_timeout too low: {api_config.request_timeout}")
+        if api_config.max_delay < 300:
+            issues.append(f"max_delay too low: {api_config.max_delay}")
+            
+        if issues:
+            print(f"   ❌ Configuration issues found:")
+            for issue in issues:
+                print(f"      - {issue}")
+            raise AssertionError(f"Rate limiting configuration issues: {issues}")
+        else:
+            print(f"   ✅ All rate limiting settings are properly conservative")
+
+    def test_max_pages_configuration():
+        """Test MAX_PAGES configuration loading and validation."""
+        print("📄 Testing MAX_PAGES Configuration...")
+        
+        api_config = APIConfig()
+        max_pages = api_config.max_pages
+        print(f"   MAX_PAGES default value: {max_pages}")
+        
+        # Validate that max_pages is properly configured
+        assert isinstance(max_pages, int), f"MAX_PAGES should be integer, got {type(max_pages)}"
+        assert max_pages >= 0, f"MAX_PAGES should be non-negative, got {max_pages}"
+        
+        if max_pages == 0:
+            print("   ✅ MAX_PAGES=0 correctly configured for unlimited processing")
+        else:
+            print(f"   ⚠️  MAX_PAGES={max_pages} limits processing (not unlimited)")
+
     # Define all tests
     tests = [
         ("Database Config Validation", test_database_config),
@@ -1227,6 +1278,8 @@ def run_comprehensive_tests() -> bool:
         ("Config Schema to_dict", test_config_schema_to_dict),
         ("Config Schema from_dict", test_config_schema_from_dict),
         ("Config Schema Validation", test_config_schema_validation),
+        ("Rate Limiting Configuration", test_rate_limiting_configuration),
+        ("MAX_PAGES Configuration", test_max_pages_configuration),
         ("Edge Cases", test_edge_cases),
         ("Integration Testing", test_integration),
         ("Performance Testing", test_performance),

@@ -134,8 +134,14 @@ try:
 except (ValueError, TypeError):
     DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = 10
 
+# Dynamic critical API failure threshold based on total pages to process
+def get_critical_api_failure_threshold(total_pages: int = 100) -> int:
+    """Calculate appropriate failure threshold based on total pages to process."""
+    # Allow 1 failure per 20 pages, minimum of 10, maximum of 100
+    return max(10, min(100, total_pages // 20))
+
 CRITICAL_API_FAILURE_THRESHOLD: int = (
-    6  # Slightly higher threshold to avoid premature batch aborts on transient 429s
+    10  # Default minimum threshold, will be dynamically adjusted based on total pages
 )
 
 # Configurable settings from config_schema
@@ -145,16 +151,16 @@ try:
     from config import config_schema as _cfg
     # PHASE 1: Use THREAD_POOL_WORKERS if available, otherwise use MAX_CONCURRENCY
     _thread_pool_workers = getattr(getattr(_cfg, 'api', None), 'thread_pool_workers', None)
-    _max_concurrency = getattr(getattr(_cfg, 'api', None), 'max_concurrency', 8)
+    _max_concurrency = getattr(getattr(_cfg, 'api', None), 'max_concurrency', 2)  # Conservative default
     
     # Prioritize THREAD_POOL_WORKERS setting, fall back to MAX_CONCURRENCY
     THREAD_POOL_WORKERS: int = _thread_pool_workers if _thread_pool_workers is not None else _max_concurrency
     
-    # ⚡ OPTIMIZATION 3: Increased minimum workers for better parallelization
-    THREAD_POOL_WORKERS = max(16, THREAD_POOL_WORKERS) if THREAD_POOL_WORKERS > 0 else 16
+    # Conservative approach: Use configured values without artificial inflation for rate limiting
+    THREAD_POOL_WORKERS = max(1, THREAD_POOL_WORKERS) if THREAD_POOL_WORKERS > 0 else 2
     
 except Exception:
-    THREAD_POOL_WORKERS = 16  # ⚡ OPTIMIZATION 3: Increased from 8 to 16 for better performance
+    THREAD_POOL_WORKERS = 2  # Conservative fallback for rate limiting compliance
 
 
 # --- Custom Exceptions ---
@@ -570,6 +576,14 @@ def _main_page_processing_loop(
     state: Dict[str, Any],  # Pass the whole state dict
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
+    
+    # Calculate dynamic API failure threshold based on total pages to process
+    global CRITICAL_API_FAILURE_THRESHOLD
+    dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
+    original_threshold = CRITICAL_API_FAILURE_THRESHOLD
+    CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold
+    logger.info(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
+    
     current_page_num = start_page
     # Estimate total matches for the progress bar based on pages *this run*
     total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
@@ -5519,6 +5533,39 @@ def action6_gather_module_tests() -> bool:
             print("🎉 Configuration respect regression tests passed!")
         return success
 
+    def test_dynamic_api_failure_threshold():
+        """
+        🔧 TEST: Dynamic API failure threshold calculation.
+        
+        Tests that the dynamic threshold scales appropriately with the number of pages
+        to prevent premature halts on large processing runs while maintaining safety.
+        """
+        print("🔧 Testing Dynamic API Failure Threshold:")
+        results = []
+        
+        test_cases = [
+            (10, 10),    # 10 pages -> minimum threshold of 10
+            (100, 10),   # 100 pages -> 100/20 = 5, but minimum is 10
+            (200, 10),   # 200 pages -> 200/20 = 10
+            (400, 20),   # 400 pages -> 400/20 = 20  
+            (795, 39),   # 795 pages -> 795/20 = 39 (our actual use case)
+            (2000, 100), # 2000 pages -> 2000/20 = 100 (maximum)
+            (5000, 100), # 5000 pages -> 5000/20 = 250, but capped at 100
+        ]
+        
+        for pages, expected in test_cases:
+            result = get_critical_api_failure_threshold(pages)
+            status = "✅" if result == expected else "❌"
+            print(f"   {status} {pages} pages -> {result} threshold (expected {expected})")
+            results.append(result == expected)
+            
+        print(f"   Current default threshold: {CRITICAL_API_FAILURE_THRESHOLD}")
+        
+        success = all(results)
+        if success:
+            print("🎉 Dynamic API failure threshold tests passed!")
+        return success
+
     def test_regression_prevention_session_management():
         """
         🛡️ REGRESSION TEST: Session management and stability.
@@ -5584,6 +5631,14 @@ def action6_gather_module_tests() -> bool:
             expected_behavior="Configuration values like MAX_PAGES are loaded and respected by the application",
             test_description="Prevents regression where configuration values were ignored",
             method_description="Testing that MAX_PAGES and other critical config values are accessible and valid",
+        )
+
+        suite.run_test(
+            test_name="Dynamic API failure threshold calculation",
+            test_func=test_dynamic_api_failure_threshold,
+            expected_behavior="API failure threshold scales appropriately with number of pages to process",
+            test_description="Dynamic threshold prevents premature halts on large runs while maintaining safety",
+            method_description="Testing threshold calculation: min 10, max 100, scales at 1 per 20 pages",
         )
 
         suite.run_test(
