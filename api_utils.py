@@ -1170,10 +1170,19 @@ def call_suggest_api(
                 raise timeout_error
         except requests.exceptions.RequestException as req_err:
             if "rate limit" in str(req_err).lower() or "429" in str(req_err):
-                raise APIRateLimitError(
-                    f"API rate limit exceeded: {req_err}",
-                    context={"api": api_description, "url": suggest_url},
-                )
+                # Enhanced 429 handling with progressive backoff
+                import time
+                rate_limit_delay = 5.0 * (2 ** (attempt - 1))  # Progressive backoff starting at 5 seconds
+                rate_limit_delay = min(rate_limit_delay, 300.0)  # Cap at 5 minutes
+                logger.warning(f"Rate limit (429) on {api_description}, attempt {attempt}/{max_attempts}. "
+                             f"Waiting {rate_limit_delay:.1f}s before retry...")
+                time.sleep(rate_limit_delay)
+                if attempt == max_attempts:
+                    raise APIRateLimitError(
+                        f"API rate limit exceeded after {max_attempts} attempts: {req_err}",
+                        context={"api": api_description, "url": suggest_url, "final_delay": rate_limit_delay},
+                    )
+                continue  # Retry the request after delay
             raise NetworkTimeoutError(
                 f"Network request failed: {req_err}",
                 context={"api": api_description, "url": suggest_url},
