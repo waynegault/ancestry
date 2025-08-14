@@ -421,7 +421,7 @@ class APIConfig:
 
     # Rate limiting (made very conservative to handle aggressive 429 errors)
     rate_limit_enabled: bool = True
-    requests_per_second: float = 0.1  # Drastically reduced from 0.5 to 0.1 for ultra-conservative rate limiting
+    requests_per_second: float = 0.2  # Optimized from 0.1 to 0.2 (5s between requests) - balancing speed vs 429 avoidance
     burst_limit: int = 1  # Reduced from 3 to 1 to prevent bursting that triggers 429s
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
