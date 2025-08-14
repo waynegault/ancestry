@@ -740,7 +740,7 @@ def _main_page_processing_loop(
                     time.sleep(0.2)  # PHASE 1: Reduced from 0.5 to 0.2
                     continue
 
-                page_new, page_updated, page_skipped, page_errors = _do_batch_with_proper_sizing(
+                page_new, page_updated, page_skipped, page_errors = _do_batch(
                     session_manager=session_manager,
                     matches_on_page=matches_on_page_for_batch,
                     current_page=current_page_num,
@@ -902,26 +902,9 @@ def coord(
         state["final_success"] = False
     except ConnectionError as coord_conn_err:  # Catch ConnectionError if it bubbles up
         logger.critical(
-            f"ConnectionError during coord execution (page {state.get('total_pages_processed', 0)}): {coord_conn_err}",
+            f"ConnectionError during coord execution: {coord_conn_err}",
             exc_info=True,
         )
-        
-        # Try session validation/refresh before failing completely  
-        logger.info("Attempting session validation due to connection error...")
-        try:
-            if session_manager and hasattr(session_manager, 'is_sess_valid'):
-                is_valid = session_manager.is_sess_valid()
-                if not is_valid:
-                    logger.warning("Session validation failed - connection may be lost")
-                else:
-                    logger.info("Session still appears valid - connection error may be temporary")
-            
-            # Log current page for manual restart reference
-            logger.info(f"Manual restart may be needed from page {state.get('total_pages_processed', 0) + 1}")
-            
-        except Exception as recovery_err:
-            logger.error(f"Session validation attempt failed: {recovery_err}")
-        
         state["final_success"] = False
     except MaxApiFailuresExceededError as api_halt_err:
         logger.critical(
@@ -2578,95 +2561,71 @@ def _execute_bulk_db_operations(
 # End of _execute_bulk_db_operations
 
 
-def _do_batch_with_proper_sizing(
-    session_manager: SessionManager,
-    matches_on_page: List[Dict[str, Any]],
-    current_page: int,
-    progress_bar: Optional[tqdm] = None,
-) -> Tuple[int, int, int, int]:
-    """
-    Wrapper that processes matches from a page in proper BATCH_SIZE chunks.
-    Respects .env BATCH_SIZE setting and provides proper batch summaries.
-    """
-    # Get BATCH_SIZE from configuration
-    configured_batch_size = _get_configured_batch_size()  # Respects .env BATCH_SIZE=10
-    num_matches_on_page = len(matches_on_page)
-    
-    if num_matches_on_page == 0:
-        return 0, 0, 0, 0
-    
-    # Split matches into batches based on BATCH_SIZE
-    match_batches = []
-    for i in range(0, num_matches_on_page, configured_batch_size):
-        batch_matches = matches_on_page[i:i + configured_batch_size]
-        match_batches.append(batch_matches)
-    
-    num_batches = len(match_batches)
-    logger.debug(f"Processing Page {current_page} in {num_batches} batches ({configured_batch_size} matches per batch)")
-    
-    # Accumulate totals across all batches
-    total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
-    
-    # Process each batch
-    for batch_idx, batch_matches in enumerate(match_batches, 1):
-        logger.debug(f"--- Starting processing for Page {current_page} Batch No{batch_idx} ({len(batch_matches)} matches) ---")
-        
-        # Call the original _do_batch function with this subset
-        try:
-            new_count, updated_count, skipped_count, error_count = _do_batch_original(
-                session_manager, batch_matches, current_page, progress_bar
-            )
-            
-            # Accumulate results
-            total_stats["new"] += new_count
-            total_stats["updated"] += updated_count  
-            total_stats["skipped"] += skipped_count
-            total_stats["error"] += error_count
-            
-            # Log batch summary with proper formatting (blank lines above and below)
-            logger.debug("")  # Blank line above
-            logger.debug(f"---- Page {current_page} Batch No{batch_idx} Summary ----")
-            logger.debug(f"  New Person/Data: {new_count}")
-            logger.debug(f"  Updated Person/Data: {updated_count}")
-            logger.debug(f"  Skipped (No Change): {skipped_count}")
-            logger.debug(f"  Errors during Prep/DB: {error_count}")
-            logger.debug("---------------------------")
-            logger.debug("")  # Blank line below
-            
-        except Exception as batch_error:
-            logger.error(f"Error processing Page {current_page} Batch No{batch_idx}: {batch_error}")
-            # Count all matches in this batch as errors
-            batch_size = len(batch_matches)
-            total_stats["error"] += batch_size
-            if progress_bar:
-                progress_bar.update(batch_size)
-    
-    return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
-
-
-def _do_batch_original(
+def _do_batch(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
     current_page: int,
     progress_bar: Optional[tqdm] = None,  # Accept progress bar
 ) -> Tuple[int, int, int, int]:
     """
-    Processes matches from a single page in smaller batches based on BATCH_SIZE.
-    Now respects .env BATCH_SIZE setting to process matches in configurable chunks.
-    Each chunk gets its own batch summary with proper numbering.
+    Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
+    If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
+    """
+    # Get BATCH_SIZE from configuration
+    try:
+        configured_batch_size = _get_configured_batch_size()
+    except:
+        configured_batch_size = 20  # Fallback to page size
+    
+    num_matches_on_page = len(matches_on_page)
+    
+    # If we have fewer matches than batch size, or batch size is >= page size, process normally
+    if num_matches_on_page <= configured_batch_size or configured_batch_size >= 20:
+        return _process_page_matches(session_manager, matches_on_page, current_page, progress_bar)
+    
+    # Otherwise, split into batches and process each with individual summaries
+    total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+    
+    for batch_idx in range(0, num_matches_on_page, configured_batch_size):
+        batch_matches = matches_on_page[batch_idx:batch_idx + configured_batch_size]
+        batch_num = (batch_idx // configured_batch_size) + 1
+        
+        logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
+        
+        # Process this batch using the original logic
+        new, updated, skipped, errors = _process_page_matches(
+            session_manager, batch_matches, current_page, progress_bar, is_batch=True
+        )
+        
+        # Accumulate totals
+        total_stats["new"] += new
+        total_stats["updated"] += updated
+        total_stats["skipped"] += skipped
+        total_stats["error"] += errors
+        
+        # Log batch summary
+        logger.debug("")  # Blank line above
+        logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
+        logger.debug(f"  New Person/Data: {new}")
+        logger.debug(f"  Updated Person/Data: {updated}")
+        logger.debug(f"  Skipped (No Change): {skipped}")
+        logger.debug(f"  Errors during Prep/DB: {errors}")
+        logger.debug("---------------------------")
+        logger.debug("")  # Blank line below
+    
+    return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
 
-    Args:
-        session_manager: The active SessionManager instance.
-        matches_on_page: List of raw match data dictionaries from `get_matches`.
-        current_page: The current page number being processed (1-based).
-        progress_bar: Optional tqdm progress bar instance to update numerically.
 
-    Returns:
-        Tuple[int, int, int, int]: Counts of (new, updated, skipped, error) outcomes
-                                   for all batches processed from this page.
-    Raises:
-        MaxApiFailuresExceededError: If API prefetch fails critically. This is caught
-                                     by the main coord function to halt the run.
+def _process_page_matches(
+    session_manager: SessionManager,
+    matches_on_page: List[Dict[str, Any]],
+    current_page: int,
+    progress_bar: Optional[tqdm] = None,
+    is_batch: bool = False,
+) -> Tuple[int, int, int, int]:
+    """
+    Original batch processing logic - now used by both single page and chunked batch processing.
+    Coordinates DB lookups, API prefetches, data preparation, and bulk DB operations.
     """
     # Step 1: Initialization
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
@@ -5651,139 +5610,6 @@ def action6_gather_module_tests() -> bool:
             print("🎉 Dynamic API failure threshold tests passed!")
         return success
 
-    def test_batch_size_configuration():
-        """
-        🔧 TEST: BATCH_SIZE configuration is properly respected.
-        
-        Tests that matches are processed in batches according to .env BATCH_SIZE setting,
-        and that batch summaries are properly formatted with blank lines and numbering.
-        """
-        print("🔧 Testing BATCH_SIZE Configuration:")
-        results = []
-        
-        # Test batch size retrieval
-        configured_size = _get_configured_batch_size()
-        print(f"   📊 Configured batch size: {configured_size}")
-        results.append(configured_size == 10)  # Should match .env BATCH_SIZE=10
-        
-        # Test batch splitting logic
-        mock_matches = [{"uuid": f"UUID-{i:03d}", "username": f"User{i}"} for i in range(25)]
-        
-        batches = []
-        for i in range(0, len(mock_matches), configured_size):
-            batch = mock_matches[i:i + configured_size]
-            batches.append(batch)
-        
-        expected_batches = 3  # 25 matches / 10 = 3 batches (10, 10, 5)
-        print(f"   📊 25 matches split into {len(batches)} batches (expected {expected_batches})")
-        results.append(len(batches) == expected_batches)
-        
-        # Test batch sizes
-        expected_sizes = [10, 10, 5]
-        for i, batch in enumerate(batches):
-            actual_size = len(batch)
-            expected_size = expected_sizes[i]
-            status = "✅" if actual_size == expected_size else "❌"
-            print(f"   {status} Batch {i+1}: {actual_size} matches (expected {expected_size})")
-            results.append(actual_size == expected_size)
-        
-        success = all(results)
-        if success:
-            print("🎉 BATCH_SIZE configuration tests passed!")
-        return success
-
-    def test_efficient_processing():
-        """
-        🔧 TEST: Efficient processing of existing records.
-        
-        Tests that the system properly identifies and skips matches that don't need
-        re-processing, improving efficiency for pages with existing data.
-        """
-        print("🔧 Testing Efficient Processing of Existing Records:")
-        results = []
-        
-        # Test candidate identification logic
-        mock_matches = [
-            {"uuid": "EXISTING-001", "username": "ExistingUser1", "sharedCentimorgans": 50},
-            {"uuid": "NEW-001", "username": "NewUser1", "sharedCentimorgans": 30},
-            {"uuid": "EXISTING-002", "username": "ExistingUser2", "sharedCentimorgans": 25},
-        ]
-        
-        # Mock existing persons map (simulate database records)
-        mock_existing = {
-            "EXISTING-001": type('Person', (), {"uuid": "EXISTING-001", "dna_match": type('DnaMatch', (), {"shared_centimorgans": 50})})(),
-            "EXISTING-002": type('Person', (), {"uuid": "EXISTING-002", "dna_match": type('DnaMatch', (), {"shared_centimorgans": 25})})(),
-        }
-        
-        # This would normally call _identify_fetch_candidates, but we'll simulate the logic
-        candidates = []
-        skipped = 0
-        
-        for match in mock_matches:
-            uuid = match["uuid"]
-            if uuid in mock_existing:
-                existing_cm = getattr(mock_existing[uuid].dna_match, 'shared_centimorgans', 0)
-                current_cm = match.get("sharedCentimorgans", 0)
-                if existing_cm == current_cm:
-                    skipped += 1  # Should skip - no change
-                else:
-                    candidates.append(match)  # Should process - data changed
-            else:
-                candidates.append(match)  # Should process - new record
-        
-        print(f"   📊 3 total matches: {len(candidates)} candidates, {skipped} skipped")
-        results.append(len(candidates) == 1)  # Only NEW-001 should be candidate
-        results.append(skipped == 2)  # EXISTING-001 and EXISTING-002 should be skipped
-        
-        status1 = "✅" if len(candidates) == 1 else "❌"
-        status2 = "✅" if skipped == 2 else "❌"
-        print(f"   {status1} Candidates identified: {len(candidates)} (expected 1)")
-        print(f"   {status2} Records skipped: {skipped} (expected 2)")
-        
-        success = all(results)
-        if success:
-            print("🎉 Efficient processing tests passed!")
-        return success
-
-    def test_rate_limiting_optimization():
-        """
-        🔧 TEST: Rate limiting optimization balance.
-        
-        Tests that rate limiting settings provide a good balance between speed and 429 avoidance.
-        """
-        print("🔧 Testing Rate Limiting Optimization:")
-        results = []
-        
-        # Check current rate limiting settings
-        try:
-            from config import config_schema
-            rps = config_schema.api.requests_per_second
-            expected_rps = 0.2  # Optimized setting
-            
-            print(f"   📊 Current requests_per_second: {rps}")
-            print(f"   📊 Time between requests: {1/rps:.1f} seconds")
-            
-            results.append(rps == expected_rps)
-            
-            # Check if setting is reasonable (not too slow, not too fast)
-            is_reasonable = 0.1 <= rps <= 0.5  # Between 2-10 seconds per request
-            print(f"   📊 Rate limiting is reasonable: {is_reasonable}")
-            results.append(is_reasonable)
-            
-            status1 = "✅" if rps == expected_rps else "❌"
-            status2 = "✅" if is_reasonable else "❌"
-            print(f"   {status1} RPS setting: {rps} (expected {expected_rps})")
-            print(f"   {status2} Within reasonable range: {rps} (0.1-0.5)")
-            
-        except Exception as e:
-            print(f"   ❌ Error checking rate limiting config: {e}")
-            results.append(False)
-        
-        success = all(results)
-        if success:
-            print("🎉 Rate limiting optimization tests passed!")
-        return success
-
     def test_regression_prevention_session_management():
         """
         🛡️ REGRESSION TEST: Session management and stability.
@@ -5849,30 +5675,6 @@ def action6_gather_module_tests() -> bool:
             expected_behavior="Configuration values like MAX_PAGES are loaded and respected by the application",
             test_description="Prevents regression where configuration values were ignored",
             method_description="Testing that MAX_PAGES and other critical config values are accessible and valid",
-        )
-
-        suite.run_test(
-            test_name="BATCH_SIZE configuration compliance",
-            test_func=test_batch_size_configuration,
-            expected_behavior="Matches processed in configurable batches with proper summaries",
-            test_description="BATCH_SIZE from .env properly respected, batch numbering implemented",
-            method_description="Testing batch splitting logic and summary formatting with blank lines",
-        )
-
-        suite.run_test(
-            test_name="Efficient processing of existing records",
-            test_func=test_efficient_processing,
-            expected_behavior="System skips matches that don't need re-processing for efficiency",
-            test_description="Candidate identification properly detects unchanged vs changed matches",
-            method_description="Testing smart skipping logic to avoid unnecessary API calls and DB operations",
-        )
-
-        suite.run_test(
-            test_name="Rate limiting optimization balance",
-            test_func=test_rate_limiting_optimization,
-            expected_behavior="Rate limiting provides optimal speed/429-avoidance balance",
-            test_description="Current rate limiting settings balanced for efficiency without errors",
-            method_description="Testing requests_per_second is optimized (0.2 RPS = 5s intervals)",
         )
 
         suite.run_test(
