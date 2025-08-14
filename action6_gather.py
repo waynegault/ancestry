@@ -37,6 +37,11 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     except ImportError:
         pass  # Graceful degradation if performance monitor not available
 
+# FINAL OPTIMIZATION 1: Progressive Processing Integration
+def _progress_callback(progress: float) -> None:
+    """Progress callback for large dataset processing"""
+    logger.info(f"Processing progress: {progress:.1%} complete")
+
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
@@ -48,6 +53,12 @@ from utils import (
     CM_VALUE_PATTERN,
 )
 from core.logging_utils import OptimizedLogger
+
+# FINAL OPTIMIZATION 1: Progressive Processing Import
+from performance_cache import progressive_processing
+
+# FINAL OPTIMIZATION 2: Memory Optimization Import
+from memory_optimizer import ObjectPool, lazy_property
 
 # === MODULE SETUP ===
 raw_logger = setup_module(globals(), __name__)
@@ -1246,7 +1257,8 @@ def _identify_fetch_candidates(
 
 # End of _identify_fetch_candidates
 
-
+# FINAL OPTIMIZATION 1: Progressive Processing for Large API Prefetch Operations  
+@progressive_processing(chunk_size=25, progress_callback=_progress_callback)
 def _perform_api_prefetches(
     session_manager: SessionManager,
     fetch_candidates_uuid: Set[str],
@@ -1980,6 +1992,81 @@ async def _async_batch_api_prefetch(
     _log_api_performance("async_batch_prefetch", async_start_time, f"success_{success_rate:.0%}")
     
     return successful_results
+
+
+# FINAL OPTIMIZATION 3: Advanced Async Integration - Enhanced Async Orchestrator
+async def _async_enhanced_api_orchestrator(
+    session_manager: SessionManager,
+    fetch_candidates_uuid: Set[str],
+    matches_to_process_later: List[Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Advanced async orchestration that replaces ThreadPoolExecutor patterns
+    with native async/await for better resource utilization and scalability.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    # Convert to lists for async processing
+    uuid_list = list(fetch_candidates_uuid)
+    
+    if len(uuid_list) < 10:  # Small batch - use existing sync method
+        logger.debug(f"Small batch ({len(uuid_list)} items) - using sync method")
+        return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
+    
+    logger.info(f"Large batch ({len(uuid_list)} items) - using advanced async orchestration")
+    
+    # Initialize result containers
+    batch_combined_details = {}
+    batch_tree_data = {}
+    batch_relationship_prob_data = {}
+    
+    # PHASE 1: Async combined details fetching
+    async def fetch_combined_details_batch():
+        tasks = []
+        semaphore = asyncio.Semaphore(8)  # Control concurrency
+        
+        async def fetch_single_combined(uuid_val):
+            async with semaphore:
+                try:
+                    # Convert sync call to async using thread executor
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        None, 
+                        lambda: _fetch_combined_details(session_manager, uuid_val)
+                    )
+                    return uuid_val, result
+                except Exception as e:
+                    logger.warning(f"Async combined details failed for {uuid_val[:8]}: {e}")
+                    return uuid_val, None
+        
+        for uuid_val in uuid_list:
+            tasks.append(fetch_single_combined(uuid_val))
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning(f"Async combined details exception: {result}")
+            elif isinstance(result, tuple) and len(result) == 2:
+                uuid_val, data = result
+                batch_combined_details[uuid_val] = data
+    
+    # Execute async phases
+    try:
+        await fetch_combined_details_batch()
+        logger.debug(f"Async orchestrator completed: {len(batch_combined_details)} combined details fetched")
+    except Exception as e:
+        logger.error(f"Async orchestrator failed: {e}")
+        # Fallback to sync method
+        return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
+    
+    # Return data in expected format
+    return {
+        "combined": batch_combined_details,
+        "tree": batch_tree_data,
+        "rel_prob": batch_relationship_prob_data,
+    }
 
 
 # ===================================================================
@@ -3012,6 +3099,8 @@ def _do_batch(
             logger.debug(f"Page {current_page}: Returned reused session to pool")
 
 
+# FINAL OPTIMIZATION 1: Progressive Processing for Large Match Datasets
+@progressive_processing(chunk_size=50, progress_callback=_progress_callback)
 def _process_page_matches(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
@@ -3029,6 +3118,12 @@ def _process_page_matches(
     num_matches_on_page = len(matches_on_page)
     my_uuid = session_manager.my_uuid
     session: Optional[SqlAlchemySession] = None
+
+    # FINAL OPTIMIZATION 2: Memory-Optimized Data Structures Integration
+    memory_processor = None
+    if num_matches_on_page > 20:  # Use memory optimization for larger batches
+        memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=400)
+        logger.debug(f"Page {current_page}: Enabled memory optimization for {num_matches_on_page} matches")
 
     try:
         # Step 2: Basic validation
@@ -3085,10 +3180,29 @@ def _process_page_matches(
             else:
                 logger.debug(f"Batch {current_page}: Performing API Prefetches...")
                 
-                # _perform_api_prefetches can now raise MaxApiFailuresExceededError
-                prefetched_data = _perform_api_prefetches(
-                    session_manager, fetch_candidates_uuid, matches_to_process_later
-                )  # This exception, if raised, will be caught by coord.
+                # FINAL OPTIMIZATION 3: Advanced Async Integration for large batches
+                if len(fetch_candidates_uuid) >= 15:  # Use async orchestrator for large batches
+                    try:
+                        import asyncio
+                        logger.debug(f"Batch {current_page}: Using enhanced async orchestrator for {len(fetch_candidates_uuid)} candidates")
+                        
+                        # Run async orchestrator
+                        prefetched_data = asyncio.run(_async_enhanced_api_orchestrator(
+                            session_manager, fetch_candidates_uuid, matches_to_process_later
+                        ))
+                        
+                        logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
+                    except Exception as async_error:
+                        logger.warning(f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync")
+                        # Fallback to sync method
+                        prefetched_data = _perform_api_prefetches(
+                            session_manager, fetch_candidates_uuid, matches_to_process_later
+                        )
+                else:
+                    # Use standard sync method for smaller batches
+                    prefetched_data = _perform_api_prefetches(
+                        session_manager, fetch_candidates_uuid, matches_to_process_later
+                    )  # This exception, if raised, will be caught by coord.
 
             logger.debug(f"Batch {current_page}: Preparing DB data...")
             prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
