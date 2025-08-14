@@ -621,6 +621,17 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
+                # Proactive session refresh to prevent 900-second timeout
+                if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
+                    session_age = time.time() - session_manager.session_start_time
+                    if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
+                        logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
+                        if session_manager._attempt_session_recovery():
+                            logger.info("✅ Proactive session refresh successful")
+                            session_manager.session_start_time = time.time()  # Reset session timer
+                        else:
+                            logger.error("❌ Proactive session refresh failed")
+                
                 if not session_manager.is_sess_valid():
                     logger.critical(
                         f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
@@ -739,6 +750,32 @@ def _main_page_processing_loop(
                     current_page_num += 1
                     time.sleep(0.2)  # PHASE 1: Reduced from 0.5 to 0.2
                     continue
+
+                # SURGICAL FIX #8: Page-Level Skip Detection
+                # Quick check if entire page can be skipped based on existing data
+                if matches_on_page_for_batch:
+                    # Get a quick DB session for page-level analysis
+                    quick_db_session = session_manager.get_db_conn()
+                    if quick_db_session:
+                        try:
+                            uuids_on_page = [m["uuid"].upper() for m in matches_on_page_for_batch if m.get("uuid")]
+                            if uuids_on_page:
+                                existing_persons_map = _lookup_existing_persons(quick_db_session, uuids_on_page)
+                                fetch_candidates_uuid, _, page_skip_count = (
+                                    _identify_fetch_candidates(matches_on_page_for_batch, existing_persons_map)
+                                )
+                                
+                                # If all matches on the page can be skipped, do fast processing
+                                if len(fetch_candidates_uuid) == 0:
+                                    logger.info(f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip")
+                                    progress_bar.update(len(matches_on_page_for_batch))
+                                    state["total_skipped"] += page_skip_count
+                                    state["total_pages_processed"] += 1
+                                    matches_on_page_for_batch = None
+                                    current_page_num += 1
+                                    continue  # Skip to next page
+                        finally:
+                            session_manager.return_session(quick_db_session)
 
                 page_new, page_updated, page_skipped, page_errors = _do_batch(
                     session_manager=session_manager,
@@ -1214,15 +1251,24 @@ def _perform_api_prefetches(
                 else:
                     logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold)")
 
-        for uuid_val in fetch_candidates_uuid:
+        # SURGICAL FIX #5: Smart Rate Limiting for Parallel Processing
+        # Apply batch rate limiting instead of individual call limiting to reduce delays
+        # Calculate total API calls needed for optimized rate limiting
+        total_api_calls = len(fetch_candidates_uuid) + len(high_priority_uuids) + len(uuids_for_tree_badge_ladder)
+        if total_api_calls > 0:
+            # Apply initial rate limiting once for the batch
             _apply_rate_limiting(session_manager)
+            logger.debug(f"Applied batch rate limiting for {total_api_calls} parallel API calls")
+
+        for uuid_val in fetch_candidates_uuid:
+            # Removed individual rate limiting - now handled at batch level
             futures[
                 executor.submit(_fetch_combined_details, session_manager, uuid_val)
             ] = ("combined_details", uuid_val)
 
             # OPTIMIZATION: Only fetch relationship probability for high-priority matches
             if uuid_val in high_priority_uuids:
-                _apply_rate_limiting(session_manager)
+                # Removed individual rate limiting - now handled at batch level
                 max_labels = 2
                 futures[
                     executor.submit(
@@ -1234,7 +1280,7 @@ def _perform_api_prefetches(
                 ] = ("relationship_prob", uuid_val)
 
         for uuid_val in uuids_for_tree_badge_ladder:
-            _apply_rate_limiting(session_manager)
+            # Removed individual rate limiting - now handled at batch level
             futures[
                 executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
             ] = ("badge_details", uuid_val)
@@ -1322,8 +1368,13 @@ def _perform_api_prefetches(
                 logger.debug(
                     f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs..."
                 )
-                for cfpid_item in cfpid_list_for_ladder:
+                # SURGICAL FIX #5: Apply batch rate limiting for ladder API calls
+                if len(cfpid_list_for_ladder) > 0:
                     _apply_rate_limiting(session_manager)
+                    logger.debug(f"Applied batch rate limiting for {len(cfpid_list_for_ladder)} ladder API calls")
+                
+                for cfpid_item in cfpid_list_for_ladder:
+                    # Removed individual rate limiting - now handled at batch level
                     ladder_futures[
                         executor.submit(
                             _fetch_batch_ladder, session_manager, cfpid_item, my_tree_id
@@ -2570,6 +2621,7 @@ def _do_batch(
     """
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
     If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
+    SURGICAL FIX #7: Reuses database session across all batches on a page.
     """
     # Get BATCH_SIZE from configuration
     try:
@@ -2579,41 +2631,55 @@ def _do_batch(
     
     num_matches_on_page = len(matches_on_page)
     
-    # If we have fewer matches than batch size, or batch size is >= page size, process normally
-    if num_matches_on_page <= configured_batch_size or configured_batch_size >= 20:
+    # If we have fewer matches than batch size, process normally (no need to split)
+    if num_matches_on_page <= configured_batch_size:
         return _process_page_matches(session_manager, matches_on_page, current_page, progress_bar)
     
-    # Otherwise, split into batches and process each with individual summaries
-    total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+    # SURGICAL FIX #7: Create single session for all batches on this page
+    page_session = session_manager.get_db_conn()
+    if not page_session:
+        logger.error(f"Page {current_page}: Failed to get DB session for batch processing.")
+        return 0, 0, 0, 0
     
-    for batch_idx in range(0, num_matches_on_page, configured_batch_size):
-        batch_matches = matches_on_page[batch_idx:batch_idx + configured_batch_size]
-        batch_num = (batch_idx // configured_batch_size) + 1
+    try:
+        # Otherwise, split into batches and process each with individual summaries
+        logger.debug(f"Splitting page {current_page} ({num_matches_on_page} matches) into batches of {configured_batch_size}")
+        total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
         
-        logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
+        for batch_idx in range(0, num_matches_on_page, configured_batch_size):
+            batch_matches = matches_on_page[batch_idx:batch_idx + configured_batch_size]
+            batch_num = (batch_idx // configured_batch_size) + 1
+            
+            logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
+            
+            # Process this batch using the original logic with reused session
+            new, updated, skipped, errors = _process_page_matches(
+                session_manager, batch_matches, current_page, progress_bar, is_batch=True, reused_session=page_session
+            )
+            
+            # Accumulate totals
+            total_stats["new"] += new
+            total_stats["updated"] += updated
+            total_stats["skipped"] += skipped
+            total_stats["error"] += errors
+            
+            # Log batch summary
+            logger.debug("")  # Blank line above
+            logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
+            logger.debug(f"  New Person/Data: {new}")
+            logger.debug(f"  Updated Person/Data: {updated}")
+            logger.debug(f"  Skipped (No Change): {skipped}")
+            logger.debug(f"  Errors during Prep/DB: {errors}")
+            logger.debug("---------------------------")
+            logger.debug("")  # Blank line below
         
-        # Process this batch using the original logic
-        new, updated, skipped, errors = _process_page_matches(
-            session_manager, batch_matches, current_page, progress_bar, is_batch=True
-        )
-        
-        # Accumulate totals
-        total_stats["new"] += new
-        total_stats["updated"] += updated
-        total_stats["skipped"] += skipped
-        total_stats["error"] += errors
-        
-        # Log batch summary
-        logger.debug("")  # Blank line above
-        logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
-        logger.debug(f"  New Person/Data: {new}")
-        logger.debug(f"  Updated Person/Data: {updated}")
-        logger.debug(f"  Skipped (No Change): {skipped}")
-        logger.debug(f"  Errors during Prep/DB: {errors}")
-        logger.debug("---------------------------")
-        logger.debug("")  # Blank line below
+        return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
     
-    return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
+    finally:
+        # SURGICAL FIX #7: Clean up the reused session
+        if page_session:
+            session_manager.return_session(page_session)
+            logger.debug(f"Page {current_page}: Returned reused session to pool")
 
 
 def _process_page_matches(
@@ -2622,6 +2688,7 @@ def _process_page_matches(
     current_page: int,
     progress_bar: Optional[tqdm] = None,
     is_batch: bool = False,
+    reused_session: Optional[SqlAlchemySession] = None,  # SURGICAL FIX #7: Accept reused session
 ) -> Tuple[int, int, int, int]:
     """
     Original batch processing logic - now used by both single page and chunked batch processing.
@@ -2648,12 +2715,17 @@ def _process_page_matches(
             f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---"
         )
 
-        # Step 3: OPTIMIZED - Use long-lived DB Session for batch operations
-        # Reusing the same session reduces connection overhead significantly  
-        batch_session = session_manager.get_db_conn()
-        if not batch_session:
-            logger.error(f"_do_batch Page {current_page}: Failed DB session.")
-            raise SQLAlchemyError("Failed get DB session")  # Caught by outer try-except
+        # Step 3: SURGICAL FIX #7 - Use reused session when available
+        if reused_session:
+            batch_session = reused_session
+            logger.debug(f"Batch {current_page}: Using reused session for batch operations")
+        else:
+            # OPTIMIZED - Use long-lived DB Session for batch operations  
+            # Reusing the same session reduces connection overhead significantly  
+            batch_session = session_manager.get_db_conn()
+            if not batch_session:
+                logger.error(f"_do_batch Page {current_page}: Failed DB session.")
+                raise SQLAlchemyError("Failed get DB session")  # Caught by outer try-except
 
         try:
             # --- Data Processing Pipeline (using reused session) ---
@@ -2675,24 +2747,18 @@ def _process_page_matches(
                 except Exception as pbar_e:
                     logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
 
-            logger.debug(f"Batch {current_page}: Performing API Prefetches...")
-            
-            # Smart match prioritization and memory-optimized processing
-            if matches_to_process_later:
-                logger.debug(f"Applying smart prioritization to {len(matches_to_process_later)} matches")
-                matches_to_process_later = _prioritize_matches_by_importance(matches_to_process_later)
+            # SURGICAL FIX #6: Smart API Call Elimination
+            # Early exit when no API processing needed - skip expensive operations
+            if len(fetch_candidates_uuid) == 0:
+                logger.debug(f"Batch {current_page}: All matches skipped (no API processing needed) - fast path")
+                prefetched_data = {}  # Empty prefetch data
+            else:
+                logger.debug(f"Batch {current_page}: Performing API Prefetches...")
                 
-                # Use memory-optimized processor for large batches
-                if len(matches_to_process_later) > 100:
-                    memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=500)
-                    matches_to_process_later = memory_processor.process_matches_with_memory_management(
-                        matches_to_process_later, session_manager
-                    )
-            
-            # _perform_api_prefetches can now raise MaxApiFailuresExceededError
-            prefetched_data = _perform_api_prefetches(
-                session_manager, fetch_candidates_uuid, matches_to_process_later
-            )  # This exception, if raised, will be caught by coord.
+                # _perform_api_prefetches can now raise MaxApiFailuresExceededError
+                prefetched_data = _perform_api_prefetches(
+                    session_manager, fetch_candidates_uuid, matches_to_process_later
+                )  # This exception, if raised, will be caught by coord.
 
             logger.debug(f"Batch {current_page}: Preparing DB data...")
             prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
@@ -2748,16 +2814,22 @@ def _process_page_matches(
                     f"No data prepared for bulk DB operations on page {current_page}."
                 )
         finally:
-            # OPTIMIZED: Return session only once at batch completion
-            session_manager.return_session(batch_session)
+            # SURGICAL FIX #7: Only return session if it wasn't reused from parent
+            if not reused_session and batch_session:
+                session_manager.return_session(batch_session)
+            elif reused_session:
+                logger.debug(f"Batch {current_page}: Keeping reused session for parent cleanup")
 
-        _log_page_summary(
-            current_page,
-            page_statuses["new"],
-            page_statuses["updated"],
-            page_statuses["skipped"],
-            page_statuses["error"],
-        )
+        # Only log page summary if not processing as part of a batch
+        # (batch summaries are logged by _do_batch function)
+        if not is_batch:
+            _log_page_summary(
+                current_page,
+                page_statuses["new"],
+                page_statuses["updated"],
+                page_statuses["skipped"],
+                page_statuses["error"],
+            )
         return (
             page_statuses["new"],
             page_statuses["updated"],
