@@ -1333,6 +1333,33 @@ class AdvancedPerformanceMonitor:
 # Global advanced monitor instance
 _advanced_monitor = AdvancedPerformanceMonitor()
 
+def track_api_performance(api_name: str, duration: float, status: str = "unknown") -> None:
+    """Global function to track API performance metrics."""
+    try:
+        # Simple performance tracking - just log and store basic metrics
+        if duration > 5.0:
+            logger.warning(f"API Performance Alert: {api_name} took {duration:.3f}s (status: {status})")
+        
+        # Update advanced monitor performance history if available  
+        performance_data = {
+            "timestamp": datetime.now().isoformat(),
+            "api_name": api_name,
+            "duration": duration,
+            "status": status,
+            "type": "api_call"
+        }
+        
+        _advanced_monitor.performance_history.append(performance_data)
+        
+        # Keep history manageable
+        if len(_advanced_monitor.performance_history) > 1000:
+            _advanced_monitor.performance_history = _advanced_monitor.performance_history[-1000:]
+            
+    except Exception as e:
+        # Graceful degradation - don't let performance monitoring break the main application
+        logger.debug(f"Performance tracking error: {e}")
+        pass
+
 def start_advanced_monitoring() -> bool:
     """Start global advanced performance monitoring."""
     return _advanced_monitor.start_advanced_monitoring()

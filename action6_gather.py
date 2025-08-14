@@ -15,17 +15,27 @@ within helpers), error handling, and concurrent API fetches using ThreadPoolExec
 from typing import Dict, Any
 
 # Performance monitoring helper
-# UNUSED - PERFORMANCE MONITORING (simplified for now)
-# def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown") -> None:
-#     """Log API performance metrics for monitoring and optimization."""
-#     duration = time.time() - start_time
-#     logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
-#     
-#     # Log warnings for slow API calls
-#     if duration > 5.0:
-#         logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
-#     elif duration > 10.0:
-#         logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
+def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown") -> None:
+    """Log API performance metrics for monitoring and optimization."""
+    duration = time.time() - start_time
+    
+    # Always log performance metrics for analysis
+    logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
+    
+    # Log warnings for slow API calls with enhanced context
+    if duration > 10.0:
+        logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
+    elif duration > 5.0:
+        logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
+    elif duration > 2.0:
+        logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
+    
+    # Track performance metrics for optimization analysis
+    try:
+        from performance_monitor import track_api_performance
+        track_api_performance(api_name, duration, response_status)
+    except ImportError:
+        pass  # Graceful degradation if performance monitor not available
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -208,10 +218,37 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
 
 # === OPTIMIZATION: Rate limiter helper to eliminate code duplication
 def _apply_rate_limiting(session_manager: SessionManager) -> None:
-    """Apply rate limiting if available on session manager."""
+    """PRIORITY 7: Apply intelligent rate limiting with performance monitoring."""
     limiter = getattr(session_manager, "dynamic_rate_limiter", None)
     if limiter is not None and hasattr(limiter, "wait"):
-        limiter.wait()
+        rate_start_time = time.time()
+        
+        # Get current limiter stats for intelligent backoff
+        current_tokens = getattr(limiter, 'tokens', 0)
+        fill_rate = getattr(limiter, 'fill_rate', 2.0)
+        
+        # Apply adaptive waiting based on system state
+        if current_tokens < 1.0:
+            # Token bucket is nearly empty - apply smart backoff
+            smart_delay = min(2.0 / fill_rate, 3.0)  # Cap at 3 seconds
+            logger.debug(f"Smart rate limiting: Low tokens ({current_tokens:.2f}), "
+                        f"applying {smart_delay:.2f}s delay")
+            limiter.wait()
+            time.sleep(smart_delay * 0.5)  # Additional smart delay
+        else:
+            # Normal rate limiting
+            limiter.wait()
+        
+        rate_duration = time.time() - rate_start_time
+        if rate_duration > 2.0:
+            logger.warning(f"Extended rate limiting delay: {rate_duration:.2f}s")
+        
+        # Track rate limiting performance
+        _log_api_performance("rate_limiting", rate_start_time, "applied")
+    else:
+        # Fallback rate limiting if no dynamic limiter available
+        logger.debug("No dynamic rate limiter available - using fallback delay")
+        time.sleep(0.5)  # Conservative fallback
 
 
 # ------------------------------------------------------------------------------
@@ -1292,19 +1329,37 @@ def _perform_api_prefetches(
         # OPTIMIZATION: Conditional relationship probability fetching
         # Only fetch relationship probability for significant matches (configurable threshold)
         # to reduce API overhead for distant matches
+        # PRIORITY 3: Smarter API Call Filtering - Enhanced priority classification
         high_priority_uuids = set()
+        medium_priority_uuids = set()
         for match_data in matches_to_process_later:
             uuid_val = match_data.get("uuid")
             if uuid_val and uuid_val in fetch_candidates_uuid:
                 cm_value = int(match_data.get("cM_DNA", 0))
-                if cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM:  # Use configurable threshold
+                has_tree = match_data.get("in_my_tree", False)
+                is_starred = match_data.get("starred", False)
+                
+                # Enhanced priority classification
+                if is_starred or cm_value > 50:  # Very high priority
                     high_priority_uuids.add(uuid_val)
+                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
+                elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
+                    # Medium priority: above threshold OR low DNA but has tree
+                    medium_priority_uuids.add(uuid_val)
+                    logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
                 else:
-                    logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold)")
+                    logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
+                                f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)")
+
+        # Combined high and medium for API calls, but prioritize high
+        priority_uuids = high_priority_uuids.union(medium_priority_uuids)
+        logger.info(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
+                   f"{len(medium_priority_uuids)} medium priority, "
+                   f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
 
         # SURGICAL FIX #16: Intelligent Rate Limiting Prediction
         # Calculate total API calls needed and predict token requirements
-        total_api_calls = len(fetch_candidates_uuid) + len(high_priority_uuids) + len(uuids_for_tree_badge_ladder)
+        total_api_calls = len(fetch_candidates_uuid) + len(priority_uuids) + len(uuids_for_tree_badge_ladder)
         if total_api_calls > 0:
             # Get current token count and fill rate from session manager
             rate_limiter = getattr(session_manager, 'rate_limiter', None)
@@ -1373,11 +1428,13 @@ def _perform_api_prefetches(
             time.sleep(0.1)  # 100ms gap between groups
             logger.debug(f"Submitted {len(combined_details_futures)} combined details API calls")
         
-        # Group 2: Submit relationship probability calls (selective)
+        # Group 2: Submit relationship probability calls (selective with priority)
         relationship_futures = []
         for uuid_val in fetch_candidates_uuid:
-            if uuid_val in high_priority_uuids:
-                max_labels = 2
+            # PRIORITY 3: Use priority-based filtering for relationship calls
+            if uuid_val in priority_uuids:
+                # Determine max labels based on priority level
+                max_labels = 3 if uuid_val in high_priority_uuids else 2
                 future = executor.submit(
                     _fetch_batch_relationship_prob,
                     session_manager,
@@ -1386,6 +1443,8 @@ def _perform_api_prefetches(
                 )
                 futures[future] = ("relationship_prob", uuid_val)
                 relationship_futures.append(future)
+                logger.debug(f"Queued relationship probability for {uuid_val[:8]} "
+                           f"(priority: {'high' if uuid_val in high_priority_uuids else 'medium'})")
         
         if relationship_futures:
             import time
@@ -1839,39 +1898,87 @@ async def _async_batch_api_prefetch(
     """
     from utils import get_configured_concurrency
     
-    # Use configured concurrency for semaphore
-    max_concurrent = get_configured_concurrency(default=8)
+    # PRIORITY 2: Enhanced Async Processing - Intelligent concurrency based on system load
+    base_concurrent = get_configured_concurrency(default=8)
+    
+    # Adaptive concurrency based on match count and system performance
+    if len(match_candidates) < 10:
+        max_concurrent = min(4, base_concurrent)  # Light load
+        logger.debug(f"Light load: Using {max_concurrent} concurrent connections")
+    elif len(match_candidates) > 50:
+        max_concurrent = min(base_concurrent + 2, 12)  # Heavy load with bounds
+        logger.debug(f"Heavy load: Using {max_concurrent} concurrent connections")
+    else:
+        max_concurrent = base_concurrent  # Normal load
+        
     semaphore = asyncio.Semaphore(max_concurrent)
     
+    # Performance monitoring for async operations
+    async_start_time = time.time()
     logger.info(f"Phase 2: Starting async batch prefetch for {len(match_candidates)} matches (concurrency: {max_concurrent})")
     
     async def process_single_match(match_data: Dict[str, Any]) -> Dict[str, Any]:
         async with semaphore:
+            match_start_time = time.time()
             match_uuid = match_data.get("sampleId")
             if not match_uuid:
                 return match_data
-                
-            # Fetch additional details if needed
-            if match_data.get("sharedCentimorgans", 0) > 20:  # Smart filtering
-                details = await _fetch_match_details_async(session_manager, match_uuid)
-                if details:
-                    match_data.update(details)
             
+            try:
+                # PRIORITY 2: Smarter filtering logic based on match characteristics
+                cm_value = match_data.get("sharedCentimorgans", 0)
+                has_tree = match_data.get("hasTree", False)
+                
+                # Enhanced filtering: prioritize high-value matches
+                should_fetch_details = (
+                    cm_value > 20 or  # Significant DNA match
+                    (cm_value > 10 and has_tree) or  # Lower DNA but has tree
+                    match_data.get("isStarred", False)  # User-starred matches
+                )
+                
+                if should_fetch_details:
+                    details = await _fetch_match_details_async(session_manager, match_uuid)
+                    if details:
+                        match_data.update(details)
+                        logger.debug(f"Async enriched match {match_uuid[:8]} ({cm_value} cM)")
+                
+                # Log performance for individual match processing
+                match_duration = time.time() - match_start_time
+                if match_duration > 3.0:
+                    logger.warning(f"Slow async match processing: {match_uuid[:8]} took {match_duration:.2f}s")
+                    
+            except Exception as e:
+                logger.warning(f"Error in async match processing {match_uuid[:8]}: {e}")
+                
             return match_data
     
     # Process all matches concurrently
     tasks = [process_single_match(match) for match in match_candidates]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    # Filter out exceptions and return successful results
+    # Enhanced error handling and performance tracking
     successful_results = []
+    error_count = 0
     for result in results:
         if isinstance(result, Exception):
+            error_count += 1
             logger.warning(f"Async match processing failed: {result}")
         else:
             successful_results.append(result)
     
-    logger.info(f"Phase 2: Async batch prefetch completed. {len(successful_results)}/{len(match_candidates)} successful")
+    # PRIORITY 2: Performance monitoring for async batch processing
+    async_duration = time.time() - async_start_time
+    success_rate = len(successful_results) / len(match_candidates) if match_candidates else 1.0
+    
+    logger.info(f"Async batch processing completed: {len(successful_results)}/{len(match_candidates)} successful "
+                f"({success_rate:.1%} success rate, {async_duration:.2f}s total)")
+    
+    if error_count > 0:
+        logger.warning(f"Async processing had {error_count} errors out of {len(match_candidates)} matches")
+    
+    # Log performance metrics
+    _log_api_performance("async_batch_prefetch", async_start_time, f"success_{success_rate:.0%}")
+    
     return successful_results
 
 
@@ -2794,22 +2901,34 @@ def _do_batch(
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
     If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
     SURGICAL FIX #7: Reuses database session across all batches on a page.
-    SURGICAL FIX #11: Smart Batch Size Optimization based on processing efficiency.
+    PRIORITY 5: Dynamic Batch Optimization with intelligent response-time adaptation.
     """
-    # SURGICAL FIX #11: Smart Batch Size Optimization
+    # PRIORITY 5: Dynamic Batch Optimization with Performance Monitoring
+    batch_start_time = time.time()
+    
     try:
         configured_batch_size = _get_configured_batch_size()
         
-        # Dynamic batch size adjustment based on page characteristics
+        # Dynamic batch size adjustment based on multiple factors
         num_matches_on_page = len(matches_on_page)
         optimized_batch_size = configured_batch_size
         
-        # For large pages, increase batch size for efficiency
-        if num_matches_on_page >= 50:
+        # Get API performance history for intelligent batching
+        recent_api_performance = getattr(_do_batch, '_recent_performance', [])
+        avg_api_time = sum(recent_api_performance) / len(recent_api_performance) if recent_api_performance else 2.0
+        
+        # Adaptive batch sizing based on API performance and page characteristics
+        if avg_api_time > 5.0:  # Slow API responses
+            optimized_batch_size = max(5, configured_batch_size - 3)
+            logger.debug(f"Slow API optimization: Reduced batch size to {optimized_batch_size} "
+                        f"(avg API time: {avg_api_time:.2f}s)")
+        elif avg_api_time < 1.0 and num_matches_on_page >= 30:  # Fast API, large page
+            optimized_batch_size = min(30, configured_batch_size + 8)
+            logger.debug(f"Fast API optimization: Increased batch size to {optimized_batch_size}")
+        elif num_matches_on_page >= 50:  # Large pages
             optimized_batch_size = min(25, configured_batch_size + 5)
-            logger.debug(f"Large page optimization: Increased batch size from {configured_batch_size} to {optimized_batch_size}")
-        # For small pages, use smaller batches for responsiveness
-        elif num_matches_on_page <= 10:
+            logger.debug(f"Large page optimization: Increased batch size to {optimized_batch_size}")
+        elif num_matches_on_page <= 10:  # Small pages
             optimized_batch_size = max(5, configured_batch_size - 3)
             logger.debug(f"Small page optimization: Reduced batch size from {configured_batch_size} to {optimized_batch_size}")
         
@@ -2863,6 +2982,26 @@ def _do_batch(
             logger.debug(f"  Errors during Prep/DB: {errors}")
             logger.debug("---------------------------\n")
 
+        # PRIORITY 5: Track batch performance for future optimization
+        batch_duration = time.time() - batch_start_time
+        if not hasattr(_do_batch, '_recent_performance'):
+            _do_batch._recent_performance = []
+        
+        # Keep recent performance history for dynamic optimization
+        _do_batch._recent_performance.append(batch_duration)
+        if len(_do_batch._recent_performance) > 10:
+            _do_batch._recent_performance = _do_batch._recent_performance[-10:]  # Keep last 10
+        
+        # Log performance metrics
+        success_rate = (total_stats["new"] + total_stats["updated"] + total_stats["skipped"]) / num_matches_on_page if num_matches_on_page > 0 else 1.0
+        logger.debug(f"Batch performance: {batch_duration:.2f}s for {num_matches_on_page} matches "
+                    f"({success_rate:.1%} success rate, batch size: {optimized_batch_size})")
+        
+        if batch_duration > 30.0:  # Log slow batch processing
+            logger.warning(f"Slow batch processing: Page {current_page} took {batch_duration:.1f}s")
+        
+        # Track performance in global monitoring
+        _log_api_performance("batch_processing", batch_start_time, f"success_{success_rate:.0%}")
         
         return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
     
@@ -3111,29 +3250,62 @@ def _process_page_matches(
         )
 
     finally:
-        # SURGICAL FIX #10: Enhanced Memory Management
+        # PRIORITY 4: Enhanced Memory Management Improvements
         # Clean up large objects to prevent memory accumulation
         try:
-            # Clear large data structures
-            if 'matches_on_page' in locals():
-                matches_on_page.clear()
-            if 'existing_persons_map' in locals():
-                existing_persons_map.clear()
-            if 'prepared_bulk_data' in locals() and hasattr(prepared_bulk_data, 'clear'):
-                prepared_bulk_data.clear()
-            if 'prefetched_data' in locals() and isinstance(prefetched_data, dict):
-                prefetched_data.clear()
+            import gc
+            import psutil
+            import os
             
-            # Force garbage collection every 10 pages to prevent memory buildup
-            if current_page % 10 == 0:
-                import gc
+            # Get current memory usage for monitoring
+            try:
+                process = psutil.Process(os.getpid())
+                current_memory_mb = process.memory_info().rss / 1024 / 1024
+                logger.debug(f"Memory usage at page {current_page}: {current_memory_mb:.1f} MB")
+            except Exception:
+                current_memory_mb = 0  # Fallback if psutil not available
+            
+            # Clear large data structures with more thorough cleanup
+            cleanup_vars = [
+                'matches_on_page', 'existing_persons_map', 'prepared_bulk_data', 
+                'prefetched_data', 'fetch_candidates_uuid', 'matches_to_process_later'
+            ]
+            
+            for var_name in cleanup_vars:
+                if var_name in locals():
+                    var_obj = locals()[var_name]
+                    if hasattr(var_obj, 'clear'):
+                        var_obj.clear()
+                    elif isinstance(var_obj, (list, set)):
+                        var_obj.clear()
+                    # Set to None to free reference
+                    locals()[var_name] = None
+            
+            # Adaptive garbage collection based on memory usage and page number
+            if current_page % 5 == 0 or current_memory_mb > 500:  # Every 5 pages or high memory
                 collected = gc.collect()
-                logger.debug(f"Memory cleanup: Forced garbage collection at page {current_page}, collected {collected} objects")
-            elif current_page % 5 == 0:
-                # Light cleanup every 5 pages
-                import gc
+                logger.debug(f"Memory cleanup: Forced garbage collection at page {current_page}, "
+                           f"collected {collected} objects, memory: {current_memory_mb:.1f} MB")
+                
+                # If memory is still high after GC, do more aggressive cleanup
+                if current_memory_mb > 800:
+                    logger.warning(f"High memory usage ({current_memory_mb:.1f} MB) - performing aggressive cleanup")
+                    gc.collect(0)  # Gen 0
+                    gc.collect(1)  # Gen 1
+                    gc.collect(2)  # Gen 2
+                    
+            elif current_page % 3 == 0:
+                # Light cleanup every 3 pages
                 gc.collect(0)  # Only collect generation 0
                 logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
+                
+            # Monitor for memory growth patterns
+            if hasattr(_process_page_matches, '_prev_memory'):
+                memory_growth = current_memory_mb - _process_page_matches._prev_memory
+                if memory_growth > 50:  # 50MB growth is concerning
+                    logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
+            _process_page_matches._prev_memory = current_memory_mb
+            
         except Exception as cleanup_exc:
             logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
         
@@ -4431,6 +4603,9 @@ def _fetch_combined_details(
         Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
         longest_shared_segment, last_logged_in_dt, contactable, etc.
     """
+    # PRIORITY 1: Performance Monitoring Integration
+    api_start_time = time.time()
+    
     # SURGICAL FIX #14: Enhanced Smart Caching using existing global cache system
     if global_cache is not None:
         cache_key = f"combined_details_{match_uuid}"
@@ -4438,6 +4613,7 @@ def _fetch_combined_details(
             cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
             if cached_data is not ENOVAL and isinstance(cached_data, dict):
                 logger.debug(f"Cache hit for combined details: {match_uuid}")
+                _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
                 return cached_data
         except Exception as cache_exc:
             logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
@@ -4446,6 +4622,8 @@ def _fetch_combined_details(
 
     if not my_uuid or not match_uuid:
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
+        _log_api_performance("combined_details", api_start_time, "error_missing_uuid")
+        return None
         return None
 
     # SURGICAL FIX #20: Universal session validation with SessionManager death detection
@@ -4711,6 +4889,12 @@ def _fetch_combined_details(
         except Exception as cache_exc:
             logger.debug(f"Failed to cache combined details for {match_uuid}: {cache_exc}")
 
+    # PRIORITY 1: Performance Monitoring - Log completion
+    if combined_data:
+        _log_api_performance("combined_details", api_start_time, "success")
+    else:
+        _log_api_performance("combined_details", api_start_time, "failed")
+    
     return combined_data if combined_data else None
 
 
@@ -5077,12 +5261,29 @@ def _fetch_batch_relationship_prob(
         A formatted string like "1st cousin [95.5%]" or "Distant relationship?",
         or None if the fetch fails.
     """
+    # PRIORITY 6: Enhanced Caching Strategies for relationship probability data
+    import time as time_module
+    api_start_time = time_module.time()
+    
+    # Enhanced caching with longer TTL for relationship data
+    if global_cache is not None:
+        cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
+        try:
+            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            if cached_data is not ENOVAL and isinstance(cached_data, str):
+                logger.debug(f"Cache hit for relationship probability: {match_uuid[:8]}")
+                _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
+                return cached_data
+        except Exception as cache_exc:
+            logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
+    
     my_uuid = session_manager.my_uuid
     driver = session_manager.driver
     scraper = session_manager.scraper
 
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_relationship_prob: Missing my_uuid or match_uuid.")
+        _log_api_performance("relationship_prob", api_start_time, "error_missing_uuid")
         return None  # Changed from "N/A (Error - Missing IDs)"
     if not scraper:
         logger.error(
@@ -5225,7 +5426,19 @@ def _fetch_batch_relationship_prob(
                 return None
             final_labels = labels[:max_labels_param]
             relationship_str = " or ".join(map(str, final_labels))
-            return f"{relationship_str} [{top_prob_display:.1f}%]"
+            result = f"{relationship_str} [{top_prob_display:.1f}%]"
+            
+            # PRIORITY 6: Cache the successful result
+            if global_cache is not None:
+                try:
+                    cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
+                    global_cache.set(cache_key, result, expire=7200, retry=True)  # 2 hour TTL
+                    logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
+                except Exception as cache_exc:
+                    logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
+            
+            _log_api_performance("relationship_prob", api_start_time, "success")
+            return result
 
         # Case 1: Parsed JSON returned directly
         if isinstance(api_resp, dict):
