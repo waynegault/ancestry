@@ -1287,53 +1287,105 @@ def _perform_api_prefetches(
                 else:
                     logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val} ({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold)")
 
-        # SURGICAL FIX #5: Smart Rate Limiting for Parallel Processing
-        # SURGICAL FIX #9: Smart Rate Limiting based on actual API load
-        # Calculate total API calls needed for intelligent rate limiting
+        # SURGICAL FIX #16: Intelligent Rate Limiting Prediction
+        # Calculate total API calls needed and predict token requirements
         total_api_calls = len(fetch_candidates_uuid) + len(high_priority_uuids) + len(uuids_for_tree_badge_ladder)
         if total_api_calls > 0:
-            # Apply proportional rate limiting based on API call volume
-            if total_api_calls >= 15:
-                # Heavy batch - apply full rate limiting
-                _apply_rate_limiting(session_manager)
-                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-            elif total_api_calls >= 5:
-                # Medium batch - apply reduced rate limiting (wait less time)
-                import time
-                time.sleep(1.2)  # Shorter than normal rate limiting
-                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+            # Get current token count and fill rate from session manager
+            rate_limiter = getattr(session_manager, 'rate_limiter', None)
+            if rate_limiter:
+                current_tokens = getattr(rate_limiter, 'tokens', 0)
+                fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
+                
+                # Predict if we'll run out of tokens
+                tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
+                if current_tokens < tokens_needed:
+                    # Calculate optimal pre-delay to avoid token bucket depletion
+                    tokens_deficit = tokens_needed - current_tokens
+                    optimal_pre_delay = min(tokens_deficit / fill_rate, 8.0)  # Cap at 8 seconds
+                    
+                    if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
+                        logger.debug(f"Predictive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (current tokens: {current_tokens:.2f})")
+                        import time
+                        time.sleep(optimal_pre_delay)
+                    else:
+                        # Use existing tiered approach for light loads
+                        if total_api_calls >= 15:
+                            _apply_rate_limiting(session_manager)
+                            logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+                        elif total_api_calls >= 5:
+                            import time
+                            time.sleep(1.2)  # Shorter than normal rate limiting
+                            logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+                        else:
+                            import time
+                            time.sleep(0.3)  # Just 300ms delay for light loads
+                            logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                else:
+                    # Sufficient tokens available - minimal delay
+                    import time
+                    time.sleep(0.1)  # Minimal delay to prevent hammering
+                    logger.debug(f"Sufficient tokens available ({current_tokens:.2f}) for {total_api_calls} API calls - minimal delay")
             else:
-                # Light batch - minimal rate limiting (very short delay)
-                import time
-                time.sleep(0.3)  # Just 300ms delay for light loads
-                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                # Fallback to original tiered approach if rate_limiter not available
+                if total_api_calls >= 15:
+                    _apply_rate_limiting(session_manager)
+                    logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+                elif total_api_calls >= 5:
+                    import time
+                    time.sleep(1.2)
+                    logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+                else:
+                    import time
+                    time.sleep(0.3)
+                    logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
         else:
             logger.debug("No API calls needed - skipping all rate limiting")
 
+        # SURGICAL FIX #18: Batch API Call Grouping for better efficiency
+        # Group similar API calls together to reduce context switching and improve rate limit utilization
+        
+        # Group 1: Submit combined details calls first (most common)
+        combined_details_futures = []
         for uuid_val in fetch_candidates_uuid:
-            # Removed individual rate limiting - now handled at batch level
-            futures[
-                executor.submit(_fetch_combined_details, session_manager, uuid_val)
-            ] = ("combined_details", uuid_val)
-
-            # OPTIMIZATION: Only fetch relationship probability for high-priority matches
+            future = executor.submit(_fetch_combined_details, session_manager, uuid_val)
+            futures[future] = ("combined_details", uuid_val)
+            combined_details_futures.append(future)
+        
+        # Small delay between groups to avoid overwhelming the API
+        if combined_details_futures:
+            import time
+            time.sleep(0.1)  # 100ms gap between groups
+            logger.debug(f"Submitted {len(combined_details_futures)} combined details API calls")
+        
+        # Group 2: Submit relationship probability calls (selective)
+        relationship_futures = []
+        for uuid_val in fetch_candidates_uuid:
             if uuid_val in high_priority_uuids:
-                # Removed individual rate limiting - now handled at batch level
                 max_labels = 2
-                futures[
-                    executor.submit(
-                        _fetch_batch_relationship_prob,
-                        session_manager,
-                        uuid_val,
-                        max_labels,
-                    )
-                ] = ("relationship_prob", uuid_val)
-
+                future = executor.submit(
+                    _fetch_batch_relationship_prob,
+                    session_manager,
+                    uuid_val,
+                    max_labels,
+                )
+                futures[future] = ("relationship_prob", uuid_val)
+                relationship_futures.append(future)
+        
+        if relationship_futures:
+            import time
+            time.sleep(0.1)  # 100ms gap between groups
+            logger.debug(f"Submitted {len(relationship_futures)} relationship probability API calls")
+        
+        # Group 3: Submit badge details calls last (tree-related)
+        badge_futures = []
         for uuid_val in uuids_for_tree_badge_ladder:
-            # Removed individual rate limiting - now handled at batch level
-            futures[
-                executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
-            ] = ("badge_details", uuid_val)
+            future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
+            futures[future] = ("badge_details", uuid_val)
+            badge_futures.append(future)
+        
+        if badge_futures:
+            logger.debug(f"Submitted {len(badge_futures)} badge details API calls")
 
         temp_badge_results: Dict[str, Optional[Dict[str, Any]]] = {}
         temp_ladder_results: Dict[str, Optional[Dict[str, Any]]] = (
@@ -2508,10 +2560,22 @@ def _execute_bulk_db_operations(
                 person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
 
                 if not person_id:
-                    logger.warning(
-                        f"Skipping DNA Match op (UUID {person_uuid}): Corresponding Person ID not found in map."
-                    )
-                    continue
+                    # SURGICAL FIX #15: Try to find Person ID in existing_persons_map
+                    if person_uuid and existing_persons_map.get(person_uuid):
+                        existing_person = existing_persons_map[person_uuid]
+                        person_id = getattr(existing_person, "id", None)
+                        if person_id:
+                            # Add to mapping for future use
+                            all_person_ids_map[person_uuid] = person_id
+                            logger.debug(f"Found existing Person ID {person_id} for UUID {person_uuid} (from existing_persons_map)")
+                        else:
+                            logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
+                            continue
+                    else:
+                        logger.warning(
+                            f"Person with UUID {person_uuid} not found in database - skipping DNA Match creation."
+                        )
+                        continue
 
                 # Prepare data dictionary (exclude internal keys)
                 op_data = {
@@ -2582,6 +2646,16 @@ def _execute_bulk_db_operations(
             for tree_data in tree_creates:
                 person_uuid = tree_data.get("uuid")
                 person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
+                
+                # SURGICAL FIX #15: Try to find Person ID in existing_persons_map if not in mapping
+                if not person_id and person_uuid and existing_persons_map.get(person_uuid):
+                    existing_person = existing_persons_map[person_uuid]
+                    person_id = getattr(existing_person, "id", None)
+                    if person_id:
+                        # Add to mapping for future use
+                        all_person_ids_map[person_uuid] = person_id
+                        logger.debug(f"Found existing Person ID {person_id} for FamilyTree UUID {person_uuid}")
+                
                 if person_id:
                     insert_dict = {
                         k: v for k, v in tree_data.items() if not k.startswith("_")
@@ -2591,7 +2665,7 @@ def _execute_bulk_db_operations(
                     tree_insert_data.append(insert_dict)
                 else:
                     logger.debug(
-                        f"Skipping FamilyTree create op (UUID {person_uuid}): Corresponding Person not created in this batch."
+                        f"Person with UUID {person_uuid} not found in database - skipping FamilyTree creation."
                     )
             if tree_insert_data:
                 logger.debug(
@@ -3810,76 +3884,106 @@ def get_matches(
             logger.error("Session validation failed before API call")
             return None
             
-        # Force cookie sync to ensure fresh authentication state
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
+        # SURGICAL FIX #17: Smart Cookie Sync Optimization
+        # Track cookie sync freshness to avoid unnecessary syncing
+        import time as time_module
+        current_time = time_module.time()
+        
+        # Check if cookies were synced recently (within last 5 minutes)
+        last_cookie_sync = getattr(session_manager, '_last_cookie_sync_time', 0)
+        cookie_sync_needed = (current_time - last_cookie_sync) > 300  # 5 minutes
+        
+        if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
-            logger.debug("Forced cookie sync before API call")
+            # Track the sync time
+            setattr(session_manager, '_last_cookie_sync_time', current_time)
+            logger.debug("Smart cookie sync performed (cookies were stale)")
+        elif not cookie_sync_needed:
+            logger.debug("Skipping cookie sync - cookies are fresh")
+        else:
+            logger.debug("Cookie sync method not available")
             
     except Exception as session_validation_error:
         logger.error(f"Session validation error: {session_validation_error}")
         return None
 
-    specific_csrf_token: Optional[str] = None
-    csrf_token_cookie_names = (
-        "_dnamatches-matchlistui-x-csrf-token",
-        "_csrf",
-    )
-    try:
-        logger.debug(f"Attempting to read CSRF cookies: {csrf_token_cookie_names}")
-        for cookie_name in csrf_token_cookie_names:
-            try:
-                cookie_obj = driver.get_cookie(cookie_name)
-                if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
-                    specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
-                    logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
-                    break
-            except NoSuchCookieException:
-                continue
-            except WebDriverException as cookie_e:
-                logger.warning(
-                    f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error getting cookie '{cookie_name}': {e}",
-                    exc_info=True,
-                )
-
-        if not specific_csrf_token:
-            logger.debug(
-                "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
-            )
-            all_cookies = get_driver_cookies(driver)
-            if all_cookies:
-                # get_driver_cookies returns a list of cookie dictionaries
-                for cookie_name in csrf_token_cookie_names:
-                    for cookie in all_cookies:
-                        if cookie.get("name") == cookie_name and cookie.get("value"):
-                            specific_csrf_token = unquote(cookie["value"]).split("|")[0]
-                            logger.debug(
-                                f"Read CSRF token via fallback from '{cookie_name}'."
-                            )
-                            break
-                    if specific_csrf_token:
+    # SURGICAL FIX #19: Enhanced CSRF Token Caching
+    # Check if we have a cached CSRF token that's still valid
+    cached_csrf_token = getattr(session_manager, '_cached_csrf_token', None)
+    cached_csrf_time = getattr(session_manager, '_cached_csrf_time', 0)
+    csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
+    
+    if cached_csrf_token and csrf_cache_valid:
+        logger.debug(f"Using cached CSRF token (age: {time_module.time() - cached_csrf_time:.1f}s)")
+        specific_csrf_token = cached_csrf_token
+    else:
+        # Need to read CSRF token from cookies
+        specific_csrf_token: Optional[str] = None
+        csrf_token_cookie_names = (
+            "_dnamatches-matchlistui-x-csrf-token",
+            "_csrf",
+        )
+        try:
+            logger.debug(f"Reading fresh CSRF token from cookies: {csrf_token_cookie_names}")
+            for cookie_name in csrf_token_cookie_names:
+                try:
+                    cookie_obj = driver.get_cookie(cookie_name)
+                    if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
+                        specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
+                        logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
+                        # Cache the token for future use
+                        setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
+                        setattr(session_manager, '_cached_csrf_time', time_module.time())
                         break
-            else:
-                logger.warning(
-                    "Fallback get_driver_cookies also failed to retrieve cookies."
-                )
+                except NoSuchCookieException:
+                    continue
+                except WebDriverException as cookie_e:
+                    logger.warning(
+                        f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Unexpected error getting cookie '{cookie_name}': {e}",
+                        exc_info=True,
+                    )
 
-        if not specific_csrf_token:
+            if not specific_csrf_token:
+                logger.debug(
+                    "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
+                )
+                all_cookies = get_driver_cookies(driver)
+                if all_cookies:
+                    # get_driver_cookies returns a list of cookie dictionaries
+                    for cookie_name in csrf_token_cookie_names:
+                        for cookie in all_cookies:
+                            if cookie.get("name") == cookie_name and cookie.get("value"):
+                                specific_csrf_token = unquote(cookie["value"]).split("|")[0]
+                                logger.debug(
+                                    f"Read CSRF token via fallback from '{cookie_name}'."
+                                )
+                                # Cache the token for future use
+                                setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
+                                setattr(session_manager, '_cached_csrf_time', time_module.time())
+                                break
+                        if specific_csrf_token:
+                            break
+                else:
+                    logger.warning(
+                        "Fallback get_driver_cookies also failed to retrieve cookies."
+                    )
+        except Exception as csrf_err:
             logger.error(
-                "Failed to obtain specific CSRF token required for Match List API."
+                f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
             )
             return None
-        else:
-            logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
-    except Exception as csrf_err:
+    if not specific_csrf_token:
         logger.error(
-            f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
+            "Failed to obtain specific CSRF token required for Match List API."
         )
         return None
+    else:
+        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
     # Use the working API endpoint pattern that matches other working API calls (like matchProbabilityData, badges, etc.)
     match_list_url = urljoin(
