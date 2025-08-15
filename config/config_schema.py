@@ -662,7 +662,7 @@ class ConfigSchema:
             "contains_first_name": 25.0,  # if the input first name is in the candidate first name
             "contains_surname": 25.0,  # if the input surname is in the candidate surname
             "bonus_both_names_contain": 25.0,  # additional bonus if both first and last name achieved a score
-            # --- Existing Date Weights ---
+            # --- Date Weights ---
             "exact_birth_date": 25.0,  # if input date of birth is exact with candidate date of birth
             "exact_death_date": 25.0,  # if input date of death is exact with candidate date of death
             "birth_year_match": 20.0,  # if input birth year matches candidate birth year (Action 11 key)
@@ -672,15 +672,15 @@ class ConfigSchema:
             "birth_year_close": 10.0,  # if input birth year is within range of candidate birth year
             "death_year_close": 10.0,  # if input death year is within range of candidate death year
             # --- Special Death Weights ---
-            "death_dates_both_absent": 15.0,  # if both search and candidate have no death date (person is alive)
+            "death_dates_both_absent": 25.0,  # if both search and candidate have no death date (person is alive) - UPDATED
             # --- Place Weights ---
-            "birth_place_match": 20.0,  # if input birth place matches candidate birth place
-            "death_place_match": 20.0,  # if input death place matches candidate death place
+            "birth_place_match": 25.0,  # if input birth place matches candidate birth place - UPDATED
+            "death_place_match": 25.0,  # if input death place matches candidate death place - UPDATED
             # --- Gender Weight ---
             "gender_match": 15.0,  # if input gender matches candidate gender
             # --- Bonus Weights ---
-            "bonus_birth_date_and_place": 15.0,  # bonus if both birth date and place match
-            "bonus_death_date_and_place": 15.0,  # bonus if both death date and place match
+            "bonus_birth_date_and_place": 25.0,  # bonus if both birth date and place match - UPDATED
+            "bonus_death_date_and_place": 25.0,  # bonus if both death date and place match - UPDATED
         }
     )
 

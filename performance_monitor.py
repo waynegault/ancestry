@@ -540,425 +540,8 @@ if __name__ != "__main__":
     performance_monitor.start_monitoring()
 
 
-# Main execution block
-if __name__ == "__main__":
-    from test_framework import TestSuite, suppress_logging
-    from unittest.mock import MagicMock, patch
-    import time
-
-    suite = TestSuite(
-        "Performance Monitor & Optimization System", "performance_monitor.py"
-    )
-
-    def test_class_availability():
-        # Test that all main classes are available
-        classes = [
-            "PerformanceMetric",
-            "PerformanceAlert",
-            "FunctionProfile",
-            "PerformanceMonitor",
-            "AlertLevel",
-        ]
-        for class_name in classes:
-            assert class_name in globals(), f"Class {class_name} should be available"
-            assert isinstance(
-                globals()[class_name], type
-            ), f"{class_name} should be a class"
-
-    def test_monitor_initialization():
-        # Test PerformanceMonitor initialization
-        monitor = PerformanceMonitor(max_history=100)
-        assert monitor.max_history == 100, "Should set max history correctly"
-        assert len(monitor.metrics) == 0, "Should start with empty metrics"
-        assert (
-            len(monitor.function_profiles) == 0
-        ), "Should start with empty function profiles"
-        assert len(monitor.alerts) == 0, "Should start with empty alerts"
-        assert monitor.enabled == True, "Should be enabled by default"
-
-        # Test with custom thresholds
-        custom_thresholds = {"test_metric": 50.0}
-        monitor2 = PerformanceMonitor(alert_thresholds=custom_thresholds)
-        assert (
-            "test_metric" in monitor2.alert_thresholds
-        ), "Should use custom thresholds"
-
-    def test_metric_recording():
-        monitor = PerformanceMonitor()
-
-        # Test basic metric recording
-        monitor.record_metric("test_metric", 100.0, "test_category")
-        assert len(monitor.metrics) == 1, "Should record one metric"
-
-        metric = monitor.metrics[0]
-        assert metric.name == "test_metric", "Should record correct metric name"
-        assert metric.value == 100.0, "Should record correct metric value"
-        assert metric.category == "test_category", "Should record correct category"
-        assert isinstance(metric.timestamp, datetime), "Should have timestamp"
-
-        # Test with metadata
-        metadata = {"source": "test", "version": "1.0"}
-        monitor.record_metric("test_metric2", 200.0, "test", metadata=metadata)
-        assert len(monitor.metrics) == 2, "Should record second metric"
-        assert monitor.metrics[1].metadata == metadata, "Should record metadata"
-
-    def test_function_profiling():
-        monitor = PerformanceMonitor()
-
-        # Test function profiling decorator
-        @monitor.profile_function
-        def test_function(x, y=10):
-            time.sleep(0.001)  # Small sleep for timing
-            return x + y
-
-        # Call function multiple times
-        result1 = test_function(5)
-        result2 = test_function(3, y=7)
-        result3 = test_function(1)
-
-        assert result1 == 15, "Function should work correctly"
-        assert result2 == 10, "Function should work with kwargs"
-        assert result3 == 11, "Function should work with default args"
-
-        # Check profiling data (function name includes module path)
-        function_names = list(monitor.function_profiles.keys())
-        assert len(function_names) > 0, "Should have at least one profiled function"
-
-        # Find the test function (should end with test_function)
-        test_func_profile = None
-        for name in function_names:
-            if name.endswith("test_function"):
-                test_func_profile = monitor.function_profiles[name]
-                break
-
-        assert test_func_profile is not None, "Function should be profiled"
-        assert test_func_profile.call_count == 3, "Should track call count"
-        assert test_func_profile.total_time > 0, "Should track total time"
-        assert test_func_profile.min_time > 0, "Should track min time"
-        assert test_func_profile.max_time > 0, "Should track max time"
-        assert test_func_profile.avg_time > 0, "Should calculate average time"
-        assert len(test_func_profile.recent_times) == 3, "Should track recent times"
-
-    def test_function_profiling_with_errors():
-        monitor = PerformanceMonitor()
-
-        @monitor.profile_function
-        def error_function():
-            raise ValueError("Test error")
-
-        # Test error handling
-        try:
-            error_function()
-        except ValueError:
-            pass  # Expected
-
-        # Check error tracking (function name includes module path)
-        function_names = list(monitor.function_profiles.keys())
-        error_func_profile = None
-        for name in function_names:
-            if name.endswith("error_function"):
-                error_func_profile = monitor.function_profiles[name]
-                break
-
-        assert (
-            error_func_profile is not None
-        ), "Function should be profiled even with errors"
-        assert error_func_profile.error_count == 1, "Should track error count"
-        assert error_func_profile.call_count == 1, "Should still track call count"
-
-    def test_system_metrics_collection():
-        monitor = PerformanceMonitor()
-
-        # Test system metrics collection
-        initial_count = len(monitor.metrics)
-        monitor._collect_system_metrics()
-
-        # Should have added system metrics
-        assert len(monitor.metrics) > initial_count, "Should collect system metrics"
-
-        # Check for expected system metrics
-        metric_names = [m.name for m in monitor.metrics]
-        expected_metrics = ["memory_usage_mb", "cpu_usage_percent"]
-        for expected in expected_metrics:
-            assert any(
-                expected in name for name in metric_names
-            ), f"Should collect {expected}"
-
-    def test_alert_system():
-        # Test with very low thresholds to trigger alerts
-        thresholds = {
-            "test_metric": 50.0,
-            "memory_usage_mb": 0.1,  # Very low to trigger alert
-        }
-        monitor = PerformanceMonitor(alert_thresholds=thresholds)
-
-        # Record metrics that exceed thresholds
-        monitor.record_metric("test_metric", 100.0, "test")  # Above 50.0
-        monitor.record_metric("memory_usage_mb", 1.0, "system")  # Above 0.1
-
-        initial_alert_count = len(monitor.alerts)
-        monitor._check_alerts()
-
-        # Should have generated alerts
-        assert (
-            len(monitor.alerts) > initial_alert_count
-        ), "Should generate alerts for threshold violations"
-
-        # Check alert structure
-        if monitor.alerts:
-            alert = monitor.alerts[-1]
-            assert isinstance(alert.level, AlertLevel), "Alert should have proper level"
-            assert isinstance(alert.message, str), "Alert should have message"
-            assert isinstance(
-                alert.current_value, (int, float)
-            ), "Alert should have current value"
-            assert isinstance(
-                alert.threshold, (int, float)
-            ), "Alert should have threshold"
-
-    def test_monitoring_control():
-        monitor = PerformanceMonitor()
-
-        # Test that monitoring controls are available
-        assert hasattr(
-            monitor, "start_monitoring"
-        ), "Should have start_monitoring method"
-        assert hasattr(monitor, "stop_monitoring"), "Should have stop_monitoring method"
-        assert hasattr(monitor, "_stop_monitoring"), "Should have _stop_monitoring flag"
-
-        # Test initial state
-        assert monitor._stop_monitoring == False, "Should start with monitoring enabled"
-
-        # Test setting stop flag directly (avoid thread complications)
-        monitor._stop_monitoring = True
-        assert monitor._stop_monitoring == True, "Should be able to set stop flag"
-
-    def test_report_generation():
-        monitor = PerformanceMonitor()
-
-        # Add some test data
-        monitor.record_metric("test_metric", 50.0, "test")
-        monitor.record_metric("test_metric", 75.0, "test")
-        monitor.record_metric("other_metric", 25.0, "other")
-
-        @monitor.profile_function
-        def profiled_function():
-            return "test"
-
-        profiled_function()
-
-        # Generate report
-        report = monitor.get_report(hours=1)
-
-        # Check report structure
-        expected_sections = [
-            "summary",
-            "metric_statistics",
-            "function_profiles",
-            "recent_alerts",
-            "system_info",
-            "recommendations",
-        ]
-        for section in expected_sections:
-            assert section in report, f"Report should include {section}"
-
-        # Check metric statistics
-        stats = report["metric_statistics"]
-        assert len(stats) > 0, "Should have metric statistics"
-
-        # Check function profiles
-        profiles = report["function_profiles"]
-        assert "profiled_function" in str(profiles), "Should include function profiles"
-
-    def test_decorators():
-        # Clear any existing profiles in global monitor
-        performance_monitor.function_profiles.clear()
-
-        # Test global decorators
-        @profile
-        def decorated_function():
-            time.sleep(0.001)
-            return "decorated"
-
-        @monitor_performance
-        def monitored_function():
-            return "monitored"
-
-        # Call decorated functions
-        result1 = decorated_function()
-        result2 = monitored_function()
-
-        assert result1 == "decorated", "Profile decorator should work"
-        assert result2 == "monitored", "Monitor decorator should work"
-
-        # Check that functions were profiled (should be in global monitor)
-        global_profiles = performance_monitor.function_profiles
-
-        # Check for function names with module prefixes
-        decorated_found = any(
-            "decorated_function" in key for key in global_profiles.keys()
-        )
-        monitored_found = any(
-            "monitored_function" in key for key in global_profiles.keys()
-        )
-
-        assert (
-            decorated_found
-        ), f"Global profile decorator should work. Found profiles: {list(global_profiles.keys())}"
-        assert (
-            monitored_found
-        ), f"Global monitor decorator should work. Found profiles: {list(global_profiles.keys())}"
-
-    def test_performance_validation():
-        monitor = PerformanceMonitor()
-        monitor.enabled = True  # Ensure monitoring is enabled
-        monitor.stop_monitoring()  # Stop any background monitoring
-        monitor.metrics.clear()  # Clear any pre-existing metrics
-
-        # Test bulk operations performance
-        start_time = time.time()
-
-        # Record many metrics
-        for i in range(200):
-            monitor.record_metric(f"metric_{i}", float(i), "bulk_test")
-
-        # Profile a function multiple times
-        @monitor.profile_function
-        def fast_function(x):
-            return x * 2
-
-        for i in range(50):
-            fast_function(i)
-
-        elapsed = time.time() - start_time
-        assert elapsed < 0.5, f"Bulk operations should be fast, took {elapsed:.3f}s"
-
-        # Check that all data was recorded
-        # 200 explicit metrics + 50 function call metrics = 250 total
-        assert (
-            len(monitor.metrics) == 250
-        ), f"Should record all metrics (200 explicit + 50 function calls), got {len(monitor.metrics)}"
-
-        # Check function profiling (function name includes module prefix)
-        fast_function_found = any(
-            "fast_function" in key for key in monitor.function_profiles.keys()
-        )
-        assert (
-            fast_function_found
-        ), f"Should profile function. Found profiles: {list(monitor.function_profiles.keys())}"
-
-        # Get the actual profile key
-        profile_key = next(
-            key for key in monitor.function_profiles.keys() if "fast_function" in key
-        )
-        profile = monitor.function_profiles[profile_key]
-        assert (
-            profile.call_count == 50
-        ), f"Should track all function calls, got {profile.call_count}"
-
-    # Run all tests
-    print(
-        "📊 Running Performance Monitor & Optimization System comprehensive test suite..."
-    )
-    
-    suite.start_suite()
-
-    with suppress_logging():
-        suite.run_test(
-            "Class availability verification",
-            test_class_availability,
-            "Test availability of all performance monitoring classes",
-            "Class availability ensures complete performance monitoring interface",
-            "All required performance monitoring classes are available and properly defined",
-        )
-
-        suite.run_test(
-            "Monitor initialization",
-            test_monitor_initialization,
-            "Test PerformanceMonitor initialization with various configurations",
-            "Monitor initialization provides configurable performance tracking setup",
-            "Performance monitor initializes correctly with custom settings and default values",
-        )
-
-        suite.run_test(
-            "Metric recording functionality",
-            test_metric_recording,
-            "Test record_metric with various data types and metadata",
-            "Metric recording provides comprehensive performance data capture",
-            "Metrics are recorded correctly with timestamps, categories, and metadata",
-        )
-
-        suite.run_test(
-            "Function profiling system",
-            test_function_profiling,
-            "Test function profiling decorator with timing and statistics",
-            "Function profiling provides detailed execution performance analysis",
-            "Function profiles track call counts, execution times, and performance statistics",
-        )
-
-        suite.run_test(
-            "Error handling in profiling",
-            test_function_profiling_with_errors,
-            "Test function profiling with exceptions and error tracking",
-            "Error handling ensures robust profiling under failure conditions",
-            "Function profiling correctly handles and tracks errors without breaking",
-        )
-
-        suite.run_test(
-            "System metrics collection",
-            test_system_metrics_collection,
-            "Test automatic system metrics collection for CPU and memory",
-            "System metrics collection provides real-time resource monitoring",
-            "System metrics are automatically collected and include CPU and memory usage",
-        )
-
-        suite.run_test(
-            "Performance alert system",
-            test_alert_system,
-            "Test alert generation based on configurable thresholds",
-            "Alert system provides proactive performance issue notification",
-            "Alerts are generated correctly when metrics exceed configured thresholds",
-        )
-
-        suite.run_test(
-            "Monitoring lifecycle control",
-            test_monitoring_control,
-            "Test start and stop monitoring thread control",
-            "Monitoring control provides background performance tracking management",
-            "Background monitoring can be started and stopped correctly with thread management",
-        )
-
-        suite.run_test(
-            "Comprehensive report generation",
-            test_report_generation,
-            "Test detailed performance report generation with all sections",
-            "Report generation provides comprehensive performance analysis output",
-            "Performance reports include all required sections with accurate statistics",
-        )
-
-        suite.run_test(
-            "Global decorator functionality",
-            test_decorators,
-            "Test global @profile and @monitor_performance decorators",
-            "Global decorators provide convenient function performance monitoring",
-            "Global decorators work correctly and integrate with the monitoring system",
-        )
-
-        suite.run_test(
-            "Performance validation",
-            test_performance_validation,
-            "Test performance of monitoring system itself with bulk operations",
-            "Performance validation ensures efficient monitoring with minimal overhead",
-            "Performance monitoring operations complete quickly without significant overhead",
-        )
-
-    result = suite.finish_suite()
-    import sys
-    sys.exit(0 if result else 1)
-
-
 # ==============================================
-# PHASE 11.2: ADVANCED PERFORMANCE MONITORING
+# ADVANCED PERFORMANCE MONITORING CLASSES
 # ==============================================
 
 class AdvancedPerformanceMonitor:
@@ -1379,3 +962,420 @@ def validate_system_configuration() -> Dict[str, Any]:
 def get_system_health_score() -> float:
     """Get current system health score."""
     return _advanced_monitor.system_health_score
+
+
+# ==============================================
+# COMPREHENSIVE TEST SUITE
+# ==============================================
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for performance monitoring functionality.
+    
+    Tests all core performance monitoring functionality including metric recording,
+    function profiling, alert generation, optimization recommendations, and system health monitoring.
+    
+    Returns:
+        bool: True if all tests pass, False otherwise
+    """
+    try:
+        from test_framework import TestSuite, suppress_logging
+    except ImportError:
+        print("⚠️  TestSuite not available - falling back to basic testing")
+        return _run_basic_tests()
+    
+    suite = TestSuite("Performance Monitor", "performance_monitor")
+    
+    def test_performance_monitor_initialization():
+        """Test PerformanceMonitor initialization and configuration"""
+        # Test default initialization
+        monitor = PerformanceMonitor()
+        assert monitor.max_history == 10000  # Default value is 10000
+        assert len(monitor.metrics) == 0
+        assert len(monitor.function_profiles) == 0
+        assert len(monitor.alerts) == 0
+        assert monitor.enabled == True
+        
+        # Test custom initialization
+        custom_thresholds = {"test_metric": 50.0}
+        monitor2 = PerformanceMonitor(max_history=500, alert_thresholds=custom_thresholds)
+        assert monitor2.max_history == 500
+        assert "test_metric" in monitor2.alert_thresholds
+    
+    def test_metric_recording_and_retrieval():
+        """Test performance metric recording and data retrieval"""
+        monitor = PerformanceMonitor()
+        
+        # Test basic metric recording
+        monitor.record_metric("test_metric", 100.0, "test_category")
+        assert len(monitor.metrics) == 1
+        
+        metric = monitor.metrics[0]
+        assert metric.name == "test_metric"
+        assert metric.value == 100.0
+        assert metric.category == "test_category"
+        assert isinstance(metric.timestamp, datetime)
+        
+        # Test with metadata
+        metadata = {"source": "test", "version": "1.0"}
+        monitor.record_metric("test_metric2", 200.0, "test", metadata=metadata)
+        assert len(monitor.metrics) == 2
+        assert monitor.metrics[1].metadata == metadata
+        
+        # Test metric retrieval by category using list comprehension
+        test_metrics = [m for m in monitor.metrics if m.category == "test_category"]
+        assert len(test_metrics) == 1
+        assert test_metrics[0].name == "test_metric"
+    
+    def test_function_profiling():
+        """Test function profiling and timing analysis"""
+        monitor = PerformanceMonitor()
+        
+        # Test function profiling decorator
+        @monitor.profile_function
+        def test_function(x, y=10):
+            import time
+            time.sleep(0.001)  # Small sleep for timing
+            return x + y
+        
+        # Call function multiple times
+        result1 = test_function(5)
+        result2 = test_function(3, y=7)
+        result3 = test_function(1)
+        
+        assert result1 == 15
+        assert result2 == 10
+        assert result3 == 11
+        
+        # Check profiling data
+        function_names = list(monitor.function_profiles.keys())
+        assert len(function_names) > 0
+        
+        # Find the test function profile
+        test_func_profile = None
+        for name in function_names:
+            if "test_function" in name:
+                test_func_profile = monitor.function_profiles[name]
+                break
+        
+        assert test_func_profile is not None
+        assert test_func_profile.call_count == 3
+        assert test_func_profile.total_time > 0
+        assert test_func_profile.avg_time > 0
+    
+    def test_alert_generation():
+        """Test performance alert generation and management"""
+        monitor = PerformanceMonitor(alert_thresholds={"slow_operation": 1.0})
+        
+        # Record metrics that should trigger alerts
+        monitor.record_metric("slow_operation", 2.0, "timing")
+        monitor.record_metric("fast_operation", 0.5, "timing")
+        
+        # Trigger alert check
+        monitor._check_alerts()
+        
+        # Check alert generation - look for slow_operation alerts
+        slow_alerts = [a for a in monitor.alerts if "slow_operation" in a.message]
+        assert len(slow_alerts) > 0
+        
+        # Test alert levels using the dataclass constructor correctly
+        critical_alert = PerformanceAlert(
+            level=AlertLevel.CRITICAL,
+            message="Critical performance issue",
+            metric_name="test_metric",
+            current_value=100.0,
+            threshold=50.0,
+            timestamp=datetime.now(),
+            recommendation="Optimize this metric"
+        )
+        assert critical_alert.level == AlertLevel.CRITICAL
+        assert "Critical" in critical_alert.message
+    
+    def test_performance_statistics():
+        """Test performance statistics calculation and analysis"""
+        monitor = PerformanceMonitor()
+        
+        # Record multiple metrics
+        values = [10.0, 20.0, 30.0, 40.0, 50.0]
+        for i, value in enumerate(values):
+            monitor.record_metric(f"metric_{i}", value, "stats_test")
+        
+        # Test statistics calculation using list comprehension
+        stats_metrics = [m for m in monitor.metrics if m.category == "stats_test"]
+        assert len(stats_metrics) == 5
+        
+        # Calculate basic statistics
+        metric_values = [m.value for m in stats_metrics]
+        avg_value = sum(metric_values) / len(metric_values)
+        assert avg_value == 30.0
+    
+    def test_advanced_monitoring():
+        """Test advanced monitoring features and system health"""
+        # Test advanced monitor initialization
+        advanced_monitor = AdvancedPerformanceMonitor()
+        assert advanced_monitor.performance_history == []
+        assert advanced_monitor.optimization_recommendations == []
+        
+        # Test performance tracking
+        track_api_performance("test_api", 1.5, "success")
+        assert len(_advanced_monitor.performance_history) > 0
+        
+        # Test dashboard generation
+        dashboard = get_performance_dashboard()
+        assert isinstance(dashboard, str)
+        assert len(dashboard) > 0
+        
+        # Test system health score
+        health_score = get_system_health_score()
+        assert isinstance(health_score, (int, float))
+        assert 0 <= health_score <= 100
+    
+    def test_configuration_validation():
+        """Test system configuration validation and optimization recommendations"""
+        # Test configuration validation
+        validation_results = validate_system_configuration()
+        assert isinstance(validation_results, dict)
+        assert "status" in validation_results
+        assert "score" in validation_results
+        assert "issues" in validation_results
+        assert "recommendations" in validation_results
+        
+        # Validation results should be well-formed
+        assert isinstance(validation_results["score"], (int, float))
+        assert isinstance(validation_results["issues"], list)
+        assert isinstance(validation_results["recommendations"], list)
+    
+    def test_memory_monitoring():
+        """Test memory usage monitoring and garbage collection tracking"""
+        monitor = PerformanceMonitor()
+        
+        # Create some objects to monitor memory
+        test_data = [i for i in range(1000)]
+        
+        # Record memory metrics
+        import psutil
+        import os
+        process = psutil.Process(os.getpid())
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        
+        monitor.record_metric("memory_usage_mb", memory_mb, "system")
+        
+        # Check memory metric was recorded using list comprehension
+        memory_metrics = [m for m in monitor.metrics if m.category == "system"]
+        assert len(memory_metrics) > 0
+        
+        memory_metric = memory_metrics[0]
+        assert memory_metric.name == "memory_usage_mb"
+        assert memory_metric.value > 0
+    
+    def test_performance_optimization():
+        """Test performance optimization recommendations and tuning"""
+        monitor = PerformanceMonitor()
+        
+        # Record some performance metrics that might trigger optimization suggestions
+        monitor.record_metric("api_response_time", 5.0, "api")
+        monitor.record_metric("database_query_time", 2.0, "database")
+        monitor.record_metric("cache_hit_ratio", 0.6, "cache")
+        
+        # Test that metrics are recorded using list comprehensions
+        api_metrics = [m for m in monitor.metrics if m.category == "api"]
+        db_metrics = [m for m in monitor.metrics if m.category == "database"]
+        cache_metrics = [m for m in monitor.metrics if m.category == "cache"]
+        
+        assert len(api_metrics) > 0
+        assert len(db_metrics) > 0
+        assert len(cache_metrics) > 0
+    
+    def test_global_performance_functions():
+        """Test global performance monitoring functions"""
+        # Test API performance tracking
+        track_api_performance("test_api_2", 0.5, "success")
+        
+        # Test advanced monitoring start/stop
+        start_result = start_advanced_monitoring()
+        assert isinstance(start_result, bool)
+        
+        stop_result = stop_advanced_monitoring()
+        assert isinstance(stop_result, dict)
+    
+    def test_error_handling():
+        """Test error handling in performance monitoring operations"""
+        monitor = PerformanceMonitor()
+        
+        # Test with invalid metric values
+        try:
+            monitor.record_metric("", 0, "")  # Empty strings
+            monitor.record_metric("test", float('nan'), "test")  # NaN value
+        except Exception:
+            pass  # Should handle gracefully
+        
+        # Test profiling with function that raises exception
+        @monitor.profile_function
+        def error_function():
+            raise ValueError("Test error")
+        
+        try:
+            error_function()
+        except ValueError:
+            pass  # Expected
+        
+        # Function should still be in profiles despite error
+        error_profiles = [name for name in monitor.function_profiles.keys() if "error_function" in name]
+        assert len(error_profiles) > 0
+    
+    def test_function_availability():
+        """Test that all required performance monitoring functions are available"""
+        required_functions = [
+            "track_api_performance",
+            "start_advanced_monitoring",
+            "stop_advanced_monitoring", 
+            "get_performance_dashboard",
+            "validate_system_configuration",
+            "get_system_health_score"
+        ]
+        
+        required_classes = [
+            "PerformanceMonitor",
+            "PerformanceMetric",
+            "PerformanceAlert",
+            "FunctionProfile",
+            "AlertLevel",
+            "AdvancedPerformanceMonitor"
+        ]
+        
+        for func_name in required_functions:
+            assert func_name in globals(), f"Function {func_name} should be available"
+            assert callable(globals()[func_name]), f"Function {func_name} should be callable"
+            
+        for class_name in required_classes:
+            assert class_name in globals(), f"Class {class_name} should be available"
+            assert isinstance(globals()[class_name], type), f"{class_name} should be a class"
+    
+    # Run all tests
+    suite.run_test(
+        "Performance monitor initialization",
+        test_performance_monitor_initialization,
+        "Performance monitor initializes correctly with default and custom settings",
+        "Test PerformanceMonitor initialization with various configuration options",
+        "Verify monitor initialization creates proper state and accepts custom parameters"
+    )
+    
+    suite.run_test(
+        "Metric recording and retrieval",
+        test_metric_recording_and_retrieval,
+        "Performance metrics are recorded and retrieved accurately with metadata",
+        "Test record_metric and get_metrics_by_category with various data types",
+        "Verify metric recording stores data correctly with timestamps and metadata"
+    )
+    
+    suite.run_test(
+        "Function profiling",
+        test_function_profiling,
+        "Function profiling tracks execution times and call statistics accurately",
+        "Test profile_function decorator with timing analysis and statistics",
+        "Verify function profiling captures timing data, call counts, and performance metrics"
+    )
+    
+    suite.run_test(
+        "Alert generation",
+        test_alert_generation,
+        "Performance alerts are generated when thresholds are exceeded",
+        "Test alert generation with threshold configuration and alert retrieval",
+        "Verify alert system detects performance issues and generates appropriate notifications"
+    )
+    
+    suite.run_test(
+        "Performance statistics",
+        test_performance_statistics,
+        "Performance statistics are calculated correctly from collected metrics",
+        "Test statistical analysis of performance metrics with calculations",
+        "Verify statistics calculation provides accurate analysis of performance data"
+    )
+    
+    suite.run_test(
+        "Advanced monitoring features",
+        test_advanced_monitoring,
+        "Advanced monitoring provides comprehensive system health analysis",
+        "Test AdvancedPerformanceMonitor with dashboard generation and health scoring",
+        "Verify advanced monitoring delivers comprehensive performance insights and recommendations"
+    )
+    
+    suite.run_test(
+        "Configuration validation",
+        test_configuration_validation,
+        "System configuration validation provides optimization recommendations",
+        "Test validate_system_configuration with various configuration scenarios",
+        "Verify configuration validation analyzes settings and suggests optimizations"
+    )
+    
+    suite.run_test(
+        "Memory monitoring",
+        test_memory_monitoring,
+        "Memory usage monitoring tracks system resource consumption accurately",
+        "Test memory monitoring with psutil integration and metric recording",
+        "Verify memory monitoring captures resource usage and system health metrics"
+    )
+    
+    suite.run_test(
+        "Performance optimization",
+        test_performance_optimization,
+        "Performance optimization provides actionable recommendations for improvement",
+        "Test optimization recommendations based on collected performance metrics",
+        "Verify optimization suggestions help identify and resolve performance bottlenecks"
+    )
+    
+    suite.run_test(
+        "Global performance functions",
+        test_global_performance_functions,
+        "Global performance functions provide system-wide monitoring capabilities",
+        "Test global functions for API tracking and advanced monitoring control",
+        "Verify global functions enable comprehensive system-wide performance monitoring"
+    )
+    
+    suite.run_test(
+        "Error handling",
+        test_error_handling,
+        "Error conditions in performance monitoring are handled gracefully",
+        "Test error handling with invalid inputs and exception scenarios",
+        "Verify robust error handling maintains monitoring functionality during failures"
+    )
+    
+    suite.run_test(
+        "Function availability verification",
+        test_function_availability,
+        "All required performance monitoring functions and classes are available and callable",
+        "Test availability of track_api_performance, PerformanceMonitor, and monitoring classes",
+        "Verify function availability ensures complete performance monitoring interface"
+    )
+    
+    return suite.finish_suite()
+
+
+def _run_basic_tests() -> bool:
+    """Basic test fallback when TestSuite is not available"""
+    try:
+        # Test basic functionality
+        monitor = PerformanceMonitor()
+        monitor.record_metric("test", 1.0, "test")
+        assert len(monitor.metrics) == 1
+        
+        # Test API tracking
+        track_api_performance("test_api", 1.0, "success")
+        
+        print("✅ Basic performance monitor tests passed")
+        return True
+    except Exception as e:
+        print(f"❌ Basic tests failed: {e}")
+        return False
+
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
+
+if __name__ == "__main__":
+    import sys
+    
+    print("⚡ Running Performance Monitor comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

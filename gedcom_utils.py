@@ -1688,7 +1688,8 @@ def calculate_match_score(
     is_candidate_dplace_absent = not bool(c_dplace)
     condition2_pod_absent = bool(is_target_pod_absent and is_candidate_dplace_absent)
     if condition1_pod_match or condition2_pod_absent:
-        points_pod = weights.get("contains_pod", 0)
+        # Try both old and new weight keys for compatibility
+        points_pod = weights.get("contains_pod", 0) or weights.get("death_place_match", 0)
         if points_pod != 0:
             field_scores["dplace"] = int(points_pod)
             reason = (
@@ -1726,19 +1727,21 @@ def calculate_match_score(
                 f"SCORE DEBUG ({c_id_debug}): Applied bonus_birth_date_and_place. Set field_scores['bbonus'] = {birth_bonus_points}"
             )
 
-    # Death Bonus Scoring (if both death year/date and death place matched)
-    if (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores[
-        "dplace"
-    ] > 0:
+    # Death Bonus Scoring - Apply when BOTH death info matched OR BOTH are absent (living person)
+    death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
+    both_death_info_absent = death_dates_absent and field_scores["dplace"] == 0  # No death date AND no death place
+    
+    if death_info_matched or both_death_info_absent:
         # Try both old and new weight keys for compatibility
         death_bonus_points = weights.get("bonus_death_info", 0) or weights.get(
             "bonus_death_date_and_place", 0
         )
         if death_bonus_points != 0:
             field_scores["dbonus"] = int(death_bonus_points)
-            match_reasons.append(f"Bonus Death Info ({death_bonus_points}pts)")
+            reason = f"Bonus Death Info ({death_bonus_points}pts)" if death_info_matched else f"Bonus Death Absent ({death_bonus_points}pts)"
+            match_reasons.append(reason)
             logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Applied bonus_death_date_and_place. Set field_scores['dbonus'] = {death_bonus_points}"
+                f"SCORE DEBUG ({c_id_debug}): Applied death bonus ({'matched' if death_info_matched else 'both absent'}). Set field_scores['dbonus'] = {death_bonus_points}"
             )
 
     # Calculate Final Total Score
