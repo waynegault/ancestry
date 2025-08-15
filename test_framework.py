@@ -37,6 +37,16 @@ __all__ = [
     "MockLogger",
     "MagicMock",
     "patch",
+    "Colors",
+    "Icons",
+    # Universal formatting functions
+    "format_test_section_header",
+    "format_score_breakdown_table", 
+    "format_search_criteria",
+    "format_test_result",
+    "suppress_debug_logging",
+    "restore_debug_logging",
+    "clean_test_output",
 ]
 
 
@@ -632,3 +642,145 @@ def mock_logger_context(module_globals: dict, logger_name: str = "logger"):
     finally:
         if original_logger:
             module_globals[logger_name] = original_logger
+
+
+# ==============================================
+# Universal Test Output Formatting Utilities
+# ==============================================
+
+def format_test_section_header(title: str, emoji: str = "🧮") -> str:
+    """
+    Create a consistent, visually appealing test section header.
+    
+    Args:
+        title: The title text for the section
+        emoji: Optional emoji to use (defaults to 🧮)
+        
+    Returns:
+        Formatted header string with colors and separators
+    """
+    separator = "─" * 60
+    header = f"\n{Colors.CYAN}{separator}{Colors.RESET}"
+    header += f"\n{Colors.BOLD}{Colors.BLUE}{emoji} {title.upper()}{Colors.RESET}"
+    header += f"\n{Colors.CYAN}{separator}{Colors.RESET}"
+    return header
+
+
+def format_score_breakdown_table(field_scores: dict, total_score: int) -> str:
+    """
+    Format scoring breakdown as a readable table with colors and descriptions.
+    
+    Args:
+        field_scores: Dictionary of field names to scores
+        total_score: The total calculated score
+        
+    Returns:
+        Formatted table string with color coding
+    """
+    table = f"\n{Colors.BOLD}{Colors.WHITE}📊 Scoring Breakdown:{Colors.RESET}\n"
+    table += f"{Colors.GRAY}{'Field':<12} {'Score':<6} {'Description':<30}{Colors.RESET}\n"
+    table += f"{Colors.GRAY}{'-' * 50}{Colors.RESET}\n"
+    
+    # Field descriptions for readability
+    descriptions = {
+        'givn': 'First Name Match', 'surn': 'Surname Match', 'gender': 'Gender Match',
+        'byear': 'Birth Year Match', 'bdate': 'Birth Date Match', 'bplace': 'Birth Place Match',
+        'bbonus': 'Birth Info Bonus', 'dyear': 'Death Year Match', 'ddate': 'Death Date Match',
+        'dplace': 'Death Place Match', 'dbonus': 'Death Info Bonus', 'bonus': 'Name Bonus'
+    }
+    
+    for field, score in field_scores.items():
+        desc = descriptions.get(field, field.capitalize().replace('_', ' '))
+        if score > 0:
+            color = Colors.GREEN
+        elif score == 0:
+            color = Colors.GRAY
+        else:
+            color = Colors.RED
+            
+        table += f"{Colors.WHITE}{field:<12}{color} {score:<6}{Colors.RESET} {desc:<30}\n"
+    
+    table += f"{Colors.GRAY}{'-' * 50}{Colors.RESET}\n"
+    table += f"{Colors.BOLD}{Colors.YELLOW}{'Total':<12} {total_score:<6} Final Match Score{Colors.RESET}\n"
+    
+    return table
+
+
+def format_search_criteria(criteria: dict) -> str:
+    """
+    Format search criteria in a clean, readable way with bullets and colors.
+    
+    Args:
+        criteria: Dictionary of search criteria
+        
+    Returns:
+        Formatted criteria string
+    """
+    formatted = f"{Colors.BOLD}{Colors.WHITE}🔍 Search Criteria:{Colors.RESET}\n"
+    for key, value in criteria.items():
+        clean_key = key.replace('_', ' ').title()
+        formatted += f"   {Colors.CYAN}•{Colors.RESET} {clean_key}: {Colors.WHITE}{value}{Colors.RESET}\n"
+    
+    return formatted
+
+
+def format_test_result(test_name: str, success: bool, duration: Optional[float] = None) -> str:
+    """
+    Format a test result with consistent styling and colors.
+    
+    Args:
+        test_name: Name of the test
+        success: Whether the test passed
+        duration: Optional duration in seconds
+        
+    Returns:
+        Formatted result string
+    """
+    if success:
+        status_color = Colors.GREEN
+        status_icon = Icons.PASS
+        status_text = "PASSED"
+    else:
+        status_color = Colors.RED
+        status_icon = Icons.FAIL
+        status_text = "FAILED"
+    
+    result = f"{status_color}{status_icon} {test_name}: {status_text}{Colors.RESET}"
+    if duration:
+        result += f" {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
+    
+    return result
+
+
+def suppress_debug_logging():
+    """Temporarily suppress debug logging for cleaner test output."""
+    import logging
+    logging.getLogger().setLevel(logging.WARNING)
+
+
+def restore_debug_logging():
+    """Restore normal logging level."""
+    import logging
+    logging.getLogger().setLevel(logging.INFO)
+
+
+def clean_test_output():
+    """
+    Context manager for clean test output without debug noise.
+    
+    Usage:
+        with clean_test_output():
+            # Test code here - debug logging will be suppressed
+            result = some_function()
+    """
+    from contextlib import contextmanager
+    
+    @contextmanager
+    def _clean_output():
+        suppress_debug_logging()
+        try:
+            yield
+        finally:
+            restore_debug_logging()
+    
+    return _clean_output()

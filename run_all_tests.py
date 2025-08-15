@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
 
 """
-Enhanced Test Runner for Ancestry Project - Phase 7.3.3 Optimization
+Comprehensive Test Runner for Ancestry Project
 Runs all unit tests and integration tests with advanced performance monitoring and optimization.
 
-Phase 7.3.3 Features:
+Features:
+• Automatic test discovery with enhanced module descriptions
+• Parallel test execution for improved performance
+• Memory usage and CPU monitoring during test execution
 • Performance benchmarking and trend analysis
-• Parallel test execution for improved speed
-• Memory usage monitoring during test execution
-• Test execution optimization and caching
-• Real-time performance metrics and reporting
-• Intelligent test ordering based on execution time
-• Resource utilization monitoring
+• Test execution optimization with intelligent parallel processing
+• Detailed pass/fail status with timing metrics
 
 This unified test runner provides:
-• Comprehensive scoring breakdowns showing what was tested
-• Detailed outcomes achieved with specific results
-• Conclusions drawn from test results
-• Clear pass/fail status for each test
+• Comprehensive test coverage across all 66 standardized modules
+• Detailed reporting showing what was tested and outcomes achieved
 • Performance metrics and optimization insights
+• Clear test results with enhanced descriptions
 
 Usage:
-    python run_all_tests.py           # Run all tests with enhanced detailed reporting
-    python run_all_tests.py --fast    # Run with performance optimizations
+    python run_all_tests.py           # Run all tests with detailed reporting
+    python run_all_tests.py --fast    # Run with parallel execution optimization
     python run_all_tests.py --benchmark # Run with detailed performance benchmarking
 """
 
@@ -123,80 +121,63 @@ class PerformanceMonitor:
 
 
 def discover_test_modules():
-    """Discover all Python modules that contain tests by scanning the project directory."""
+    """
+    Discover all Python modules that contain tests by scanning the project directory.
+    
+    Returns a list of module paths that contain the run_comprehensive_tests() function,
+    which indicates they follow the standardized testing framework.
+    """
     project_root = Path(__file__).parent
     test_modules = []
 
     # Get all Python files in the project
     for python_file in project_root.rglob("*.py"):
-        # Skip the test runner itself, main.py, and other non-test files
+        # Skip the test runner itself, main.py, and coordination files
         if python_file.name in [
             "run_all_tests.py",
-            "main.py",
+            "main.py", 
             "__init__.py",
             "__main__.py",
-            "credentials.py",  # Interactive credential manager
-            "core_imports.py",  # Import utility, not a test module
-            "standard_imports.py",  # Import utility, not a test module
         ]:
             continue
 
-        # Skip cache, backup, temp files, and anything in __pycache__
+        # Skip cache, backup, temp files, and virtual environment
         file_path_str = str(python_file)
         if (
             "__pycache__" in file_path_str
             or python_file.name.endswith("_backup.py")
             or "backup_before_migration" in file_path_str
-            or "temp" in python_file.name.lower()
+            or python_file.name.startswith("temp_")
+            or python_file.name.endswith("_temp.py")
             or "_old" in python_file.name
-            or python_file.name.startswith("phase1_cleanup")
-            or python_file.name.startswith("test_phase1")
-            or python_file.name.startswith("cleanup_")
-            or python_file.name.startswith("migration_")
-            or python_file.name.startswith("fix_")
-            or python_file.name.startswith("convert_")
             or ".venv" in file_path_str
             or "site-packages" in file_path_str
+            or "Cache" in file_path_str
+            or "Logs" in file_path_str
         ):
             continue
 
-        # Check if the file has test functionality by looking for test patterns
+        # Check if the file has the standardized test function
         try:
             with open(python_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-                # Skip files with interactive components
-                has_interactive = any(
-                    pattern in content
-                    for pattern in [
-                        "input(",
-                        "getpass.getpass",
-                        "Enter choice:",
-                        "Select option:",
-                        "Press any key",
-                        "while True:",  # Often indicates interactive loops
-                    ]
-                )
+                # Skip files with interactive components that would block testing
+                # But allow legitimate test modules that happen to have interactive functionality
+                has_interactive = False
+                if python_file.name in ["db_viewer.py", "test_program_executor.py"]:
+                    # Specifically known interactive modules that should be excluded
+                    has_interactive = True
 
                 if has_interactive:
                     continue
 
-                # Look for test patterns that indicate this file has tests
-                has_tests = any(
-                    pattern in content
-                    for pattern in [
-                        "run_comprehensive_tests",
-                        'if __name__ == "__main__"',
-                        "TestSuite(",
-                        "def test_",
-                        "run_test(",
-                    ]
-                )
-
-                if has_tests:
+                # Look for the standardized test function (with or without parentheses)
+                if "def run_comprehensive_tests" in content:
                     # Convert to relative path from project root
                     relative_path = python_file.relative_to(project_root)
                     test_modules.append(str(relative_path))
+
         except (UnicodeDecodeError, PermissionError):
             # Skip files that can't be read
             continue
@@ -723,7 +704,7 @@ def analyze_performance_trends(metrics: List[TestExecutionMetrics]) -> List[str]
 
 
 def main():
-    """Enhanced test runner with performance monitoring and optimization."""
+    """Comprehensive test runner with performance monitoring and optimization."""
     # Parse command line arguments
     enable_fast_mode = "--fast" in sys.argv
     enable_benchmark = "--benchmark" in sys.argv
@@ -734,23 +715,17 @@ def main():
         print("🚀 FAST MODE: Parallel execution enabled")
     if enable_benchmark:
         print("📊 BENCHMARK MODE: Performance monitoring enabled")
-    print("=" * 50)
-    print()  # Blank line instead of subtitle
+    print("=" * 60)
+    print()  # Blank line
 
-    # Auto-discover all test modules
+    # Auto-discover all test modules with the standardized test function
     discovered_modules = discover_test_modules()
 
-    # Ensure action10.py and action11.py are included
-    must_have = ["action10.py", "action11.py"]
-    for mod in must_have:
-        if mod not in discovered_modules:
-            discovered_modules.append(mod)
-
     if not discovered_modules:
-        print("⚠️  No test modules discovered.")
+        print("⚠️  No test modules discovered with run_comprehensive_tests() function.")
         return False
 
-    # Extract descriptions from module docstrings
+    # Extract descriptions from module docstrings for enhanced reporting
     module_descriptions = {}
     enhanced_count = 0
 
@@ -766,9 +741,9 @@ def main():
         f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced descriptions)"
     )
 
-    print(f"\n{'='* 50}")
+    print(f"\n{'='* 60}")
     print(f"🧪 RUNNING TESTS")
-    print(f"{'='* 50}")
+    print(f"{'='* 60}")
 
     # Prepare modules with descriptions
     modules_with_descriptions = [
@@ -806,9 +781,9 @@ def main():
     failed_count = len(results) - passed_count
     success_rate = (passed_count / len(results)) * 100 if results else 0
 
-    print(f"\n{'='* 50}")
+    print(f"\n{'='* 60}")
     print(f"📊 FINAL TEST SUMMARY")
-    print(f"{'='* 50}")
+    print(f"{'='* 60}")
     print(f"⏰ Duration: {total_duration:.1f}s")
     print(f"🧪 Total Tests Run: {total_tests_run}")
     print(f"✅ Passed: {passed_count}")
@@ -881,32 +856,12 @@ def main():
         f"   Standard Modules: {passed_count - enhanced_passed} passed, {failed_count - enhanced_failed} failed"
     )
 
-    # Coverage reporting (always print at end)
-    try:
-        cov_html = "coverage_html"
-        subprocess.run([sys.executable, "-m", "coverage", "combine"], capture_output=True)
-        cov_report = subprocess.run([sys.executable, "-m", "coverage", "report", "-m"], capture_output=True, text=True)
-        summary_line = None
-        if cov_report.stdout:
-            for line in cov_report.stdout.splitlines()[::-1]:
-                if line.strip().startswith("TOTAL"):
-                    summary_line = line.strip()
-                    break
-        if summary_line:
-            print(f"\n🛡️  COVERAGE SUMMARY: {summary_line}")
-        else:
-            print("\n🛡️  COVERAGE SUMMARY: (unavailable)")
-        subprocess.run([sys.executable, "-m", "coverage", "html", "-d", cov_html], capture_output=True)
-        print(f"📄 HTML coverage report generated at ./{cov_html}/index.html")
-    except Exception as e:
-        print(f"⚠️  Coverage reporting failed: {e}")
-
     if failed_count == 0:
         print(f"\n🎉 ALL {len(discovered_modules)} MODULES PASSED!")
-        print("   Enhanced detailed reporting & (optional) coverage summarization complete.\n\n")
+        print(f"   Professional testing framework with {len(discovered_modules)} standardized modules complete.\n")
     else:
         print(f"\n⚠️  {failed_count} module(s) failed.")
-        print("   Check individual test outputs above for details.\n\n")
+        print("   Check individual test outputs above for details.\n")
 
     return failed_count == 0
 

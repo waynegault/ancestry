@@ -14,13 +14,17 @@ within helpers), error handling, and concurrent API fetches using ThreadPoolExec
 
 from typing import Dict, Any
 
-# Performance monitoring helper
-def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown") -> None:
+# Performance monitoring helper with session manager integration
+def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
     """Log API performance metrics for monitoring and optimization."""
     duration = time.time() - start_time
     
     # Always log performance metrics for analysis
     logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
+    
+    # Update session manager performance tracking
+    if session_manager:
+        _update_session_performance_tracking(session_manager, duration, response_status)
     
     # Log warnings for slow API calls with enhanced context
     if duration > 10.0:
@@ -36,6 +40,37 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
         track_api_performance(api_name, duration, response_status)
     except ImportError:
         pass  # Graceful degradation if performance monitor not available
+
+
+def _update_session_performance_tracking(session_manager, duration: float, response_status: str) -> None:
+    """Update session manager with performance tracking data."""
+    try:
+        # Initialize tracking if not exists
+        if not hasattr(session_manager, '_response_times'):
+            session_manager._response_times = []
+            session_manager._recent_slow_calls = 0
+            session_manager._avg_response_time = 0.0
+        
+        # Add response time to tracking (keep last 20 calls)
+        session_manager._response_times.append(duration)
+        if len(session_manager._response_times) > 20:
+            session_manager._response_times.pop(0)
+        
+        # Update average response time
+        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)
+        
+        # Track consecutive slow calls
+        if duration > 5.0:
+            session_manager._recent_slow_calls += 1
+        else:
+            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
+            
+        # Cap slow call counter to prevent endless accumulation
+        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
+        
+    except Exception as e:
+        logger.debug(f"Failed to update session performance tracking: {e}")
+        pass
 
 # FINAL OPTIMIZATION 1: Progressive Processing Integration
 def _progress_callback(progress: float) -> None:
@@ -59,6 +94,58 @@ from performance_cache import progressive_processing
 
 # FINAL OPTIMIZATION 2: Memory Optimization Import
 from memory_optimizer import ObjectPool, lazy_property
+
+# ENHANCEMENT: Advanced Caching Layer
+import hashlib
+from functools import wraps
+
+# In-memory cache for API responses with TTL
+API_RESPONSE_CACHE = {}
+CACHE_TTL = {
+    'combined_details': 3600,  # 1 hour cache for profile details
+    'relationship_prob': 86400,  # 24 hour cache for relationship probabilities
+    'person_facts': 1800,  # 30 minute cache for person facts
+}
+
+def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
+    """Decorator for caching API responses with TTL."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Create cache key from function name and arguments
+            cache_args = str(args[1:]) + str(kwargs) if len(args) > 1 else str(kwargs)
+            cache_key = f"{cache_key_prefix}_{hashlib.md5(cache_args.encode()).hexdigest()}"
+            
+            current_time = time.time()
+            
+            # Check cache hit
+            if cache_key in API_RESPONSE_CACHE:
+                cached_data, cache_time = API_RESPONSE_CACHE[cache_key]
+                if current_time - cache_time < ttl_seconds:
+                    logger.debug(f"Cache hit: {cache_key_prefix} (age: {current_time - cache_time:.1f}s)")
+                    return cached_data
+                else:
+                    # Remove expired entry
+                    del API_RESPONSE_CACHE[cache_key]
+            
+            # Cache miss - execute function
+            result = func(*args, **kwargs)
+            
+            # Cache successful results only
+            if result is not None:
+                API_RESPONSE_CACHE[cache_key] = (result, current_time)
+                
+                # Cleanup old cache entries (keep max 1000 entries)
+                if len(API_RESPONSE_CACHE) > 1000:
+                    # Remove oldest 200 entries
+                    sorted_keys = sorted(API_RESPONSE_CACHE.keys(), 
+                                       key=lambda k: API_RESPONSE_CACHE[k][1])
+                    for old_key in sorted_keys[:200]:
+                        del API_RESPONSE_CACHE[old_key]
+            
+            return result
+        return wrapper
+    return decorator
 
 # === MODULE SETUP ===
 raw_logger = setup_module(globals(), __name__)
@@ -227,9 +314,9 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
         logger.warning(f"Error caching profile data for {profile_id}: {e}")
 
 
-# === OPTIMIZATION: Rate limiter helper to eliminate code duplication
+# === OPTIMIZATION: Rate limiter helper with response-time adaptation
 def _apply_rate_limiting(session_manager: SessionManager) -> None:
-    """PRIORITY 7: Apply intelligent rate limiting with performance monitoring."""
+    """ENHANCED: Apply intelligent rate limiting with response-time adaptation."""
     limiter = getattr(session_manager, "dynamic_rate_limiter", None)
     if limiter is not None and hasattr(limiter, "wait"):
         rate_start_time = time.time()
@@ -238,17 +325,35 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
         current_tokens = getattr(limiter, 'tokens', 0)
         fill_rate = getattr(limiter, 'fill_rate', 2.0)
         
-        # Apply adaptive waiting based on system state
+        # ENHANCEMENT: Check recent API performance for adaptive delays
+        recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
+        avg_response_time = getattr(session_manager, '_avg_response_time', 0.0)
+        
+        # Calculate adaptive delay based on recent performance
+        base_delay = 0.0
+        if avg_response_time > 8.0:  # Very slow responses
+            base_delay = min(avg_response_time * 0.3, 4.0)
+            logger.debug(f"Very slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
+        elif avg_response_time > 5.0:  # Moderate slow responses  
+            base_delay = min(avg_response_time * 0.2, 2.0)
+            logger.debug(f"Slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
+        elif recent_slow_calls > 3:  # Multiple consecutive slow calls
+            base_delay = 1.0
+            logger.debug(f"Multiple slow calls detected ({recent_slow_calls}), adding {base_delay:.1f}s delay")
+        
+        # Apply token-based backoff
         if current_tokens < 1.0:
             # Token bucket is nearly empty - apply smart backoff
-            smart_delay = min(2.0 / fill_rate, 3.0)  # Cap at 3 seconds
+            smart_delay = min(2.0 / fill_rate, 3.0) + base_delay  # Add adaptive delay
             logger.debug(f"Smart rate limiting: Low tokens ({current_tokens:.2f}), "
-                        f"applying {smart_delay:.2f}s delay")
+                        f"total delay {smart_delay:.2f}s (base: {base_delay:.1f}s)")
             limiter.wait()
             time.sleep(smart_delay * 0.5)  # Additional smart delay
         else:
-            # Normal rate limiting
+            # Normal rate limiting with adaptive component
             limiter.wait()
+            if base_delay > 0:
+                time.sleep(base_delay)
         
         rate_duration = time.time() - rate_start_time
         if rate_duration > 2.0:
@@ -2104,6 +2209,33 @@ def _get_configured_batch_size() -> int:
         logger.warning(f"Failed to get configured batch size: {e}, using default 10")
         return 10  # Fallback to match .env default
 
+def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = None) -> int:
+    """Get dynamically adapted batch size based on current server performance."""
+    if base_batch_size is None:
+        base_batch_size = _get_configured_batch_size()
+    
+    # Get current performance metrics from session manager
+    avg_response_time = getattr(session_manager, '_avg_response_time', 0.0)
+    recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
+    
+    # Adaptive batch sizing based on server performance
+    if avg_response_time > 10.0:  # Very slow server
+        adapted_size = max(5, base_batch_size // 4)
+        logger.info(f"Server very slow ({avg_response_time:.1f}s avg), reducing batch size to {adapted_size}")
+    elif avg_response_time > 7.0:  # Slow server
+        adapted_size = max(8, base_batch_size // 2)
+        logger.info(f"Server slow ({avg_response_time:.1f}s avg), reducing batch size to {adapted_size}")
+    elif recent_slow_calls > 5:  # Multiple consecutive slow calls
+        adapted_size = max(8, base_batch_size // 2)
+        logger.info(f"Multiple slow calls ({recent_slow_calls}), reducing batch size to {adapted_size}")
+    elif avg_response_time < 3.0 and recent_slow_calls == 0:  # Fast server
+        adapted_size = min(25, int(base_batch_size * 1.5))
+        logger.debug(f"Server fast ({avg_response_time:.1f}s avg), increasing batch size to {adapted_size}")
+    else:
+        adapted_size = base_batch_size
+    
+    return adapted_size
+
 DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 
 def _execute_batched_db_operations(
@@ -2802,21 +2934,38 @@ def _execute_bulk_db_operations(
                 person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
 
                 if not person_id:
-                    # SURGICAL FIX #15: Try to find Person ID in existing_persons_map
-                    if person_uuid and existing_persons_map.get(person_uuid):
-                        existing_person = existing_persons_map[person_uuid]
-                        person_id = getattr(existing_person, "id", None)
-                        if person_id:
-                            # Add to mapping for future use
-                            all_person_ids_map[person_uuid] = person_id
-                            logger.debug(f"Found existing Person ID {person_id} for UUID {person_uuid} (from existing_persons_map)")
+                    # ENHANCED UUID RESOLUTION: Multiple fallback strategies
+                    if person_uuid:
+                        # Strategy 1: Check existing_persons_map
+                        if existing_persons_map.get(person_uuid):
+                            existing_person = existing_persons_map[person_uuid]
+                            person_id = getattr(existing_person, "id", None)
+                            if person_id:
+                                # Add to mapping for future use
+                                all_person_ids_map[person_uuid] = person_id
+                                logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (from existing_persons_map)")
+                            else:
+                                logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
+                                continue
                         else:
-                            logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
-                            continue
+                            # Strategy 2: Direct database query as fallback
+                            try:
+                                db_person = session.query(Person.id).filter(
+                                    Person.uuid == person_uuid,
+                                    Person.deleted_at.is_(None)
+                                ).first()
+                                if db_person:
+                                    person_id = db_person.id
+                                    all_person_ids_map[person_uuid] = person_id
+                                    logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (direct DB query)")
+                                else:
+                                    logger.info(f"Person UUID {person_uuid} not found in database - will be created in next batch")
+                                    continue
+                            except Exception as e:
+                                logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
+                                continue
                     else:
-                        logger.warning(
-                            f"Person with UUID {person_uuid} not found in database - skipping DNA Match creation."
-                        )
+                        logger.warning(f"Missing UUID in DNA match data - skipping DNA Match creation")
                         continue
 
                 # Prepare data dictionary (exclude internal keys)
@@ -2889,14 +3038,36 @@ def _execute_bulk_db_operations(
                 person_uuid = tree_data.get("uuid")
                 person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
                 
-                # SURGICAL FIX #15: Try to find Person ID in existing_persons_map if not in mapping
-                if not person_id and person_uuid and existing_persons_map.get(person_uuid):
-                    existing_person = existing_persons_map[person_uuid]
-                    person_id = getattr(existing_person, "id", None)
-                    if person_id:
-                        # Add to mapping for future use
-                        all_person_ids_map[person_uuid] = person_id
-                        logger.debug(f"Found existing Person ID {person_id} for FamilyTree UUID {person_uuid}")
+                # ENHANCED UUID RESOLUTION: Multiple fallback strategies for FamilyTree
+                if not person_id and person_uuid:
+                    # Strategy 1: Check existing_persons_map
+                    if existing_persons_map.get(person_uuid):
+                        existing_person = existing_persons_map[person_uuid]
+                        person_id = getattr(existing_person, "id", None)
+                        if person_id:
+                            # Add to mapping for future use
+                            all_person_ids_map[person_uuid] = person_id
+                            logger.debug(f"Resolved Person ID {person_id} for FamilyTree UUID {person_uuid} (from existing_persons_map)")
+                        else:
+                            logger.warning(f"Person exists for FamilyTree UUID {person_uuid} but has no ID attribute")
+                            continue
+                    else:
+                        # Strategy 2: Direct database query as fallback
+                        try:
+                            db_person = session.query(Person.id).filter(
+                                Person.uuid == person_uuid,
+                                Person.deleted_at.is_(None)
+                            ).first()
+                            if db_person:
+                                person_id = db_person.id
+                                all_person_ids_map[person_uuid] = person_id
+                                logger.debug(f"Resolved Person ID {person_id} for FamilyTree UUID {person_uuid} (direct DB query)")
+                            else:
+                                logger.info(f"FamilyTree Person UUID {person_uuid} not found in database - will be created in next batch")
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Database query failed for FamilyTree UUID {person_uuid}: {e}")
+                            continue
                 
                 if person_id:
                     insert_dict = {
@@ -2990,36 +3161,24 @@ def _do_batch(
     SURGICAL FIX #7: Reuses database session across all batches on a page.
     PRIORITY 5: Dynamic Batch Optimization with intelligent response-time adaptation.
     """
-    # PRIORITY 5: Dynamic Batch Optimization with Performance Monitoring
+    # ENHANCED: Dynamic Batch Optimization with Server Performance Integration
     batch_start_time = time.time()
     
     try:
-        configured_batch_size = _get_configured_batch_size()
+        # Get adaptive batch size based on current server performance
+        optimized_batch_size = _get_adaptive_batch_size(session_manager)
         
-        # Dynamic batch size adjustment based on multiple factors
         num_matches_on_page = len(matches_on_page)
-        optimized_batch_size = configured_batch_size
         
-        # Get API performance history for intelligent batching
-        recent_api_performance = getattr(_do_batch, '_recent_performance', [])
-        avg_api_time = sum(recent_api_performance) / len(recent_api_performance) if recent_api_performance else 2.0
-        
-        # Adaptive batch sizing based on API performance and page characteristics
-        if avg_api_time > 5.0:  # Slow API responses
-            optimized_batch_size = max(5, configured_batch_size - 3)
-            logger.debug(f"Slow API optimization: Reduced batch size to {optimized_batch_size} "
-                        f"(avg API time: {avg_api_time:.2f}s)")
-        elif avg_api_time < 1.0 and num_matches_on_page >= 30:  # Fast API, large page
-            optimized_batch_size = min(30, configured_batch_size + 8)
-            logger.debug(f"Fast API optimization: Increased batch size to {optimized_batch_size}")
-        elif num_matches_on_page >= 50:  # Large pages
-            optimized_batch_size = min(25, configured_batch_size + 5)
+        # Additional optimizations based on page characteristics
+        if num_matches_on_page >= 50:  # Large pages
+            optimized_batch_size = min(25, int(optimized_batch_size * 1.2))
             logger.debug(f"Large page optimization: Increased batch size to {optimized_batch_size}")
         elif num_matches_on_page <= 10:  # Small pages
-            optimized_batch_size = max(5, configured_batch_size - 3)
-            logger.debug(f"Small page optimization: Reduced batch size from {configured_batch_size} to {optimized_batch_size}")
+            optimized_batch_size = max(5, int(optimized_batch_size * 0.8))
+            logger.debug(f"Small page optimization: Reduced batch size to {optimized_batch_size}")
         
-        # Override for memory efficiency during heavy processing
+        # Memory efficiency for long runs
         if current_page % 20 == 0:  # Every 20 pages, use smaller batches
             optimized_batch_size = max(5, optimized_batch_size - 2)
             logger.debug(f"Memory efficiency: Reduced batch size to {optimized_batch_size} at page {current_page}")
@@ -4701,6 +4860,7 @@ def get_matches(
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
+@api_cache("combined_details", CACHE_TTL['combined_details'])
 def _fetch_combined_details(
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[Dict[str, Any]]:
@@ -5005,9 +5165,9 @@ def _fetch_combined_details(
 
     # PRIORITY 1: Performance Monitoring - Log completion
     if combined_data:
-        _log_api_performance("combined_details", api_start_time, "success")
+        _log_api_performance("combined_details", api_start_time, "success", session_manager)
     else:
-        _log_api_performance("combined_details", api_start_time, "failed")
+        _log_api_performance("combined_details", api_start_time, "failed", session_manager)
     
     return combined_data if combined_data else None
 
@@ -5359,6 +5519,7 @@ def _fetch_batch_ladder(
         cloudscraper.exceptions.CloudflareException,  # type: ignore
     )
 )
+@api_cache("relationship_prob", CACHE_TTL['relationship_prob'])
 def _fetch_batch_relationship_prob(
     session_manager: SessionManager, match_uuid: str, max_labels_param: int = 2
 ) -> Optional[str]:
@@ -5551,7 +5712,7 @@ def _fetch_batch_relationship_prob(
                 except Exception as cache_exc:
                     logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
             
-            _log_api_performance("relationship_prob", api_start_time, "success")
+            _log_api_performance("relationship_prob", api_start_time, "success", session_manager)
             return result
 
         # Case 1: Parsed JSON returned directly

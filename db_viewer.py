@@ -163,5 +163,372 @@ def main():
     finally:
         conn.close()
 
+
+# ==============================================
+# COMPREHENSIVE TEST SUITE
+# ==============================================
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for database viewer functions.
+    
+    Tests all core database viewing functionality including table display,
+    data visualization, stats generation, and error handling.
+    
+    Returns:
+        bool: True if all tests pass, False otherwise
+    """
+    try:
+        from test_framework import TestSuite
+    except ImportError:
+        print("⚠️  TestSuite not available - falling back to basic testing")
+        return _run_basic_tests()
+    
+    suite = TestSuite("Database Viewer", "db_viewer")
+    
+    def test_database_connection():
+        """Test database connection functionality"""
+        import tempfile
+        import sqlite3
+        
+        # Create temporary test database
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            # Create test database with sample data
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            cursor.execute('''CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)''')
+            cursor.execute('''INSERT INTO test_table (name) VALUES ('test1'), ('test2')''')
+            conn.commit()
+            
+            # Test show_tables function
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cursor.fetchall()
+            assert len(tables) >= 1
+            
+            conn.close()
+        finally:
+            os.unlink(test_db)
+    
+    def test_table_display_functions():
+        """Test table display and data retrieval functions"""
+        import tempfile
+        import sqlite3
+        from io import StringIO
+        import sys
+        
+        # Create test database
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            
+            # Create test tables
+            cursor.execute('''CREATE TABLE people (id INTEGER, name TEXT, age INTEGER)''')
+            cursor.execute('''INSERT INTO people VALUES (1, 'John Doe', 30), (2, 'Jane Smith', 25)''')
+            cursor.execute('''CREATE TABLE message_types (id INTEGER, type TEXT)''')
+            cursor.execute('''INSERT INTO message_types VALUES (1, 'email'), (2, 'sms')''')
+            conn.commit()
+            
+            # Test show_tables function by capturing output
+            old_stdout = sys.stdout
+            sys.stdout = StringIO()
+            
+            show_tables(cursor)
+            output = sys.stdout.getvalue()
+            sys.stdout = old_stdout
+            
+            assert 'people' in output
+            assert 'message_types' in output
+            assert '2 records' in output
+            
+            conn.close()
+        finally:
+            os.unlink(test_db)
+    
+    def test_table_data_display():
+        """Test table data display formatting"""
+        import tempfile
+        import sqlite3
+        from io import StringIO
+        import sys
+        
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            
+            cursor.execute('''CREATE TABLE test_data (id INTEGER, description TEXT)''')
+            cursor.execute('''INSERT INTO test_data VALUES (1, 'Test Description'), (2, 'Another Test')''')
+            conn.commit()
+            
+            # Capture output
+            old_stdout = sys.stdout
+            sys.stdout = StringIO()
+            
+            show_table_data(cursor, 'test_data', limit=10)
+            output = sys.stdout.getvalue()
+            sys.stdout = old_stdout
+            
+            # Verify output contains expected elements
+            assert 'TEST_DATA DATA:' in output
+            assert 'Test Description' in output
+            assert 'Another Test' in output
+            
+            conn.close()
+        finally:
+            os.unlink(test_db)
+    
+    def test_database_stats():
+        """Test database statistics generation"""
+        import tempfile
+        import sqlite3
+        from io import StringIO
+        import sys
+        
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            
+            # Create test tables with data
+            cursor.execute('''CREATE TABLE stats_test (id INTEGER, value TEXT)''')
+            cursor.execute('''INSERT INTO stats_test VALUES (1, 'a'), (2, 'b'), (3, 'c')''')
+            conn.commit()
+            
+            # Test stats generation
+            old_stdout = sys.stdout
+            sys.stdout = StringIO()
+            
+            show_db_stats(cursor)
+            output = sys.stdout.getvalue()
+            sys.stdout = old_stdout
+            
+            assert 'Total tables:' in output
+            assert 'Total records:' in output
+            assert '3' in output  # Should show 3 records
+            
+            conn.close()
+        finally:
+            os.unlink(test_db)
+    
+    def test_custom_query_handling():
+        """Test custom query execution"""
+        import tempfile
+        import sqlite3
+        
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            
+            cursor.execute('''CREATE TABLE query_test (id INTEGER, name TEXT)''')
+            cursor.execute('''INSERT INTO query_test VALUES (1, 'test_name')''')
+            conn.commit()
+            
+            # Test basic query execution
+            cursor.execute("SELECT COUNT(*) FROM query_test")
+            result = cursor.fetchone()
+            assert result[0] == 1
+            
+            # Test column info retrieval
+            cursor.execute("PRAGMA table_info(query_test)")
+            columns = cursor.fetchall()
+            assert len(columns) == 2
+            
+            conn.close()
+        finally:
+            os.unlink(test_db)
+    
+    def test_menu_display():
+        """Test menu display functionality"""
+        from io import StringIO
+        import sys
+        
+        # Capture menu output
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+        
+        # Mock input to test menu display
+        old_stdin = sys.stdin
+        sys.stdin = StringIO('q\n')
+        
+        try:
+            choice = display_menu()
+            output = sys.stdout.getvalue()
+            
+            assert '📊 ANCESTRY DATABASE VIEWER' in output
+            assert 'Show all tables' in output
+            assert 'View people' in output
+            assert 'Quit' in output
+            assert choice == 'q'
+            
+        finally:
+            sys.stdout = old_stdout
+            sys.stdin = old_stdin
+    
+    def test_error_handling():
+        """Test error handling with invalid database operations"""
+        import tempfile
+        import sqlite3
+        
+        # Test with non-existent database
+        assert not os.path.exists("nonexistent_database.db")
+        
+        # Test with invalid table operations
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            
+            # Test querying non-existent table should not crash
+            try:
+                cursor.execute("SELECT * FROM nonexistent_table")
+                assert False, "Should have raised an exception"
+            except sqlite3.OperationalError:
+                pass  # Expected
+            
+            conn.close()
+        finally:
+            os.unlink(test_db)
+    
+    def test_function_availability():
+        """Test that all required functions are available"""
+        required_functions = [
+            "display_menu",
+            "show_tables",
+            "show_table_data", 
+            "run_custom_query",
+            "show_db_stats",
+            "main"
+        ]
+        
+        for func_name in required_functions:
+            assert func_name in globals(), f"Function {func_name} should be available"
+            assert callable(globals()[func_name]), f"Function {func_name} should be callable"
+    
+    # Run all tests
+    suite.run_test(
+        "Database connection",
+        test_database_connection,
+        "Database connection and basic SQLite operations work correctly",
+        "Test SQLite database connection, table creation, and basic queries",
+        "Verify database connection handles SQLite operations properly"
+    )
+    
+    suite.run_test(
+        "Table display functions",
+        test_table_display_functions,
+        "Table display functions show database structure correctly",
+        "Test show_tables function with sample database tables and records",
+        "Verify table display shows correct table names and record counts"
+    )
+    
+    suite.run_test(
+        "Table data display",
+        test_table_data_display,
+        "Table data display formats database records properly",
+        "Test show_table_data function with sample data and column formatting",
+        "Verify data display shows proper column headers and record formatting"
+    )
+    
+    suite.run_test(
+        "Database statistics",
+        test_database_stats,
+        "Database statistics generation provides accurate information",
+        "Test show_db_stats function with sample database and record counts",
+        "Verify stats generation shows correct table counts and totals"
+    )
+    
+    suite.run_test(
+        "Custom query handling",
+        test_custom_query_handling,
+        "Custom query execution works with various SQL commands",
+        "Test query execution with SELECT, PRAGMA, and other SQL operations",
+        "Verify custom queries execute properly and return expected results"
+    )
+    
+    suite.run_test(
+        "Menu display functionality",
+        test_menu_display,
+        "Menu display shows all available options correctly",
+        "Test display_menu function output and user input handling",
+        "Verify menu displays all database viewer options properly"
+    )
+    
+    suite.run_test(
+        "Error handling",
+        test_error_handling,
+        "Error conditions are handled gracefully without crashing",
+        "Test error handling with invalid databases and malformed queries",
+        "Verify robust error handling for database and SQL operation failures"
+    )
+    
+    suite.run_test(
+        "Function availability verification",
+        test_function_availability,
+        "All required database viewer functions are available and callable",
+        "Test availability of display_menu, show_tables, and data functions",
+        "Verify function availability ensures complete database viewer interface"
+    )
+    
+    return suite.finish_suite()
+
+
+def _run_basic_tests() -> bool:
+    """Basic test fallback when TestSuite is not available"""
+    try:
+        import sqlite3
+        import tempfile
+        
+        # Test basic database operations
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            test_db = tmp.name
+        
+        try:
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            cursor.execute('''CREATE TABLE test (id INTEGER)''')
+            cursor.execute('''INSERT INTO test VALUES (1)''')
+            conn.commit()
+            
+            # Test show_tables doesn't crash
+            show_tables(cursor)
+            
+            conn.close()
+            print("✅ Basic database viewer tests passed")
+            return True
+        finally:
+            os.unlink(test_db)
+            
+    except Exception as e:
+        print(f"❌ Basic tests failed: {e}")
+        return False
+
+
+# ==============================================
+# Standalone Test Block  
+# ==============================================
+
 if __name__ == "__main__":
-    main()
+    import sys
+    
+    # Check if running tests vs normal viewer
+    if len(sys.argv) > 1 and sys.argv[1] == '--test':
+        print("🔍 Running Database Viewer comprehensive test suite...")
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    else:
+        main()

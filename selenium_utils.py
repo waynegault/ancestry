@@ -265,30 +265,13 @@ def selenium_module_tests():
 
 
 def run_comprehensive_tests() -> bool:
-    """Run selenium utilities tests using unified framework."""
-    from test_framework import TestSuite
-
-    suite = TestSuite("Selenium Utilities Tests", "selenium_utils.py")
-    suite.start_suite()
-
-    # Get the test list and run each test
-    test_list = selenium_module_tests()
-    for test_name, test_func in test_list:
-        suite.run_test(test_name, test_func, f"Should pass {test_name}")
-
-    return suite.finish_suite()
-
-
-# Functions are automatically registered via auto_register_module() at import
-# No manual registration needed - this is a key benefit of the unified system
-
-
-if __name__ == "__main__":
+    """Run comprehensive selenium utilities tests using standardized TestSuite framework."""
     from test_framework import TestSuite, suppress_logging
     from unittest.mock import MagicMock
     import time
 
     suite = TestSuite("Selenium Utilities & Browser Automation", "selenium_utils.py")
+    suite.start_suite()
 
     def test_function_availability():
         """Test selenium utility functions are available with detailed verification."""
@@ -585,5 +568,15 @@ if __name__ == "__main__":
             "Selenium operations complete within reasonable time limits for automation",
         )
 
-    # Generate summary report
-    suite.finish_suite()
+    # Generate summary report and return result
+    return suite.finish_suite()
+
+
+# Functions are automatically registered via auto_register_module() at import
+# No manual registration needed - this is a key benefit of the unified system
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)

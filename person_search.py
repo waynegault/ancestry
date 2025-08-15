@@ -294,18 +294,28 @@ def calculate_name_similarity(name1: str, name2: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-# --- Main execution block ---
-if __name__ == "__main__":
+# =============================================================================
+# COMPREHENSIVE TEST SUITE
+# =============================================================================
+
+def person_search_module_tests() -> bool:
+    """
+    Comprehensive test suite for person_search.py.
+    Tests person search functionality, GEDCOM integration, API search, and relationship analysis.
+    """
     from test_framework import TestSuite, suppress_logging
     from unittest.mock import MagicMock, patch
     import time
 
     suite = TestSuite("Person Search & Matching Engine", "person_search.py")
+    suite.start_suite()
 
+    # === INITIALIZATION TESTS ===
     def test_function_availability():
+        """Test that all core person search functions are available."""
         required_functions = [
             "search_gedcom_persons",
-            "search_ancestry_api_persons",
+            "search_ancestry_api_persons", 
             "get_person_family_details",
             "get_person_relationship_path",
             "unified_person_search",
@@ -314,11 +324,26 @@ if __name__ == "__main__":
         ]
         for func_name in required_functions:
             assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(
-                globals()[func_name]
-            ), f"Function {func_name} should be callable"
+            assert callable(globals()[func_name]), f"Function {func_name} should be callable"
 
+    def test_module_imports():
+        """Test that required modules and dependencies are imported correctly."""
+        # Test core infrastructure imports
+        assert 'logger' in globals(), "Logger should be initialized"
+        assert 'safe_execute' in globals(), "safe_execute decorator should be available" 
+        assert 'SessionManager' in globals(), "SessionManager should be importable"
+        
+        # Test error handling imports
+        required_error_imports = [
+            'retry_on_failure', 'circuit_breaker', 'timeout_protection',
+            'graceful_degradation', 'error_context', 'AncestryException'
+        ]
+        for import_name in required_error_imports:
+            assert import_name in globals(), f"Error handling import {import_name} should be available"
+
+    # === CORE FUNCTIONALITY TESTS ===
     def test_parse_person_name():
+        """Test name parsing functionality with various name formats."""
         # Test normal name parsing
         result = parse_person_name("John Doe Smith")
         assert result["first_name"] == "John", "Should parse first name correctly"
@@ -337,38 +362,35 @@ if __name__ == "__main__":
         assert result["surname"] == "", "Should handle empty name"
 
     def test_name_similarity():
+        """Test name similarity calculation with various combinations."""
         # Test exact match
-        assert (
-            calculate_name_similarity("John", "John") == 1.0
-        ), "Exact match should return 1.0"
+        assert calculate_name_similarity("John", "John") == 1.0, "Exact match should return 1.0"
 
         # Test no match
-        assert (
-            calculate_name_similarity("John", "Mary") < 0.5
-        ), "Different names should have low similarity"
+        assert calculate_name_similarity("John", "Mary") < 0.5, "Different names should have low similarity"
 
         # Test similar names
         similarity = calculate_name_similarity("John", "Jon")
         assert 0.5 < similarity < 1.0, "Similar names should have moderate similarity"
 
         # Test empty names
-        assert (
-            calculate_name_similarity("", "John") == 0.0
-        ), "Empty name should return 0.0"
+        assert calculate_name_similarity("", "John") == 0.0, "Empty name should return 0.0"
 
-    def test_gedcom_search_integration():
+    def test_gedcom_search_functions():
+        """Test GEDCOM search functionality with various criteria."""
         # Test with mock search criteria
         search_criteria = {"first_name": "John", "surname": "Smith", "birth_year": 1850}
-
-        # This will return empty list due to safe_execute if imports fail
+        
+        # This will return mock data due to safe_execute wrapper
         results = search_gedcom_persons(search_criteria, max_results=5)
         assert isinstance(results, list), "Should return a list"
-
+        
         # Test with invalid criteria
         results = search_gedcom_persons({}, max_results=1)
         assert isinstance(results, list), "Should handle empty criteria"
 
-    def test_api_search_integration():
+    def test_api_search_functions():
+        """Test Ancestry API search functionality with session validation."""
         # Test with None session manager
         results = search_ancestry_api_persons(None, {"first_name": "John"}, 5)
         assert results == [], "Should return empty list for None session manager"
@@ -379,7 +401,9 @@ if __name__ == "__main__":
         results = search_ancestry_api_persons(mock_session, {"first_name": "John"}, 5)
         assert results == [], "Should return empty list for invalid session"
 
-    def test_family_details_integration():
+    # === EDGE CASE TESTS ===
+    def test_family_details_edge_cases():
+        """Test family details retrieval with different configurations."""
         # Test with invalid person ID
         result = get_person_family_details("", source="gedcom")
         assert isinstance(result, dict), "Should return dictionary"
@@ -392,7 +416,8 @@ if __name__ == "__main__":
         result = get_person_family_details("test_id", source="auto")
         assert isinstance(result, dict), "Should handle auto detection"
 
-    def test_relationship_path_integration():
+    def test_relationship_path_edge_cases():
+        """Test relationship path analysis with various source configurations."""
         # Test GEDCOM relationship path
         path = get_person_relationship_path("person1", "person2", source="gedcom")
         assert isinstance(path, str), "Should return string"
@@ -405,7 +430,9 @@ if __name__ == "__main__":
         path = get_person_relationship_path("person1", "person2", source="auto")
         assert isinstance(path, str), "Should handle auto detection"
 
-    def test_unified_search():
+    # === INTEGRATION TESTS ===
+    def test_unified_search_integration():
+        """Test unified search combining multiple data sources."""
         search_criteria = {"first_name": "John", "surname": "Doe"}
 
         # Test with no session manager
@@ -426,16 +453,31 @@ if __name__ == "__main__":
         )
         assert results == [], "Should return empty list when both sources disabled"
 
-    def test_error_handling():
-        # Test functions with invalid inputs
-        assert search_gedcom_persons(None, 5) == [], "Should handle None criteria"
-        assert (
-            search_ancestry_api_persons(None, None, 5) == []
-        ), "Should handle None inputs"
-        assert get_person_family_details(None) == {}, "Should handle None person ID"
-        assert get_person_relationship_path(None) == "", "Should handle None person ID"
+    def test_session_manager_integration():
+        """Test integration with SessionManager and external dependencies.""" 
+        # Test that functions can work with session manager interface
+        mock_session_manager = MagicMock()
+        mock_session_manager.is_sess_valid.return_value = True
+        
+        # Test API search with valid session
+        results = search_ancestry_api_persons(
+            mock_session_manager, 
+            {"first_name": "Test"}, 
+            max_results=5
+        )
+        assert isinstance(results, list), "Should return list with valid session"
+        
+        # Test unified search with session manager
+        results = unified_person_search(
+            {"first_name": "Test"}, 
+            session_manager=mock_session_manager,
+            include_api=True
+        )
+        assert isinstance(results, list), "Should integrate with session manager"
 
+    # === PERFORMANCE TESTS ===
     def test_performance():
+        """Test performance of core person search operations."""
         # Test that operations complete within reasonable time
         start_time = time.time()
 
@@ -447,93 +489,173 @@ if __name__ == "__main__":
             get_person_family_details("test_id", source="gedcom")
 
         elapsed = time.time() - start_time
-        assert (
-            elapsed < 0.5
-        ), f"Performance test should complete quickly, took {elapsed:.3f}s"
+        assert elapsed < 0.5, f"Performance test should complete quickly, took {elapsed:.3f}s"
+
+    def test_bulk_operations():
+        """Test performance with bulk operations and larger datasets."""
+        # Test name parsing performance
+        names = ["John Smith", "Jane Doe", "Robert Johnson", "Mary Wilson", "David Brown"]
+        start_time = time.time()
+        
+        for _ in range(10):
+            for name in names:
+                parse_person_name(name)
+                
+        elapsed = time.time() - start_time
+        assert elapsed < 0.2, f"Bulk name parsing should be fast, took {elapsed:.3f}s"
+
+    # === ERROR HANDLING TESTS ===
+    def test_error_handling():
+        """Test all functions with invalid inputs and error conditions."""
+        # Test functions with invalid inputs
+        assert search_gedcom_persons(None, 5) == [], "Should handle None criteria"
+        assert search_ancestry_api_persons(None, None, 5) == [], "Should handle None inputs"
+        assert get_person_family_details(None) == {}, "Should handle None person ID"
+        assert get_person_relationship_path(None) == "", "Should handle None person ID"
+
+    def test_safe_execute_decorator():
+        """Test that safe_execute decorator properly handles errors."""
+        # Test that functions return safe defaults on errors
+        # Note: Using type ignore for intentional None testing  
+        result = parse_person_name(None)  # type: ignore
+        assert isinstance(result, dict), "Should return dict default for invalid input"
+        
+        result = calculate_name_similarity(None, None)  # type: ignore
+        assert result == 0, "Should return 0 for invalid name similarity input"
 
     # Run all tests
-    print("🔍 Running Person Search & Matching Engine comprehensive test suite...")
-
     with suppress_logging():
+        suite.run_test(
+            "Module imports and initialization",
+            test_module_imports,
+            "All required modules and dependencies are properly imported",
+            "Test import availability of core infrastructure and error handling components",
+            "Module initialization provides complete dependency access"
+        )
+
         suite.run_test(
             "Function availability verification",
             test_function_availability,
+            "All core person search functions are available and callable",
             "Test availability of all core person search functions",
-            "Function availability ensures complete person search interface",
-            "All required person search functions are available and callable",
+            "Function availability ensures complete person search interface"
         )
 
         suite.run_test(
             "Name parsing functionality",
             test_parse_person_name,
-            "Test parse_person_name with various name formats and edge cases",
-            "Name parsing provides robust name component extraction",
             "Name parsing correctly handles full names, single names, and empty inputs",
+            "Test parse_person_name with various name formats and edge cases",
+            "Name parsing provides robust name component extraction"
         )
 
         suite.run_test(
             "Name similarity calculation",
             test_name_similarity,
+            "Name similarity correctly calculates match scores for exact, similar, and different names", 
             "Test calculate_name_similarity with various name combinations",
-            "Name similarity provides accurate comparison scoring",
-            "Name similarity correctly calculates match scores for exact, similar, and different names",
+            "Name similarity provides accurate comparison scoring"
         )
 
         suite.run_test(
-            "GEDCOM search integration",
-            test_gedcom_search_integration,
-            "Test search_gedcom_persons with mock criteria and error handling",
-            "GEDCOM search integration provides reliable data access",
+            "GEDCOM search functionality",
+            test_gedcom_search_functions,
             "GEDCOM search handles various search criteria and gracefully handles missing imports",
+            "Test search_gedcom_persons with mock criteria and error handling",
+            "GEDCOM search integration provides reliable data access"
         )
 
         suite.run_test(
-            "API search integration",
-            test_api_search_integration,
-            "Test search_ancestry_api_persons with session validation and error handling",
-            "API search integration provides authenticated data access",
+            "API search functionality",
+            test_api_search_functions,
             "API search validates sessions and handles invalid or missing authentication",
+            "Test search_ancestry_api_persons with session validation and error handling",
+            "API search integration provides authenticated data access"
         )
 
         suite.run_test(
-            "Family details integration",
-            test_family_details_integration,
-            "Test get_person_family_details with different sources and configurations",
-            "Family details integration provides comprehensive person information",
+            "Family details edge cases",
+            test_family_details_edge_cases,
             "Family details correctly handles GEDCOM, API, and auto-detection modes",
+            "Test get_person_family_details with different sources and configurations",
+            "Family details integration provides comprehensive person information"
         )
 
         suite.run_test(
-            "Relationship path integration",
-            test_relationship_path_integration,
-            "Test get_person_relationship_path with various source configurations",
-            "Relationship path integration provides family connection analysis",
+            "Relationship path edge cases",
+            test_relationship_path_edge_cases,
             "Relationship path correctly handles different data sources and auto-detection",
+            "Test get_person_relationship_path with various source configurations", 
+            "Relationship path integration provides family connection analysis"
         )
 
         suite.run_test(
-            "Unified search functionality",
-            test_unified_search,
-            "Test unified_person_search combining multiple data sources",
-            "Unified search provides comprehensive cross-platform searching",
+            "Unified search integration",
+            test_unified_search_integration,
             "Unified search correctly combines GEDCOM and API results with proper source tagging",
+            "Test unified_person_search combining multiple data sources",
+            "Unified search provides comprehensive cross-platform searching"
         )
 
         suite.run_test(
-            "Error handling robustness",
-            test_error_handling,
-            "Test all functions with invalid inputs and error conditions",
-            "Error handling ensures stable operation under adverse conditions",
-            "Error handling gracefully manages None inputs and missing dependencies",
+            "Session manager integration",
+            test_session_manager_integration,
+            "Integration with SessionManager provides authenticated access and proper session validation",
+            "Test integration with SessionManager and external dependencies", 
+            "Session manager integration enables secure API access"
         )
 
         suite.run_test(
             "Performance validation",
             test_performance,
-            "Test performance of core person search operations with multiple iterations",
-            "Performance validation ensures efficient person search execution",
             "Person search operations complete within reasonable time limits for production use",
+            "Test performance of core person search operations with multiple iterations",
+            "Performance validation ensures efficient person search execution"
         )
 
-    # Generate summary report
-    suite.finish_suite()
+        suite.run_test(
+            "Bulk operations performance",
+            test_bulk_operations,
+            "Bulk operations handle larger datasets efficiently with good performance characteristics",
+            "Test performance with bulk operations and larger datasets",
+            "Bulk operations provide scalable performance for production workloads"
+        )
+
+        suite.run_test(
+            "Error handling robustness",
+            test_error_handling,
+            "Error handling gracefully manages None inputs and missing dependencies",
+            "Test all functions with invalid inputs and error conditions",
+            "Error handling ensures stable operation under adverse conditions"
+        )
+
+        suite.run_test(
+            "Safe execute decorator validation",
+            test_safe_execute_decorator,
+            "Safe execute decorator provides robust error handling and safe defaults",
+            "Test that safe_execute decorator properly handles errors",
+            "Safe execute decorator ensures stable function execution"
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive person search tests using standardized TestSuite format.""" 
+    return person_search_module_tests()
+
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+if __name__ == "__main__":
+    import sys
+    
+    # Always run comprehensive tests
+    print("🔍 Running Person Search & Matching Engine comprehensive test suite...")
+    success = run_comprehensive_tests()
+    if success:
+        print("\n✅ All person search tests completed successfully!")
+    else:
+        print("\n❌ Some person search tests failed!")
+    sys.exit(0 if success else 1)

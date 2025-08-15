@@ -86,7 +86,8 @@ def _run_simple_suggestion_scoring(
     date_flex: Optional[Dict[str, Any]] = None,
 ) -> Tuple[int, Dict[str, int], List[str]]:
     """
-    Simple scoring function for API suggestions when gedcom_utils is not available.
+    Use the main scoring function from gedcom_utils for consistency.
+    This ensures all scoring uses the same logic and calculations.
 
     Args:
         search_criteria: Dictionary of search criteria
@@ -97,9 +98,19 @@ def _run_simple_suggestion_scoring(
     Returns:
         Tuple of (total_score, field_scores, reasons)
     """
-    # Use default weights if none provided
-    if weights is None:
-        weights = dict(config_schema.common_scoring_weights)
+    # Import the main scoring function
+    from gedcom_utils import calculate_match_score
+    
+    # Use the unified scoring function
+    result = calculate_match_score(
+        search_criteria=search_criteria,
+        candidate_processed_data=candidate,
+        scoring_weights=weights,
+        date_flexibility=date_flex
+    )
+    
+    # Convert float score to int for API compatibility
+    return (int(result[0]), result[1], result[2])
 
     # Use default date flexibility if none provided
     if date_flex is None:

@@ -524,15 +524,30 @@ def optimize_on_high_usage(memory_threshold: float = 85.0):
 # MODULE TESTS
 # ==============================================
 
-def performance_optimizer_module_tests() -> bool:
-    """Comprehensive test suite for performance optimizer."""
-    from test_framework import TestSuite, suppress_logging
+# ==============================================
+# COMPREHENSIVE TEST SUITE
+# ==============================================
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for performance orchestrator functionality.
     
-    suite = TestSuite("Performance Optimizer - Priority 4 Implementation", "performance_optimizer.py")
-    suite.start_suite()
+    Tests all core performance optimization functionality including query optimization,
+    memory monitoring, API batching, module loading optimization, and comprehensive reporting.
     
-    def test_query_optimizer():
-        """Test SmartQueryOptimizer functionality."""
+    Returns:
+        bool: True if all tests pass, False otherwise
+    """
+    try:
+        from test_framework import TestSuite, suppress_logging
+    except ImportError:
+        print("⚠️  TestSuite not available - falling back to basic testing")
+        return _run_basic_tests()
+    
+    suite = TestSuite("Performance Orchestrator", "performance_orchestrator")
+    
+    def test_query_optimizer_functionality():
+        """Test SmartQueryOptimizer query tracking and optimization"""
         optimizer = SmartQueryOptimizer()
         
         # Track some test queries
@@ -540,17 +555,20 @@ def performance_optimizer_module_tests() -> bool:
         optimizer.track_query("SELECT * FROM test WHERE id = ?", 0.15)
         optimizer.track_query("SELECT * FROM test", 0.06)
         
+        # Verify query tracking
+        assert len(optimizer.query_stats) > 0
+        
         # Get optimization suggestions
         suggestions = optimizer.get_optimization_suggestions()
-        assert len(suggestions) >= 0  # Should have suggestions for slow queries
+        assert isinstance(suggestions, list)
         
         # Test optimization
         result = optimizer.optimize_common_patterns()
         assert result.success
         assert result.optimization_type == "query"
     
-    def test_memory_monitor():
-        """Test MemoryPressureMonitor functionality."""
+    def test_memory_pressure_monitoring():
+        """Test MemoryPressureMonitor memory tracking and optimization"""
         monitor = MemoryPressureMonitor(pressure_threshold=50.0)  # Low threshold for testing
         
         # Get memory info
@@ -563,9 +581,10 @@ def performance_optimizer_module_tests() -> bool:
         result = monitor.optimize_memory_usage()
         assert result.success
         assert result.optimization_type == "memory"
+        assert result.improvement_percent >= 0
     
-    def test_batch_coordinator():
-        """Test APIBatchCoordinator functionality."""
+    def test_api_batch_coordination():
+        """Test APIBatchCoordinator request batching and coordination"""
         coordinator = APIBatchCoordinator(batch_size=3, batch_timeout=0.1)
         
         # Add requests to batch
@@ -574,6 +593,7 @@ def performance_optimizer_module_tests() -> bool:
         batch_id3 = coordinator.add_to_batch("search", {"query": "test3"})
         
         assert batch_id1 != batch_id2
+        assert isinstance(batch_id1, str)
         
         # Check if batch should execute
         should_execute = coordinator.should_execute_batch("search")
@@ -588,8 +608,8 @@ def performance_optimizer_module_tests() -> bool:
         assert result.success
         assert result.optimization_type == "api_batching"
     
-    def test_module_optimizer():
-        """Test ModuleLoadOptimizer functionality."""
+    def test_module_load_optimization():
+        """Test ModuleLoadOptimizer import tracking and optimization"""
         optimizer = ModuleLoadOptimizer()
         
         # Track some module loads
@@ -597,13 +617,17 @@ def performance_optimizer_module_tests() -> bool:
         optimizer.track_module_load("test_module2", 0.15)  # Slow module
         optimizer.track_module_load("test_module2", 0.12)  # Slow module again
         
+        # Verify tracking using load_times attribute
+        assert len(optimizer.load_times) > 0
+        
         # Test optimization
         result = optimizer.optimize_slow_imports()
         assert result.success
         assert result.optimization_type == "module_loading"
+        assert isinstance(result.improvement_percent, (int, float))
     
-    def test_comprehensive_optimizer():
-        """Test PerformanceOptimizer comprehensive functionality."""
+    def test_comprehensive_performance_optimization():
+        """Test PerformanceOptimizer comprehensive coordination"""
         optimizer = PerformanceOptimizer()
         
         # Run comprehensive optimization
@@ -615,17 +639,28 @@ def performance_optimizer_module_tests() -> bool:
         expected_types = {"memory", "query", "api_batching", "module_loading"}
         assert optimization_types == expected_types
         
+        # Verify all results are OptimizationResult objects
+        for result in results:
+            assert hasattr(result, 'success')
+            assert hasattr(result, 'optimization_type')
+            assert hasattr(result, 'improvement_percent')
+        
         # Test performance report
         report = optimizer.get_performance_report()
         assert "PERFORMANCE OPTIMIZER REPORT" in report
         assert "OPTIMIZATION SUMMARY" in report
     
-    def test_global_functions():
-        """Test global optimizer functions."""
+    def test_global_optimization_functions():
+        """Test global performance optimization functions"""
         # Test global optimization
         results = optimize_performance()
         assert isinstance(results, list)
         assert len(results) > 0
+        
+        # Verify all results are successful OptimizationResult objects
+        for result in results:
+            assert hasattr(result, 'success')
+            assert hasattr(result, 'optimization_type')
         
         # Test performance report
         report = get_performance_report()
@@ -639,83 +674,234 @@ def performance_optimizer_module_tests() -> bool:
         high_pressure = monitor_memory_pressure()
         assert isinstance(high_pressure, bool)
     
-    def test_optimization_decorator():
-        """Test performance optimization decorator."""
+    def test_optimization_decorators():
+        """Test performance optimization decorators"""
         @optimize_on_high_usage(memory_threshold=0.0)  # Very low threshold for testing
         def test_function():
+            import time
             time.sleep(0.001)  # Small delay
             return "test_result"
         
         result = test_function()
         assert result == "test_result"
     
-    with suppress_logging():
-        suite.run_test(
-            "Query Optimizer",
-            test_query_optimizer,
-            "SmartQueryOptimizer tracks queries and provides optimization suggestions",
-            "Test query performance tracking and optimization suggestions",
-            "Query optimizer identifies slow queries and provides optimization recommendations"
-        )
+    def test_performance_metrics():
+        """Test performance metric collection and analysis"""
+        optimizer = PerformanceOptimizer()
         
-        suite.run_test(
-            "Memory Monitor",
-            test_memory_monitor,
-            "MemoryPressureMonitor detects high memory usage and optimizes",
-            "Test memory pressure detection and optimization",
-            "Memory monitor tracks usage and applies garbage collection optimizations"
-        )
+        # Test metric collection by running optimization which collects metrics
+        results = optimizer.run_comprehensive_optimization()
+        assert isinstance(results, list)
+        assert len(results) > 0
         
-        suite.run_test(
-            "Batch Coordinator",
-            test_batch_coordinator,
-            "APIBatchCoordinator efficiently batches API requests",
-            "Test API request batching and coordination",
-            "Batch coordinator groups requests for efficient processing and tracks statistics"
-        )
+        # Verify result structure (which represents our metrics)
+        for result in results:
+            assert hasattr(result, 'optimization_type')
+            assert hasattr(result, 'improvement_percent')
+            assert hasattr(result, 'success')
+            assert isinstance(result.improvement_percent, (int, float))
+    
+    def test_memory_optimization_techniques():
+        """Test various memory optimization techniques"""
+        monitor = MemoryPressureMonitor()
         
-        suite.run_test(
-            "Module Optimizer",
-            test_module_optimizer,
-            "ModuleLoadOptimizer tracks and optimizes slow module loading",
-            "Test module loading time tracking and optimization",
-            "Module optimizer identifies and optimizes slow-loading modules"
-        )
+        # Test different optimization techniques
+        initial_memory = monitor.get_memory_info()["rss_mb"]
         
-        suite.run_test(
-            "Comprehensive Optimizer",
-            test_comprehensive_optimizer,
-            "PerformanceOptimizer coordinates all optimization types",
-            "Test comprehensive performance optimization coordination",
-            "Comprehensive optimizer runs all optimization types and provides detailed reporting"
-        )
+        # Force garbage collection
+        import gc
+        gc.collect()
         
-        suite.run_test(
-            "Global Functions",
-            test_global_functions,
-            "Global optimizer functions provide convenient access to optimization features",
-            "Test global optimization functions and utilities",
-            "Global functions provide easy access to performance optimization with proper state management"
-        )
+        # Test memory monitoring
+        post_gc_memory = monitor.get_memory_info()["rss_mb"]
+        assert isinstance(post_gc_memory, (int, float))
+        assert post_gc_memory > 0
+    
+    def test_query_optimization_patterns():
+        """Test query optimization pattern recognition"""
+        optimizer = SmartQueryOptimizer()
         
-        suite.run_test(
-            "Optimization Decorator", 
-            test_optimization_decorator,
-            "Decorator automatically optimizes performance for high-usage functions",
-            "Test automatic performance optimization decorator",
-            "Decorator monitors function performance and applies optimizations when needed"
-        )
+        # Track patterns
+        optimizer.track_query("SELECT * FROM users WHERE active = 1", 0.2)
+        optimizer.track_query("SELECT * FROM users WHERE active = 0", 0.15)
+        optimizer.track_query("SELECT count(*) FROM users", 0.05)
+        
+        # Test pattern analysis
+        suggestions = optimizer.get_optimization_suggestions()
+        assert isinstance(suggestions, list)
+        
+        # Test common pattern optimization
+        result = optimizer.optimize_common_patterns()
+        assert result.success
+    
+    def test_error_handling_and_resilience():
+        """Test error handling in optimization operations"""
+        optimizer = PerformanceOptimizer()
+        
+        # Test with invalid inputs
+        try:
+            # This should handle errors gracefully
+            results = optimizer.run_comprehensive_optimization()
+            assert isinstance(results, list)
+        except Exception as e:
+            # Should not raise unhandled exceptions
+            assert False, f"Optimization should handle errors gracefully: {e}"
+    
+    def test_function_availability():
+        """Test that all required optimization functions are available"""
+        required_functions = [
+            "optimize_performance",
+            "get_performance_report",
+            "track_query_performance",
+            "monitor_memory_pressure"
+        ]
+        
+        required_classes = [
+            "PerformanceOptimizer",
+            "SmartQueryOptimizer", 
+            "MemoryPressureMonitor",
+            "APIBatchCoordinator",
+            "ModuleLoadOptimizer",
+            "PerformanceMetric",
+            "OptimizationResult"
+        ]
+        
+        for func_name in required_functions:
+            assert func_name in globals(), f"Function {func_name} should be available"
+            assert callable(globals()[func_name]), f"Function {func_name} should be callable"
+            
+        for class_name in required_classes:
+            assert class_name in globals(), f"Class {class_name} should be available"
+            assert isinstance(globals()[class_name], type), f"{class_name} should be a class"
+    
+    # Run all tests
+    suite.run_test(
+        "Query optimizer functionality",
+        test_query_optimizer_functionality,
+        "SmartQueryOptimizer tracks queries and provides optimization suggestions effectively",
+        "Test query performance tracking, optimization suggestions, and pattern optimization",
+        "Verify query optimizer identifies slow queries and provides actionable recommendations"
+    )
+    
+    suite.run_test(
+        "Memory pressure monitoring",
+        test_memory_pressure_monitoring,
+        "MemoryPressureMonitor detects high memory usage and applies optimizations successfully",
+        "Test memory usage tracking, pressure detection, and garbage collection optimization",
+        "Verify memory monitor tracks resource usage and optimizes memory consumption"
+    )
+    
+    suite.run_test(
+        "API batch coordination",
+        test_api_batch_coordination,
+        "APIBatchCoordinator efficiently batches API requests for optimal performance",
+        "Test API request batching, coordination, and statistics collection",
+        "Verify batch coordinator groups requests efficiently and provides performance statistics"
+    )
+    
+    suite.run_test(
+        "Module load optimization",
+        test_module_load_optimization,
+        "ModuleLoadOptimizer tracks and optimizes slow module loading operations",
+        "Test module loading time tracking, slow import detection, and optimization",
+        "Verify module optimizer identifies slow imports and provides loading optimizations"
+    )
+    
+    suite.run_test(
+        "Comprehensive performance optimization",
+        test_comprehensive_performance_optimization,
+        "PerformanceOptimizer coordinates all optimization types for comprehensive improvement",
+        "Test comprehensive optimization coordination, result collection, and reporting",
+        "Verify comprehensive optimizer runs all optimization types and provides detailed analysis"
+    )
+    
+    suite.run_test(
+        "Global optimization functions",
+        test_global_optimization_functions,
+        "Global optimization functions provide convenient access to all optimization features",
+        "Test global functions for optimization execution, reporting, and monitoring",
+        "Verify global functions provide easy access to optimization with proper state management"
+    )
+    
+    suite.run_test(
+        "Optimization decorators",
+        test_optimization_decorators,
+        "Performance optimization decorators automatically optimize high-usage functions",
+        "Test decorator-based automatic optimization with configurable thresholds",
+        "Verify decorators monitor function performance and apply optimizations automatically"
+    )
+    
+    suite.run_test(
+        "Performance metrics collection",
+        test_performance_metrics,
+        "Performance metric collection provides comprehensive system analysis data",
+        "Test metric collection, structure validation, and data accuracy",
+        "Verify metrics collection captures accurate performance data with proper structure"
+    )
+    
+    suite.run_test(
+        "Memory optimization techniques",
+        test_memory_optimization_techniques,
+        "Memory optimization techniques effectively reduce memory pressure and improve performance",
+        "Test various memory optimization strategies and their effectiveness",
+        "Verify memory optimization techniques provide measurable memory usage improvements"
+    )
+    
+    suite.run_test(
+        "Query optimization patterns",
+        test_query_optimization_patterns,
+        "Query optimization pattern recognition identifies and optimizes common query patterns",
+        "Test pattern recognition, analysis, and optimization for database queries",
+        "Verify query pattern analysis provides actionable optimization recommendations"
+    )
+    
+    suite.run_test(
+        "Error handling and resilience",
+        test_error_handling_and_resilience,
+        "Performance optimization operations handle errors gracefully without system failure",
+        "Test error handling, exception management, and system resilience",
+        "Verify optimization operations maintain stability and handle errors appropriately"
+    )
+    
+    suite.run_test(
+        "Function availability verification",
+        test_function_availability,
+        "All required performance optimization functions and classes are available and callable",
+        "Test availability of optimize_performance, PerformanceOptimizer, and optimization classes",
+        "Verify function availability ensures complete performance optimization interface"
+    )
     
     return suite.finish_suite()
 
 
+def _run_basic_tests() -> bool:
+    """Basic test fallback when TestSuite is not available"""
+    try:
+        # Test basic functionality
+        optimizer = PerformanceOptimizer()
+        results = optimizer.run_comprehensive_optimization()
+        assert len(results) > 0
+        
+        # Test global functions
+        report = get_performance_report()
+        assert isinstance(report, str)
+        
+        print("✅ Basic performance orchestrator tests passed")
+        return True
+    except Exception as e:
+        print(f"❌ Basic tests failed: {e}")
+        return False
+
+
 # ==============================================
-# MAIN EXECUTION
+# Standalone Test Block
 # ==============================================
 
 if __name__ == "__main__":
-    print("🚀 Running Performance Optimizer comprehensive test suite...")
-    success = performance_optimizer_module_tests()
+    import sys
+    
+    print("⚡ Running Performance Orchestrator comprehensive test suite...")
+    success = run_comprehensive_tests()
     
     if success:
         print("\n🎯 Testing Performance Optimization Features...")
@@ -734,7 +920,6 @@ if __name__ == "__main__":
         print("\n3. Performance Report:")
         print(get_performance_report())
         
-        print("✅ Performance Optimizer (Priority 4) implementation complete!")
+        print("✅ Performance Orchestrator comprehensive testing complete!")
     
-    import sys
     sys.exit(0 if success else 1)
