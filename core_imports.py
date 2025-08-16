@@ -439,12 +439,15 @@ def run_comprehensive_tests() -> bool:
             "another_test_func": lambda: "another_result",
             "__name__": "mock_test_module"
         }
-        
+
         # Test auto registration
         auto_register_module(mock_globals, "mock_test_module")
-        
-        assert is_function_available("test_auto_func")
-        assert call_function("test_auto_func") == "auto_result"
+
+        # Functions are registered with module prefix
+        assert is_function_available("mock_test_module.test_auto_func")
+        assert call_function("mock_test_module.test_auto_func") == "auto_result"
+        assert is_function_available("mock_test_module.another_test_func")
+        assert call_function("mock_test_module.another_test_func") == "another_result"
     
     def test_project_root_detection():
         """Test project root detection"""
@@ -479,16 +482,24 @@ def run_comprehensive_tests() -> bool:
         """Test safe function execution wrapper"""
         def safe_func():
             return "safe_result"
-        
+
         def error_func():
             raise ValueError("Test error")
-        
-        # Test successful execution
-        result = safe_execute(safe_func)
+
+        # Test successful execution using decorator
+        @safe_execute
+        def decorated_safe_func():
+            return "safe_result"
+
+        result = decorated_safe_func()
         assert result == "safe_result"
-        
-        # Test error handling
-        result = safe_execute(error_func, default_return="default")
+
+        # Test error handling using decorator with default return
+        @safe_execute(default_return="default")
+        def decorated_error_func():
+            raise ValueError("Test error")
+
+        result = decorated_error_func()
         assert result == "default"
     
     def test_performance_caching():
@@ -523,28 +534,44 @@ def run_comprehensive_tests() -> bool:
         # Register some test functions
         register_function("cleanup_test1", lambda: "test1")
         register_function("cleanup_test2", lambda: "test2")
-        
-        initial_size = len(_registry)
-        
-        # Test cleanup
-        cleanup_registry()
-        
-        # Registry should still work after cleanup
+
+        # Verify functions are available before cleanup
         assert is_function_available("cleanup_test1")
         assert is_function_available("cleanup_test2")
+
+        initial_size = len(_registry)
+        assert initial_size >= 2  # Should have at least our test functions
+
+        # Test cleanup
+        cleanup_registry()
+
+        # Registry should be empty after cleanup
+        assert len(_registry) == 0
+        assert not is_function_available("cleanup_test1")
+        assert not is_function_available("cleanup_test2")
+
+        # Registry should still work after cleanup - register new functions
+        register_function("post_cleanup_test", lambda: "post_cleanup")
+        assert is_function_available("post_cleanup_test")
     
     def test_error_handling():
         """Test error handling and recovery"""
         # Test with non-existent function
         assert not is_function_available("nonexistent_function")
-        result = call_function("nonexistent_function", default_return="missing")
-        assert result == "missing"
-        
+
+        # Test that call_function raises ValueError for non-existent function
+        try:
+            call_function("nonexistent_function")
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "not available in registry" in str(e)
+
         # Test with invalid module registration (empty globals)
         try:
             auto_register_module({}, "empty_module")
+            # Should handle gracefully without error
         except Exception:
-            pass  # Should handle gracefully
+            assert False, "Should handle empty module gracefully"
     
     def test_function_availability():
         """Test that all required functions are available"""

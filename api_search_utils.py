@@ -98,9 +98,13 @@ def _run_simple_suggestion_scoring(
     Returns:
         Tuple of (total_score, field_scores, reasons)
     """
+    # Handle empty inputs - should return zero score
+    if not search_criteria or not candidate:
+        return (0, {}, [])
+
     # Import the main scoring function
     from gedcom_utils import calculate_match_score
-    
+
     # Use the unified scoring function
     result = calculate_match_score(
         search_criteria=search_criteria,
@@ -108,216 +112,41 @@ def _run_simple_suggestion_scoring(
         scoring_weights=weights,
         date_flexibility=date_flex
     )
-    
+
     # Convert float score to int for API compatibility
     return (int(result[0]), result[1], result[2])
 
-    # Use default date flexibility if none provided
-    if date_flex is None:
-        date_flex = {"year_match_range": config_schema.date_flexibility}
 
-    # Get year range for flexible matching
-    year_range = 10
-    if date_flex and isinstance(date_flex, dict):
-        year_range = date_flex.get("year_match_range", 10)
 
-    # Initialize scoring variables
-    total_score = 0
-    field_scores = {}
-    reasons = []
 
-    # Clean inputs for comparison
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
 
-    # Extract search criteria
-    search_first_name = clean_param(search_criteria.get("first_name"))
-    search_surname = clean_param(search_criteria.get("surname"))
-    search_gender = clean_param(search_criteria.get("gender"))
-    search_birth_year = search_criteria.get("birth_year")
-    search_birth_place = clean_param(search_criteria.get("birth_place"))
-    search_death_year = search_criteria.get("death_year")
-    search_death_place = clean_param(search_criteria.get("death_place"))
+def process_and_score_suggestions(api_results: List[Dict[str, Any]], search_criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Processes API results and scores them using the main scoring logic. Returns a list of scored suggestions sorted by score (descending).
 
-    # Extract candidate data - handle both camelCase and Title Case field names
-    cand_first_name = clean_param(
-        candidate.get(
-            "first_name", candidate.get("firstName", candidate.get("First Name"))
+    Args:
+        api_results: List of API result dictionaries
+        search_criteria: Dictionary of search criteria for scoring
+
+    Returns:
+        List of scored suggestions sorted by score (descending)
+    """
+    scored = []
+    for candidate in api_results:
+        score, field_scores, reasons = _run_simple_suggestion_scoring(
+            search_criteria,
+            candidate,
+            weights=None,
+            date_flex=None
         )
-    )
-    cand_surname = clean_param(
-        candidate.get("surname", candidate.get("lastName", candidate.get("Surname")))
-    )
-    cand_gender = clean_param(candidate.get("gender", candidate.get("Gender")))
-    cand_birth_year = candidate.get(
-        "birth_year", candidate.get("birthYear", candidate.get("Birth Year"))
-    )
-    cand_birth_place = clean_param(
-        candidate.get(
-            "birth_place", candidate.get("birthPlace", candidate.get("Birth Place"))
-        )
-    )
-    cand_death_year = candidate.get(
-        "death_year", candidate.get("deathYear", candidate.get("Death Year"))
-    )
-    cand_death_place = clean_param(
-        candidate.get(
-            "death_place", candidate.get("deathPlace", candidate.get("Death Place"))
-        )
-    )
-
-    # Default scores if weights is None or not a dict
-    contains_first_name_score = 25
-    contains_surname_score = 25
-    bonus_both_names_score = 25
-    gender_match_score = 15
-
-    # Get scores from weights if available
-    if weights and isinstance(weights, dict):
-        contains_first_name_score = weights.get("contains_first_name", 25)
-        contains_surname_score = weights.get("contains_surname", 25)
-        bonus_both_names_score = weights.get("bonus_both_names_contain", 25)
-        gender_match_score = weights.get("gender_match", 15)
-
-    # Score first name
-    if search_first_name and cand_first_name and search_first_name in cand_first_name:
-        score = contains_first_name_score
-        total_score += score
-        field_scores["first_name"] = score
-        reasons.append(f"First name '{search_first_name}' found in '{cand_first_name}'")
-
-    # Score surname
-    if search_surname and cand_surname and search_surname in cand_surname:
-        score = contains_surname_score
-        total_score += score
-        field_scores["surname"] = score
-        reasons.append(f"Surname '{search_surname}' found in '{cand_surname}'")
-
-    # Bonus for both names matching
-    if "first_name" in field_scores and "surname" in field_scores:
-        score = bonus_both_names_score
-        total_score += score
-        field_scores["name_bonus"] = score
-        reasons.append("Both first name and surname matched")
-
-    # Score gender
-    if search_gender and cand_gender and search_gender == cand_gender:
-        score = gender_match_score
-        total_score += score
-        field_scores["gender"] = score
-        reasons.append(f"Gender '{search_gender}' matched")
-
-    # More default scores
-    birth_year_match_score = 20
-    birth_year_close_score = 10
-    birth_place_match_score = 20
-    death_year_match_score = 20
-    death_year_close_score = 10
-    death_place_match_score = 20
-    bonus_birth_date_place_score = 15
-    bonus_death_date_place_score = 15
-
-    # Get more scores from weights if available
-    if weights and isinstance(weights, dict):
-        birth_year_match_score = weights.get("birth_year_match", 20)
-        birth_year_close_score = weights.get("birth_year_close", 10)
-        birth_place_match_score = weights.get("birth_place_match", 20)
-        death_year_match_score = weights.get("death_year_match", 20)
-        death_year_close_score = weights.get("death_year_close", 10)
-        death_place_match_score = weights.get("death_place_match", 20)
-        bonus_birth_date_place_score = weights.get("bonus_birth_date_and_place", 15)
-        bonus_death_date_place_score = weights.get("bonus_death_date_and_place", 15)
-
-    # Score birth year
-    if search_birth_year and cand_birth_year:
-        # Ensure both values are integers for arithmetic operations
-        try:
-            search_birth_year_int = int(search_birth_year)
-            cand_birth_year_int = int(cand_birth_year)
-
-            if search_birth_year_int == cand_birth_year_int:
-                score = birth_year_match_score
-                total_score += score
-                field_scores["birth_year"] = score
-                reasons.append(f"Birth year {search_birth_year} matched exactly")
-            elif abs(search_birth_year_int - cand_birth_year_int) <= year_range:
-                score = birth_year_close_score
-                total_score += score
-                field_scores["birth_year"] = score
-                reasons.append(
-                    f"Birth year {search_birth_year} close to {cand_birth_year}"
-                )
-        except (ValueError, TypeError) as e:
-            # Log the error but continue processing without awarding birth year points
-            logger.debug(
-                f"Birth year comparison failed - search: {search_birth_year} ({type(search_birth_year)}), candidate: {cand_birth_year} ({type(cand_birth_year)}), error: {e}"
-            )
-
-    # Score birth place
-    if (
-        search_birth_place
-        and cand_birth_place
-        and search_birth_place in cand_birth_place
-    ):
-        score = birth_place_match_score
-        total_score += score
-        field_scores["birth_place"] = score
-        reasons.append(
-            f"Birth place '{search_birth_place}' found in '{cand_birth_place}'"
-        )
-
-    # Score death year
-    if search_death_year and cand_death_year:
-        # Ensure both values are integers for arithmetic operations
-        try:
-            search_death_year_int = int(search_death_year)
-            cand_death_year_int = int(cand_death_year)
-
-            if search_death_year_int == cand_death_year_int:
-                score = death_year_match_score
-                total_score += score
-                field_scores["death_year"] = score
-                reasons.append(f"Death year {search_death_year} matched exactly")
-            elif abs(search_death_year_int - cand_death_year_int) <= year_range:
-                score = death_year_close_score
-                total_score += score
-                field_scores["death_year"] = score
-                reasons.append(
-                    f"Death year {search_death_year} close to {cand_death_year}"
-                )
-        except (ValueError, TypeError) as e:
-            # Log the error but continue processing without awarding death year points
-            logger.debug(
-                f"Death year comparison failed - search: {search_death_year} ({type(search_death_year)}), candidate: {cand_death_year} ({type(cand_death_year)}), error: {e}"
-            )
-
-    # Score death place
-    if (
-        search_death_place
-        and cand_death_place
-        and search_death_place in cand_death_place
-    ):
-        score = death_place_match_score
-        total_score += score
-        field_scores["death_place"] = score
-        reasons.append(
-            f"Death place '{search_death_place}' found in '{cand_death_place}'"
-        )
-
-    # Bonus for both birth date and place matching
-    if "birth_year" in field_scores and "birth_place" in field_scores:
-        score = bonus_birth_date_place_score
-        total_score += score
-        field_scores["birth_bonus"] = score
-        reasons.append("Both birth year and place matched")
-
-    # Bonus for both death date and place matching
-    if "death_year" in field_scores and "death_place" in field_scores:
-        score = bonus_death_date_place_score
-        total_score += score
-        field_scores["death_bonus"] = score
-        reasons.append("Both death year and place matched")
-
-    return int(total_score), field_scores, reasons
+        candidate_copy = candidate.copy()
+        candidate_copy["score"] = score
+        candidate_copy["field_scores"] = field_scores
+        candidate_copy["reasons"] = reasons
+        scored.append(candidate_copy)
+    # Sort by score descending
+    scored.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return scored
 
 
 def search_api_for_criteria(
@@ -419,50 +248,69 @@ def search_api_for_criteria(
     # Process each suggestion result
     for suggestion in suggest_results[:max_suggestions]:
         try:
-            # Extract basic information
-            person_id = suggestion.get("id")
+            # Extract basic information - handle both old and new API formats
+            person_id = suggestion.get("PersonId") or suggestion.get("id")
             if not person_id:
                 continue
 
-            # Extract name components
-            full_name = suggestion.get("name", "")
-            name_parts = full_name.split()
-            first_name = name_parts[0] if name_parts else ""
-            surname = name_parts[-1] if len(name_parts) > 1 else ""
+            # Extract name components - handle both old and new API formats
+            full_name = suggestion.get("FullName") or suggestion.get("name", "")
+            first_name = suggestion.get("GivenName") or ""
+            surname = suggestion.get("Surname") or ""
 
-            # Extract lifespan information
-            lifespan = suggestion.get("lifespan", "")
+            # If we don't have separate first/last names, parse from full name
+            if not first_name or not surname:
+                name_parts = full_name.split()
+                if not first_name:
+                    first_name = name_parts[0] if name_parts else ""
+                if not surname:
+                    surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+            # Extract birth/death years - handle both old and new API formats
             birth_year = None
             death_year = None
 
-            # Parse lifespan (format: "1900-1980" or "b. 1900" or "d. 1980")
-            if lifespan:
-                if "-" in lifespan:
-                    parts = lifespan.split("-")
-                    if len(parts) == 2:
-                        try:
-                            birth_year = (
-                                int(parts[0].strip()) if parts[0].strip() else None
-                            )
-                            death_year = (
-                                int(parts[1].strip()) if parts[1].strip() else None
-                            )
-                        except ValueError:
-                            pass
-                elif "b." in lifespan.lower():
-                    match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
-                    if match:
-                        try:
-                            birth_year = int(match.group(1))
-                        except ValueError:
-                            pass
-                elif "d." in lifespan.lower():
-                    match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
-                    if match:
-                        try:
-                            death_year = int(match.group(1))
-                        except ValueError:
-                            pass
+            # New API format has direct BirthYear/DeathYear fields
+            if suggestion.get("BirthYear"):
+                try:
+                    birth_year = int(suggestion["BirthYear"])
+                except (ValueError, TypeError):
+                    pass
+
+            if suggestion.get("DeathYear"):
+                try:
+                    death_year = int(suggestion["DeathYear"])
+                except (ValueError, TypeError):
+                    pass
+
+            # Fallback to old lifespan parsing if needed
+            if birth_year is None or death_year is None:
+                lifespan = suggestion.get("lifespan", "")
+                if lifespan:
+                    if "-" in lifespan:
+                        parts = lifespan.split("-")
+                        if len(parts) == 2:
+                            try:
+                                if birth_year is None and parts[0].strip():
+                                    birth_year = int(parts[0].strip())
+                                if death_year is None and parts[1].strip():
+                                    death_year = int(parts[1].strip())
+                            except ValueError:
+                                pass
+                    elif "b." in lifespan.lower():
+                        match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
+                        if match and birth_year is None:
+                            try:
+                                birth_year = int(match.group(1))
+                            except ValueError:
+                                pass
+                    elif "d." in lifespan.lower():
+                        match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
+                        if match and death_year is None:
+                            try:
+                                death_year = int(match.group(1))
+                            except ValueError:
+                                pass
 
             # Extract location information
             location = suggestion.get("location", "")
@@ -478,9 +326,13 @@ def search_api_for_criteria(
                 "gender": None,  # Not available in suggestion results
             }
 
-            # Score the candidate
-            total_score, field_scores, reasons = _run_simple_suggestion_scoring(
-                search_criteria, candidate, scoring_weights, date_flex
+            # Score the candidate using the same function as Action 10
+            from gedcom_utils import calculate_match_score
+            total_score, field_scores, reasons = calculate_match_score(
+                search_criteria=search_criteria,
+                candidate_processed_data=candidate,
+                scoring_weights=scoring_weights,
+                date_flexibility=date_flex
             )
 
             # Only include if score is above threshold
@@ -488,9 +340,11 @@ def search_api_for_criteria(
                 # Create a match record
                 match_record = {
                     "id": person_id,
+                    "person_id": person_id,  # Add person_id field for compatibility
                     "display_id": person_id,
                     "first_name": first_name,
                     "surname": surname,
+                    "full_name_disp": full_name,  # Add full name display field
                     "gender": None,  # Not available in suggestion results
                     "birth_year": birth_year,
                     "birth_place": location,  # Assuming location is birth place
@@ -548,13 +402,13 @@ def search_api_for_criteria(
                         config_schema.test, "test_profile_id", ""
                     )
 
-                # Call the treesui-list API
+                # Call the treesui-list API (pass original search_criteria, not mapped search_params)
                 treesui_results = call_treesui_list_api(
                     session_manager=session_manager,
                     owner_tree_id=tree_id,
                     owner_profile_id=owner_profile_id,
                     base_url=base_url,
-                    search_criteria=search_params,
+                    search_criteria=search_criteria,
                 )
 
                 if (
