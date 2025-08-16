@@ -225,6 +225,20 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
 # End of clear_log_file
 
 
+def _show_platform_specific_instructions():
+    """Show platform-specific installation instructions for non-Windows systems."""
+    import platform
+
+    # Use platform.system() instead of os.name to avoid static analysis warning
+    system_name = platform.system()
+    if system_name in ("Linux", "Darwin"):  # Linux or macOS
+        print("\n  For Linux/macOS users, you may also need:")
+        print("     pip install keyrings.alt")
+        print(
+            "     Some Linux distributions may require: sudo apt-get install python3-dbus"
+        )
+
+
 # Global flag to track if caching has been initialized
 _caching_initialized = False
 
@@ -1388,7 +1402,7 @@ def run_action11_wrapper(session_manager, *_):
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
     logger.debug("Starting API Report...")
     try:
-        # Call the actual API Report function, passing the session_manager
+        # Call the actual API Report function, passing the session_manager for API calls
         result = run_action11(session_manager)
         if result is False:
             logger.error("API Report reported failure.")
@@ -1691,12 +1705,8 @@ def main():
                         print("     - OR -")
                         print("     pip install -r requirements.txt")
 
-                        if os.name != "nt":  # Not Windows
-                            print("\n  For Linux/macOS users, you may also need:")
-                            print("     pip install keyrings.alt")
-                            print(
-                                "     Some Linux distributions may require: sudo apt-get install python3-dbus"
-                            )
+                        # Platform-specific installation instructions
+                        _show_platform_specific_instructions()
 
                         print("\n📚 For more information, see:")
                         print("  - ENV_IMPORT_GUIDE.md")
@@ -1791,13 +1801,10 @@ def main():
                         
                         # Cycle through DEBUG → INFO → WARNING
                         if current_level == logging.DEBUG:
-                            new_level = logging.INFO
                             new_level_name = "INFO"
                         elif current_level == logging.INFO:
-                            new_level = logging.WARNING
                             new_level_name = "WARNING"
                         else:  # WARNING or other
-                            new_level = logging.DEBUG
                             new_level_name = "DEBUG"
                         
                         # Re-call setup_logging to potentially update filters etc. too

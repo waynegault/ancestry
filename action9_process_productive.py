@@ -395,8 +395,8 @@ from relationship_utils import (
 
 from gedcom_search_utils import get_gedcom_relationship_path
 
-# Import from action11
-from action11 import _process_and_score_suggestions
+# Import from api_search_utils where it belongs
+from api_search_utils import process_and_score_suggestions
 
 
 def _search_gedcom_for_names(
@@ -623,7 +623,7 @@ def _search_api_for_names(
                 continue
 
             # Process and score the API results if they exist
-            scored_suggestions = _process_and_score_suggestions(
+            scored_suggestions = process_and_score_suggestions(
                 api_results, search_criteria
             )
 

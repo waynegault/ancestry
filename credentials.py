@@ -1419,5 +1419,10 @@ def main():
 
 
 if __name__ == "__main__":
-    success = main()
+    # Run tests when executed directly (for test suite compatibility)
+    # Use main() for interactive credential setup: python credentials.py --interactive
+    if len(sys.argv) > 1 and sys.argv[1] == "--interactive":
+        success = main()
+    else:
+        success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
