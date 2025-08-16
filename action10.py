@@ -11,7 +11,7 @@ using the cached GEDCOM data.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module, safe_execute
+from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
@@ -23,12 +23,6 @@ from error_handling import (
     timeout_protection,
     graceful_degradation,
     error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
 )
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION ===
@@ -45,7 +39,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
 
 # === LOCAL IMPORTS ===
-from config import config_manager, config_schema
+from config import config_schema
 from core.error_handling import MissingConfigError
 
 """
@@ -83,15 +77,10 @@ except ImportError:
 
 # --- Test framework imports ---
 from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
     mock_logger_context,
 )
 
-# --- Mock imports ---
-from unittest.mock import patch
+
 
 # Import GEDCOM utilities
 from gedcom_utils import (
@@ -1234,15 +1223,11 @@ def main() -> bool:
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
     from test_framework import (
-        TestSuite, suppress_logging, create_mock_data, MagicMock,
-        format_test_section_header, format_score_breakdown_table, 
+        TestSuite,
+        format_test_section_header, format_score_breakdown_table,
         format_search_criteria, clean_test_output, Colors
     )
-    import types
     import builtins
-    import io
-    import sys
-    import logging
     import time
 
     # PHASE 4.2: Disable mock mode - use real GEDCOM data for testing
@@ -1254,10 +1239,8 @@ def action10_module_tests() -> bool:
     suite.start_suite()
 
     # --- TESTS ---
-    def debug_wrapper(test_func, name):
+    def debug_wrapper(test_func):
         def wrapped():
-
-            start = time.time()
             result = test_func()
             # Debug timing removed for cleaner output
             return result
@@ -1478,6 +1461,7 @@ def action10_module_tests() -> bool:
         test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
         test_gender = os.getenv("TEST_PERSON_GENDER", "m")
         test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+        expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
         
         # Load real GEDCOM data and search for the test person
         gedcom_data = get_cached_gedcom()
@@ -1488,9 +1472,9 @@ def action10_module_tests() -> bool:
         # Test person's exact data from .env - using consistent test data
         search_criteria = {
             "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(), 
+            "surname": test_last_name.lower(),
             "birth_year": test_birth_year,
-            "gender": test_gender,
+            "gender": test_gender.lower(),  # Use lowercase for scoring consistency
             "birth_place": test_birth_place
         }
 
@@ -1520,76 +1504,18 @@ def action10_module_tests() -> bool:
         
         print(format_score_breakdown_table(field_scores, int(score)))
         
-        # Test validation
-        expected_min_score = 200  # Test person should score very highly
-        
+        # Test validation using universal expected score
         print(f"\n{Colors.BOLD}{Colors.WHITE}✅ Test Validation:{Colors.RESET}")
-        print(f"   Score ≥ {expected_min_score}: {Colors.GREEN if score >= expected_min_score else Colors.RED}{score >= expected_min_score}{Colors.RESET}")
+        print(f"   Score ≥ 50: {Colors.GREEN if score >= 50 else Colors.RED}{score >= 50}{Colors.RESET}")
+        print(f"   Expected score validation: {Colors.GREEN if score == expected_score else Colors.RED}{score == expected_score}{Colors.RESET} (Expected: {expected_score}, Actual: {score})")
         print(f"   Has field scores: {Colors.GREEN if field_scores else Colors.RED}{bool(field_scores)}{Colors.RESET}")
         print(f"   Final Score: {Colors.BOLD}{Colors.YELLOW}{score}{Colors.RESET}")
-        
-        assert score >= expected_min_score, f"{test_first_name} {test_last_name} should score at least {expected_min_score}, got {score}"
+
+        # Check both minimum threshold and exact expected score
+        assert score >= 50, f"{test_first_name} {test_last_name} should score at least 50, got {score}"
+        assert score == expected_score, f"{test_first_name} {test_last_name} should score exactly {expected_score}, got {score}"
         print(f"{Colors.GREEN}✅ {test_first_name} {test_last_name} scoring algorithm test passed{Colors.RESET}")
         return True
-        
-        # Test person's exact data from .env - using consistent test data
-        search_criteria = {
-            "first_name": "fraser",
-            "surname": "gault", 
-            "birth_year": 1941,
-            "gender": "m",
-            "birth_place": "Banff"
-        }
-        
-        # Consistent candidate data (simplified to match search criteria exactly)
-        candidate_data = {
-            "first_name": "Fraser",
-            "surname": "Gault",
-            "birth_year": 1941,
-            "gender_norm": "m",
-            "birth_place_disp": "Banff, Banffshire, Scotland",  # Add birth place for consistent scoring
-            "death_date_obj": None  # Fraser is still alive in test data
-        }
-        
-        scoring_weights = config_schema.common_scoring_weights
-        date_flex = {"year_match_range": config_schema.date_flexibility}
-
-        print("📋 Test Parameters:")
-        print(f"   Search: {search_criteria}")
-        print(f"   Candidate: {candidate_data}")
-        
-        try:
-            score, field_scores, reasons = calculate_match_score_cached(
-                search_criteria, candidate_data, scoring_weights, date_flex, cache={}
-            )
-
-            print(f"\n📊 Scoring Results:")
-            print(f"   Total Score: {score}")
-            print(f"   Field Breakdown: {field_scores}")
-            print(f"   Match Reasons: {reasons}")
-            
-            # Expected score calculation for Fraser Gault:
-            # Contains first name (25) + Contains surname (25) + Bonus both names (25) + 
-            # Exact birth year (20) + Gender match (15) + Death dates both absent (15) = 125
-            expected_min_score = 100  # Allow some flexibility for scoring variations
-            
-            print(f"\n✅ Test Validation:")
-            print(f"   Score ≥ {expected_min_score}: {score >= expected_min_score}")
-            print(f"   Has field scores: {bool(field_scores)}")  
-            print(f"   Has reasons: {bool(reasons)}")
-            
-            # Assertions
-            assert score >= expected_min_score, f"Fraser Gault should score at least {expected_min_score}, got {score}"
-            assert isinstance(field_scores, dict), f"Field scores should be dict, got {type(field_scores)}"
-            assert isinstance(reasons, list), f"Reasons should be list, got {type(reasons)}"
-            assert len(reasons) > 0, "Should have at least one scoring reason"
-
-            print("✅ Fraser Gault scoring algorithm test passed")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Scoring algorithm test failed: {e}")
-            return False
 
     # test_filter_and_score_individuals_fraser removed - consolidated with Test 14
 
@@ -1652,7 +1578,7 @@ def action10_module_tests() -> bool:
         with mock_logger_context(globals()) as dummy_logger:
             display_relatives(gedcom_data, fraser_individual)
             # Check that relatives information was displayed
-            log_content = "\n".join(dummy_logger.lines)
+
             assert (
                 len(dummy_logger.lines) > 0
             ), "Should display some relatives information"
@@ -1765,7 +1691,8 @@ def action10_module_tests() -> bool:
         test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
         test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
         test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+        expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
+
         
         print(format_test_section_header("Search Performance & Accuracy", "🎯"))
         print(f"Test: Real GEDCOM search for {test_first_name} {test_last_name} with performance validation")
@@ -1791,14 +1718,24 @@ def action10_module_tests() -> bool:
         # Test person consistent search criteria (same as scoring test)
         search_criteria = {
             "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(), 
+            "surname": test_last_name.lower(),
             "birth_year": test_birth_year,
-            "gender": test_gender,  # Add gender for consistency with scoring test
-            "birth_place": test_birth_place
+            "gender": test_gender.lower(),  # Use lowercase for scoring consistency
+            "birth_place": "Banff",  # Search for 'Banff' within the full place name
+            "death_year": None,
+            "death_place": None
         }
 
+        print("🔍 Search Criteria:")
+        print(f"   • First Name contains: {test_first_name.lower()}")
+        print(f"   • Surname contains: {test_last_name.lower()}")
+        print(f"   • Birth Year: {test_birth_year}")
+        print(f"   • Gender: {test_gender.upper()}")
+        print(f"   • Birth Place contains: Banff")
+        print(f"   • Death Year: null")
+        print(f"   • Death Place contains: null")
+
         print(f"\n🔍 Searching for {test_first_name} {test_last_name}...")
-        print(f"   Criteria: {search_criteria}")
         
         start_time = time.time()
         results = filter_and_score_individuals(
@@ -1814,14 +1751,18 @@ def action10_module_tests() -> bool:
 
         if results:
             top_result = results[0]
-            print(f"   Top match: {top_result.get('full_name_disp')} (Score: {top_result.get('total_score')})")
-            print(f"   Score validation: {top_result.get('total_score') >= 100}")
-            
+            actual_score = top_result.get('total_score', 0)
+            print(f"   Top match: {top_result.get('full_name_disp')} (Score: {actual_score})")
+            print(f"   Score validation: {actual_score >= 50}")
+            print(f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})")
+
             # Validate performance
             performance_ok = search_time < 5.0  # Should complete in under 5 seconds
             print(f"   Performance validation: {performance_ok} (< 5.0s)")
-            
-            assert top_result.get('total_score', 0) >= 100, f"{test_first_name} should score at least 100 points"
+
+            # Check both minimum threshold and exact expected score
+            assert actual_score >= 50, f"{test_first_name} should score at least 50 points, got {actual_score}"
+            assert actual_score == expected_score, f"{test_first_name} should score exactly {expected_score}, got {actual_score}"
             assert performance_ok, f"Search should complete in < 5s, took {search_time:.3f}s"
             
         else:
@@ -2023,81 +1964,6 @@ def action10_module_tests() -> bool:
         except Exception as e:
             print(f"❌ Relationship path calculation failed: {e}")
             return False
-        import os
-        from dotenv import load_dotenv
-        load_dotenv()
-
-        print("👨‍👩‍👧‍👦 FAMILY RELATIONSHIP TEST")
-        print("=" * 50)
-
-        # Disable mock mode to use real GEDCOM data
-        disable_mock_mode()
-        print("� Using real GEDCOM data for Fraser Gault relationship analysis")
-        
-        # Load real GEDCOM data from configuration
-        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
-        if not gedcom_path or not Path(gedcom_path).exists():
-            print("⚠️ GEDCOM_FILE_PATH not configured or file not found")
-            print("   Please ensure GEDCOM_FILE_PATH is set in config and file exists")
-            return True  # Don't fail test if GEDCOM not available
-            
-        print(f"📂 Loading GEDCOM: {Path(gedcom_path).name}")
-        gedcom_data = load_gedcom_data(Path(gedcom_path))
-        if not gedcom_data:
-            print("❌ Failed to load GEDCOM data")
-            return False
-
-        print(f"✅ Loaded GEDCOM: {len(gedcom_data.indi_index)} individuals")
-
-        # Search for Fraser Gault using .env specified criteria (Test 6 - Relationship Path)
-        fraser_search = {
-            "first_name": "fraser", 
-            "surname": "gault", 
-            "birth_year": 1941,
-            "gender": "m",  # Add gender for consistency
-            "birth_place": "Banff"  # Add birth place for consistent scoring (235 pts)
-        }
-        
-        print(f"🔍 Searching for Fraser Gault (birth: 1941)...")
-        fraser_results = filter_and_score_individuals(
-            gedcom_data,
-            fraser_search,
-            fraser_search,
-            dict(config_schema.common_scoring_weights),
-            {"year_match_range": 5}
-        )
-
-        if not fraser_results:
-            print("❌ Could not find Fraser Gault in GEDCOM data")
-            print("   Expected: Fraser Gault, born 1941")
-            return False
-
-        fraser = fraser_results[0]
-        fraser_individual = gedcom_data.find_individual_by_id(fraser.get('id'))
-
-        if not fraser_individual:
-            print("❌ Could not retrieve Fraser's individual record")
-            return False
-
-        print(f"✅ Found Fraser: {fraser.get('full_name_disp')} (Score: {fraser.get('total_score')})")
-        
-        # Validate against .env expected data
-        expected_birth_year = 1941
-        found_birth_year = fraser.get('birth_year')
-        if found_birth_year and found_birth_year != expected_birth_year:
-            print(f"⚠️  Birth year mismatch: found {found_birth_year}, expected {expected_birth_year}")
-        else:
-            print(f"✅ Birth year validated: {found_birth_year or 'not specified'}")
-
-        # Test relationship analysis functionality
-        try:
-            print("🔍 Analyzing family relationships...")
-            analyze_top_match(gedcom_data, fraser, None, None)
-            print("✅ Relationship analysis completed successfully")
-            return True
-        except Exception as e:
-            print(f"❌ Relationship analysis failed: {e}")
-            return False
 
     def test_main_patch():
         # Patch input and logger to simulate user flow
@@ -2105,7 +1971,7 @@ def action10_module_tests() -> bool:
         builtins.input = lambda _: ""
 
         try:
-            with mock_logger_context(globals()) as dummy_logger:
+            with mock_logger_context(globals()):
                 result = main()
 
                 assert result is not False
@@ -2277,43 +2143,35 @@ def action10_module_tests() -> bool:
     # Register meaningful tests only
     suite.run_test(
         "Input Sanitization",
-        debug_wrapper(test_sanitize_input, "Input Sanitization"),
+        debug_wrapper(test_sanitize_input),
         "Validates whitespace trimming, empty string handling, and text preservation.",
         "Test input sanitization with edge cases and real-world inputs.",
         "Test against: '  John  ', '', '   ', 'Fraser Gault', '  Multiple   Spaces  '.",
     )
     suite.run_test(
         "Date Parsing",
-        debug_wrapper(
-            test_get_validated_year_input_patch, "Date Parsing"
-        ),
+        debug_wrapper(test_get_validated_year_input_patch),
         "Parses multiple date formats: simple years, full dates, and various formats.",
         "Test year extraction from various date input formats.",
         "Test against: '1990', '1 Jan 1942', '1/1/1942', '1942/1/1', '2000'.",
     )
     suite.run_test(
         "Test Person Scoring Algorithm",
-        debug_wrapper(
-            test_fraser_gault_scoring_algorithm, "Test Person Scoring Algorithm"
-        ),
+        debug_wrapper(test_fraser_gault_scoring_algorithm),
         "Validates scoring algorithm with test person's real data and consistent scoring.",
         "Test match scoring algorithm with test person's real genealogical data from .env.",
         "Test scoring algorithm with actual test person data from .env configuration.",
     )
     suite.run_test(
         "Family Relationship Analysis",
-        debug_wrapper(
-            test_family_relationship_analysis, "Family Relationship Analysis"
-        ),
+        debug_wrapper(test_family_relationship_analysis),
         "Tests family relationship analysis with test person from .env configuration.",
         "Test family relationship analysis with test person from .env.",
         "Find test person using .env data and analyze family relationships (parents, siblings, spouse, children).",
     )
     suite.run_test(
         "Relationship Path Calculation",
-        debug_wrapper(
-            test_relationship_path_calculation, "Relationship Path Calculation"
-        ),
+        debug_wrapper(test_relationship_path_calculation),
         "Tests relationship path calculation from test person to tree owner using BFS algorithm.",
         "Test relationship path calculation between test person and tree owner.",
         "Calculate relationship path from test person to tree owner using bidirectional BFS and format relationship description.",
@@ -2524,13 +2382,7 @@ if __name__ == "__main__":
     for handler in root_logger.handlers:
         handler.addFilter(PerformanceFilter())
     
-    # Also try to disable performance monitoring during tests
-    try:
-        from performance_monitor import PerformanceMonitor
-        pm = PerformanceMonitor.get_instance()
-        pm.enabled = False
-    except:
-        pass
+    # Performance monitoring disabled during tests
 
     # Check command line arguments for what to run
     import sys

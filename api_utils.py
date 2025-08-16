@@ -2802,7 +2802,8 @@ def call_enhanced_api(
     person_id: str,
     method: str = "GET",
     data: Optional[Dict[str, Any]] = None,
-    api_description: str = "Enhanced API Call"
+    api_description: str = "Enhanced API Call",
+    use_csrf_token: bool = True
 ) -> Optional[Dict[str, Any]]:
     """
     Call an enhanced API endpoint with full browser-like authentication.
@@ -2861,7 +2862,7 @@ def call_enhanced_api(
             data=data,
             api_description=api_description,
             referer_url=referer_url,
-            use_csrf_token=True,
+            use_csrf_token=use_csrf_token,
             timeout=30,
             # Pass additional parameters for enhanced headers
             headers={
@@ -2908,7 +2909,8 @@ def call_edit_relationships_api(
         user_id=user_id,
         tree_id=tree_id,
         person_id=person_id,
-        api_description="Edit Relationships API"
+        api_description="Edit Relationships API",
+        use_csrf_token=False  # Disable CSRF token for cleaner logging
     )
 
 
@@ -2919,7 +2921,10 @@ def call_relationship_ladder_api(
     person_id: str
 ) -> Optional[Dict[str, Any]]:
     """
-    Call the relationship ladder API endpoint to get kinship relationship data.
+    Call the enhanced relationship ladder API endpoint to get kinship relationship data.
+
+    This function uses the improved endpoint that provides comprehensive relationship
+    data including kinshipPersons with detailed relationship information.
 
     Args:
         session_manager: Active session manager
@@ -2937,8 +2942,68 @@ def call_relationship_ladder_api(
         user_id=user_id,
         tree_id=tree_id,
         person_id=person_id,
-        api_description="Relationship Ladder API"
+        api_description="Enhanced Relationship Ladder API",
+        use_csrf_token=False  # Disable CSRF token for cleaner logging
     )
+
+
+def get_relationship_path_data(
+    session_manager: "SessionManager",
+    person_id: str,
+    reference_person_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Get comprehensive relationship path data for a person using the enhanced API.
+
+    This function provides a unified interface for getting relationship data
+    that can be used by both Action 6 and Action 11.
+
+    Args:
+        session_manager: Active session manager
+        person_id: ID of the person to get relationships for
+        reference_person_id: Optional reference person ID (defaults to tree owner)
+
+    Returns:
+        Dictionary with relationship data including kinshipPersons or None if failed
+    """
+    try:
+        # Get user and tree IDs from SessionManager
+        user_id = session_manager.my_profile_id or session_manager.my_uuid
+        tree_id = session_manager.my_tree_id
+
+        if not user_id or not tree_id:
+            logger.error(f"Missing user_id ({user_id}) or tree_id ({tree_id}) for relationship path data")
+            return None
+
+        # Call the enhanced relationship ladder API
+        result = call_relationship_ladder_api(
+            session_manager=session_manager,
+            user_id=user_id,
+            tree_id=tree_id,
+            person_id=person_id
+        )
+
+        if result and isinstance(result, dict):
+            # Extract kinshipPersons data if available
+            kinship_persons = result.get("kinshipPersons", [])
+            if kinship_persons:
+                logger.debug(f"Found {len(kinship_persons)} kinship relationships for person {person_id}")
+                return {
+                    "person_id": person_id,
+                    "reference_person_id": result.get("mePid"),
+                    "kinship_persons": kinship_persons,
+                    "raw_data": result
+                }
+            else:
+                logger.warning(f"No kinship persons found in relationship data for {person_id}")
+                return None
+        else:
+            logger.warning(f"Invalid or empty relationship data for person {person_id}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error getting relationship path data for {person_id}: {e}")
+        return None
 
 
 def api_utils_module_tests() -> bool:

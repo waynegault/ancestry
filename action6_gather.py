@@ -5321,7 +5321,9 @@ def _fetch_batch_ladder(
     """
     Fetches the relationship ladder details (relationship path, actual relationship)
     between the user and a specific person (CFPID) within the user's tree.
-    Parses the JSONP response containing HTML.
+
+    Now uses the enhanced relationship ladder API via shared function for better
+    performance and consistency with Action 11.
 
     Args:
         session_manager: The active SessionManager instance.
@@ -5332,12 +5334,61 @@ def _fetch_batch_ladder(
         A dictionary containing 'actual_relationship' and 'relationship_path' strings
         if successful, otherwise None.
     """
+    # Try the new enhanced API first
+    try:
+        from api_utils import get_relationship_path_data
+
+        enhanced_result = get_relationship_path_data(
+            session_manager=session_manager,
+            person_id=cfpid
+        )
+
+        if enhanced_result and isinstance(enhanced_result, dict):
+            kinship_persons = enhanced_result.get("kinship_persons", [])
+            if kinship_persons:
+                # Extract relationship information from the enhanced API
+                for person in kinship_persons:
+                    if isinstance(person, dict) and person.get("personId") == cfpid:
+                        relationship = person.get("relationship", "")
+                        if relationship:
+                            # Format the result to match the expected format
+                            return {
+                                "actual_relationship": relationship,
+                                "relationship_path": f"Enhanced API: {relationship}"
+                            }
+
+                # If we have kinship data but no direct match, use the first relationship
+                if kinship_persons and isinstance(kinship_persons[0], dict):
+                    first_person = kinship_persons[0]
+                    relationship = first_person.get("relationship", "")
+                    if relationship:
+                        return {
+                            "actual_relationship": relationship,
+                            "relationship_path": f"Enhanced API: {relationship}"
+                        }
+
+        logger.debug(f"Enhanced API didn't return usable data for {cfpid}, falling back to legacy API")
+
+    except Exception as e:
+        logger.debug(f"Enhanced API failed for {cfpid}, falling back to legacy API: {e}")
+
+    # Fallback to the original implementation
+    return _fetch_batch_ladder_legacy(session_manager, cfpid, tree_id)
+
+
+def _fetch_batch_ladder_legacy(
+    session_manager: SessionManager, cfpid: str, tree_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Legacy implementation of relationship ladder fetching using the old /getladder endpoint.
+    This is kept as a fallback for the enhanced API.
+    """
     if not cfpid or not tree_id:
-        logger.warning("_fetch_batch_ladder: Missing cfpid or tree_id.")
+        logger.warning("_fetch_batch_ladder_legacy: Missing cfpid or tree_id.")
         return None
     if not session_manager.is_sess_valid():
         logger.error(
-            f"_fetch_batch_ladder: WebDriver session invalid for CFPID {cfpid}."
+            f"_fetch_batch_ladder_legacy: WebDriver session invalid for CFPID {cfpid}."
         )
         raise ConnectionError(
             f"WebDriver session invalid for ladder fetch (CFPID: {cfpid})"
