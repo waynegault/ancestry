@@ -16,7 +16,6 @@ Key Features:
 
 import sys
 import os
-import time
 from typing import Dict, Any, List, Optional
 
 # Add current directory to path for imports
@@ -25,27 +24,327 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 # Core imports
-from core_imports import *
 from standard_imports import setup_module
-from test_framework import TestSuite, format_test_section_header, Colors, Icons
+from test_framework import TestSuite, Colors
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # Import necessary functions for API-based operations
-from api_search_utils import search_api_for_criteria, _run_simple_suggestion_scoring
-from api_utils import call_facts_user_api, call_getladder_api
-from person_search import search_ancestry_api_persons
+from api_utils import call_facts_user_api
 from config import config_schema
 from core.session_manager import SessionManager
 
 # Import utility functions from action10 since they're not in utils
-from action10 import sanitize_input, get_validated_year_input
+from action10 import sanitize_input
 
 # Enhanced API functions are now available in api_utils.py
 
+def enhanced_treesui_search(
+    session_manager: SessionManager,
+    search_criteria: Dict[str, Any],
+    max_results: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Enhanced TreesUI search using the new endpoint with better filtering and universal scoring.
 
-# Enhanced API functions are now available in api_utils.py
+    Uses the endpoint: /api/treesui-list/trees/{tree_id}/persons?name={first_name}%20{last_name}&fields=EVENTS,GENDERS,KINSHIP,NAMES,RELATIONS&isGetFullPersonObject=true
+
+    Args:
+        session_manager: Active session manager
+        search_criteria: Dictionary with search criteria
+        max_results: Maximum number of results to return
+
+    Returns:
+        List of scored and sorted results
+    """
+    try:
+        from utils import _api_req
+        from config import config_schema
+        from gedcom_utils import calculate_match_score
+
+        # Get configuration
+        tree_id = session_manager.my_tree_id
+        if not tree_id:
+            tree_id = getattr(config_schema.test, "test_tree_id", "")
+            if not tree_id:
+                logger.error("No tree ID available for enhanced TreesUI search")
+                return []
+
+        base_url = config_schema.api.base_url.rstrip('/')
+
+        # Build the enhanced TreesUI endpoint URL
+        first_name = search_criteria.get("first_name", "")
+        last_name = search_criteria.get("surname", "")
+        full_name = f"{first_name} {last_name}".strip()
+
+        # URL encode the name parameter
+        from urllib.parse import quote
+        encoded_name = quote(full_name)
+
+        # Construct the new TreesUI endpoint
+        endpoint = f"/api/treesui-list/trees/{tree_id}/persons"
+        params = f"name={encoded_name}&fields=EVENTS,GENDERS,KINSHIP,NAMES,RELATIONS&isGetFullPersonObject=true"
+        url = f"{base_url}{endpoint}?{params}"
+
+        # Make the API request with enhanced headers and reduced timeout for faster response
+        response = _api_req(
+            url=url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            api_description="Enhanced TreesUI List API",
+            headers={
+                "_use_enhanced_headers": "true",
+                "_tree_id": tree_id,
+                "_person_id": "search"
+            },
+            timeout=10,  # Reduced to 10 seconds for faster response
+            use_csrf_token=False  # Don't request CSRF token for this endpoint
+        )
+
+        if not response:
+            logger.warning("Enhanced TreesUI search returned no response")
+            return []
+
+        # Parse the response
+        persons = []
+        if isinstance(response, dict):
+            if "persons" in response:
+                persons = response["persons"]
+            elif "data" in response and isinstance(response["data"], list):
+                persons = response["data"]
+            elif isinstance(response, list):
+                persons = response
+        elif isinstance(response, list):
+            persons = response
+
+        # Ensure persons is a list
+        if not persons:
+            logger.warning("Enhanced TreesUI search found no persons")
+            return []
+
+        if not isinstance(persons, list):
+            logger.warning(f"Expected list but got {type(persons)}, converting to empty list")
+            return []
+
+        print(f"TreesUI search found {len(persons)} raw results")
+
+        # Score and filter results using universal scoring
+        scored_results = []
+        scoring_weights = config_schema.common_scoring_weights
+        date_flex = {"year_match_range": config_schema.date_flexibility}
+
+        # Process persons (limit to reasonable number for performance)
+        from typing import cast
+        persons_list = cast(List[Dict[str, Any]], persons)
+
+        # Debug logging for development (can be removed in production)
+        if len(persons_list) > 0:
+            first_person = persons_list[0]
+            logger.debug(f"First person structure: {first_person}")
+            logger.debug(f"First person keys: {list(first_person.keys()) if isinstance(first_person, dict) else 'Not a dict'}")
+
+        # Limit processing to improve performance - only process what we need
+        persons_to_process = persons_list[:max_results] if len(persons_list) > max_results else persons_list
+
+        # Track processing time for performance monitoring
+        import time
+        start_time = time.time()
+
+        for i, person in enumerate(persons_to_process):
+            # Early termination if we have enough good results and processing is taking too long
+            if len(scored_results) >= max_results and (time.time() - start_time) > 5.0:
+                logger.debug(f"Early termination after processing {i+1} persons due to time limit")
+                break
+            try:
+                # Ensure person is a dictionary
+                if not isinstance(person, dict):
+                    logger.warning(f"Skipping non-dict person: {type(person)}")
+                    continue
+
+                # Extract person data for scoring (optimized)
+                candidate = extract_person_data_for_scoring(person)
+
+                # Score using universal scoring function
+                total_score, field_scores, reasons = calculate_match_score(
+                    search_criteria=search_criteria,
+                    candidate_processed_data=candidate,
+                    scoring_weights=scoring_weights,
+                    date_flexibility=date_flex
+                )
+
+                # Add scoring results to the person data
+                result = candidate.copy()
+
+                # Extract person ID from various possible fields
+                person_id = ""
+                if isinstance(person, dict):
+                    person_id = (person.get("pid") or
+                               person.get("personId") or
+                               person.get("id") or "")
+
+                    # Try to extract from gid if available
+                    if not person_id and "gid" in person:
+                        gid = person.get("gid")
+                        if isinstance(gid, dict) and "v" in gid:
+                            gid_value = gid["v"]
+                            if isinstance(gid_value, str) and ":" in gid_value:
+                                person_id = gid_value.split(":")[0]
+
+                result.update({
+                    "total_score": int(total_score),
+                    "field_scores": field_scores,
+                    "reasons": reasons,
+                    "full_name_disp": f"{candidate.get('first_name', '')} {candidate.get('surname', '')}".strip(),
+                    "person_id": person_id,
+                    "raw_data": person  # Keep original data for debugging
+                })
+
+                scored_results.append(result)
+
+                # Performance optimization: if we have a very high score, we can stop early
+                if total_score >= 200 and len(scored_results) >= 1:
+                    logger.debug(f"Found high-quality match (score: {total_score}), stopping early for performance")
+                    break
+
+            except Exception as e:
+                person_id_for_log = "unknown"
+                if isinstance(person, dict):
+                    person_id_for_log = person.get('personId', person.get('pid', 'unknown'))
+                logger.warning(f"Error scoring person {person_id_for_log}: {e}")
+                continue
+
+        # Sort by score (descending) and return top results
+        scored_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
+        final_results = scored_results[:max_results]
+
+        print(f"TreesUI search returning {len(final_results)} scored results")
+        return final_results
+
+    except Exception as e:
+        logger.error(f"Enhanced TreesUI search failed: {e}")
+        return []
+
+
+def extract_person_data_for_scoring(person: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract person data from TreesUI API response for universal scoring.
+
+    Args:
+        person: Person data from TreesUI API
+
+    Returns:
+        Dictionary formatted for universal scoring
+    """
+    try:
+        # Extract names - handle both direct fields and Names array
+        first_name = ""
+        surname = ""
+
+        # Try direct fields first (gname, sname)
+        if "gname" in person and "sname" in person:
+            first_name = person.get("gname", "")
+            surname = person.get("sname", "")
+        else:
+            # Fallback to Names array
+            names = person.get("Names", person.get("names", []))
+            if names and isinstance(names, list) and len(names) > 0:
+                primary_name = names[0]
+                first_name = primary_name.get("g", primary_name.get("given", primary_name.get("first", "")))
+                surname = primary_name.get("s", primary_name.get("surname", primary_name.get("last", "")))
+
+        # Extract events (birth, death) - handle both Events and events
+        events = person.get("Events", person.get("events", []))
+        birth_year = None
+        death_year = None
+        birth_place = ""
+        death_place = ""
+
+        for event in events:
+            event_type = event.get("t", event.get("type", "")).lower()
+            if event_type == "birth" and birth_year is None:  # Only process first birth event
+                birth_year = extract_year_from_event(event)
+                # Extract place from various possible fields
+                event_place = event.get("p", event.get("place", ""))
+                if isinstance(event_place, dict):
+                    event_place = event_place.get("original", "")
+                # Only update birth_place if we found a non-empty place
+                if event_place:
+                    birth_place = event_place
+            elif event_type == "death" and death_year is None:  # Only process first death event
+                death_year = extract_year_from_event(event)
+                # Extract place from various possible fields
+                event_place = event.get("p", event.get("place", ""))
+                if isinstance(event_place, dict):
+                    event_place = event_place.get("original", "")
+                # Only update death_place if we found a non-empty place
+                if event_place:
+                    death_place = event_place
+
+        # Extract gender - handle both direct field and Genders array
+        gender = ""
+        if "gender" in person:
+            gender = person.get("gender", "")
+        else:
+            genders = person.get("Genders", [])
+            if genders and isinstance(genders, list) and len(genders) > 0:
+                gender = genders[0].get("g", "")
+
+        if isinstance(gender, dict):
+            gender = gender.get("type", "")
+
+        return {
+            "first_name": first_name,
+            "surname": surname,
+            "birth_year": birth_year,
+            "death_year": death_year,
+            "birth_place_disp": birth_place,  # Use birth_place_disp for scoring function
+            "death_place_disp": death_place,  # Use death_place_disp for scoring function
+            "gender_norm": gender.lower() if gender else ""  # Use gender_norm and lowercase for scoring
+        }
+
+    except Exception as e:
+        logger.warning(f"Error extracting person data: {e}")
+        return {
+            "first_name": "",
+            "surname": "",
+            "birth_year": None,
+            "death_year": None,
+            "birth_place": "",
+            "death_place": "",
+            "gender": ""
+        }
+
+
+def extract_year_from_event(event: Dict[str, Any]) -> Optional[int]:
+    """Extract year from an event's date information."""
+    try:
+        # Try various date fields from the API response
+        date_str = None
+
+        # Check for direct date fields (API format)
+        if "d" in event:
+            date_str = event["d"]  # e.g., "15/6/1941"
+        elif "nd" in event:
+            date_str = event["nd"]  # e.g., "1941-06-15"
+        elif "date" in event:
+            date_info = event["date"]
+            if isinstance(date_info, dict):
+                date_str = date_info.get("year") or date_info.get("original")
+            else:
+                date_str = str(date_info)
+
+        if date_str:
+            # Extract 4-digit year from various formats
+            import re
+            year_match = re.search(r'\b(\d{4})\b', str(date_str))
+            if year_match:
+                return int(year_match.group(1))
+
+        return None
+    except Exception:
+        return None
 
 
 def run_action11(session_manager: Optional[SessionManager] = None) -> bool:
@@ -164,6 +463,10 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     Returns:
         bool: True if all tests pass, False otherwise
     """
+    # Temporarily increase log level to reduce noise during tests
+    import logging
+    original_level = logging.getLogger().level
+    logging.getLogger().setLevel(logging.ERROR)
 
     suite = TestSuite(
         "Action 11 - Live API Research Tool", "action11.py"
@@ -171,9 +474,8 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     suite.start_suite()
 
     # --- TESTS ---
-    def debug_wrapper(test_func, name):
+    def debug_wrapper(test_func):
         def wrapped():
-            start = time.time()
             result = test_func()
             # Debug timing removed for cleaner output
             return result
@@ -254,7 +556,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
         test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
         test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+        expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
 
         # Check if we have a valid session for API calls
         api_session = get_api_session(session_manager)
@@ -262,34 +564,41 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
             print(f"{Colors.RED}❌ Failed to create API session for search test{Colors.RESET}")
             assert False, "API search test requires a valid session manager but failed to create one"
 
-        # Test person's search criteria
+        # Enhanced search criteria with revised format
         search_criteria = {
             "first_name": test_first_name.lower(),
             "surname": test_last_name.lower(),
             "birth_year": test_birth_year,
-            "gender": test_gender,
-            "birth_place": test_birth_place
+            "gender": test_gender.lower(),  # Use lowercase for scoring consistency
+            "birth_place": "Banff",  # Search for 'Banff' within the full place name
+            "death_year": None,
+            "death_place": None
         }
 
         print("🔍 Search Criteria:")
-        print(f"   • First Name: {test_first_name.lower()}")
-        print(f"   • Surname: {test_last_name.lower()}")
+        print(f"   • First Name contains: {test_first_name.lower()}")
+        print(f"   • Surname contains: {test_last_name.lower()}")
         print(f"   • Birth Year: {test_birth_year}")
         print(f"   • Gender: {test_gender.upper()}")
-        print(f"   • Birth Place: {test_birth_place}")
+        print(f"   • Birth Place contains: Banff")
+        print(f"   • Death Year: null")
+        print(f"   • Death Place contains: null")
 
         try:
-            # Use API search instead of GEDCOM search
+            # Use enhanced TreesUI search with new endpoint and performance monitoring
             import time
             start_time = time.time()
 
-            results = search_api_for_criteria(
+            print(f"🔍 Starting search at {time.strftime('%H:%M:%S')}...")
+
+            results = enhanced_treesui_search(
                 session_manager=api_session,
                 search_criteria=search_criteria,
-                max_results=10
+                max_results=5  # Reduced from 10 to 5 for faster processing
             )
 
             search_time = time.time() - start_time
+            print(f"🔍 Search completed at {time.strftime('%H:%M:%S')} (took {search_time:.3f}s)")
 
             print(f"\n🔍 API Search Results:")
             print(f"   Search time: {search_time:.3f}s")
@@ -297,17 +606,28 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             if results:
                 top_result = results[0]
-                print(f"   Top match: {top_result.get('full_name_disp', 'N/A')} (Score: {top_result.get('total_score', 0)})")
-                print(f"   Score validation: {top_result.get('total_score', 0) >= 50}")  # Lower threshold for API
+                actual_score = top_result.get('total_score', 0)
+                print(f"   Top match: {top_result.get('full_name_disp', 'N/A')} (Score: {actual_score})")
+                print(f"   Score validation: {actual_score >= 50}")  # Lower threshold for API
 
-                # Validate performance
-                performance_ok = search_time < 10.0  # API calls may take longer than GEDCOM
-                print(f"   Performance validation: {performance_ok} (< 10.0s)")
+                # Validate expected score from .env
+                score_matches_expected = actual_score == expected_score
+                print(f"   Expected score validation: {score_matches_expected} (Expected: {expected_score}, Actual: {actual_score})")
+
+                if not score_matches_expected:
+                    print(f"   ⚠️ WARNING: Score mismatch! Expected {expected_score} but got {actual_score}")
+
+                # Validate performance with more detailed feedback
+                performance_ok = search_time < 8.0  # Reduced threshold for better performance
+                performance_status = "✅ FAST" if search_time < 3.0 else "⚠️ SLOW" if search_time < 8.0 else "❌ TOO SLOW"
+                print(f"   Performance validation: {performance_ok} (< 8.0s) - {performance_status}")
+
+                if search_time > 8.0:
+                    print(f"   ⚠️ WARNING: Search took {search_time:.3f}s which may indicate performance issues")
 
                 # Display detailed scoring breakdown exactly like Action 10
                 score = top_result.get('total_score', 0)
                 field_scores = top_result.get('field_scores', {})
-                reasons = top_result.get('reasons', [])
 
                 print(f"\n📊 Scoring Breakdown:")
                 print("Field        Score  Description")
@@ -354,10 +674,16 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                     print(f"❌ SCORE TOO LOW: Expected ≥50, got {score}")
                     assert False, f"API search score too low: expected ≥50, got {score}"
 
+                # Check expected score matches
+                if score != expected_score:
+                    print(f"❌ SCORE MISMATCH: Expected {expected_score}, got {score}")
+                    assert False, f"API search score mismatch: expected {expected_score}, got {score}"
+
                 # Check performance
-                assert performance_ok, f"API search should complete in < 10s, took {search_time:.3f}s"
+                assert performance_ok, f"API search should complete in < 8s, took {search_time:.3f}s"
 
                 print(f"✅ Found correct person: {found_name} with score {score}")
+                print(f"✅ Score matches expected value: {expected_score}")
 
             else:
                 print("❌ NO MATCHES FOUND - This is a FAILURE")
@@ -383,7 +709,6 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
         test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
         test_gender = os.getenv("TEST_PERSON_GENDER", "M")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff, Banffshire, Scotland")
 
         # Check if we have a valid session for API calls
         api_session = get_api_session(session_manager)
@@ -394,19 +719,21 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         print(f"🔍 Testing API family analysis for {test_first_name} {test_last_name}...")
 
         try:
-            # Step 1: Search for the person via API (like Action 10 does with GEDCOM)
+            # Step 1: Search for the person via enhanced TreesUI API
             search_criteria = {
                 "first_name": test_first_name.lower(),
                 "surname": test_last_name.lower(),
                 "birth_year": test_birth_year,
-                "gender": test_gender,
-                "birth_place": test_birth_place
+                "gender": test_gender.lower(),  # Use lowercase for scoring consistency
+                "birth_place": "Banff",  # Search for 'Banff' within the full place name
+                "death_year": None,
+                "death_place": None
             }
 
-            print(f"🔍 Searching for {test_first_name} {test_last_name} via API...")
+            print(f"🔍 Searching for {test_first_name} {test_last_name} via enhanced TreesUI API...")
 
-            # Use API search to find the person
-            results = search_api_for_criteria(
+            # Use enhanced TreesUI search to find the person
+            results = enhanced_treesui_search(
                 session_manager=api_session,
                 search_criteria=search_criteria,
                 max_results=5
@@ -463,13 +790,11 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                     person_id=person_id
                 )
 
-                # Try the new relationship ladder API using enhanced API utils
+                # Try the enhanced relationship ladder API using shared function
                 print(f"🔍 Trying enhanced relationship ladder API...")
-                from api_utils import call_relationship_ladder_api
-                relationship_ladder_result = call_relationship_ladder_api(
+                from api_utils import get_relationship_path_data
+                relationship_ladder_result = get_relationship_path_data(
                     session_manager=api_session,
-                    user_id=user_id,
-                    tree_id=tree_id,
                     person_id=person_id
                 )
 
@@ -493,11 +818,41 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 else:
                     print(f"❌ Edit Relationships API: No data returned")
 
-                # Check relationship ladder API result
+                # Check relationship ladder API result and parse kinshipPersons
                 if relationship_ladder_result:
                     print(f"✅ Relationship Ladder API: SUCCESS")
                     print(f"   • Data type: {type(relationship_ladder_result)}")
-                    print(f"   • Keys: {list(relationship_ladder_result.keys()) if isinstance(relationship_ladder_result, dict) else 'Not a dict'}")
+
+                    # Parse kinshipPersons data
+                    kinship_persons = relationship_ladder_result.get("kinship_persons", [])
+                    if kinship_persons:
+                        print(f"   • Found {len(kinship_persons)} family relationships")
+
+                        # Extract family members (excluding Fraser himself)
+                        family_members = []
+                        for person in kinship_persons:
+                            if isinstance(person, dict):
+                                name = person.get("name", "Unknown")
+                                relationship = person.get("relationship", "Unknown")
+                                life_span = person.get("lifeSpan", "")
+
+                                # Skip Fraser Gault himself (the target person)
+                                if name != "Fraser Gault":
+                                    family_members.append({
+                                        "name": name,
+                                        "relationship": relationship,
+                                        "life_span": life_span
+                                    })
+
+                        # Display parsed family relationships
+                        if family_members:
+                            print(f"\n👨‍👩‍👧‍👦 Family Details for Fraser Gault (from kinshipPersons):")
+                            for member in family_members:
+                                print(f"   • {member['name']} ({member['life_span']}) - {member['relationship']}")
+                        else:
+                            print(f"   • No family members found (only Fraser himself)")
+                    else:
+                        print(f"   • No kinshipPersons data found")
                 else:
                     print(f"❌ Relationship Ladder API: No data returned")
 
@@ -616,7 +971,6 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
         test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
         test_gender = os.getenv("TEST_PERSON_GENDER", "M")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff, Banffshire, Scotland")
 
         # Get tree owner data from configuration
         reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
@@ -632,19 +986,21 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         print(f"   • To: {reference_person_name}")
 
         try:
-            # Step 1: Search for the test person via API (like Action 10 does with GEDCOM)
+            # Step 1: Search for the test person via enhanced TreesUI API
             search_criteria = {
                 "first_name": test_first_name.lower(),
                 "surname": test_last_name.lower(),
                 "birth_year": test_birth_year,
-                "gender": test_gender,
-                "birth_place": test_birth_place
+                "gender": test_gender.lower(),  # Use lowercase for scoring consistency
+                "birth_place": "Banff",  # Search for 'Banff' within the full place name
+                "death_year": None,
+                "death_place": None
             }
 
-            print(f"🔍 Searching for {test_first_name} {test_last_name} via API...")
+            print(f"🔍 Searching for {test_first_name} {test_last_name} via enhanced TreesUI API...")
 
-            # Use API search to find the person
-            results = search_api_for_criteria(
+            # Use enhanced TreesUI search to find the person
+            results = enhanced_treesui_search(
                 session_manager=api_session,
                 search_criteria=search_criteria,
                 max_results=5
@@ -707,13 +1063,11 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 # Get required IDs for the new API endpoints
                 user_id = api_session.my_profile_id or api_session.my_uuid
 
-                # Try the new relationship ladder API first using enhanced API utils
+                # Try the enhanced relationship ladder API using shared function
                 print(f"🔍 Trying enhanced relationship ladder API...")
-                from api_utils import call_relationship_ladder_api
-                enhanced_relationship_result = call_relationship_ladder_api(
+                from api_utils import get_relationship_path_data
+                enhanced_relationship_result = get_relationship_path_data(
                     session_manager=api_session,
-                    user_id=user_id,
-                    tree_id=tree_id,
                     person_id=person_id
                 )
 
@@ -736,14 +1090,20 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 if enhanced_relationship_result:
                     print(f"✅ Enhanced Relationship Ladder API: SUCCESS")
                     print(f"   • Data type: {type(enhanced_relationship_result)}")
-                    print(f"   • Keys: {list(enhanced_relationship_result.keys()) if isinstance(enhanced_relationship_result, dict) else 'Not a dict'}")
 
-                    # Try to extract relationship information from the enhanced API
+                    # Extract kinship data from the shared function result
                     if isinstance(enhanced_relationship_result, dict):
-                        # Look for relationship data in the response
-                        for key, value in enhanced_relationship_result.items():
-                            if 'relation' in key.lower() or 'kinship' in key.lower() or 'label' in key.lower():
-                                print(f"   • Found relationship data in '{key}': {value}")
+                        kinship_persons = enhanced_relationship_result.get("kinship_persons", [])
+                        if kinship_persons:
+                            print(f"   • Found {len(kinship_persons)} relationship entries")
+                            # Show first few relationships for debugging
+                            for person in kinship_persons[:3]:
+                                if isinstance(person, dict):
+                                    name = person.get("name", "Unknown")
+                                    relationship = person.get("relationship", "Unknown")
+                                    print(f"   • {name}: {relationship}")
+                        else:
+                            print(f"   • No kinship persons found")
                 else:
                     print(f"❌ Enhanced Relationship Ladder API: No data returned")
 
@@ -813,11 +1173,14 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     for i, (name, description, method, expected, test_func) in enumerate(tests, 1):
         suite.run_test(
             f"⚙️ Test {i}: {name}",
-            debug_wrapper(test_func, name),
+            debug_wrapper(test_func),
             expected,
             description,
             method,
         )
+
+    # Restore original log level
+    logging.getLogger().setLevel(original_level)
 
     return suite.finish_suite()
 
@@ -857,13 +1220,7 @@ if __name__ == "__main__":
     for handler in root_logger.handlers:
         handler.addFilter(PerformanceFilter())
 
-    # Also try to disable performance monitoring during tests
-    try:
-        from performance_monitor import PerformanceMonitor
-        pm = PerformanceMonitor.get_instance()
-        pm.enabled = False
-    except:
-        pass
+    # Performance monitoring disabled during tests
 
     print("🧪 Running Action 11 comprehensive test suite...")
 
