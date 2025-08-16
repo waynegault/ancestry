@@ -1019,11 +1019,22 @@ class PersonProcessor:
                 except Exception as e:
                     logger.debug(f"{log_prefix}: GEDCOM data not available for task generation: {e}")
 
+                # === PHASE 12.3: ENHANCED DATA INTEGRATION ===
                 enhanced_tasks = task_generator.generate_research_tasks(
                     person_data,
                     extracted_data,
                     suggested_tasks,
                     gedcom_data
+                )
+
+                # Apply intelligent task selection and validation
+                enhanced_tasks = _apply_intelligent_task_selection(
+                    enhanced_tasks, extracted_data, person_data, log_prefix
+                )
+
+                # Validate and score task quality
+                enhanced_tasks = _validate_and_score_tasks(
+                    enhanced_tasks, extracted_data, log_prefix
                 )
 
                 if enhanced_tasks:
@@ -2762,6 +2773,186 @@ def action9_process_productive_module_tests() -> bool:
         )
 
     return suite.finish_suite()
+
+
+# === PHASE 12.3: ENHANCED DATA INTEGRATION FUNCTIONS ===
+
+def _apply_intelligent_task_selection(
+    tasks: List[Dict[str, Any]],
+    extracted_data: Dict[str, Any],
+    person_data: Dict[str, Any],
+    log_prefix: str
+) -> List[Dict[str, Any]]:
+    """
+    Apply intelligent task selection based on data completeness and quality.
+    Prioritizes tasks that make best use of available extracted data.
+    """
+    try:
+        if not tasks:
+            return tasks
+
+        logger.debug(f"{log_prefix}: Applying intelligent task selection to {len(tasks)} tasks")
+
+        # Score tasks based on data integration potential
+        scored_tasks = []
+        for task in tasks:
+            score = _calculate_task_data_integration_score(task, extracted_data)
+            task['data_integration_score'] = score
+            scored_tasks.append(task)
+
+        # Sort by integration score (highest first) and select top tasks
+        scored_tasks.sort(key=lambda t: t.get('data_integration_score', 0), reverse=True)
+
+        # Select tasks with good data integration (score > 0.6) or top 5 tasks
+        selected_tasks = []
+        for task in scored_tasks:
+            if task.get('data_integration_score', 0) > 0.6 or len(selected_tasks) < 5:
+                selected_tasks.append(task)
+            if len(selected_tasks) >= 8:  # Maximum 8 tasks
+                break
+
+        logger.debug(f"{log_prefix}: Selected {len(selected_tasks)} tasks with good data integration")
+        return selected_tasks
+
+    except Exception as e:
+        logger.warning(f"{log_prefix}: Error in intelligent task selection: {e}")
+        return tasks[:5]  # Fallback to first 5 tasks
+
+def _calculate_task_data_integration_score(task: Dict[str, Any], extracted_data: Dict[str, Any]) -> float:
+    """Calculate how well a task integrates with available extracted data."""
+    score = 0.0
+
+    # Check if task uses specific extracted data
+    task_desc = task.get('description', '').lower()
+    task_title = task.get('title', '').lower()
+
+    # Score based on data type utilization
+    if extracted_data.get('vital_records'):
+        if any(term in task_desc for term in ['birth', 'death', 'marriage', 'vital']):
+            score += 0.3
+
+    if extracted_data.get('locations'):
+        if any(term in task_desc for term in ['location', 'place', 'county', 'state']):
+            score += 0.25
+
+    if extracted_data.get('relationships'):
+        if any(term in task_desc for term in ['family', 'parent', 'child', 'spouse', 'relationship']):
+            score += 0.2
+
+    if extracted_data.get('dna_information'):
+        if any(term in task_desc for term in ['dna', 'match', 'genetic']):
+            score += 0.35
+
+    if extracted_data.get('occupations'):
+        if any(term in task_desc for term in ['occupation', 'work', 'job', 'career']):
+            score += 0.15
+
+    # Bonus for specific names mentioned
+    structured_names = extracted_data.get('structured_names', [])
+    for name_data in structured_names:
+        if isinstance(name_data, dict):
+            full_name = name_data.get('full_name', '')
+            if full_name and full_name.lower() in task_desc:
+                score += 0.2
+                break
+
+    # Bonus for research questions alignment
+    research_questions = extracted_data.get('research_questions', [])
+    for question in research_questions:
+        if isinstance(question, str):
+            question_words = question.lower().split()
+            if any(word in task_desc for word in question_words if len(word) > 3):
+                score += 0.15
+                break
+
+    return min(1.0, score)
+
+def _validate_and_score_tasks(
+    tasks: List[Dict[str, Any]],
+    extracted_data: Dict[str, Any],
+    log_prefix: str
+) -> List[Dict[str, Any]]:
+    """
+    Validate task quality and add quality scores for better task management.
+    """
+    try:
+        if not tasks:
+            return tasks
+
+        logger.debug(f"{log_prefix}: Validating and scoring {len(tasks)} tasks")
+
+        validated_tasks = []
+        for task in tasks:
+            # Calculate task quality score
+            quality_score = _calculate_task_quality_score(task, extracted_data)
+            task['quality_score'] = quality_score
+
+            # Only include tasks with minimum quality threshold
+            if quality_score >= 0.4:  # Minimum 40% quality score
+                validated_tasks.append(task)
+            else:
+                logger.debug(f"{log_prefix}: Filtered out low-quality task: {task.get('title', 'Unknown')[:50]}")
+
+        logger.debug(f"{log_prefix}: Validated {len(validated_tasks)} tasks meeting quality threshold")
+        return validated_tasks
+
+    except Exception as e:
+        logger.warning(f"{log_prefix}: Error in task validation: {e}")
+        return tasks
+
+def _calculate_task_quality_score(task: Dict[str, Any], extracted_data: Dict[str, Any]) -> float:
+    """Calculate overall quality score for a research task."""
+    score = 0.0
+
+    # Check task completeness
+    title = task.get('title', '')
+    description = task.get('description', '')
+    category = task.get('category', '')
+
+    if title and len(title) > 10:
+        score += 0.2
+    if description and len(description) > 50:
+        score += 0.3
+    if category:
+        score += 0.1
+
+    # Check specificity (specific names, dates, places)
+    specificity_score = 0.0
+
+    # Look for specific names
+    structured_names = extracted_data.get('structured_names', [])
+    for name_data in structured_names:
+        if isinstance(name_data, dict):
+            full_name = name_data.get('full_name', '')
+            if full_name and full_name in description:
+                specificity_score += 0.1
+                break
+
+    # Look for specific dates
+    vital_records = extracted_data.get('vital_records', [])
+    for record in vital_records:
+        if isinstance(record, dict):
+            date = record.get('date', '')
+            if date and date in description:
+                specificity_score += 0.1
+                break
+
+    # Look for specific places
+    locations = extracted_data.get('locations', [])
+    for location in locations:
+        if isinstance(location, dict):
+            place = location.get('place', '')
+            if place and place in description:
+                specificity_score += 0.1
+                break
+
+    score += min(0.3, specificity_score)
+
+    # Check actionability (presence of research steps or methodology)
+    if any(term in description.lower() for term in ['search', 'check', 'review', 'examine', 'research']):
+        score += 0.1
+
+    return min(1.0, score)
 
 
 def run_comprehensive_tests() -> bool:

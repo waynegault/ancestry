@@ -322,22 +322,113 @@ class IntelligentResearchPrioritizer:
                 self.research_priorities.append(priority)
 
     def _score_and_rank_priorities(self):
-        """Score and rank all research priorities."""
+        """Score and rank all research priorities with dependency tracking and workflow optimization."""
+        # Apply dependency tracking and workflow optimization
+        self._analyze_task_dependencies()
+        self._optimize_research_workflow()
+
         # Sort by priority score (highest first)
         self.research_priorities.sort(key=lambda p: p.priority_score, reverse=True)
-        
-        # Adjust scores based on research efficiency and success probability
+
+        # Enhanced scoring with research efficiency and success probability
         for priority in self.research_priorities:
+            # Efficiency adjustments
             efficiency_bonus = 0
             if priority.estimated_effort == "low":
-                efficiency_bonus = 5
+                efficiency_bonus = 8  # Increased bonus for quick wins
+            elif priority.estimated_effort == "medium":
+                efficiency_bonus = 2
             elif priority.estimated_effort == "high":
-                efficiency_bonus = -5
-            
-            success_bonus = (priority.success_probability - 0.5) * 10
-            
-            priority.priority_score += efficiency_bonus + success_bonus
+                efficiency_bonus = -3  # Reduced penalty for important high-effort tasks
+
+            # Success probability bonus (more nuanced)
+            success_bonus = (priority.success_probability - 0.5) * 15
+
+            # Dependency bonus for prerequisite tasks
+            dependency_bonus = getattr(priority, 'dependency_bonus', 0)
+
+            # Workflow optimization bonus
+            workflow_bonus = getattr(priority, 'workflow_bonus', 0)
+
+            priority.priority_score += efficiency_bonus + success_bonus + dependency_bonus + workflow_bonus
             priority.priority_score = max(0, min(100, priority.priority_score))  # Clamp to 0-100
+
+    def _analyze_task_dependencies(self):
+        """Analyze dependencies between research tasks and adjust priorities accordingly."""
+        for priority in self.research_priorities:
+            dependency_bonus = 0
+
+            # Tasks that enable other research get priority boost
+            if priority.task_type == "vital_records":
+                # Vital records often enable other research
+                dependency_bonus += 5
+
+            elif priority.task_type == "conflict_resolution":
+                # Resolving conflicts enables accurate further research
+                dependency_bonus += 8
+
+            elif priority.task_type == "dna_verification":
+                # DNA verification can confirm or refute multiple hypotheses
+                dependency_bonus += 6
+
+            # Check for prerequisite relationships
+            for other_priority in self.research_priorities:
+                if other_priority != priority:
+                    if self._is_prerequisite(priority, other_priority):
+                        dependency_bonus += 3
+
+            priority.dependency_bonus = dependency_bonus
+
+    def _optimize_research_workflow(self):
+        """Optimize research workflow by grouping related tasks and considering efficiency."""
+        # Group tasks by location for research efficiency
+        location_groups = defaultdict(list)
+        for priority in self.research_priorities:
+            location = self._extract_location_from_context(priority.research_context)
+            if location:
+                location_groups[location].append(priority)
+
+        # Apply workflow bonuses for location clustering
+        for location, tasks in location_groups.items():
+            if len(tasks) > 1:  # Multiple tasks in same location
+                for task in tasks:
+                    task.workflow_bonus = getattr(task, 'workflow_bonus', 0) + 3
+
+        # Group tasks by person for research efficiency
+        person_groups = defaultdict(list)
+        for priority in self.research_priorities:
+            if priority.target_people:
+                for person in priority.target_people:
+                    person_groups[person].append(priority)
+
+        # Apply workflow bonuses for person clustering
+        for person, tasks in person_groups.items():
+            if len(tasks) > 1:  # Multiple tasks for same person
+                for task in tasks:
+                    task.workflow_bonus = getattr(task, 'workflow_bonus', 0) + 2
+
+    def _is_prerequisite(self, task1: ResearchPriority, task2: ResearchPriority) -> bool:
+        """Determine if task1 is a prerequisite for task2."""
+        # Vital records often prerequisite for other research
+        if task1.task_type == "vital_records" and task2.task_type in ["census", "immigration"]:
+            # Check if they involve the same person
+            if any(person in task2.target_people for person in task1.target_people):
+                return True
+
+        # Conflict resolution prerequisite for verification tasks
+        if task1.task_type == "conflict_resolution" and task2.task_type == "dna_verification":
+            if any(person in task2.target_people for person in task1.target_people):
+                return True
+
+        return False
+
+    def _extract_location_from_context(self, context: Dict[str, Any]) -> str:
+        """Extract location information from research context."""
+        # Look for location indicators in context
+        for key in ['location', 'place', 'county', 'state', 'country']:
+            if key in context:
+                return str(context[key])
+        return ""
 
     # Helper methods for calculations and analysis
     def _estimate_generations_back(self, surname: str, gedcom_analysis: Dict[str, Any]) -> int:
@@ -430,40 +521,121 @@ class IntelligentResearchPrioritizer:
         ]
 
     def _calculate_gap_priority_score(self, gap: Dict[str, Any]) -> float:
-        """Calculate priority score for a gap."""
+        """Calculate enhanced priority score for a gap using genealogical research best practices."""
         base_score = 50.0
-        
-        # Higher priority for certain gap types
+
+        # Enhanced gap type scoring with genealogical research priorities
         gap_type = gap.get("gap_type", "")
         if gap_type == "missing_parents":
-            base_score += 20
+            base_score += 25  # Critical for family tree extension
+        elif gap_type == "missing_spouse":
+            base_score += 22  # Important for family completeness
+        elif gap_type == "missing_children":
+            base_score += 20  # Valuable for descendant research
         elif gap_type == "missing_dates":
-            base_score += 15
+            base_score += 18  # Essential for timeline verification
         elif gap_type == "missing_places":
-            base_score += 10
-        
-        # Higher priority for high-priority gaps
-        if gap.get("priority") == "high":
+            base_score += 15  # Important for location-based research
+        elif gap_type == "missing_occupation":
+            base_score += 10  # Useful for social history
+
+        # Priority level adjustments
+        priority = gap.get("priority", "low")
+        if priority == "critical":
+            base_score += 20
+        elif priority == "high":
             base_score += 15
-        elif gap.get("priority") == "medium":
+        elif priority == "medium":
+            base_score += 8
+        elif priority == "low":
+            base_score += 3
+
+        # Research feasibility factors
+        person_id = gap.get("person_id", "")
+        if person_id:
+            # Boost score for direct ancestors (higher generations)
+            generation_level = self._estimate_generation_level(person_id)
+            if generation_level <= 3:  # Parents, grandparents, great-grandparents
+                base_score += (4 - generation_level) * 5
+
+        # Available evidence bonus
+        evidence_quality = gap.get("evidence_quality", "low")
+        if evidence_quality == "high":
+            base_score += 10
+        elif evidence_quality == "medium":
             base_score += 5
-        
-        return min(100.0, base_score)
+
+        # Research difficulty adjustment
+        difficulty = gap.get("research_difficulty", "medium")
+        if difficulty == "easy":
+            base_score += 8  # Quick wins are valuable
+        elif difficulty == "hard":
+            base_score -= 5  # Reduce priority for very difficult research
+
+        return min(100.0, max(0.0, base_score))
 
     def _calculate_conflict_priority_score(self, conflict: Dict[str, Any]) -> float:
-        """Calculate priority score for a conflict."""
+        """Calculate enhanced priority score for a conflict using genealogical accuracy principles."""
         base_score = 60.0
-        
-        # Higher priority for more severe conflicts
+
+        # Enhanced severity scoring with genealogical impact assessment
         severity = conflict.get("severity", "minor")
         if severity == "critical":
-            base_score += 30
+            base_score += 35  # Major tree accuracy issues
         elif severity == "major":
-            base_score += 20
+            base_score += 25  # Significant discrepancies
+        elif severity == "moderate":
+            base_score += 15  # Notable inconsistencies
         elif severity == "minor":
+            base_score += 8   # Small discrepancies
+
+        # Conflict type impact on research
+        conflict_type = conflict.get("conflict_type", "")
+        if conflict_type == "date_conflict":
+            base_score += 15  # Timeline accuracy is crucial
+        elif conflict_type == "location_conflict":
+            base_score += 12  # Geographic accuracy affects research strategy
+        elif conflict_type == "relationship_conflict":
+            base_score += 20  # Family structure accuracy is critical
+        elif conflict_type == "name_conflict":
+            base_score += 10  # Identity verification important
+
+        # Number of people affected
+        people_involved = conflict.get("people_involved", [])
+        if len(people_involved) > 3:
+            base_score += 10  # Multi-person conflicts have broader impact
+        elif len(people_involved) > 1:
             base_score += 5
-        
-        return min(100.0, base_score)
+
+        # Available resolution evidence
+        resolution_evidence = conflict.get("resolution_evidence", "low")
+        if resolution_evidence == "high":
+            base_score += 12  # High chance of successful resolution
+        elif resolution_evidence == "medium":
+            base_score += 6
+
+        # Research blocking factor
+        if conflict.get("blocks_research", False):
+            base_score += 15  # Conflicts that block further research get priority
+
+        return min(100.0, max(0.0, base_score))
+
+    def _estimate_generation_level(self, person_id: str) -> int:
+        """Estimate generation level from person ID (lower numbers = closer to root person)."""
+        # This is a simplified estimation - in a real system this would
+        # analyze the actual family tree structure
+        if not person_id:
+            return 5  # Default to mid-level
+
+        # Simple heuristic based on ID patterns (this would be more sophisticated in practice)
+        if "parent" in person_id.lower() or "father" in person_id.lower() or "mother" in person_id.lower():
+            return 1
+        elif "grandparent" in person_id.lower() or "grand" in person_id.lower():
+            return 2
+        elif "great" in person_id.lower():
+            return 3
+        else:
+            return 4  # Default for other relatives
 
     def _map_gap_to_task_type(self, gap_type: str) -> str:
         """Map gap type to research task type."""
@@ -507,21 +679,83 @@ class IntelligentResearchPrioritizer:
             return "medium"
 
     def _estimate_success_probability(self, gap: Dict[str, Any]) -> float:
-        """Estimate probability of successfully filling a gap."""
+        """Estimate probability of successfully filling a gap using genealogical research factors."""
         gap_type = gap.get("gap_type", "")
         priority = gap.get("priority", "low")
-        
-        base_probability = 0.5
-        
-        if priority == "high":
+
+        base_probability = 0.4  # Start with realistic baseline
+
+        # Priority level impact on success probability
+        if priority == "critical":
+            base_probability += 0.25  # Critical gaps often have more evidence
+        elif priority == "high":
             base_probability += 0.2
         elif priority == "medium":
-            base_probability += 0.1
-        
-        if gap_type in ["missing_dates", "missing_places"]:
-            base_probability += 0.1
-        
-        return min(1.0, base_probability)
+            base_probability += 0.15
+        elif priority == "low":
+            base_probability += 0.05
+
+        # Gap type success probability based on genealogical research experience
+        if gap_type == "missing_dates":
+            base_probability += 0.15  # Dates often found in multiple record types
+        elif gap_type == "missing_places":
+            base_probability += 0.12  # Places often documented in various records
+        elif gap_type == "missing_parents":
+            base_probability += 0.08  # More challenging but often achievable
+        elif gap_type == "missing_spouse":
+            base_probability += 0.10  # Marriage records often well-documented
+        elif gap_type == "missing_children":
+            base_probability += 0.06  # Can be challenging due to infant mortality
+        elif gap_type == "missing_occupation":
+            base_probability += 0.18  # Often found in census and directories
+
+        # Time period impact (older records are harder to find)
+        time_period = gap.get("time_period", "")
+        if time_period:
+            if "18" in time_period:  # 1800s
+                if "180" in time_period or "181" in time_period:  # Early 1800s
+                    base_probability -= 0.1
+                else:  # Later 1800s
+                    base_probability += 0.05
+            elif "19" in time_period:  # 1900s
+                base_probability += 0.1  # Better record keeping
+            elif "17" in time_period:  # 1700s
+                base_probability -= 0.2  # Much more challenging
+
+        # Location impact on success probability
+        location = gap.get("location", "")
+        if location:
+            location_lower = location.lower()
+            if any(term in location_lower for term in ['england', 'scotland', 'ireland']):
+                base_probability += 0.08  # Good record keeping traditions
+            elif any(term in location_lower for term in ['massachusetts', 'connecticut', 'new hampshire']):
+                base_probability += 0.12  # Excellent early American records
+            elif any(term in location_lower for term in ['virginia', 'north carolina', 'south carolina']):
+                base_probability -= 0.05  # Some record loss from wars
+            elif any(term in location_lower for term in ['frontier', 'territory', 'west']):
+                base_probability -= 0.1  # Frontier areas had less record keeping
+
+        # Available evidence quality impact
+        evidence_quality = gap.get("evidence_quality", "low")
+        if evidence_quality == "high":
+            base_probability += 0.15
+        elif evidence_quality == "medium":
+            base_probability += 0.08
+        elif evidence_quality == "low":
+            base_probability -= 0.05
+
+        # Research difficulty adjustment
+        difficulty = gap.get("research_difficulty", "medium")
+        if difficulty == "easy":
+            base_probability += 0.2
+        elif difficulty == "medium":
+            base_probability += 0.05
+        elif difficulty == "hard":
+            base_probability -= 0.15
+        elif difficulty == "very_hard":
+            base_probability -= 0.25
+
+        return min(1.0, max(0.1, base_probability))  # Keep between 10% and 100%
 
     def _generate_research_recommendations(self) -> List[str]:
         """Generate overall research recommendations."""

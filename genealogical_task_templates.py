@@ -45,57 +45,123 @@ class GenealogicalTaskGenerator:
             self.gedcom_ai_available = False
 
     def _load_task_templates(self) -> Dict[str, Dict[str, str]]:
-        """Load genealogical research task templates."""
+        """Load enhanced genealogical research task templates with specific methodologies."""
         return {
             "vital_records_search": {
                 "title": "Search {record_type} for {person_name} ({time_period})",
-                "description": "Research {record_type} for {person_name} {birth_death_info}.\n\nLocation: {location}\nTime Period: {time_period}\nPriority: {priority}\n\nResearch Steps:\n1. Search {location} vital records databases\n2. Check county/parish records for {time_period}\n3. Look for alternative spellings of {person_name}\n4. Cross-reference with family members\n\nExpected Information: {expected_info}",
+                "description": "Research {record_type} for {person_name} {birth_death_info}.\n\n📍 Location: {location}\n📅 Time Period: {time_period}\n⭐ Priority: {priority}\n\n🔍 DETAILED RESEARCH METHODOLOGY:\n\n1. PRIMARY SOURCES:\n   • Search {location} vital records databases (state/county archives)\n   • Check parish/church records for {time_period}\n   • Review cemetery records and burial registers\n   • Examine hospital/medical records if available\n\n2. LOCATION-SPECIFIC STRATEGIES:\n   • {location_strategy}\n   • Check neighboring counties/parishes for border communities\n   • Review historical boundary changes affecting record locations\n\n3. NAME VARIATIONS & SPELLINGS:\n   • Search alternative spellings: {name_variations}\n   • Check phonetic variations and transcription errors\n   • Look for nicknames and formal name variations\n\n4. FAMILY CONTEXT RESEARCH:\n   • Cross-reference with spouse and children's records\n   • Check family group records and household compositions\n   • Review witness signatures on family documents\n\n5. VERIFICATION STEPS:\n   • Compare dates and locations across multiple sources\n   • Verify against known family timeline\n   • Check for conflicting information requiring resolution\n\n🎯 EXPECTED OUTCOMES:\n   • {expected_info}\n   • Verification of family relationships\n   • Timeline confirmation for genealogical accuracy\n\n📊 SUCCESS CRITERIA:\n   • Primary source documentation located\n   • Date and location verified through multiple sources\n   • Family connections confirmed or clarified",
                 "category": "vital_records",
                 "priority": "high"
             },
             "dna_match_analysis": {
                 "title": "Analyze DNA Match: {match_name} ({estimated_relationship})",
-                "description": "Investigate DNA match with {match_name} showing {shared_dna} shared DNA.\n\nEstimated Relationship: {estimated_relationship}\nShared DNA: {shared_dna}\nTesting Company: {testing_company}\n\nResearch Steps:\n1. Compare family trees for common ancestors\n2. Identify shared surnames and locations\n3. Look for triangulation opportunities\n4. Research potential common ancestor lines\n\nGoal: {research_goal}",
+                "description": "Comprehensive DNA match investigation with {match_name} showing {shared_dna} shared DNA.\n\n🧬 MATCH DETAILS:\n   • Estimated Relationship: {estimated_relationship}\n   • Testing Company: {testing_company}\n   • Shared DNA: {shared_dna}\n   • Research Goal: {research_goal}\n\n🔬 SYSTEMATIC DNA ANALYSIS METHODOLOGY:\n\n1. QUANTITATIVE ANALYSIS:\n   • Review total shared centiMorgans (cM) and segments\n   • Analyze largest shared segment size\n   • Calculate relationship probability using DNA Painter tools\n   • Document X-chromosome inheritance patterns (if applicable)\n\n2. GENEALOGICAL COMPARISON:\n   • Compare family trees systematically by generation\n   • Identify potential common ancestor couples\n   • Map known family lines and geographical overlaps\n   • Document surname patterns and regional concentrations\n\n3. TRIANGULATION STRATEGY:\n   • Identify shared matches between you and this match\n   • Create triangulation groups for chromosome segments\n   • Map shared matches to specific ancestral lines\n   • Build evidence clusters supporting relationship theories\n\n4. ADVANCED VERIFICATION:\n   • Use chromosome browser for segment analysis\n   • Compare DNA match with known relatives\n   • Cross-reference with paper trail evidence\n   • Validate relationship through multiple DNA relatives\n\n5. RESEARCH EXPANSION:\n   • Contact match for family information exchange\n   • Request access to extended family trees\n   • Share relevant genealogical documentation\n   • Coordinate research efforts for mutual benefit\n\n🎯 EXPECTED OUTCOMES:\n   • Identification of most recent common ancestors (MRCA)\n   • Verification of specific family line connections\n   • Resolution of brick wall research problems\n   • Expansion of verified family tree branches\n\n📊 SUCCESS CRITERIA:\n   • Common ancestors identified with supporting evidence\n   • Relationship path documented and verified\n   • DNA evidence integrated with paper trail research",
                 "category": "dna_analysis",
                 "priority": "medium"
             },
             "family_tree_verification": {
                 "title": "Verify Family Connection: {person1} → {person2}",
-                "description": "Verify the relationship between {person1} and {person2}.\n\nRelationship to Verify: {relationship}\nConflicting Information: {conflicts}\nEvidence Available: {evidence}\n\nResearch Steps:\n1. Gather primary source documents\n2. Cross-reference multiple sources\n3. Check for alternative explanations\n4. Document findings with source citations\n\nResolution Priority: {priority}",
+                "description": "Systematic verification of the relationship between {person1} and {person2}.\n\n🔍 VERIFICATION DETAILS:\n   • Relationship to Verify: {relationship}\n   • Conflicting Information: {conflicts}\n   • Evidence Available: {evidence}\n   • Resolution Priority: {priority}\n\n📋 COMPREHENSIVE VERIFICATION METHODOLOGY:\n\n1. PRIMARY SOURCE COLLECTION:\n   • Gather birth, marriage, and death certificates\n   • Collect census records showing family groupings\n   • Review church/parish records for family events\n   • Examine probate records and wills mentioning relationships\n\n2. MULTI-SOURCE CROSS-REFERENCE:\n   • Compare information across 3+ independent sources\n   • Verify dates and locations for consistency\n   • Check for corroborating evidence from different record types\n   • Document any discrepancies requiring further investigation\n\n3. ALTERNATIVE HYPOTHESIS TESTING:\n   • Consider alternative relationship explanations\n   • Test competing theories against available evidence\n   • Examine possibility of adoption, step-relationships, or name changes\n   • Investigate potential record transcription errors\n\n4. CONTEXTUAL VALIDATION:\n   • Verify against known family timeline and geography\n   • Check relationship against historical and social context\n   • Confirm biological feasibility of claimed relationships\n   • Review family naming patterns and traditions\n\n5. DOCUMENTATION & CITATION:\n   • Create detailed source citations for all evidence\n   • Document research methodology and decision process\n   • Prepare evidence summary with confidence assessment\n   • Update family tree with verified information and source links\n\n🎯 EXPECTED OUTCOMES:\n   • Definitive confirmation or refutation of relationship\n   • Resolution of conflicting information\n   • Strengthened family tree accuracy\n   • Clear documentation for future researchers\n\n📊 SUCCESS CRITERIA:\n   • Relationship verified through multiple independent sources\n   • All conflicts resolved with documented explanations\n   • Evidence meets genealogical proof standard",
                 "category": "verification",
                 "priority": "high"
             },
             "immigration_research": {
                 "title": "Immigration Research: {person_name} ({origin} → {destination})",
-                "description": "Research immigration of {person_name} from {origin} to {destination}.\n\nTime Period: {time_period}\nPorts: {ports}\nShip/Vessel: {vessel_info}\n\nResearch Steps:\n1. Search passenger manifests for {time_period}\n2. Check {origin} emigration records\n3. Look for naturalization records in {destination}\n4. Research family members who may have traveled together\n\nExpected Documents: {expected_documents}",
+                "description": "Comprehensive immigration research for {person_name} from {origin} to {destination}.\n\n🚢 IMMIGRATION DETAILS:\n   • Time Period: {time_period}\n   • Departure Port: {ports}\n   • Ship/Vessel: {vessel_info}\n   • Expected Documents: {expected_documents}\n\n🌍 SYSTEMATIC IMMIGRATION RESEARCH METHODOLOGY:\n\n1. PASSENGER MANIFEST RESEARCH:\n   • Search ship passenger lists for {time_period}\n   • Check multiple spelling variations of {person_name}\n   • Look for family groups traveling together\n   • Review both departure and arrival manifests\n   • Cross-reference with known family members\n\n2. ORIGIN COUNTRY RESEARCH:\n   • Search {origin} emigration records and permits\n   • Check parish records for departure notifications\n   • Review local newspapers for emigration announcements\n   • Examine land sales or property transfers before departure\n   • Research family left behind for correspondence\n\n3. DESTINATION COUNTRY INTEGRATION:\n   • Search naturalization records and declarations of intent\n   • Check early census records in {destination}\n   • Look for immigrant aid society records\n   • Review early employment or business records\n   • Examine church membership transfers\n\n4. TRAVEL COMPANION ANALYSIS:\n   • Identify other passengers from same region\n   • Research family members who may have traveled separately\n   • Check for chain migration patterns\n   • Look for sponsors or contacts in destination country\n\n5. HISTORICAL CONTEXT RESEARCH:\n   • Study migration patterns from {origin} during {time_period}\n   • Research economic/political factors driving emigration\n   • Examine transportation routes and shipping companies\n   • Review immigration laws and requirements of the era\n\n🎯 EXPECTED OUTCOMES:\n   • Complete immigration timeline and documentation\n   • Verification of family travel companions\n   • Understanding of migration motivations and context\n   • Connection to origin and destination communities\n\n📊 SUCCESS CRITERIA:\n   • Immigration date and vessel identified\n   • Origin location and family context documented\n   • Integration into destination community traced",
                 "category": "immigration",
                 "priority": "medium"
             },
             "census_research": {
                 "title": "Census Research: {person_name} Family ({location}, {year})",
-                "description": "Locate {person_name} and family in {year} census records.\n\nLocation: {location}\nFamily Members: {family_members}\nOccupation: {occupation}\n\nResearch Steps:\n1. Search {year} census for {location}\n2. Try alternative spellings and nearby areas\n3. Look for family members as search aids\n4. Check previous/subsequent census years\n\nInformation Needed: {information_needed}",
+                "description": "Comprehensive census research for {person_name} and family in {year} census records.\n\n📊 CENSUS RESEARCH PARAMETERS:\n   • Target Location: {location}\n   • Census Year: {year}\n   • Family Members: {family_members}\n   • Known Occupation: {occupation}\n   • Information Needed: {information_needed}\n\n📋 SYSTEMATIC CENSUS RESEARCH METHODOLOGY:\n\n1. PRIMARY SEARCH STRATEGY:\n   • Search {year} census for {location} using exact name\n   • Expand search to county/state level if not found locally\n   • Use Soundex and phonetic search algorithms\n   • Search by household head if {person_name} is not head\n\n2. NAME VARIATION TECHNIQUES:\n   • Try alternative spellings and transcription errors\n   • Search using nicknames and formal name variations\n   • Check for reversed first/middle names\n   • Consider ethnic name variations and Americanization\n\n3. FAMILY GROUP IDENTIFICATION:\n   • Search for known family members as entry points\n   • Use spouse and children's names to locate household\n   • Check for extended family living in same household\n   • Look for boarders or servants who might be relatives\n\n4. GEOGRAPHICAL EXPANSION:\n   • Search neighboring townships and counties\n   • Check for boundary changes affecting enumeration\n   • Consider seasonal migration or temporary relocation\n   • Review urban vs. rural enumeration districts\n\n5. TEMPORAL ANALYSIS:\n   • Compare with previous census ({year-10}) for migration patterns\n   • Check subsequent census ({year+10}) for family changes\n   • Analyze age progression and family composition changes\n   • Document occupation and property value changes\n\n6. CONTEXTUAL VERIFICATION:\n   • Verify ages against known birth dates\n   • Check birthplaces against family history\n   • Confirm occupation against other records\n   • Validate family relationships and household composition\n\n🎯 EXPECTED OUTCOMES:\n   • Complete household enumeration with all family members\n   • Verification of residence location and duration\n   • Documentation of occupation and economic status\n   • Age and birthplace verification for family members\n\n📊 SUCCESS CRITERIA:\n   • Family located in correct census year and location\n   • All household members identified and relationships confirmed\n   • Information integrated with broader family timeline",
                 "category": "census",
                 "priority": "medium"
             },
             "military_research": {
                 "title": "Military Service Research: {person_name} ({conflict})",
-                "description": "Research military service of {person_name} during {conflict}.\n\nConflict: {conflict}\nService Branch: {service_branch}\nUnit: {unit_info}\nService Period: {service_period}\n\nResearch Steps:\n1. Search military service records\n2. Look for pension applications\n3. Check unit histories and muster rolls\n4. Research battle participation\n\nExpected Records: {expected_records}",
+                "description": "Comprehensive military service research for {person_name} during {conflict}.\n\n⚔️ MILITARY SERVICE DETAILS:\n   • Conflict: {conflict}\n   • Service Branch: {service_branch}\n   • Unit Information: {unit_info}\n   • Service Period: {service_period}\n   • Expected Records: {expected_records}\n\n🎖️ SYSTEMATIC MILITARY RESEARCH METHODOLOGY:\n\n1. SERVICE RECORD RESEARCH:\n   • Search compiled military service records (CMSR)\n   • Check enlistment and discharge papers\n   • Review muster rolls and pay records\n   • Examine medical records and casualty reports\n   • Look for court martial or disciplinary records\n\n2. PENSION AND BENEFIT RESEARCH:\n   • Search pension application files\n   • Check widow's and dependent pension records\n   • Review bounty land warrant applications\n   • Examine disability and medical pension files\n   • Look for rejected or pending pension claims\n\n3. UNIT HISTORY AND CONTEXT:\n   • Research regimental and company histories\n   • Check unit muster rolls and organizational records\n   • Study battle participation and campaign records\n   • Review unit movements and station assignments\n   • Examine casualty lists and honor rolls\n\n4. BATTLE AND CAMPAIGN ANALYSIS:\n   • Document specific battles and engagements\n   • Research unit's role in major campaigns\n   • Check for mentions in official reports\n   • Look for personal accounts and diaries\n   • Examine prisoner of war records if applicable\n\n5. POST-SERVICE INTEGRATION:\n   • Research veteran organization memberships\n   • Check for Grand Army of the Republic records\n   • Look for veteran reunion attendance\n   • Examine veteran cemetery and burial records\n   • Review veteran benefit and hospital records\n\n6. FAMILY IMPACT RESEARCH:\n   • Document impact on family during service\n   • Research family correspondence during war\n   • Check for family members' military service\n   • Examine post-war family reunification\n   • Look for war-related family migrations\n\n🎯 EXPECTED OUTCOMES:\n   • Complete military service timeline and documentation\n   • Verification of unit assignments and battle participation\n   • Understanding of service impact on family\n   • Connection to veteran communities and benefits\n\n📊 SUCCESS CRITERIA:\n   • Military service verified through official records\n   • Unit assignments and battle participation documented\n   • Pension and benefit records located and analyzed",
                 "category": "military",
                 "priority": "medium"
             },
             "occupation_research": {
                 "title": "Occupation Research: {person_name} ({occupation})",
-                "description": "Research {person_name}'s career as {occupation} in {location}.\n\nOccupation: {occupation}\nLocation: {location}\nTime Period: {time_period}\nEmployer: {employer}\n\nResearch Steps:\n1. Search employment records and directories\n2. Look for professional associations\n3. Check local newspapers for mentions\n4. Research industry-specific records\n\nResearch Goal: {research_goal}",
+                "description": "Comprehensive occupational research for {person_name}'s career as {occupation} in {location}.\n\n💼 OCCUPATIONAL DETAILS:\n   • Occupation: {occupation}\n   • Location: {location}\n   • Time Period: {time_period}\n   • Known Employer: {employer}\n   • Research Goal: {research_goal}\n\n🏭 SYSTEMATIC OCCUPATIONAL RESEARCH METHODOLOGY:\n\n1. EMPLOYMENT RECORD RESEARCH:\n   • Search city directories for business listings\n   • Check employment records and payroll documents\n   • Review apprenticeship and training records\n   • Examine union membership and labor organization records\n   • Look for professional licensing and certification documents\n\n2. INDUSTRY-SPECIFIC RESEARCH:\n   • Study industry history and development in {location}\n   • Research major employers and business establishments\n   • Check trade publications and industry journals\n   • Examine guild records and professional associations\n   • Review industry-specific regulatory records\n\n3. NEWSPAPER AND MEDIA RESEARCH:\n   • Search local newspapers for business mentions\n   • Check obituaries for occupational details\n   • Look for business advertisements and announcements\n   • Review social pages for professional activities\n   • Examine trade journal articles and features\n\n4. PROPERTY AND BUSINESS RECORDS:\n   • Research business property ownership and leases\n   • Check commercial property tax records\n   • Examine business partnership and incorporation documents\n   • Look for business insurance and bonding records\n   • Review bankruptcy or business dissolution records\n\n5. SOCIAL AND PROFESSIONAL NETWORKS:\n   • Research professional association memberships\n   • Check social club and organization records\n   • Look for business partner and colleague connections\n   • Examine professional conference and meeting attendance\n   • Review charitable and civic organization involvement\n\n6. ECONOMIC CONTEXT ANALYSIS:\n   • Study economic conditions affecting the industry\n   • Research technological changes impacting the occupation\n   • Examine labor disputes and strikes affecting the field\n   • Look for government regulations affecting the profession\n   • Analyze migration patterns related to occupational opportunities\n\n🎯 EXPECTED OUTCOMES:\n   • Complete occupational timeline and career progression\n   • Understanding of professional networks and associations\n   • Documentation of economic and social status\n   • Context for family migration and settlement patterns\n\n📊 SUCCESS CRITERIA:\n   • Occupational details verified through multiple sources\n   • Professional networks and associations documented\n   • Career progression and economic impact understood",
                 "category": "occupation",
                 "priority": "low"
             },
             "location_research": {
                 "title": "Location Research: {person_name} in {location}",
-                "description": "Research {person_name}'s time in {location} during {time_period}.\n\nLocation: {location}\nTime Period: {time_period}\nResidence Type: {residence_type}\nNeighbors: {neighbors}\n\nResearch Steps:\n1. Search local records and directories\n2. Check property/land records\n3. Look for church/school records\n4. Research local history and migration patterns\n\nInformation Sought: {information_sought}",
+                "description": "Comprehensive location-based research for {person_name}'s time in {location} during {time_period}.\n\n📍 LOCATION RESEARCH PARAMETERS:\n   • Location: {location}\n   • Time Period: {time_period}\n   • Residence Type: {residence_type}\n   • Known Neighbors: {neighbors}\n   • Information Sought: {information_sought}\n\n🗺️ SYSTEMATIC LOCATION RESEARCH METHODOLOGY:\n\n1. PROPERTY AND LAND RECORDS:\n   • Search deed records for property ownership\n   • Check property tax records and assessments\n   • Review mortgage and land contract documents\n   • Examine homestead and land grant records\n   • Look for property inheritance and transfer records\n\n2. LOCAL DIRECTORY AND CENSUS RESEARCH:\n   • Search city/county directories for residence listings\n   • Check voter registration and poll tax records\n   • Review local census and enumeration records\n   • Examine school district and enrollment records\n   • Look for jury duty and civic service records\n\n3. RELIGIOUS AND COMMUNITY RECORDS:\n   • Search church membership and baptismal records\n   • Check cemetery and burial records\n   • Review school attendance and graduation records\n   • Examine fraternal organization memberships\n   • Look for charitable and social organization involvement\n\n4. NEIGHBORHOOD AND COMMUNITY ANALYSIS:\n   • Research known neighbors and their families\n   • Study community development and growth patterns\n   • Examine local business and commercial development\n   • Check for ethnic or cultural community concentrations\n   • Look for family clusters and chain migration patterns\n\n5. HISTORICAL CONTEXT RESEARCH:\n   • Study local history and significant events\n   • Research economic development and industry growth\n   • Examine transportation development (roads, railroads)\n   • Look for natural disasters or significant local events\n   • Study political and administrative boundary changes\n\n6. MIGRATION PATTERN ANALYSIS:\n   • Research why family came to this location\n   • Check for previous and subsequent residences\n   • Examine seasonal migration or temporary relocations\n   • Look for family members in surrounding areas\n   • Study regional migration trends and patterns\n\n🎯 EXPECTED OUTCOMES:\n   • Complete residential timeline and property history\n   • Understanding of community integration and networks\n   • Documentation of local family and social connections\n   • Context for family decisions and life events\n\n📊 SUCCESS CRITERIA:\n   • Residence period and property details documented\n   • Community connections and networks identified\n   • Migration motivations and patterns understood",
                 "category": "location",
                 "priority": "low"
             }
         }
+
+    def _get_location_specific_strategy(self, location: str) -> str:
+        """Generate location-specific research strategies based on geographical and historical context."""
+        location_lower = location.lower()
+
+        # Scotland-specific strategies
+        if any(term in location_lower for term in ['scotland', 'scottish', 'edinburgh', 'glasgow', 'aberdeen', 'dundee']):
+            return "Focus on Old Parish Registers (OPR) pre-1855 and statutory records post-1855. Check National Records of Scotland online. Review kirk session records and heritors' records. Consider Highland Clearances impact if applicable."
+
+        # Ireland-specific strategies
+        elif any(term in location_lower for term in ['ireland', 'irish', 'dublin', 'cork', 'belfast', 'galway']):
+            return "Search civil registration from 1864 (births/deaths) and 1845 (marriages). Check Catholic parish records and Church of Ireland registers. Review Griffith's Valuation and Tithe Applotment Books. Consider Famine emigration records."
+
+        # England-specific strategies
+        elif any(term in location_lower for term in ['england', 'english', 'london', 'manchester', 'birmingham', 'liverpool']):
+            return "Search parish registers and Bishop's Transcripts. Check Probate Court of Canterbury (PCC) wills. Review Quarter Sessions and Manorial records. Consider Industrial Revolution migration patterns."
+
+        # Wales-specific strategies
+        elif any(term in location_lower for term in ['wales', 'welsh', 'cardiff', 'swansea', 'newport']):
+            return "Focus on Welsh parish registers and Nonconformist records. Check National Library of Wales collections. Review tithe maps and schedules. Consider Welsh language variations in records."
+
+        # US state-specific strategies
+        elif any(term in location_lower for term in ['massachusetts', 'boston', 'ma']):
+            return "Check Massachusetts Vital Records to 1850. Review Mayflower descendant records if applicable. Search Boston immigration records and ship manifests. Check town clerk records."
+
+        elif any(term in location_lower for term in ['new york', 'ny', 'manhattan', 'brooklyn']):
+            return "Search Ellis Island and Castle Garden immigration records. Check NYC Municipal Archives. Review tenement records and city directories. Consider ethnic neighborhood concentrations."
+
+        elif any(term in location_lower for term in ['pennsylvania', 'philadelphia', 'pa']):
+            return "Check Pennsylvania German records if applicable. Search Quaker meeting records. Review Philadelphia port records. Check county courthouse records."
+
+        # Generic strategies for other locations
+        else:
+            return "Research local archives and historical societies. Check county courthouse records. Review local newspapers and obituaries. Consider regional migration patterns and historical events."
+
+    def _generate_name_variations(self, name: str) -> str:
+        """Generate common name variations for genealogical research."""
+        if not name:
+            return "Check common spelling variations"
+
+        variations = []
+        name_parts = name.split()
+
+        for part in name_parts:
+            # Common letter substitutions
+            if 'ph' in part.lower():
+                variations.append(part.replace('ph', 'f').replace('Ph', 'F'))
+            if 'c' in part.lower():
+                variations.append(part.replace('c', 'k').replace('C', 'K'))
+            if 'y' in part.lower():
+                variations.append(part.replace('y', 'i').replace('Y', 'I'))
+
+        # Add common prefixes/suffixes
+        if name_parts:
+            first_name = name_parts[0]
+            if first_name.lower() in ['william', 'bill', 'billy']:
+                variations.extend(['William', 'Bill', 'Billy', 'Will', 'Willie'])
+            elif first_name.lower() in ['robert', 'bob', 'bobby']:
+                variations.extend(['Robert', 'Bob', 'Bobby', 'Rob', 'Robbie'])
+            elif first_name.lower() in ['james', 'jim', 'jimmy']:
+                variations.extend(['James', 'Jim', 'Jimmy', 'Jamie'])
+
+        if variations:
+            return f"Try variations: {', '.join(set(variations[:5]))}"
+        else:
+            return "Check phonetic spellings and transcription errors"
 
     def _load_task_configuration(self) -> Dict[str, Any]:
         """Load task generation configuration."""
@@ -185,17 +251,18 @@ class GenealogicalTaskGenerator:
             return self._create_fallback_tasks(person_data, suggested_tasks)
 
     def _generate_vital_records_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generate vital records search tasks."""
+        """Generate enhanced vital records search tasks with location-specific strategies."""
         tasks = []
         vital_records = extracted_data.get("vital_records", [])
-        
+
         for record in vital_records[:2]:  # Limit to 2 most important
             if isinstance(record, dict):
                 person = record.get("person", "Unknown Person")
                 event_type = record.get("event_type", "vital record")
                 date = record.get("date", "unknown date")
                 place = record.get("place", "unknown location")
-                
+
+                # Generate enhanced task data with location-specific strategies
                 task_data = {
                     "person_name": person,
                     "record_type": f"{event_type} record",
@@ -203,13 +270,15 @@ class GenealogicalTaskGenerator:
                     "location": place,
                     "time_period": date,
                     "priority": "high",
+                    "location_strategy": self._get_location_specific_strategy(place),
+                    "name_variations": self._generate_name_variations(person),
                     "expected_info": f"Official {event_type} documentation with parents, dates, and locations"
                 }
-                
+
                 task = self._create_task_from_template("vital_records_search", task_data)
                 if task:
                     tasks.append(task)
-        
+
         return tasks
 
     def _generate_dna_analysis_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
