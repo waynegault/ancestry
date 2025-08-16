@@ -52,6 +52,7 @@ from urllib.parse import quote, urlencode, urljoin
 
 # === THIRD-PARTY IMPORTS ===
 import requests
+import base64  # For enhanced authentication headers
 
 # --- Check for optional dependencies ---
 try:
@@ -2791,6 +2792,153 @@ async def async_batch_person_lookup(
     logger.info(f"Async batch person lookup completed: {successful_count}/{len(person_ids)} successful")
 
     return parsed_results
+
+
+def call_enhanced_api(
+    session_manager: "SessionManager",
+    endpoint: str,
+    user_id: str,
+    tree_id: str,
+    person_id: str,
+    method: str = "GET",
+    data: Optional[Dict[str, Any]] = None,
+    api_description: str = "Enhanced API Call"
+) -> Optional[Dict[str, Any]]:
+    """
+    Call an enhanced API endpoint with full browser-like authentication.
+
+    This function provides enhanced authentication for API endpoints that require
+    more sophisticated headers and session state, such as the new family relationship
+    and kinship APIs discovered in Action 11.
+
+    Args:
+        session_manager: Active session manager
+        endpoint: API endpoint path (e.g., "/family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships")
+        user_id: User profile ID
+        tree_id: Tree ID
+        person_id: Person ID
+        method: HTTP method (GET, POST, etc.)
+        data: Optional request data
+        api_description: Description for logging
+
+    Returns:
+        Dictionary with API response data or None if failed
+    """
+    if not session_manager or not session_manager.is_sess_valid():
+        logger.error(f"Invalid session manager for {api_description}")
+        return None
+
+    try:
+        # Import _api_req from utils
+        from utils import _api_req
+
+        # Construct full URL
+        base_url = config_schema.api.base_url.rstrip('/')
+        # Format endpoint with provided IDs
+        formatted_endpoint = endpoint.format(
+            user_id=user_id,
+            tree_id=tree_id,
+            person_id=person_id
+        )
+        url = f"{base_url}{formatted_endpoint}"
+        referer_url = f"{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts"
+
+        logger.debug(f"Calling enhanced API: {url}")
+
+        # Sync cookies to ensure authentication state
+        try:
+            if hasattr(session_manager, '_sync_cookies_to_requests'):
+                session_manager._sync_cookies_to_requests()
+        except Exception as e:
+            logger.debug(f"Cookie sync failed: {e}")
+
+        # Use enhanced _api_req with special parameters for enhanced headers
+        response = _api_req(
+            url=url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method=method,
+            data=data,
+            api_description=api_description,
+            referer_url=referer_url,
+            use_csrf_token=True,
+            timeout=30,
+            # Pass additional parameters for enhanced headers
+            headers={
+                "_use_enhanced_headers": "true",
+                "_tree_id": tree_id,
+                "_person_id": person_id
+            }
+        )
+
+        if response:
+            logger.info(f"{api_description} successful")
+            return response
+        else:
+            logger.warning(f"{api_description} returned no data")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error calling {api_description}: {e}")
+        return None
+
+
+def call_edit_relationships_api(
+    session_manager: "SessionManager",
+    user_id: str,
+    tree_id: str,
+    person_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Call the edit relationships API endpoint to get family relationship data.
+
+    Args:
+        session_manager: Active session manager
+        user_id: User profile ID
+        tree_id: Tree ID
+        person_id: Person ID
+
+    Returns:
+        Dictionary with relationship data or None if failed
+    """
+    endpoint = "/family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships"
+    return call_enhanced_api(
+        session_manager=session_manager,
+        endpoint=endpoint,
+        user_id=user_id,
+        tree_id=tree_id,
+        person_id=person_id,
+        api_description="Edit Relationships API"
+    )
+
+
+def call_relationship_ladder_api(
+    session_manager: "SessionManager",
+    user_id: str,
+    tree_id: str,
+    person_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Call the relationship ladder API endpoint to get kinship relationship data.
+
+    Args:
+        session_manager: Active session manager
+        user_id: User profile ID
+        tree_id: Tree ID
+        person_id: Person ID
+
+    Returns:
+        Dictionary with relationship ladder data or None if failed
+    """
+    endpoint = "/family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"
+    return call_enhanced_api(
+        session_manager=session_manager,
+        endpoint=endpoint,
+        user_id=user_id,
+        tree_id=tree_id,
+        person_id=person_id,
+        api_description="Relationship Ladder API"
+    )
 
 
 def api_utils_module_tests() -> bool:

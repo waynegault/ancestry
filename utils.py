@@ -66,6 +66,8 @@ from typing import (
     IO,
 )  # Consolidated typing imports
 import asyncio  # For async/await patterns
+import base64  # For enhanced authentication headers
+import uuid  # For generating trace IDs and session IDs
 
 # PHASE 1: Utility function to get configured concurrency across the codebase
 def get_configured_concurrency(default: int = 8) -> int:
@@ -1111,6 +1113,10 @@ def _prepare_api_headers(
     base_headers: Dict[str, str],
     use_csrf_token: bool,
     add_default_origin: bool,
+    use_enhanced_headers: bool = False,
+    tree_id: Optional[str] = None,
+    person_id: Optional[str] = None,
+    referer_url: Optional[str] = None,
 ) -> Dict[str, str]:
     """Generates the final headers for an API request."""
     final_headers = base_headers.copy()
@@ -1198,6 +1204,20 @@ def _prepare_api_headers(
             f"[{api_description}] Omitting 'ancestry-userid' header as configured."
         )
     # End of if/elif
+
+    # Apply enhanced browser headers if requested
+    if use_enhanced_headers:
+        try:
+            final_headers = _add_enhanced_browser_headers(
+                headers=final_headers,
+                session_manager=session_manager,
+                tree_id=tree_id,
+                person_id=person_id,
+                referer_url=referer_url
+            )
+            logger.debug(f"[{api_description}] Applied enhanced browser headers")
+        except Exception as e:
+            logger.warning(f"[{api_description}] Failed to apply enhanced headers: {e}")
 
     # Remove any headers with None values (e.g., if dynamic generation failed)
     final_headers = {k: v for k, v in final_headers.items() if v is not None}
@@ -1407,6 +1427,150 @@ def _log_request_details(
 
 # End of _log_request_details
 
+def _generate_ancestry_context_ube(session_manager: 'SessionManager', tree_id: str, person_id: str) -> Optional[str]:
+    """
+    Generate the ancestry-context-ube header based on session state.
+    This header contains encoded session and navigation context for enhanced API access.
+
+    Args:
+        session_manager: Active session manager
+        tree_id: Tree ID
+        person_id: Person ID
+
+    Returns:
+        Base64 encoded context string or None if generation fails
+    """
+    try:
+        # Generate a session ID if we don't have one
+        session_id = getattr(session_manager, 'session_id', None)
+        if not session_id:
+            session_id = str(uuid.uuid4())
+
+        # Create context data structure similar to the browser
+        context_data = {
+            "eventId": "00000000-0000-0000-0000-000000000000",
+            "correlatedScreenViewedId": str(uuid.uuid4()),
+            "correlatedSessionId": session_id,
+            "screenNameStandard": "ancestry : gb : en : person-ui : person-views : facts",
+            "screenName": f"ancestry uk : family-tree : person : tree : {tree_id} : person : {person_id} : facts",
+            "userConsent": "necessary|preference|performance|analytics1st|analytics3rd|advertising1st|advertising3rd|attribution3rd",
+            "vendors": "adobemc",
+            "vendorConfigurations": json.dumps({
+                "adobemc": {
+                    "mid": "12426276233354459660893024301797718888",
+                    "sdid": "23EF299E33E03C85-014F054DB1DD53B0"
+                }
+            })
+        }
+
+        # Convert to JSON and encode
+        context_json = json.dumps(context_data)
+        context_encoded = base64.b64encode(context_json.encode('utf-8')).decode('utf-8')
+
+        logger.debug(f"Generated ancestry context UBE header")
+        return context_encoded
+
+    except Exception as e:
+        logger.debug(f"Failed to generate ancestry context: {e}")
+        return None
+
+# End of _generate_ancestry_context_ube
+
+def _add_enhanced_browser_headers(
+    headers: Dict[str, str],
+    session_manager: 'SessionManager',
+    tree_id: Optional[str] = None,
+    person_id: Optional[str] = None,
+    referer_url: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Add enhanced browser-like headers for better API compatibility.
+
+    Args:
+        headers: Existing headers dictionary
+        session_manager: Active session manager
+        tree_id: Optional tree ID for context generation
+        person_id: Optional person ID for context generation
+        referer_url: Optional referer URL
+
+    Returns:
+        Enhanced headers dictionary
+    """
+    enhanced_headers = headers.copy()
+
+    try:
+        # Add comprehensive browser headers
+        enhanced_headers.update({
+            "accept": "application/json",
+            "accept-language": "en-GB,en;q=0.9",
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "dnt": "1",
+            "pragma": "no-cache",
+            "priority": "u=1, i",
+            "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Microsoft Edge";v="140"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"
+        })
+
+        # Add referer if provided
+        if referer_url:
+            enhanced_headers["referer"] = referer_url
+
+        # Add ancestry context if tree_id and person_id are available
+        if tree_id and person_id:
+            try:
+                ancestry_context = _generate_ancestry_context_ube(session_manager, tree_id, person_id)
+                if ancestry_context:
+                    enhanced_headers["ancestry-context-ube"] = ancestry_context
+                    logger.debug(f"Added ancestry-context-ube header")
+            except Exception as e:
+                logger.debug(f"Could not generate ancestry context: {e}")
+
+        # Add tracing headers for better compatibility
+        try:
+            trace_id = str(uuid.uuid4()).replace('-', '')
+            span_id = str(uuid.uuid4()).replace('-', '')[:16]
+            enhanced_headers["traceparent"] = f"00-{trace_id}-{span_id}-01"
+            enhanced_headers["tracestate"] = f"2611750@nr=0-1-1690570-1588686754-{span_id}----{int(datetime.now().timestamp() * 1000)}"
+            logger.debug(f"Added tracing headers")
+        except Exception as e:
+            logger.debug(f"Could not generate tracing headers: {e}")
+
+        # Add NewRelic header for better compatibility
+        try:
+            newrelic_data = {
+                "v": [0, 1],
+                "d": {
+                    "ty": "Browser",
+                    "ac": "1690570",
+                    "ap": "1588686754",
+                    "id": span_id,
+                    "tr": trace_id,
+                    "ti": int(datetime.now().timestamp() * 1000),
+                    "tk": "2611750"
+                }
+            }
+            newrelic_encoded = base64.b64encode(json.dumps(newrelic_data).encode('utf-8')).decode('utf-8')
+            enhanced_headers["newrelic"] = newrelic_encoded
+            logger.debug(f"Added NewRelic header")
+        except Exception as e:
+            logger.debug(f"Could not generate NewRelic header: {e}")
+
+        logger.debug(f"Enhanced headers with {len(enhanced_headers) - len(headers)} additional browser-like headers")
+
+    except Exception as e:
+        logger.warning(f"Failed to add enhanced browser headers: {e}")
+        return headers  # Return original headers if enhancement fails
+
+    return enhanced_headers
+
+# End of _add_enhanced_browser_headers
+
 def _prepare_api_request(
     session_manager: SessionManager,
     driver: DriverType,
@@ -1476,6 +1640,21 @@ def _prepare_api_request(
         attempt=attempt,
     )
 
+    # Check for enhanced headers flags in the headers parameter
+    use_enhanced_headers = False
+    tree_id = None
+    person_id = None
+    enhanced_referer_url = referer_url
+
+    if headers:
+        use_enhanced_headers = headers.get("_use_enhanced_headers") == "true"
+        tree_id = headers.get("_tree_id")
+        person_id = headers.get("_person_id")
+
+        # Remove internal flags from headers
+        headers = {k: v for k, v in headers.items() if not k.startswith("_")}
+        base_headers.update(headers)
+
     # Generate final headers
     final_headers = _prepare_api_headers(
         session_manager=session_manager,
@@ -1484,6 +1663,10 @@ def _prepare_api_request(
         base_headers=base_headers,
         use_csrf_token=use_csrf_token,
         add_default_origin=add_default_origin,
+        use_enhanced_headers=use_enhanced_headers,
+        tree_id=tree_id,
+        person_id=person_id,
+        referer_url=enhanced_referer_url,
     )
 
     # Apply rate limiting
