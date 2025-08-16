@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 
 """
-Action 10: Find GEDCOM Matches and Relationship Path
+Action 10: GEDCOM Analysis & Relationship Path Calculation
 
-Applies a hardcoded filter (OR logic) to the GEDCOM data (using pre-processed
-cache), calculates a score for each filtered individual based on specific criteria,
-displays the top 3 highest-scoring individuals (simplified format), identifies the
-highest scoring individual, and attempts to find a relationship path to that person
-using the cached GEDCOM data.
+Comprehensive genealogical research tool that processes GEDCOM data to find
+and analyze family relationships. Features include:
+
+- Advanced filtering and scoring algorithms for individual matching
+- Family relationship analysis with detailed relative information
+- Relationship path calculation between individuals
+- Performance-optimized caching and processing
+- Comprehensive test suite with real genealogical data validation
+
+Uses cached GEDCOM data for fast processing and provides detailed scoring
+breakdowns for genealogical research accuracy.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -34,53 +40,25 @@ from performance_cache import (
 )
 
 # === STANDARD LIBRARY IMPORTS ===
-import sys
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
-
-# === LOCAL IMPORTS ===
-from config import config_schema
-from core.error_handling import MissingConfigError
-
-"""
-Action 10: Find GEDCOM Matches and Relationship Path
-
-Applies a hardcoded filter (OR logic) to the GEDCOM data (using pre-processed
-cache), calculates a score for each filtered individual based on specific criteria,
-displays the top 3 highest-scoring individuals (simplified format), identifies the
-best match, and displays their relatives and relationship path to the reference person.
-V.20240503.Refactored
-
-Example output:
---------------
---- Top 3 Highest Scoring Matches ---
-ID     ---------------------------------------------
-@I123@           | John Smith                     | M      | 1 JAN 1850        | New York, NY, USA               | 12 DEC 1910       | Boston, MA, USA                 | 95
-@I456@           | Jonathan Smith                 | M      | 15 MAR 1848       | Albany, NY, USA                 | 23 NOV 1915       | Chicago, IL, USA               | 82
-@I789@           | John Smithson                  | M      | 22 FEB 1855       | Brooklyn, NY, USA               | 30 JUL 1922       | Philadelphia, PA, USA          | 73
-"""
-
-# --- Standard library imports ---
+import argparse
 import logging
 import os
 import sys
 import time
-import argparse
-from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple, Union, Mapping
 
-# --- Third-party imports ---
+# === THIRD-PARTY IMPORTS ===
 try:
     from tabulate import tabulate
 except ImportError:
     tabulate = None
 
-# --- Test framework imports ---
-from test_framework import (
-    mock_logger_context,
-)
-
-
+# === LOCAL IMPORTS ===
+from config import config_schema
+from core.error_handling import MissingConfigError
+from test_framework import mock_logger_context
 
 # Import GEDCOM utilities
 from gedcom_utils import (
@@ -1240,12 +1218,8 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     def debug_wrapper(test_func):
-        def wrapped():
-            result = test_func()
-            # Debug timing removed for cleaner output
-            return result
-
-        return wrapped
+        """Simple wrapper for test functions (timing removed for cleaner output)"""
+        return test_func
 
     def test_module_initialization():
         """Test that all required Action 10 functions are available and callable"""
@@ -1516,10 +1490,6 @@ def action10_module_tests() -> bool:
         assert score == expected_score, f"{test_first_name} {test_last_name} should score exactly {expected_score}, got {score}"
         print(f"{Colors.GREEN}✅ {test_first_name} {test_last_name} scoring algorithm test passed{Colors.RESET}")
         return True
-
-    # test_filter_and_score_individuals_fraser removed - consolidated with Test 14
-
-    # Removed test_display_top_matches_patch - pointless mock test
 
     def test_display_relatives_fraser():
         """Test display_relatives with real Fraser Gault data"""
@@ -2183,9 +2153,7 @@ def action10_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return action10_module_tests()
+
 
 
 # === PHASE 4.2: PERFORMANCE VALIDATION FUNCTIONS ===
