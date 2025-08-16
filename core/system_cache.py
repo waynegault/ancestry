@@ -638,6 +638,116 @@ def warm_system_caches() -> bool:
         return False
 
 
+# PHASE 2 ENHANCEMENT: Intelligent Cache Warming Strategies
+def warm_system_caches_intelligent(
+    strategies: Optional[List[str]] = None,
+    background: bool = False,
+    priority_data: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Enhanced cache warming with intelligent strategies and background processing.
+
+    Args:
+        strategies: List of warming strategies ('config', 'api_templates', 'common_queries', 'user_data')
+        background: Whether to run warming in background thread
+        priority_data: Priority data to warm first (e.g., frequently accessed items)
+
+    Returns:
+        True if warming completed successfully
+    """
+    if strategies is None:
+        strategies = ['config', 'api_templates', 'common_queries']
+
+    def _warm_caches():
+        try:
+            warmed_items = 0
+
+            # Strategy 1: Configuration data
+            if 'config' in strategies:
+                config_data = {
+                    "cache_version": "5.2.1",
+                    "warmed_at": time.time(),
+                    "strategies_used": strategies,
+                    "api_cache_enabled": True,
+                    "db_cache_enabled": True,
+                    "memory_optimization_enabled": SYSTEM_CACHE_CONFIG.enable_aggressive_gc,
+                    "adaptive_concurrency_enabled": True,
+                }
+
+                warm_cache_with_data(
+                    get_unified_cache_key("system", "config", "enhanced"),
+                    config_data,
+                    expire=SYSTEM_CACHE_CONFIG.api_response_ttl,
+                )
+                warmed_items += 1
+
+            # Strategy 2: API endpoint templates
+            if 'api_templates' in strategies:
+                api_templates = {
+                    "ancestry_profile_details": "/api/profile/{profile_id}/details",
+                    "ancestry_relationship_prob": "/api/dna/{uuid}/relationship",
+                    "ancestry_suggest_api": "/api/search/suggest",
+                    "ancestry_facts_api": "/api/person/{person_id}/facts",
+                    "ai_classification": "/ai/classify/message",
+                    "ai_extraction": "/ai/extract/genealogical",
+                }
+
+                warm_cache_with_data(
+                    get_unified_cache_key("api", "templates", "endpoints"),
+                    api_templates,
+                    expire=SYSTEM_CACHE_CONFIG.api_response_ttl * 2,  # Longer TTL for templates
+                )
+                warmed_items += 1
+
+            # Strategy 3: Common database queries
+            if 'common_queries' in strategies:
+                common_queries = {
+                    "active_conversations": "SELECT * FROM conversation_logs WHERE status = 'active'",
+                    "recent_matches": "SELECT * FROM people WHERE created_at > datetime('now', '-7 days')",
+                    "productive_candidates": "SELECT * FROM people WHERE status = 'productive'",
+                    "message_templates": "SELECT * FROM message_types",
+                }
+
+                warm_cache_with_data(
+                    get_unified_cache_key("database", "queries", "common"),
+                    common_queries,
+                    expire=SYSTEM_CACHE_CONFIG.db_query_ttl,
+                )
+                warmed_items += 1
+
+            # Strategy 4: Priority user data
+            if 'user_data' in strategies and priority_data:
+                for key, data in priority_data.items():
+                    warm_cache_with_data(
+                        get_unified_cache_key("user", "priority", key),
+                        data,
+                        expire=SYSTEM_CACHE_CONFIG.api_response_ttl,
+                    )
+                    warmed_items += 1
+
+            # Warm session cache
+            from core.session_cache import warm_session_cache
+            session_warmed = warm_session_cache()
+            if session_warmed:
+                warmed_items += 1
+
+            logger.info(f"Intelligent cache warming completed: {warmed_items} items warmed with strategies {strategies}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Error in intelligent cache warming: {e}")
+            return False
+
+    if background:
+        import threading
+        warming_thread = threading.Thread(target=_warm_caches, daemon=True)
+        warming_thread.start()
+        logger.debug("Started background cache warming")
+        return True
+    else:
+        return _warm_caches()
+
+
 # === TESTING FUNCTIONS ===
 
 

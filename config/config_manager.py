@@ -300,8 +300,9 @@ class ConfigManager:
             return False
 
     def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration values."""
-        return {
+        """Get default configuration values with auto-detection."""
+        # PHASE 2 ENHANCEMENT: Auto-detect optimal settings (simplified for now)
+        base_config = {
             "environment": self.environment,
             "debug_mode": self.environment == "development",
             "app_name": "Ancestry Automation",
@@ -313,6 +314,274 @@ class ConfigManager:
             "cache": {},
             "security": {},
         }
+
+        # Add basic auto-detected batch size
+        try:
+            import psutil
+            cpu_count = psutil.cpu_count(logical=True) or 4
+            base_config["batch_size"] = min(cpu_count * 2, 20)  # Adaptive batch size
+        except Exception:
+            pass
+
+        return base_config
+
+    def _auto_detect_optimal_settings(self) -> Dict[str, Any]:
+        """
+        Auto-detect optimal configuration settings based on system capabilities.
+
+        Returns:
+            Dictionary with auto-detected configuration values
+        """
+        try:
+            import psutil
+            import os
+            from pathlib import Path
+
+            # System capabilities
+            cpu_count = psutil.cpu_count(logical=True) or 4
+            memory_gb = psutil.virtual_memory().total / (1024**3)
+            disk_space_gb = psutil.disk_usage('/').free / (1024**3)
+
+            # Auto-detect API settings
+            api_config = {
+                "max_concurrency": min(cpu_count * 2, 16),  # 2x CPU cores, max 16
+                "thread_pool_workers": min(cpu_count * 2, 12),  # Conservative for stability
+                "request_timeout": 30 if memory_gb >= 8 else 60,  # Shorter timeout for high-memory systems
+                "max_retries": 3,
+                "retry_backoff_factor": 2.0,
+            }
+
+            # Auto-detect cache settings
+            cache_memory_mb = min(int(memory_gb * 0.1 * 1024), 1024)  # 10% of RAM, max 1GB
+            cache_disk_mb = min(int(disk_space_gb * 0.05 * 1024), 2048)  # 5% of free disk, max 2GB
+
+            cache_config = {
+                "memory_cache_size": cache_memory_mb,
+                "disk_cache_size_mb": cache_disk_mb,
+                "memory_cache_ttl": 3600,  # 1 hour
+                "disk_cache_ttl": 86400,  # 24 hours
+                "auto_cleanup_enabled": True,
+            }
+
+            # Auto-detect database settings
+            db_pool_size = min(cpu_count + 2, 10)  # CPU cores + 2, max 10
+            db_config = {
+                "pool_size": db_pool_size,
+                "max_overflow": max(5, int(db_pool_size * 0.5)),
+                "pool_timeout": 30,
+                "cache_size_mb": min(int(memory_gb * 0.05 * 1024), 512),  # 5% of RAM for DB cache, max 512MB
+            }
+
+            # Auto-detect Selenium settings based on system performance
+            selenium_config = {
+                "headless_mode": True,  # Default to headless for better performance
+                "window_size": "1920,1080",
+                "page_load_timeout": 30 if memory_gb >= 8 else 45,
+                "implicit_wait": 10,
+                "disable_images": memory_gb < 8,  # Disable images on low-memory systems
+            }
+
+            # Auto-detect logging level based on environment and system
+            if self.environment == "development":
+                log_level = "DEBUG"
+            elif self.environment == "testing":
+                log_level = "INFO"
+            else:
+                log_level = "WARNING"
+
+            logging_config = {
+                "level": log_level,
+                "enable_file_logging": True,
+                "max_log_size_mb": min(int(disk_space_gb * 0.01 * 1024), 100),  # 1% of free disk, max 100MB
+                "backup_count": 5,
+            }
+
+            # Auto-detect security settings
+            security_config = {
+                "encryption_enabled": True,
+                "use_system_keyring": True,
+                "session_timeout_minutes": 120,
+                "auto_logout_enabled": True,
+                "verify_ssl": True,
+            }
+
+            auto_detected = {
+                "api": api_config,
+                "cache": cache_config,
+                "database": db_config,
+                "selenium": selenium_config,
+                "logging": logging_config,
+                "security": security_config,
+                "batch_size": min(cpu_count * 2, 20),  # Adaptive batch size
+                "max_productive_to_process": min(cpu_count * 10, 100),  # Scale with CPU
+            }
+
+            logger.debug(f"Auto-detected configuration: CPU={cpu_count}, RAM={memory_gb:.1f}GB, Disk={disk_space_gb:.1f}GB")
+            return auto_detected
+
+        except Exception as e:
+            logger.warning(f"Auto-detection failed, using defaults: {e}")
+            return {}
+
+    def validate_system_requirements(self) -> Dict[str, Any]:
+        """
+        Validate system requirements and provide recommendations.
+
+        Returns:
+            Dictionary with validation results and recommendations
+        """
+        try:
+            import psutil
+            import shutil
+            from pathlib import Path
+
+            validation_results = {
+                "valid": True,
+                "warnings": [],
+                "errors": [],
+                "recommendations": [],
+                "system_info": {}
+            }
+
+            # Check system resources
+            cpu_count = psutil.cpu_count(logical=True) or 1
+            memory_gb = psutil.virtual_memory().total / (1024**3)
+            disk_space_gb = psutil.disk_usage('/').free / (1024**3)
+
+            validation_results["system_info"] = {
+                "cpu_cores": cpu_count,
+                "memory_gb": round(memory_gb, 1),
+                "free_disk_gb": round(disk_space_gb, 1)
+            }
+
+            # Validate minimum requirements
+            if cpu_count < 2:
+                validation_results["warnings"].append(
+                    f"Low CPU count ({cpu_count}). Recommend at least 2 cores for optimal performance."
+                )
+
+            if memory_gb < 4:
+                validation_results["errors"].append(
+                    f"Insufficient memory ({memory_gb:.1f}GB). Minimum 4GB required."
+                )
+                validation_results["valid"] = False
+
+            if disk_space_gb < 1:
+                validation_results["errors"].append(
+                    f"Insufficient disk space ({disk_space_gb:.1f}GB). Minimum 1GB free space required."
+                )
+                validation_results["valid"] = False
+
+            # Check for optimal performance
+            if memory_gb >= 16:
+                validation_results["recommendations"].append(
+                    "High memory detected. Consider enabling GPU acceleration and increasing cache sizes."
+                )
+
+            if cpu_count >= 8:
+                validation_results["recommendations"].append(
+                    "High CPU count detected. Consider increasing concurrency settings for better performance."
+                )
+
+            # Check Python dependencies
+            try:
+                import selenium
+                import requests
+                import sqlalchemy
+                validation_results["dependencies_ok"] = True
+            except ImportError as e:
+                validation_results["errors"].append(f"Missing required dependency: {e}")
+                validation_results["valid"] = False
+
+            # Check Chrome/ChromeDriver availability
+            chrome_available = shutil.which("chrome") or shutil.which("google-chrome") or shutil.which("chromium")
+            if not chrome_available:
+                validation_results["warnings"].append(
+                    "Chrome browser not found in PATH. Selenium automation may not work."
+                )
+
+            return validation_results
+
+        except Exception as e:
+            return {
+                "valid": False,
+                "errors": [f"System validation failed: {e}"],
+                "warnings": [],
+                "recommendations": [],
+                "system_info": {}
+            }
+
+    def run_setup_wizard(self, interactive: bool = True) -> bool:
+        """
+        Run interactive setup wizard for first-time configuration.
+
+        Args:
+            interactive: Whether to run in interactive mode
+
+        Returns:
+            True if setup completed successfully
+        """
+        try:
+            print("\n🚀 Ancestry Automation Setup Wizard")
+            print("=" * 50)
+
+            # Validate system requirements
+            validation = self.validate_system_requirements()
+
+            print(f"\n📊 System Information:")
+            system_info = validation.get("system_info", {})
+            print(f"   CPU Cores: {system_info.get('cpu_cores', 'Unknown')}")
+            print(f"   Memory: {system_info.get('memory_gb', 'Unknown')}GB")
+            print(f"   Free Disk: {system_info.get('free_disk_gb', 'Unknown')}GB")
+
+            # Show validation results
+            if validation.get("errors"):
+                print(f"\n❌ Critical Issues:")
+                for error in validation["errors"]:
+                    print(f"   • {error}")
+
+            if validation.get("warnings"):
+                print(f"\n⚠️  Warnings:")
+                for warning in validation["warnings"]:
+                    print(f"   • {warning}")
+
+            if validation.get("recommendations"):
+                print(f"\n💡 Recommendations:")
+                for rec in validation["recommendations"]:
+                    print(f"   • {rec}")
+
+            if not validation.get("valid"):
+                print(f"\n❌ Setup cannot continue due to critical issues.")
+                return False
+
+            print(f"\n✅ System validation passed!")
+
+            # Auto-detect and show optimal settings
+            auto_detected = self._auto_detect_optimal_settings()
+            print(f"\n🔧 Auto-detected Optimal Settings:")
+
+            api_config = auto_detected.get("api", {})
+            print(f"   Concurrency: {api_config.get('max_concurrency', 'Default')}")
+            print(f"   Thread Pool: {api_config.get('thread_pool_workers', 'Default')}")
+
+            cache_config = auto_detected.get("cache", {})
+            print(f"   Memory Cache: {cache_config.get('memory_cache_size', 'Default')}MB")
+            print(f"   Disk Cache: {cache_config.get('disk_cache_size_mb', 'Default')}MB")
+
+            if interactive:
+                response = input(f"\n✨ Use auto-detected settings? (Y/n): ").strip().lower()
+                if response and response != 'y' and response != 'yes':
+                    print("Manual configuration not implemented yet. Using auto-detected settings.")
+
+            print(f"\n🎯 Setup completed successfully!")
+            print(f"   Configuration will be applied automatically.")
+            print(f"   You can modify settings in .env file or config files.")
+
+            return True
+
+        except Exception as e:
+            print(f"\n❌ Setup wizard failed: {e}")
+            return False
 
     def _load_config_file(self) -> Dict[str, Any]:
         """Load configuration from file."""

@@ -70,19 +70,23 @@ import base64  # For enhanced authentication headers
 import uuid  # For generating trace IDs and session IDs
 
 # PHASE 1: Utility function to get configured concurrency across the codebase
-def get_configured_concurrency(default: int = 8) -> int:
+# PHASE 2 ENHANCEMENT: Adaptive concurrency with system load monitoring
+def get_configured_concurrency(default: int = 8, workload_size: Optional[int] = None, operation_type: str = "general") -> int:
     """
-    Get the configured concurrency value from environment variables or config.
-    Prioritizes THREAD_POOL_WORKERS, then MAX_CONCURRENCY, then provided default.
-    
+    Get the configured concurrency value with adaptive sizing based on system load and workload.
+    Prioritizes THREAD_POOL_WORKERS, then MAX_CONCURRENCY, then adaptive calculation.
+
     Args:
         default: Default concurrency if no configuration found
-        
+        workload_size: Size of the workload to process (for adaptive sizing)
+        operation_type: Type of operation ("api", "database", "file", "general")
+
     Returns:
-        Configured concurrency value
+        Optimized concurrency value based on system capabilities and workload
     """
     import os
-    
+    import psutil
+
     # Check environment variables first (highest priority)
     thread_pool_workers = os.getenv("THREAD_POOL_WORKERS")
     if thread_pool_workers:
@@ -90,13 +94,75 @@ def get_configured_concurrency(default: int = 8) -> int:
             return max(1, int(thread_pool_workers))
         except ValueError:
             pass
-    
+
     max_concurrency = os.getenv("MAX_CONCURRENCY")
     if max_concurrency:
         try:
             return max(1, int(max_concurrency))
         except ValueError:
             pass
+
+    # PHASE 2 ENHANCEMENT: Adaptive concurrency calculation
+    try:
+        # Get system capabilities
+        cpu_count = psutil.cpu_count(logical=True) or 4
+        memory_gb = psutil.virtual_memory().total / (1024**3)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory_percent = psutil.virtual_memory().percent
+
+        # Base concurrency on CPU count and operation type
+        operation_multipliers = {
+            "api": 2.0,      # API calls can be more concurrent (I/O bound)
+            "database": 1.5,  # Database operations moderate concurrency
+            "file": 1.0,     # File operations conservative concurrency
+            "general": 1.5   # General operations moderate concurrency
+        }
+
+        base_concurrency = int(cpu_count * operation_multipliers.get(operation_type, 1.5))
+
+        # Adjust based on current system load
+        load_factor = 1.0
+        if cpu_percent > 80:
+            load_factor = 0.5  # Reduce concurrency if CPU is heavily loaded
+        elif cpu_percent > 60:
+            load_factor = 0.75  # Moderate reduction
+        elif cpu_percent < 30:
+            load_factor = 1.25  # Increase if CPU is underutilized
+
+        if memory_percent > 85:
+            load_factor *= 0.5  # Further reduce if memory is constrained
+        elif memory_percent > 70:
+            load_factor *= 0.75
+
+        # Adjust based on workload size
+        if workload_size:
+            if workload_size < 10:
+                workload_factor = 0.5  # Small workloads don't need high concurrency
+            elif workload_size > 100:
+                workload_factor = 1.5  # Large workloads benefit from higher concurrency
+            else:
+                workload_factor = 1.0
+        else:
+            workload_factor = 1.0
+
+        # Calculate final concurrency
+        adaptive_concurrency = int(base_concurrency * load_factor * workload_factor)
+
+        # Apply bounds
+        min_concurrency = 1
+        max_concurrency_limit = min(cpu_count * 3, 20)  # Cap at 3x CPU count or 20
+
+        final_concurrency = max(min_concurrency, min(adaptive_concurrency, max_concurrency_limit))
+
+        # Use default if calculation fails or seems unreasonable
+        if final_concurrency < 1 or final_concurrency > 50:
+            return default
+
+        return final_concurrency
+
+    except Exception:
+        # Fallback to default if adaptive calculation fails
+        return default
     
     # Try config schema as fallback
     try:
