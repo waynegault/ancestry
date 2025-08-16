@@ -1,14 +1,13 @@
-<img alt="Ancestry Research Automation" width="0" height="0"/>
-
 # Ancestry Research Automation
-
 
 ## USER GUIDE (What It Is & What You Can Do)
 
 ### Purpose
+
 An intelligent assistant that automates large portions of your genealogical research workflow on Ancestry.com: collecting DNA match data, analyzing inbox conversations, sending personalized messages, and generating specific research tasks (Microsoft To‑Do) — all while protecting credentials and adapting performance automatically.
 
 ### Core Outcomes
+
 - Centralized, always-fresh DNA match intelligence
 - Higher quality and higher response-rate messaging to matches
 - Actionable, prioritized research task lists instead of vague TODOs
@@ -16,6 +15,7 @@ An intelligent assistant that automates large portions of your genealogical rese
 - Continuous quality scoring & regression protection
 
 ### Key Capabilities
+
 1. DNA Match Management
    - Collect & refresh all matches with change tracking
    - Detect in-tree status and relationship paths (where available)
@@ -30,14 +30,19 @@ An intelligent assistant that automates large portions of your genealogical rese
    - Prioritized, specific, evidence-seeking task descriptions
 5. GEDCOM & Tree Intelligence (Selected Modules)
    - Gap analysis, prioritization, and DNA cross-referencing helpers
+   - Action 10: GEDCOM analysis with advanced scoring & relationship paths
+   - Action 11: Live API research with optimized performance & caching
 6. Performance & Adaptation
    - Adaptive rate limiting (0.1–2.0 RPS) & smart batching
    - Performance dashboard & optimization recommendations
+   - Optimized caching: Action 11 tests reuse data (Test 3→4→5)
+   - Enhanced API endpoints: editrelationships & relationladderwithlabels
 7. Quality Scoring & Safeguards
    - Unified extraction quality_score (0–100)
    - Baseline & regression detection + optional CI gate
 
 ### Typical User Flows
+
 | Goal | Run These Steps |
 |------|-----------------|
 | First-time setup | Configure credentials → action6_gather → action7_inbox |
@@ -48,6 +53,7 @@ An intelligent assistant that automates large portions of your genealogical rese
 | Guard quality | prompt_telemetry.py (baseline / regression) |
 
 ### Quick Start
+
 ```bash
 git clone https://github.com/waynegault/ancestry.git
 cd ancestry
@@ -60,17 +66,28 @@ python action8_messaging.py      # send personalized messages
 ```
 
 ### Quality & Safety
-- 100% passing test baseline (hundreds of tests across modules)
+
+- 100% passing test baseline (565 tests across 62 modules)
 - Credential encryption with Fernet + system keyring
 - Graceful degradation & retry logic; circuit breaker safeguards
 - Optional quality regression gate: `python quality_regression_gate.py`
 
+### Recent Performance Optimizations (2025-01-16)
+
+- **Action 11**: Test 3 optimized to ~5.4s, Tests 4&5 use cached data (instant start)
+- **Action 10**: Code cleanup removed 32 lines, improved organization
+- **Action 11**: Code cleanup removed 36 lines, enhanced documentation
+- **API Improvements**: editrelationships & relationladderwithlabels endpoints
+- **Caching**: Module-level data sharing prevents duplicate searches
+
 ### What You’ll See Produced
+
 - SQLite DB (ancestry.db) tracking people, matches, conversations
 - Logs/ directory with telemetry, alerts, quality baselines
 - Microsoft To‑Do tasks (when properly configured) with actionable descriptions
 
 ### High-Level Feature Summary
+
 | Feature | Benefit |
 |---------|---------|
 | AI Entity Extraction | Higher specificity for tasks & messages |
@@ -85,6 +102,7 @@ python action8_messaging.py      # send personalized messages
 ## DEVELOPER GUIDE (How It Works)
 
 ### Architectural Layers
+
 1. Action Scripts (workflow entrypoints): action6–11
 2. Core Infrastructure (core/): session, database, browser, api, error handling
 3. AI & Personalization: ai_interface.py, ai_prompts.json, message_personalization.py
@@ -94,13 +112,16 @@ python action8_messaging.py      # send personalized messages
 7. Security & Config: security_manager.py, config/ package
 
 ### Data Extraction & Quality Scoring
+
 compute_extraction_quality combines:
+
 - Entity richness (names, vitals, relationships, locations, etc.) up to 70 pts (penalty: -10 if no names)
 - Task specificity (compute_task_quality) up to 30 pts (verbs, year, record terms, specificity tokens, healthy length, filler penalties)
 - Bonus for 3–8 well‑formed tasks; penalty if zero tasks
 Telemetry captures quality_score for each extraction event.
 
 Baseline & Regression:
+
 ```bash
 python prompt_telemetry.py --build-baseline --variant control --window 300 --min-events 8
 python prompt_telemetry.py --check-regression --variant control --window 120 --drop-threshold 15
@@ -108,6 +129,7 @@ python quality_regression_gate.py  # exit 1 on regression
 ```
 
 ### Telemetry & Experimentation
+
 - JSONL appends (Logs/prompt_experiments.jsonl)
 - Fields: variant_label, parse_success, counts, tasks, raw size, quality_score
 - Analysis heuristics (control vs alt) with auto-alerting (Logs/prompt_experiment_alerts.jsonl)

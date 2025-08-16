@@ -1,16 +1,26 @@
-## User Experience Roadmap (Concise Edition) – Updated 2025-08-11
+# User Experience Roadmap (Concise Edition) – Updated 2025-01-16
 
 Purpose: Help a genealogist move from raw conversation / match context → trustworthy facts → focused tasks → effective outreach with the least friction and zero surprises.
 
-### Core UX Principles
+## Core UX Principles
+
 Trust (show quality + gaps) | Clarity (stable, compact phrasing) | Momentum (each step unlocks next) | Frictionless Defaults | Safe Rollback (feature‑flag first).
 
-### What Already Works (Baseline)
+## What Already Works (Baseline)
+
 - Structured extraction + normalization (names, relationships, locations, etc.)
 - Telemetry: component_coverage + anomaly_summary (internal only)
 - Dynamic message personalization engine (fallback safe)
 - Research task templating & adaptive rate limiting
 - Full green internal test network (acts as guardrail)
+
+### Recent Optimizations Completed (2025-01-16)
+- **Action 10 & 11 Performance**: Comprehensive code cleanup and optimization
+- **Test Performance**: Action 11 Test 3 reduced to ~5.4s, Tests 4&5 instant start
+- **Caching Strategy**: Module-level data sharing prevents duplicate API searches
+- **API Endpoints**: Enhanced with editrelationships & relationladderwithlabels
+- **Code Quality**: Removed 68 lines of redundant code, improved documentation
+- **Test Coverage**: 565 tests across 62 modules, 100% success rate
 
 ### User‑Facing Outcome Metrics (Plain Language)
 - Coverage: “Did we capture enough breadth?” (coverage ≥ 0.6 target)
@@ -891,6 +901,56 @@ Heuristics:
 - Baseline median quality vs current median over recent window
 - Regression flagged when median drop >= threshold (default 15.0)
 - Lenient pass when no baseline yet (first run bootstrap)
+
+## NEXT IMPROVEMENT OPPORTUNITIES (2025-01-16)
+
+### Priority 1: Performance & Scalability
+1. **Action 6-9 Performance Audit**: Apply Action 10/11 optimization patterns
+   - Profile DNA gathering, inbox processing, messaging workflows
+   - Implement caching strategies for repeated API calls
+   - Optimize database queries and batch operations
+
+2. **Memory Optimization**: Large GEDCOM file handling
+   - Streaming GEDCOM parser for files >100MB
+   - Lazy loading of person records
+   - Memory-mapped file access for cached data
+
+3. **Parallel Processing**: Multi-threading for independent operations
+   - Concurrent DNA match processing
+   - Parallel message sending (respecting rate limits)
+   - Background cache warming
+
+### Priority 2: User Experience Enhancements
+1. **Progress Indicators**: Real-time feedback for long operations
+   - Progress bars for DNA gathering, inbox processing
+   - ETA calculations based on historical performance
+   - Graceful handling of slow API responses
+
+2. **Error Recovery**: Better resilience and user guidance
+   - Auto-retry with exponential backoff
+   - Clear error messages with suggested actions
+   - Partial success handling (continue after errors)
+
+3. **Configuration Simplification**: Reduce setup friction
+   - Auto-detection of optimal settings
+   - Guided first-run setup wizard
+   - Validation of credentials and API access
+
+### Priority 3: Advanced Features
+1. **Smart Relationship Detection**: Enhanced genealogical intelligence
+   - Automatic relationship path discovery
+   - DNA segment analysis integration
+   - Confidence scoring for relationships
+
+2. **Research Workflow Automation**: End-to-end task management
+   - Auto-prioritization based on DNA match strength
+   - Research task dependencies and sequencing
+   - Integration with external genealogy tools
+
+3. **Quality Assurance**: Enhanced validation and monitoring
+   - Real-time data quality scoring
+   - Anomaly detection for genealogical data
+   - Automated baseline updates
 
 Planned Enhancements (future):
 - Statistical significance test (bootstrap / Mann-Whitney) for quality deltas
