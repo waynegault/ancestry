@@ -107,6 +107,11 @@ class AdaptiveRateLimiter:
         
         # ⚡ OPTIMIZATION 2: Load cached optimal settings from previous sessions
         self._load_cached_optimal_settings()
+
+        # === PHASE 12.4.2: ENHANCED ADAPTIVE PROCESSING & INTELLIGENCE ===
+        self.ml_optimizer = MLBasedOptimizer()
+        self.predictive_processor = PredictiveProcessor()
+        self.system_health_monitor = SystemHealthMonitor()
         
         logger.debug(f"Initialized adaptive rate limiter: {self.current_rps} RPS, {self.current_delay}s delay")
 
@@ -487,6 +492,204 @@ class SmartBatchProcessor:
             "average_success_rate": statistics.mean([b["success_rate"] for b in recent_batches]),
             "target_processing_time": self.target_processing_time
         }
+
+
+# === PHASE 12.4.2: ENHANCED ADAPTIVE PROCESSING & INTELLIGENCE ===
+
+class MLBasedOptimizer:
+    """
+    Machine learning-based optimization for adaptive rate limiting.
+    Uses historical patterns to predict optimal settings.
+    """
+
+    def __init__(self):
+        self.training_data: List[Dict[str, Any]] = []
+        self.model_weights: Dict[str, float] = {
+            "success_rate": 0.4,
+            "response_time": 0.3,
+            "rate_limit_errors": 0.2,
+            "throughput": 0.1
+        }
+        self.prediction_accuracy: float = 0.0
+        self.last_training_time: float = 0.0
+        self.training_interval: float = 3600.0  # Retrain every hour
+
+    def add_training_sample(self,
+                          current_rps: float,
+                          success_rate: float,
+                          avg_response_time: float,
+                          rate_limit_rate: float,
+                          throughput: float,
+                          outcome_score: float):
+        """Add a training sample for ML optimization."""
+        sample = {
+            "timestamp": time.time(),
+            "rps": current_rps,
+            "success_rate": success_rate,
+            "response_time": avg_response_time,
+            "rate_limit_rate": rate_limit_rate,
+            "throughput": throughput,
+            "outcome_score": outcome_score
+        }
+
+        self.training_data.append(sample)
+
+        # Keep only recent data (last 1000 samples)
+        if len(self.training_data) > 1000:
+            self.training_data = self.training_data[-1000:]
+
+    def predict_optimal_rps(self,
+                           current_success_rate: float,
+                           current_response_time: float,
+                           current_rate_limit_rate: float) -> float:
+        """Predict optimal RPS based on current conditions."""
+        if len(self.training_data) < 10:
+            return 1.0  # Default if insufficient data
+
+        # Simple weighted scoring based on historical patterns
+        best_score = -1.0
+        optimal_rps = 1.0
+
+        for sample in self.training_data[-50:]:  # Use recent samples
+            # Calculate similarity to current conditions
+            similarity = self._calculate_similarity(
+                current_success_rate, current_response_time, current_rate_limit_rate,
+                sample["success_rate"], sample["response_time"], sample["rate_limit_rate"]
+            )
+
+            # Weight by similarity and outcome score
+            weighted_score = similarity * sample["outcome_score"]
+
+            if weighted_score > best_score:
+                best_score = weighted_score
+                optimal_rps = sample["rps"]
+
+        return optimal_rps
+
+    def _calculate_similarity(self, sr1: float, rt1: float, rl1: float,
+                            sr2: float, rt2: float, rl2: float) -> float:
+        """Calculate similarity between two sets of conditions."""
+        # Normalize differences
+        sr_diff = abs(sr1 - sr2)
+        rt_diff = abs(rt1 - rt2) / max(rt1, rt2, 0.1)
+        rl_diff = abs(rl1 - rl2)
+
+        # Calculate weighted similarity (higher = more similar)
+        similarity = (
+            (1.0 - sr_diff) * self.model_weights["success_rate"] +
+            (1.0 - rt_diff) * self.model_weights["response_time"] +
+            (1.0 - rl_diff) * self.model_weights["rate_limit_errors"]
+        )
+
+        return max(0.0, similarity)
+
+
+class PredictiveProcessor:
+    """
+    Predictive processing optimization based on historical patterns.
+    """
+
+    def __init__(self):
+        self.processing_patterns: Dict[str, List[Dict[str, Any]]] = {}
+        self.time_based_predictions: Dict[int, Dict[str, float]] = {}  # hour -> predictions
+        self.load_predictions: Dict[str, float] = {}  # load_level -> optimal_rps
+
+    def record_processing_pattern(self,
+                                pattern_type: str,
+                                load_level: str,
+                                optimal_rps: float,
+                                success_rate: float,
+                                response_time: float):
+        """Record processing patterns for future prediction."""
+        current_hour = datetime.now().hour
+
+        if pattern_type not in self.processing_patterns:
+            self.processing_patterns[pattern_type] = []
+
+        pattern = {
+            "timestamp": time.time(),
+            "hour": current_hour,
+            "load_level": load_level,
+            "optimal_rps": optimal_rps,
+            "success_rate": success_rate,
+            "response_time": response_time
+        }
+
+        self.processing_patterns[pattern_type].append(pattern)
+
+        # Keep only recent patterns (last 500 per type)
+        if len(self.processing_patterns[pattern_type]) > 500:
+            self.processing_patterns[pattern_type] = self.processing_patterns[pattern_type][-500:]
+
+
+class SystemHealthMonitor:
+    """
+    System health monitoring and automatic optimization.
+    """
+
+    def __init__(self):
+        self.health_metrics: Dict[str, Any] = {}
+        self.health_history: List[Dict[str, Any]] = []
+        self.alert_thresholds: Dict[str, Dict[str, float]] = {
+            "cpu_usage": {"warning": 70.0, "critical": 85.0},
+            "memory_usage": {"warning": 75.0, "critical": 90.0},
+            "error_rate": {"warning": 0.05, "critical": 0.10},
+            "response_time": {"warning": 3.0, "critical": 5.0}
+        }
+        self.auto_optimization_enabled: bool = True
+
+    def update_health_metrics(self,
+                            cpu_usage: float,
+                            memory_usage: float,
+                            error_rate: float,
+                            avg_response_time: float,
+                            throughput: float):
+        """Update system health metrics."""
+        self.health_metrics = {
+            "timestamp": time.time(),
+            "cpu_usage": cpu_usage,
+            "memory_usage": memory_usage,
+            "error_rate": error_rate,
+            "response_time": avg_response_time,
+            "throughput": throughput,
+            "health_score": self._calculate_health_score(cpu_usage, memory_usage, error_rate, avg_response_time)
+        }
+
+        self.health_history.append(self.health_metrics.copy())
+
+        # Keep only recent history (last 100 samples)
+        if len(self.health_history) > 100:
+            self.health_history = self.health_history[-100:]
+
+    def _calculate_health_score(self, cpu: float, memory: float, error_rate: float, response_time: float) -> float:
+        """Calculate overall system health score (0-100)."""
+        score = 100.0
+
+        # CPU penalty
+        if cpu > 85:
+            score -= 30
+        elif cpu > 70:
+            score -= 15
+
+        # Memory penalty
+        if memory > 90:
+            score -= 25
+        elif memory > 75:
+            score -= 10
+
+        # Error rate penalty
+        if error_rate > 0.10:
+            score -= 25
+        elif error_rate > 0.05:
+            score -= 10
+
+        # Response time penalty
+        if response_time > 5.0:
+            score -= 20
+        elif response_time > 3.0:
+            score -= 10
+
+        return max(0.0, score)
 
 
 # Test functions

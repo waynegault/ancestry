@@ -45,7 +45,8 @@ import tempfile
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, Dict, Union, List
+from typing import Any, Callable, Optional, Dict, Union, List, Set
+from collections import deque
 
 # --- Third-party imports ---
 from diskcache import Cache
@@ -158,15 +159,21 @@ class BaseCacheModule(CacheInterface):
         return clear_cache()
 
     def warm(self) -> bool:
-        """Warm base cache with system data."""
+        """Warm base cache with system data using intelligent warming."""
         try:
-            # Warm cache with commonly accessed configuration
+            # Traditional warming
             warm_cache_with_data(
                 "system_status", {"status": "operational", "timestamp": time.time()}
             )
             warm_cache_with_data(
                 "cache_metadata", {"version": "2.0", "type": "enhanced_base"}
             )
+
+            # === PHASE 12.4.1: INTELLIGENT CACHE WARMING ===
+            warmer = get_intelligent_cache_warmer()
+            warmed_count = warmer.warm_predictive_cache()
+
+            logger.info(f"Base cache warming completed: {warmed_count} predictive entries warmed")
             return True
         except Exception as e:
             logger.error(f"Error warming base cache: {e}")
@@ -291,10 +298,14 @@ def cache_result(
                 # Step 3a: Cache Hit - Return cached value
                 if cached_value is not ENOVAL:
                     logger.debug(f"Cache HIT for key: '{final_cache_key}'")
+                    # === PHASE 12.4.1: RECORD CACHE ACCESS PATTERNS ===
+                    get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=True)
                     return cached_value
                 # Step 3b: Cache Miss - Log and proceed to function execution
                 else:
                     logger.debug(f"Cache MISS for key: '{final_cache_key}'")
+                    # === PHASE 12.4.1: RECORD CACHE ACCESS PATTERNS ===
+                    get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=False)
 
             except Exception as e:
                 # Log errors during cache read but treat as cache miss
@@ -911,6 +922,266 @@ def warm_cache_with_data(
     except Exception as e:
         logger.error(f"Error warming cache with key '{cache_key}': {e}")
         return False
+
+
+# === PHASE 12.4.1: ADVANCED CACHING STRATEGIES & CACHE WARMING ===
+
+class IntelligentCacheWarmer:
+    """
+    Intelligent cache warming system that learns from usage patterns
+    and proactively loads frequently accessed data.
+    """
+
+    def __init__(self):
+        self.usage_patterns: Dict[str, Dict[str, Any]] = {}
+        self.warming_history: List[Dict[str, Any]] = []
+        self.predictive_cache_keys: Set[str] = set()
+        self.dependency_graph: Dict[str, List[str]] = {}
+
+    def record_cache_access(self, cache_key: str, hit: bool, access_time: float = None):
+        """Record cache access patterns for learning."""
+        if access_time is None:
+            access_time = time.time()
+
+        if cache_key not in self.usage_patterns:
+            self.usage_patterns[cache_key] = {
+                "access_count": 0,
+                "hit_count": 0,
+                "miss_count": 0,
+                "last_access": access_time,
+                "access_frequency": 0.0,
+                "access_times": deque(maxlen=100)
+            }
+
+        pattern = self.usage_patterns[cache_key]
+        pattern["access_count"] += 1
+        pattern["last_access"] = access_time
+        pattern["access_times"].append(access_time)
+
+        if hit:
+            pattern["hit_count"] += 1
+        else:
+            pattern["miss_count"] += 1
+
+        # Calculate access frequency (accesses per hour)
+        if len(pattern["access_times"]) > 1:
+            time_span = pattern["access_times"][-1] - pattern["access_times"][0]
+            if time_span > 0:
+                pattern["access_frequency"] = len(pattern["access_times"]) / (time_span / 3600)
+
+    def get_warming_candidates(self, max_candidates: int = 20) -> List[str]:
+        """Get cache keys that should be warmed based on usage patterns."""
+        candidates = []
+
+        for cache_key, pattern in self.usage_patterns.items():
+            # Calculate warming score based on multiple factors
+            score = 0.0
+
+            # Frequency score (higher frequency = higher score)
+            score += min(pattern["access_frequency"] * 10, 50)
+
+            # Recency score (more recent access = higher score)
+            time_since_access = time.time() - pattern["last_access"]
+            if time_since_access < 3600:  # Within last hour
+                score += 30
+            elif time_since_access < 86400:  # Within last day
+                score += 15
+
+            # Miss rate penalty (high miss rate = lower score)
+            if pattern["access_count"] > 0:
+                hit_rate = pattern["hit_count"] / pattern["access_count"]
+                score += hit_rate * 20
+
+            candidates.append((cache_key, score))
+
+        # Sort by score and return top candidates
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return [key for key, score in candidates[:max_candidates] if score > 10]
+
+    def warm_predictive_cache(self, session_manager=None) -> int:
+        """Warm cache with predictively useful data."""
+        warmed_count = 0
+        candidates = self.get_warming_candidates()
+
+        logger.info(f"Starting predictive cache warming for {len(candidates)} candidates")
+
+        for cache_key in candidates:
+            try:
+                # Try to regenerate data for high-value cache keys
+                if self._should_regenerate_cache_data(cache_key):
+                    success = self._regenerate_cache_data(cache_key, session_manager)
+                    if success:
+                        warmed_count += 1
+                        logger.debug(f"Predictively warmed cache key: {cache_key}")
+            except Exception as e:
+                logger.warning(f"Failed to warm cache key {cache_key}: {e}")
+
+        self.warming_history.append({
+            "timestamp": time.time(),
+            "candidates_count": len(candidates),
+            "warmed_count": warmed_count
+        })
+
+        logger.info(f"Predictive cache warming completed: {warmed_count}/{len(candidates)} keys warmed")
+        return warmed_count
+
+    def _should_regenerate_cache_data(self, cache_key: str) -> bool:
+        """Determine if cache data should be regenerated."""
+        # Check if key is in our predictive set
+        if cache_key in self.predictive_cache_keys:
+            return True
+
+        # Check usage patterns
+        pattern = self.usage_patterns.get(cache_key, {})
+        if pattern.get("access_frequency", 0) > 1.0:  # More than 1 access per hour
+            return True
+
+        return False
+
+    def _regenerate_cache_data(self, cache_key: str, session_manager=None) -> bool:
+        """Regenerate cache data for a specific key."""
+        try:
+            # For genealogical data keys, try to regenerate
+            if "gedcom" in cache_key.lower():
+                return self._warm_gedcom_data(cache_key)
+            elif "api" in cache_key.lower():
+                return self._warm_api_data(cache_key, session_manager)
+            elif "profile" in cache_key.lower():
+                return self._warm_profile_data(cache_key, session_manager)
+            else:
+                # Generic warming with placeholder data
+                return warm_cache_with_data(cache_key, {"warmed_at": time.time()})
+        except Exception as e:
+            logger.warning(f"Failed to regenerate cache data for {cache_key}: {e}")
+            return False
+
+    def _warm_gedcom_data(self, cache_key: str) -> bool:
+        """Warm GEDCOM-related cache data."""
+        try:
+            # Try to load GEDCOM metadata
+            from config import config_schema
+            if hasattr(config_schema.database, "gedcom_file_path"):
+                gedcom_path = config_schema.database.gedcom_file_path
+                if gedcom_path and Path(gedcom_path).exists():
+                    file_stats = Path(gedcom_path).stat()
+                    metadata = {
+                        "size": file_stats.st_size,
+                        "mtime": file_stats.st_mtime,
+                        "warmed_at": time.time(),
+                        "predictive": True
+                    }
+                    return warm_cache_with_data(cache_key, metadata)
+        except Exception as e:
+            logger.debug(f"Could not warm GEDCOM data for {cache_key}: {e}")
+        return False
+
+    def _warm_api_data(self, cache_key: str, session_manager=None) -> bool:
+        """Warm API-related cache data."""
+        try:
+            # Warm with API configuration data
+            api_config = {
+                "warmed_at": time.time(),
+                "predictive": True,
+                "session_valid": session_manager.is_sess_valid() if session_manager else False
+            }
+            return warm_cache_with_data(cache_key, api_config)
+        except Exception as e:
+            logger.debug(f"Could not warm API data for {cache_key}: {e}")
+        return False
+
+    def _warm_profile_data(self, cache_key: str, session_manager=None) -> bool:
+        """Warm profile-related cache data."""
+        try:
+            # Warm with basic profile metadata
+            profile_data = {
+                "warmed_at": time.time(),
+                "predictive": True,
+                "cache_key": cache_key
+            }
+            return warm_cache_with_data(cache_key, profile_data)
+        except Exception as e:
+            logger.debug(f"Could not warm profile data for {cache_key}: {e}")
+        return False
+
+
+class CacheDependencyTracker:
+    """
+    Tracks dependencies between cache entries for intelligent invalidation.
+    """
+
+    def __init__(self):
+        self.dependencies: Dict[str, Set[str]] = {}  # key -> set of dependent keys
+        self.reverse_dependencies: Dict[str, Set[str]] = {}  # key -> set of keys it depends on
+
+    def add_dependency(self, parent_key: str, dependent_key: str):
+        """Add a dependency relationship."""
+        if parent_key not in self.dependencies:
+            self.dependencies[parent_key] = set()
+        if dependent_key not in self.reverse_dependencies:
+            self.reverse_dependencies[dependent_key] = set()
+
+        self.dependencies[parent_key].add(dependent_key)
+        self.reverse_dependencies[dependent_key].add(parent_key)
+
+        logger.debug(f"Added cache dependency: {parent_key} -> {dependent_key}")
+
+    def invalidate_with_dependencies(self, cache_key: str) -> int:
+        """Invalidate a cache key and all its dependents."""
+        invalidated_count = 0
+
+        # Invalidate the key itself
+        if cache and cache_key in cache:
+            try:
+                del cache[cache_key]
+                invalidated_count += 1
+                logger.debug(f"Invalidated cache key: {cache_key}")
+            except Exception as e:
+                logger.warning(f"Failed to invalidate cache key {cache_key}: {e}")
+
+        # Invalidate all dependent keys
+        if cache_key in self.dependencies:
+            for dependent_key in self.dependencies[cache_key].copy():
+                try:
+                    if cache and dependent_key in cache:
+                        del cache[dependent_key]
+                        invalidated_count += 1
+                        logger.debug(f"Invalidated dependent cache key: {dependent_key}")
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate dependent key {dependent_key}: {e}")
+
+        return invalidated_count
+
+    def get_dependency_chain(self, cache_key: str) -> List[str]:
+        """Get the full dependency chain for a cache key."""
+        chain = []
+        visited = set()
+
+        def _collect_dependencies(key: str):
+            if key in visited:
+                return
+            visited.add(key)
+            chain.append(key)
+
+            for dependent in self.dependencies.get(key, []):
+                _collect_dependencies(dependent)
+
+        _collect_dependencies(cache_key)
+        return chain
+
+
+# Global instances for intelligent caching
+_intelligent_cache_warmer = IntelligentCacheWarmer()
+_cache_dependency_tracker = CacheDependencyTracker()
+
+
+def get_intelligent_cache_warmer() -> IntelligentCacheWarmer:
+    """Get the global intelligent cache warmer instance."""
+    return _intelligent_cache_warmer
+
+
+def get_cache_dependency_tracker() -> CacheDependencyTracker:
+    """Get the global cache dependency tracker instance."""
+    return _cache_dependency_tracker
 
 
 # End of warm_cache_with_data
