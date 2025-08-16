@@ -17,6 +17,7 @@ standard library modules for safety.
 from __future__ import annotations
 
 from typing import Any, Dict, List
+import re
 
 # Minimal constants for expected keys used across the codebase
 STRUCTURED_KEYS = [
@@ -55,6 +56,176 @@ def _dedupe_list_str(items: Any) -> List[str]:
         seen.add(s.lower())
         out.append(s)
     return out
+
+
+def _validate_and_normalize_date(date_str: str) -> str:
+    """
+    Enhanced Phase 12.1: Validate and normalize genealogical dates.
+
+    Handles common genealogical date formats:
+    - Full dates: "15 Mar 1850", "March 15, 1850", "1850-03-15"
+    - Partial dates: "Mar 1850", "1850"
+    - Approximate dates: "circa 1850", "~1850", "about 1850"
+    - Date ranges: "1850-1855", "between 1850 and 1855"
+
+    Returns normalized date string or original if no normalization needed.
+    """
+    if not date_str or not isinstance(date_str, str):
+        return ""
+
+    date_str = date_str.strip()
+    if not date_str:
+        return ""
+
+    # Preserve approximate indicators
+    approx_indicators = ["circa", "~", "about", "abt", "c.", "ca.", "before", "after", "bef", "aft"]
+    has_approx = any(indicator in date_str.lower() for indicator in approx_indicators)
+
+    # Extract year patterns (genealogically relevant range: 1400-2100)
+    year_match = re.search(r'\b(1[4-9]\d{2}|20\d{2}|21\d{2})\b', date_str)
+    if year_match:
+        year = year_match.group(1)
+
+        # Check for month patterns
+        month_patterns = {
+            r'\b(jan|january)\b': '01', r'\b(feb|february)\b': '02', r'\b(mar|march)\b': '03',
+            r'\b(apr|april)\b': '04', r'\b(may)\b': '05', r'\b(jun|june)\b': '06',
+            r'\b(jul|july)\b': '07', r'\b(aug|august)\b': '08', r'\b(sep|september)\b': '09',
+            r'\b(oct|october)\b': '10', r'\b(nov|november)\b': '11', r'\b(dec|december)\b': '12'
+        }
+
+        month = None
+        for pattern, month_num in month_patterns.items():
+            if re.search(pattern, date_str.lower()):
+                month = month_num
+                break
+
+        # Check for day patterns
+        day_match = re.search(r'\b([0-3]?\d)\b', date_str)
+        day = None
+        if day_match and month:
+            potential_day = int(day_match.group(1))
+            if 1 <= potential_day <= 31:
+                day = f"{potential_day:02d}"
+
+        # Construct normalized date
+        if day and month:
+            normalized = f"{year}-{month}-{day}"
+        elif month:
+            normalized = f"{year}-{month}"
+        else:
+            normalized = year
+
+        # Add back approximation indicators
+        if has_approx:
+            if "circa" in date_str.lower() or "c." in date_str.lower():
+                normalized = f"circa {normalized}"
+            elif "~" in date_str:
+                normalized = f"~{normalized}"
+            elif "about" in date_str.lower() or "abt" in date_str.lower():
+                normalized = f"about {normalized}"
+            elif "before" in date_str.lower() or "bef" in date_str.lower():
+                normalized = f"before {normalized}"
+            elif "after" in date_str.lower() or "aft" in date_str.lower():
+                normalized = f"after {normalized}"
+
+        return normalized
+
+    # Return original if no recognizable date pattern
+    return date_str
+
+
+def _validate_relationship(relationship: str) -> str:
+    """
+    Enhanced Phase 12.1: Validate and normalize genealogical relationships.
+
+    Standardizes common relationship terms to consistent format.
+    """
+    if not relationship or not isinstance(relationship, str):
+        return ""
+
+    rel = relationship.strip().lower()
+
+    # Standard relationship mappings
+    relationship_map = {
+        # Direct relationships
+        "father": "father", "dad": "father", "papa": "father",
+        "mother": "mother", "mom": "mother", "mama": "mother",
+        "son": "son", "daughter": "daughter",
+        "brother": "brother", "bro": "brother",
+        "sister": "sister", "sis": "sister",
+        "husband": "spouse", "wife": "spouse", "spouse": "spouse",
+
+        # Extended relationships
+        "grandfather": "grandfather", "grandpa": "grandfather",
+        "grandmother": "grandmother", "grandma": "grandmother",
+        "grandson": "grandson", "granddaughter": "granddaughter",
+        "uncle": "uncle", "aunt": "aunt",
+        "nephew": "nephew", "niece": "niece",
+        "cousin": "cousin", "cuz": "cousin",
+
+        # In-law relationships
+        "father-in-law": "father-in-law", "mother-in-law": "mother-in-law",
+        "son-in-law": "son-in-law", "daughter-in-law": "daughter-in-law",
+        "brother-in-law": "brother-in-law", "sister-in-law": "sister-in-law",
+
+        # Step relationships
+        "stepfather": "stepfather", "stepmother": "stepmother",
+        "stepson": "stepson", "stepdaughter": "stepdaughter",
+        "stepbrother": "stepbrother", "stepsister": "stepsister",
+    }
+
+    return relationship_map.get(rel, relationship.strip())
+
+
+def _validate_location(location: str) -> str:
+    """
+    Enhanced Phase 12.1: Validate and normalize genealogical locations.
+
+    Standardizes location formats and handles common abbreviations.
+    """
+    if not location or not isinstance(location, str):
+        return ""
+
+    loc = location.strip()
+
+    # Common state/country abbreviations
+    location_map = {
+        # US States
+        "ny": "New York", "ca": "California", "tx": "Texas", "fl": "Florida",
+        "pa": "Pennsylvania", "il": "Illinois", "oh": "Ohio", "ga": "Georgia",
+        "nc": "North Carolina", "mi": "Michigan", "nj": "New Jersey",
+        "va": "Virginia", "wa": "Washington", "az": "Arizona", "ma": "Massachusetts",
+        "tn": "Tennessee", "in": "Indiana", "mo": "Missouri", "md": "Maryland",
+        "wi": "Wisconsin", "co": "Colorado", "mn": "Minnesota", "sc": "South Carolina",
+        "al": "Alabama", "la": "Louisiana", "ky": "Kentucky", "or": "Oregon",
+        "ok": "Oklahoma", "ct": "Connecticut", "ia": "Iowa", "ms": "Mississippi",
+        "ar": "Arkansas", "ks": "Kansas", "ut": "Utah", "nv": "Nevada",
+
+        # Countries
+        "uk": "United Kingdom", "usa": "United States", "us": "United States",
+        "can": "Canada", "aus": "Australia", "ger": "Germany", "fra": "France",
+        "ita": "Italy", "esp": "Spain", "pol": "Poland", "ire": "Ireland",
+    }
+
+    # Check for exact matches (case insensitive)
+    loc_lower = loc.lower()
+    if loc_lower in location_map:
+        return location_map[loc_lower]
+
+    # Handle comma-separated locations (City, State, Country)
+    if "," in loc:
+        parts = [part.strip() for part in loc.split(",")]
+        normalized_parts = []
+        for part in parts:
+            part_lower = part.lower()
+            if part_lower in location_map:
+                normalized_parts.append(location_map[part_lower])
+            else:
+                normalized_parts.append(part)
+        return ", ".join(normalized_parts)
+
+    return loc
 
 
 def _ensure_extracted_data_container(resp: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,17 +280,92 @@ def _promote_legacy_fields(extracted: Dict[str, Any]) -> None:
 
 def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Normalize extracted_data dict in-place-like and return it.
-    Ensures keys exist and promotes simple legacy fields when present.
+    Enhanced Phase 12.1: Normalize extracted_data dict with genealogical validation.
+    Ensures keys exist, promotes legacy fields, and validates genealogical data.
     """
     if not isinstance(extracted, dict):
         extracted = {}
+
     # Ensure all structured keys exist
     for key in STRUCTURED_KEYS:
         if key not in extracted or extracted[key] is None:
             extracted[key] = []
+
     # Promote legacy flat fields conservatively
     _promote_legacy_fields(extracted)
+
+    # Enhanced Phase 12.1: Apply genealogical validation and normalization
+
+    # Validate and normalize vital records
+    vital_records = extracted.get("vital_records", [])
+    if isinstance(vital_records, list):
+        for record in vital_records:
+            if isinstance(record, dict):
+                # Normalize dates
+                if "date" in record and record["date"]:
+                    record["date"] = _validate_and_normalize_date(str(record["date"]))
+
+                # Normalize locations
+                if "place" in record and record["place"]:
+                    record["place"] = _validate_location(str(record["place"]))
+
+                # Validate event types
+                if "event_type" in record and record["event_type"]:
+                    event_type = str(record["event_type"]).lower().strip()
+                    valid_events = ["birth", "death", "marriage", "baptism", "burial", "christening", "divorce"]
+                    if event_type in valid_events:
+                        record["event_type"] = event_type
+
+    # Validate and normalize relationships
+    relationships = extracted.get("relationships", [])
+    if isinstance(relationships, list):
+        for relationship in relationships:
+            if isinstance(relationship, dict):
+                # Normalize relationship type
+                if "relationship" in relationship and relationship["relationship"]:
+                    relationship["relationship"] = _validate_relationship(str(relationship["relationship"]))
+
+                # Ensure person names are properly formatted
+                for person_key in ["person1", "person2"]:
+                    if person_key in relationship and relationship[person_key]:
+                        name = str(relationship[person_key]).strip()
+                        # Basic name validation - ensure it's not just whitespace or numbers
+                        if name and not name.isdigit() and len(name) > 1:
+                            relationship[person_key] = name
+                        else:
+                            relationship[person_key] = ""
+
+    # Validate and normalize locations
+    locations = extracted.get("locations", [])
+    if isinstance(locations, list):
+        for location in locations:
+            if isinstance(location, dict):
+                # Normalize place names
+                if "place" in location and location["place"]:
+                    location["place"] = _validate_location(str(location["place"]))
+
+                # Normalize time periods
+                if "time_period" in location and location["time_period"]:
+                    location["time_period"] = _validate_and_normalize_date(str(location["time_period"]))
+
+    # Validate and normalize structured names
+    structured_names = extracted.get("structured_names", [])
+    if isinstance(structured_names, list):
+        for name_entry in structured_names:
+            if isinstance(name_entry, dict):
+                # Ensure full_name is properly formatted
+                if "full_name" in name_entry and name_entry["full_name"]:
+                    full_name = str(name_entry["full_name"]).strip()
+                    # Basic name validation
+                    if full_name and not full_name.isdigit() and len(full_name) > 1:
+                        name_entry["full_name"] = full_name
+                    else:
+                        name_entry["full_name"] = ""
+
+                # Ensure nicknames is a list
+                if "nicknames" not in name_entry or not isinstance(name_entry["nicknames"], list):
+                    name_entry["nicknames"] = []
+
     return extracted
 
 
