@@ -120,10 +120,11 @@ def compute_task_quality(tasks: Optional[List[Any]]) -> int:
 def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
     """Compute a heuristic overall quality score (0-100) for an extraction result.
 
-    Incorporates entity richness plus task specificity (via compute_task_quality).
-    Backwards compatible: still returns a single integer. Components allocation:
+    Enhanced Phase 12.1 version with sophisticated genealogical data scoring:
       - Entities & relationships portion (base_score) up to 70
       - Task quality portion up to 30
+      - Specialized scoring for DNA information, vital records, and relationships
+      - Quality bonuses for complete genealogical data structures
     """
     if not isinstance(extraction, dict):
         return 0
@@ -147,27 +148,81 @@ def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
     dna = count("dna_information")
     tasks = len(suggested_tasks)
 
-    # Base entity richness score (max 70)
+    # Enhanced base entity richness score (max 70)
     base_score = 0.0
+
+    # Names scoring with quality bonuses
     base_score += min(names * 5, 20)
+    if names > 0:
+        # Bonus for complete name structures
+        names_data = extracted_data.get("structured_names", [])
+        complete_names = sum(1 for n in names_data if isinstance(n, dict) and
+                           n.get("full_name") and len(n.get("full_name", "").strip()) > 3)
+        if complete_names > 0:
+            base_score += min(complete_names * 2, 5)  # Up to 5 bonus points
+
+    # Vital records scoring with enhanced quality assessment
     base_score += min(vitals * 4, 20)
+    if vitals > 0:
+        # Bonus for complete vital records with dates and places
+        vitals_data = extracted_data.get("vital_records", [])
+        complete_vitals = sum(1 for v in vitals_data if isinstance(v, dict) and
+                            v.get("person") and v.get("date") and v.get("place"))
+        if complete_vitals > 0:
+            base_score += min(complete_vitals * 2, 6)  # Up to 6 bonus points
+
+    # Relationships scoring with connection quality
     base_score += min(rels * 5, 15)
+    if rels > 0:
+        # Bonus for complete relationship structures
+        rels_data = extracted_data.get("relationships", [])
+        complete_rels = sum(1 for r in rels_data if isinstance(r, dict) and
+                          r.get("person1") and r.get("person2") and r.get("relationship"))
+        if complete_rels > 0:
+            base_score += min(complete_rels * 2, 4)  # Up to 4 bonus points
+
+    # Enhanced DNA information scoring
+    base_score += min(dna * 2, 8)  # Increased from 1 to 2, max from 5 to 8
+    if dna > 0:
+        # Bonus for specific DNA information (cM values, chromosome data, etc.)
+        dna_data = extracted_data.get("dna_information", [])
+        specific_dna = sum(1 for d in dna_data if isinstance(d, str) and
+                         any(term in d.lower() for term in ["cm", "chromosome", "segment", "match"]))
+        if specific_dna > 0:
+            base_score += min(specific_dna * 2, 4)  # Up to 4 bonus points
+
+    # Standard scoring for other categories
     base_score += min(locs * 2, 10)
     base_score += min(occs * 1, 5)
     base_score += min(questions * 2, 10)
     base_score += min(docs * 1, 5)
-    base_score += min(dna * 1, 5)
 
-    # Penalties on base portion
+    # Enhanced penalties and bonuses
     if names == 0:
         base_score -= 10
+
+    # Bonus for genealogically rich extractions
+    if names > 0 and vitals > 0 and (rels > 0 or locs > 0):
+        base_score += 3  # Genealogical completeness bonus
+
+    # Bonus for DNA + genealogical data combination
+    if dna > 0 and names > 0 and (vitals > 0 or rels > 0):
+        base_score += 2  # DNA-genealogy integration bonus
 
     # Task quality component (0-30)
     task_quality_component = compute_task_quality(suggested_tasks)
 
-    # Small bonus if healthy number of tasks and decent specificity
+    # Enhanced task quality bonuses
     if 3 <= tasks <= 8 and task_quality_component >= 15:
         task_quality_component = min(30, task_quality_component + 3)
+
+    # Bonus for genealogically-focused tasks
+    if tasks > 0:
+        genealogy_tasks = sum(1 for t in suggested_tasks if isinstance(t, str) and
+                            any(term in t.lower() for term in ["census", "birth", "death", "marriage",
+                                                             "immigration", "dna", "family", "ancestor"]))
+        if genealogy_tasks > 0:
+            task_quality_component = min(30, task_quality_component + min(genealogy_tasks, 3))
 
     # Penalty if no tasks at all
     if tasks == 0:
