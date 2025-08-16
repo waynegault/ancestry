@@ -6,6 +6,12 @@ Action 7: Ancestry Inbox Message Processing
 Automates processing of Ancestry inbox messages with AI-powered intent classification,
 database synchronization, and intelligent conversation management including batch
 processing, pagination, and comprehensive message analysis workflows.
+
+PHASE 1 OPTIMIZATIONS (2025-01-16):
+- Enhanced progress indicators with ETA calculations for inbox processing
+- Improved error recovery with exponential backoff for AI classification calls
+- Memory monitoring during large inbox processing sessions
+- Better user feedback for long-running conversation analysis
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -13,6 +19,10 @@ from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
+
+# === PHASE 1 OPTIMIZATIONS ===
+from core.progress_indicators import ProgressIndicator, create_progress_indicator
+from core.enhanced_error_recovery import with_enhanced_recovery, with_api_recovery
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
@@ -880,6 +890,7 @@ class InboxProcessor:
 
     # --- Main Public Methods ---
 
+    @with_enhanced_recovery(max_attempts=3, base_delay=4.0, max_delay=120.0)
     @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased backoff from 2.0 to 4.0
     @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 5 to 10 for better tolerance
     @timeout_protection(timeout=600)  # 10 minutes for inbox processing
@@ -948,7 +959,19 @@ class InboxProcessor:
             logger.info(
                 f"Processing inbox items (limit: {self.max_inbox_limit if self.max_inbox_limit > 0 else 'unlimited'})...\n"
             )
-            with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
+
+            # PHASE 1 OPTIMIZATION: Enhanced progress tracking for inbox processing
+            with create_progress_indicator(
+                description="Inbox Message Processing",
+                total=self.max_inbox_limit if self.max_inbox_limit > 0 else None,
+                unit="conversations",
+                show_memory=True,
+                show_rate=True
+            ) as enhanced_progress:
+
+                with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
+                    # Link enhanced progress to tqdm for updates
+                    progress_bar._enhanced_progress = enhanced_progress
                 (
                     stop_reason,
                     total_processed_api_items,
@@ -1225,6 +1248,14 @@ class InboxProcessor:
                         if progress_bar is not None:
                             progress_bar.update(1)
                             progress_bar.set_description("Processing (skipped invalid)")
+
+                            # PHASE 1 OPTIMIZATION: Enhanced progress tracking
+                            if hasattr(progress_bar, '_enhanced_progress'):
+                                progress_bar._enhanced_progress.update(
+                                    increment=1,
+                                    warnings=1,  # Invalid items are warnings
+                                    custom_status="Skipped invalid"
+                                )
                         continue
 
                     # --- Comparator Logic & Fetch Decision ---
@@ -1300,6 +1331,14 @@ class InboxProcessor:
                         if progress_bar is not None:
                             progress_bar.update(1)
                             progress_bar.set_description(f"Processing (up-to-date)")
+
+                            # PHASE 1 OPTIMIZATION: Enhanced progress tracking
+                            if hasattr(progress_bar, '_enhanced_progress'):
+                                progress_bar._enhanced_progress.update(
+                                    increment=1,
+                                    cache_hits=1,  # Up-to-date items are cache hits
+                                    custom_status="Up-to-date"
+                                )
                         if stop_processing:
                             break  # Break inner loop if comparator was hit
                         continue  # Move to next conversation
@@ -1319,6 +1358,14 @@ class InboxProcessor:
                         progress_bar.set_description(
                             f"Processing conversation {api_conv_id}"
                         )
+
+                        # PHASE 1 OPTIMIZATION: Enhanced progress tracking
+                        if hasattr(progress_bar, '_enhanced_progress'):
+                            progress_bar._enhanced_progress.update(
+                                increment=1,
+                                api_calls=2,  # Conversation fetch + AI classification
+                                custom_status=f"Processing {api_conv_id[:8]}"
+                            )
 
                     context_messages = self._fetch_conversation_context(api_conv_id)
                     if context_messages is None:
@@ -1403,9 +1450,14 @@ class InboxProcessor:
                                 raise WebDriverException(
                                     f"Session invalid before AI classification call for ConvID {api_conv_id}"
                                 )
-                            ai_result = classify_message_intent(
-                                formatted_context, self.session_manager
-                            )
+                            # PHASE 1 OPTIMIZATION: Enhanced error recovery for AI calls
+                            @with_api_recovery(max_attempts=3, base_delay=2.0)
+                            def _classify_with_recovery():
+                                return classify_message_intent(
+                                    formatted_context, self.session_manager
+                                )
+
+                            ai_result = _classify_with_recovery()
                             # Handle AI result - it should return just a string, not a tuple
                             if isinstance(ai_result, tuple):
                                 ai_sentiment_result = (
