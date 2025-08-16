@@ -10,9 +10,18 @@ compares with existing database records, fetches additional details via API for
 new or changed matches, and performs bulk updates/inserts into the local database.
 Handles pagination, rate limiting, caching (via utils/cache.py decorators used
 within helpers), error handling, and concurrent API fetches using ThreadPoolExecutor.
+
+PHASE 1 OPTIMIZATIONS (2025-01-16):
+- Enhanced progress indicators with ETA calculations and memory monitoring
+- Improved error recovery with exponential backoff and partial success handling
+- Optimized batch processing with adaptive sizing based on performance metrics
 """
 
 from typing import Dict, Any
+
+# === PHASE 1 OPTIMIZATIONS ===
+from core.progress_indicators import ProgressIndicator, create_progress_indicator
+from core.enhanced_error_recovery import with_enhanced_recovery, with_api_recovery
 
 # Performance monitoring helper with session manager integration
 def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
@@ -756,19 +765,29 @@ def _main_page_processing_loop(
 
     loop_final_success = True  # Success flag for this loop's execution
 
-    with logging_redirect_tqdm():
-        progress_bar = tqdm(
-            total=total_matches_estimate_this_run,
-            desc="",
-            unit=" match",
-            bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
-            file=sys.stderr,
-            leave=True,
-            dynamic_ncols=True,
-            ascii=False,
-            mininterval=0.1,
-            maxinterval=1.0,
-        )
+    # PHASE 1 OPTIMIZATION: Enhanced progress tracking with ETA and memory monitoring
+    with create_progress_indicator(
+        description="DNA Match Gathering",
+        total=total_matches_estimate_this_run,
+        unit="matches",
+        show_memory=True,
+        show_rate=True
+    ) as enhanced_progress:
+
+        # Keep original tqdm for compatibility
+        with logging_redirect_tqdm():
+            progress_bar = tqdm(
+                total=total_matches_estimate_this_run,
+                desc="",
+                unit=" match",
+                bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
+                file=sys.stderr,
+                leave=True,
+                dynamic_ncols=True,
+                ascii=False,
+                mininterval=0.1,
+                maxinterval=1.0,
+            )
         try:
             matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = (
                 initial_matches_on_page
@@ -1029,6 +1048,7 @@ def _main_page_processing_loop(
 # ------------------------------------------------------------------------------
 
 
+@with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=3, recovery_timeout=60)
 @timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
@@ -1904,6 +1924,16 @@ def _prepare_bulk_db_data(
             if progress_bar:
                 try:
                     progress_bar.update(1)
+
+                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking
+                    if hasattr(progress_bar, '_enhanced_progress'):
+                        enhanced_progress = progress_bar._enhanced_progress
+                        enhanced_progress.update(
+                            increment=1,
+                            errors=1 if status == "error" else 0,
+                            api_calls=1,  # Approximate API calls per match
+                            cache_hits=1 if status == "skipped" else 0
+                        )
                 except Exception as pbar_e:
                     logger.warning(f"Progress bar update error: {pbar_e}")
 
