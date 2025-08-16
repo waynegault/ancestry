@@ -10,9 +10,8 @@ Phase: 9.1 - Message Template Enhancement
 """
 
 import json
-import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable
 from datetime import datetime
 
 # Import standard modules
@@ -70,7 +69,7 @@ class MessagePersonalizer:
             "effectiveness_threshold": 6.0  # Minimum effectiveness score to consider template good
         }
 
-    def _build_personalization_registry(self) -> Dict[str, callable]:
+    def _build_personalization_registry(self) -> Dict[str, Callable[[Dict[str, Any]], str]]:
         """Build registry of all personalization functions for dynamic usage."""
         return {
             # Existing functions
@@ -116,7 +115,7 @@ class MessagePersonalizer:
         person_data: Dict[str, Any],
         extracted_data: Dict[str, Any],
         base_format_data: Dict[str, str],
-        track_effectiveness: bool = True
+        _track_effectiveness: bool = True
     ) -> Tuple[str, List[str]]:
         """
         Create a personalized message using extracted genealogical data with intelligent function selection.
@@ -203,7 +202,7 @@ class MessagePersonalizer:
             logger.error(f"Error creating personalized message: {e}")
             return self._create_fallback_message(person_data, base_format_data), []
 
-    def _apply_ab_testing(self, template_key: str, extracted_data: Dict[str, Any]) -> str:
+    def _apply_ab_testing(self, template_key: str, _extracted_data: Dict[str, Any]) -> str:
         """Apply A/B testing for template selection based on effectiveness data."""
         # Get alternative templates for A/B testing
         alternative_templates = self._get_alternative_templates(template_key)
@@ -233,7 +232,7 @@ class MessagePersonalizer:
             "research_collaboration": ["research_collaboration_formal", "research_collaboration_friendly"]
         }
 
-        for family, templates in template_families.items():
+        for _family, templates in template_families.items():
             if template_key in templates:
                 return [t for t in templates if t != template_key and t in self.templates]
 
@@ -315,8 +314,8 @@ class MessagePersonalizer:
         self,
         extracted_data: Dict[str, Any],
         base_format_data: Dict[str, str],
-        person_data: Dict[str, Any],
-        selected_functions: List[str] = None
+        _person_data: Dict[str, Any],
+        selected_functions: Optional[List[str]] = None
     ) -> Dict[str, str]:
         """Create enhanced format data by applying selected personalization functions."""
         enhanced_data = base_format_data.copy()
@@ -498,13 +497,7 @@ class MessagePersonalizer:
         
         return "Family History Research"
 
-    def _create_geographic_context(self, extracted_data: Dict[str, Any]) -> str:
-        """Create geographic context from location data."""
-        return self._format_location_context(extracted_data)
 
-    def _format_research_questions(self, extracted_data: Dict[str, Any]) -> str:
-        """Format research questions (alias for specific_research_questions)."""
-        return self._format_specific_research_questions(extracted_data)
 
     def _format_location_context(self, extracted_data: Dict[str, Any]) -> str:
         """Format location context for messages."""
@@ -562,7 +555,7 @@ class MessagePersonalizer:
         else:
             return "In_Tree-Initial"  # Default fallback
 
-    def _create_fallback_message(self, person_data: Dict[str, Any], base_format_data: Dict[str, str]) -> str:
+    def _create_fallback_message(self, _person_data: Dict[str, Any], base_format_data: Dict[str, str]) -> str:
         """Create a simple fallback message when template processing fails."""
         name = base_format_data.get("name", "there")
         return f"Dear {name},\n\nThank you for connecting! I'm excited to learn more about our family history.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland"
@@ -605,7 +598,7 @@ class MessagePersonalizer:
         
         return "our shared family history"
 
-    def _create_personalized_response(self, extracted_data: Dict[str, Any]) -> str:
+    def _create_personalized_response(self, _extracted_data: Dict[str, Any]) -> str:
         """Create personalized response content."""
         # This would be populated by AI-generated content
         return "I found your information very helpful for my genealogical research."
@@ -655,15 +648,15 @@ class MessagePersonalizer:
                 return str(info)
         return "significant DNA"
 
-    def _create_dna_context(self, extracted_data: Dict[str, Any]) -> str:
+    def _create_dna_context(self, _extracted_data: Dict[str, Any]) -> str:
         """Create DNA-specific context."""
         return "This suggests we share recent common ancestors."
 
-    def _format_shared_ancestor_info(self, extracted_data: Dict[str, Any]) -> str:
+    def _format_shared_ancestor_info(self, _extracted_data: Dict[str, Any]) -> str:
         """Format shared ancestor information."""
         return "I'd love to compare our family trees to identify our common ancestors."
 
-    def _create_collaboration_request(self, extracted_data: Dict[str, Any]) -> str:
+    def _create_collaboration_request(self, _extracted_data: Dict[str, Any]) -> str:
         """Create collaboration request text."""
         return "Would you be interested in collaborating on our genealogical research?"
 
@@ -674,11 +667,11 @@ class MessagePersonalizer:
             return research_questions[0]
         return "Family History Research"
 
-    def _format_research_needs(self, extracted_data: Dict[str, Any]) -> str:
+    def _format_research_needs(self, _extracted_data: Dict[str, Any]) -> str:
         """Format specific research needs."""
         return "I'm looking for additional information to complete our family history."
 
-    def _create_collaboration_proposal(self, extracted_data: Dict[str, Any]) -> str:
+    def _create_collaboration_proposal(self, _extracted_data: Dict[str, Any]) -> str:
         """Create collaboration proposal text."""
         return "Perhaps we could share our research findings and work together to solve any family history mysteries."
 
@@ -726,7 +719,6 @@ class MessagePersonalizer:
 
                 if date and place:
                     # Extract year for historical context
-                    year_match = None
                     for part in date.split():
                         if part.isdigit() and len(part) == 4:
                             year = int(part)
@@ -746,12 +738,10 @@ class MessagePersonalizer:
     def _create_record_availability_assessment(self, extracted_data: Dict[str, Any]) -> str:
         """Assess likely record availability based on location and time period."""
         locations = extracted_data.get("locations", [])
-        vital_records = extracted_data.get("vital_records", [])
 
         for location in locations:
             if isinstance(location, dict):
                 place = location.get("place", "")
-                time_period = location.get("time_period", "")
 
                 if "Scotland" in place:
                     return "Scottish records are generally well-preserved, especially civil registration after 1855 and parish records."
@@ -897,7 +887,6 @@ class MessagePersonalizer:
     def _create_document_preservation_likelihood(self, extracted_data: Dict[str, Any]) -> str:
         """Assess likelihood of document preservation based on context."""
         locations = extracted_data.get("locations", [])
-        vital_records = extracted_data.get("vital_records", [])
 
         for location in locations:
             if isinstance(location, dict):
@@ -960,7 +949,7 @@ class MessageEffectivenessTracker:
         personalization_functions_used: List[str],
         response_intent: str,
         response_quality_score: float,
-        conversation_length: int,
+        _conversation_length: int,
         genealogical_data_extracted: int
     ) -> None:
         """
@@ -1076,8 +1065,8 @@ class MessageEffectivenessTracker:
             template_scores[template_key] = self.get_template_effectiveness_score(template_key)
 
         if template_scores:
-            best_template = max(template_scores, key=template_scores.get)
-            worst_template = min(template_scores, key=template_scores.get)
+            best_template = max(template_scores.keys(), key=lambda k: template_scores[k])
+            worst_template = min(template_scores.keys(), key=lambda k: template_scores[k])
 
             if template_scores[best_template] > 7.0:
                 recommendations.append(f"Template '{best_template}' is performing excellently (score: {template_scores[best_template]:.1f}). Consider using it more frequently.")
@@ -1093,8 +1082,8 @@ class MessageEffectivenessTracker:
                 func_effectiveness[func_name] = effectiveness
 
         if func_effectiveness:
-            best_func = max(func_effectiveness, key=func_effectiveness.get)
-            worst_func = min(func_effectiveness, key=func_effectiveness.get)
+            best_func = max(func_effectiveness.keys(), key=lambda k: func_effectiveness[k])
+            worst_func = min(func_effectiveness.keys(), key=lambda k: func_effectiveness[k])
 
             if func_effectiveness[best_func] > 0.7:
                 recommendations.append(f"Personalization function '{best_func}' is highly effective ({func_effectiveness[best_func]:.1%} positive response rate). Use it more often.")
@@ -1148,7 +1137,7 @@ def test_message_personalization():
     }
     
     # Test message creation
-    message, functions_used = personalizer.create_personalized_message(
+    message, _functions_used = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         test_person_data,
         test_extracted_data,
@@ -1164,7 +1153,7 @@ def test_fallback_template_path():
     personalizer = MessagePersonalizer()
     # Force empty templates to guarantee fallback path
     personalizer.templates = {"In_Tree-Initial": "Hello {name}!"}
-    msg, functions_used = personalizer.create_personalized_message(
+    msg, _functions_used = personalizer.create_personalized_message(
         "Totally_Unknown_Template",
         {"username": "UserX"},
         {},
