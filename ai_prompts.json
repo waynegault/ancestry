@@ -59,7 +59,7 @@
     "diff_snippet_prompt": {
       "name": "Diff Test",
       "description": "Diff generation test",
-      "prompt": "Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3\nExtraLineA\nExtraLineB\nExtraLineC",
+      "prompt": "Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3Line1\nLine2\nLine3",
       "prompt_version": "0.2.0"
     }
   }
