@@ -32,6 +32,9 @@ class MessagePersonalizer:
         """Initialize the message personalizer with templates and configuration."""
         self.templates = self._load_message_templates()
         self.personalization_config = self._load_personalization_config()
+        self.effectiveness_tracker = MessageEffectivenessTracker()
+        self.ab_testing_enabled = True
+        self.personalization_functions_registry = self._build_personalization_registry()
 
     def _load_message_templates(self) -> Dict[str, str]:
         """Load message templates from messages.json."""
@@ -61,7 +64,50 @@ class MessagePersonalizer:
             "max_research_questions": 2,
             "include_dates_in_context": True,
             "include_occupations": True,
-            "geographic_context_priority": ["Scotland", "Ireland", "England", "Poland", "Ukraine"]
+            "geographic_context_priority": ["Scotland", "Ireland", "England", "Poland", "Ukraine"],
+            "ab_testing_split_ratio": 0.5,  # 50/50 split for A/B testing
+            "min_usage_for_optimization": 10,  # Minimum usage before optimization kicks in
+            "effectiveness_threshold": 6.0  # Minimum effectiveness score to consider template good
+        }
+
+    def _build_personalization_registry(self) -> Dict[str, callable]:
+        """Build registry of all personalization functions for dynamic usage."""
+        return {
+            # Existing functions
+            "shared_ancestors": self._format_shared_ancestors,
+            "ancestor_details": self._format_ancestor_details,
+            "genealogical_context": self._create_genealogical_context,
+            "research_focus": self._identify_research_focus,
+            "specific_questions": self._generate_specific_questions,
+            "geographic_context": self._create_geographic_context,
+            "location_context": self._format_location_context,
+            "research_suggestions": self._create_research_suggestions,
+            "specific_research_questions": self._format_research_questions,
+            "mentioned_people": self._format_mentioned_people,
+            "research_context": self._create_research_context,
+            "personalized_response": self._create_personalized_response,
+            "research_insights": self._create_research_insights,
+            "follow_up_questions": self._create_follow_up_questions,
+            "estimated_relationship": self._format_estimated_relationship,
+            "shared_dna_amount": self._format_shared_dna,
+            "dna_context": self._create_dna_context,
+            "shared_ancestor_information": self._format_shared_ancestor_info,
+            "research_collaboration_request": self._create_collaboration_request,
+            "research_topic": self._identify_research_topic,
+            "specific_research_needs": self._format_research_needs,
+            "collaboration_proposal": self._create_collaboration_proposal,
+
+            # New advanced functions
+            "dna_segment_analysis": self._create_dna_segment_analysis,
+            "migration_pattern_context": self._create_migration_pattern_context,
+            "historical_context_analysis": self._create_historical_context_analysis,
+            "record_availability_assessment": self._create_record_availability_assessment,
+            "dna_ethnicity_correlation": self._create_dna_ethnicity_correlation,
+            "surname_distribution_analysis": self._create_surname_distribution_analysis,
+            "occupation_social_context": self._create_occupation_social_context,
+            "family_size_analysis": self._create_family_size_analysis,
+            "generational_gap_analysis": self._create_generational_gap_analysis,
+            "document_preservation_likelihood": self._create_document_preservation_likelihood
         }
 
     def create_personalized_message(
@@ -69,33 +115,42 @@ class MessagePersonalizer:
         template_key: str,
         person_data: Dict[str, Any],
         extracted_data: Dict[str, Any],
-        base_format_data: Dict[str, str]
-    ) -> str:
+        base_format_data: Dict[str, str],
+        track_effectiveness: bool = True
+    ) -> Tuple[str, List[str]]:
         """
-        Create a personalized message using extracted genealogical data.
-        
+        Create a personalized message using extracted genealogical data with intelligent function selection.
+
         Args:
             template_key: Key for the message template to use
             person_data: Information about the person being messaged
             extracted_data: Genealogical data extracted from conversations
             base_format_data: Basic formatting data (name, relationships, etc.)
-            
+            track_effectiveness: Whether to track effectiveness for optimization
+
         Returns:
-            Personalized message text
+            Tuple of (personalized message text, list of personalization functions used)
         """
         try:
-            # Get the template
+            # Get the template (with A/B testing if enabled)
             if template_key not in self.templates:
                 logger.warning(f"Template '{template_key}' not found, using fallback")
                 template_key = self._get_fallback_template(template_key)
-            
+
+            # Apply A/B testing for template selection if enabled
+            if self.ab_testing_enabled:
+                template_key = self._apply_ab_testing(template_key, extracted_data)
+
             template = self.templates.get(template_key, "")
             if not template:
-                return self._create_fallback_message(person_data, base_format_data)
-            
-            # Create enhanced format data
+                return self._create_fallback_message(person_data, base_format_data), []
+
+            # Select optimal personalization functions based on data and effectiveness
+            selected_functions = self._select_optimal_personalization_functions(extracted_data)
+
+            # Create enhanced format data using selected functions
             enhanced_format_data = self._create_enhanced_format_data(
-                extracted_data, base_format_data, person_data
+                extracted_data, base_format_data, person_data, selected_functions
             )
             
             # Format the message with safe formatting
@@ -141,49 +196,172 @@ class MessagePersonalizer:
                 # Try formatting again
                 personalized_message = template.format(**enhanced_format_data)
             
-            logger.info(f"Created personalized message using template '{template_key}'")
-            return personalized_message
-            
+            logger.info(f"Created personalized message using template '{template_key}' with {len(selected_functions)} personalization functions")
+            return personalized_message, selected_functions
+
         except Exception as e:
             logger.error(f"Error creating personalized message: {e}")
-            return self._create_fallback_message(person_data, base_format_data)
+            return self._create_fallback_message(person_data, base_format_data), []
+
+    def _apply_ab_testing(self, template_key: str, extracted_data: Dict[str, Any]) -> str:
+        """Apply A/B testing for template selection based on effectiveness data."""
+        # Get alternative templates for A/B testing
+        alternative_templates = self._get_alternative_templates(template_key)
+
+        if not alternative_templates:
+            return template_key
+
+        # Check effectiveness scores
+        current_score = self.effectiveness_tracker.get_template_effectiveness_score(template_key)
+
+        for alt_template in alternative_templates:
+            alt_score = self.effectiveness_tracker.get_template_effectiveness_score(alt_template)
+
+            # If alternative is significantly better, use it
+            if alt_score > current_score + 1.0:
+                logger.info(f"A/B testing: switching from '{template_key}' to '{alt_template}' (score: {alt_score:.1f} vs {current_score:.1f})")
+                return alt_template
+
+        return template_key
+
+    def _get_alternative_templates(self, template_key: str) -> List[str]:
+        """Get alternative templates for A/B testing."""
+        # Define template families for A/B testing
+        template_families = {
+            "initial_contact": ["initial_contact_v2", "initial_contact_research_focused"],
+            "follow_up": ["follow_up_detailed", "follow_up_casual"],
+            "research_collaboration": ["research_collaboration_formal", "research_collaboration_friendly"]
+        }
+
+        for family, templates in template_families.items():
+            if template_key in templates:
+                return [t for t in templates if t != template_key and t in self.templates]
+
+        return []
+
+    def _select_optimal_personalization_functions(self, extracted_data: Dict[str, Any]) -> List[str]:
+        """Select optimal personalization functions based on data availability and effectiveness."""
+        selected_functions = []
+
+        # Always include basic functions
+        basic_functions = ["shared_ancestors", "genealogical_context", "research_focus"]
+        selected_functions.extend(basic_functions)
+
+        # Add functions based on data availability
+        if extracted_data.get("dna_information"):
+            dna_functions = ["dna_segment_analysis", "dna_ethnicity_correlation", "estimated_relationship", "shared_dna_amount"]
+            # Select best performing DNA function
+            best_dna_func = self._get_best_performing_function(dna_functions)
+            if best_dna_func:
+                selected_functions.append(best_dna_func)
+
+        if extracted_data.get("locations"):
+            location_functions = ["migration_pattern_context", "record_availability_assessment", "geographic_context"]
+            best_location_func = self._get_best_performing_function(location_functions)
+            if best_location_func:
+                selected_functions.append(best_location_func)
+
+        if extracted_data.get("vital_records"):
+            historical_functions = ["historical_context_analysis", "generational_gap_analysis"]
+            best_historical_func = self._get_best_performing_function(historical_functions)
+            if best_historical_func:
+                selected_functions.append(best_historical_func)
+
+        if extracted_data.get("occupations"):
+            selected_functions.append("occupation_social_context")
+
+        if extracted_data.get("relationships"):
+            selected_functions.append("family_size_analysis")
+
+        # Add advanced functions based on effectiveness
+        advanced_functions = ["surname_distribution_analysis", "document_preservation_likelihood"]
+        for func in advanced_functions:
+            if self._is_function_effective(func):
+                selected_functions.append(func)
+
+        return list(set(selected_functions))  # Remove duplicates
+
+    def _get_best_performing_function(self, function_list: List[str]) -> Optional[str]:
+        """Get the best performing function from a list based on effectiveness data."""
+        best_func = None
+        best_score = 0.0
+
+        for func in function_list:
+            if func in self.effectiveness_tracker.effectiveness_data["personalization_effectiveness"]:
+                stats = self.effectiveness_tracker.effectiveness_data["personalization_effectiveness"][func]
+                if stats["usage_count"] >= 3:  # Minimum usage for consideration
+                    score = stats["avg_engagement_score"]
+                    if score > best_score:
+                        best_score = score
+                        best_func = func
+
+        # If no function has enough data, return the first one
+        return best_func or (function_list[0] if function_list else None)
+
+    def _is_function_effective(self, function_name: str) -> bool:
+        """Check if a personalization function is effective enough to use."""
+        if function_name not in self.effectiveness_tracker.effectiveness_data["personalization_effectiveness"]:
+            return True  # New functions get a chance
+
+        stats = self.effectiveness_tracker.effectiveness_data["personalization_effectiveness"][function_name]
+        if stats["usage_count"] < 5:
+            return True  # Not enough data yet
+
+        # Consider effective if positive response rate > 50% or avg engagement > 3.0
+        positive_rate = stats["positive_responses"] / stats["usage_count"]
+        return positive_rate > 0.5 or stats["avg_engagement_score"] > 3.0
 
     def _create_enhanced_format_data(
         self,
         extracted_data: Dict[str, Any],
         base_format_data: Dict[str, str],
-        person_data: Dict[str, Any]
+        person_data: Dict[str, Any],
+        selected_functions: List[str] = None
     ) -> Dict[str, str]:
-        """Create enhanced formatting data from extracted genealogical information."""
+        """Create enhanced format data by applying selected personalization functions."""
         enhanced_data = base_format_data.copy()
-        
-        # Add genealogical context
-        enhanced_data.update({
-            "shared_ancestors": self._format_shared_ancestors(extracted_data),
-            "ancestors_details": self._format_ancestor_details(extracted_data),
-            "genealogical_context": self._create_genealogical_context(extracted_data),
-            "research_focus": self._identify_research_focus(extracted_data),
-            "specific_questions": self._generate_specific_questions(extracted_data),
-            "geographic_context": self._create_geographic_context(extracted_data),
-            "location_context": self._format_location_context(extracted_data),
-            "research_suggestions": self._create_research_suggestions(extracted_data),
-            "specific_research_questions": self._format_research_questions(extracted_data),
-            "mentioned_people": self._format_mentioned_people(extracted_data),
-            "research_context": self._create_research_context(extracted_data),
-            "personalized_response": self._create_personalized_response(extracted_data),
-            "research_insights": self._create_research_insights(extracted_data),
-            "follow_up_questions": self._create_follow_up_questions(extracted_data),
-            "estimated_relationship": self._format_estimated_relationship(extracted_data),
-            "shared_dna_amount": self._format_shared_dna(extracted_data),
-            "dna_context": self._create_dna_context(extracted_data),
-            "shared_ancestor_information": self._format_shared_ancestor_info(extracted_data),
-            "research_collaboration_request": self._create_collaboration_request(extracted_data),
-            "research_topic": self._identify_research_topic(extracted_data),
-            "specific_research_needs": self._format_research_needs(extracted_data),
-            "collaboration_proposal": self._create_collaboration_proposal(extracted_data)
-        })
-        
+
+        # If no specific functions selected, use all available functions
+        if selected_functions is None:
+            selected_functions = list(self.personalization_functions_registry.keys())
+
+        # Apply selected personalization functions
+        for func_name in selected_functions:
+            if func_name in self.personalization_functions_registry:
+                try:
+                    func = self.personalization_functions_registry[func_name]
+                    enhanced_data[func_name] = func(extracted_data)
+                except Exception as e:
+                    logger.warning(f"Error applying personalization function '{func_name}': {e}")
+                    # Provide fallback value
+                    enhanced_data[func_name] = self._get_fallback_value(func_name)
+
+        # Ensure all required template keys have values (backward compatibility)
+        required_keys = {
+            "total_rows": "many",
+            "predicted_relationship": "family connection",
+            "actual_relationship": "family connection",
+            "relationship_path": "our shared family line"
+        }
+
+        for key, default_value in required_keys.items():
+            if key not in enhanced_data:
+                enhanced_data[key] = default_value
+
         return enhanced_data
+
+    def _get_fallback_value(self, func_name: str) -> str:
+        """Get fallback value for a personalization function."""
+        fallback_values = {
+            "shared_ancestors": "our shared family line",
+            "genealogical_context": "I'm excited to learn more about our family connection.",
+            "research_focus": "our shared family history",
+            "dna_segment_analysis": "DNA analysis could help us identify our connection.",
+            "migration_pattern_context": "Understanding family migration helps trace our ancestry.",
+            "historical_context_analysis": "Historical context provides valuable research insights.",
+            "occupation_social_context": "Family occupations provide insights into our ancestors' lives."
+        }
+        return fallback_values.get(func_name, "our family research")
 
     def _format_shared_ancestors(self, extracted_data: Dict[str, Any]) -> str:
         """Format shared ancestors information."""
@@ -319,6 +497,14 @@ class MessagePersonalizer:
                     return place
         
         return "Family History Research"
+
+    def _create_geographic_context(self, extracted_data: Dict[str, Any]) -> str:
+        """Create geographic context from location data."""
+        return self._format_location_context(extracted_data)
+
+    def _format_research_questions(self, extracted_data: Dict[str, Any]) -> str:
+        """Format research questions (alias for specific_research_questions)."""
+        return self._format_specific_research_questions(extracted_data)
 
     def _format_location_context(self, extracted_data: Dict[str, Any]) -> str:
         """Format location context for messages."""
@@ -496,6 +682,440 @@ class MessagePersonalizer:
         """Create collaboration proposal text."""
         return "Perhaps we could share our research findings and work together to solve any family history mysteries."
 
+    # ========== NEW ADVANCED PERSONALIZATION FUNCTIONS ==========
+
+    def _create_dna_segment_analysis(self, extracted_data: Dict[str, Any]) -> str:
+        """Create DNA segment analysis context for advanced users."""
+        dna_info = extracted_data.get("dna_information", [])
+        for info in dna_info:
+            info_str = str(info).lower()
+            if "segment" in info_str or "chromosome" in info_str:
+                return f"The DNA segment data shows {info}, which helps narrow down our common ancestor timeframe."
+        return "DNA segment analysis could help us identify our most recent common ancestor."
+
+    def _create_migration_pattern_context(self, extracted_data: Dict[str, Any]) -> str:
+        """Create context about family migration patterns."""
+        locations = extracted_data.get("locations", [])
+        if len(locations) >= 2:
+            places = []
+            for loc in locations[:3]:
+                if isinstance(loc, dict):
+                    place = loc.get("place", "")
+                    time_period = loc.get("time_period", "")
+                    if place:
+                        if time_period:
+                            places.append(f"{place} ({time_period})")
+                        else:
+                            places.append(place)
+
+            if len(places) >= 2:
+                return f"I'm tracking family migration patterns from {places[0]} to {places[1]}, which aligns with historical movement patterns."
+
+        return "Understanding family migration patterns helps piece together our shared ancestry."
+
+    def _create_historical_context_analysis(self, extracted_data: Dict[str, Any]) -> str:
+        """Create historical context based on dates and locations."""
+        vital_records = extracted_data.get("vital_records", [])
+        historical_contexts = []
+
+        for record in vital_records[:2]:
+            if isinstance(record, dict):
+                date = record.get("date", "")
+                place = record.get("place", "")
+                event_type = record.get("event_type", "")
+
+                if date and place:
+                    # Extract year for historical context
+                    year_match = None
+                    for part in date.split():
+                        if part.isdigit() and len(part) == 4:
+                            year = int(part)
+                            if 1800 <= year <= 1950:
+                                if "Scotland" in place and 1840 <= year <= 1920:
+                                    historical_contexts.append(f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods.")
+                                elif "Ireland" in place and 1845 <= year <= 1855:
+                                    historical_contexts.append(f"The {event_type} in {place} around {year} was during the Irish Potato Famine era.")
+                                elif year >= 1914 and year <= 1918:
+                                    historical_contexts.append(f"The {year} timeframe was during World War I, which affected many family records.")
+                            break
+
+        if historical_contexts:
+            return historical_contexts[0]
+        return "Understanding the historical context of our family events helps explain migration and life decisions."
+
+    def _create_record_availability_assessment(self, extracted_data: Dict[str, Any]) -> str:
+        """Assess likely record availability based on location and time period."""
+        locations = extracted_data.get("locations", [])
+        vital_records = extracted_data.get("vital_records", [])
+
+        for location in locations:
+            if isinstance(location, dict):
+                place = location.get("place", "")
+                time_period = location.get("time_period", "")
+
+                if "Scotland" in place:
+                    return "Scottish records are generally well-preserved, especially civil registration after 1855 and parish records."
+                elif "Ireland" in place:
+                    return "Irish records can be challenging due to the 1922 Public Record Office fire, but many alternatives exist."
+                elif "England" in place:
+                    return "English records are extensive, with civil registration from 1837 and excellent parish records."
+                elif "Poland" in place or "Ukraine" in place:
+                    return "Eastern European records require specialized research due to border changes and wartime losses."
+
+        return "Record availability varies by location and time period - I can help identify the best sources for our research."
+
+    def _create_dna_ethnicity_correlation(self, extracted_data: Dict[str, Any]) -> str:
+        """Create correlation between DNA ethnicity and documented ancestry."""
+        dna_info = extracted_data.get("dna_information", [])
+        locations = extracted_data.get("locations", [])
+
+        ethnicity_regions = []
+        documented_regions = []
+
+        for info in dna_info:
+            info_str = str(info).lower()
+            if any(region in info_str for region in ["scottish", "irish", "english", "polish", "ukrainian"]):
+                ethnicity_regions.append(info_str)
+
+        for location in locations:
+            if isinstance(location, dict):
+                place = location.get("place", "")
+                if place:
+                    documented_regions.append(place.lower())
+
+        if ethnicity_regions and documented_regions:
+            return "The DNA ethnicity results align well with our documented family locations, confirming our research direction."
+
+        return "Comparing DNA ethnicity with documented ancestry helps validate our family tree research."
+
+    def _create_surname_distribution_analysis(self, extracted_data: Dict[str, Any]) -> str:
+        """Analyze surname distribution patterns."""
+        names = extracted_data.get("structured_names", [])
+        locations = extracted_data.get("locations", [])
+
+        surnames = []
+        places = []
+
+        for name in names:
+            if isinstance(name, dict):
+                full_name = name.get("full_name", "")
+                if full_name and " " in full_name:
+                    surname = full_name.split()[-1]
+                    surnames.append(surname)
+
+        for location in locations:
+            if isinstance(location, dict):
+                place = location.get("place", "")
+                if place:
+                    places.append(place)
+
+        if surnames and places:
+            surname = surnames[0]
+            place = places[0]
+            return f"The {surname} surname distribution in {place} can help identify other family branches and potential connections."
+
+        return "Surname distribution patterns often reveal family migration routes and concentrations."
+
+    def _create_occupation_social_context(self, extracted_data: Dict[str, Any]) -> str:
+        """Create social context based on occupations."""
+        occupations = extracted_data.get("occupations", [])
+
+        for occ in occupations:
+            if isinstance(occ, dict):
+                occupation = occ.get("occupation", "").lower()
+                person = occ.get("person", "")
+
+                if "farmer" in occupation or "agricultural" in occupation:
+                    return f"{person}'s agricultural work suggests rural family roots, which often means strong community ties and local records."
+                elif "miner" in occupation or "mining" in occupation:
+                    return f"{person}'s mining work indicates industrial family history, often with company records and mining community connections."
+                elif "fisherman" in occupation or "fishing" in occupation:
+                    return f"{person}'s fishing occupation suggests coastal family traditions and maritime community connections."
+                elif "teacher" in occupation or "educator" in occupation:
+                    return f"{person}'s teaching profession indicates educated family background with potential school and community records."
+                elif "merchant" in occupation or "trader" in occupation:
+                    return f"{person}'s merchant work suggests business connections and potential commercial records."
+
+        return "Family occupations provide insights into social status, community connections, and available records."
+
+    def _create_family_size_analysis(self, extracted_data: Dict[str, Any]) -> str:
+        """Analyze family size patterns and implications."""
+        relationships = extracted_data.get("relationships", [])
+
+        children_count = 0
+        siblings_count = 0
+
+        for rel in relationships:
+            if isinstance(rel, dict):
+                relationship = rel.get("relationship", "").lower()
+                if relationship == "child":
+                    children_count += 1
+                elif relationship == "sibling":
+                    siblings_count += 1
+
+        if children_count >= 6:
+            return f"Large families of {children_count}+ children were common in that era and often indicate strong family traditions and extensive cousin networks."
+        elif children_count >= 3:
+            return f"The family size of {children_count} children suggests good survival rates and potential for extensive descendant research."
+        elif siblings_count >= 4:
+            return f"Large sibling groups of {siblings_count}+ often mean multiple family lines to research and potential DNA matches through various branches."
+
+        return "Family size patterns help predict the scope of potential DNA matches and research opportunities."
+
+    def _create_generational_gap_analysis(self, extracted_data: Dict[str, Any]) -> str:
+        """Analyze generational gaps and their implications."""
+        vital_records = extracted_data.get("vital_records", [])
+
+        birth_years = []
+        marriage_years = []
+
+        for record in vital_records:
+            if isinstance(record, dict):
+                event_type = record.get("event_type", "")
+                date = record.get("date", "")
+
+                # Extract year
+                for part in str(date).split():
+                    if part.isdigit() and len(part) == 4:
+                        year = int(part)
+                        if 1800 <= year <= 2000:
+                            if event_type == "birth":
+                                birth_years.append(year)
+                            elif event_type == "marriage":
+                                marriage_years.append(year)
+                        break
+
+        if len(birth_years) >= 2:
+            gap = abs(birth_years[0] - birth_years[1])
+            if gap >= 25:
+                return f"The {gap}-year generational gap suggests we may be looking at parent-child relationships, which helps narrow our connection."
+            elif gap <= 10:
+                return f"The {gap}-year age gap suggests sibling or cousin relationships, indicating we share more recent common ancestors."
+
+        return "Analyzing generational gaps helps estimate relationship distances and common ancestor timeframes."
+
+    def _create_document_preservation_likelihood(self, extracted_data: Dict[str, Any]) -> str:
+        """Assess likelihood of document preservation based on context."""
+        locations = extracted_data.get("locations", [])
+        vital_records = extracted_data.get("vital_records", [])
+
+        for location in locations:
+            if isinstance(location, dict):
+                place = location.get("place", "")
+                context = location.get("context", "")
+
+                if "church" in context.lower() or "parish" in context.lower():
+                    return f"Church connections in {place} suggest good preservation of parish records and potential for baptism, marriage, and burial documentation."
+                elif "military" in context.lower():
+                    return f"Military service records from {place} are often well-preserved and can provide detailed family information."
+                elif "immigration" in context.lower() or "emigration" in context.lower():
+                    return f"Immigration records for {place} often include family details and can help trace origins and destinations."
+
+        return "Document preservation varies by location and institution - I can help identify the most promising record sources."
+
+
+class MessageEffectivenessTracker:
+    """
+    Advanced message effectiveness tracking and analytics system.
+    Tracks response rates, engagement quality, and optimization opportunities.
+    """
+
+    def __init__(self):
+        """Initialize the effectiveness tracker."""
+        self.effectiveness_data = self._load_effectiveness_data()
+        self.response_categories = {
+            "ENTHUSIASTIC": 5,
+            "PRODUCTIVE": 4,
+            "CAUTIOUSLY_INTERESTED": 3,
+            "CONFUSED": 2,
+            "UNINTERESTED": 1,
+            "DESIST": 0,
+            "OTHER": 2
+        }
+
+    def _load_effectiveness_data(self) -> Dict[str, Any]:
+        """Load existing effectiveness tracking data."""
+        try:
+            script_dir = Path(__file__).resolve().parent
+            effectiveness_path = script_dir / "message_effectiveness.json"
+
+            if effectiveness_path.exists():
+                with effectiveness_path.open("r", encoding="utf-8") as f:
+                    return json.load(f)
+            else:
+                return {
+                    "template_performance": {},
+                    "personalization_effectiveness": {},
+                    "response_analytics": {},
+                    "optimization_insights": {},
+                    "last_updated": datetime.now().isoformat()
+                }
+        except Exception as e:
+            logger.error(f"Error loading effectiveness data: {e}")
+            return {"template_performance": {}, "personalization_effectiveness": {}}
+
+    def track_message_response(
+        self,
+        template_key: str,
+        personalization_functions_used: List[str],
+        response_intent: str,
+        response_quality_score: float,
+        conversation_length: int,
+        genealogical_data_extracted: int
+    ) -> None:
+        """
+        Track the effectiveness of a message and its response.
+
+        Args:
+            template_key: The message template used
+            personalization_functions_used: List of personalization functions applied
+            response_intent: The classified intent of the response
+            response_quality_score: Quality score of the response (0-10)
+            conversation_length: Number of messages in conversation
+            genealogical_data_extracted: Amount of genealogical data extracted
+        """
+        try:
+            # Update template performance
+            if template_key not in self.effectiveness_data["template_performance"]:
+                self.effectiveness_data["template_performance"][template_key] = {
+                    "total_sent": 0,
+                    "responses_received": 0,
+                    "avg_response_quality": 0.0,
+                    "intent_distribution": {},
+                    "avg_data_extracted": 0.0
+                }
+
+            template_stats = self.effectiveness_data["template_performance"][template_key]
+            template_stats["total_sent"] += 1
+
+            if response_intent != "NO_RESPONSE":
+                template_stats["responses_received"] += 1
+
+                # Update intent distribution
+                if response_intent not in template_stats["intent_distribution"]:
+                    template_stats["intent_distribution"][response_intent] = 0
+                template_stats["intent_distribution"][response_intent] += 1
+
+                # Update average response quality
+                current_avg = template_stats["avg_response_quality"]
+                response_count = template_stats["responses_received"]
+                template_stats["avg_response_quality"] = (
+                    (current_avg * (response_count - 1) + response_quality_score) / response_count
+                )
+
+                # Update average data extracted
+                current_data_avg = template_stats["avg_data_extracted"]
+                template_stats["avg_data_extracted"] = (
+                    (current_data_avg * (response_count - 1) + genealogical_data_extracted) / response_count
+                )
+
+            # Track personalization function effectiveness
+            for func_name in personalization_functions_used:
+                if func_name not in self.effectiveness_data["personalization_effectiveness"]:
+                    self.effectiveness_data["personalization_effectiveness"][func_name] = {
+                        "usage_count": 0,
+                        "positive_responses": 0,
+                        "avg_engagement_score": 0.0
+                    }
+
+                func_stats = self.effectiveness_data["personalization_effectiveness"][func_name]
+                func_stats["usage_count"] += 1
+
+                # Consider ENTHUSIASTIC, PRODUCTIVE, CAUTIOUSLY_INTERESTED as positive
+                if response_intent in ["ENTHUSIASTIC", "PRODUCTIVE", "CAUTIOUSLY_INTERESTED"]:
+                    func_stats["positive_responses"] += 1
+
+                # Update engagement score
+                engagement_score = self.response_categories.get(response_intent, 2)
+                current_avg = func_stats["avg_engagement_score"]
+                usage_count = func_stats["usage_count"]
+                func_stats["avg_engagement_score"] = (
+                    (current_avg * (usage_count - 1) + engagement_score) / usage_count
+                )
+
+            # Update last modified
+            self.effectiveness_data["last_updated"] = datetime.now().isoformat()
+
+            # Save updated data
+            self._save_effectiveness_data()
+
+            logger.info(f"Tracked message effectiveness for template '{template_key}' with response '{response_intent}'")
+
+        except Exception as e:
+            logger.error(f"Error tracking message response: {e}")
+
+    def get_template_effectiveness_score(self, template_key: str) -> float:
+        """Get effectiveness score for a specific template (0-10)."""
+        if template_key not in self.effectiveness_data["template_performance"]:
+            return 5.0  # Default neutral score
+
+        stats = self.effectiveness_data["template_performance"][template_key]
+
+        if stats["total_sent"] == 0:
+            return 5.0
+
+        # Calculate response rate (0-4 points)
+        response_rate = stats["responses_received"] / stats["total_sent"]
+        response_score = response_rate * 4
+
+        # Add quality bonus (0-3 points)
+        quality_score = (stats["avg_response_quality"] / 10) * 3
+
+        # Add data extraction bonus (0-3 points)
+        data_score = min(stats["avg_data_extracted"] / 5, 1) * 3
+
+        return min(response_score + quality_score + data_score, 10.0)
+
+    def get_optimization_recommendations(self) -> List[str]:
+        """Get recommendations for optimizing message effectiveness."""
+        recommendations = []
+
+        # Analyze template performance
+        template_scores = {}
+        for template_key in self.effectiveness_data["template_performance"]:
+            template_scores[template_key] = self.get_template_effectiveness_score(template_key)
+
+        if template_scores:
+            best_template = max(template_scores, key=template_scores.get)
+            worst_template = min(template_scores, key=template_scores.get)
+
+            if template_scores[best_template] > 7.0:
+                recommendations.append(f"Template '{best_template}' is performing excellently (score: {template_scores[best_template]:.1f}). Consider using it more frequently.")
+
+            if template_scores[worst_template] < 4.0:
+                recommendations.append(f"Template '{worst_template}' needs improvement (score: {template_scores[worst_template]:.1f}). Consider revising or replacing.")
+
+        # Analyze personalization function effectiveness
+        func_effectiveness = {}
+        for func_name, stats in self.effectiveness_data["personalization_effectiveness"].items():
+            if stats["usage_count"] >= 5:  # Only consider functions used at least 5 times
+                effectiveness = stats["positive_responses"] / stats["usage_count"]
+                func_effectiveness[func_name] = effectiveness
+
+        if func_effectiveness:
+            best_func = max(func_effectiveness, key=func_effectiveness.get)
+            worst_func = min(func_effectiveness, key=func_effectiveness.get)
+
+            if func_effectiveness[best_func] > 0.7:
+                recommendations.append(f"Personalization function '{best_func}' is highly effective ({func_effectiveness[best_func]:.1%} positive response rate). Use it more often.")
+
+            if func_effectiveness[worst_func] < 0.3:
+                recommendations.append(f"Personalization function '{worst_func}' has low effectiveness ({func_effectiveness[worst_func]:.1%} positive response rate). Consider improving or replacing.")
+
+        return recommendations
+
+    def _save_effectiveness_data(self) -> None:
+        """Save effectiveness data to file."""
+        try:
+            script_dir = Path(__file__).resolve().parent
+            effectiveness_path = script_dir / "message_effectiveness.json"
+
+            with effectiveness_path.open("w", encoding="utf-8") as f:
+                json.dump(self.effectiveness_data, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            logger.error(f"Error saving effectiveness data: {e}")
+
 
 # Test functions
 def test_message_personalization():
@@ -528,13 +1148,13 @@ def test_message_personalization():
     }
     
     # Test message creation
-    message = personalizer.create_personalized_message(
+    message, functions_used = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         test_person_data,
         test_extracted_data,
         test_base_data
     )
-    
+
     success = len(message) > 100 and "John Smith" in message
     logger.info(f"Message personalization test: {'✅ PASSED' if success else '❌ FAILED'}")
     return success
@@ -544,7 +1164,7 @@ def test_fallback_template_path():
     personalizer = MessagePersonalizer()
     # Force empty templates to guarantee fallback path
     personalizer.templates = {"In_Tree-Initial": "Hello {name}!"}
-    msg = personalizer.create_personalized_message(
+    msg, functions_used = personalizer.create_personalized_message(
         "Totally_Unknown_Template",
         {"username": "UserX"},
         {},
