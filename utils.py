@@ -1249,7 +1249,7 @@ def _prepare_api_headers(
                     )
                 # End of try/except
             # End of if
-            final_headers["X-CSRF-Token"] = str(raw_token_val)  # Ensure string
+            final_headers["x-csrf-token"] = str(raw_token_val)  # CRITICAL FIX: Use lowercase header name
         else:
             logger.warning(
                 f"[{api_description}] CSRF token requested but not found in SessionManager."
@@ -4420,7 +4420,7 @@ async def async_api_request(
 
         # Add CSRF token if available
         if session_manager and hasattr(session_manager, 'csrf_token') and session_manager.csrf_token:
-            request_headers['X-CSRF-TOKEN'] = session_manager.csrf_token
+            request_headers['x-csrf-token'] = session_manager.csrf_token  # CRITICAL FIX: Use lowercase header name
 
         # Set timeout
         request_timeout = aiohttp.ClientTimeout(total=timeout or 30) if aiohttp else None

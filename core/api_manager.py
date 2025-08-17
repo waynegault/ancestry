@@ -188,7 +188,7 @@ class APIManager:
 
             # Add CSRF token if requested and available
             if use_csrf_token and self.csrf_token:
-                request_headers["X-CSRF-TOKEN"] = self.csrf_token
+                request_headers["x-csrf-token"] = self.csrf_token  # CRITICAL FIX: Use lowercase header
                 logger.debug(f"Added CSRF token to {api_description} request")
             elif use_csrf_token and not self.csrf_token:
                 logger.warning(

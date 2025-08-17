@@ -496,7 +496,7 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
             
             if fresh_csrf_token:
                 logger.info("Fresh CSRF token obtained. Retrying API call...")
-                match_list_headers['X-CSRF-Token'] = fresh_csrf_token
+                match_list_headers['x-csrf-token'] = fresh_csrf_token  # CRITICAL FIX: Use lowercase header
                 
                 # Retry with fresh token
                 token_retry_response = _api_req(
@@ -532,7 +532,7 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
                     # Get fresh CSRF token after session refresh
                     csrf_token = _get_csrf_token(session_manager)
                     if csrf_token:
-                        match_list_headers['X-CSRF-Token'] = csrf_token
+                        match_list_headers['x-csrf-token'] = csrf_token  # CRITICAL FIX: Use lowercase header
                         
                         # Final retry with fresh session
                         session_retry_response = _api_req(
@@ -794,6 +794,35 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
+                # OPTION C: PROACTIVE BROWSER REFRESH - Check if browser needs refresh before processing
+                if session_manager.should_proactive_browser_refresh():
+                    logger.info(f"🔄 Performing proactive browser refresh at page {current_page_num}")
+                    if not session_manager.perform_proactive_browser_refresh():
+                        logger.error(f"❌ Proactive browser refresh failed at page {current_page_num}")
+                        # Continue anyway - reactive recovery will handle if needed
+
+                # PROACTIVE SESSION REFRESH: Check if session needs refresh before processing
+                if session_manager.should_proactive_refresh():
+                    logger.info(f"🔄 Performing proactive session refresh at page {current_page_num}")
+                    if not session_manager.perform_proactive_refresh():
+                        logger.error(f"❌ Proactive session refresh failed at page {current_page_num}")
+                        # Continue anyway - reactive recovery will handle if needed
+
+                # OPTION C: BROWSER HEALTH MONITORING - Check browser health before processing
+                if not session_manager.check_browser_health():
+                    logger.warning(f"🚨 BROWSER DEATH DETECTED at page {current_page_num}")
+                    # Attempt browser recovery
+                    if session_manager.attempt_browser_recovery():
+                        logger.info(f"✅ Browser recovery successful at page {current_page_num} - continuing")
+                    else:
+                        logger.critical(f"❌ Browser recovery failed at page {current_page_num} - halting")
+                        loop_final_success = False
+                        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                        if remaining_matches_estimate > 0:
+                            progress_bar.update(remaining_matches_estimate)
+                            state["total_errors"] += remaining_matches_estimate
+                        break  # Exit while loop
+
                 # SURGICAL FIX #20: Universal Session Health Monitoring via SessionManager
                 if not session_manager.check_session_health():
                     logger.critical(
@@ -806,6 +835,24 @@ def _main_page_processing_loop(
                         progress_bar.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
+
+                # EMERGENCY FIX: Check for 303 redirect pattern (indicates dead session)
+                # If we get multiple 303s in a row, the session is dead
+                if hasattr(session_manager, '_consecutive_303_count'):
+                    if session_manager._consecutive_303_count >= 3:
+                        logger.critical(
+                            f"🚨 DEAD SESSION DETECTED: {session_manager._consecutive_303_count} consecutive 303 redirects at page {current_page_num}. "
+                            f"Session is completely invalid. Halting immediately."
+                        )
+                        # Force session death detection
+                        session_manager.session_health_monitor['death_detected'].set()
+                        session_manager.session_health_monitor['is_alive'].clear()
+                        loop_final_success = False
+                        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                        if remaining_matches_estimate > 0:
+                            progress_bar.update(remaining_matches_estimate)
+                            state["total_errors"] += remaining_matches_estimate
+                        break
                 
                 # Proactive session refresh to prevent 900-second timeout
                 if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
@@ -818,11 +865,11 @@ def _main_page_processing_loop(
                         else:
                             logger.error("❌ Proactive session refresh failed")
 
-                # SURGICAL FIX #12: Enhanced Connection Pool Optimization
+                # SURGICAL FIX #12: Enhanced Connection Pool Optimization + Session Age Monitoring
                 # Optimize database connections every 25 pages
                 if current_page_num % 25 == 0:
                     try:
-                        # Use existing database manager access pattern
+                        # Database pool monitoring
                         if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
                             db_manager = session_manager.db_manager
                             if hasattr(db_manager, 'get_performance_stats'):
@@ -831,8 +878,34 @@ def _main_page_processing_loop(
                                 logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
                             else:
                                 logger.debug(f"Database connection pool check at page {current_page_num}")
+
+                        # Session age monitoring
+                        if hasattr(session_manager, 'session_health_monitor'):
+                            import time
+                            current_time = time.time()
+                            session_age = current_time - session_manager.session_health_monitor.get('session_start_time', current_time)
+                            time_since_refresh = current_time - session_manager.session_health_monitor.get('last_proactive_refresh', current_time)
+                            max_age = session_manager.session_health_monitor.get('max_session_age', 2400)
+
+                            logger.debug(f"Session status at page {current_page_num}: "
+                                       f"age={session_age:.0f}s, since_refresh={time_since_refresh:.0f}s, "
+                                       f"max_age={max_age}s ({(session_age/max_age)*100:.1f}% of limit)")
+
+                        # OPTION C: Browser age monitoring
+                        if hasattr(session_manager, 'browser_health_monitor'):
+                            browser_age = current_time - session_manager.browser_health_monitor.get('browser_start_time', current_time)
+                            browser_time_since_refresh = current_time - session_manager.browser_health_monitor.get('last_browser_refresh', current_time)
+                            browser_max_age = session_manager.browser_health_monitor.get('max_browser_age', 1800)
+                            pages_since_refresh = session_manager.browser_health_monitor.get('pages_since_refresh', 0)
+                            max_pages = session_manager.browser_health_monitor.get('max_pages_before_refresh', 30)
+
+                            logger.debug(f"Browser status at page {current_page_num}: "
+                                       f"age={browser_age:.0f}s, since_refresh={browser_time_since_refresh:.0f}s, "
+                                       f"max_age={browser_max_age}s ({(browser_age/browser_max_age)*100:.1f}% of limit), "
+                                       f"pages_since_refresh={pages_since_refresh}/{max_pages}")
+
                     except Exception as pool_opt_exc:
-                        logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
+                        logger.debug(f"Connection pool/session/browser check at page {current_page_num}: {pool_opt_exc}")
                 
                 if not session_manager.is_sess_valid():
                     logger.critical(
@@ -950,6 +1023,9 @@ def _main_page_processing_loop(
                         )  # Assume a full page skip if not first&empty
                     matches_on_page_for_batch = None  # Reset for next iteration
                     current_page_num += 1
+
+                    # OPTION C: Increment browser page count for health monitoring (empty page path)
+                    session_manager.increment_page_count()
                     time.sleep(0.2)  # PHASE 1: Reduced from 0.5 to 0.2
                     continue
 
@@ -975,6 +1051,9 @@ def _main_page_processing_loop(
                                     state["total_pages_processed"] += 1
                                     matches_on_page_for_batch = None
                                     current_page_num += 1
+
+                                    # OPTION C: Increment browser page count for health monitoring (fast skip path)
+                                    session_manager.increment_page_count()
                                     continue  # Skip to next page
                         finally:
                             session_manager.return_session(quick_db_session)
@@ -1009,6 +1088,9 @@ def _main_page_processing_loop(
                     None  # CRITICAL: Clear for the next iteration
                 )
                 current_page_num += 1
+
+                # OPTION C: Increment browser page count for health monitoring
+                session_manager.increment_page_count()
         finally:
             if progress_bar:
                 progress_bar.set_postfix(
@@ -1085,6 +1167,34 @@ def coord(
     logger.debug(
         f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---"
     )
+
+    # EMERGENCY FIX: Force session validation before starting
+    logger.info("🔍 Performing comprehensive session validation before starting...")
+
+    # Test API connectivity with a simple call
+    try:
+        profile_check = session_manager.api_manager.get_profile_id()
+        if not profile_check:
+            logger.critical("🚨 CRITICAL: Session authentication failed at startup. API calls will fail.")
+            logger.critical("🚨 Forcing complete session refresh...")
+
+            # Force complete session refresh
+            session_manager.close_sess()
+            from core.browser_manager import BrowserManager
+            browser_manager = BrowserManager()
+            browser_manager.start_browser("session_recovery")
+
+            # Re-authenticate
+            from utils import login_status
+            if not login_status(session_manager, disable_ui_fallback=False):
+                raise Exception("Failed to re-authenticate after session refresh")
+
+            logger.info("✅ Session refresh and re-authentication successful")
+        else:
+            logger.info("✅ Session validation passed - API connectivity confirmed")
+    except Exception as e:
+        logger.critical(f"🚨 CRITICAL: Session validation failed: {e}")
+        raise Exception(f"Cannot proceed with invalid session: {e}")
 
     try:
         # Step 3: Initial Navigation and Total Pages Fetch
@@ -1497,6 +1607,11 @@ def _perform_api_prefetches(
         # SURGICAL FIX #16: Intelligent Rate Limiting Prediction
         # Calculate total API calls needed and predict token requirements
         total_api_calls = len(fetch_candidates_uuid) + len(priority_uuids) + len(uuids_for_tree_badge_ladder)
+
+        # EMERGENCY FIX: Ensure total_api_calls is always defined to prevent NameError
+        if total_api_calls is None:
+            total_api_calls = 0
+
         if total_api_calls > 0:
             # Get current token count and fill rate from session manager
             rate_limiter = getattr(session_manager, 'rate_limiter', None)
@@ -4517,7 +4632,7 @@ def get_matches(
     )
     # Use simplified headers that were working earlier
     match_list_headers = {
-        "X-CSRF-Token": specific_csrf_token,
+        "x-csrf-token": specific_csrf_token,  # CRITICAL FIX: Use lowercase header
         "Accept": "application/json",
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
     }
@@ -4539,14 +4654,15 @@ def get_matches(
     except Exception as cookie_sync_error:
         logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
-    # Call the API with fresh cookie sync
+    # ROOT CAUSE FIX: Match List API REQUIRES CSRF token authentication
+    # The Profile API works without CSRF, but Match List API needs it
     api_response = _api_req(
         url=match_list_url,
         driver=driver,
         session_manager=session_manager,
         method="GET",
         headers=match_list_headers,
-        use_csrf_token=False,
+        use_csrf_token=True,  # CRITICAL FIX: Enable CSRF token for Match List API
         api_description="Match List API",
         allow_redirects=True,
     )
@@ -4579,7 +4695,7 @@ def get_matches(
                         session_manager=session_manager,
                         method="GET",
                         headers=match_list_headers,
-                        use_csrf_token=False,
+                        use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for redirected Match List API
                         api_description="Match List API (redirected)",
                         allow_redirects=False,
                     )
@@ -4596,6 +4712,12 @@ def get_matches(
                         "Match List API received 303 See Other with no redirect location. "
                         "This usually indicates session expiration. Attempting session refresh with cache clear."
                     )
+
+                    # EMERGENCY FIX: Track consecutive 303 redirects for session death detection
+                    if not hasattr(session_manager, '_consecutive_303_count'):
+                        session_manager._consecutive_303_count = 0
+                    session_manager._consecutive_303_count += 1
+                    logger.warning(f"🚨 303 Redirect #{session_manager._consecutive_303_count} detected - session may be dead")
                     try:
                         # Clear session cache for complete fresh start
                         try:
@@ -4619,7 +4741,7 @@ def get_matches(
                         fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
                         if fresh_csrf_token:
                             # Update headers with fresh token and retry
-                            match_list_headers['X-CSRF-Token'] = fresh_csrf_token
+                            match_list_headers['x-csrf-token'] = fresh_csrf_token  # CRITICAL FIX: Use lowercase header
                             logger.info("✅ Retrying Match List API with refreshed session, cleared cache, and fresh CSRF token.")
                             logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
                             logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
@@ -4630,7 +4752,7 @@ def get_matches(
                                 session_manager=session_manager,
                                 method="GET",
                                 headers=match_list_headers,
-                                use_csrf_token=False,
+                                use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for refreshed Match List API
                                 api_description="Match List API (Session Refreshed)",
                                 allow_redirects=True,
                             )
@@ -4665,6 +4787,12 @@ def get_matches(
             logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
     else:
         logger.warning("Total pages missing from match list response.")
+    # EMERGENCY FIX: Reset 303 counter on successful API response
+    if hasattr(session_manager, '_consecutive_303_count'):
+        if session_manager._consecutive_303_count > 0:
+            logger.debug(f"✅ Successful API response - resetting 303 counter (was {session_manager._consecutive_303_count})")
+            session_manager._consecutive_303_count = 0
+
     match_data_list = api_response.get("matchList", [])
     if not match_data_list:
         logger.info(f"No matches found in 'matchList' array for page {current_page}.")
@@ -4742,7 +4870,7 @@ def get_matches(
                     pass
             ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
             in_tree_headers = {
-                "X-CSRF-Token": specific_csrf_token,
+                "x-csrf-token": specific_csrf_token,  # CRITICAL FIX: Use lowercase header
                 "Referer": urljoin(
                     config_schema.api.base_url, "/discoveryui-matches/list/"
                 ),
@@ -4995,7 +5123,7 @@ def _fetch_combined_details(
             session_manager=session_manager,
             method="GET",
             headers=details_headers,
-            use_csrf_token=False,
+            use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for Match Details API
             api_description="Match Details API (Batch)",
         )
         if details_response and isinstance(details_response, dict):
@@ -5271,7 +5399,7 @@ def _fetch_batch_badge_details(
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
-            use_csrf_token=False,
+            use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for Badge Details API
             api_description="Badge Details API (Batch)",
             referer_url=badge_referer,
         )
@@ -5680,7 +5808,7 @@ def _fetch_batch_relationship_prob(
         session_manager._is_csrf_token_valid() and
         session_manager._cached_csrf_token):
         csrf_token_val = session_manager._cached_csrf_token
-        rel_headers["X-CSRF-Token"] = csrf_token_val
+        rel_headers["x-csrf-token"] = csrf_token_val  # CRITICAL FIX: Use lowercase header
         logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
     else:
         # Fallback to driver cookies only if cache miss
@@ -5698,7 +5826,7 @@ def _fetch_batch_relationship_prob(
             for name in csrf_cookie_names:
                 if name in driver_cookies_dict and driver_cookies_dict[name]:
                     csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-                    rel_headers["X-CSRF-Token"] = csrf_token_val
+                    rel_headers["x-csrf-token"] = csrf_token_val  # CRITICAL FIX: Use lowercase header
                     
                     # Cache the token for future use (5-minute cache)
                     import time
@@ -5712,12 +5840,12 @@ def _fetch_batch_relationship_prob(
         except Exception as csrf_e:
             logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
 
-    if "X-CSRF-Token" not in rel_headers:
+    if "x-csrf-token" not in rel_headers:  # CRITICAL FIX: Use lowercase header check
         if session_manager.csrf_token:
             logger.warning(
                 f"{api_description}: Using potentially stale CSRF from SessionManager."
             )
-            rel_headers["X-CSRF-Token"] = session_manager.csrf_token
+            rel_headers["x-csrf-token"] = session_manager.csrf_token  # CRITICAL FIX: Use lowercase header
         else:
             logger.error(
                 f"{api_description}: Failed to add CSRF token to headers. Returning None."
@@ -5739,7 +5867,7 @@ def _fetch_batch_relationship_prob(
             api_description=api_description,
             timeout=config_schema.selenium.api_timeout,
             allow_redirects=True,
-            use_csrf_token=False,
+            use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for Match Probability API
             json={},
         )
 
@@ -5825,7 +5953,7 @@ def _fetch_batch_relationship_prob(
             api_description=f"{api_description} (GET Fallback)",
             timeout=config_schema.selenium.api_timeout,
             allow_redirects=True,
-            use_csrf_token=False,
+            use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for Match Probability API (GET)
         )
         if isinstance(get_resp, dict):
             parsed = _parse_probability(get_resp)
@@ -5836,7 +5964,7 @@ def _fetch_batch_relationship_prob(
         try:
             fresh_csrf = session_manager.get_csrf()
             if fresh_csrf:
-                rel_headers["X-CSRF-Token"] = fresh_csrf
+                rel_headers["x-csrf-token"] = fresh_csrf  # CRITICAL FIX: Use lowercase header
                 logger.debug("Refreshed CSRF token. Retrying POST for probability...")
                 api_resp2 = _api_req(
                     url=rel_url,
@@ -5848,7 +5976,7 @@ def _fetch_batch_relationship_prob(
                     api_description=f"{api_description} (Retry with fresh CSRF)",
                     timeout=config_schema.selenium.api_timeout,
                     allow_redirects=True,
-                    use_csrf_token=False,
+                    use_csrf_token=True,  # CRITICAL FIX: Enable CSRF for Match Probability API (Retry)
                     json={},
                 )
                 if isinstance(api_resp2, dict):
