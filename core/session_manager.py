@@ -749,7 +749,9 @@ class SessionManager:
         # Reset browser health monitoring
         self.browser_health_monitor['browser_start_time'] = current_time
         self.browser_health_monitor['last_browser_refresh'] = current_time
+        old_page_count = self.browser_health_monitor['pages_since_refresh']
         self.browser_health_monitor['pages_since_refresh'] = 0
+        logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (reset_session_health_monitoring)")
         self.browser_health_monitor['browser_refresh_in_progress'].clear()
         self.browser_health_monitor['browser_death_count'] = 0
         self.browser_health_monitor['last_browser_health_check'] = current_time
@@ -880,7 +882,9 @@ class SessionManager:
                     current_time = time.time()
                     self.browser_health_monitor['last_browser_refresh'] = current_time
                     self.browser_health_monitor['browser_start_time'] = current_time
+                    old_page_count = self.browser_health_monitor['pages_since_refresh']
                     self.browser_health_monitor['pages_since_refresh'] = 0
+                    logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (proactive_browser_refresh)")
                     logger.info("✅ Proactive browser refresh completed successfully")
                     return True
                 else:
@@ -898,7 +902,10 @@ class SessionManager:
 
     def increment_page_count(self):
         """Increment the page count for browser health monitoring."""
+        old_count = self.browser_health_monitor['pages_since_refresh']
         self.browser_health_monitor['pages_since_refresh'] += 1
+        new_count = self.browser_health_monitor['pages_since_refresh']
+        logger.debug(f"🔢 Page count incremented: {old_count} → {new_count}")
 
     def check_browser_health(self) -> bool:
         """Check browser health and detect browser death."""
