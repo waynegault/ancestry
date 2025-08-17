@@ -1443,6 +1443,20 @@ def _record_adaptive_response(
             )
         except Exception as e:
             logger.debug(f"Failed to record adaptive response: {e}")
+
+    # === HEALTH MONITORING: Record API response time ===
+    if hasattr(session_manager, 'health_monitor') and session_manager.health_monitor:
+        try:
+            session_manager.health_monitor.record_api_response_time(response_time)
+
+            # Record errors if request failed
+            if not success:
+                error_name = error_type or "api_error"
+                session_manager.health_monitor.record_error(error_name)
+
+        except Exception as health_exc:
+            logger.debug(f"Health monitoring API tracking: {health_exc}")
+
 # End of _record_adaptive_response
 
 def _log_request_details(

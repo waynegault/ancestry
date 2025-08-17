@@ -904,6 +904,31 @@ def _main_page_processing_loop(
                                        f"max_age={browser_max_age}s ({(browser_age/browser_max_age)*100:.1f}% of limit), "
                                        f"pages_since_refresh={pages_since_refresh}/{max_pages}")
 
+                        # === HEALTH MONITORING INTEGRATION ===
+                        # Update comprehensive health metrics
+                        if hasattr(session_manager, 'health_monitor') and session_manager.health_monitor:
+                            try:
+                                health_monitor = session_manager.health_monitor
+
+                                # Update session metrics
+                                health_monitor.update_session_metrics(session_manager)
+                                health_monitor.update_system_metrics()
+
+                                # Log comprehensive health summary
+                                health_monitor.log_health_summary()
+
+                                # Check for recommended actions
+                                dashboard = health_monitor.get_health_dashboard()
+                                if dashboard['risk_score'] > 0.6:
+                                    logger.warning(f"🚨 HIGH RISK DETECTED: {dashboard['risk_level']} "
+                                                 f"(Score: {dashboard['health_score']:.1f}/100, "
+                                                 f"Risk: {dashboard['risk_score']:.2f})")
+                                    for action in dashboard['recommended_actions'][:2]:  # Show top 2 actions
+                                        logger.warning(f"   Recommended: {action}")
+
+                            except Exception as health_exc:
+                                logger.debug(f"Health monitoring update at page {current_page_num}: {health_exc}")
+
                     except Exception as pool_opt_exc:
                         logger.debug(f"Connection pool/session/browser check at page {current_page_num}: {pool_opt_exc}")
                 
@@ -3392,6 +3417,18 @@ def _do_batch(
         
         if batch_duration > 30.0:  # Log slow batch processing
             logger.warning(f"Slow batch processing: Page {current_page} took {batch_duration:.1f}s")
+
+        # === HEALTH MONITORING: Record batch processing time ===
+        if hasattr(session_manager, 'health_monitor') and session_manager.health_monitor:
+            try:
+                session_manager.health_monitor.record_page_processing_time(batch_duration)
+
+                # Record errors if any
+                if total_stats["error"] > 0:
+                    session_manager.health_monitor.record_error("batch_processing_error")
+
+            except Exception as health_exc:
+                logger.debug(f"Health monitoring batch tracking: {health_exc}")
         
         # Track performance in global monitoring
         _log_api_performance("batch_processing", batch_start_time, f"success_{success_rate:.0%}")
