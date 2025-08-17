@@ -423,6 +423,9 @@ class SessionManager:
         start_time = time.time()
         # Removed duplicate logging - browser_manager will log the action
 
+        # MINIMAL FIX: Set browser_needed to True for session operations
+        self.browser_manager.browser_needed = True
+
         # PHASE 5.1: Check cached session state first
         session_id = f"{id(self)}_{action_name or 'default'}"
 
