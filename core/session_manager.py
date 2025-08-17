@@ -176,7 +176,26 @@ class SessionManager:
             'death_cascade_halt': threading.Event(),
             'death_timestamp': None,
             'parallel_operations': 0,
-            'death_cascade_count': 0
+            'death_cascade_count': 0,
+            # PROACTIVE SESSION REFRESH ADDITIONS
+            'session_start_time': time.time(),
+            'max_session_age': 2400,  # 40 minutes (before 45min expiry)
+            'last_proactive_refresh': time.time(),
+            'proactive_refresh_interval': 1800,  # 30 minutes
+            'refresh_in_progress': threading.Event()
+        }
+
+        # OPTION C: BROWSER HEALTH MONITORING ADDITIONS
+        self.browser_health_monitor = {
+            'browser_start_time': time.time(),
+            'max_browser_age': 1800,  # 30 minutes before proactive refresh
+            'last_browser_refresh': time.time(),
+            'browser_refresh_interval': 1800,  # 30 minutes
+            'pages_since_refresh': 0,
+            'max_pages_before_refresh': 30,  # Refresh every 30 pages
+            'browser_refresh_in_progress': threading.Event(),
+            'browser_death_count': 0,
+            'last_browser_health_check': time.time()
         }
         self.session_health_monitor['is_alive'].set()  # Initially alive
 
@@ -647,8 +666,22 @@ class SessionManager:
         """Determine if operations should halt due to session death."""
         if self.is_session_death_cascade():
             self.session_health_monitor['death_cascade_count'] += 1
-            
-            # Halt immediately if session is dead
+
+            # Try recovery before halting (up to 2 attempts)
+            if self.session_health_monitor['death_cascade_count'] <= 2:
+                logger.warning(
+                    f"⚠️  Session death cascade detected (cascade #{self.session_health_monitor['death_cascade_count']}) "
+                    f"- attempting recovery before halting"
+                )
+
+                # Attempt session recovery
+                if self.attempt_cascade_recovery():
+                    logger.info("✅ Session cascade recovery successful - continuing operations")
+                    return False
+                else:
+                    logger.error("❌ Session cascade recovery failed")
+
+            # Halt if recovery failed or too many cascades
             logger.warning(
                 f"⚠️  Halting operation due to session death cascade "
                 f"(cascade #{self.session_health_monitor['death_cascade_count']})"
@@ -656,15 +689,269 @@ class SessionManager:
             return True
         return False
 
+    def attempt_cascade_recovery(self) -> bool:
+        """Attempt to recover from session death cascade."""
+        try:
+            logger.info("🔄 Attempting session cascade recovery...")
+
+            # Reset death detection flags
+            self.session_health_monitor['death_detected'].clear()
+            self.session_health_monitor['is_alive'].set()
+
+            # Clear all caches and force fresh session
+            self.clear_session_caches()
+
+            # Attempt to establish new session
+            success = self.ensure_session_ready("Cascade Recovery")
+
+            if success:
+                # Reset timers for new session
+                current_time = time.time()
+                self.session_health_monitor['session_start_time'] = current_time
+                self.session_health_monitor['last_proactive_refresh'] = current_time
+                self.session_health_monitor['last_heartbeat'] = current_time
+                self.session_health_monitor['death_timestamp'] = None
+
+                logger.info("✅ Session cascade recovery completed successfully")
+                return True
+            else:
+                logger.error("❌ Session cascade recovery failed - could not establish new session")
+                return False
+
+        except Exception as exc:
+            logger.error(f"❌ Session cascade recovery failed with exception: {exc}")
+            # If clear_session_caches doesn't exist, try alternative cleanup
+            if "'SessionManager' object has no attribute 'clear'" in str(exc):
+                logger.debug("Attempting alternative session cleanup...")
+                try:
+                    # Reset session readiness flags
+                    self.session_ready = False
+                    self.driver_live = False
+                    return True
+                except Exception as alt_exc:
+                    logger.error(f"Alternative cleanup also failed: {alt_exc}")
+            return False
+
     def reset_session_health_monitoring(self):
         """Reset session health monitoring (used when creating new sessions)."""
+        current_time = time.time()
         self.session_health_monitor['is_alive'].set()
         self.session_health_monitor['death_detected'].clear()
-        self.session_health_monitor['last_heartbeat'] = time.time()
+        self.session_health_monitor['last_heartbeat'] = current_time
         self.session_health_monitor['death_timestamp'] = None
         self.session_health_monitor['parallel_operations'] = 0
         self.session_health_monitor['death_cascade_count'] = 0
-        logger.debug("🔄 Session health monitoring reset for new session")
+        # Reset proactive refresh timers
+        self.session_health_monitor['session_start_time'] = current_time
+        self.session_health_monitor['last_proactive_refresh'] = current_time
+        self.session_health_monitor['refresh_in_progress'].clear()
+
+        # Reset browser health monitoring
+        self.browser_health_monitor['browser_start_time'] = current_time
+        self.browser_health_monitor['last_browser_refresh'] = current_time
+        self.browser_health_monitor['pages_since_refresh'] = 0
+        self.browser_health_monitor['browser_refresh_in_progress'].clear()
+        self.browser_health_monitor['browser_death_count'] = 0
+        self.browser_health_monitor['last_browser_health_check'] = current_time
+
+        logger.debug("🔄 Session and browser health monitoring reset for new session")
+
+    def should_proactive_refresh(self) -> bool:
+        """Check if session should be proactively refreshed to prevent expiry."""
+        current_time = time.time()
+
+        # Don't refresh if already in progress
+        if self.session_health_monitor['refresh_in_progress'].is_set():
+            return False
+
+        # Check if session is approaching max age
+        session_age = current_time - self.session_health_monitor['session_start_time']
+        if session_age >= self.session_health_monitor['max_session_age']:
+            logger.info(f"🔄 Session age ({session_age:.0f}s) approaching limit - proactive refresh needed")
+            return True
+
+        # Check if enough time has passed since last proactive refresh
+        time_since_refresh = current_time - self.session_health_monitor['last_proactive_refresh']
+        if time_since_refresh >= self.session_health_monitor['proactive_refresh_interval']:
+            logger.info(f"🔄 Time since last refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
+            return True
+
+        return False
+
+    def perform_proactive_refresh(self) -> bool:
+        """Perform proactive session refresh to prevent session death."""
+        if self.session_health_monitor['refresh_in_progress'].is_set():
+            logger.debug("Proactive refresh already in progress, skipping")
+            return True
+
+        try:
+            self.session_health_monitor['refresh_in_progress'].set()
+            logger.info("🔄 Starting proactive session refresh...")
+
+            # Clear session readiness cache to force fresh validation
+            self.clear_session_caches()
+
+            # Perform session readiness check which will refresh everything
+            success = self.ensure_session_ready("Proactive Refresh")
+
+            if success:
+                current_time = time.time()
+                self.session_health_monitor['last_proactive_refresh'] = current_time
+                self.session_health_monitor['session_start_time'] = current_time  # Reset session age
+                logger.info("✅ Proactive session refresh completed successfully")
+                return True
+            else:
+                logger.error("❌ Proactive session refresh failed")
+                return False
+
+        except Exception as exc:
+            logger.error(f"❌ Proactive session refresh failed with exception: {exc}")
+            # If clear_session_caches doesn't exist, try alternative cleanup
+            if "'SessionManager' object has no attribute 'clear'" in str(exc):
+                logger.debug("Attempting alternative session cleanup for proactive refresh...")
+                try:
+                    # Reset session readiness flags
+                    self.session_ready = False
+                    self.driver_live = False
+                    # Try to establish session again
+                    success = self.ensure_session_ready("Proactive Refresh - Alternative")
+                    if success:
+                        current_time = time.time()
+                        self.session_health_monitor['last_proactive_refresh'] = current_time
+                        self.session_health_monitor['session_start_time'] = current_time
+                        logger.info("✅ Alternative proactive session refresh completed successfully")
+                        return True
+                except Exception as alt_exc:
+                    logger.error(f"Alternative proactive refresh also failed: {alt_exc}")
+            return False
+        finally:
+            self.session_health_monitor['refresh_in_progress'].clear()
+
+    def should_proactive_browser_refresh(self) -> bool:
+        """Check if browser should be proactively refreshed to prevent death."""
+        current_time = time.time()
+
+        # Don't refresh if already in progress
+        if self.browser_health_monitor['browser_refresh_in_progress'].is_set():
+            return False
+
+        # Check if browser is approaching max age
+        browser_age = current_time - self.browser_health_monitor['browser_start_time']
+        if browser_age >= self.browser_health_monitor['max_browser_age']:
+            logger.info(f"🔄 Browser age ({browser_age:.0f}s) approaching limit - proactive browser refresh needed")
+            return True
+
+        # Check if enough time has passed since last browser refresh
+        time_since_refresh = current_time - self.browser_health_monitor['last_browser_refresh']
+        if time_since_refresh >= self.browser_health_monitor['browser_refresh_interval']:
+            logger.info(f"🔄 Time since last browser refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
+            return True
+
+        # Check if too many pages processed since last refresh
+        pages_processed = self.browser_health_monitor['pages_since_refresh']
+        if pages_processed >= self.browser_health_monitor['max_pages_before_refresh']:
+            logger.info(f"🔄 Pages since last refresh ({pages_processed}) - proactive browser refresh needed")
+            return True
+
+        return False
+
+    def perform_proactive_browser_refresh(self) -> bool:
+        """Perform proactive browser refresh to prevent browser death."""
+        if self.browser_health_monitor['browser_refresh_in_progress'].is_set():
+            logger.debug("Proactive browser refresh already in progress, skipping")
+            return True
+
+        try:
+            self.browser_health_monitor['browser_refresh_in_progress'].set()
+            logger.info("🔄 Starting proactive browser refresh...")
+
+            # Close current browser
+            self.close_browser()
+
+            # Start new browser
+            success = self.start_browser("Proactive Browser Refresh")
+
+            if success:
+                # Re-authenticate if needed
+                from utils import login_status
+                auth_success = login_status(self, disable_ui_fallback=False)
+
+                if auth_success:
+                    current_time = time.time()
+                    self.browser_health_monitor['last_browser_refresh'] = current_time
+                    self.browser_health_monitor['browser_start_time'] = current_time
+                    self.browser_health_monitor['pages_since_refresh'] = 0
+                    logger.info("✅ Proactive browser refresh completed successfully")
+                    return True
+                else:
+                    logger.error("❌ Proactive browser refresh failed - re-authentication failed")
+                    return False
+            else:
+                logger.error("❌ Proactive browser refresh failed - could not start new browser")
+                return False
+
+        except Exception as exc:
+            logger.error(f"❌ Proactive browser refresh failed with exception: {exc}")
+            return False
+        finally:
+            self.browser_health_monitor['browser_refresh_in_progress'].clear()
+
+    def increment_page_count(self):
+        """Increment the page count for browser health monitoring."""
+        self.browser_health_monitor['pages_since_refresh'] += 1
+
+    def check_browser_health(self) -> bool:
+        """Check browser health and detect browser death."""
+        current_time = time.time()
+        self.browser_health_monitor['last_browser_health_check'] = current_time
+
+        # Check if browser is needed
+        if not self.browser_manager.browser_needed:
+            return True
+
+        # Check if driver exists and is responsive
+        if not self.browser_manager.is_session_valid():
+            self.browser_health_monitor['browser_death_count'] += 1
+            logger.warning(f"🚨 Browser death detected (count: {self.browser_health_monitor['browser_death_count']})")
+            return False
+
+        return True
+
+    def attempt_browser_recovery(self) -> bool:
+        """Attempt to recover from browser death."""
+        try:
+            logger.info("🔄 Attempting browser recovery...")
+
+            # Close dead browser
+            self.close_browser()
+
+            # Start new browser
+            success = self.start_browser("Browser Recovery")
+
+            if success:
+                # Re-authenticate if needed
+                from utils import login_status
+                auth_success = login_status(self, disable_ui_fallback=False)
+
+                if auth_success:
+                    # Reset browser health timers
+                    current_time = time.time()
+                    self.browser_health_monitor['browser_start_time'] = current_time
+                    self.browser_health_monitor['last_browser_refresh'] = current_time
+                    self.browser_health_monitor['pages_since_refresh'] = 0
+
+                    logger.info("✅ Browser recovery completed successfully")
+                    return True
+                else:
+                    logger.error("❌ Browser recovery failed - re-authentication failed")
+                    return False
+            else:
+                logger.error("❌ Browser recovery failed - could not start new browser")
+                return False
+
+        except Exception as exc:
+            logger.error(f"❌ Browser recovery failed with exception: {exc}")
+            return False
 
     def _reset_logged_flags(self):
         """Reset flags used to prevent repeated logging of IDs."""
@@ -1433,7 +1720,14 @@ class SessionManager:
             for name in csrf_cookie_names:
                 if name in driver_cookies_dict and driver_cookies_dict[name]:
                     from urllib.parse import unquote
-                    csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
+                    # CRITICAL FIX: Handle both ^| and | separators in CSRF token
+                    unquoted_val = unquote(driver_cookies_dict[name])
+                    if "^|" in unquoted_val:
+                        csrf_token_val = unquoted_val.split("^|")[0]
+                    elif "|" in unquoted_val:
+                        csrf_token_val = unquoted_val.split("|")[0]
+                    else:
+                        csrf_token_val = unquoted_val
                     
                     # Cache the token
                     self._cached_csrf_token = csrf_token_val
