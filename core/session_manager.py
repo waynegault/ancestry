@@ -199,6 +199,17 @@ class SessionManager:
         }
         self.session_health_monitor['is_alive'].set()  # Initially alive
 
+        # === HEALTH MONITORING INTEGRATION ===
+        # Initialize comprehensive health monitoring
+        try:
+            from health_monitor import get_health_monitor, integrate_with_session_manager
+            self.health_monitor = get_health_monitor()
+            integrate_with_session_manager(self)
+            logger.info("Health monitoring integrated with session manager")
+        except ImportError:
+            logger.warning("Health monitoring module not available")
+            self.health_monitor = None
+
         # === PHASE 11.1: ADAPTIVE RATE LIMITING ===
         try:
             from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor
