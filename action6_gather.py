@@ -3157,11 +3157,13 @@ def _execute_bulk_db_operations(
     # Step 9: Handle database errors during bulk operations
     except IntegrityError as integrity_err:
         # Handle UNIQUE constraint violations gracefully
-        if "UNIQUE constraint failed: people.uuid" in str(integrity_err):
+        integrity_str = str(integrity_err)
+        if ("UNIQUE constraint failed: people.uuid" in integrity_str or
+            "UNIQUE constraint failed: family_tree.people_id" in integrity_str):
             logger.warning(f"UNIQUE constraint violation during bulk insert - some records already exist: {integrity_err}")
             # This is expected behavior when records already exist - don't fail the entire batch
             logger.info("Continuing with database operations despite duplicate records...")
-            
+
             # Use helper function to handle recovery
             # Note: insert_data might not be available in this exception scope, pass None for safe recovery
             return _handle_integrity_error_recovery(session, None)
