@@ -730,6 +730,16 @@ def _main_page_processing_loop(
                         logger.error(f"❌ Proactive session refresh failed at page {current_page_num}")
                         # Continue anyway - reactive recovery will handle if needed
 
+                # AUTOMATIC INTERVENTION CHECK - Check for health monitor intervention requests
+                if session_manager.check_automatic_intervention():
+                    logger.critical(f"🚨 AUTOMATIC INTERVENTION TRIGGERED - Halting processing at page {current_page_num}")
+                    loop_final_success = False
+                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    if remaining_matches_estimate > 0:
+                        progress_bar.update(remaining_matches_estimate)
+                        state["total_errors"] += remaining_matches_estimate
+                    break  # Exit while loop immediately
+
                 # OPTION C: BROWSER HEALTH MONITORING - Check browser health before processing
                 if not session_manager.check_browser_health():
                     logger.warning(f"🚨 BROWSER DEATH DETECTED at page {current_page_num}")
