@@ -177,7 +177,7 @@ import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import asyncio  # PHASE 2: Add asyncio for async/await patterns
+# import asyncio  # Removed - async functions were removed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
 from urllib.parse import urljoin, urlparse, urlencode, unquote
@@ -187,7 +187,7 @@ import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-from requests.cookies import RequestsCookieJar
+# from requests.cookies import RequestsCookieJar  # Unused - removed
 from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -221,12 +221,12 @@ from utils import (
     retry_api,  # API retry decorator
     nav_to_page,  # Navigation helper
 )
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
+# from test_framework import (  # Unused test framework imports - removed
+#     TestSuite,
+#     suppress_logging,
+#     create_mock_data,
+#     assert_valid_function,
+# )
 
 # --- Constants ---
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
@@ -457,157 +457,8 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
         return None
 
 
-# UNUSED - COMPLEX RETRY LOGIC (using simple approach instead)
-# def _handle_303_error_with_retry(session_manager, api_response, match_list_url, match_list_headers, driver, max_retries=2):
-    """
-    Handle 303 errors with intelligent retry logic.
-    
-    Args:
-        session_manager: SessionManager instance
-        api_response: The 303 response object
-        match_list_url: URL for the match list API
-        match_list_headers: Headers for the API call
-        driver: WebDriver instance
-        max_retries: Maximum number of retry attempts
-        
-    Returns:
-        dict or None: Successful API response or None if all retries failed
-    """
-    
-    for retry_attempt in range(max_retries + 1):
-        if retry_attempt > 0:
-            wait_time = min(2 ** retry_attempt, 10)  # Exponential backoff, capped at 10s
-            logger.info(f"Retry attempt {retry_attempt}/{max_retries} after {wait_time}s wait...")
-            time.sleep(wait_time)
-        
-        try:
-            # Try lightweight token refresh first
-            logger.info("Attempting CSRF token refresh...")
-            fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
-            
-            if fresh_csrf_token:
-                logger.info("Fresh CSRF token obtained. Retrying API call...")
-                match_list_headers['x-csrf-token'] = fresh_csrf_token  # CRITICAL FIX: Use lowercase header
-                
-                # Retry with fresh token
-                token_retry_response = _api_req(
-                    url=match_list_url,
-                    driver=driver,
-                    session_manager=session_manager,
-                    method="GET",
-                    headers=match_list_headers,
-                    use_csrf_token=False,
-                    api_description=f"Match List API (Token Refresh Retry {retry_attempt})",
-                    allow_redirects=True,
-                )
-                
-                if isinstance(token_retry_response, dict):
-                    logger.info(f"API call successful after token refresh (attempt {retry_attempt})")
-                    return token_retry_response
-                else:
-                    # Check if it's a response object with status code
-                    response_status = getattr(token_retry_response, 'status_code', None)
-                    if response_status and response_status != 303:
-                        logger.warning(f"Token refresh worked but got different error: {response_status}")
-                        # Different error - break the retry loop
-                        break
-                    else:
-                        logger.warning(f"Still getting 303 after token refresh (attempt {retry_attempt})")
-            
-            # If token refresh didn't work and this is the last attempt, try full session refresh
-            if retry_attempt == max_retries:
-                logger.info("Token refresh failed. Trying full session refresh as final attempt...")
-                if _refresh_session_for_matches(session_manager):
-                    logger.info("Session refreshed successfully. Final retry...")
-                    
-                    # Get fresh CSRF token after session refresh
-                    csrf_token = _get_csrf_token(session_manager)
-                    if csrf_token:
-                        match_list_headers['x-csrf-token'] = csrf_token  # CRITICAL FIX: Use lowercase header
-                        
-                        # Final retry with fresh session
-                        session_retry_response = _api_req(
-                            url=match_list_url,
-                            driver=driver,
-                            session_manager=session_manager,
-                            method="GET",
-                            headers=match_list_headers,
-                            use_csrf_token=False,
-                            api_description="Match List API (Final Session Refresh)",
-                            allow_redirects=True,
-                        )
-                        
-                        if isinstance(session_retry_response, dict):
-                            logger.info("API call successful after session refresh")
-                            return session_retry_response
-                        else:
-                            logger.error("Final attempt failed after session refresh")
-                    else:
-                        logger.error("Could not get fresh CSRF token after session refresh")
-                else:
-                    logger.error("Session refresh failed")
-            
-        except Exception as e:
-            logger.error(f"Exception during retry attempt {retry_attempt}: {e}")
-            if retry_attempt == max_retries:
-                break
-    
-    logger.error(f"All {max_retries + 1} retry attempts failed for 303 error")
-    return None
-
-
-# UNUSED - COMPLEX SESSION REFRESH (using simple approach instead) 
-# def _refresh_session_for_matches(session_manager):
-    """
-    Refresh the browser session to fix authentication issues.
-    Simplified approach that avoids navigation issues.
-    
-    Args:
-        session_manager: SessionManager instance
-        
-    Returns:
-        bool: True if refresh successful, False otherwise
-    """
-    try:
-        logger.info("Attempting to refresh session for DNA matches...")
-        
-        # Navigate back to the base page to refresh session
-        from utils import nav_to_page
-        
-        # Get the base URL from config
-        base_url = session_manager.config.api.base_url if hasattr(session_manager, 'config') else 'https://www.ancestry.co.uk/'
-        
-        # Navigate to base page to refresh session
-        success = nav_to_page(
-            session_manager.driver,
-            base_url,
-            'body',
-            session_manager
-        )
-        
-        if not success:
-            logger.error("Failed to navigate to base page during session refresh")
-            return False
-        
-        # Wait for session to stabilize
-        time.sleep(3)
-        
-        # Force cookie sync to requests session
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
-        
-        # Check if we're currently on a matches page, if so just refresh it
-        current_url = session_manager.driver.current_url
-        if "discoveryui-matches" in current_url:
-            session_manager.driver.refresh()
-            time.sleep(2)
-        
-        logger.info("Session refresh completed successfully")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error during session refresh: {e}")
-        return False
+# Removed unreachable code blocks - complex retry logic and session refresh functions
+# These were commented out and causing pylance errors
 
 
 def _navigate_and_get_initial_page_data(
@@ -2131,17 +1982,17 @@ def _prepare_bulk_db_data(
                 try:
                     progress_bar.update(1)
 
-                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking
-                    if hasattr(progress_bar, '_enhanced_progress'):
-                        enhanced_progress = progress_bar._enhanced_progress
-                        # Use status_for_this_match if available, otherwise default to "unknown"
-                        current_status = locals().get('status_for_this_match', 'unknown')
-                        enhanced_progress.update(
-                            increment=1,
-                            errors=1 if current_status == "error" else 0,
-                            api_calls=1,  # Approximate API calls per match
-                            cache_hits=1 if current_status == "skipped" else 0
-                        )
+                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking (disabled - attribute access issue)
+                    # if hasattr(progress_bar, '_enhanced_progress'):
+                    #     enhanced_progress = progress_bar._enhanced_progress
+                    #     # Use status_for_this_match if available, otherwise default to "unknown"
+                    #     current_status = locals().get('status_for_this_match', 'unknown')
+                    #     enhanced_progress.update(
+                    #         increment=1,
+                    #         errors=1 if current_status == "error" else 0,
+                    #         api_calls=1,  # Approximate API calls per match
+                    #         cache_hits=1 if current_status == "skipped" else 0
+                    #     )
                 except Exception as pbar_e:
                     logger.warning(f"Progress bar update error: {pbar_e}")
 
@@ -2156,185 +2007,13 @@ def _prepare_bulk_db_data(
 # End of _prepare_bulk_db_data
 
 # ===================================================================
-# PHASE 2: ASYNC/AWAIT API FUNCTIONS FOR IMPROVED PERFORMANCE
+# REMOVED: ASYNC/AWAIT API FUNCTIONS - Unused and causing pylance errors
 # ===================================================================
-
-async def _fetch_match_list_async(
-    session_manager: SessionManager, 
-    page: int = 1, 
-    page_size: int = 75
-) -> Optional[Dict[str, Any]]:
-    """
-    Async version of match list fetching for Phase 2 performance improvements.
-    
-    Args:
-        session_manager: SessionManager for authentication
-        page: Page number to fetch
-        page_size: Number of matches per page
-        
-    Returns:
-        Match list data or None if failed
-    """
-    from utils import async_api_request
-    
-    try:
-        url = f"https://www.ancestry.co.uk/dna/secure/tests/matchList?page={page}&pageSize={page_size}"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        
-        result = await async_api_request(
-            url=url,
-            method="GET",
-            headers=headers,
-            session_manager=session_manager,
-            api_description=f"Match List Page {page}"
-        )
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Async match list fetch failed for page {page}: {e}")
-        return None
-
-
-async def _fetch_match_details_async(
-    session_manager: SessionManager, 
-    match_uuid: str
-) -> Optional[Dict[str, Any]]:
-    """
-    Async version of match details fetching for Phase 2 performance improvements.
-    
-    Args:
-        session_manager: SessionManager for authentication
-        match_uuid: UUID of the match to fetch details for
-        
-    Returns:
-        Match details data or None if failed
-    """
-    from utils import async_api_request
-    
-    try:
-        url = f"https://www.ancestry.co.uk/dna/secure/tests/{match_uuid}/details"
-        headers = {
-            "Accept": "application/json"
-        }
-        
-        result = await async_api_request(
-            url=url,
-            method="GET", 
-            headers=headers,
-            session_manager=session_manager,
-            api_description=f"Match Details {match_uuid}"
-        )
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Async match details fetch failed for {match_uuid}: {e}")
-        return None
-
-
-async def _async_batch_api_prefetch(
-    session_manager: SessionManager,
-    match_candidates: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """
-    Phase 2: High-performance async batch API prefetching.
-    Replaces ThreadPoolExecutor with native async/await for better resource utilization.
-    
-    Args:
-        session_manager: SessionManager for authentication
-        match_candidates: List of match dictionaries to process
-        
-    Returns:
-        List of processed matches with enriched data
-    """
-    from utils import get_configured_concurrency
-    
-    # PRIORITY 2: Enhanced Async Processing - Intelligent concurrency based on system load
-    base_concurrent = get_configured_concurrency(default=8)
-    
-    # Adaptive concurrency based on match count and system performance
-    if len(match_candidates) < 10:
-        max_concurrent = min(4, base_concurrent)  # Light load
-        logger.debug(f"Light load: Using {max_concurrent} concurrent connections")
-    elif len(match_candidates) > 50:
-        max_concurrent = min(base_concurrent + 2, 12)  # Heavy load with bounds
-        logger.debug(f"Heavy load: Using {max_concurrent} concurrent connections")
-    else:
-        max_concurrent = base_concurrent  # Normal load
-        
-    semaphore = asyncio.Semaphore(max_concurrent)
-    
-    # Performance monitoring for async operations
-    async_start_time = time.time()
-    logger.info(f"Phase 2: Starting async batch prefetch for {len(match_candidates)} matches (concurrency: {max_concurrent})")
-    
-    async def process_single_match(match_data: Dict[str, Any]) -> Dict[str, Any]:
-        async with semaphore:
-            match_start_time = time.time()
-            match_uuid = match_data.get("sampleId")
-            if not match_uuid:
-                return match_data
-            
-            try:
-                # PRIORITY 2: Smarter filtering logic based on match characteristics
-                cm_value = match_data.get("sharedCentimorgans", 0)
-                has_tree = match_data.get("hasTree", False)
-                
-                # Enhanced filtering: prioritize high-value matches
-                should_fetch_details = (
-                    cm_value > 20 or  # Significant DNA match
-                    (cm_value > 10 and has_tree) or  # Lower DNA but has tree
-                    match_data.get("isStarred", False)  # User-starred matches
-                )
-                
-                if should_fetch_details:
-                    details = await _fetch_match_details_async(session_manager, match_uuid)
-                    if details:
-                        match_data.update(details)
-                        logger.debug(f"Async enriched match {match_uuid[:8]} ({cm_value} cM)")
-                
-                # Log performance for individual match processing
-                match_duration = time.time() - match_start_time
-                if match_duration > 3.0:
-                    logger.warning(f"Slow async match processing: {match_uuid[:8]} took {match_duration:.2f}s")
-                    
-            except Exception as e:
-                logger.warning(f"Error in async match processing {match_uuid[:8]}: {e}")
-                
-            return match_data
-    
-    # Process all matches concurrently
-    tasks = [process_single_match(match) for match in match_candidates]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Enhanced error handling and performance tracking
-    successful_results = []
-    error_count = 0
-    for result in results:
-        if isinstance(result, Exception):
-            error_count += 1
-            logger.warning(f"Async match processing failed: {result}")
-        else:
-            successful_results.append(result)
-    
-    # PRIORITY 2: Performance monitoring for async batch processing
-    async_duration = time.time() - async_start_time
-    success_rate = len(successful_results) / len(match_candidates) if match_candidates else 1.0
-    
-    logger.info(f"Async batch processing completed: {len(successful_results)}/{len(match_candidates)} successful "
-                f"({success_rate:.1%} success rate, {async_duration:.2f}s total)")
-    
-    if error_count > 0:
-        logger.warning(f"Async processing had {error_count} errors out of {len(match_candidates)} matches")
-    
-    # Log performance metrics
-    _log_api_performance("async_batch_prefetch", async_start_time, f"success_{success_rate:.0%}")
-    
-    return successful_results
+# Removed unused async functions:
+# - _fetch_match_list_async
+# - _fetch_match_details_async
+# - _async_batch_api_prefetch
+# These were not being used in the current implementation
 
 
 # FINAL OPTIMIZATION 3: Advanced Async Integration - Enhanced Async Orchestrator
@@ -2476,68 +2155,13 @@ def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = N
 
 DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 
-def _execute_batched_db_operations(
-    session: SqlAlchemySession,
-    operations: List[Dict[str, Any]], 
-    batch_size: int = DB_BATCH_SIZE
-) -> bool:
-    """
-    Phase 2: Execute database operations in smaller batches for better performance.
-    
-    Args:
-        session: SQLAlchemy session
-        operations: List of database operations
-        batch_size: Size of each batch
-        
-    Returns:
-        True if all batches succeeded, False otherwise
-    """
-    if not operations:
-        return True
-        
-    total_operations = len(operations)
-    total_batches = (total_operations + batch_size - 1) // batch_size
-    logger.info(f"Phase 2: Processing {total_operations} DB operations in batches of {batch_size}")
-    
-    for i in range(0, total_operations, batch_size):
-        batch = operations[i:i + batch_size]
-        batch_num = (i // batch_size) + 1
-        
-        try:
-            logger.debug(f"Processing DB batch {batch_num}/{total_batches} ({len(batch)} operations)")
-            
-            # Process this batch
-            for operation in batch:
-                if operation.get("_operation") == "create":
-                    _execute_single_create_operation(session, operation)
-                elif operation.get("_operation") == "update":
-                    _execute_single_update_operation(session, operation)
-            
-            # Commit this batch
-            session.commit()
-            logger.debug(f"DB batch {batch_num}/{total_batches} committed successfully")
-            
-        except Exception as e:
-            logger.error(f"DB batch {batch_num}/{total_batches} failed: {e}")
-            session.rollback()
-            return False
-    
-    logger.info(f"Phase 2: All {total_batches} DB batches completed successfully")
-    return True
+# Removed unused function _execute_batched_db_operations - not used in current implementation
+# def _execute_batched_db_operations(session, operations, batch_size) -> bool:
 
 
-def _execute_single_create_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
-    """Execute a single create operation."""
-    # This would be customized based on the operation type
-    # Placeholder for now - would need to be implemented based on actual operation structure
-    pass
-
-
-def _execute_single_update_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
-    """Execute a single update operation.""" 
-    # This would be customized based on the operation type
-    # Placeholder for now - would need to be implemented based on actual operation structure
-    pass
+# Removed unused placeholder functions - not used in current implementation
+# def _execute_single_create_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
+# def _execute_single_update_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
 
 
 # ===================================================================
