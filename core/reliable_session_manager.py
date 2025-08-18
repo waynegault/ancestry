@@ -537,7 +537,7 @@ class ResourceMonitor:
             'https://www.cloudflare.com'
         ]
 
-        best_result = None
+        best_result: Optional[Dict[str, Any]] = None
         all_failed = True
 
         for endpoint in test_endpoints:
@@ -559,6 +559,8 @@ class ResourceMonitor:
         else:
             # Reset failure count on success
             self.network_failure_count = 0
+            # best_result should never be None here since all_failed is False
+            assert best_result is not None, "best_result should not be None when not all_failed"
             return best_result
 
     def _test_single_endpoint(self, url: str) -> Dict[str, Any]:
@@ -795,15 +797,20 @@ class ReliableSessionManager:
                 return False
 
             # Test 2: Navigation capability
-            from utils import nav_to_page
-            from config_schema import config_schema
-            base_url = config_schema.api.base_url
+            try:
+                from utils import nav_to_page
+                from config_schema import config_schema
+                base_url = config_schema.api.base_url
 
-            if base_url:
-                nav_success = nav_to_page(browser_manager.driver, base_url)
-                if not nav_success:
-                    logger.warning("❌ Browser failed navigation test")
-                    return False
+                if base_url:
+                    nav_success = nav_to_page(browser_manager.driver, base_url)
+                    if not nav_success:
+                        logger.warning("❌ Browser failed navigation test")
+                        return False
+            except ImportError:
+                # Skip navigation test if config_schema not available
+                logger.debug("⚠️ Skipping navigation test - config_schema not available")
+                pass
 
             # Test 3: Cookie access (the originally failing operation)
             cookies = browser_manager.driver.get_cookies()
@@ -840,6 +847,8 @@ class ReliableSessionManager:
                 return False
 
             # Quick cookie test
+            if self.browser_manager.driver is None:
+                return False
             cookies = self.browser_manager.driver.get_cookies()
             return isinstance(cookies, list)
 
@@ -864,6 +873,9 @@ class ReliableSessionManager:
         """
         if not self.browser_manager:
             raise RuntimeError("No browser manager available")
+
+        if not self.browser_manager.driver:
+            raise RuntimeError("No browser driver available")
 
         # Placeholder for actual page processing
         # This would be replaced with the actual Action 6 page processing logic
@@ -1123,6 +1135,10 @@ class ReliableSessionManager:
 
             # Try to access a protected resource to verify auth
             try:
+                if not self.browser_manager or not self.browser_manager.driver:
+                    logger.error(f"❌ No browser available for auth check")
+                    return False
+
                 cookies = self.browser_manager.driver.get_cookies()
                 auth_cookies = [c for c in cookies if 'auth' in c['name'].lower() or 'session' in c['name'].lower()]
 
