@@ -919,8 +919,8 @@ _advanced_monitor = AdvancedPerformanceMonitor()
 def track_api_performance(api_name: str, duration: float, status: str = "unknown") -> None:
     """Global function to track API performance metrics."""
     try:
-        # Simple performance tracking - just log and store basic metrics
-        if duration > 5.0:
+        # Simple performance tracking - just log and store basic metrics - OPTIMIZATION: Less pessimistic threshold
+        if duration > 20.0:  # OPTIMIZATION: Increased from 5.0s to 20.0s - align with action6_gather.py thresholds
             logger.warning(f"API Performance Alert: {api_name} took {duration:.3f}s (status: {status})")
         
         # Update advanced monitor performance history if available  

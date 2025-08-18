@@ -121,7 +121,7 @@ class SessionHealthMonitor:
     def _initialize_metrics(self):
         """Initialize health metrics with default thresholds."""
         metrics_config = {
-            "api_response_time": {"warning": 5.0, "critical": 10.0, "weight": 2.0},
+            "api_response_time": {"warning": 15.0, "critical": 25.0, "weight": 2.0},  # OPTIMIZATION: Less pessimistic thresholds (was 5.0/10.0)
             "memory_usage_mb": {"warning": 200.0, "critical": 400.0, "weight": 1.5},
             "error_rate": {"warning": 0.05, "critical": 0.15, "weight": 3.0},
             "session_age_minutes": {"warning": 45.0, "critical": 60.0, "weight": 1.0},
