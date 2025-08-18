@@ -18,6 +18,7 @@ from standard_imports import (
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import sys
 import time
 import threading
 import psutil
@@ -752,3 +753,21 @@ register_function("integrate_with_session_manager", integrate_with_session_manag
 register_function("integrate_with_action6", integrate_with_action6)
 register_function("get_performance_recommendations", get_performance_recommendations)
 register_function("health_monitor_tests", health_monitor_tests)
+
+
+def run_comprehensive_tests():
+    """
+    Standardized test function for the test framework.
+    This function is required for integration with run_all_tests.py.
+    """
+    return health_monitor_tests()
+
+
+if __name__ == "__main__":
+    # Run tests when executed directly
+    success = health_monitor_tests()
+    if success:
+        print("🎉 All health monitor tests passed!")
+    else:
+        print("❌ Some health monitor tests failed!")
+        sys.exit(1)
