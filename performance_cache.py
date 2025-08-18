@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 # === PERFORMANCE CACHE CLASSES ===
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
-from memory_optimizer import ObjectPool, lazy_property
+from memory_utils import ObjectPool, lazy_property
 
 
 class CacheableObject:
