@@ -1031,7 +1031,7 @@ class DynamicRateLimiter:
                 sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
                 # OPTIMIZATION: Reduce token bucket logging verbosity
-                if sleep_duration > 3.0:  # Only log significant waits
+                if sleep_duration > 5.0:  # Only log very significant waits (increased from 3.0s)
                     logger.debug(
                         f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
                     )
@@ -1547,7 +1547,7 @@ def _generate_ancestry_context_ube(session_manager: 'SessionManager', tree_id: s
         context_json = json.dumps(context_data)
         context_encoded = base64.b64encode(context_json.encode('utf-8')).decode('utf-8')
 
-        logger.debug(f"Generated ancestry context UBE header")
+        # Consolidated logging - reduced verbosity
         return context_encoded
 
     except Exception as e:
@@ -1607,7 +1607,6 @@ def _add_enhanced_browser_headers(
                 ancestry_context = _generate_ancestry_context_ube(session_manager, tree_id, person_id)
                 if ancestry_context:
                     enhanced_headers["ancestry-context-ube"] = ancestry_context
-                    logger.debug(f"Added ancestry-context-ube header")
             except Exception as e:
                 logger.debug(f"Could not generate ancestry context: {e}")
 
@@ -1617,7 +1616,6 @@ def _add_enhanced_browser_headers(
             span_id = str(uuid.uuid4()).replace('-', '')[:16]
             enhanced_headers["traceparent"] = f"00-{trace_id}-{span_id}-01"
             enhanced_headers["tracestate"] = f"2611750@nr=0-1-1690570-1588686754-{span_id}----{int(datetime.now().timestamp() * 1000)}"
-            logger.debug(f"Added tracing headers")
         except Exception as e:
             logger.debug(f"Could not generate tracing headers: {e}")
 
@@ -1637,11 +1635,12 @@ def _add_enhanced_browser_headers(
             }
             newrelic_encoded = base64.b64encode(json.dumps(newrelic_data).encode('utf-8')).decode('utf-8')
             enhanced_headers["newrelic"] = newrelic_encoded
-            logger.debug(f"Added NewRelic header")
         except Exception as e:
             logger.debug(f"Could not generate NewRelic header: {e}")
 
-        logger.debug(f"Enhanced headers with {len(enhanced_headers) - len(headers)} additional browser-like headers")
+        # Reduced verbosity: Only log header enhancement at INFO level for important calls
+        if len(enhanced_headers) - len(headers) > 15:  # Only log when significant enhancement
+            logger.info(f"Enhanced headers with {len(enhanced_headers) - len(headers)} additional browser-like headers")
 
     except Exception as e:
         logger.warning(f"Failed to add enhanced browser headers: {e}")

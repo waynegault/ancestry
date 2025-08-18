@@ -2,11 +2,11 @@
 /session_state.json
 
 # Environment and Configuration
-/.env
-/.env.*
-/.env-*
-/.env.example
-/credentials.enc
+.env
+.env.*
+.env-*
+.env.example
+credentials.enc
 
 # Python Environment
 /venv/
@@ -59,7 +59,7 @@ Logs/api_utils.log
 Logs/api_utils.log
 IMPLEMENTATION_PLAN.md
 /ai_prompts.bak.*
-ancestry.db-shm
-ancestry.db-wal
+Data/ancestry.db-shm
+Data/ancestry.db-wal
 Data/ancestry_backup.db
-ancestry.db
+Data/ancestry.db
