@@ -641,12 +641,23 @@ class SessionManager:
     def check_session_health(self) -> bool:
         """
         Universal session health monitoring that detects session death and prevents
-        cascade failures during long-running operations. 
-        
+        cascade failures during long-running operations.
+
         This replaces action6-specific monitoring with universal monitoring.
+        Enhanced to check both driver validity AND cascade state.
         """
         try:
-            # Quick session validation first
+            # CRITICAL FIX: Check for session death cascade first
+            if self.is_session_death_cascade():
+                cascade_count = self.session_health_monitor.get('death_cascade_count', 0)
+                if cascade_count >= 5:  # Lower threshold for health check
+                    logger.critical(
+                        f"🚨 SESSION HEALTH CHECK: Death cascade count {cascade_count} "
+                        f"exceeds health check threshold. Session is unhealthy."
+                    )
+                    return False
+
+            # Quick session validation
             if not self.is_sess_valid():
                 if not self.session_health_monitor['death_detected'].is_set():
                     self.session_health_monitor['death_detected'].set()
@@ -657,11 +668,11 @@ class SessionManager:
                         f" - Universal session health monitoring triggered"
                     )
                 return False
-            
+
             # Update heartbeat if session is alive
             self.session_health_monitor['last_heartbeat'] = time.time()
             return True
-            
+
         except Exception as exc:
             logger.error(f"Session health check failed: {exc}")
             # Assume session is dead on health check failure
@@ -677,48 +688,106 @@ class SessionManager:
         return self.session_health_monitor['death_detected'].is_set()
 
     def should_halt_operations(self) -> bool:
-        """Determine if operations should halt due to session death."""
-        if self.is_session_death_cascade():
-            self.session_health_monitor['death_cascade_count'] += 1
-
-            # Try recovery before halting (up to 2 attempts)
-            if self.session_health_monitor['death_cascade_count'] <= 2:
-                logger.warning(
-                    f"⚠️  Session death cascade detected (cascade #{self.session_health_monitor['death_cascade_count']}) "
-                    f"- attempting recovery before halting"
-                )
-
-                # Attempt session recovery
-                if self.attempt_cascade_recovery():
-                    logger.info("✅ Session cascade recovery successful - continuing operations")
-                    return False
-                else:
-                    logger.error("❌ Session cascade recovery failed")
-
-            # Halt if recovery failed or too many cascades
-            logger.warning(
-                f"⚠️  Halting operation due to session death cascade "
-                f"(cascade #{self.session_health_monitor['death_cascade_count']})"
-            )
+        """
+        Simplified halt logic - immediate shutdown on session death.
+        NO RECOVERY ATTEMPTS - prevents infinite cascade loops.
+        """
+        # Check if emergency shutdown already triggered
+        if self.is_emergency_shutdown():
             return True
+
+        if self.is_session_death_cascade():
+            cascade_count = self.session_health_monitor.get('death_cascade_count', 0) + 1
+
+            # Prevent cascade count from going beyond emergency threshold
+            if cascade_count > 9999:
+                return True  # Already in emergency shutdown, don't increment further
+
+            self.session_health_monitor['death_cascade_count'] = cascade_count
+
+            # IMMEDIATE HALT: No recovery attempts, reduced threshold
+            if cascade_count >= 3:  # Reduced from 20 to 3
+                logger.critical(
+                    f"🚨 IMMEDIATE EMERGENCY SHUTDOWN: Cascade #{cascade_count} exceeds limit (3). "
+                    f"No recovery attempted - preventing infinite loops."
+                )
+                self.emergency_shutdown(
+                    f"Session death cascade #{cascade_count} - immediate shutdown to prevent infinite loop"
+                )
+                return True
+
+            # Even for first few cascades, log and halt immediately
+            logger.critical(
+                f"🚨 SESSION DEATH CASCADE #{cascade_count}: Immediate halt - no recovery attempts. "
+                f"Will trigger emergency shutdown at cascade #3."
+            )
+
+            # SIMPLIFIED: Always halt on session death, no recovery
+            if cascade_count >= 1:  # Halt immediately on any cascade
+                logger.critical(f"🚨 HALTING IMMEDIATELY: Session death detected (cascade #{cascade_count})")
+                return True
+
         return False
+
+    def emergency_shutdown(self, reason: str = "Emergency shutdown triggered") -> None:
+        """
+        Emergency shutdown mechanism for critical failures.
+        Forces immediate termination of all operations.
+        """
+        logger.critical(f"🚨 EMERGENCY SHUTDOWN: {reason}")
+
+        # Set emergency shutdown flag
+        self.session_health_monitor['emergency_shutdown'] = True
+        self.session_health_monitor['death_detected'].set()
+        self.session_health_monitor['is_alive'].clear()
+
+        # Force cascade count to maximum to prevent any recovery attempts
+        self.session_health_monitor['death_cascade_count'] = 9999
+
+        # Close browser if it exists
+        try:
+            if self.driver:
+                self.driver.quit()
+                self.driver = None
+        except Exception as e:
+            logger.debug(f"Error closing driver during emergency shutdown: {e}")
+
+        logger.critical("🚨 EMERGENCY SHUTDOWN COMPLETE - All operations halted")
+
+    def is_emergency_shutdown(self) -> bool:
+        """Check if emergency shutdown has been triggered."""
+        return self.session_health_monitor.get('emergency_shutdown', False)
+
+    def cancel_all_operations(self) -> None:
+        """Cancel all pending operations to prevent cascade failures."""
+        try:
+            # Set a flag that other operations can check
+            self.session_health_monitor['operations_cancelled'] = True
+            logger.info("🛑 All operations cancelled to prevent cascade failures")
+        except Exception as e:
+            logger.debug(f"Error cancelling operations: {e}")
 
     def attempt_cascade_recovery(self) -> bool:
         """Attempt to recover from session death cascade."""
         try:
             logger.info("🔄 Attempting session cascade recovery...")
 
-            # Reset death detection flags
-            self.session_health_monitor['death_detected'].clear()
-            self.session_health_monitor['is_alive'].set()
+            # CRITICAL FIX: Don't reset death detection flags during cascade
+            # This was causing infinite cascade loops because the death state
+            # was being cleared, allowing the cascade to restart indefinitely
+            # Only clear flags if recovery is truly successful
 
-            # Clear all caches and force fresh session
+            # Clear all caches and force fresh session first
             self.clear_session_caches()
 
             # Attempt to establish new session
             success = self.ensure_session_ready("Cascade Recovery")
 
             if success:
+                # Only reset death detection flags if recovery actually worked
+                self.session_health_monitor['death_detected'].clear()
+                self.session_health_monitor['is_alive'].set()
+
                 # Reset timers for new session
                 current_time = time.time()
                 self.session_health_monitor['session_start_time'] = current_time

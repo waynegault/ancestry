@@ -89,6 +89,66 @@ def _progress_callback(progress: float) -> None:
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
+# === COLOR UTILITIES ===
+class Colors:
+    """ANSI color codes for terminal output"""
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    END = '\033[0m'  # Reset to default
+
+    @staticmethod
+    def green(text: str) -> str:
+        """Return text in green color"""
+        return f"{Colors.GREEN}{text}{Colors.END}"
+
+    @staticmethod
+    def red(text: str) -> str:
+        """Return text in red color"""
+        return f"{Colors.RED}{text}{Colors.END}"
+
+    @staticmethod
+    def yellow(text: str) -> str:
+        """Return text in yellow color"""
+        return f"{Colors.YELLOW}{text}{Colors.END}"
+
+# === ENHANCED LOGGER WITH COLORS ===
+class ColorLogger:
+    """Enhanced logger wrapper that automatically applies colors to different log levels"""
+
+    def __init__(self, base_logger):
+        self.base_logger = base_logger
+
+    def debug(self, message):
+        self.base_logger.debug(message)
+
+    def info(self, message):
+        self.base_logger.info(message)
+
+    def warning(self, message):
+        # Auto-colorize warnings in yellow unless already colored
+        if '\033[' not in str(message):  # Check if already has ANSI codes
+            message = Colors.yellow(str(message))
+        self.base_logger.warning(message)
+
+    def error(self, message, **kwargs):
+        # Auto-colorize errors in red unless already colored
+        if '\033[' not in str(message):  # Check if already has ANSI codes
+            message = Colors.red(str(message))
+        self.base_logger.error(message, **kwargs)
+
+    def critical(self, message, **kwargs):
+        # Auto-colorize critical messages in red unless already colored
+        if '\033[' not in str(message):  # Check if already has ANSI codes
+            message = Colors.red(str(message))
+        self.base_logger.critical(message, **kwargs)
+
 # === PERFORMANCE OPTIMIZATIONS ===
 from utils import (
     fast_json_loads,
@@ -156,7 +216,8 @@ def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
 
 # === MODULE SETUP ===
 raw_logger = setup_module(globals(), __name__)
-logger = OptimizedLogger(raw_logger)
+optimized_logger = OptimizedLogger(raw_logger)
+logger = ColorLogger(optimized_logger)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
@@ -678,6 +739,46 @@ def _main_page_processing_loop(
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
 
+                # CRITICAL FIX: Check for emergency shutdown first
+                if hasattr(session_manager, 'is_emergency_shutdown') and session_manager.is_emergency_shutdown():
+                    logger.critical(
+                        f"🚨 EMERGENCY SHUTDOWN DETECTED at page {current_page_num}. "
+                        f"Immediate termination required."
+                    )
+                    loop_final_success = False
+                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    if remaining_matches_estimate > 0:
+                        progress_bar.update(remaining_matches_estimate)
+                        state["total_errors"] += remaining_matches_estimate
+                    break  # Exit while loop immediately
+
+                # CRITICAL FIX: Check for session death cascade halt signal
+                if session_manager.should_halt_operations():
+                    cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
+                    logger.critical(
+                        f"🚨 SESSION DEATH CASCADE HALT SIGNAL at page {current_page_num}. "
+                        f"Cascade count: {cascade_count}. Emergency termination triggered."
+                    )
+                    loop_final_success = False
+                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    if remaining_matches_estimate > 0:
+                        progress_bar.update(remaining_matches_estimate)
+                        state["total_errors"] += remaining_matches_estimate
+                    break  # Exit while loop immediately
+
+                # CRITICAL FIX: Check emergency shutdown flag
+                if session_manager.is_emergency_shutdown():
+                    logger.critical(
+                        f"🚨 EMERGENCY SHUTDOWN DETECTED at page {current_page_num}. "
+                        f"Terminating immediately to prevent infinite loops."
+                    )
+                    loop_final_success = False
+                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    if remaining_matches_estimate > 0:
+                        progress_bar.update(remaining_matches_estimate)
+                        state["total_errors"] += remaining_matches_estimate
+                    break  # Exit while loop immediately
+
                 # EMERGENCY FIX: Check for 303 redirect pattern (indicates dead session)
                 # If we get multiple 303s in a row, the session is dead
                 if hasattr(session_manager, '_consecutive_303_count'):
@@ -894,6 +995,19 @@ def _main_page_processing_loop(
                                 result  # We don't need total_pages again
                             )
                     except ConnectionError as conn_e:
+                        # CRITICAL FIX: Check if ConnectionError is from session death cascade
+                        if "Session death cascade detected" in str(conn_e):
+                            logger.critical(
+                                f"🚨 SESSION DEATH CASCADE ConnectionError at page {current_page_num}: {conn_e}. "
+                                f"Halting main loop to prevent infinite cascade."
+                            )
+                            loop_final_success = False
+                            remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                            if remaining_matches_estimate > 0:
+                                progress_bar.update(remaining_matches_estimate)
+                                state["total_errors"] += remaining_matches_estimate
+                            break  # Exit while loop immediately
+
                         logger.error(
                             f"ConnectionError get_matches page {current_page_num}: {conn_e}",
                             exc_info=False,
@@ -960,6 +1074,7 @@ def _main_page_processing_loop(
                                 
                                 # If all matches on the page can be skipped, do fast processing
                                 if len(fetch_candidates_uuid) == 0:
+                                    print()
                                     logger.info(f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip")
                                     progress_bar.update(len(matches_on_page_for_batch))
                                     state["total_skipped"] += page_skip_count
@@ -1051,7 +1166,7 @@ def _main_page_processing_loop(
 @timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
 @error_context("DNA match gathering coordination")
 def coord(
-    session_manager: SessionManager, config_schema: "ConfigSchema", start: int = 1
+    session_manager: SessionManager, _config_schema: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
@@ -1081,7 +1196,8 @@ def coord(
             context={"session_state": "authenticated but no UUID"},
         )
 
-    # Step 2: Initialize state  
+    # Step 2: Initialize state
+    _ = _config_schema  # Suppress unused parameter warning
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
     logger.debug(
@@ -1509,6 +1625,17 @@ def _perform_api_prefetches(
         f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {optimized_workers} workers) ---"
     )
 
+    # CRITICAL FIX: Check for halt signal before starting batch processing
+    if session_manager.should_halt_operations():
+        cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
+        logger.critical(
+            f"🚨 HALT SIGNAL DETECTED: Stopping API batch processing immediately. "
+            f"Cascade count: {cascade_count}. Preventing infinite loop."
+        )
+        raise MaxApiFailuresExceededError(
+            f"Session death cascade detected (#{cascade_count}) - halting batch processing to prevent infinite loop"
+        )
+
     uuids_for_tree_badge_ladder = {
         match_data["uuid"]
         for match_data in matches_to_process_later
@@ -1536,7 +1663,7 @@ def _perform_api_prefetches(
                 # Enhanced priority classification
                 if is_starred or cm_value > 50:  # Very high priority
                     high_priority_uuids.add(uuid_val)
-                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
+                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, favorite={is_starred}")
                 elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
                     # Medium priority: above threshold OR low DNA but has tree
                     medium_priority_uuids.add(uuid_val)
@@ -1613,7 +1740,18 @@ def _perform_api_prefetches(
 
         # SURGICAL FIX #18: Batch API Call Grouping for better efficiency
         # Group similar API calls together to reduce context switching and improve rate limit utilization
-        
+
+        # CRITICAL FIX: Final halt check before submitting API calls
+        if session_manager.should_halt_operations():
+            cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
+            logger.critical(
+                f"🚨 HALT SIGNAL: Stopping before API submission. "
+                f"Cascade count: {cascade_count}. Preventing API call submission."
+            )
+            raise MaxApiFailuresExceededError(
+                f"Session death cascade detected (#{cascade_count}) - halting before API submission"
+            )
+
         # Group 1: Submit combined details calls first (most common)
         combined_details_futures = []
         for uuid_val in fetch_candidates_uuid:
@@ -1709,6 +1847,21 @@ def _perform_api_prefetches(
             except (
                 ConnectionError
             ) as conn_err:  # Includes HTTPError if raised by retry_api
+                # CRITICAL FIX: Check if ConnectionError is from session death cascade
+                if "Session death cascade detected" in str(conn_err):
+                    logger.critical(
+                        f"🚨 SESSION DEATH CASCADE in batch processing '{task_type}' {identifier_uuid}: {conn_err}. "
+                        f"Cancelling remaining batch tasks to prevent infinite cascade."
+                    )
+                    # Cancel all remaining futures to stop the cascade
+                    for f_cancel in futures:
+                        if not f_cancel.done():
+                            f_cancel.cancel()
+                    # Raise exception to halt batch processing
+                    raise MaxApiFailuresExceededError(
+                        f"Session death cascade detected in batch processing - halting to prevent infinite loop"
+                    )
+
                 logger.error(
                     f"ConnErr prefetch '{task_type}' {identifier_uuid}: {conn_err}",
                     exc_info=False,  # Keep log concise
@@ -2904,14 +3057,22 @@ def _do_batch(
             total_stats["skipped"] += skipped
             total_stats["error"] += errors
             
-            # Log batch summary
-            print()
-            logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
-            logger.debug(f"  New Person/Data: {new}")
-            logger.debug(f"  Updated Person/Data: {updated}")
-            logger.debug(f"  Skipped (No Change): {skipped}")
-            logger.debug(f"  Errors during Prep/DB: {errors}")
-            logger.debug("---------------------------\n")
+            # Log batch summary with green color
+            print("\n\n")
+            logger.debug(Colors.green(f"---- Page {current_page} Batch No{batch_num} Summary ----"))
+            logger.debug(Colors.green(f"  New Person/Data: {new}"))
+            logger.debug(Colors.green(f"  Updated Person/Data: {updated}"))
+            logger.debug(Colors.green(f"  Skipped (No Change): {skipped}"))
+            logger.debug(Colors.green(f"  Errors during Prep/DB: {errors}"))
+
+            # Calculate and log average duration per record
+            total_records = new + updated
+            if total_records > 0:
+                batch_duration = time.time() - batch_start_time
+                avg_duration_per_record = batch_duration / total_records
+                logger.debug(Colors.green(f"  Average duration per record: {avg_duration_per_record:.2f}s"))
+
+            logger.debug(Colors.green("---------------------------\n\n"))
 
         # PRIORITY 5: Track batch performance for future optimization
         batch_duration = time.time() - batch_start_time
@@ -2995,6 +3156,16 @@ def _process_page_matches(
         logger.debug(
             f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---"
         )
+
+        # CRITICAL FIX: Check emergency shutdown before batch processing
+        if session_manager.is_emergency_shutdown():
+            logger.critical(
+                f"🚨 EMERGENCY SHUTDOWN: Stopping batch processing for page {current_page}. "
+                f"Preventing further processing to avoid infinite loops."
+            )
+            raise MaxApiFailuresExceededError(
+                f"Emergency shutdown detected - halting batch processing for page {current_page}"
+            )
 
         # Step 3: SURGICAL FIX #7 - Use reused session when available
         if reused_session:
@@ -3811,7 +3982,7 @@ def _prepare_family_tree_operation_data(
 
 
 def _do_match(
-    session: SqlAlchemySession,  # Required by signature but not used in current implementation
+    session: SqlAlchemySession,  # Required by signature but not used in current implementation  # noqa: ARG001
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
@@ -3854,6 +4025,7 @@ def _do_match(
           for this match based on all data comparisons.
         - error_msg (Optional[str]): An error message if status is 'error', otherwise None.
     """
+    _ = session  # Suppress unused parameter warning - required by signature
     existing_person: Optional[Person] = existing_person_arg
     dna_match_record: Optional[DnaMatch] = (
         existing_person.dna_match if existing_person else None
@@ -4018,7 +4190,7 @@ def _do_match(
 
 def get_matches(
     session_manager: SessionManager,
-    db_session: SqlAlchemySession,  # Required by interface but not used in this function
+    db_session: SqlAlchemySession,  # Required by interface but not used in this function  # noqa: ARG001
     current_page: int = 1,
 ) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
     """
@@ -4041,6 +4213,7 @@ def get_matches(
     # Parameter `db_session` is unused in this function.
     # Consider removing it if it's not planned for future use here.
     # For now, we'll keep it to maintain the signature as per original code.
+    _ = db_session  # Suppress unused parameter warning
 
     if not isinstance(session_manager, SessionManager):
         logger.error("get_matches: Invalid SessionManager.")
@@ -4612,6 +4785,11 @@ def _fetch_combined_details(
     # SURGICAL FIX #20: Universal session validation with SessionManager death detection
     if session_manager.should_halt_operations():
         logger.warning(f"_fetch_combined_details: Halting due to session death cascade for UUID {match_uuid}")
+        # Cancel any pending operations to prevent further cascade
+        try:
+            session_manager.cancel_all_operations()  # type: ignore[attr-defined]
+        except AttributeError:
+            logger.debug("cancel_all_operations method not available")
         raise ConnectionError(
             f"Session death cascade detected - halting combined details fetch (UUID: {match_uuid})"
         )
@@ -4868,7 +5046,7 @@ def _fetch_combined_details(
                 expire=3600,  # 1 hour TTL for combined details
                 retry=True
             )
-            logger.debug(f"Cached combined details for {match_uuid}")
+            # Details cached successfully (reduced verbosity)
         except Exception as cache_exc:
             logger.debug(f"Failed to cache combined details for {match_uuid}: {cache_exc}")
 
@@ -4989,7 +5167,7 @@ def _fetch_batch_badge_details(
                         expire=3600,  # 1 hour TTL for badge details
                         retry=True
                     )
-                    logger.debug(f"Cached badge details for {match_uuid}")
+                    # Badge details cached successfully (reduced verbosity)
                 except Exception as cache_exc:
                     logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
             
@@ -5358,7 +5536,7 @@ def _fetch_batch_relationship_prob(
         session_manager._cached_csrf_token):
         csrf_token_val = session_manager._cached_csrf_token
         rel_headers["x-csrf-token"] = csrf_token_val  # CRITICAL FIX: Use lowercase header
-        logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
+        # Reduced verbosity: CSRF token caching is working as expected
     else:
         # Fallback to driver cookies only if cache miss
         csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
@@ -5468,7 +5646,7 @@ def _fetch_batch_relationship_prob(
                 try:
                     cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
                     global_cache.set(cache_key, result, expire=7200, retry=True)  # 2 hour TTL
-                    logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
+                    # Relationship probability cached successfully (reduced verbosity)
                 except Exception as cache_exc:
                     logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
             
@@ -5588,12 +5766,12 @@ def _log_page_summary(
 ):
     """Logs a summary of processed matches for a single page with proper formatting."""
     logger.debug("")  # Blank line above
-    logger.debug(f"---- Page {page} Summary ----")
-    logger.debug(f"  New Person/Data: {page_new}")
-    logger.debug(f"  Updated Person/Data: {page_updated}")
-    logger.debug(f"  Skipped (No Change): {page_skipped}")
-    logger.debug(f"  Errors during Prep/DB: {page_errors}")
-    logger.debug("---------------------------")
+    logger.debug(Colors.green(f"---- Page {page} Summary ----"))
+    logger.debug(Colors.green(f"  New Person/Data: {page_new}"))
+    logger.debug(Colors.green(f"  Updated Person/Data: {page_updated}"))
+    logger.debug(Colors.green(f"  Skipped (No Change): {page_skipped}"))
+    logger.debug(Colors.green(f"  Errors during Prep/DB: {page_errors}"))
+    logger.debug(Colors.green("---------------------------"))
     logger.debug("")  # Blank line below
 
 

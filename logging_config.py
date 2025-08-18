@@ -48,6 +48,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Define log format constants ---
+
+# === UNIVERSAL COLOR SUPPORT ===
+class Colors:
+    """ANSI color codes for terminal output"""
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    END = '\033[0m'  # Reset to default
+
+    @staticmethod
+    def green(text: str) -> str:
+        """Return text in green color"""
+        return f"{Colors.GREEN}{text}{Colors.END}"
+
+    @staticmethod
+    def red(text: str) -> str:
+        """Return text in red color"""
+        return f"{Colors.RED}{text}{Colors.END}"
+
+    @staticmethod
+    def yellow(text: str) -> str:
+        """Return text in yellow color"""
+        return f"{Colors.YELLOW}{text}{Colors.END}"
+
+# --- Define log format constants ---
 LOG_FORMAT: str = (
     "%(asctime)s %(levelname).3s [%(module)-8.8s %(funcName)-8.8s %(lineno)-4d] %(message)s"
 )
@@ -150,9 +181,23 @@ class AlignedMessageFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        """Formats the log record with alignment."""
+        """Formats the log record with alignment and automatic color support."""
         # Step 1: Get the original message content
         original_message = record.getMessage()
+
+        # Step 1.5: Apply automatic color based on log level
+        if record.levelno >= logging.CRITICAL:
+            # Critical messages in red
+            if '\033[' not in original_message:  # Check if already has ANSI codes
+                original_message = Colors.red(original_message)
+        elif record.levelno >= logging.ERROR:
+            # Error messages in red
+            if '\033[' not in original_message:  # Check if already has ANSI codes
+                original_message = Colors.red(original_message)
+        elif record.levelno >= logging.WARNING:
+            # Warning messages in yellow
+            if '\033[' not in original_message:  # Check if already has ANSI codes
+                original_message = Colors.yellow(original_message)
 
         # Step 2: Create a copy to safely calculate prefix length
         record_copy = copy.copy(record)
