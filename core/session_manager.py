@@ -210,6 +210,9 @@ class SessionManager:
             logger.warning("Health monitoring module not available")
             self.health_monitor = None
 
+        # Session death detection tracking
+        self._consecutive_303_count = 0
+
         # === PHASE 11.1: ADAPTIVE RATE LIMITING ===
         try:
             from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor
