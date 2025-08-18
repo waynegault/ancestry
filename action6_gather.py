@@ -2168,7 +2168,8 @@ DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 # PHASE 3: ADVANCED OPTIMIZATIONS - SMART MATCH PRIORITIZATION
 # ===================================================================
 
-def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+# Removed unused function _prioritize_matches_by_importance - not called
+# def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Phase 3: Intelligently prioritize matches for processing.
     
