@@ -702,9 +702,26 @@ def _main_page_processing_loop(
                 # OPTION C: PROACTIVE BROWSER REFRESH - Check if browser needs refresh before processing
                 if session_manager.should_proactive_browser_refresh():
                     logger.info(f"🔄 Performing proactive browser refresh at page {current_page_num}")
-                    if not session_manager.perform_proactive_browser_refresh():
+                    refresh_success = session_manager.perform_proactive_browser_refresh()
+
+                    if not refresh_success:
                         logger.error(f"❌ Proactive browser refresh failed at page {current_page_num}")
-                        # Continue anyway - reactive recovery will handle if needed
+
+                        # SAFETY: Reset page count to prevent immediate re-trigger
+                        session_manager.browser_health_monitor['pages_since_refresh'] = 0
+                        session_manager.browser_health_monitor['last_browser_refresh'] = time.time()
+
+                        # SAFETY: Check if we can continue with current session
+                        if not session_manager.browser_manager.is_session_valid():
+                            logger.critical(f"🚨 Browser session invalid after failed refresh at page {current_page_num}")
+                            # Trigger session death detection to prevent cascade
+                            session_manager.session_health_monitor['death_detected'].set()
+                            session_manager.session_health_monitor['death_timestamp'] = time.time()
+                            break
+                        else:
+                            logger.warning(f"⚠️ Browser refresh failed but session still valid - continuing with current session")
+                    else:
+                        logger.info(f"✅ Proactive browser refresh successful at page {current_page_num}")
 
                 # PROACTIVE SESSION REFRESH: Check if session needs refresh before processing
                 if session_manager.should_proactive_refresh():

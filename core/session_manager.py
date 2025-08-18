@@ -1004,39 +1004,66 @@ class SessionManager:
             logger.debug("Proactive browser refresh already in progress, skipping")
             return True
 
+        max_attempts = 3
+        start_time = time.time()
+
         try:
             self.browser_health_monitor['browser_refresh_in_progress'].set()
             logger.info("🔄 Starting proactive browser refresh...")
 
-            # Close current browser
-            self.close_browser()
+            for attempt in range(1, max_attempts + 1):
+                logger.info(f"🔄 Browser refresh attempt {attempt}/{max_attempts}...")
 
-            # Start new browser
-            success = self.start_browser("Proactive Browser Refresh")
+                try:
+                    # Close current browser safely
+                    self.close_browser()
+                    time.sleep(1)  # Brief pause to ensure cleanup
 
-            if success:
-                # Re-authenticate if needed
-                from utils import login_status
-                auth_success = login_status(self, disable_ui_fallback=False)
+                    # Start new browser with proper error handling
+                    success = self.start_browser(f"Proactive Refresh - Attempt {attempt}")
 
-                if auth_success:
-                    current_time = time.time()
-                    self.browser_health_monitor['last_browser_refresh'] = current_time
-                    self.browser_health_monitor['browser_start_time'] = current_time
-                    old_page_count = self.browser_health_monitor['pages_since_refresh']
-                    self.browser_health_monitor['pages_since_refresh'] = 0
-                    logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (proactive_browser_refresh)")
-                    logger.info("✅ Proactive browser refresh completed successfully")
-                    return True
-                else:
-                    logger.error("❌ Proactive browser refresh failed - re-authentication failed")
-                    return False
-            else:
-                logger.error("❌ Proactive browser refresh failed - could not start new browser")
-                return False
+                    if success:
+                        # Verify browser is actually working
+                        if self.browser_manager.is_session_valid():
+                            # Perform full session readiness check
+                            session_ready = self.ensure_session_ready(f"Browser Refresh Verification - Attempt {attempt}")
+
+                            if session_ready:
+                                # Update browser health tracking
+                                current_time = time.time()
+                                self.browser_health_monitor['last_browser_refresh'] = current_time
+                                self.browser_health_monitor['browser_start_time'] = current_time
+                                old_page_count = self.browser_health_monitor['pages_since_refresh']
+                                self.browser_health_monitor['pages_since_refresh'] = 0
+
+                                duration = current_time - start_time
+                                logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (proactive_browser_refresh)")
+                                logger.info(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
+                                return True
+                            else:
+                                logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
+                        else:
+                            logger.warning(f"❌ Browser refresh attempt {attempt}: Browser session invalid after start")
+                    else:
+                        logger.warning(f"❌ Browser refresh attempt {attempt}: Failed to start new browser")
+
+                except Exception as attempt_exc:
+                    logger.error(f"❌ Browser refresh attempt {attempt} exception: {attempt_exc}")
+
+                # Wait before next attempt (except on last attempt)
+                if attempt < max_attempts:
+                    wait_time = attempt * 2  # Progressive backoff: 2s, 4s
+                    logger.info(f"⏳ Waiting {wait_time}s before attempt {attempt + 1}...")
+                    time.sleep(wait_time)
+
+            # All attempts failed
+            duration = time.time() - start_time
+            logger.error(f"❌ All {max_attempts} browser refresh attempts failed after {duration:.1f}s")
+            return False
 
         except Exception as exc:
-            logger.error(f"❌ Proactive browser refresh failed with exception: {exc}")
+            duration = time.time() - start_time
+            logger.error(f"❌ Proactive browser refresh failed with exception after {duration:.1f}s: {exc}")
             return False
         finally:
             self.browser_health_monitor['browser_refresh_in_progress'].clear()

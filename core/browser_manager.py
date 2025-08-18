@@ -133,23 +133,32 @@ class BrowserManager:
             return False
 
     def close_browser(self) -> None:
-        """Close the browser and cleanup resources."""
+        """Close the browser and cleanup resources with enhanced error handling."""
         logger.debug("Closing browser session...")
 
         if self.driver:
             try:
+                # First try to close gracefully
                 self.driver.quit()
                 logger.debug("WebDriver quit successfully")
             except Exception as e:
-                logger.warning(f"Error quitting WebDriver: {e}")
+                logger.warning(f"Error quitting WebDriver gracefully: {e}")
 
-        # Reset state
+                # Force cleanup if graceful quit failed
+                try:
+                    if hasattr(self.driver, 'service') and self.driver.service:
+                        self.driver.service.stop()
+                        logger.debug("WebDriver service stopped forcefully")
+                except Exception as service_e:
+                    logger.warning(f"Error stopping WebDriver service: {service_e}")
+
+        # Always reset state regardless of quit success
         self.driver = None
         self.driver_live = False
         self.browser_needed = False
         self.session_start_time = None
 
-        logger.debug("Browser session closed")
+        logger.debug("Browser session closed and state reset")
 
     def is_session_valid(self) -> bool:
         """
