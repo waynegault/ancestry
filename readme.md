@@ -195,6 +195,8 @@ python quality_regression_gate.py  # exit 1 on regression
 
 - SQLite schema (people, dna_matches, conversation_logs, tasks) via DatabaseManager
 - Caching layers for GEDCOM parsing & API responses
+- Lightweight memory utilities: memory_utils.py provides ObjectPool and lazy_property used by performance_cache.py and gedcom_cache.py, replacing the previous memory_optimizer module.
+
 - Backup & restore operations (action menu options)
 
 ### Security Model
