@@ -249,7 +249,15 @@ def run_comprehensive_tests() -> bool:
                 # Add duplicate handlers manually
                 handler1 = logging.StreamHandler()
                 handler2 = logging.StreamHandler()  # Same type, should be detected as duplicate
-                handler3 = logging.FileHandler("test.log") if hasattr(logging, 'FileHandler') else logging.StreamHandler()
+                # Use proper logs directory for test.log
+                import os
+                from pathlib import Path
+                logs_dir = Path(os.getenv("LOG_DIR", "Logs"))
+                if not logs_dir.is_absolute():
+                    logs_dir = (Path(__file__).parent.parent.resolve() / logs_dir).resolve()
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                test_log_path = logs_dir / "test.log"
+                handler3 = logging.FileHandler(str(test_log_path)) if hasattr(logging, 'FileHandler') else logging.StreamHandler()
                 
                 test_logger.addHandler(handler1)
                 test_logger.addHandler(handler2)
