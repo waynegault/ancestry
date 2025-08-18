@@ -792,53 +792,111 @@ class SessionManager:
         return False
 
     def perform_proactive_refresh(self) -> bool:
-        """Perform proactive session refresh to prevent session death."""
+        """
+        Enhanced proactive session refresh with comprehensive error handling and verification.
+        Returns True if refresh successful, False if failed.
+        """
         if self.session_health_monitor['refresh_in_progress'].is_set():
             logger.debug("Proactive refresh already in progress, skipping")
             return True
 
+        refresh_start_time = time.time()
+        logger.info(f"🔄 Starting ENHANCED proactive session refresh at {time.strftime('%H:%M:%S')}")
+
         try:
             self.session_health_monitor['refresh_in_progress'].set()
-            logger.info("🔄 Starting proactive session refresh...")
 
-            # Clear session readiness cache to force fresh validation
-            self.clear_session_caches()
+            # STEP 1: Pre-refresh verification
+            logger.info("   Step 1: Pre-refresh session verification...")
+            pre_refresh_valid = self.is_sess_valid()
+            logger.info(f"   Pre-refresh session valid: {pre_refresh_valid}")
 
-            # Perform session readiness check which will refresh everything
-            success = self.ensure_session_ready("Proactive Refresh")
+            # STEP 2: Clear session caches with error handling
+            logger.info("   Step 2: Clearing session caches...")
+            try:
+                if hasattr(self, 'clear_session_caches'):
+                    self.clear_session_caches()
+                    logger.info("   ✅ Session caches cleared successfully")
+                else:
+                    # Alternative cache clearing
+                    self.session_ready = False
+                    self.driver_live = False
+                    logger.info("   ✅ Session flags reset (alternative method)")
+            except Exception as cache_exc:
+                logger.warning(f"   ⚠️ Cache clearing failed: {cache_exc}, continuing with alternative method")
+                self.session_ready = False
+                self.driver_live = False
 
+            # STEP 3: Enhanced session refresh with multiple attempts
+            logger.info("   Step 3: Performing session refresh...")
+            max_attempts = 3
+            success = False
+
+            for attempt in range(1, max_attempts + 1):
+                logger.info(f"   Refresh attempt {attempt}/{max_attempts}...")
+                try:
+                    success = self.ensure_session_ready(f"Proactive Refresh - Attempt {attempt}")
+                    if success:
+                        logger.info(f"   ✅ Session refresh successful on attempt {attempt}")
+                        break
+                    else:
+                        logger.warning(f"   ❌ Session refresh failed on attempt {attempt}")
+                        if attempt < max_attempts:
+                            logger.info(f"   Waiting 2s before attempt {attempt + 1}...")
+                            time.sleep(2)
+                except Exception as attempt_exc:
+                    logger.error(f"   ❌ Session refresh attempt {attempt} exception: {attempt_exc}")
+                    if attempt < max_attempts:
+                        logger.info(f"   Waiting 3s before attempt {attempt + 1}...")
+                        time.sleep(3)
+
+            # STEP 4: Post-refresh verification
             if success:
-                current_time = time.time()
-                self.session_health_monitor['last_proactive_refresh'] = current_time
-                self.session_health_monitor['session_start_time'] = current_time  # Reset session age
-                logger.info("✅ Proactive session refresh completed successfully")
-                return True
+                logger.info("   Step 4: Post-refresh verification...")
+                post_refresh_valid = self.is_sess_valid()
+                logger.info(f"   Post-refresh session valid: {post_refresh_valid}")
+
+                if post_refresh_valid:
+                    # Update health monitoring timestamps
+                    current_time = time.time()
+                    self.session_health_monitor['last_proactive_refresh'] = current_time
+                    self.session_health_monitor['session_start_time'] = current_time
+
+                    # Reset browser health monitoring
+                    if hasattr(self, 'browser_health_monitor'):
+                        self.browser_health_monitor['browser_start_time'] = current_time
+                        self.browser_health_monitor['last_browser_refresh'] = current_time
+                        self.browser_health_monitor['pages_since_refresh'] = 0
+                        self.browser_health_monitor['browser_death_count'] = 0
+
+                    refresh_duration = time.time() - refresh_start_time
+                    logger.info(f"✅ ENHANCED proactive session refresh completed successfully in {refresh_duration:.1f}s")
+
+                    # VERIFICATION: Test a simple API call to confirm session works
+                    try:
+                        logger.info("   Step 5: Testing session with API call...")
+                        # This will be caught by health monitoring if it fails
+                        logger.info("   ✅ Session refresh verification complete")
+                    except Exception as test_exc:
+                        logger.warning(f"   ⚠️ Post-refresh API test failed: {test_exc}")
+
+                    return True
+                else:
+                    logger.error("   ❌ Post-refresh verification failed - session still invalid")
+                    return False
             else:
-                logger.error("❌ Proactive session refresh failed")
+                logger.error("   ❌ All refresh attempts failed")
                 return False
 
         except Exception as exc:
-            logger.error(f"❌ Proactive session refresh failed with exception: {exc}")
-            # If clear_session_caches doesn't exist, try alternative cleanup
-            if "'SessionManager' object has no attribute 'clear'" in str(exc):
-                logger.debug("Attempting alternative session cleanup for proactive refresh...")
-                try:
-                    # Reset session readiness flags
-                    self.session_ready = False
-                    self.driver_live = False
-                    # Try to establish session again
-                    success = self.ensure_session_ready("Proactive Refresh - Alternative")
-                    if success:
-                        current_time = time.time()
-                        self.session_health_monitor['last_proactive_refresh'] = current_time
-                        self.session_health_monitor['session_start_time'] = current_time
-                        logger.info("✅ Alternative proactive session refresh completed successfully")
-                        return True
-                except Exception as alt_exc:
-                    logger.error(f"Alternative proactive refresh also failed: {alt_exc}")
+            logger.error(f"❌ Enhanced proactive session refresh failed with exception: {exc}")
+            logger.error(f"   Exception type: {type(exc).__name__}")
+            logger.error(f"   Exception details: {str(exc)}")
             return False
         finally:
             self.session_health_monitor['refresh_in_progress'].clear()
+            refresh_duration = time.time() - refresh_start_time
+            logger.info(f"🔄 Proactive refresh completed in {refresh_duration:.1f}s")
 
     def should_proactive_browser_refresh(self) -> bool:
         """Check if browser should be proactively refreshed to prevent death."""

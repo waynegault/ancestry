@@ -904,33 +904,81 @@ def _main_page_processing_loop(
                                        f"max_age={browser_max_age}s ({(browser_age/browser_max_age)*100:.1f}% of limit), "
                                        f"pages_since_refresh={pages_since_refresh}/{max_pages}")
 
-                        # === HEALTH MONITORING INTEGRATION ===
-                        # Update comprehensive health metrics
-                        if hasattr(session_manager, 'health_monitor') and session_manager.health_monitor:
-                            try:
-                                health_monitor = session_manager.health_monitor
-
-                                # Update session metrics
-                                health_monitor.update_session_metrics(session_manager)
-                                health_monitor.update_system_metrics()
-
-                                # Log comprehensive health summary
-                                health_monitor.log_health_summary()
-
-                                # Check for recommended actions
-                                dashboard = health_monitor.get_health_dashboard()
-                                if dashboard['risk_score'] > 0.6:
-                                    logger.warning(f"🚨 HIGH RISK DETECTED: {dashboard['risk_level']} "
-                                                 f"(Score: {dashboard['health_score']:.1f}/100, "
-                                                 f"Risk: {dashboard['risk_score']:.2f})")
-                                    for action in dashboard['recommended_actions'][:2]:  # Show top 2 actions
-                                        logger.warning(f"   Recommended: {action}")
-
-                            except Exception as health_exc:
-                                logger.debug(f"Health monitoring update at page {current_page_num}: {health_exc}")
-
                     except Exception as pool_opt_exc:
                         logger.debug(f"Connection pool/session/browser check at page {current_page_num}: {pool_opt_exc}")
+
+                # === CONTINUOUS HEALTH MONITORING (MOVED OUTSIDE 25-PAGE CONDITION) ===
+                # This runs on EVERY page to provide continuous monitoring and early intervention
+                if hasattr(session_manager, 'health_monitor') and session_manager.health_monitor:
+                    try:
+                        health_monitor = session_manager.health_monitor
+
+                        # Update metrics on every page
+                        health_monitor.update_session_metrics(session_manager)
+                        health_monitor.update_system_metrics()
+
+                        # Get current health status
+                        dashboard = health_monitor.get_health_dashboard()
+                        health_score = dashboard['health_score']
+                        risk_score = dashboard['risk_score']
+
+                        # COMPREHENSIVE HEALTH SUMMARY every 25 pages
+                        if current_page_num % 25 == 0:
+                            logger.info(f"📊 COMPREHENSIVE HEALTH SUMMARY - Page {current_page_num}")
+                            logger.info(f"   Health Score: {health_score:.1f}/100 ({dashboard['health_status'].upper()})")
+                            logger.info(f"   Risk Level: {dashboard['risk_level']} (Score: {risk_score:.2f})")
+                            logger.info(f"   API Response: {dashboard['performance_summary']['avg_api_response_time']:.1f}s avg")
+                            logger.info(f"   Memory: {dashboard['performance_summary']['current_memory_mb']:.1f}MB")
+                            logger.info(f"   Errors: {dashboard['performance_summary']['total_errors']}")
+
+                            # Show recommended actions
+                            if dashboard['recommended_actions']:
+                                logger.info(f"   Recommended Actions:")
+                                for action in dashboard['recommended_actions'][:3]:
+                                    logger.info(f"     • {action}")
+
+                        # EMERGENCY INTERVENTION - Check on every page
+                        if risk_score > 0.8:
+                            logger.critical(f"🚨 EMERGENCY INTERVENTION TRIGGERED - Page {current_page_num}")
+                            logger.critical(f"   Risk Score: {risk_score:.2f} (EMERGENCY LEVEL)")
+                            logger.critical(f"   Health Score: {health_score:.1f}/100")
+                            logger.critical(f"   FORCING IMMEDIATE SESSION REFRESH")
+
+                            # Force immediate session refresh
+                            try:
+                                session_manager.perform_proactive_refresh()
+                                logger.info(f"✅ Emergency session refresh completed at page {current_page_num}")
+                            except Exception as refresh_exc:
+                                logger.error(f"❌ Emergency session refresh failed: {refresh_exc}")
+                                # If emergency refresh fails, halt processing to prevent cascade
+                                logger.critical(f"🚨 EMERGENCY REFRESH FAILED - HALTING TO PREVENT CASCADE")
+                                loop_final_success = False
+                                break
+
+                        elif risk_score > 0.6:
+                            logger.warning(f"⚠️ HIGH RISK DETECTED - Page {current_page_num}")
+                            logger.warning(f"   Risk Score: {risk_score:.2f} (HIGH RISK)")
+                            logger.warning(f"   Health Score: {health_score:.1f}/100")
+                            for action in dashboard['recommended_actions'][:2]:
+                                logger.warning(f"   Recommended: {action}")
+
+                        elif risk_score > 0.4:
+                            logger.info(f"⚠️ MODERATE RISK - Page {current_page_num} (Risk: {risk_score:.2f}, Health: {health_score:.1f})")
+
+                        # VERIFICATION: Log that health monitoring is working
+                        if current_page_num % 10 == 0:
+                            logger.debug(f"✅ Health monitoring active - Page {current_page_num} (Risk: {risk_score:.2f}, Health: {health_score:.1f})")
+
+                            # Additional verification every 10 pages
+                            try:
+                                from verify_health_monitoring_active import log_health_status_for_verification
+                                log_health_status_for_verification(session_manager, current_page_num)
+                            except Exception as verify_exc:
+                                logger.debug(f"Health status verification failed: {verify_exc}")
+
+                    except Exception as health_exc:
+                        logger.error(f"❌ Health monitoring failed at page {current_page_num}: {health_exc}")
+                        # Don't let health monitoring failures stop processing, but log them prominently
                 
                 if not session_manager.is_sess_valid():
                     logger.critical(
@@ -1217,6 +1265,33 @@ def coord(
             logger.info("✅ Session refresh and re-authentication successful")
         else:
             logger.info("✅ Session validation passed - API connectivity confirmed")
+
+        # === CRITICAL: VERIFY HEALTH MONITORING IS ACTIVE ===
+        logger.info("🔍 Verifying health monitoring system is active...")
+        try:
+            from verify_health_monitoring_active import verify_health_monitoring_active, test_emergency_intervention_trigger
+
+            # Verify health monitoring is working
+            health_verification_success = verify_health_monitoring_active(session_manager)
+
+            if health_verification_success:
+                logger.info("✅ Health monitoring verification PASSED - System is protected")
+
+                # Test emergency intervention
+                emergency_test_success = test_emergency_intervention_trigger(session_manager)
+                if emergency_test_success:
+                    logger.info("✅ Emergency intervention test PASSED - System will respond to crises")
+                else:
+                    logger.warning("⚠️ Emergency intervention test FAILED - System may not respond to crises")
+            else:
+                logger.error("❌ Health monitoring verification FAILED - System is NOT protected")
+                logger.error("❌ ABORTING: Cannot proceed without health monitoring protection")
+                return False
+
+        except Exception as verification_exc:
+            logger.error(f"❌ Health monitoring verification failed: {verification_exc}")
+            logger.error("❌ ABORTING: Cannot verify health monitoring is working")
+            return False
     except Exception as e:
         logger.critical(f"🚨 CRITICAL: Session validation failed: {e}")
         raise Exception(f"Cannot proceed with invalid session: {e}")
