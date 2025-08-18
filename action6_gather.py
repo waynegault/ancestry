@@ -3001,19 +3001,41 @@ def _execute_bulk_db_operations(
         # Handle UNIQUE constraint violations gracefully
         integrity_str = str(integrity_err)
         if ("UNIQUE constraint failed: people.uuid" in integrity_str or
-            "UNIQUE constraint failed: family_tree.people_id" in integrity_str):
-            logger.warning(f"UNIQUE constraint violation during bulk insert - some records already exist: {integrity_err}")
-            # This is expected behavior when records already exist - don't fail the entire batch
-            logger.info("Continuing with database operations despite duplicate records...")
+            "UNIQUE constraint failed: family_tree.people_id" in integrity_str or
+            "UNIQUE constraint failed: people.profile_id" in integrity_str):
+            logger.warning(
+                "UNIQUE constraint violation during bulk insert/update - some records already exist: %s",
+                integrity_err,
+            )
+            # Always rollback the failed transaction before attempting recovery or continuing
+            try:
+                session.rollback()
+                logger.debug("Rolled back transaction after IntegrityError to clear failed state")
+            except Exception as rb_exc:
+                logger.warning(f"Rollback after IntegrityError failed: {rb_exc}")
 
-            # Use helper function to handle recovery
-            # Note: insert_data might not be available in this exception scope, pass None for safe recovery
-            return _handle_integrity_error_recovery(session, None)
+            # Attempt targeted recovery for Person creates when available
+            # insert_data contains the prepared Person create mappings (may be empty)
+            try:
+                return _handle_integrity_error_recovery(session, insert_data if insert_data else None)
+            except Exception as rec_exc:
+                logger.error(f"Recovery handler failed: {rec_exc}")
+                return False
         else:
+            # Unknown integrity error: rollback and fail
+            try:
+                session.rollback()
+                logger.debug("Rolled back transaction after unknown IntegrityError")
+            except Exception:
+                pass
             logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
             return False  # Other integrity errors should still fail
     except SQLAlchemyError as bulk_db_err:
         logger.error(f"Bulk DB operation FAILED: {bulk_db_err}", exc_info=True)
+        try:
+            session.rollback()
+        except Exception:
+            pass
         return False  # Indicate failure (rollback handled by db_transn)
     except Exception as e:
         logger.error(f"Unexpected error during bulk DB operations: {e}", exc_info=True)
