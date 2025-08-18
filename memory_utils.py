@@ -6,7 +6,7 @@ Provides a simple ObjectPool and a lazy_property descriptor.
 
 from functools import wraps
 from threading import Lock
-from typing import Callable, Generic, List, Optional, TypeVar
+from typing import Callable, Generic, List, TypeVar
 
 T = TypeVar("T")
 
