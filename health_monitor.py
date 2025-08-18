@@ -254,38 +254,52 @@ class SessionHealthMonitor:
     
     def predict_session_death_risk(self) -> float:
         """
-        Predict likelihood of session death in next 10 pages (0.0-1.0).
-        
+        Enhanced prediction of session death likelihood in next 10 pages (0.0-1.0).
+
         Returns:
             Risk score from 0.0 (very safe) to 1.0 (imminent failure)
         """
         risk_score = 0.0
-        
-        # Base risk from current health score
+
+        # Base risk from current health score (more aggressive)
         health_score = self.calculate_health_score()
-        risk_score += (100 - health_score) / 100 * 0.4
-        
-        # Risk from API response time trend
-        if len(self.api_response_times) >= 5:
-            recent_avg = sum(list(self.api_response_times)[-5:]) / 5
-            if recent_avg > 8.0:
-                risk_score += 0.3
+        health_risk = (100 - health_score) / 100 * 0.5  # Increased from 0.4
+        risk_score += health_risk
+
+        # Risk from API response time trend (more sensitive)
+        if len(self.api_response_times) >= 3:  # Reduced from 5
+            recent_avg = sum(list(self.api_response_times)[-3:]) / 3
+            if recent_avg > 10.0:
+                risk_score += 0.4  # Increased from 0.3
+            elif recent_avg > 8.0:
+                risk_score += 0.3  # New threshold
             elif recent_avg > 5.0:
-                risk_score += 0.15
-        
-        # Risk from error rate
+                risk_score += 0.2  # Increased from 0.15
+
+        # Risk from error rate (more aggressive)
         total_errors = sum(self.error_counts.values())
-        if total_errors > 10:
-            risk_score += 0.2
+        if total_errors > 15:
+            risk_score += 0.4  # Increased from 0.2
+        elif total_errors > 10:
+            risk_score += 0.3  # Increased from 0.2
         elif total_errors > 5:
-            risk_score += 0.1
-        
+            risk_score += 0.2  # Increased from 0.1
+
         # Risk from memory usage trend
         if len(self.memory_usage_history) >= 3:
             memory_trend = list(self.memory_usage_history)[-1] - list(self.memory_usage_history)[-3]
-            if memory_trend > 50:  # Memory increasing rapidly
+            if memory_trend > 100:  # Memory increasing very rapidly
+                risk_score += 0.2  # Increased from 0.1
+            elif memory_trend > 50:  # Memory increasing rapidly
                 risk_score += 0.1
-        
+
+        # Additional risk factors for critical metrics
+        for metric_name, metric in self.current_metrics.items():
+            if metric.value >= metric.threshold_critical:
+                risk_score += 0.15  # Each critical metric adds significant risk
+            elif metric.value >= metric.threshold_warning:
+                risk_score += 0.05  # Each warning metric adds some risk
+
         return min(1.0, risk_score)
     
     def get_recommended_actions(self) -> List[str]:
@@ -360,24 +374,45 @@ class SessionHealthMonitor:
             logger.warning(f"Error updating system metrics: {e}")
     
     def update_session_metrics(self, session_manager=None):
-        """Update session-specific metrics."""
+        """Update session-specific metrics with enhanced error handling."""
         try:
             # Session age
             session_age_minutes = (time.time() - self.session_start_time) / 60
             self.update_metric("session_age_minutes", session_age_minutes)
-            
-            if session_manager and hasattr(session_manager, 'browser_health_monitor'):
-                monitor = session_manager.browser_health_monitor
-                
-                # Browser age
-                if 'browser_start_time' in monitor:
-                    browser_age_minutes = (time.time() - monitor['browser_start_time']) / 60
-                    self.update_metric("browser_age_minutes", browser_age_minutes)
-                
-                # Pages since refresh
-                if 'pages_since_refresh' in monitor:
-                    self.update_metric("pages_since_refresh", monitor['pages_since_refresh'])
-                    
+
+            if session_manager:
+                # Handle browser health monitor
+                if hasattr(session_manager, 'browser_health_monitor'):
+                    try:
+                        monitor = session_manager.browser_health_monitor
+
+                        # Check if monitor is a dict-like object
+                        if hasattr(monitor, 'get') or isinstance(monitor, dict):
+                            # Browser age
+                            browser_start_time = monitor.get('browser_start_time') if hasattr(monitor, 'get') else monitor.get('browser_start_time', time.time())
+                            if browser_start_time:
+                                browser_age_minutes = (time.time() - browser_start_time) / 60
+                                self.update_metric("browser_age_minutes", browser_age_minutes)
+
+                            # Pages since refresh
+                            pages_since_refresh = monitor.get('pages_since_refresh') if hasattr(monitor, 'get') else monitor.get('pages_since_refresh', 0)
+                            if pages_since_refresh is not None:
+                                self.update_metric("pages_since_refresh", pages_since_refresh)
+                    except Exception as browser_exc:
+                        logger.debug(f"Browser health monitor update failed: {browser_exc}")
+
+                # Handle session health monitor
+                if hasattr(session_manager, 'session_health_monitor'):
+                    try:
+                        session_monitor = session_manager.session_health_monitor
+                        if hasattr(session_monitor, 'get') or isinstance(session_monitor, dict):
+                            session_start = session_monitor.get('session_start_time') if hasattr(session_monitor, 'get') else session_monitor.get('session_start_time', time.time())
+                            if session_start:
+                                session_age_minutes = (time.time() - session_start) / 60
+                                self.update_metric("session_age_minutes", session_age_minutes)
+                    except Exception as session_exc:
+                        logger.debug(f"Session health monitor update failed: {session_exc}")
+
         except Exception as e:
             logger.warning(f"Error updating session metrics: {e}")
     
