@@ -1051,11 +1051,16 @@ def _main_page_processing_loop(
 @timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
 @error_context("DNA match gathering coordination")
 def coord(
-    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
+    session_manager: SessionManager, config_schema: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
     Handles pagination, fetches match data, compares with database, and processes.
+
+    Args:
+        session_manager: SessionManager for API calls and browser control
+        config_schema: Configuration schema (required by signature, not used in implementation)
+        start: Starting page number for gathering
     """
     # Step 1: Validate Session State
     if (
@@ -2126,9 +2131,8 @@ class MemoryOptimizedMatchProcessor:
         self.memory_checkpoints = []
     
     def process_matches_with_memory_management(
-        self, 
-        matches: List[Dict[str, Any]], 
-        session_manager: SessionManager
+        self,
+        matches: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Process matches with active memory management.
@@ -2153,7 +2157,7 @@ class MemoryOptimizedMatchProcessor:
         
         for i, match in enumerate(matches):
             # Process single match
-            processed_match = self._process_single_match(match, session_manager)
+            processed_match = self._process_single_match(match)
             processed_matches.append(processed_match)
             self.processed_count += 1
             
@@ -2179,7 +2183,7 @@ class MemoryOptimizedMatchProcessor:
         
         return processed_matches
     
-    def _process_single_match(self, match: Dict[str, Any], _session_manager: SessionManager) -> Dict[str, Any]:
+    def _process_single_match(self, match: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single match with minimal memory footprint."""
         # Placeholder - would integrate with existing match processing logic
         return match
@@ -2969,7 +2973,7 @@ def _process_page_matches(
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
     my_uuid = session_manager.my_uuid
-    _session: Optional[SqlAlchemySession] = None  # Unused - prefixed with underscore
+    # session: Optional[SqlAlchemySession] = None  # Removed unused variable
 
     # FINAL OPTIMIZATION 2: Memory-Optimized Data Structures Integration (disabled)
     # memory_processor = None
@@ -3807,13 +3811,13 @@ def _prepare_family_tree_operation_data(
 
 
 def _do_match(
-    _session: SqlAlchemySession,  # Changed from _ to session
+    session: SqlAlchemySession,  # Required by signature but not used in current implementation
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    _config_schema_arg: "ConfigSchema",  # Config schema argument - unused
+    config_schema: "ConfigSchema",  # Config schema for API settings
     logger_instance: logging.Logger,
 ) -> Tuple[
     Optional[Dict[str, Any]],
@@ -4014,7 +4018,7 @@ def _do_match(
 
 def get_matches(
     session_manager: SessionManager,
-    _db_session: SqlAlchemySession,  # Parameter name changed for clarity
+    db_session: SqlAlchemySession,  # Required by interface but not used in this function
     current_page: int = 1,
 ) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
     """
@@ -4629,10 +4633,10 @@ def _fetch_combined_details(
         config_schema.api.base_url,
         f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
     )
-    _details_referer = urljoin(  # Unused - prefixed with underscore
-        config_schema.api.base_url,
-        f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
-    )
+    # details_referer = urljoin(  # Removed unused variable
+    #     config_schema.api.base_url,
+    #     f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
+    # )
     logger.debug(f"Fetching /details API for UUID {match_uuid}...")
 
     # Use headers from working cURL command
