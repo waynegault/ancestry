@@ -229,15 +229,15 @@ class SessionManager:
             # OPTIMIZATION: More aggressive adaptive settings based on log analysis
             # Log analysis showed 96.3% cache hit rate and very stable performance
             self.adaptive_rate_limiter = AdaptiveRateLimiter(
-                initial_rps=max(0.6, initial_rps),  # Start slightly higher than config
-                min_rps=0.3,  # Higher minimum (was 0.1) - we can handle more load
-                max_rps=3.0,  # Higher maximum (was 2.0) - allow aggressive optimization
+                initial_rps=max(0.7, initial_rps),  # SAFE OPTIMIZATION: Start higher to match new config (0.6 → 0.7)
+                min_rps=0.35,  # SAFE OPTIMIZATION: Slightly higher minimum (0.3 → 0.35) to match new baseline
+                max_rps=3.0,  # Keep same maximum - already optimized
                 initial_delay=initial_delay,
-                min_delay=0.3,  # More aggressive minimum (was 0.5) 
-                max_delay=8.0,  # Lower maximum (was 10.0) - don't over-penalize
-                adaptation_window=30,  # Smaller window (was 50) for faster adaptation
-                success_threshold=0.92,  # Slightly lower threshold (was 0.95) for earlier optimization
-                rate_limit_threshold=0.05  # Higher tolerance (was 0.02) - we can handle occasional limits
+                min_delay=0.3,  # Keep same - already optimized
+                max_delay=8.0,  # Keep same - already optimized
+                adaptation_window=30,  # Keep same - already optimized
+                success_threshold=0.92,  # Keep same - already optimized
+                rate_limit_threshold=0.05  # Keep same - already optimized
             )
 
             logger.debug("Optimized adaptive rate limiting initialized for Action 6 performance")
