@@ -51,7 +51,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
         pass  # Graceful degradation if performance monitor not available
 
 
-def _update_session_performance_tracking(session_manager, duration: float, response_status: str) -> None:
+def _update_session_performance_tracking(session_manager, duration: float, _response_status: str) -> None:
     """Update session manager with performance tracking data."""
     try:
         # Initialize tracking if not exists
@@ -614,7 +614,7 @@ def _main_page_processing_loop(
         unit="matches",
         show_memory=True,
         show_rate=True
-    ) as enhanced_progress:
+    ) as _enhanced_progress:  # Unused variable - prefixed with underscore
 
         # Keep original tqdm for compatibility
         with logging_redirect_tqdm():
@@ -2217,59 +2217,8 @@ def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dic
     return sorted_matches
 
 
-def _smart_batch_processing(
-    matches: List[Dict[str, Any]], 
-    session_manager: SessionManager,
-    batch_size: Optional[int] = None  # Now gets configured batch size
-) -> List[Dict[str, Any]]:
-    """
-    Phase 3: Smart batch processing with adaptive sizing based on match priority.
-    
-    Args:
-        matches: List of matches to process
-        session_manager: SessionManager for API calls
-        batch_size: Base batch size (adjusted based on priority)
-        
-    Returns:
-        List of processed matches
-    """
-    # Use configured batch size if not provided
-    if batch_size is None:
-        batch_size = _get_configured_batch_size()
-    
-    prioritized_matches = _prioritize_matches_by_importance(matches)
-    processed_matches = []
-    
-    # Process high-priority matches first with smaller batches (better error handling)
-    high_priority_matches = [m for m in prioritized_matches if m.get("sharedCentimorgans", 0) > 50]
-    medium_priority_matches = [m for m in prioritized_matches if 20 <= m.get("sharedCentimorgans", 0) <= 50]
-    low_priority_matches = [m for m in prioritized_matches if m.get("sharedCentimorgans", 0) < 20]
-    
-    # Adaptive batch sizes
-    high_priority_batch_size = max(10, batch_size // 2)  # Smaller batches for important matches
-    medium_priority_batch_size = batch_size
-    low_priority_batch_size = min(50, batch_size * 2)  # Larger batches for bulk processing
-    
-    processing_plan = [
-        ("High Priority", high_priority_matches, high_priority_batch_size),
-        ("Medium Priority", medium_priority_matches, medium_priority_batch_size), 
-        ("Low Priority", low_priority_matches, low_priority_batch_size)
-    ]
-    
-    for priority_name, match_group, group_batch_size in processing_plan:
-        if not match_group:
-            continue
-            
-        logger.info(f"Phase 3: Processing {len(match_group)} {priority_name} matches (batch size: {group_batch_size})")
-        
-        for i in range(0, len(match_group), group_batch_size):
-            batch = match_group[i:i + group_batch_size]
-            
-            # Process this batch (would integrate with existing processing logic)
-            processed_batch = _process_match_batch(batch, session_manager)
-            processed_matches.extend(processed_batch)
-    
-    return processed_matches
+# Removed unused function _smart_batch_processing - not called in current implementation
+# Function body removed - was not being used
 
 
 def _process_match_batch(matches: List[Dict[str, Any]], session_manager: SessionManager) -> List[Dict[str, Any]]:
@@ -3152,13 +3101,13 @@ def _process_page_matches(
     page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
     my_uuid = session_manager.my_uuid
-    session: Optional[SqlAlchemySession] = None
+    _session: Optional[SqlAlchemySession] = None  # Unused - prefixed with underscore
 
-    # FINAL OPTIMIZATION 2: Memory-Optimized Data Structures Integration
-    memory_processor = None
-    if num_matches_on_page > 20:  # Use memory optimization for larger batches
-        memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=400)
-        logger.debug(f"Page {current_page}: Enabled memory optimization for {num_matches_on_page} matches")
+    # FINAL OPTIMIZATION 2: Memory-Optimized Data Structures Integration (disabled)
+    # memory_processor = None
+    # if num_matches_on_page > 20:  # Use memory optimization for larger batches
+    #     memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=400)
+    #     logger.debug(f"Page {current_page}: Enabled memory optimization for {num_matches_on_page} matches")
 
     try:
         # Step 2: Basic validation
@@ -4812,7 +4761,7 @@ def _fetch_combined_details(
         config_schema.api.base_url,
         f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
     )
-    details_referer = urljoin(
+    _details_referer = urljoin(  # Unused - prefixed with underscore
         config_schema.api.base_url,
         f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
     )
