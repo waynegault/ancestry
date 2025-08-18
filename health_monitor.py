@@ -114,6 +114,11 @@ class SessionHealthMonitor:
         self.error_rate_warnings_sent: Dict[str, float] = {}  # Track when warnings were sent
         self.last_error_rate_check: float = time.time()
 
+        # Metric alert de-duplication (prevents alert spam on repeated updates)
+        self._last_metric_alert_level: Dict[str, AlertLevel] = {}
+        self._last_metric_alert_time: Dict[str, float] = {}
+        self._metric_alert_cooldown_seconds: float = 60.0  # Only re-log after 60s unless level escalates
+
         # Performance optimization for long sessions
         self._monitoring_interval: float = 30.0  # Base monitoring interval
         self._adaptive_interval: bool = True  # Enable adaptive monitoring
@@ -177,27 +182,45 @@ class SessionHealthMonitor:
                 logger.warning(f"Unknown health metric: {name}")
 
     def _check_metric_alerts(self, metric_name: str):
-        """Check if a metric triggers any alerts."""
+        """Check if a metric triggers any alerts, with de-duplication and cooldown."""
         metric = self.current_metrics[metric_name]
 
+        level: Optional[AlertLevel] = None
+        message: str = ""
+        threshold: float = 0.0
+
         if metric.value >= metric.threshold_critical:
-            self._create_alert(
-                AlertLevel.CRITICAL,
-                "session_health",
-                f"{metric_name} is critical: {metric.value:.2f} >= {metric.threshold_critical}",
-                metric_name,
-                metric.value,
-                metric.threshold_critical
-            )
+            level = AlertLevel.CRITICAL
+            message = f"{metric_name} is critical: {metric.value:.2f} >= {metric.threshold_critical}"
+            threshold = metric.threshold_critical
         elif metric.value >= metric.threshold_warning:
-            self._create_alert(
-                AlertLevel.WARNING,
-                "session_health",
-                f"{metric_name} is elevated: {metric.value:.2f} >= {metric.threshold_warning}",
-                metric_name,
-                metric.value,
-                metric.threshold_warning
-            )
+            level = AlertLevel.WARNING
+            message = f"{metric_name} is elevated: {metric.value:.2f} >= {metric.threshold_warning}"
+            threshold = metric.threshold_warning
+
+        if level is None:
+            # Reset last level so future crossings log again
+            self._last_metric_alert_level.pop(metric_name, None)
+            return
+
+        # Gate logs: only log when escalating level or after cooldown
+        last_level = self._last_metric_alert_level.get(metric_name)
+        last_time = self._last_metric_alert_time.get(metric_name, 0.0)
+        now = time.time()
+
+        should_log = False
+        if last_level is None:
+            should_log = True
+        elif level.value != last_level.value:
+            # Escalation from WARNING->CRITICAL (or vice versa) should log
+            should_log = True
+        elif (now - last_time) >= self._metric_alert_cooldown_seconds:
+            should_log = True
+
+        if should_log:
+            self._create_alert(level, "session_health", message, metric_name, metric.value, threshold)
+            self._last_metric_alert_level[metric_name] = level
+            self._last_metric_alert_time[metric_name] = now
 
     def _create_alert(self, level: AlertLevel, component: str, message: str,
                      metric_name: str, metric_value: float, threshold: float):
