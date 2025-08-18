@@ -196,36 +196,42 @@ def test_emergency_intervention_trigger(session_manager) -> bool:
     """
     try:
         logger.info("🧪 TESTING EMERGENCY INTERVENTION TRIGGER")
-        
+        logger.info("🔬 SAFETY TEST: Simulating fake emergency conditions to verify system protection")
+        logger.info("⚠️  NOTE: The following CRITICAL ALERTS are FAKE TEST DATA - NOT real problems!")
+
         if not hasattr(session_manager, 'health_monitor') or not session_manager.health_monitor:
             logger.error("❌ Health monitor not available for emergency test")
             return False
-        
+
         health_monitor = session_manager.health_monitor
-        
+
         # Save current state
         original_metrics = {}
         for name, metric in health_monitor.current_metrics.items():
             original_metrics[name] = metric.value
-        
+
+        logger.info("🧪 INJECTING FAKE TEST VALUES (these are not real system conditions):")
+
         # Simulate emergency conditions
         health_monitor.update_metric("api_response_time", 15.0)  # Very slow
         health_monitor.update_metric("memory_usage_mb", 500.0)   # Very high
         health_monitor.update_metric("error_rate", 0.25)         # Very high
-        
+
         # Add many errors
+        logger.info("🧪 GENERATING FAKE ERROR SEQUENCE (testing alert system)...")
         for i in range(20):
             health_monitor.record_error("test_emergency_error")
         
         # Check risk assessment
         risk_score = health_monitor.predict_session_death_risk()
         dashboard = health_monitor.get_health_dashboard()
-        
-        logger.info(f"   Emergency simulation - Risk: {risk_score:.2f}, Health: {dashboard['health_score']:.1f}")
-        
+
+        logger.info("🧪 END OF FAKE TEST DATA - Evaluating emergency response system...")
+        logger.info(f"📊 SIMULATED Emergency conditions - Risk: {risk_score:.2f}, Health: {dashboard['health_score']:.1f}")
+
         # Verify emergency conditions trigger high risk
         if risk_score > 0.8:
-            logger.info("✅ Emergency intervention would trigger correctly")
+            logger.info("✅ SAFETY TEST PASSED: Emergency intervention would trigger correctly for real problems")
             
             # Test performance recommendations (optional - may not exist in all versions)
             try:
@@ -233,25 +239,29 @@ def test_emergency_intervention_trigger(session_manager) -> bool:
                 emergency_recs = get_performance_recommendations(dashboard['health_score'], risk_score)
 
                 if emergency_recs.get("action_required") == "emergency_refresh":
-                    logger.info("✅ Emergency recommendations are correct")
+                    logger.info("✅ SAFETY TEST PASSED: Emergency recommendations are correct")
                     success = True
                 else:
                     logger.warning("⚠️ Emergency recommendations not optimal, but risk detection working")
                     success = True  # Still pass if risk detection works
             except ImportError:
-                logger.info("✅ Emergency risk detection working (recommendations module not available)")
+                logger.info("✅ SAFETY TEST PASSED: Emergency risk detection working (recommendations module not available)")
                 success = True  # Pass if basic risk detection works
         else:
-            logger.error(f"❌ Emergency conditions did not trigger high risk (only {risk_score:.2f})")
+            logger.error(f"❌ SAFETY TEST FAILED: Emergency conditions did not trigger high risk (only {risk_score:.2f})")
             success = False
-        
+
+        logger.info("🧹 CLEANING UP: Restoring normal system metrics after safety test")
+
         # Restore original metrics
         for name, value in original_metrics.items():
             health_monitor.update_metric(name, value)
-        
+
         # Clear test errors
         health_monitor.error_counts.clear()
-        
+
+        logger.info("✅ SAFETY TEST COMPLETE: System restored to normal operation")
+
         return success
         
     except Exception as e:

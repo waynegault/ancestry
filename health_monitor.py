@@ -191,13 +191,16 @@ class SessionHealthMonitor:
         
         self.alerts.append(alert)
         
-        # Log alert based on level
+        # Log alert based on level - Check if this is a test alert
+        is_test_alert = "test_emergency_error" in str(metric_name) or metric_value > 100.0
+        test_prefix = "🧪 [SAFETY TEST] " if is_test_alert else ""
+
         if level == AlertLevel.CRITICAL:
-            logger.critical(f"🚨 CRITICAL ALERT: {message}")
+            logger.critical(f"{test_prefix}🚨 CRITICAL ALERT: {message}")
         elif level == AlertLevel.WARNING:
-            logger.warning(f"⚠️ WARNING: {message}")
+            logger.warning(f"{test_prefix}⚠️ WARNING: {message}")
         else:
-            logger.info(f"ℹ️ INFO: {message}")
+            logger.info(f"{test_prefix}ℹ️ INFO: {message}")
     
     def calculate_health_score(self) -> float:
         """
