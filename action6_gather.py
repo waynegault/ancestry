@@ -33,7 +33,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     
     # Update session manager performance tracking
     if session_manager:
-        _update_session_performance_tracking(session_manager, duration, response_status)
+        _update_session_performance_tracking(session_manager, duration)
     
     # Log warnings for slow API calls with enhanced context
     if duration > 10.0:
@@ -51,7 +51,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
         pass  # Graceful degradation if performance monitor not available
 
 
-def _update_session_performance_tracking(session_manager, duration: float, _response_status: str) -> None:
+def _update_session_performance_tracking(session_manager, duration: float) -> None:
     """Update session manager with performance tracking data."""
     try:
         # Initialize tracking if not exists
@@ -614,7 +614,7 @@ def _main_page_processing_loop(
         unit="matches",
         show_memory=True,
         show_rate=True
-    ) as _enhanced_progress:  # Unused variable - prefixed with underscore
+    ):
 
         # Keep original tqdm for compatibility
         with logging_redirect_tqdm():
@@ -2016,79 +2016,8 @@ def _prepare_bulk_db_data(
 # These were not being used in the current implementation
 
 
-# FINAL OPTIMIZATION 3: Advanced Async Integration - Enhanced Async Orchestrator
-async def _async_enhanced_api_orchestrator(
-    session_manager: SessionManager,
-    fetch_candidates_uuid: Set[str],
-    matches_to_process_later: List[Dict[str, Any]]
-) -> Dict[str, Dict[str, Any]]:
-    """
-    Advanced async orchestration that replaces ThreadPoolExecutor patterns
-    with native async/await for better resource utilization and scalability.
-    """
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
-    
-    # Convert to lists for async processing
-    uuid_list = list(fetch_candidates_uuid)
-    
-    if len(uuid_list) < 10:  # Small batch - use existing sync method
-        logger.debug(f"Small batch ({len(uuid_list)} items) - using sync method")
-        return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
-    
-    logger.info(f"Large batch ({len(uuid_list)} items) - using advanced async orchestration")
-    
-    # Initialize result containers
-    batch_combined_details = {}
-    batch_tree_data = {}
-    batch_relationship_prob_data = {}
-    
-    # PHASE 1: Async combined details fetching
-    async def fetch_combined_details_batch():
-        tasks = []
-        semaphore = asyncio.Semaphore(8)  # Control concurrency
-        
-        async def fetch_single_combined(uuid_val):
-            async with semaphore:
-                try:
-                    # Convert sync call to async using thread executor
-                    loop = asyncio.get_event_loop()
-                    result = await loop.run_in_executor(
-                        None, 
-                        lambda: _fetch_combined_details(session_manager, uuid_val)
-                    )
-                    return uuid_val, result
-                except Exception as e:
-                    logger.warning(f"Async combined details failed for {uuid_val[:8]}: {e}")
-                    return uuid_val, None
-        
-        for uuid_val in uuid_list:
-            tasks.append(fetch_single_combined(uuid_val))
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception):
-                logger.warning(f"Async combined details exception: {result}")
-            elif isinstance(result, tuple) and len(result) == 2:
-                uuid_val, data = result
-                batch_combined_details[uuid_val] = data
-    
-    # Execute async phases
-    try:
-        await fetch_combined_details_batch()
-        logger.debug(f"Async orchestrator completed: {len(batch_combined_details)} combined details fetched")
-    except Exception as e:
-        logger.error(f"Async orchestrator failed: {e}")
-        # Fallback to sync method
-        return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
-    
-    # Return data in expected format
-    return {
-        "combined": batch_combined_details,
-        "tree": batch_tree_data,
-        "rel_prob": batch_relationship_prob_data,
-    }
+# Removed unused async function _async_enhanced_api_orchestrator - not called in current implementation
+# Removed orphaned code from async function
 
 
 # ===================================================================
@@ -2168,74 +2097,12 @@ DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 # PHASE 3: ADVANCED OPTIMIZATIONS - SMART MATCH PRIORITIZATION
 # ===================================================================
 
-# Removed unused function _prioritize_matches_by_importance - not called
-# def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Phase 3: Intelligently prioritize matches for processing.
-    
-    Priority order:
-    1. High cM matches (>50 cM) - likely close relatives
-    2. Medium cM matches (20-50 cM) - potential cousins
-    3. Matches with trees - more genealogical value
-    4. Recent activity - newly added matches
-    5. Low cM matches (<20 cM) - distant relatives
-    
-    Args:
-        matches: List of match dictionaries
-        
-    Returns:
-        Sorted list of matches by priority (highest first)
-    """
-    def get_match_priority(match: Dict[str, Any]) -> tuple:
-        cm_value = match.get("sharedCentimorgans", 0)
-        has_tree = bool(match.get("treeId") or match.get("hasTree", False))
-        is_recent = match.get("isNew", False)
-        
-        # Priority scoring (lower number = higher priority)
-        if cm_value > 50:
-            priority_class = 1  # High priority
-        elif cm_value >= 20:
-            priority_class = 2  # Medium priority  
-        else:
-            priority_class = 3  # Low priority
-            
-        # Sub-priority within class
-        tree_bonus = 0 if has_tree else 1
-        recent_bonus = 0 if is_recent else 1
-        
-        # Return tuple for sorting (all ascending for highest priority first)
-        return (priority_class, tree_bonus, recent_bonus, -cm_value)
-    
-    sorted_matches = sorted(matches, key=get_match_priority)
-    
-    # Log prioritization statistics
-    high_priority = sum(1 for m in matches if m.get("sharedCentimorgans", 0) > 50)
-    medium_priority = sum(1 for m in matches if 20 <= m.get("sharedCentimorgans", 0) <= 50)
-    with_trees = sum(1 for m in matches if m.get("treeId") or m.get("hasTree", False))
-    
-    logger.debug(f"Match prioritization - High: {high_priority}, Medium: {medium_priority}, With trees: {with_trees}")
-    
-    return sorted_matches
+# Removed unused functions - not called in current implementation:
+# - _prioritize_matches_by_importance
+# - _smart_batch_processing
 
 
-# Removed unused function _smart_batch_processing - not called in current implementation
-# Function body removed - was not being used
-
-
-def _process_match_batch(matches: List[Dict[str, Any]], session_manager: SessionManager) -> List[Dict[str, Any]]:
-    """
-    Process a batch of matches with error handling.
-    
-    Args:
-        matches: Batch of matches to process
-        session_manager: SessionManager for API calls
-        
-    Returns:
-        List of successfully processed matches
-    """
-    # Placeholder for actual batch processing logic
-    # This would integrate with existing _perform_api_prefetches or async equivalent
-    return matches
+# Removed unused function _process_match_batch - not called in current implementation
 
 
 # ===================================================================
@@ -2312,7 +2179,7 @@ class MemoryOptimizedMatchProcessor:
         
         return processed_matches
     
-    def _process_single_match(self, match: Dict[str, Any], session_manager: SessionManager) -> Dict[str, Any]:
+    def _process_single_match(self, match: Dict[str, Any], _session_manager: SessionManager) -> Dict[str, Any]:
         """Process a single match with minimal memory footprint."""
         # Placeholder - would integrate with existing match processing logic
         return match
@@ -3168,13 +3035,13 @@ def _process_page_matches(
                 # FINAL OPTIMIZATION 3: Advanced Async Integration for large batches
                 if len(fetch_candidates_uuid) >= 15:  # Use async orchestrator for large batches
                     try:
-                        import asyncio
-                        logger.debug(f"Batch {current_page}: Using enhanced async orchestrator for {len(fetch_candidates_uuid)} candidates")
-                        
-                        # Run async orchestrator
-                        prefetched_data = asyncio.run(_async_enhanced_api_orchestrator(
+                        # import asyncio  # Removed - async orchestrator was removed
+                        logger.debug(f"Batch {current_page}: Using sync API prefetches for {len(fetch_candidates_uuid)} candidates")
+
+                        # Use sync method (async orchestrator was removed)
+                        prefetched_data = _perform_api_prefetches(
                             session_manager, fetch_candidates_uuid, matches_to_process_later
-                        ))
+                        )
                         
                         logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
                     except Exception as async_error:
@@ -3946,7 +3813,7 @@ def _do_match(
     existing_person_arg: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_schema_arg: "ConfigSchema",  # Config schema argument
+    _config_schema_arg: "ConfigSchema",  # Config schema argument - unused
     logger_instance: logging.Logger,
 ) -> Tuple[
     Optional[Dict[str, Any]],
@@ -5920,7 +5787,7 @@ def action6_gather_module_tests() -> bool:
     # CORE FUNCTIONALITY TESTS
     def test_core_functionality():
         """Test all core DNA match gathering functions"""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock  # patch unused in this test
 
         # Test _lookup_existing_persons function
         mock_session = MagicMock()
@@ -5942,7 +5809,7 @@ def action6_gather_module_tests() -> bool:
 
     def test_data_processing_functions():
         """Test all data processing and preparation functions"""
-        from unittest.mock import MagicMock
+        # from unittest.mock import MagicMock  # Unused in this test
 
         # Test _identify_fetch_candidates with correct signature
         matches_on_page = [{"uuid": "test_12345", "cM_DNA": 100}]
@@ -6097,7 +5964,7 @@ def action6_gather_module_tests() -> bool:
         print("   • Test 3: Database transaction rollback scenario simulation")
         try:
             # Simulate the exact sequence that caused rollbacks in Action 6
-            with patch('database.logger') as mock_logger:
+            with patch('database.logger'):  # mock_logger unused
                 # This mimics the database.py db_transn function error handling
                 try:
                     # Simulate UNIQUE constraint failure during bulk insert
@@ -6474,7 +6341,7 @@ def action6_gather_module_tests() -> bool:
                 
                 # Test 1: Verify CSRF token extraction works
                 print("✓ Test 1: CSRF token extraction")
-                with patch('action6_gather.SessionManager') as mock_sm_class:
+                with patch('action6_gather.SessionManager'):  # mock_sm_class unused
                     mock_session_manager = Mock()
                     mock_session_manager.driver = Mock()
                     
