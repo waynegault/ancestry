@@ -110,11 +110,11 @@ class SessionState:
 
 class CriticalErrorDetector:
     """
-    Sophisticated error detection system for early intervention.
-    
-    Focuses on specific error patterns that lead to cascade failures.
+    Enhanced error detection system for early intervention.
+
+    Phase 2: Expanded patterns, early warning system, and sophisticated intervention.
     """
-    
+
     def __init__(self):
         self.error_patterns = {
             'webdriver_death': {
@@ -123,7 +123,10 @@ class CriticalErrorDetector:
                     'invalid session id',
                     'session deleted',
                     'chrome not reachable',
-                    'browser process died'
+                    'browser process died',
+                    'session not created',
+                    'chrome crashed',
+                    'browser disconnected'
                 ],
                 'severity': 'critical',
                 'action': 'immediate_halt'
@@ -133,7 +136,10 @@ class CriticalErrorDetector:
                     'OutOfMemoryError',
                     'MemoryError',
                     'cannot allocate memory',
-                    'virtual memory exhausted'
+                    'virtual memory exhausted',
+                    'memory allocation failed',
+                    'insufficient memory',
+                    'heap space'
                 ],
                 'severity': 'critical',
                 'action': 'immediate_restart'
@@ -143,10 +149,15 @@ class CriticalErrorDetector:
                     'ConnectionError',
                     'TimeoutError',
                     'DNS resolution failed',
-                    'network unreachable'
+                    'network unreachable',
+                    'connection refused',
+                    'connection reset',
+                    'socket timeout',
+                    'name resolution failed',
+                    'no route to host'
                 ],
                 'severity': 'warning',
-                'action': 'retry_with_backoff'
+                'action': 'network_resilience_retry'
             },
             'auth_loss': {
                 'patterns': [
@@ -155,55 +166,128 @@ class CriticalErrorDetector:
                     'authenticate',
                     'unauthorized',
                     '401',
-                    '403'
+                    '403',
+                    'session expired',
+                    'access denied',
+                    'authentication required',
+                    'please sign in'
                 ],
                 'severity': 'critical',
-                'action': 'immediate_halt'
+                'action': 'auth_recovery'
             },
             'rate_limiting': {
                 'patterns': [
                     '429',
                     'rate limit',
                     'too many requests',
-                    'throttled'
+                    'throttled',
+                    'quota exceeded',
+                    'api limit',
+                    'request limit',
+                    'slow down'
                 ],
                 'severity': 'warning',
-                'action': 'exponential_backoff'
+                'action': 'adaptive_backoff'
+            },
+            'ancestry_specific': {
+                'patterns': [
+                    'ancestry.com error',
+                    'service unavailable',
+                    'maintenance mode',
+                    'temporarily unavailable',
+                    'server error',
+                    'internal server error',
+                    '500',
+                    '502',
+                    '503',
+                    '504'
+                ],
+                'severity': 'warning',
+                'action': 'ancestry_service_retry'
+            },
+            'selenium_specific': {
+                'patterns': [
+                    'element not found',
+                    'stale element',
+                    'element not clickable',
+                    'element not visible',
+                    'no such element',
+                    'timeout waiting for',
+                    'element click intercepted'
+                ],
+                'severity': 'warning',
+                'action': 'selenium_recovery'
+            },
+            'javascript_errors': {
+                'patterns': [
+                    'javascript error',
+                    'script timeout',
+                    'execution timeout',
+                    'script error',
+                    'js error',
+                    'uncaught exception'
+                ],
+                'severity': 'warning',
+                'action': 'page_refresh'
             }
         }
-        
+
         self.error_history = deque(maxlen=1000)
         self.cascade_threshold = 5  # Errors in 60 seconds
+
+        # Phase 2: Enhanced monitoring
+        self.early_warning_thresholds = {
+            'error_rate_1min': 3,      # 3 errors in 1 minute
+            'error_rate_5min': 10,     # 10 errors in 5 minutes
+            'error_rate_15min': 25,    # 25 errors in 15 minutes
+            'critical_errors_1min': 1, # 1 critical error in 1 minute
+            'network_errors_5min': 5   # 5 network errors in 5 minutes
+        }
+
+        self.intervention_history = deque(maxlen=100)
+        self.last_early_warning = 0
         
     def analyze_error(self, error: Exception) -> tuple[str, str]:
-        """Analyze error and return category with recommended action."""
+        """
+        Enhanced error analysis with early warning detection.
+
+        Phase 2: Includes pattern matching, cascade detection, and early warning system.
+        """
         error_msg = str(error).lower()
         timestamp = time.time()
-        
+
         # Pattern matching
         for category, config in self.error_patterns.items():
             if any(pattern.lower() in error_msg for pattern in config['patterns']):
-                self.error_history.append({
+                error_record = {
                     'timestamp': timestamp,
                     'category': category,
                     'severity': config['severity'],
-                    'message': str(error)
-                })
-                
+                    'message': str(error),
+                    'action': config['action']
+                }
+                self.error_history.append(error_record)
+
                 # Check for cascade pattern
                 if self._detect_cascade_pattern(category):
                     return category, 'emergency_halt'
-                    
+
+                # Check for early warning conditions
+                early_warning = self._check_early_warning_conditions(timestamp)
+                if early_warning:
+                    return category, early_warning
+
                 return category, config['action']
-                
+
         # Unknown error
         self.error_history.append({
             'timestamp': timestamp,
             'category': 'unknown',
             'severity': 'info',
-            'message': str(error)
+            'message': str(error),
+            'action': 'continue'
         })
-        
+
         return 'unknown', 'continue'
         
     def _detect_cascade_pattern(self, category: str) -> bool:
@@ -214,6 +298,97 @@ class CriticalErrorDetector:
         ]
         
         return len(recent_errors) >= self.cascade_threshold
+
+    def _check_early_warning_conditions(self, current_time: float) -> Optional[str]:
+        """
+        Check for early warning conditions that require intervention.
+
+        Phase 2: Proactive detection before cascade failures occur.
+        """
+        # Avoid spam - only check every 30 seconds
+        if current_time - self.last_early_warning < 30:
+            return None
+
+        # Check error rate thresholds
+        time_windows = [
+            (60, self.early_warning_thresholds['error_rate_1min'], 'enhanced_monitoring'),
+            (300, self.early_warning_thresholds['error_rate_5min'], 'proactive_intervention'),
+            (900, self.early_warning_thresholds['error_rate_15min'], 'immediate_intervention')
+        ]
+
+        for window_seconds, threshold, action in time_windows:
+            window_start = current_time - window_seconds
+            errors_in_window = [
+                e for e in self.error_history
+                if e['timestamp'] >= window_start
+            ]
+
+            if len(errors_in_window) >= threshold:
+                self.last_early_warning = current_time
+                self._record_intervention(action, f"{len(errors_in_window)} errors in {window_seconds}s")
+                return action
+
+        # Check critical error patterns
+        critical_window = current_time - 60  # 1 minute
+        critical_errors = [
+            e for e in self.error_history
+            if e['timestamp'] >= critical_window and e['severity'] == 'critical'
+        ]
+
+        if len(critical_errors) >= self.early_warning_thresholds['critical_errors_1min']:
+            self.last_early_warning = current_time
+            self._record_intervention('immediate_halt', f"{len(critical_errors)} critical errors in 1min")
+            return 'immediate_halt'
+
+        # Check network error patterns
+        network_window = current_time - 300  # 5 minutes
+        network_errors = [
+            e for e in self.error_history
+            if e['timestamp'] >= network_window and e['category'] == 'network_failure'
+        ]
+
+        if len(network_errors) >= self.early_warning_thresholds['network_errors_5min']:
+            self.last_early_warning = current_time
+            self._record_intervention('network_recovery', f"{len(network_errors)} network errors in 5min")
+            return 'network_recovery'
+
+        return None
+
+    def _record_intervention(self, intervention_type: str, reason: str) -> None:
+        """Record intervention for monitoring and analysis."""
+        self.intervention_history.append({
+            'timestamp': time.time(),
+            'type': intervention_type,
+            'reason': reason
+        })
+
+    def get_early_warning_status(self) -> Dict[str, Any]:
+        """Get current early warning system status."""
+        current_time = time.time()
+
+        # Calculate current error rates
+        error_rates = {}
+        for window_name, window_seconds in [('1min', 60), ('5min', 300), ('15min', 900)]:
+            window_start = current_time - window_seconds
+            errors_in_window = [
+                e for e in self.error_history
+                if e['timestamp'] >= window_start
+            ]
+            error_rates[window_name] = len(errors_in_window)
+
+        # Get recent interventions
+        recent_interventions = [
+            i for i in self.intervention_history
+            if i['timestamp'] > current_time - 3600  # Last hour
+        ]
+
+        return {
+            'error_rates': error_rates,
+            'thresholds': self.early_warning_thresholds,
+            'recent_interventions': recent_interventions,
+            'last_warning': self.last_early_warning,
+            'status': 'active' if error_rates['1min'] > 0 else 'monitoring'
+        }
         
     def get_error_summary(self) -> Dict[str, Any]:
         """Get summary of recent errors for monitoring."""
@@ -235,16 +410,24 @@ class CriticalErrorDetector:
 
 class ResourceMonitor:
     """
-    Real-time system resource monitoring for proactive management.
-    
-    Monitors memory, processes, network, and browser health.
+    Enhanced real-time system resource monitoring for proactive management.
+
+    Phase 2: Monitors memory, processes, network resilience, and authentication state.
     """
-    
+
     def __init__(self):
         self.memory_threshold_mb = 1000
         self.process_threshold = 10
         self.network_timeout = 5
         self.browser_memory_limit_mb = 500
+
+        # Phase 2: Enhanced monitoring
+        self.network_retry_attempts = 3
+        self.network_backoff_factor = 2.0
+        self.auth_check_interval = 300  # 5 minutes
+        self.last_auth_check = 0
+        self.network_failure_count = 0
+        self.max_network_failures = 5
         
     def check_system_health(self) -> Dict[str, Any]:
         """Comprehensive system health check."""
@@ -342,36 +525,102 @@ class ResourceMonitor:
             }
 
     def _check_network_health(self) -> Dict[str, Any]:
-        """Check network connectivity."""
-        try:
-            import requests
-            from config_schema import config_schema
+        """
+        Enhanced network connectivity check with resilience.
 
-            # Test connectivity to Ancestry.com
-            test_url = config_schema.api.base_url
-            response = requests.get(test_url, timeout=self.network_timeout)
+        Phase 2: Includes retry logic, multiple endpoints, and failure tracking.
+        """
+        # Test multiple endpoints for better reliability
+        test_endpoints = [
+            'https://www.ancestry.com',
+            'https://www.google.com',
+            'https://www.cloudflare.com'
+        ]
 
-            if response.status_code == 200:
-                return {
-                    'status': 'healthy',
-                    'response_time': response.elapsed.total_seconds(),
-                    'status_code': response.status_code,
-                    'message': f'Network OK: {response.elapsed.total_seconds():.2f}s response'
-                }
-            else:
-                return {
-                    'status': 'warning',
-                    'response_time': response.elapsed.total_seconds(),
-                    'status_code': response.status_code,
-                    'message': f'Network warning: HTTP {response.status_code}'
-                }
+        best_result = None
+        all_failed = True
 
-        except Exception as e:
+        for endpoint in test_endpoints:
+            result = self._test_single_endpoint(endpoint)
+
+            if result['status'] in ['healthy', 'warning']:
+                all_failed = False
+                if best_result is None or result['status'] == 'healthy':
+                    best_result = result
+
+        if all_failed:
+            self.network_failure_count += 1
             return {
                 'status': 'critical',
-                'error': str(e),
-                'message': f'Network failure: {e}'
+                'failure_count': self.network_failure_count,
+                'max_failures': self.max_network_failures,
+                'message': f'All network endpoints failed (failure #{self.network_failure_count})'
             }
+        else:
+            # Reset failure count on success
+            self.network_failure_count = 0
+            return best_result
+
+    def _test_single_endpoint(self, url: str) -> Dict[str, Any]:
+        """Test connectivity to a single endpoint with retry logic."""
+        for attempt in range(self.network_retry_attempts):
+            try:
+                import requests
+
+                timeout = self.network_timeout * (attempt + 1)  # Progressive timeout
+                response = requests.get(url, timeout=timeout)
+
+                if response.status_code == 200:
+                    return {
+                        'status': 'healthy',
+                        'endpoint': url,
+                        'response_time': response.elapsed.total_seconds(),
+                        'status_code': response.status_code,
+                        'attempt': attempt + 1,
+                        'message': f'Network OK: {response.elapsed.total_seconds():.2f}s response'
+                    }
+                elif response.status_code in [429, 503, 504]:
+                    # Temporary issues - continue retrying
+                    if attempt < self.network_retry_attempts - 1:
+                        time.sleep(self.network_backoff_factor ** attempt)
+                        continue
+                    else:
+                        return {
+                            'status': 'warning',
+                            'endpoint': url,
+                            'response_time': response.elapsed.total_seconds(),
+                            'status_code': response.status_code,
+                            'attempt': attempt + 1,
+                            'message': f'Network warning: HTTP {response.status_code} after {attempt + 1} attempts'
+                        }
+                else:
+                    return {
+                        'status': 'warning',
+                        'endpoint': url,
+                        'response_time': response.elapsed.total_seconds(),
+                        'status_code': response.status_code,
+                        'attempt': attempt + 1,
+                        'message': f'Network warning: HTTP {response.status_code}'
+                    }
+
+            except Exception as e:
+                if attempt < self.network_retry_attempts - 1:
+                    time.sleep(self.network_backoff_factor ** attempt)
+                    continue
+                else:
+                    return {
+                        'status': 'critical',
+                        'endpoint': url,
+                        'error': str(e),
+                        'attempt': attempt + 1,
+                        'message': f'Network failure: {e} after {attempt + 1} attempts'
+                    }
+
+        return {
+            'status': 'critical',
+            'endpoint': url,
+            'message': 'All retry attempts failed'
+        }
 
     def ready_for_restart(self) -> bool:
         """Check if system is ready for browser restart."""
@@ -632,13 +881,31 @@ class ReliableSessionManager:
         }
 
     def _handle_recoverable_error(self, error: Exception, page_num: int, action: str) -> bool:
-        """Handle recoverable errors with appropriate retry strategies."""
+        """
+        Enhanced error handling with sophisticated recovery strategies.
+
+        Phase 2: Includes network resilience, auth recovery, and adaptive strategies.
+        """
         logger.info(f"🔄 Handling recoverable error on page {page_num}: {action}")
 
         if action == 'retry_with_backoff':
             return self._retry_with_backoff(page_num, max_attempts=3)
         elif action == 'exponential_backoff':
             return self._retry_with_exponential_backoff(page_num, max_attempts=3)
+        elif action == 'adaptive_backoff':
+            return self._adaptive_backoff_retry(page_num, max_attempts=5)
+        elif action == 'network_resilience_retry':
+            return self._network_resilience_retry(page_num, max_attempts=3)
+        elif action == 'ancestry_service_retry':
+            return self._ancestry_service_retry(page_num, max_attempts=3)
+        elif action == 'selenium_recovery':
+            return self._selenium_recovery(page_num, max_attempts=2)
+        elif action == 'page_refresh':
+            return self._page_refresh_recovery(page_num)
+        elif action == 'auth_recovery':
+            return self._authentication_recovery(page_num)
+        elif action == 'network_recovery':
+            return self._network_recovery(page_num)
         elif action == 'immediate_restart':
             try:
                 self._safe_browser_restart()
@@ -686,8 +953,239 @@ class ReliableSessionManager:
 
         return False
 
+    def _adaptive_backoff_retry(self, page_num: int, max_attempts: int = 5) -> bool:
+        """
+        Adaptive backoff retry with intelligent delay calculation.
+
+        Phase 2: Adjusts delay based on error history and system load.
+        """
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Calculate adaptive delay based on recent error rate
+                recent_errors = len([
+                    e for e in self.error_detector.error_history
+                    if e['timestamp'] > time.time() - 300  # Last 5 minutes
+                ])
+
+                # Adaptive delay: more errors = longer delay
+                base_delay = 2 ** attempt
+                error_multiplier = 1 + (recent_errors * 0.5)
+                adaptive_delay = min(base_delay * error_multiplier, 60)  # Cap at 60 seconds
+
+                logger.info(f"🔄 Adaptive retry attempt {attempt}/{max_attempts} for page {page_num} (delay: {adaptive_delay:.1f}s)")
+                time.sleep(adaptive_delay)
+
+                result = self._process_single_page(page_num)
+                logger.info(f"✅ Adaptive retry successful on attempt {attempt}")
+                return True
+
+            except Exception as e:
+                logger.warning(f"⚠️ Adaptive retry attempt {attempt} failed: {e}")
+                if attempt == max_attempts:
+                    logger.error(f"❌ All adaptive retry attempts failed for page {page_num}")
+
+        return False
+
+    def _network_resilience_retry(self, page_num: int, max_attempts: int = 3) -> bool:
+        """
+        Network-aware retry with connectivity validation.
+
+        Phase 2: Validates network health before retry attempts.
+        """
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Check network health before retry
+                network_health = self.resource_monitor._check_network_health()
+                if network_health['status'] == 'critical':
+                    logger.warning(f"⚠️ Network critical, waiting before retry attempt {attempt}")
+                    time.sleep(10 * attempt)  # Wait longer for network recovery
+
+                logger.info(f"🌐 Network resilience retry attempt {attempt}/{max_attempts} for page {page_num}")
+                time.sleep(3 * attempt)  # Progressive delay
+
+                result = self._process_single_page(page_num)
+                logger.info(f"✅ Network resilience retry successful on attempt {attempt}")
+                return True
+
+            except Exception as e:
+                logger.warning(f"⚠️ Network resilience retry attempt {attempt} failed: {e}")
+                if attempt == max_attempts:
+                    logger.error(f"❌ All network resilience retry attempts failed for page {page_num}")
+
+        return False
+
+    def _ancestry_service_retry(self, page_num: int, max_attempts: int = 3) -> bool:
+        """
+        Ancestry.com service-specific retry with service status awareness.
+
+        Phase 2: Handles Ancestry.com specific service issues.
+        """
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Longer delays for service issues
+                service_delay = 30 * attempt  # 30s, 60s, 90s
+                logger.info(f"🏛️ Ancestry service retry attempt {attempt}/{max_attempts} for page {page_num} (delay: {service_delay}s)")
+                time.sleep(service_delay)
+
+                # Check if we can reach Ancestry.com
+                network_health = self.resource_monitor._test_single_endpoint('https://www.ancestry.com')
+                if network_health['status'] == 'critical':
+                    logger.warning(f"⚠️ Ancestry.com still unreachable on attempt {attempt}")
+                    continue
+
+                result = self._process_single_page(page_num)
+                logger.info(f"✅ Ancestry service retry successful on attempt {attempt}")
+                return True
+
+            except Exception as e:
+                logger.warning(f"⚠️ Ancestry service retry attempt {attempt} failed: {e}")
+                if attempt == max_attempts:
+                    logger.error(f"❌ All Ancestry service retry attempts failed for page {page_num}")
+
+        return False
+
+    def _selenium_recovery(self, page_num: int, max_attempts: int = 2) -> bool:
+        """
+        Selenium-specific recovery for element and interaction issues.
+
+        Phase 2: Handles stale elements, timeouts, and interaction failures.
+        """
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.info(f"🔧 Selenium recovery attempt {attempt}/{max_attempts} for page {page_num}")
+
+                # Refresh page to clear stale elements
+                if self.browser_manager and self.browser_manager.driver:
+                    self.browser_manager.driver.refresh()
+                    time.sleep(5)  # Wait for page load
+
+                    # Verify page is ready
+                    ready_state = self.browser_manager.driver.execute_script("return document.readyState;")
+                    if ready_state != "complete":
+                        logger.warning(f"⚠️ Page not ready after refresh: {ready_state}")
+                        time.sleep(5)
+
+                result = self._process_single_page(page_num)
+                logger.info(f"✅ Selenium recovery successful on attempt {attempt}")
+                return True
+
+            except Exception as e:
+                logger.warning(f"⚠️ Selenium recovery attempt {attempt} failed: {e}")
+                if attempt == max_attempts:
+                    logger.error(f"❌ All Selenium recovery attempts failed for page {page_num}")
+
+        return False
+
+    def _page_refresh_recovery(self, page_num: int) -> bool:
+        """
+        Simple page refresh recovery for JavaScript errors.
+
+        Phase 2: Handles JavaScript execution issues.
+        """
+        try:
+            logger.info(f"🔄 Page refresh recovery for page {page_num}")
+
+            if self.browser_manager and self.browser_manager.driver:
+                # Clear any JavaScript errors
+                self.browser_manager.driver.execute_script("console.clear();")
+
+                # Refresh page
+                self.browser_manager.driver.refresh()
+                time.sleep(3)
+
+                # Verify JavaScript is working
+                js_test = self.browser_manager.driver.execute_script("return typeof jQuery !== 'undefined';")
+                logger.debug(f"JavaScript test result: {js_test}")
+
+            result = self._process_single_page(page_num)
+            logger.info(f"✅ Page refresh recovery successful")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Page refresh recovery failed: {e}")
+            return False
+
+    def _authentication_recovery(self, page_num: int) -> bool:
+        """
+        Authentication recovery for session expiration.
+
+        Phase 2: Handles authentication loss and session expiration.
+        """
+        try:
+            logger.info(f"🔐 Authentication recovery for page {page_num}")
+
+            # Check current URL for login indicators
+            if self.browser_manager and self.browser_manager.driver:
+                current_url = self.browser_manager.driver.current_url
+                if any(indicator in current_url.lower() for indicator in ['login', 'signin', 'authenticate']):
+                    logger.critical(f"🚨 Authentication lost - on login page: {current_url}")
+                    return False  # Cannot recover automatically
+
+            # Try to access a protected resource to verify auth
+            try:
+                cookies = self.browser_manager.driver.get_cookies()
+                auth_cookies = [c for c in cookies if 'auth' in c['name'].lower() or 'session' in c['name'].lower()]
+
+                if not auth_cookies:
+                    logger.warning(f"⚠️ No authentication cookies found")
+                    return False
+
+                logger.info(f"✅ Authentication appears valid ({len(auth_cookies)} auth cookies)")
+
+            except Exception as cookie_error:
+                logger.error(f"❌ Cannot access cookies for auth check: {cookie_error}")
+                return False
+
+            # Try processing the page
+            result = self._process_single_page(page_num)
+            logger.info(f"✅ Authentication recovery successful")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Authentication recovery failed: {e}")
+            return False
+
+    def _network_recovery(self, page_num: int) -> bool:
+        """
+        Network recovery for persistent connectivity issues.
+
+        Phase 2: Handles network instability and connectivity problems.
+        """
+        try:
+            logger.info(f"🌐 Network recovery for page {page_num}")
+
+            # Wait for network to stabilize
+            max_wait_time = 60  # Maximum 60 seconds
+            wait_interval = 10   # Check every 10 seconds
+
+            for wait_time in range(0, max_wait_time, wait_interval):
+                network_health = self.resource_monitor._check_network_health()
+
+                if network_health['status'] in ['healthy', 'warning']:
+                    logger.info(f"✅ Network recovered after {wait_time}s")
+                    break
+
+                logger.info(f"⏳ Waiting for network recovery... ({wait_time}s/{max_wait_time}s)")
+                time.sleep(wait_interval)
+            else:
+                logger.error(f"❌ Network did not recover within {max_wait_time}s")
+                return False
+
+            # Try processing the page
+            result = self._process_single_page(page_num)
+            logger.info(f"✅ Network recovery successful")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Network recovery failed: {e}")
+            return False
+
     def get_session_summary(self) -> Dict[str, Any]:
-        """Get comprehensive session summary for monitoring."""
+        """
+        Enhanced comprehensive session summary for monitoring.
+
+        Phase 2: Includes early warning status, intervention history, and network resilience data.
+        """
         return {
             'session_state': {
                 'current_page': self.session_state.current_page,
@@ -699,9 +1197,21 @@ class ReliableSessionManager:
             },
             'system_health': self.resource_monitor.check_system_health(),
             'error_summary': self.error_detector.get_error_summary(),
+            'early_warning': self.error_detector.get_early_warning_status(),
+            'network_resilience': {
+                'failure_count': self.resource_monitor.network_failure_count,
+                'max_failures': self.resource_monitor.max_network_failures,
+                'retry_attempts': self.resource_monitor.network_retry_attempts
+            },
             'browser_status': {
                 'available': self.browser_manager is not None,
                 'valid': self._quick_browser_health_check() if self.browser_manager else False
+            },
+            'phase2_features': {
+                'enhanced_error_patterns': len(self.error_detector.error_patterns),
+                'intervention_history_count': len(self.error_detector.intervention_history),
+                'network_endpoints_tested': 3,
+                'recovery_strategies_available': 8
             }
         }
 
@@ -716,3 +1226,260 @@ class ReliableSessionManager:
                 logger.warning(f"⚠️ Error closing browser during cleanup: {e}")
             finally:
                 self.browser_manager = None
+
+
+# ============================================================================
+# EMBEDDED TESTS - Following user preference for tests in same file
+# ============================================================================
+
+def test_session_state_management():
+    """Test SessionState backup and restore functionality."""
+    print("🧪 Testing SessionState management...")
+
+    # Create session state
+    state = SessionState()
+    state.current_page = 10
+    state.pages_processed = 5
+    state.error_count = 2
+
+    # Create backup
+    backup = state.create_backup()
+
+    # Modify state
+    state.current_page = 20
+    state.pages_processed = 15
+    state.error_count = 5
+
+    # Restore from backup
+    state.restore_backup(backup)
+
+    # Verify restoration
+    assert state.current_page == 10, f"Expected current_page=10, got {state.current_page}"
+    assert state.pages_processed == 5, f"Expected pages_processed=5, got {state.pages_processed}"
+    assert state.error_count == 2, f"Expected error_count=2, got {state.error_count}"
+
+    print("   ✅ SessionState backup/restore working correctly")
+    return True
+
+
+def test_critical_error_detection():
+    """Test CriticalErrorDetector pattern matching and cascade detection."""
+    print("🧪 Testing CriticalErrorDetector...")
+
+    detector = CriticalErrorDetector()
+
+    # Test webdriver death detection
+    webdriver_error = Exception("WebDriver became None during operation")
+    category, action = detector.analyze_error(webdriver_error)
+    assert category == 'webdriver_death', f"Expected webdriver_death, got {category}"
+    assert action == 'immediate_halt', f"Expected immediate_halt, got {action}"
+
+    # Test memory pressure detection
+    memory_error = Exception("OutOfMemoryError: cannot allocate memory")
+    category, action = detector.analyze_error(memory_error)
+    assert category == 'memory_pressure', f"Expected memory_pressure, got {category}"
+    assert action == 'immediate_restart', f"Expected immediate_restart, got {action}"
+
+    # Test cascade detection
+    for i in range(6):  # Trigger cascade threshold
+        detector.analyze_error(Exception("WebDriver became None"))
+
+    # Next error should trigger emergency halt
+    category, action = detector.analyze_error(Exception("WebDriver became None"))
+    assert action == 'emergency_halt', f"Expected emergency_halt for cascade, got {action}"
+
+    print("   ✅ CriticalErrorDetector pattern matching and cascade detection working")
+    return True
+
+
+def test_enhanced_error_patterns():
+    """Test Phase 2 enhanced error patterns and detection."""
+    print("🧪 Testing Phase 2 enhanced error patterns...")
+
+    # Create fresh detector to avoid early warning interference
+    detector = CriticalErrorDetector()
+
+    # Test new ancestry-specific error detection
+    ancestry_error = Exception("ancestry.com error: service unavailable")
+    category, action = detector.analyze_error(ancestry_error)
+    assert category == 'ancestry_specific', f"Expected ancestry_specific, got {category}"
+    assert action == 'ancestry_service_retry', f"Expected ancestry_service_retry, got {action}"
+
+    # Create fresh detector for selenium test
+    detector = CriticalErrorDetector()
+    selenium_error = Exception("element not found: stale element reference")
+    category, action = detector.analyze_error(selenium_error)
+    assert category == 'selenium_specific', f"Expected selenium_specific, got {category}"
+    assert action == 'selenium_recovery', f"Expected selenium_recovery, got {action}"
+
+    # Create fresh detector for javascript test
+    detector = CriticalErrorDetector()
+    js_error = Exception("javascript error: script timeout")
+    category, action = detector.analyze_error(js_error)
+    assert category == 'javascript_errors', f"Expected javascript_errors, got {category}"
+    assert action == 'page_refresh', f"Expected page_refresh, got {action}"
+
+    print("   ✅ Enhanced error patterns working correctly")
+    return True
+
+
+def test_early_warning_system():
+    """Test Phase 2 early warning system."""
+    print("🧪 Testing Phase 2 early warning system...")
+
+    detector = CriticalErrorDetector()
+
+    # Test early warning thresholds
+    assert 'error_rate_1min' in detector.early_warning_thresholds
+    assert 'critical_errors_1min' in detector.early_warning_thresholds
+    assert 'network_errors_5min' in detector.early_warning_thresholds
+
+    # Test early warning status
+    warning_status = detector.get_early_warning_status()
+    assert 'error_rates' in warning_status
+    assert 'thresholds' in warning_status
+    assert 'recent_interventions' in warning_status
+    assert 'status' in warning_status
+
+    # Simulate multiple errors to trigger early warning
+    current_time = time.time()
+    for i in range(4):  # Trigger 1-minute threshold (3 errors)
+        detector.error_history.append({
+            'timestamp': current_time - (i * 10),  # Spread over 30 seconds
+            'category': 'network_failure',
+            'severity': 'warning',
+            'message': f'Test error {i}'
+        })
+
+    # Check if early warning would trigger
+    warning_action = detector._check_early_warning_conditions(current_time)
+    assert warning_action is not None, "Early warning should trigger with 4 recent errors"
+
+    print("   ✅ Early warning system working correctly")
+    return True
+
+
+def test_resource_monitor():
+    """Test ResourceMonitor system health checks."""
+    print("🧪 Testing ResourceMonitor...")
+
+    monitor = ResourceMonitor()
+
+    # Test system health check
+    health = monitor.check_system_health()
+    assert 'memory' in health, "Health check should include memory status"
+    assert 'processes' in health, "Health check should include process status"
+    assert 'network' in health, "Health check should include network status"
+    assert 'overall' in health, "Health check should include overall status"
+
+    # Test memory pressure detection
+    memory_pressure = monitor.memory_pressure_detected()
+    assert isinstance(memory_pressure, bool), "Memory pressure should return boolean"
+
+    # Test restart readiness
+    ready = monitor.ready_for_restart()
+    assert isinstance(ready, bool), "Restart readiness should return boolean"
+
+    print("   ✅ ResourceMonitor health checks working correctly")
+    return True
+
+
+def test_network_resilience():
+    """Test Phase 2 network resilience features."""
+    print("🧪 Testing Phase 2 network resilience...")
+
+    monitor = ResourceMonitor()
+
+    # Test enhanced network monitoring attributes
+    assert hasattr(monitor, 'network_retry_attempts')
+    assert hasattr(monitor, 'network_backoff_factor')
+    assert hasattr(monitor, 'network_failure_count')
+    assert hasattr(monitor, 'max_network_failures')
+
+    # Test single endpoint testing
+    result = monitor._test_single_endpoint('https://www.google.com')
+    assert 'status' in result
+    assert 'endpoint' in result
+    assert 'attempt' in result
+
+    print("   ✅ Network resilience features working correctly")
+    return True
+
+
+def test_reliable_session_manager_basic():
+    """Test basic ReliableSessionManager functionality."""
+    print("🧪 Testing ReliableSessionManager basic functionality...")
+
+    # Test initialization
+    session_manager = ReliableSessionManager()
+    assert session_manager.session_state is not None, "Session state should be initialized"
+    assert session_manager.error_detector is not None, "Error detector should be initialized"
+    assert session_manager.resource_monitor is not None, "Resource monitor should be initialized"
+
+    # Test session summary
+    summary = session_manager.get_session_summary()
+    assert 'session_state' in summary, "Summary should include session state"
+    assert 'system_health' in summary, "Summary should include system health"
+    assert 'error_summary' in summary, "Summary should include error summary"
+    assert 'browser_status' in summary, "Summary should include browser status"
+
+    # Test Phase 2 additions
+    assert 'early_warning' in summary, "Summary should include early warning status"
+    assert 'network_resilience' in summary, "Summary should include network resilience data"
+    assert 'phase2_features' in summary, "Summary should include Phase 2 feature info"
+
+    # Test cleanup
+    session_manager.cleanup()
+
+    print("   ✅ ReliableSessionManager basic functionality working")
+    return True
+
+
+def run_embedded_tests():
+    """Run all embedded tests for reliable session manager."""
+    print("🚀 Running Embedded Tests for Reliable Session Manager...")
+    print("=" * 60)
+
+    tests = [
+        ("SessionState Management", test_session_state_management),
+        ("Critical Error Detection", test_critical_error_detection),
+        ("Enhanced Error Patterns", test_enhanced_error_patterns),
+        ("Early Warning System", test_early_warning_system),
+        ("Resource Monitoring", test_resource_monitor),
+        ("Network Resilience", test_network_resilience),
+        ("ReliableSessionManager Basic", test_reliable_session_manager_basic),
+    ]
+
+    passed = 0
+    failed = 0
+
+    for test_name, test_func in tests:
+        try:
+            print(f"\n🧪 Running: {test_name}")
+            result = test_func()
+            if result:
+                passed += 1
+                print(f"✅ PASSED: {test_name}")
+            else:
+                failed += 1
+                print(f"❌ FAILED: {test_name}")
+        except Exception as e:
+            failed += 1
+            print(f"❌ FAILED: {test_name} - {e}")
+
+    print(f"\n" + "=" * 60)
+    print(f"📊 Test Results: {passed} passed, {failed} failed")
+
+    if failed == 0:
+        print("🎉 All embedded tests passed!")
+        return True
+    else:
+        print(f"❌ {failed} tests failed!")
+        return False
+
+
+if __name__ == "__main__":
+    # Run embedded tests when file is executed directly
+    success = run_embedded_tests()
+    import sys
+    sys.exit(0 if success else 1)
