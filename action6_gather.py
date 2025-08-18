@@ -35,12 +35,14 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     if session_manager:
         _update_session_performance_tracking(session_manager, duration)
     
-    # Log warnings for slow API calls with enhanced context
-    if duration > 10.0:
+    # Log warnings for slow API calls with enhanced context - ADJUSTED: Less pessimistic thresholds
+    if duration > 25.0:  # OPTIMIZATION: Increased from 10.0s to 25.0s - more realistic for batch processing
+        print()
         logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
-    elif duration > 5.0:
+    elif duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - batch processing can take 10-15s normally
+        print()
         logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
-    elif duration > 2.0:
+    elif duration > 8.0:  # OPTIMIZATION: Increased from 2.0s to 8.0s - individual API calls can take 3-8s normally
         logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
     
     # Track performance metrics for optimization analysis
@@ -68,8 +70,8 @@ def _update_session_performance_tracking(session_manager, duration: float) -> No
         # Update average response time
         session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)
         
-        # Track consecutive slow calls
-        if duration > 5.0:
+        # Track consecutive slow calls - OPTIMIZATION: Adjusted threshold to be less aggressive
+        if duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - align with new warning thresholds
             session_manager._recent_slow_calls += 1
         else:
             session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
@@ -390,13 +392,13 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
         recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
         avg_response_time = getattr(session_manager, '_avg_response_time', 0.0)
         
-        # Calculate adaptive delay based on recent performance
+        # Calculate adaptive delay based on recent performance - OPTIMIZATION: Less aggressive thresholds
         base_delay = 0.0
-        if avg_response_time > 8.0:  # Very slow responses
-            base_delay = min(avg_response_time * 0.3, 4.0)
+        if avg_response_time > 20.0:  # OPTIMIZATION: Increased from 8.0s to 20.0s - very slow responses
+            base_delay = min(avg_response_time * 0.2, 3.0)  # OPTIMIZATION: Reduced multiplier from 0.3 to 0.2, max from 4.0 to 3.0
             logger.debug(f"Very slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
-        elif avg_response_time > 5.0:  # Moderate slow responses  
-            base_delay = min(avg_response_time * 0.2, 2.0)
+        elif avg_response_time > 12.0:  # OPTIMIZATION: Increased from 5.0s to 12.0s - moderate slow responses
+            base_delay = min(avg_response_time * 0.1, 1.5)  # OPTIMIZATION: Reduced multiplier from 0.2 to 0.1, max from 2.0 to 1.5
             logger.debug(f"Slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
         elif recent_slow_calls > 3:  # Multiple consecutive slow calls
             base_delay = 1.0
@@ -3058,9 +3060,10 @@ def _do_batch(
             total_stats["skipped"] += skipped
             total_stats["error"] += errors
             
-            # Log batch summary with green color
-            print("\n\n")
-            logger.debug(Colors.green(f"---- Page {current_page} Batch No{batch_num} Summary ({len(batch_matches)} matches) ----"))
+            # Log batch summary with green color - FIXED: Ensure batch_matches length is preserved
+            batch_size_for_summary = len(batch_matches)  # Capture length before any potential modifications
+            print("\n")
+            logger.debug(Colors.green(f"---- Page {current_page} Batch No{batch_num} Summary ({batch_size_for_summary} matches) ----"))
             logger.debug(Colors.green(f"  New Person/Data: {new}"))
             logger.debug(Colors.green(f"  Updated Person/Data: {updated}"))
             logger.debug(Colors.green(f"  Skipped (No Change): {skipped}"))
@@ -3074,7 +3077,7 @@ def _do_batch(
                 logger.debug(Colors.green(f"  Average duration per record: {avg_duration_per_record:.2f}s"))
 
             logger.debug(Colors.green(f"  Batch processing time: {time.time() - batch_start_time:.2f}s"))
-            logger.debug(Colors.green("---------------------------\n\n"))
+            logger.debug(Colors.green("---------------------------\n"))
 
         # PRIORITY 5: Track batch performance for future optimization
         batch_duration = time.time() - batch_start_time
