@@ -156,7 +156,6 @@ class ColorLogger:
 
 # === PERFORMANCE OPTIMIZATIONS ===
 # FINAL OPTIMIZATION 2: Memory Optimization Import
-# from memory_optimizer import ObjectPool, lazy_property  # Unused - commented out
 # ENHANCEMENT: Advanced Caching Layer
 import hashlib
 from functools import wraps
