@@ -19,10 +19,15 @@ Aggregation utilities can produce per-variant stats (counts, success rate, avg t
 Safe to import even if log directory missing (auto creates). Failures are logged but non-fatal.
 """
 from __future__ import annotations
-import json, os, hashlib, statistics
+
+import hashlib
+import json
+import os
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+
 LOGS_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "Logs"
 LOGS_DIR.mkdir(exist_ok=True)
 TELEMETRY_FILE = LOGS_DIR / "prompt_experiments.jsonl"
@@ -398,7 +403,8 @@ def run_comprehensive_tests() -> bool:  # Consistent entrypoint naming
     return prompt_telemetry_module_tests()
 
 if __name__ == "__main__":
-    import argparse, json as _json
+    import argparse
+    import json as _json
     parser = argparse.ArgumentParser(description="Prompt Experiment Telemetry Utilities")
     parser.add_argument("--summary", action="store_true", help="Print telemetry summary (default last 1000 events)")
     parser.add_argument("--last", type=int, default=1000, help="Number of recent events to summarize")

@@ -28,36 +28,36 @@ __version__ = "2.0.0"
 # Export key components
 try:
     # Try relative imports first (normal package usage)
-    from .session_manager import SessionManager
-    from .database_manager import DatabaseManager
-    from .browser_manager import BrowserManager
     from .api_manager import APIManager
-    from .session_validator import SessionValidator
+    from .browser_manager import BrowserManager
+    from .database_manager import DatabaseManager
     from .dependency_injection import (
         DIContainer,
+        DIScope,
         Injectable,
-        inject,
+        configure_dependencies,
         get_container,
         get_service,
-        configure_dependencies,
-        DIScope,
+        inject,
     )
     from .error_handling import (
-        AppError,
-        ErrorSeverity,
-        ErrorCategory,
-        AuthenticationError,
-        ValidationError,
-        DatabaseError,
-        NetworkError,
-        BrowserError,
         APIError,
+        AppError,
+        AuthenticationError,
+        BrowserError,
         ConfigurationError,
+        DatabaseError,
+        ErrorCategory,
+        ErrorContext,
+        ErrorSeverity,
+        NetworkError,
+        ValidationError,
         error_handler,
         handle_error,
         safe_execute,
-        ErrorContext,
     )
+    from .session_manager import SessionManager
+    from .session_validator import SessionValidator
 except ImportError:
     # If relative imports fail (e.g., when running as __main__),
     # set up dummy objects for testing
@@ -233,8 +233,8 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
+    # import os  # unused import cleanup
     import sys
-    import os
 
     # Use centralized path management
     try:

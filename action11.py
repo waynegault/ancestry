@@ -19,9 +19,9 @@ Performance Optimizations:
 - Test 5: Reuses cached Fraser data from Test 3, no re-search needed
 """
 
-import sys
 import os
-from typing import Dict, Any, List, Optional
+import sys
+from typing import Any, Dict, List, Optional
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,18 +30,21 @@ if current_dir not in sys.path:
 
 # Core imports
 from standard_imports import setup_module
-from test_framework import TestSuite, Colors
+from test_framework import Colors, TestSuite
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # Import necessary functions for API-based operations
+# Import utility functions from action10
+from action10 import sanitize_input
 from config import config_schema
 from core.session_manager import SessionManager
 from utils import _api_req
 
-# Import utility functions from action10
-from action10 import sanitize_input
+# Simple per-run cache for relation ladder and family endpoints
+_relation_ladder_cache: dict[str, dict] = {}
+_edit_relationships_cache: dict[str, dict] = {}
 
 # Module-level variables to cache Fraser's data from Test 3 for reuse in Test 4 & 5
 _cached_fraser_person_id = None
@@ -67,9 +70,9 @@ def enhanced_treesui_search(
         List of person dictionaries with calculated scores, sorted by relevance
     """
     try:
-        from utils import _api_req
         from config import config_schema
         from gedcom_utils import calculate_match_score
+        from utils import _api_req
 
         # Get configuration
         tree_id = session_manager.my_tree_id
@@ -397,7 +400,7 @@ def get_api_session(session_manager: Optional[SessionManager] = None) -> Optiona
             return None
 
         # Check login status and authenticate if needed (like Action 5)
-        from utils import login_status, log_in
+        from utils import log_in, login_status
 
         logger.debug("Checking login status...")
         login_ok = login_status(new_session_manager, disable_ui_fallback=False)
@@ -455,6 +458,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     def test_input_sanitization():
         """Test input sanitization with edge cases and real-world inputs"""
         import os
+
         from dotenv import load_dotenv
         load_dotenv()
 
@@ -519,6 +523,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     def test_api_search_functionality():
         """Test API search functionality with test person's data from .env"""
         import os
+
         from dotenv import load_dotenv
         load_dotenv()
 
@@ -551,9 +556,9 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         print(f"   • Surname contains: {test_last_name.lower()}")
         print(f"   • Birth Year: {test_birth_year}")
         print(f"   • Gender: {test_gender.upper()}")
-        print(f"   • Birth Place contains: Banff")
-        print(f"   • Death Year: null")
-        print(f"   • Death Place contains: null")
+        print("   • Birth Place contains: Banff")
+        print("   • Death Year: null")
+        print("   • Death Place contains: null")
 
         try:
             # Use enhanced TreesUI search with new endpoint and performance monitoring
@@ -571,7 +576,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
             search_time = time.time() - start_time
             print(f"🔍 Search completed at {time.strftime('%H:%M:%S')} (took {search_time:.3f}s)")
 
-            print(f"\n🔍 API Search Results:")
+            print("\n🔍 API Search Results:")
             print(f"   Search time: {search_time:.3f}s")
             print(f"   Total matches: {len(results)}")
 
@@ -608,7 +613,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 score = top_result.get('total_score', 0)
                 field_scores = top_result.get('field_scores', {})
 
-                print(f"\n📊 Scoring Breakdown:")
+                print("\n📊 Scoring Breakdown:")
                 print("Field        Score  Description")
                 print("--------------------------------------------------")
 
@@ -679,8 +684,9 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
     def test_api_family_analysis():
         """Test family relationship analysis via editrelationships API (uses cached Fraser data)"""
-        import os
         import json
+        import os
+
         from dotenv import load_dotenv
         load_dotenv()
 
@@ -690,17 +696,17 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         # Check if we have a valid session for API calls
         api_session = get_api_session(session_manager)
         if not api_session:
-            print(f"❌ Failed to create API session for family analysis test")
+            print("❌ Failed to create API session for family analysis test")
             assert False, "Family analysis test requires a valid session manager but failed to create one"
 
-        print(f"🔍 Testing API family analysis...")
+        print("🔍 Testing API family analysis...")
 
         try:
             # Use cached Fraser data from Test 3 if available
             if _cached_fraser_person_id and _cached_fraser_name:
                 person_id = _cached_fraser_person_id
                 found_name = _cached_fraser_name
-                print(f"✅ Using cached Fraser data from Test 3:")
+                print("✅ Using cached Fraser data from Test 3:")
                 print(f"   Name: {found_name}")
                 print(f"   Person ID: {person_id}")
             else:
@@ -729,7 +735,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
                 if not results:
                     print("❌ No API results found for family analysis")
-                    assert False, f"Family analysis test must find Fraser Gault but found 0 matches"
+                    assert False, "Family analysis test must find Fraser Gault but found 0 matches"
 
                 top_match = results[0]
                 person_id = top_match.get('person_id') or top_match.get('id')
@@ -737,11 +743,11 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 print(f"✅ Found Fraser: {found_name}")
 
             # Step 2: Get family details using the better editrelationships API endpoint
-            print(f"\n🔍 Getting family relationships via editrelationships API...")
+            print("\n🔍 Getting family relationships via editrelationships API...")
 
             if not person_id:
                 print("❌ No person ID available for family analysis")
-                assert False, f"Family analysis requires person ID but none found"
+                assert False, "Family analysis requires person ID but none found"
 
             # Get required IDs for the API call
             user_id = api_session.my_profile_id or api_session.my_uuid
@@ -755,16 +761,21 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
             base_url = config_schema.api.base_url.rstrip('/')
             api_url = f"{base_url}/family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships"
 
-            print(f"🔍 Calling editrelationships API...")
-            response = _api_req(
-                url=api_url,
-                driver=api_session.driver,
-                session_manager=api_session,
-                method="GET",
-                api_description="Edit Relationships API",
-                timeout=10,
-                use_csrf_token=False
-            )
+            print("🔍 Calling editrelationships API...")
+            cache_key = f"{user_id}:{tree_id}:{person_id}"
+            response = _edit_relationships_cache.get(cache_key)
+            if response is None:
+                response = _api_req(
+                    url=api_url,
+                    driver=api_session.driver,
+                    session_manager=api_session,
+                    method="GET",
+                    api_description="Edit Relationships API",
+                    timeout=10,
+                    use_csrf_token=False
+                )
+                if isinstance(response, dict):
+                    _edit_relationships_cache[cache_key] = response
 
             if response and isinstance(response, dict) and response.get('data'):
                 # Parse the JSON data from the response
@@ -840,9 +851,9 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                     print(f"      • {name}{birth_info}{death_info}")
 
                 total_family = len(fathers) + len(mothers) + len(spouses) + len(children)
-                print(f"\n✅ Family analysis completed successfully")
+                print("\n✅ Family analysis completed successfully")
                 print(f"   Total family members found: {total_family}")
-                print(f"Conclusion: Fraser Gault's family structure successfully analyzed via editrelationships API")
+                print("Conclusion: Fraser Gault's family structure successfully analyzed via editrelationships API")
                 return True
             else:
                 print("❌ No family data returned from editrelationships API")
@@ -856,6 +867,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     def test_api_relationship_path():
         """Test relationship path calculation via relationladderwithlabels API (uses cached Fraser data)"""
         import os
+
         from dotenv import load_dotenv
         load_dotenv()
 
@@ -868,7 +880,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         # Check if we have a valid session for API calls
         api_session = get_api_session(session_manager)
         if not api_session:
-            print(f"❌ Failed to create API session for relationship path test")
+            print("❌ Failed to create API session for relationship path test")
             assert False, "Relationship path test requires a valid session manager but failed to create one"
 
         try:
@@ -902,7 +914,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
                 if not results:
                     print("❌ No API results found for relationship path")
-                    assert False, f"Relationship path test must find Fraser Gault but found 0 matches"
+                    assert False, "Relationship path test must find Fraser Gault but found 0 matches"
 
                 top_match = results[0]
                 person_id = top_match.get('person_id') or top_match.get('id')
@@ -918,7 +930,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             if not person_id:
                 print("❌ No person ID available for relationship calculation")
-                assert False, f"Relationship path requires person ID but none found"
+                assert False, "Relationship path requires person ID but none found"
 
             # Get required IDs for the API call
             user_id = api_session.my_profile_id or api_session.my_uuid
@@ -932,15 +944,20 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
             base_url = config_schema.api.base_url.rstrip('/')
             api_url = f"{base_url}/family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"
 
-            response = _api_req(
-                url=api_url,
-                driver=api_session.driver,
-                session_manager=api_session,
-                method="GET",
-                api_description="Relation Ladder with Labels API",
-                timeout=10,
-                use_csrf_token=False
-            )
+            cache_key = f"{user_id}:{tree_id}:{person_id}"
+            response = _relation_ladder_cache.get(cache_key)
+            if response is None:
+                response = _api_req(
+                    url=api_url,
+                    driver=api_session.driver,
+                    session_manager=api_session,
+                    method="GET",
+                    api_description="Relation Ladder with Labels API",
+                    timeout=10,
+                    use_csrf_token=False
+                )
+                if isinstance(response, dict):
+                    _relation_ladder_cache[cache_key] = response
 
             if response and isinstance(response, dict) and response.get('kinshipPersons'):
                 kinship_persons = response['kinshipPersons']
@@ -966,10 +983,10 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 # Check if we found the expected uncle relationship
                 fraser_entry = next((p for p in kinship_persons if "Fraser" in p.get("name", "")), None)
                 if fraser_entry and "uncle" in fraser_entry.get("relationship", "").lower():
-                    print(f"\n✅ Correct relationship confirmed: Uncle relationship found")
+                    print("\n✅ Correct relationship confirmed: Uncle relationship found")
                     print(f"   Fraser Gault is confirmed as uncle to {reference_person_name}")
                 else:
-                    print(f"\n⚠️ Different relationship found, but path is valid")
+                    print("\n⚠️ Different relationship found, but path is valid")
 
                 print("✅ Relationship path calculation completed successfully")
                 print(f"Conclusion: Relationship path between Fraser Gault and {reference_person_name} successfully calculated via API")
@@ -1052,8 +1069,8 @@ if __name__ == "__main__":
         # For standalone execution, we don't have a session manager
         # The tests will handle this gracefully by skipping API-dependent tests
         success = run_comprehensive_tests(session_manager=None)
-    except Exception as e:
-        print(f"\n[ERROR] Unhandled exception during Action 11 tests:", file=sys.stderr)
+    except Exception:
+        print("\n[ERROR] Unhandled exception during Action 11 tests:", file=sys.stderr)
         import traceback
         traceback.print_exc()
         success = False

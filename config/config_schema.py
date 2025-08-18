@@ -9,8 +9,8 @@ and schema versioning support.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,29 +22,13 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, Dict, Any, List, Union, Callable
 import os
-import re
+from dataclasses import dataclass, field
 from enum import Enum
-from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
 
 
 class ConfigValidationError(Exception):
@@ -198,7 +182,7 @@ class DatabaseConfig:
         errors = validator.validate(self, self._get_environment())
 
         if errors:
-            error_msg = f"Database configuration validation failed:\n" + "\n".join(
+            error_msg = "Database configuration validation failed:\n" + "\n".join(
                 f"  - {error}" for error in errors
             )
             logger.error(error_msg)
@@ -801,14 +785,14 @@ def run_comprehensive_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
     import tempfile
     from pathlib import Path
+
+    from test_framework import (
+        TestSuite,
+        assert_valid_function,
+        suppress_logging,
+    )
 
     # Initialize test suite
     suite = TestSuite("ConfigSchema", __name__)
@@ -1083,7 +1067,7 @@ def run_comprehensive_tests() -> bool:
 
             # Test configuration with invalid environment
             try:
-                invalid_config = ConfigSchema(environment="invalid")
+                ConfigSchema(environment="invalid")
                 assert False, "Should have raised ValueError for invalid environment"
             except ValueError:
                 pass  # Expected
@@ -1152,7 +1136,7 @@ def run_comprehensive_tests() -> bool:
             start_time = time.time()
             for config in configs[:10]:  # Test a subset
                 config_dict = config.to_dict()
-                restored = ConfigSchema.from_dict(config_dict)
+                ConfigSchema.from_dict(config_dict)
 
             serialization_time = time.time() - start_time
             logger.info(
@@ -1195,7 +1179,6 @@ def run_comprehensive_tests() -> bool:
             assert callable(field)
 
             # Test typing imports
-            from typing import Optional, Dict, Any, List
 
             # Test pathlib
             from pathlib import Path
@@ -1218,12 +1201,12 @@ def run_comprehensive_tests() -> bool:
     def test_rate_limiting_configuration():
         """Test that rate limiting configuration values are conservative for API stability."""
         print("🚦 Testing Rate Limiting Configuration...")
-        
+
         api_config = APIConfig()
-        
+
         # Validate conservative settings for API rate limiting compliance
         issues = []
-        
+
         if api_config.requests_per_second > 0.4:
             issues.append(f"requests_per_second too high: {api_config.requests_per_second}")
         if api_config.thread_pool_workers > 4:
@@ -1240,27 +1223,27 @@ def run_comprehensive_tests() -> bool:
             issues.append(f"request_timeout too low: {api_config.request_timeout}")
         if api_config.max_delay < 300:
             issues.append(f"max_delay too low: {api_config.max_delay}")
-            
+
         if issues:
-            print(f"   ❌ Configuration issues found:")
+            print("   ❌ Configuration issues found:")
             for issue in issues:
                 print(f"      - {issue}")
             raise AssertionError(f"Rate limiting configuration issues: {issues}")
         else:
-            print(f"   ✅ All rate limiting settings are properly conservative")
+            print("   ✅ All rate limiting settings are properly conservative")
 
     def test_max_pages_configuration():
         """Test MAX_PAGES configuration loading and validation."""
         print("📄 Testing MAX_PAGES Configuration...")
-        
+
         api_config = APIConfig()
         max_pages = api_config.max_pages
         print(f"   MAX_PAGES default value: {max_pages}")
-        
+
         # Validate that max_pages is properly configured
         assert isinstance(max_pages, int), f"MAX_PAGES should be integer, got {type(max_pages)}"
         assert max_pages >= 0, f"MAX_PAGES should be non-negative, got {max_pages}"
-        
+
         if max_pages == 0:
             print("   ✅ MAX_PAGES=0 correctly configured for unlimited processing")
         else:

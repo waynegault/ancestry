@@ -12,29 +12,12 @@ in specific fields (status, direction). Implements a transactional context manag
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    FatalError,
-    DatabaseConnectionError,
-    DataValidationError,
-    ErrorContext,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
 import enum
@@ -46,7 +29,7 @@ import shutil
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 from uuid import uuid4
@@ -81,18 +64,25 @@ from sqlalchemy.orm import (
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+from error_handling import (
+    AncestryException,
+    DatabaseConnectionError,
+    DataValidationError,
+    ErrorContext,
+    FatalError,
+    RetryableError,
+    error_context,
+    retry_on_failure,
+    timeout_protection,
+)
 
 # === MODULE CONFIGURATION ===
 # Use global cached config instance
-
 # Note: SessionManager imported locally when needed to avoid circular imports
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
-
 
 # ----------------------------------------------------------------------
 # SQLAlchemy Base Declarative Model
@@ -1580,7 +1570,7 @@ def exclude_deleted_persons(query):
     Returns:
         The modified query with a filter for Person.deleted_at == None.
     """
-    return query.filter(Person.deleted_at == None)
+    return query.filter(Person.deleted_at is None)
 
 
 # End of exclude_deleted_persons
@@ -1871,9 +1861,6 @@ def commit_bulk_data(
 
                 # Query for existing logs matching the keys in this batch
                 # Use a different name to avoid shadowing the previous declaration
-                existing_logs_dict: Dict[
-                    Tuple[str, MessageDirectionEnum], ConversationLog
-                ] = {}
                 # Initialize the map that will be used later
                 existing_logs_map: Dict[str, ConversationLog] = {}
                 if log_keys_to_check:
@@ -2157,7 +2144,7 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
             .filter(
                 func.upper(Person.profile_id) == profile_id.upper(),
                 Person.username == username,
-                Person.deleted_at == None,  # Only consider non-deleted records
+                Person.deleted_at is None,  # Only consider non-deleted records
             )
             .first()
         )
@@ -2748,7 +2735,7 @@ def test_soft_delete_functionality(session: Session) -> bool:
             return False
 
         logger.info(
-            f"Verified test person not found in normal query after soft-delete."
+            "Verified test person not found in normal query after soft-delete."
         )
 
         # Step 5: Verify the person is found when include_deleted=True
@@ -2762,7 +2749,7 @@ def test_soft_delete_functionality(session: Session) -> bool:
             return False
 
         logger.info(
-            f"Verified test person found with include_deleted=True after soft-delete."
+            "Verified test person found with include_deleted=True after soft-delete."
         )
 
         # Step 6: Verify deleted_at timestamp is set - use safer comparison
@@ -2785,7 +2772,7 @@ def test_soft_delete_functionality(session: Session) -> bool:
             )
             return False
 
-        logger.info(f"Verified test person has status ARCHIVE after soft-delete.")
+        logger.info("Verified test person has status ARCHIVE after soft-delete.")
 
         # Step 8: Hard-delete the person to clean up
         logger.info(
@@ -2812,7 +2799,7 @@ def test_soft_delete_functionality(session: Session) -> bool:
             )
             return False
 
-        logger.info(f"Verified test person permanently deleted.")
+        logger.info("Verified test person permanently deleted.")
 
         logger.info("=== All Soft Delete Tests Passed ===")
         return True
@@ -2932,7 +2919,7 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
             session, test_persons[0]["profile_id"], include_deleted=True
         )
         if person1:
-            logger.error(f"Test person 1 still exists after cleanup.")
+            logger.error("Test person 1 still exists after cleanup.")
             return False
 
         logger.info("Verified test person 1 was permanently deleted.")
@@ -2942,7 +2929,7 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
             session, test_persons[1]["profile_id"], include_deleted=True
         )
         if not person2:
-            logger.error(f"Test person 2 was unexpectedly deleted.")
+            logger.error("Test person 2 was unexpectedly deleted.")
             return False
 
         logger.info("Verified test person 2 still exists (soft-deleted).")
@@ -2952,7 +2939,7 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
             session, test_persons[2]["profile_id"], include_deleted=True
         )
         if not person3:
-            logger.error(f"Test person 3 was unexpectedly deleted.")
+            logger.error("Test person 3 was unexpectedly deleted.")
             return False
 
         logger.info("Verified test person 3 still exists (soft-deleted).")
@@ -3212,12 +3199,6 @@ if __name__ == "__main__":
 # ==============================================
 # Test Framework Integration
 # ==============================================
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
 
 
 def database_module_tests() -> bool:
@@ -3225,7 +3206,6 @@ def database_module_tests() -> bool:
     Comprehensive test suite for database.py with real functionality testing.
     Tests initialization, core functionality, edge cases, integration, performance, and error handling.
     """
-    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Database Models & ORM Management", "database.py")
     suite.start_suite()
@@ -3250,11 +3230,10 @@ def database_module_tests() -> bool:
 
             # Test model instantiation
             instance_created = False
-            instance_type = None
             try:
                 instance = model_class()
                 instance_created = instance is not None
-                instance_type = type(instance).__name__
+                type(instance).__name__
             except Exception as e:
                 print(f"   ❌ {model_name} instantiation failed: {e}")
                 instance_created = False

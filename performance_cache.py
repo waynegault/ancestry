@@ -15,13 +15,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
@@ -29,13 +22,12 @@ import pickle
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Optional, Callable, Tuple, List
-import weakref
+from typing import Any, Callable, Dict, List, Optional
 
 # === PERFORMANCE CACHE CLASSES ===
-
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
 from memory_optimizer import ObjectPool, lazy_property
+
 
 class CacheableObject:
     """Example cacheable object for pooling."""

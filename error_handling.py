@@ -8,38 +8,27 @@ Enhanced for Phase 4.1: Error Handling & Resilience Enhancement
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    safe_execute,
-    get_function,
-    is_function_available,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import functools
-import sqlite3
 import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from functools import wraps
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 # === THIRD-PARTY IMPORTS ===
-import requests
-
 # === LOCAL IMPORTS ===
 # Module logger is set up by setup_module() above
-
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
 
 
@@ -364,20 +353,6 @@ class CircuitBreaker:
         elapsed = (datetime.now() - self._last_failure_time).total_seconds()
         return max(0, int(self.config.recovery_timeout - elapsed))
 
-        try:
-            # Execute the function
-            start_time = time.time()
-            result = func(*args, **kwargs)
-            execution_time = time.time() - start_time
-
-            # Record success
-            self._record_success(execution_time)
-            return result
-
-        except Exception as e:
-            # Record failure
-            self._record_failure(e)
-            raise
 
     def _should_attempt_reset(self) -> bool:
         """Check if enough time has passed to attempt reset."""
@@ -1356,7 +1331,7 @@ def error_handling_module_tests() -> bool:
 
         for _ in range(100):
             # Test circuit breaker creation performance
-            cb = CircuitBreaker(f"perf_test")
+            cb = CircuitBreaker("perf_test")
             assert cb.name == "perf_test", "Circuit breaker should initialize quickly"
 
         end_time = time.time()
@@ -1456,7 +1431,7 @@ def error_handling_module_tests() -> bool:
             recovery_manager.log_failure_warnings()
             # Should not raise any exceptions
             success = True
-        except Exception as e:
+        except Exception:
             success = False
 
         assert success, "log_failure_warnings should execute without errors"

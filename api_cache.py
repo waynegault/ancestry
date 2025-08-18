@@ -9,55 +9,35 @@ for dramatically improved response times in genealogical data processing.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module, get_function, is_function_available
+from standard_imports import get_function, is_function_available, setup_module
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
 import json
 import sys
-import tempfile
-import threading
 import time
-from typing import Any, Dict, Optional, Union, List, Callable
-from unittest.mock import MagicMock, patch
+from typing import Any, Callable, Dict, List, Optional
+
+# === LOCAL IMPORTS ===
+from cache import (
+    BaseCacheModule,
+    cache,
+    cache_result,
+    get_cache_stats,
+    get_unified_cache_key,
+    invalidate_related_caches,
+    warm_cache_with_data,
+)
 
 # === THIRD-PARTY IMPORTS ===
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
-
-# === LOCAL IMPORTS ===
-from cache import (
-    cache_result,
-    cache,
-    warm_cache_with_data,
-    get_cache_stats,
-    CacheInterface,
-    BaseCacheModule,
-    get_unified_cache_key,
-    invalidate_related_caches,
-)
-from config import config_schema
 
 # === MODULE CONSTANTS ===
 # Cache Configuration
@@ -181,7 +161,7 @@ def cache_suggest_api(
     try:
         from api_utils import call_suggest_api
 
-        logger.debug(f"Fetching suggestions for search criteria (cache miss)")
+        logger.debug("Fetching suggestions for search criteria (cache miss)")
         return call_suggest_api(
             session_manager,
             owner_tree_id,
@@ -928,8 +908,6 @@ def api_cache_module_tests() -> bool:
     Comprehensive test suite for api_cache.py.
     Tests API response caching, invalidation, and performance optimization.
     """
-    from test_framework import TestSuite, suppress_logging
-    import threading
     import time
 
     suite = TestSuite("API Response Caching System", "api_cache.py")

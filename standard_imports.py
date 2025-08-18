@@ -23,6 +23,14 @@ This replaces inconsistent patterns like:
 """
 
 # === CORE INFRASTRUCTURE ===
+# === STANDARD LIBRARY IMPORTS ===
+import logging
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 from core_imports import (
     auto_register_module,
     call_function,
@@ -40,14 +48,6 @@ from core_imports import (
     safe_execute,
     standardize_module_imports,
 )
-
-# === STANDARD LIBRARY IMPORTS ===
-import logging
-import os
-import sys
-import time
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Callable, Union, Tuple
 
 
 # === STANDARDIZED LOGGER ===
@@ -189,7 +189,7 @@ BEFORE (Inconsistent patterns across codebase - 6+ lines per module):
 # Pattern 1 - Verbose and error-prone (found in 24+ files)
 from core_imports import (
     auto_register_module,
-    get_logger, 
+    get_logger,
     standardize_module_imports,
     register_function,
     get_function,
@@ -227,7 +227,7 @@ logger = setup_module(globals(), __name__)
 
 # Everything now available automatically:
 # - logger (configured and ready)
-# - All core_imports functions  
+# - All core_imports functions
 # - All function registry capabilities
 # - Standardized imports handled
 # - Auto-registration completed
@@ -399,7 +399,7 @@ def run_comprehensive_tests() -> bool:
 
         start_time = time.time()
         for i in range(100):
-            logger = get_standard_logger(f"test_module_{i}")
+            get_standard_logger(f"test_module_{i}")
             register_function(f"test_func_{i}", lambda: i)
         duration = time.time() - start_time
 

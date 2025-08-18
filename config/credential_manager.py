@@ -8,8 +8,8 @@ to the SecurityManager and enhanced configuration system.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,25 +21,10 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
-from pathlib import Path
-from typing import Dict, Optional, Any
 import os
+from typing import Any, Dict, Optional
 
 
 class CredentialManager:
@@ -385,29 +370,24 @@ def run_comprehensive_tests():
     This function tests all major functionality of the CredentialManager
     to ensure proper credential handling and security integration.
     """
-    import sys
-    import traceback
-    from typing import Dict, Any
-    import tempfile
     import os  # Test framework imports with fallback
+    import traceback
+    from typing import Any
 
     try:
         from test_framework import (
             TestSuite,  # type: ignore
-            suppress_logging,  # type: ignore
-            create_mock_data,
             assert_valid_function,  # type: ignore
+            create_mock_data,
+            suppress_logging,  # type: ignore
         )
 
-        HAS_TEST_FRAMEWORK = True
     except ImportError:
         # Fallback implementations
-        HAS_TEST_FRAMEWORK = False
 
         # Define minimal fallback classes that match expected interface
-        from typing import Any, Callable
         from types import TracebackType
-        from typing import Optional, Type
+        from typing import Any, Callable, Optional, Type
 
         class TestSuite:
             def __init__(self, name: str, module: Any = None):
@@ -466,25 +446,21 @@ def run_comprehensive_tests():
                 print(f"Test: {test_description}")
             test_func()
             test_results["passed"] += 1
-            print(f"Outcome: Test executed successfully with all assertions passing")
-            print(f"Conclusion: ✅ PASSED")
+            print("Outcome: Test executed successfully with all assertions passing")
+            print("Conclusion: ✅ PASSED")
             return True
         except Exception as e:
             test_results["failed"] += 1
             error_msg = f"✗ FAILED: {test_name} - {str(e)}"
             test_results["errors"].append(error_msg)
             print(f"Outcome: Test failed with error: {str(e)}")
-            print(f"Conclusion: ❌ FAILED")
+            print("Conclusion: ❌ FAILED")
             print(traceback.format_exc())
             return False
 
     # Test 1: Basic Initialization
     def test_initialization():
         """Test CredentialManager initialization with detailed verification."""
-        initialization_tests = [
-            ("Default app name", "AncestryAutomation", "Default application name"),
-            ("Custom app name", "TestApp", "Custom application name"),
-        ]
 
         print("📋 Testing CredentialManager initialization:")
 
@@ -887,7 +863,6 @@ def run_comprehensive_tests():
             assert isinstance(test_path, Path)
 
             # Test typing
-            from typing import Dict, Optional, Any
 
             # Test os module
             import os
@@ -982,11 +957,11 @@ def run_comprehensive_tests():
         run_test(test_name, test_func, description)
 
     # Print summary
-    total_tests = len(tests)
+    len(tests)
     print("============================================================")
     print("🔍 Test Summary: Configuration Management & Credential Storage")
     print("============================================================")
-    print(f"⏰ Duration: 0.000s")
+    print("⏰ Duration: 0.000s")
 
     success = test_results["failed"] == 0
     if success:

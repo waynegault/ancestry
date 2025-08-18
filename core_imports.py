@@ -8,15 +8,14 @@ with high-performance caching, thread-safe operations, and comprehensive error
 handling for the entire Ancestry automation project infrastructure.
 """
 
+import logging
 import os
 import sys
-import time
-from pathlib import Path
-from typing import Any, Dict, Optional, Set, Callable, List, Union
-import logging
 import threading
+import time
 from contextlib import contextmanager
-from functools import wraps
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 # Thread-safe locks for concurrent access
 _lock = threading.RLock()
@@ -103,7 +102,7 @@ def _log_info(message: str) -> None:
     """Internal logging function that safely handles early initialization."""
     try:
         logging.getLogger(__name__).info(message)
-    except:
+    except Exception:
         print(f"INFO: {message}")
 
 
@@ -111,7 +110,7 @@ def _log_warning(message: str) -> None:
     """Internal logging function that safely handles early initialization."""
     try:
         logging.getLogger(__name__).warning(message)
-    except:
+    except Exception:
         print(f"WARNING: {message}")
 
 
@@ -126,7 +125,7 @@ def _log_error(message: str) -> None:
                 "function": "get_project_root",
             }
         )
-    except:
+    except Exception:
         print(f"ERROR: {message}")
 
 
@@ -368,7 +367,7 @@ def core_imports_module_tests() -> bool:
 
         # Test 4: Import standardization
         result = standardize_module_imports()
-        assert result == True, "Import standardization should succeed"
+        assert result, "Import standardization should succeed"
 
         # Test 5: Context manager
         original_path = sys.path.copy()
@@ -386,10 +385,10 @@ def core_imports_module_tests() -> bool:
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for core imports functionality.
-    
+
     Tests all core import system functionality including function registry,
     module management, performance caching, and error handling.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
@@ -398,26 +397,26 @@ def run_comprehensive_tests() -> bool:
     except ImportError:
         print("⚠️  TestSuite not available - falling back to basic testing")
         return core_imports_module_tests()
-    
+
     suite = TestSuite("Core Imports", "core_imports")
-    
+
     def test_function_registry():
         """Test function registration and retrieval"""
         # Test basic registration
         def test_func():
             return "test_result"
-        
+
         register_function("test_func", test_func)
         assert is_function_available("test_func")
-        
+
         retrieved_func = get_function("test_func")
         assert retrieved_func is not None
         assert retrieved_func() == "test_result"
-        
+
         # Test function call
         result = call_function("test_func")
         assert result == "test_result"
-    
+
     def test_bulk_registration():
         """Test bulk function registration"""
         # Test using **kwargs format
@@ -425,12 +424,12 @@ def run_comprehensive_tests() -> bool:
             bulk_test1=lambda: "result1",
             bulk_test2=lambda: "result2"
         )
-        
+
         assert is_function_available("bulk_test1")
         assert is_function_available("bulk_test2")
         assert call_function("bulk_test1") == "result1"
         assert call_function("bulk_test2") == "result2"
-    
+
     def test_module_auto_registration():
         """Test automatic module registration"""
         # Create mock module globals with test functions
@@ -448,14 +447,14 @@ def run_comprehensive_tests() -> bool:
         assert call_function("mock_test_module.test_auto_func") == "auto_result"
         assert is_function_available("mock_test_module.another_test_func")
         assert call_function("mock_test_module.another_test_func") == "another_result"
-    
+
     def test_project_root_detection():
         """Test project root detection"""
         root = get_project_root()
         assert root is not None
         assert isinstance(root, Path)
         assert root.exists()
-    
+
     def test_logger_functionality():
         """Test logger creation and functionality"""
         logger = get_logger("test_logger")
@@ -463,21 +462,21 @@ def run_comprehensive_tests() -> bool:
         assert hasattr(logger, 'info')
         assert hasattr(logger, 'error')
         assert hasattr(logger, 'warning')
-        
+
         # Test logger naming
         logger2 = get_logger("test.module.name")
         assert logger2 is not None
-    
+
     def test_import_context_manager():
         """Test import context manager"""
         original_path = sys.path.copy()
-        
+
         with import_context():
             # Context manager should preserve sys.path
             pass
-        
+
         assert sys.path == original_path
-    
+
     def test_safe_execution():
         """Test safe function execution wrapper"""
         def safe_func():
@@ -501,25 +500,25 @@ def run_comprehensive_tests() -> bool:
 
         result = decorated_error_func()
         assert result == "default"
-    
+
     def test_performance_caching():
         """Test performance caching functionality"""
         # Clear cache first
         _import_cache.clear()
         _stats["cache_hits"] = 0
         _stats["cache_misses"] = 0
-        
+
         # Register a test function
         register_function("cache_test", lambda: "cached")
-        
+
         # Multiple lookups should hit cache
         for _ in range(5):
             assert is_function_available("cache_test")
-        
+
         # Should have cache hits
         stats = get_import_stats()
         assert stats["cache_hits"] > 0
-    
+
     def test_statistics_tracking():
         """Test import statistics tracking"""
         initial_stats = get_import_stats()
@@ -528,7 +527,7 @@ def run_comprehensive_tests() -> bool:
         assert "imports_resolved" in initial_stats
         assert "cache_hits" in initial_stats
         assert "registry_size" in initial_stats
-    
+
     def test_cleanup_functionality():
         """Test registry cleanup functionality"""
         # Register some test functions
@@ -553,7 +552,7 @@ def run_comprehensive_tests() -> bool:
         # Registry should still work after cleanup - register new functions
         register_function("post_cleanup_test", lambda: "post_cleanup")
         assert is_function_available("post_cleanup_test")
-    
+
     def test_error_handling():
         """Test error handling and recovery"""
         # Test with non-existent function
@@ -572,12 +571,12 @@ def run_comprehensive_tests() -> bool:
             # Should handle gracefully without error
         except Exception:
             assert False, "Should handle empty module gracefully"
-    
+
     def test_function_availability():
         """Test that all required functions are available"""
         required_functions = [
             "ensure_imports",
-            "register_function", 
+            "register_function",
             "get_function",
             "is_function_available",
             "call_function",
@@ -587,11 +586,11 @@ def run_comprehensive_tests() -> bool:
             "safe_execute",
             "cleanup_registry"
         ]
-        
+
         for func_name in required_functions:
             assert func_name in globals(), f"Function {func_name} should be available"
             assert callable(globals()[func_name]), f"Function {func_name} should be callable"
-    
+
     # Run all tests
     suite.run_test(
         "Function registry operations",
@@ -600,7 +599,7 @@ def run_comprehensive_tests() -> bool:
         "Test register_function, get_function, and is_function_available operations",
         "Verify function registry enables proper registration and retrieval of callables"
     )
-    
+
     suite.run_test(
         "Bulk function registration",
         test_bulk_registration,
@@ -608,7 +607,7 @@ def run_comprehensive_tests() -> bool:
         "Test register_many function with dictionary of functions",
         "Verify bulk registration handles multiple function registrations properly"
     )
-    
+
     suite.run_test(
         "Module auto-registration",
         test_module_auto_registration,
@@ -616,7 +615,7 @@ def run_comprehensive_tests() -> bool:
         "Test auto_register_module with mock module and function discovery",
         "Verify auto-registration scans modules and registers available functions"
     )
-    
+
     suite.run_test(
         "Project root detection",
         test_project_root_detection,
@@ -624,7 +623,7 @@ def run_comprehensive_tests() -> bool:
         "Test get_project_root function with filesystem path detection",
         "Verify project root detection locates correct directory hierarchy"
     )
-    
+
     suite.run_test(
         "Logger functionality",
         test_logger_functionality,
@@ -632,7 +631,7 @@ def run_comprehensive_tests() -> bool:
         "Test get_logger function with various module name formats",
         "Verify logger creation provides standard logging interface"
     )
-    
+
     suite.run_test(
         "Import context management",
         test_import_context_manager,
@@ -640,7 +639,7 @@ def run_comprehensive_tests() -> bool:
         "Test import_context context manager with sys.path preservation",
         "Verify context manager maintains system import path state"
     )
-    
+
     suite.run_test(
         "Safe execution wrapper",
         test_safe_execution,
@@ -648,7 +647,7 @@ def run_comprehensive_tests() -> bool:
         "Test safe_execute function with both successful and error cases",
         "Verify safe execution provides error handling with default returns"
     )
-    
+
     suite.run_test(
         "Performance caching",
         test_performance_caching,
@@ -656,7 +655,7 @@ def run_comprehensive_tests() -> bool:
         "Test caching system with repeated function availability checks",
         "Verify caching system reduces lookup overhead for repeated operations"
     )
-    
+
     suite.run_test(
         "Statistics tracking",
         test_statistics_tracking,
@@ -664,7 +663,7 @@ def run_comprehensive_tests() -> bool:
         "Test get_import_stats function with various operational metrics",
         "Verify statistics provide insights into import system performance"
     )
-    
+
     suite.run_test(
         "Cleanup functionality",
         test_cleanup_functionality,
@@ -672,7 +671,7 @@ def run_comprehensive_tests() -> bool:
         "Test cleanup_registry function with registered functions",
         "Verify cleanup operations maintain registry functionality"
     )
-    
+
     suite.run_test(
         "Error handling and recovery",
         test_error_handling,
@@ -680,7 +679,7 @@ def run_comprehensive_tests() -> bool:
         "Test error handling with missing functions and invalid operations",
         "Verify robust error handling provides safe defaults for failures"
     )
-    
+
     suite.run_test(
         "Function availability verification",
         test_function_availability,
@@ -688,7 +687,7 @@ def run_comprehensive_tests() -> bool:
         "Test availability of ensure_imports, register_function, and utility functions",
         "Verify function availability ensures complete core import interface"
     )
-    
+
     return suite.finish_suite()
 
 
@@ -698,7 +697,7 @@ def run_comprehensive_tests() -> bool:
 
 if __name__ == "__main__":
     import sys
-    
+
     print("🔧 Running Core Imports comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

@@ -9,59 +9,37 @@ for efficient genealogical research and family tree data processing.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
-
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
+from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
-import os
 import json
-import logging
 import sys
-import tempfile
-import threading
-from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from typing import Any, Dict, List, Optional
 
+from config.config_manager import ConfigManager
+from gedcom_utils import GedcomData, _normalize_id, calculate_match_score
+
+# --- Local module imports ---
+# from logging_config import logger  # Unused here
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
-
-# --- Local module imports ---
-from logging_config import logger
-from config.config_manager import ConfigManager
-from gedcom_utils import GedcomData, calculate_match_score, _normalize_id
 
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
+from core.error_handling import MissingConfigError
 from relationship_utils import (
-    fast_bidirectional_bfs,
     convert_gedcom_path_to_unified_format,
+    fast_bidirectional_bfs,
     format_relationship_path_unified,
 )
-from core.error_handling import MissingConfigError
 
 # Default configuration values
 DEFAULT_CONFIG = {
@@ -153,7 +131,7 @@ def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
 
         # Check if the instance was created successfully
         if gedcom_data:
-            logger.info(f"GedcomData instance created successfully")
+            logger.info("GedcomData instance created successfully")
 
             # Try to build caches if the method exists
             if hasattr(gedcom_data, "build_caches"):
@@ -241,7 +219,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
         _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
 
     if _CACHED_GEDCOM_DATA:
-        logger.debug(f"GEDCOM file loaded successfully and cached for reuse.")
+        logger.debug("GEDCOM file loaded successfully and cached for reuse.")
 
         # Log cache statistics if available
         try:
@@ -816,12 +794,6 @@ def gedcom_search_module_tests() -> bool:
     GEDCOM Search Utilities module test suite.
     Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
 
     with suppress_logging():
         suite = TestSuite(
@@ -1142,7 +1114,7 @@ def search_frances_milne_demo():
                 if i <= 2:
                     family_details = get_gedcom_family_details(match["id"])
                     if family_details:
-                        print(f"   Family Details:")
+                        print("   Family Details:")
                         if family_details.get("parents"):
                             print(f"   - Parents: {len(family_details['parents'])}")
                         if family_details.get("spouses"):

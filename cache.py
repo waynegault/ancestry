@@ -11,48 +11,31 @@ Cache directory and default settings are configurable via `config.py`.
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    setup_module,
-    register_function,
     get_function,
     is_function_available,
+    setup_module,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import atexit
 import hashlib
-import logging
 import os
 import shutil
 import sys
-import tempfile
 import time
+from collections import deque
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, Dict, Union, List, Set
-from collections import deque
+from typing import Any, Callable, Dict, List, Optional, Set
 
 # --- Third-party imports ---
 from diskcache import Cache
 
 # Import constants used for checking cache misses vs. stored None values
-from diskcache.core import ENOVAL, UNKNOWN
+from diskcache.core import ENOVAL
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
@@ -60,10 +43,6 @@ from config import config_schema  # Use configured instance
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
 )
 
 # --- Global Cache Initialization ---
@@ -108,7 +87,7 @@ try:
     logger.debug(
         f"DiskCache instance initialized with aggressive settings at {CACHE_DIR}."
     )
-    logger.debug(f"Cache settings: size_limit=2GB, eviction=LRU, statistics=enabled")
+    logger.debug("Cache settings: size_limit=2GB, eviction=LRU, statistics=enabled")
 except Exception as e:
     logger.critical(
         f"CRITICAL: Failed to initialize DiskCache at {CACHE_DIR}: {e}", exc_info=True
@@ -741,7 +720,7 @@ def check_cache_size_before_add(estimated_size: int = 1) -> bool:
             return True
 
         # Would exceed limit - trigger enforcement
-        enforcement_result = enforce_cache_size_limit()
+        enforce_cache_size_limit()
 
         # Check again after enforcement
         new_size = get_cache_entry_count()
@@ -1228,7 +1207,6 @@ def cache_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from test_framework import TestSuite
 
     def test_cache_initialization():
         """Test cache system initialization and configuration."""
@@ -1402,7 +1380,7 @@ def cache_module_tests() -> bool:
 
         # Test with None values
         cache.set("test_none", None)
-        retrieved_none = cache.get("test_none")
+        cache.get("test_none")
         # Note: this might be None due to the value OR due to key not found
         # The actual behavior depends on diskcache implementation
 

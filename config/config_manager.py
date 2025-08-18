@@ -13,8 +13,8 @@ This module provides a comprehensive configuration management system with:
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -26,19 +26,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
@@ -50,10 +37,9 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import copy
 import json
-import logging
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 try:
@@ -65,24 +51,24 @@ except ImportError:
 
 try:
     from .config_schema import (
+        APIConfig,
+        CacheConfig,
         ConfigSchema,
         DatabaseConfig,
-        SeleniumConfig,
-        APIConfig,
         LoggingConfig,
-        CacheConfig,
         SecurityConfig,
+        SeleniumConfig,
     )
 except ImportError:
     # If relative import fails, try absolute import
     from config_schema import (
+        APIConfig,
+        CacheConfig,
         ConfigSchema,
         DatabaseConfig,
-        SeleniumConfig,
-        APIConfig,
         LoggingConfig,
-        CacheConfig,
         SecurityConfig,
+        SeleniumConfig,
     )
 
 
@@ -333,9 +319,8 @@ class ConfigManager:
             Dictionary with auto-detected configuration values
         """
         try:
+
             import psutil
-            import os
-            from pathlib import Path
 
             # System capabilities
             cpu_count = psutil.cpu_count(logical=True) or 4
@@ -431,9 +416,9 @@ class ConfigManager:
             Dictionary with validation results and recommendations
         """
         try:
-            import psutil
             import shutil
-            from pathlib import Path
+
+            import psutil
 
             validation_results = {
                 "valid": True,
@@ -485,11 +470,10 @@ class ConfigManager:
 
             # Check Python dependencies
             try:
-                import selenium
-                import requests
-                import sqlalchemy
-                validation_results["dependencies_ok"] = True
-            except ImportError as e:
+                from importlib.util import find_spec
+                deps = ["requests", "selenium", "sqlalchemy"]
+                validation_results["dependencies_ok"] = all(find_spec(d) is not None for d in deps)
+            except Exception as e:
                 validation_results["errors"].append(f"Missing required dependency: {e}")
                 validation_results["valid"] = False
 
@@ -528,7 +512,7 @@ class ConfigManager:
             # Validate system requirements
             validation = self.validate_system_requirements()
 
-            print(f"\n📊 System Information:")
+            print("\n📊 System Information:")
             system_info = validation.get("system_info", {})
             print(f"   CPU Cores: {system_info.get('cpu_cores', 'Unknown')}")
             print(f"   Memory: {system_info.get('memory_gb', 'Unknown')}GB")
@@ -536,29 +520,29 @@ class ConfigManager:
 
             # Show validation results
             if validation.get("errors"):
-                print(f"\n❌ Critical Issues:")
+                print("\n❌ Critical Issues:")
                 for error in validation["errors"]:
                     print(f"   • {error}")
 
             if validation.get("warnings"):
-                print(f"\n⚠️  Warnings:")
+                print("\n⚠️  Warnings:")
                 for warning in validation["warnings"]:
                     print(f"   • {warning}")
 
             if validation.get("recommendations"):
-                print(f"\n💡 Recommendations:")
+                print("\n💡 Recommendations:")
                 for rec in validation["recommendations"]:
                     print(f"   • {rec}")
 
             if not validation.get("valid"):
-                print(f"\n❌ Setup cannot continue due to critical issues.")
+                print("\n❌ Setup cannot continue due to critical issues.")
                 return False
 
-            print(f"\n✅ System validation passed!")
+            print("\n✅ System validation passed!")
 
             # Auto-detect and show optimal settings
             auto_detected = self._auto_detect_optimal_settings()
-            print(f"\n🔧 Auto-detected Optimal Settings:")
+            print("\n🔧 Auto-detected Optimal Settings:")
 
             api_config = auto_detected.get("api", {})
             print(f"   Concurrency: {api_config.get('max_concurrency', 'Default')}")
@@ -569,13 +553,13 @@ class ConfigManager:
             print(f"   Disk Cache: {cache_config.get('disk_cache_size_mb', 'Default')}MB")
 
             if interactive:
-                response = input(f"\n✨ Use auto-detected settings? (Y/n): ").strip().lower()
+                response = input("\n✨ Use auto-detected settings? (Y/n): ").strip().lower()
                 if response and response != 'y' and response != 'yes':
                     print("Manual configuration not implemented yet. Using auto-detected settings.")
 
-            print(f"\n🎯 Setup completed successfully!")
-            print(f"   Configuration will be applied automatically.")
-            print(f"   You can modify settings in .env file or config files.")
+            print("\n🎯 Setup completed successfully!")
+            print("   Configuration will be applied automatically.")
+            print("   You can modify settings in .env file or config files.")
 
             return True
 
@@ -964,7 +948,8 @@ def run_comprehensive_tests() -> bool:
     """
     import tempfile
     import time
-    from test_framework import TestSuite, assert_valid_function
+
+    from test_framework import TestSuite
 
     suite = TestSuite("Configuration Management & Validation", "config_manager.py")
     suite.start_suite()
@@ -1070,7 +1055,7 @@ def run_comprehensive_tests() -> bool:
 
             try:
                 os.unlink(config_path)
-            except:
+            except Exception:
                 pass
 
     def test_environment_integration():

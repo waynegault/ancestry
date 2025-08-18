@@ -5,8 +5,8 @@ This module extracts API management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,23 +18,9 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
-from typing import Optional, Dict, Any, Union, List
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -476,7 +462,7 @@ def _test_identifier_management():
         api_manager.my_uuid = "test_uuid_456"
         updated_state = api_manager.has_essential_identifiers
         assert (
-            updated_state == True
+            updated_state
         ), "Should have essential identifiers after setting them"
         return True
     except Exception:
@@ -575,9 +561,6 @@ def run_comprehensive_tests() -> bool:
     """
     from test_framework import (
         TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
     )
 
     suite = TestSuite("API Manager & HTTP Request Handling", "api_manager.py")

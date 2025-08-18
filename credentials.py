@@ -11,27 +11,11 @@ credentials with encryption and environment variable management.
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -39,7 +23,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 # === LOCAL IMPORTS ===
 # Import SecurityManager
@@ -269,7 +253,7 @@ class UnifiedCredentialManager:
         new_creds = existing_creds.copy()
 
         # Setup required credentials
-        print(f"\n🔸 Required Credentials:")
+        print("\n🔸 Required Credentials:")
         for key, description in required_creds.items():
             current_value = existing_creds.get(key, "")
             if current_value:
@@ -283,7 +267,7 @@ class UnifiedCredentialManager:
                     new_creds[key] = value
 
         # Setup optional credentials
-        print(f"\n🔹 Optional Credentials (press Enter to skip):")
+        print("\n🔹 Optional Credentials (press Enter to skip):")
         for key, description in optional_creds.items():
             current_value = existing_creds.get(key, "")
             if current_value:
@@ -307,7 +291,7 @@ class UnifiedCredentialManager:
             print("\n❌ No credentials to remove.")
             return
 
-        print(f"\nAvailable credentials:")
+        print("\nAvailable credentials:")
         for i, key in enumerate(sorted(credentials.keys()), 1):
             print(f"  {i}. {key}")
 
@@ -539,15 +523,15 @@ class UnifiedCredentialManager:
             print("\n❌ No credentials to export.")
             return
 
-        print(f"\n📦 Export Options:")
-        print(f"  1. Display credentials (for manual copy)")
-        print(f"  2. Export to file (encrypted)")
-        print(f"  3. Cancel")
+        print("\n📦 Export Options:")
+        print("  1. Display credentials (for manual copy)")
+        print("  2. Export to file (encrypted)")
+        print("  3. Cancel")
 
         choice = input("Choice (1/2/3): ").strip()
 
         if choice == "1":
-            print(f"\n📋 Current Credentials (for manual backup):")
+            print("\n📋 Current Credentials (for manual backup):")
             print("-" * 50)
             for key, value in sorted(credentials.items()):
                 print(f"{key}={value}")
@@ -595,19 +579,19 @@ class UnifiedCredentialManager:
         try:
             import keyring
 
-            keyring_status = f"✅ Installed"
+            keyring_status = "✅ Installed"
             try:
                 # Try to get version if available
                 keyring_version = getattr(keyring, "__version__", "unknown")
                 if keyring_version != "unknown":
                     keyring_status = f"✅ Installed (v{keyring_version})"
-            except:
+            except Exception:
                 pass
         except ImportError:
             keyring_status = "❌ Not installed (required for secure key storage)"
             security_ok = False
 
-        print(f"🔐 Security Dependencies:")
+        print("🔐 Security Dependencies:")
         print(f"  - cryptography: {crypto_status}")
         print(f"  - keyring: {keyring_status}")
 
@@ -621,7 +605,7 @@ class UnifiedCredentialManager:
                     alt_version = getattr(keyrings.alt, "__version__", "unknown")
                     if alt_version != "unknown":
                         alt_status = f"✅ Installed (v{alt_version})"
-                except:
+                except Exception:
                     pass
             except ImportError:
                 alt_status = "⚠️ Not installed (recommended for Linux/macOS)"
@@ -669,7 +653,7 @@ class UnifiedCredentialManager:
                 print(f"⚠️  Missing Required: {', '.join(missing)}")
                 security_ok = False
             else:
-                print(f"✅ Required Credentials: All present")
+                print("✅ Required Credentials: All present")
 
             # Check for optional credentials
             present_optional = [
@@ -685,7 +669,7 @@ class UnifiedCredentialManager:
             if unknown_creds:
                 print(f"ℹ️  Additional Credentials: {', '.join(unknown_creds)}")
         else:
-            print(f"🗝️  Stored Credentials: ❌ None found")
+            print("🗝️  Stored Credentials: ❌ None found")
             security_ok = False
 
         # Check encryption status
@@ -717,12 +701,12 @@ class UnifiedCredentialManager:
                     cred_types = json.load(f)
                 required_creds = cred_types.get("required_credentials", {})
                 optional_creds = cred_types.get("optional_credentials", {})
-                print(f"✅ Loaded credential types from configuration file")
+                print("✅ Loaded credential types from configuration file")
             except Exception as e:
                 print(f"⚠️ Error loading credential types: {e}, using defaults")
                 required_creds, optional_creds = self._load_credential_types()
         else:
-            print(f"⚠️ Configuration file not found, creating new one")
+            print("⚠️ Configuration file not found, creating new one")
             required_creds, optional_creds = self._load_credential_types()
 
         print("\nCurrent Configuration:")
@@ -929,7 +913,7 @@ class UnifiedCredentialManager:
             else:
                 # Fallback to default credential types if file doesn't exist
                 print(
-                    f"⚠️ Credential types configuration file not found, using defaults"
+                    "⚠️ Credential types configuration file not found, using defaults"
                 )
                 return (
                     {
@@ -1011,11 +995,11 @@ class UnifiedCredentialManager:
 
 def credentials_module_tests() -> bool:
     """Comprehensive test suite for credentials.py"""
-    import tempfile
     import json
-    import os
+    import tempfile
     from pathlib import Path
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
+
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Unified Credential Manager", "credentials.py")
@@ -1352,7 +1336,6 @@ def main():
         try:
             manager = UnifiedCredentialManager()
             # Use default .env path, non-interactive
-            env_file = ".env"
             print("\n🔐 Importing credentials from .env (non-interactive)...")
             manager.import_from_env = manager.import_from_env.__func__.__get__(manager)
             # Patch input to always use default .env and merge

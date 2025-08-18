@@ -25,19 +25,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import gc
@@ -52,7 +39,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -239,7 +226,7 @@ class PerformanceMonitor:
             try:
                 result = func(*args, **kwargs)
                 return result
-            except Exception as e:
+            except Exception:
                 error_occurred = True
                 raise
             finally:
@@ -272,7 +259,7 @@ class PerformanceMonitor:
 
                 # Record metric
                 self.record_metric(
-                    f"function_time_ms",
+                    "function_time_ms",
                     execution_time * 1000,
                     "performance",
                     {
@@ -547,11 +534,11 @@ if __name__ != "__main__":
 class AdvancedPerformanceMonitor:
     """
     Phase 11.2: Advanced Performance Monitoring Dashboard
-    
+
     Provides comprehensive performance monitoring with automated tuning
     recommendations, configuration validation, and predictive analysis.
     """
-    
+
     def __init__(self, config_path: Optional[str] = None):
         self.config_path = config_path or "config/config.json"
         self.performance_history: List[Dict[str, Any]] = []
@@ -559,7 +546,7 @@ class AdvancedPerformanceMonitor:
         self.system_health_score: float = 100.0
         self.monitoring_active = False
         self._monitor_thread: Optional[threading.Thread] = None
-        
+
         # Performance thresholds
         self.thresholds = {
             "cpu_usage": {"warning": 70.0, "critical": 90.0},
@@ -568,13 +555,13 @@ class AdvancedPerformanceMonitor:
             "test_execution_time": {"warning": 300.0, "critical": 600.0},
             "cache_hit_rate": {"warning": 60.0, "critical": 40.0}
         }
-        
+
     def start_advanced_monitoring(self) -> bool:
         """Start advanced performance monitoring with predictive analysis."""
         if self.monitoring_active:
             logger.info("Advanced monitoring already active")
             return True
-            
+
         try:
             self.monitoring_active = True
             self._monitor_thread = threading.Thread(
@@ -585,26 +572,26 @@ class AdvancedPerformanceMonitor:
             self._monitor_thread.start()
             logger.info("🚀 Advanced performance monitoring started")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to start advanced monitoring: {e}")
             self.monitoring_active = False
             return False
-    
+
     def stop_advanced_monitoring(self) -> Dict[str, Any]:
         """Stop advanced monitoring and return final analysis."""
         self.monitoring_active = False
-        
+
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=5.0)
-            
+
         return {
             "final_health_score": self.system_health_score,
             "total_recommendations": len(self.optimization_recommendations),
             "performance_samples": len(self.performance_history),
             "monitoring_duration": time.time()
         }
-    
+
     def _advanced_monitoring_loop(self) -> None:
         """Advanced monitoring loop with predictive analysis."""
         while self.monitoring_active:
@@ -612,23 +599,23 @@ class AdvancedPerformanceMonitor:
                 # Collect comprehensive metrics
                 metrics = self._collect_comprehensive_metrics()
                 self.performance_history.append(metrics)
-                
+
                 # Analyze trends and generate recommendations
                 self._analyze_performance_trends()
-                
+
                 # Update system health score
                 self._calculate_system_health_score()
-                
+
                 # Keep history manageable (last 1000 samples)
                 if len(self.performance_history) > 1000:
                     self.performance_history = self.performance_history[-1000:]
-                
+
                 time.sleep(30)  # Monitor every 30 seconds
-                
+
             except Exception as e:
                 logger.error(f"Error in advanced monitoring loop: {e}")
                 time.sleep(60)  # Wait longer on error
-    
+
     def _collect_comprehensive_metrics(self) -> Dict[str, Any]:
         """Collect comprehensive system and application metrics."""
         try:
@@ -636,12 +623,12 @@ class AdvancedPerformanceMonitor:
             cpu_percent = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('.')
-            
+
             # Process-specific metrics
             process = psutil.Process()
             process_memory = process.memory_info()
             process_cpu = process.cpu_percent()
-            
+
             return {
                 "timestamp": datetime.now().isoformat(),
                 "system": {
@@ -665,14 +652,14 @@ class AdvancedPerformanceMonitor:
         except Exception as e:
             logger.error(f"Error collecting metrics: {e}")
             return {"timestamp": datetime.now().isoformat(), "error": str(e)}
-    
+
     def _analyze_performance_trends(self) -> None:
         """Analyze performance trends and generate optimization recommendations."""
         if len(self.performance_history) < 10:
             return  # Need sufficient data for trend analysis
-            
+
         recent_metrics = self.performance_history[-10:]
-        
+
         # Analyze CPU trend
         cpu_values = [m.get("system", {}).get("cpu_percent", 0) for m in recent_metrics]
         if cpu_values and statistics.mean(cpu_values) > self.thresholds["cpu_usage"]["warning"]:
@@ -684,41 +671,41 @@ class AdvancedPerformanceMonitor:
                 "current_value": statistics.mean(cpu_values),
                 "threshold": self.thresholds["cpu_usage"]["warning"]
             })
-        
-        # Analyze memory trend  
+
+        # Analyze memory trend
         memory_values = [m.get("system", {}).get("memory_percent", 0) for m in recent_metrics]
         if memory_values and statistics.mean(memory_values) > self.thresholds["memory_usage"]["warning"]:
             self._add_recommendation({
                 "type": "memory_optimization",
-                "severity": "warning", 
+                "severity": "warning",
                 "message": "High memory usage detected",
                 "recommendation": "Consider implementing memory cleanup or reducing cache sizes",
                 "current_value": statistics.mean(memory_values),
                 "threshold": self.thresholds["memory_usage"]["warning"]
             })
-    
+
     def _calculate_system_health_score(self) -> None:
         """Calculate overall system health score (0-100)."""
         if not self.performance_history:
             return
-            
+
         latest_metrics = self.performance_history[-1]
         score = 100.0
-        
+
         # CPU impact
         cpu_percent = latest_metrics.get("system", {}).get("cpu_percent", 0)
         if cpu_percent > self.thresholds["cpu_usage"]["critical"]:
             score -= 30
         elif cpu_percent > self.thresholds["cpu_usage"]["warning"]:
             score -= 15
-            
+
         # Memory impact
         memory_percent = latest_metrics.get("system", {}).get("memory_percent", 0)
         if memory_percent > self.thresholds["memory_usage"]["critical"]:
             score -= 25
         elif memory_percent > self.thresholds["memory_usage"]["warning"]:
             score -= 10
-            
+
         # Cache performance impact
         cache_stats = latest_metrics.get("application", {}).get("cache_stats", {})
         cache_hit_rate = cache_stats.get("hit_rate", 100)
@@ -726,9 +713,9 @@ class AdvancedPerformanceMonitor:
             score -= 20
         elif cache_hit_rate < self.thresholds["cache_hit_rate"]["warning"]:
             score -= 10
-        
+
         self.system_health_score = max(0.0, score)
-    
+
     def _add_recommendation(self, recommendation: Dict[str, Any]) -> None:
         """Add optimization recommendation, avoiding duplicates."""
         # Check for existing similar recommendation
@@ -736,14 +723,14 @@ class AdvancedPerformanceMonitor:
             if (existing.get("type") == recommendation.get("type") and
                 existing.get("severity") == recommendation.get("severity")):
                 return  # Avoid duplicate
-                
+
         recommendation["timestamp"] = datetime.now().isoformat()
         self.optimization_recommendations.append(recommendation)
-        
+
         # Keep recommendations manageable
         if len(self.optimization_recommendations) > 50:
             self.optimization_recommendations = self.optimization_recommendations[-50:]
-    
+
     def _get_cache_statistics(self) -> Dict[str, Any]:
         """Get cache performance statistics."""
         try:
@@ -752,9 +739,9 @@ class AdvancedPerformanceMonitor:
             return get_cache_stats()
         except Exception:
             pass
-            
+
         return {"hit_rate": 75, "total_requests": 0, "cache_size": 0}
-    
+
     def _get_database_connections(self) -> int:
         """Get current database connection count."""
         try:
@@ -762,7 +749,7 @@ class AdvancedPerformanceMonitor:
             return 5  # Placeholder
         except Exception:
             return 0
-    
+
     def _get_api_statistics(self) -> Dict[str, Any]:
         """Get API performance statistics."""
         try:
@@ -775,14 +762,14 @@ class AdvancedPerformanceMonitor:
             }
         except Exception:
             return {}
-    
+
     def generate_performance_dashboard(self) -> str:
         """Generate comprehensive performance dashboard report."""
         if not self.performance_history:
             return "📊 No performance data available"
-            
+
         latest = self.performance_history[-1]
-        
+
         dashboard = [
             "🚀 ADVANCED PERFORMANCE MONITORING DASHBOARD",
             "=" * 60,
@@ -799,7 +786,7 @@ class AdvancedPerformanceMonitor:
             "",
             "🔧 OPTIMIZATION RECOMMENDATIONS:",
         ]
-        
+
         if not self.optimization_recommendations:
             dashboard.append("   ✅ No optimization recommendations at this time")
         else:
@@ -807,7 +794,7 @@ class AdvancedPerformanceMonitor:
                 severity_icon = "🟡" if rec.get("severity") == "warning" else "🔴"
                 dashboard.append(f"   {severity_icon} {rec.get('message', 'N/A')}")
                 dashboard.append(f"      → {rec.get('recommendation', 'N/A')}")
-        
+
         dashboard.extend([
             "",
             "📊 PERFORMANCE TRENDS:",
@@ -816,41 +803,41 @@ class AdvancedPerformanceMonitor:
             f"🎯 Monitoring Status: {'Active' if self.monitoring_active else 'Stopped'}",
             "=" * 60
         ])
-        
+
         return "\n".join(dashboard)
-    
+
     def _generate_trend_summary(self) -> str:
         """Generate performance trend summary."""
         if len(self.performance_history) < 2:
             return "   Insufficient data for trend analysis"
-            
+
         recent_10 = self.performance_history[-10:]
-        
+
         # Calculate averages
         avg_cpu = statistics.mean([m.get("system", {}).get("cpu_percent", 0) for m in recent_10])
         avg_memory = statistics.mean([m.get("system", {}).get("memory_percent", 0) for m in recent_10])
-        
+
         trend_lines = [
             f"   Average CPU (last 10 samples): {avg_cpu:.1f}%",
             f"   Average Memory (last 10 samples): {avg_memory:.1f}%"
         ]
-        
+
         # Trend indicators
         if len(self.performance_history) >= 20:
             older_10 = self.performance_history[-20:-10]
             old_cpu = statistics.mean([m.get("system", {}).get("cpu_percent", 0) for m in older_10])
             old_memory = statistics.mean([m.get("system", {}).get("memory_percent", 0) for m in older_10])
-            
+
             cpu_trend = "📈" if avg_cpu > old_cpu else "📉" if avg_cpu < old_cpu else "➡️"
             memory_trend = "📈" if avg_memory > old_memory else "📉" if avg_memory < old_memory else "➡️"
-            
+
             trend_lines.extend([
                 f"   CPU Trend: {cpu_trend} ({avg_cpu - old_cpu:+.1f}%)",
                 f"   Memory Trend: {memory_trend} ({avg_memory - old_memory:+.1f}%)"
             ])
-        
+
         return "\n".join(trend_lines)
-    
+
     def validate_configuration(self) -> Dict[str, Any]:
         """Validate current configuration and suggest optimizations."""
         validation_results = {
@@ -859,57 +846,57 @@ class AdvancedPerformanceMonitor:
             "recommendations": [],
             "score": 100
         }
-        
+
         try:
             # Load current configuration
             import json
             from pathlib import Path
-            
+
             config_file = Path(self.config_path)
             if not config_file.exists():
                 validation_results["issues"].append("Configuration file not found")
                 validation_results["score"] -= 20
                 return validation_results
-                
+
             with open(config_file, 'r') as f:
                 config = json.load(f)
-            
+
             # Validate API settings
             api_config = config.get("api", {})
             initial_delay = api_config.get("initial_delay", 0.5)
             max_pages = api_config.get("max_pages", 1)
             batch_size = api_config.get("batch_size", 5)
-            
+
             if initial_delay > 2.0:
                 validation_results["issues"].append(f"API delay very conservative: {initial_delay}s")
                 validation_results["recommendations"].append("Consider reducing initial_delay to 1.0s for better throughput")
                 validation_results["score"] -= 10
-                
+
             if max_pages == 1:
                 validation_results["issues"].append("MAX_PAGES=1 limits data gathering")
                 validation_results["recommendations"].append("Consider increasing max_pages to 5-10 for better data collection")
                 validation_results["score"] -= 15
-                
+
             if batch_size < 10:
                 validation_results["recommendations"].append(f"Batch size {batch_size} could be increased to 10-15 for better efficiency")
                 validation_results["score"] -= 5
-            
+
             # Validate cache settings
             cache_config = config.get("cache", {})
             if not cache_config.get("enabled", True):
                 validation_results["issues"].append("Caching disabled")
                 validation_results["recommendations"].append("Enable caching for significant performance improvements")
                 validation_results["score"] -= 25
-                
+
         except Exception as e:
             validation_results["issues"].append(f"Configuration validation error: {e}")
             validation_results["score"] -= 30
-            
+
         if validation_results["score"] < 70:
             validation_results["status"] = "needs_optimization"
         elif validation_results["score"] < 90:
             validation_results["status"] = "suboptimal"
-            
+
         return validation_results
 
 
@@ -922,8 +909,8 @@ def track_api_performance(api_name: str, duration: float, status: str = "unknown
         # Simple performance tracking - just log and store basic metrics - OPTIMIZATION: Less pessimistic threshold
         if duration > 20.0:  # OPTIMIZATION: Increased from 5.0s to 20.0s - align with action6_gather.py thresholds
             logger.warning(f"API Performance Alert: {api_name} took {duration:.3f}s (status: {status})")
-        
-        # Update advanced monitor performance history if available  
+
+        # Update advanced monitor performance history if available
         performance_data = {
             "timestamp": datetime.now().isoformat(),
             "api_name": api_name,
@@ -931,13 +918,13 @@ def track_api_performance(api_name: str, duration: float, status: str = "unknown
             "status": status,
             "type": "api_call"
         }
-        
+
         _advanced_monitor.performance_history.append(performance_data)
-        
+
         # Keep history manageable
         if len(_advanced_monitor.performance_history) > 1000:
             _advanced_monitor.performance_history = _advanced_monitor.performance_history[-1000:]
-            
+
     except Exception as e:
         # Graceful degradation - don't let performance monitoring break the main application
         logger.debug(f"Performance tracking error: {e}")
@@ -971,21 +958,21 @@ def get_system_health_score() -> float:
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for performance monitoring functionality.
-    
+
     Tests all core performance monitoring functionality including metric recording,
     function profiling, alert generation, optimization recommendations, and system health monitoring.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
     try:
-        from test_framework import TestSuite, suppress_logging
+        from test_framework import TestSuite  # Using TestSuite only
     except ImportError:
         print("⚠️  TestSuite not available - falling back to basic testing")
         return _run_basic_tests()
-    
+
     suite = TestSuite("Performance Monitor", "performance_monitor")
-    
+
     def test_performance_monitor_initialization():
         """Test PerformanceMonitor initialization and configuration"""
         # Test default initialization
@@ -994,90 +981,90 @@ def run_comprehensive_tests() -> bool:
         assert len(monitor.metrics) == 0
         assert len(monitor.function_profiles) == 0
         assert len(monitor.alerts) == 0
-        assert monitor.enabled == True
-        
+        assert monitor.enabled
+
         # Test custom initialization
         custom_thresholds = {"test_metric": 50.0}
         monitor2 = PerformanceMonitor(max_history=500, alert_thresholds=custom_thresholds)
         assert monitor2.max_history == 500
         assert "test_metric" in monitor2.alert_thresholds
-    
+
     def test_metric_recording_and_retrieval():
         """Test performance metric recording and data retrieval"""
         monitor = PerformanceMonitor()
-        
+
         # Test basic metric recording
         monitor.record_metric("test_metric", 100.0, "test_category")
         assert len(monitor.metrics) == 1
-        
+
         metric = monitor.metrics[0]
         assert metric.name == "test_metric"
         assert metric.value == 100.0
         assert metric.category == "test_category"
         assert isinstance(metric.timestamp, datetime)
-        
+
         # Test with metadata
         metadata = {"source": "test", "version": "1.0"}
         monitor.record_metric("test_metric2", 200.0, "test", metadata=metadata)
         assert len(monitor.metrics) == 2
         assert monitor.metrics[1].metadata == metadata
-        
+
         # Test metric retrieval by category using list comprehension
         test_metrics = [m for m in monitor.metrics if m.category == "test_category"]
         assert len(test_metrics) == 1
         assert test_metrics[0].name == "test_metric"
-    
+
     def test_function_profiling():
         """Test function profiling and timing analysis"""
         monitor = PerformanceMonitor()
-        
+
         # Test function profiling decorator
         @monitor.profile_function
         def test_function(x, y=10):
             import time
             time.sleep(0.001)  # Small sleep for timing
             return x + y
-        
+
         # Call function multiple times
         result1 = test_function(5)
         result2 = test_function(3, y=7)
         result3 = test_function(1)
-        
+
         assert result1 == 15
         assert result2 == 10
         assert result3 == 11
-        
+
         # Check profiling data
         function_names = list(monitor.function_profiles.keys())
         assert len(function_names) > 0
-        
+
         # Find the test function profile
         test_func_profile = None
         for name in function_names:
             if "test_function" in name:
                 test_func_profile = monitor.function_profiles[name]
                 break
-        
+
         assert test_func_profile is not None
         assert test_func_profile.call_count == 3
         assert test_func_profile.total_time > 0
         assert test_func_profile.avg_time > 0
-    
+
     def test_alert_generation():
         """Test performance alert generation and management"""
         monitor = PerformanceMonitor(alert_thresholds={"slow_operation": 1.0})
-        
+
         # Record metrics that should trigger alerts
         monitor.record_metric("slow_operation", 2.0, "timing")
         monitor.record_metric("fast_operation", 0.5, "timing")
-        
+
         # Trigger alert check
         monitor._check_alerts()
-        
+
         # Check alert generation - look for slow_operation alerts
         slow_alerts = [a for a in monitor.alerts if "slow_operation" in a.message]
         assert len(slow_alerts) > 0
-        
+
         # Test alert levels using the dataclass constructor correctly
         critical_alert = PerformanceAlert(
             level=AlertLevel.CRITICAL,
@@ -1090,46 +1077,46 @@ def run_comprehensive_tests() -> bool:
         )
         assert critical_alert.level == AlertLevel.CRITICAL
         assert "Critical" in critical_alert.message
-    
+
     def test_performance_statistics():
         """Test performance statistics calculation and analysis"""
         monitor = PerformanceMonitor()
-        
+
         # Record multiple metrics
         values = [10.0, 20.0, 30.0, 40.0, 50.0]
         for i, value in enumerate(values):
             monitor.record_metric(f"metric_{i}", value, "stats_test")
-        
+
         # Test statistics calculation using list comprehension
         stats_metrics = [m for m in monitor.metrics if m.category == "stats_test"]
         assert len(stats_metrics) == 5
-        
+
         # Calculate basic statistics
         metric_values = [m.value for m in stats_metrics]
         avg_value = sum(metric_values) / len(metric_values)
         assert avg_value == 30.0
-    
+
     def test_advanced_monitoring():
         """Test advanced monitoring features and system health"""
         # Test advanced monitor initialization
         advanced_monitor = AdvancedPerformanceMonitor()
         assert advanced_monitor.performance_history == []
         assert advanced_monitor.optimization_recommendations == []
-        
+
         # Test performance tracking
         track_api_performance("test_api", 1.5, "success")
         assert len(_advanced_monitor.performance_history) > 0
-        
+
         # Test dashboard generation
         dashboard = get_performance_dashboard()
         assert isinstance(dashboard, str)
         assert len(dashboard) > 0
-        
+
         # Test system health score
         health_score = get_system_health_score()
         assert isinstance(health_score, (int, float))
         assert 0 <= health_score <= 100
-    
+
     def test_configuration_validation():
         """Test system configuration validation and optimization recommendations"""
         # Test configuration validation
@@ -1139,101 +1126,102 @@ def run_comprehensive_tests() -> bool:
         assert "score" in validation_results
         assert "issues" in validation_results
         assert "recommendations" in validation_results
-        
+
         # Validation results should be well-formed
         assert isinstance(validation_results["score"], (int, float))
         assert isinstance(validation_results["issues"], list)
         assert isinstance(validation_results["recommendations"], list)
-    
+
     def test_memory_monitoring():
         """Test memory usage monitoring and garbage collection tracking"""
         monitor = PerformanceMonitor()
-        
+
         # Create some objects to monitor memory
-        test_data = [i for i in range(1000)]
-        
+        [i for i in range(1000)]
+
         # Record memory metrics
-        import psutil
         import os
+
+        import psutil
         process = psutil.Process(os.getpid())
         memory_mb = process.memory_info().rss / 1024 / 1024
-        
+
         monitor.record_metric("memory_usage_mb", memory_mb, "system")
-        
+
         # Check memory metric was recorded using list comprehension
         memory_metrics = [m for m in monitor.metrics if m.category == "system"]
         assert len(memory_metrics) > 0
-        
+
         memory_metric = memory_metrics[0]
         assert memory_metric.name == "memory_usage_mb"
         assert memory_metric.value > 0
-    
+
     def test_performance_optimization():
         """Test performance optimization recommendations and tuning"""
         monitor = PerformanceMonitor()
-        
+
         # Record some performance metrics that might trigger optimization suggestions
         monitor.record_metric("api_response_time", 5.0, "api")
         monitor.record_metric("database_query_time", 2.0, "database")
         monitor.record_metric("cache_hit_ratio", 0.6, "cache")
-        
+
         # Test that metrics are recorded using list comprehensions
         api_metrics = [m for m in monitor.metrics if m.category == "api"]
         db_metrics = [m for m in monitor.metrics if m.category == "database"]
         cache_metrics = [m for m in monitor.metrics if m.category == "cache"]
-        
+
         assert len(api_metrics) > 0
         assert len(db_metrics) > 0
         assert len(cache_metrics) > 0
-    
+
     def test_global_performance_functions():
         """Test global performance monitoring functions"""
         # Test API performance tracking
         track_api_performance("test_api_2", 0.5, "success")
-        
+
         # Test advanced monitoring start/stop
         start_result = start_advanced_monitoring()
         assert isinstance(start_result, bool)
-        
+
         stop_result = stop_advanced_monitoring()
         assert isinstance(stop_result, dict)
-    
+
     def test_error_handling():
         """Test error handling in performance monitoring operations"""
         monitor = PerformanceMonitor()
-        
+
         # Test with invalid metric values
         try:
             monitor.record_metric("", 0, "")  # Empty strings
             monitor.record_metric("test", float('nan'), "test")  # NaN value
         except Exception:
             pass  # Should handle gracefully
-        
+
         # Test profiling with function that raises exception
         @monitor.profile_function
         def error_function():
             raise ValueError("Test error")
-        
+
         try:
             error_function()
         except ValueError:
             pass  # Expected
-        
+
         # Function should still be in profiles despite error
         error_profiles = [name for name in monitor.function_profiles.keys() if "error_function" in name]
         assert len(error_profiles) > 0
-    
+
     def test_function_availability():
         """Test that all required performance monitoring functions are available"""
         required_functions = [
             "track_api_performance",
             "start_advanced_monitoring",
-            "stop_advanced_monitoring", 
+            "stop_advanced_monitoring",
             "get_performance_dashboard",
             "validate_system_configuration",
             "get_system_health_score"
         ]
-        
+
         required_classes = [
             "PerformanceMonitor",
             "PerformanceMetric",
@@ -1242,15 +1230,15 @@ def run_comprehensive_tests() -> bool:
             "AlertLevel",
             "AdvancedPerformanceMonitor"
         ]
-        
+
         for func_name in required_functions:
             assert func_name in globals(), f"Function {func_name} should be available"
             assert callable(globals()[func_name]), f"Function {func_name} should be callable"
-            
+
         for class_name in required_classes:
             assert class_name in globals(), f"Class {class_name} should be available"
             assert isinstance(globals()[class_name], type), f"{class_name} should be a class"
-    
+
     # Run all tests
     suite.run_test(
         "Performance monitor initialization",
@@ -1259,7 +1247,7 @@ def run_comprehensive_tests() -> bool:
         "Test PerformanceMonitor initialization with various configuration options",
         "Verify monitor initialization creates proper state and accepts custom parameters"
     )
-    
+
     suite.run_test(
         "Metric recording and retrieval",
         test_metric_recording_and_retrieval,
@@ -1267,7 +1255,7 @@ def run_comprehensive_tests() -> bool:
         "Test record_metric and get_metrics_by_category with various data types",
         "Verify metric recording stores data correctly with timestamps and metadata"
     )
-    
+
     suite.run_test(
         "Function profiling",
         test_function_profiling,
@@ -1275,7 +1263,7 @@ def run_comprehensive_tests() -> bool:
         "Test profile_function decorator with timing analysis and statistics",
         "Verify function profiling captures timing data, call counts, and performance metrics"
     )
-    
+
     suite.run_test(
         "Alert generation",
         test_alert_generation,
@@ -1283,7 +1271,7 @@ def run_comprehensive_tests() -> bool:
         "Test alert generation with threshold configuration and alert retrieval",
         "Verify alert system detects performance issues and generates appropriate notifications"
     )
-    
+
     suite.run_test(
         "Performance statistics",
         test_performance_statistics,
@@ -1291,7 +1279,7 @@ def run_comprehensive_tests() -> bool:
         "Test statistical analysis of performance metrics with calculations",
         "Verify statistics calculation provides accurate analysis of performance data"
     )
-    
+
     suite.run_test(
         "Advanced monitoring features",
         test_advanced_monitoring,
@@ -1299,7 +1287,7 @@ def run_comprehensive_tests() -> bool:
         "Test AdvancedPerformanceMonitor with dashboard generation and health scoring",
         "Verify advanced monitoring delivers comprehensive performance insights and recommendations"
     )
-    
+
     suite.run_test(
         "Configuration validation",
         test_configuration_validation,
@@ -1307,7 +1295,7 @@ def run_comprehensive_tests() -> bool:
         "Test validate_system_configuration with various configuration scenarios",
         "Verify configuration validation analyzes settings and suggests optimizations"
     )
-    
+
     suite.run_test(
         "Memory monitoring",
         test_memory_monitoring,
@@ -1315,7 +1303,7 @@ def run_comprehensive_tests() -> bool:
         "Test memory monitoring with psutil integration and metric recording",
         "Verify memory monitoring captures resource usage and system health metrics"
     )
-    
+
     suite.run_test(
         "Performance optimization",
         test_performance_optimization,
@@ -1323,7 +1311,7 @@ def run_comprehensive_tests() -> bool:
         "Test optimization recommendations based on collected performance metrics",
         "Verify optimization suggestions help identify and resolve performance bottlenecks"
     )
-    
+
     suite.run_test(
         "Global performance functions",
         test_global_performance_functions,
@@ -1331,7 +1319,7 @@ def run_comprehensive_tests() -> bool:
         "Test global functions for API tracking and advanced monitoring control",
         "Verify global functions enable comprehensive system-wide performance monitoring"
     )
-    
+
     suite.run_test(
         "Error handling",
         test_error_handling,
@@ -1339,7 +1327,7 @@ def run_comprehensive_tests() -> bool:
         "Test error handling with invalid inputs and exception scenarios",
         "Verify robust error handling maintains monitoring functionality during failures"
     )
-    
+
     suite.run_test(
         "Function availability verification",
         test_function_availability,
@@ -1347,7 +1335,7 @@ def run_comprehensive_tests() -> bool:
         "Test availability of track_api_performance, PerformanceMonitor, and monitoring classes",
         "Verify function availability ensures complete performance monitoring interface"
     )
-    
+
     return suite.finish_suite()
 
 
@@ -1358,10 +1346,10 @@ def _run_basic_tests() -> bool:
         monitor = PerformanceMonitor()
         monitor.record_metric("test", 1.0, "test")
         assert len(monitor.metrics) == 1
-        
+
         # Test API tracking
         track_api_performance("test_api", 1.0, "success")
-        
+
         print("✅ Basic performance monitor tests passed")
         return True
     except Exception as e:
@@ -1375,7 +1363,7 @@ def _run_basic_tests() -> bool:
 
 if __name__ == "__main__":
     import sys
-    
+
     print("⚡ Running Performance Monitor comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

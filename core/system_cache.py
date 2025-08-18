@@ -15,8 +15,8 @@ Building on Phase 5.1 success (1,281x session manager improvement), Phase 5.2 ta
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,47 +28,31 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import gc
 import hashlib
+import json
 import threading
 import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, List, Callable, Union
-import json
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
+    BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
-    cache_result,  # Existing cache decorator
+    clear_cache,  # Cache clearing
+    get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
     warm_cache_with_data,  # Cache warming
-    get_cache_stats,  # Statistics
-    clear_cache,  # Cache clearing
-    BaseCacheModule,  # Base cache interface
 )
 
 # === SESSION CACHE INTEGRATION ===
 from core.session_cache import (
-    SessionCacheConfig,
     get_session_cache_stats,
-    _session_cache,
 )
 
 # === PHASE 5.2 CONFIGURATION ===
@@ -364,7 +348,7 @@ class MemoryOptimizer(BaseCacheModule):
                     try:
                         if obj() is None:
                             del obj
-                    except:
+                    except Exception:
                         pass
 
             # Get memory usage after optimization
@@ -500,7 +484,7 @@ def memory_optimized(gc_threshold: Optional[float] = None):
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Check memory before execution
-            memory_before = _memory_optimizer.get_memory_usage_mb()
+            _memory_optimizer.get_memory_usage_mb()
 
             try:
                 result = func(*args, **kwargs)
@@ -519,7 +503,7 @@ def memory_optimized(gc_threshold: Optional[float] = None):
 
                 return result
 
-            except Exception as e:
+            except Exception:
                 # Optimize memory on exception to clean up partial allocations
                 _memory_optimizer.optimize_memory(force=True)
                 raise
@@ -613,7 +597,7 @@ def warm_system_caches() -> bool:
         # Warm session cache
         from core.session_cache import warm_session_cache
 
-        session_warmed = warm_session_cache()
+        warm_session_cache()
 
         # Warm base cache with system metadata
         system_metadata = {
@@ -770,12 +754,12 @@ def test_system_cache_performance():
 
         # First call (should be slow)
         start_time = time.time()
-        result1 = mock_api_call("test_data")
+        mock_api_call("test_data")
         first_call_time = time.time() - start_time
 
         # Second call (should be fast - cached)
         start_time = time.time()
-        result2 = mock_api_call("test_data")
+        mock_api_call("test_data")
         second_call_time = time.time() - start_time
 
         api_speedup = first_call_time / max(second_call_time, 0.001)
@@ -792,11 +776,11 @@ def test_system_cache_performance():
             return [{"id": query_id, "data": "test_result"}]
 
         start_time = time.time()
-        db_result1 = mock_db_query(123)
+        mock_db_query(123)
         first_db_time = time.time() - start_time
 
         start_time = time.time()
-        db_result2 = mock_db_query(123)
+        mock_db_query(123)
         second_db_time = time.time() - start_time
 
         db_speedup = first_db_time / max(second_db_time, 0.001)
@@ -807,7 +791,7 @@ def test_system_cache_performance():
         )
 
         # Test memory optimization
-        memory_before = _memory_optimizer.get_memory_usage_mb()
+        _memory_optimizer.get_memory_usage_mb()
         optimization_result = _memory_optimizer.optimize_memory()
         results["memory_optimization_test"] = optimization_result.get(
             "optimized", False
@@ -833,47 +817,47 @@ def test_system_cache_performance():
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for core/system_cache.py.
-    
+
     Tests advanced system-wide caching including API response caching,
     database query caching, memory optimization, and system-wide cache management.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
     try:
         from test_framework import TestSuite
-        
+
         suite = TestSuite("System Cache Comprehensive Tests", __name__)
         suite.start_suite()
-        
+
         def test_api_response_cache_functionality():
             """Test API response caching system"""
             try:
                 # Test caching API response
                 test_params = {"param1": "value1", "param2": "value2"}
                 test_response = {"result": "success", "data": "test_data"}
-                
+
                 success = _api_cache.cache_api_response("test_service", "test_method", test_params, test_response, 300)
-                assert success == True
-                
+                assert success
+
                 # Test retrieving cached response
                 cached_response = _api_cache.get_cached_api_response("test_service", "test_method", test_params)
                 assert cached_response is not None
                 assert cached_response.get("result") == "success"
-                
+
                 # Test cache miss
                 missing_response = _api_cache.get_cached_api_response("test_service", "nonexistent_method", test_params)
                 assert missing_response is None
-                
+
                 # Test cache key generation
                 key1 = _api_cache._get_api_cache_key("service1", "method1", {"a": 1})
                 key2 = _api_cache._get_api_cache_key("service1", "method1", {"a": 1})
                 assert key1 == key2  # Should be consistent
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_database_query_cache_functionality():
             """Test database query caching system"""
             try:
@@ -881,29 +865,29 @@ def run_comprehensive_tests() -> bool:
                 test_query = "SELECT * FROM test_table WHERE id = ?"
                 test_params = (123,)
                 test_result = [{"id": 123, "name": "test"}]
-                
+
                 success = _db_cache.cache_query_result(test_query, test_params, test_result, 600)
-                assert success == True
-                
+                assert success
+
                 # Test retrieving cached result
                 cached_result = _db_cache.get_cached_query_result(test_query, test_params)
                 assert cached_result is not None
                 assert len(cached_result) == 1
                 assert cached_result[0].get("id") == 123
-                
+
                 # Test cache miss
                 missing_result = _db_cache.get_cached_query_result("SELECT * FROM nonexistent", ())
                 assert missing_result is None
-                
+
                 # Test query normalization
-                key1 = _db_cache._get_query_cache_key("SELECT * FROM table", ())
-                key2 = _db_cache._get_query_cache_key("  select  *  from  table  ", ())
+                _db_cache._get_query_cache_key("SELECT * FROM table", ())
+                _db_cache._get_query_cache_key("  select  *  from  table  ", ())
                 # Should normalize to same key (case and whitespace)
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_memory_optimization_functionality():
             """Test memory optimization system"""
             try:
@@ -911,114 +895,114 @@ def run_comprehensive_tests() -> bool:
                 memory_usage = _memory_optimizer.get_memory_usage_mb()
                 assert isinstance(memory_usage, (int, float))
                 assert memory_usage >= 0
-                
+
                 # Test memory optimization
                 optimization_result = _memory_optimizer.optimize_memory()
                 assert isinstance(optimization_result, dict)
                 assert "optimized" in optimization_result
-                
+
                 # Test forced memory optimization
                 forced_result = _memory_optimizer.optimize_memory(force=True)
                 assert forced_result.get("optimized") in [True, False]  # Should be boolean
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_caching_decorators():
             """Test system caching decorators"""
             try:
                 # Test API caching decorator
                 call_count = 0
-                
+
                 @cached_api_call("test_api", ttl=60)
                 def test_api_function(param):
                     nonlocal call_count
                     call_count += 1
                     return {"param": param, "call_count": call_count}
-                
+
                 result1 = test_api_function("test_param")
                 assert result1.get("call_count") == 1
-                
+
                 result2 = test_api_function("test_param")  # Should use cache or call again
                 assert result2 is not None
-                
+
                 # Test database caching decorator
                 db_call_count = 0
-                
+
                 @cached_database_query(ttl=300)
                 def test_db_function(query_id):
                     nonlocal db_call_count
                     db_call_count += 1
                     return [{"id": query_id, "call_count": db_call_count}]
-                
+
                 db_result1 = test_db_function(123)
                 assert len(db_result1) > 0
-                
+
                 # Test memory optimization decorator
                 @memory_optimized(gc_threshold=0.5)
                 def test_memory_function():
                     # Simulate memory intensive operation
                     data = list(range(1000))
                     return len(data)
-                
+
                 memory_result = test_memory_function()
                 assert memory_result == 1000
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_system_cache_statistics():
             """Test comprehensive system cache statistics"""
             try:
                 stats = get_system_cache_stats()
-                
+
                 # Should have all expected categories
                 expected_categories = ["base_cache", "session_cache", "api_cache", "database_cache", "memory_optimization", "system_config"]
                 for category in expected_categories:
                     assert category in stats, f"Missing category: {category}"
-                
+
                 # API cache stats should have expected fields
                 api_stats = stats["api_cache"]
                 expected_api_fields = ["ai_requests", "ai_cache_hits", "ancestry_requests", "ancestry_cache_hits"]
                 for field in expected_api_fields:
                     assert field in api_stats, f"Missing API stat field: {field}"
-                
+
                 # System config should have expected settings
                 system_config = stats["system_config"]
                 expected_config_fields = ["api_response_ttl", "db_query_ttl", "memory_limit_mb", "aggressive_gc_enabled"]
                 for field in expected_config_fields:
                     assert field in system_config, f"Missing config field: {field}"
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_cache_management_operations():
             """Test system cache management"""
             try:
                 # Test cache warming
                 warm_result = warm_system_caches()
-                assert warm_result == True
-                
+                assert warm_result
+
                 # Test cache clearing
                 clear_results = clear_system_caches()
                 assert isinstance(clear_results, dict)
-                
+
                 # Should not have errors in clearing results
                 assert "error" not in clear_results or clear_results.get("error") is None
-                
+
                 # Should have cleared various cache types
                 expected_clear_types = ["base_cache", "session_cache", "api_cache", "database_cache"]
                 for cache_type in expected_clear_types:
                     if cache_type in clear_results:
                         assert isinstance(clear_results[cache_type], (int, str))
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_cache_configuration():
             """Test system cache configuration"""
             try:
@@ -1027,101 +1011,101 @@ def run_comprehensive_tests() -> bool:
                 assert hasattr(SYSTEM_CACHE_CONFIG, 'api_response_ttl')
                 assert hasattr(SYSTEM_CACHE_CONFIG, 'db_query_ttl')
                 assert hasattr(SYSTEM_CACHE_CONFIG, 'memory_cache_limit_mb')
-                
+
                 # Test configuration values are reasonable
                 assert SYSTEM_CACHE_CONFIG.api_response_ttl > 0
                 assert SYSTEM_CACHE_CONFIG.db_query_ttl > 0
                 assert SYSTEM_CACHE_CONFIG.memory_cache_limit_mb > 0
-                
+
                 # Test configuration is used by cache instances
                 assert _api_cache is not None
                 assert _db_cache is not None
                 assert _memory_optimizer is not None
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_performance_improvements():
             """Test actual performance improvements from caching"""
             try:
                 import time
-                
+
                 # Test API caching performance
                 @cached_api_call("performance_test", ttl=30)
                 def slow_api_call():
                     time.sleep(0.01)  # Simulate network delay
                     return {"timestamp": time.time()}
-                
+
                 # First call
                 start = time.time()
                 result1 = slow_api_call()
                 first_call_time = time.time() - start
-                
+
                 # Second call (potentially cached)
                 start = time.time()
                 result2 = slow_api_call()
                 second_call_time = time.time() - start
-                
+
                 # Should at least not be significantly slower
                 assert first_call_time >= 0
                 assert second_call_time >= 0
                 assert result1 is not None
                 assert result2 is not None
-                
+
                 # Test database caching performance
                 @cached_database_query(ttl=30)
                 def slow_db_query():
                     time.sleep(0.005)  # Simulate DB delay
                     return [{"result": "cached"}]
-                
+
                 start = time.time()
                 db_result = slow_db_query()
                 db_call_time = time.time() - start
-                
+
                 assert db_call_time >= 0
                 assert len(db_result) > 0
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_error_handling_and_edge_cases():
             """Test error handling in cache operations"""
             try:
                 # Test API cache with None response
                 success = _api_cache.cache_api_response("test", "method", {}, None, 60)
-                assert success == True  # Should handle None gracefully
-                
+                assert success  # Should handle None gracefully
+
                 # Test database cache with empty result
                 success = _db_cache.cache_query_result("SELECT", (), [], 60)
-                assert success == True  # Should handle empty results
-                
+                assert success  # Should handle empty results
+
                 # Test memory optimization when no optimization possible
                 result = _memory_optimizer.optimize_memory()
                 assert isinstance(result, dict)  # Should return result dict regardless
-                
+
                 # Test cache operations when cache is unavailable
                 # This tests graceful degradation
                 original_cache = globals().get('cache')
                 try:
                     # Temporarily disable cache
                     globals()['cache'] = None
-                    
+
                     no_cache_result = _api_cache.get_cached_api_response("test", "method", {})
                     assert no_cache_result is None  # Should return None when cache unavailable
-                    
+
                     no_cache_success = _api_cache.cache_api_response("test", "method", {}, "result", 60)
-                    assert no_cache_success == False  # Should return False when cache unavailable
-                    
+                    assert not no_cache_success  # Should return False when cache unavailable
+
                 finally:
                     # Restore cache
                     globals()['cache'] = original_cache
-                
+
                 return True
             except Exception:
                 return False
-        
+
         # Run all tests
         suite.run_test(
             "API Response Cache Functionality",
@@ -1130,7 +1114,7 @@ def run_comprehensive_tests() -> bool:
             "API response caching reduces external service call overhead and improves performance",
             "Test API response caching, retrieval, and cache key generation"
         )
-        
+
         suite.run_test(
             "Database Query Cache Functionality",
             test_database_query_cache_functionality,
@@ -1138,7 +1122,7 @@ def run_comprehensive_tests() -> bool:
             "Database query caching reduces database load and improves query performance",
             "Test database query result caching, retrieval, and query normalization"
         )
-        
+
         suite.run_test(
             "Memory Optimization Functionality",
             test_memory_optimization_functionality,
@@ -1146,7 +1130,7 @@ def run_comprehensive_tests() -> bool:
             "Memory optimization prevents memory leaks and improves system stability",
             "Test memory usage monitoring and optimization operations"
         )
-        
+
         suite.run_test(
             "Caching Decorators",
             test_caching_decorators,
@@ -1154,7 +1138,7 @@ def run_comprehensive_tests() -> bool:
             "Decorators enable easy integration of caching into existing code",
             "Test API, database, and memory optimization decorators"
         )
-        
+
         suite.run_test(
             "System Cache Statistics",
             test_system_cache_statistics,
@@ -1162,7 +1146,7 @@ def run_comprehensive_tests() -> bool:
             "Statistics enable monitoring and optimization of cache performance",
             "Test comprehensive statistics collection across all cache systems"
         )
-        
+
         suite.run_test(
             "Cache Management Operations",
             test_cache_management_operations,
@@ -1170,7 +1154,7 @@ def run_comprehensive_tests() -> bool:
             "Management operations ensure optimal cache performance and resource cleanup",
             "Test cache warming, clearing, and management functionality"
         )
-        
+
         suite.run_test(
             "Cache Configuration",
             test_cache_configuration,
@@ -1178,7 +1162,7 @@ def run_comprehensive_tests() -> bool:
             "Configuration enables tuning of cache behavior for different environments",
             "Test system cache configuration structure and accessibility"
         )
-        
+
         suite.run_test(
             "Performance Improvements",
             test_performance_improvements,
@@ -1186,7 +1170,7 @@ def run_comprehensive_tests() -> bool:
             "Performance improvements justify the complexity of caching systems",
             "Test actual performance improvements from API and database caching"
         )
-        
+
         suite.run_test(
             "Error Handling and Edge Cases",
             test_error_handling_and_edge_cases,
@@ -1194,30 +1178,30 @@ def run_comprehensive_tests() -> bool:
             "Robust error handling ensures cache failures don't break application functionality",
             "Test error scenarios and graceful degradation when cache is unavailable"
         )
-        
+
         return suite.finish_suite()
-        
+
     except ImportError:
         print("Warning: TestSuite not available, running basic validation...")
-        
+
         # Basic fallback tests
         try:
             # Test basic functionality
             assert _api_cache is not None
             assert _db_cache is not None
             assert _memory_optimizer is not None
-            
+
             # Test basic operations
             _api_cache.cache_api_response("basic_test", "method", {}, {"result": "test"}, 60)
             cached = _api_cache.get_cached_api_response("basic_test", "method", {})
             assert cached is not None
-            
+
             stats = get_system_cache_stats()
             assert stats is not None
-            
+
             warm_result = warm_system_caches()
-            assert warm_result == True
-            
+            assert warm_result
+
             print("✅ Basic system_cache validation passed")
             return True
         except Exception as e:

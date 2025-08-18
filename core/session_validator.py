@@ -8,8 +8,8 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,19 +21,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 from datetime import datetime, timezone
@@ -281,7 +268,7 @@ class SessionValidator:
             # Check if we're on a valid Ancestry page
             base_url = config_schema.api.base_url or "https://www.ancestry.com"
             if not current_url or not current_url.startswith(base_url):
-                logger.warning(f"Not on Ancestry domain. Navigating to base URL...")
+                logger.warning("Not on Ancestry domain. Navigating to base URL...")
 
                 # Import nav_to_page here to avoid circular imports
                 from utils import nav_to_page
@@ -588,7 +575,7 @@ def _test_initialization_performance():
 
     start_time = time.time()
     for _ in range(100):
-        validator = SessionValidator()
+        SessionValidator()
     end_time = time.time()
     total_time = end_time - start_time
     assert (
@@ -599,6 +586,7 @@ def _test_initialization_performance():
 
 def _test_webdriver_exception_handling():
     from unittest.mock import Mock, patch
+
     from selenium.common.exceptions import WebDriverException
 
     validator = SessionValidator()

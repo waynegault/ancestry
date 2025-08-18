@@ -15,31 +15,13 @@ Note: Relationship path formatting functions previously in test_relationship_pat
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    APIRateLimitError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    ErrorContext,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
-import asyncio
 import json
 import logging
 import re
@@ -47,12 +29,22 @@ import time
 import traceback
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast, Awaitable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode, urljoin
 
 # === THIRD-PARTY IMPORTS ===
 import requests
-import base64  # For enhanced authentication headers
+
+from error_handling import (
+    AncestryException,
+    APIRateLimitError,
+    NetworkTimeoutError,
+    RetryableError,
+    circuit_breaker,
+    error_context,
+    retry_on_failure,
+    timeout_protection,
+)
 
 # --- Check for optional dependencies ---
 try:
@@ -64,18 +56,17 @@ except ImportError:
     BS4_AVAILABLE = False
 
 try:
-    import pydantic
-
-    PYDANTIC_AVAILABLE = True
-except ImportError:
+    from importlib.util import find_spec as _find_spec
+    PYDANTIC_AVAILABLE = _find_spec("pydantic") is not None
+except Exception:
     PYDANTIC_AVAILABLE = False
 
 # === LOCAL IMPORTS ===
 from config import config_schema
-from database import Person
-from gedcom_utils import _parse_date, _clean_display_date
-from logging_config import setup_logging
 from core.session_manager import SessionManager
+from database import Person
+from gedcom_utils import _clean_display_date, _parse_date
+from logging_config import setup_logging
 from utils import _api_req, format_name
 
 # --- Test framework imports ---
@@ -135,7 +126,7 @@ API_PATH_PERSON_FACTS_USER = (
 API_PATH_PERSON_GETLADDER = (
     "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
 )
-API_PATH_DISCOVERY_RELATIONSHIP = "discoveryui-matchingservice/api/relationship"  # noqa: Ancestry's matching service API
+API_PATH_DISCOVERY_RELATIONSHIP = "discoveryui-matchingservice/api/relationship"  # noqa: E501 - Ancestry's matching service API
 API_PATH_TREESUI_LIST = "trees/{tree_id}/persons"
 
 # Message API keys
@@ -161,7 +152,7 @@ KEY_OWNER = "owner"
 # --- Response Models ---
 # Modern dataclass-based models for API response validation
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -1012,7 +1003,7 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 def call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],  # noqa: Kept for API signature consistency
+    owner_profile_id: Optional[str],  # noqa: F401 - Kept for API signature consistency
     base_url: str,
     search_criteria: Dict[str, Any],
     timeouts: Optional[List[int]] = None,
@@ -1468,7 +1459,7 @@ def call_facts_user_api(
         if "data" in facts_data_raw and isinstance(facts_data_raw["data"], dict):
             logger.debug(f"'data' sub-keys: {list(facts_data_raw['data'].keys())}")
         else:
-            logger.debug(f"'data' key missing or not a dict in response.")
+            logger.debug("'data' key missing or not a dict in response.")
         # End of if/else
         return None
     # End of if
@@ -1476,7 +1467,7 @@ def call_facts_user_api(
     # Validate response with Pydantic if available
     if PYDANTIC_AVAILABLE:
         try:
-            validated_response = PersonFactsResponse(**facts_data_raw)
+            PersonFactsResponse(**facts_data_raw)
             logger.debug("Facts API response validation successful")
         except Exception as validation_err:
             logger.warning(f"Facts API response validation warning: {validation_err}")
@@ -1564,7 +1555,7 @@ def call_getladder_api(
                     import json
 
                     parsed_data = json.loads(relationship_data)
-                    validated_response = GetLadderResponse(**parsed_data)
+                    GetLadderResponse(**parsed_data)
                     logger.debug("GetLadder API response validation successful")
                 except json.JSONDecodeError:
                     logger.debug("GetLadder API returned non-JSON string response")
@@ -1689,7 +1680,7 @@ def call_discovery_relationship_api(
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
-                    validated_response = DiscoveryRelationshipResponse(
+                    DiscoveryRelationshipResponse(
                         **relationship_data
                     )
                     logger.debug(
@@ -1708,7 +1699,7 @@ def call_discovery_relationship_api(
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
-                    validated_response = DiscoveryRelationshipResponse(
+                    DiscoveryRelationshipResponse(
                         **relationship_data
                     )
                     logger.debug(
@@ -1744,7 +1735,7 @@ def call_discovery_relationship_api(
 def call_treesui_list_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],  # noqa: Kept for API signature consistency
+    owner_profile_id: Optional[str],  # noqa: F401 - Kept for API signature consistency
     base_url: str,
     search_criteria: Dict[str, Any],
     timeouts: Optional[List[int]] = None,
@@ -2127,7 +2118,7 @@ def call_profile_details_api(
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
-                    validated_response = ProfileDetailsResponse(**profile_response)
+                    ProfileDetailsResponse(**profile_response)
                     logger.debug("Profile Details API response validation successful")
                 except Exception as validation_err:
                     logger.warning(
@@ -2290,7 +2281,7 @@ def call_header_trees_api_for_tree_id(
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
-                    validated_response = HeaderTreesResponse(**response_data)
+                    HeaderTreesResponse(**response_data)
                     logger.debug("Header Trees API response validation successful")
                 except Exception as validation_err:
                     logger.warning(
@@ -2406,7 +2397,7 @@ def call_tree_owner_api(
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
-                    validated_response = TreeOwnerResponse.from_dict(response_data)
+                    TreeOwnerResponse.from_dict(response_data)
                     logger.debug("Tree Owner API response validation successful")
                 except Exception as validation_err:
                     logger.warning(
@@ -3013,7 +3004,7 @@ def api_utils_module_tests() -> bool:
 
     Categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, Error Handling
     """
-    from test_framework import TestSuite, suppress_logging, create_mock_data
+    from test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite("API Utilities & Ancestry Integration", "api_utils.py")
@@ -3214,7 +3205,6 @@ def api_utils_module_tests() -> bool:
     # === PERFORMANCE TESTS ===
     def test_json_parsing_performance():
         """Test JSON parsing performance with large data sets."""
-        import time
 
         large_data = {"items": [{"id": i, "name": f"Person {i}"} for i in range(1000)]}
         json_string = json.dumps(large_data)
@@ -3232,13 +3222,12 @@ def api_utils_module_tests() -> bool:
 
     def test_url_encoding_performance():
         """Test URL encoding performance with multiple strings."""
-        import time
 
         test_strings = [f"Person Name {i} & Family" for i in range(100)]
 
         start_time = time.time()
         for test_string in test_strings:
-            encoded = quote(test_string)
+            quote(test_string)
         end_time = time.time()
 
         encoding_time = end_time - start_time
@@ -3248,7 +3237,6 @@ def api_utils_module_tests() -> bool:
 
     def test_data_processing_efficiency():
         """Test efficiency of data processing operations."""
-        import time
 
         test_data = [
             {

@@ -19,19 +19,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # --- Standard library imports ---
 import copy
@@ -116,6 +103,8 @@ external_loggers = [
 ]
 for logger_name in external_loggers:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
+# Specifically silence undetected_chromedriver noisy "ensuring close"
+logging.getLogger('uc').setLevel(logging.ERROR)
 
 # --- Initialize Main Application Logger ---
 # Get the logger instance named 'logger' (used throughout the application)
@@ -128,8 +117,6 @@ logger.propagate = False  # Prevent messages from propagating to the root logger
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
 
 
@@ -358,12 +345,6 @@ def logging_config_module_tests() -> bool:
     Logging Configuration & Management module test suite.
     Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
 
     with suppress_logging():
         suite = TestSuite("Logging Configuration & Management", "logging_config.py")
@@ -710,8 +691,8 @@ def test_filter_integration():
         exc_info=None,
     )
 
-    assert filter_obj.filter(included_record) == True
-    assert filter_obj.filter(excluded_record) == False
+    assert filter_obj.filter(included_record)
+    assert not filter_obj.filter(excluded_record)
 
 
 def test_external_library_logging():

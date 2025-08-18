@@ -16,8 +16,8 @@ Key improvements:
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,25 +29,9 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import inspect
-import logging
-from typing import Dict, Any, List, Optional, Callable, Set
-from functools import wraps
+from typing import Any, Callable, Dict, List, Optional
 
 
 class SmartFunctionRegistry:
@@ -297,7 +281,7 @@ def run_comprehensive_tests() -> bool:
         # Report test counts in detectable format
         total_tests = 6  # Count of assertions/test cases above
         print(f"✅ Passed: {total_tests}")
-        print(f"❌ Failed: 0")
+        print("❌ Failed: 0")
 
         return True
 
@@ -306,7 +290,7 @@ def run_comprehensive_tests() -> bool:
 
         # Report test counts in detectable format (failure case)
         total_tests = 6
-        print(f"✅ Passed: 0")
+        print("✅ Passed: 0")
         print(f"❌ Failed: {total_tests}")
 
         return False

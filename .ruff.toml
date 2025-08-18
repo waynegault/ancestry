@@ -1,0 +1,23 @@
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I"]
+# Project-wide intentional patterns:
+# - E402: imports after module setup (setup_module) by design
+# - F403/F405: controlled star imports for CSS selectors/constants
+ignore = ["E501", "E402", "F403", "F405"]
+
+[lint.isort]
+combine-as-imports = true
+force-single-line = false
+known-first-party = ["core", "config"]
+known-third-party = [
+  "selenium", "requests", "sqlalchemy", "bs4", "cloudscraper", "dotenv", "tabulate", "tqdm"
+]
+
+[format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+

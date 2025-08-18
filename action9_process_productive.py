@@ -17,9 +17,6 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 # === MODULE SETUP ===
@@ -27,40 +24,26 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
-    retry_on_failure,
     circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
     error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import ProgressIndicator, create_progress_indicator
-from core.enhanced_error_recovery import with_enhanced_recovery, with_file_recovery
-from core.memory_optimization import (
-    StreamingGedcomParser,
-    memory_optimized_processing,
-    optimize_for_large_files,
-    memory_monitor
-)
 
 # === STANDARD LIBRARY IMPORTS ===
+import hashlib
 import json
+import re
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union, Literal, Tuple
-import hashlib
-import re
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -90,7 +73,7 @@ except ImportError as e:
 
 # === PHASE 11.1: ADAPTIVE RATE LIMITING & PERFORMANCE MONITORING ===
 try:
-    from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor, ConfigurationOptimizer
+    from adaptive_rate_limiter import AdaptiveRateLimiter, ConfigurationOptimizer, SmartBatchProcessor
     from performance_dashboard import PerformanceDashboard
     ADAPTIVE_SYSTEMS_AVAILABLE = True
     logger.debug("Adaptive rate limiting and performance monitoring loaded in action9")
@@ -104,8 +87,17 @@ except ImportError as e:
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+import ms_graph_utils
+from ai_interface import extract_genealogical_entities
+
 # === LOCAL IMPORTS ===
 from config import config_schema
+from core.session_manager import SessionManager
+
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from core.system_cache import (
+    cached_database_query,
+)
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -114,25 +106,12 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
-
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import (
-    cached_database_query,
-    memory_optimized,
-    get_system_cache_stats,
-)
-
-from ai_interface import extract_genealogical_entities
-import ms_graph_utils
 from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
     MagicMock,
+    TestSuite,
     patch,
+    suppress_logging,
 )
-from core.session_manager import SessionManager
 from utils import format_name
 
 # === CONSTANTS ===
@@ -381,7 +360,7 @@ def get_gedcom_data():
 
         _CACHED_GEDCOM_DATA = load_gedcom_data(str(gedcom_path))
         if _CACHED_GEDCOM_DATA:
-            logger.debug(f"GEDCOM file loaded successfully and cached for reuse.")
+            logger.debug("GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
             logger.debug(
                 f"  Index size: {len(getattr(_CACHED_GEDCOM_DATA, 'indi_index', {}))}"
@@ -396,23 +375,12 @@ def get_gedcom_data():
 
 
 # Import required modules and functions
-from gedcom_utils import (
-    calculate_match_score,
-    _normalize_id,
-    GedcomData,
-)
-
 # Import from relationship_utils
-from relationship_utils import (
-    fast_bidirectional_bfs,
-    convert_gedcom_path_to_unified_format,
-    format_relationship_path_unified,
-)
-
-from gedcom_search_utils import get_gedcom_relationship_path
-
 # Import from api_search_utils where it belongs
 from api_search_utils import process_and_score_suggestions
+from gedcom_utils import (
+    calculate_match_score,
+)
 
 
 def _search_gedcom_for_names(
@@ -1827,7 +1795,7 @@ def _query_candidates(
                     ConversationLog.ai_sentiment == PRODUCTIVE_SENTIMENT,
                     ConversationLog.ai_sentiment == OTHER_SENTIMENT,
                 ),
-                ConversationLog.custom_reply_sent_at == None,
+                ConversationLog.custom_reply_sent_at is None,
             ),
         )
         .outerjoin(
@@ -1836,7 +1804,7 @@ def _query_candidates(
         )
         .filter(
             Person.status == PersonStatusEnum.ACTIVE,
-            (latest_ack_out_log_subq.c.max_ack_out_ts == None)
+            (latest_ack_out_log_subq.c.max_ack_out_ts is None)
             | (
                 latest_ack_out_log_subq.c.max_ack_out_ts
                 < latest_in_log_subq.c.max_in_ts
@@ -2063,8 +2031,8 @@ def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dic
         # Length stats
         lengths = [len(t) for t in tasks if isinstance(t, str)]
         avg_len = sum(lengths) / len(lengths) if lengths else 0
-        short_count = sum(1 for l in lengths if l < 25)
-        long_count = sum(1 for l in lengths if l > 220)
+        short_count = sum(1 for ln in lengths if ln < 25)
+        long_count = sum(1 for ln in lengths if ln > 220)
 
         # Action verbs heuristic
         ACTION_VERBS = [
@@ -2259,7 +2227,7 @@ def _format_context_for_ai_extraction(
                 elif str(direction_value) == str(MessageDirectionEnum.IN):
                     # Try string comparison as last resort
                     is_in_direction = True
-        except:
+        except Exception:
             # Default to OUT if any error occurs
             is_in_direction = False
 
@@ -2516,7 +2484,6 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 # ==============================================
 def action9_process_productive_module_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
-    from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
     suite = TestSuite(
         "Action 9 - AI Message Processing & Data Extraction",
@@ -2824,7 +2791,7 @@ def _calculate_task_data_integration_score(task: Dict[str, Any], extracted_data:
 
     # Check if task uses specific extracted data
     task_desc = task.get('description', '').lower()
-    task_title = task.get('title', '').lower()
+    task.get('title', '').lower()
 
     # Score based on data type utilization
     if extracted_data.get('vital_records'):

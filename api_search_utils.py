@@ -18,45 +18,27 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import os  # Used for path operations
 import re
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+# === LOCAL IMPORTS ===
+from api_utils import (
+    call_facts_user_api,
+    call_getladder_api,
+    call_suggest_api,
+    call_treesui_list_api,
+)
+from config import config_schema
+from relationship_utils import format_api_relationship_path
 
 # === THIRD-PARTY IMPORTS ===
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
-
-# === LOCAL IMPORTS ===
-from api_utils import (
-    call_suggest_api,
-    call_facts_user_api,
-    call_getladder_api,
-    call_treesui_list_api,
-)
-from config import config_schema
-from relationship_utils import format_api_relationship_path
 from utils import SessionManager
-
-
 
 # === MODULE CONSTANTS ===
 API_UTILS_AVAILABLE = True
@@ -883,7 +865,6 @@ def get_api_relationship_path(
 
 def api_search_utils_module_tests() -> bool:
     # Comprehensive test suite for api_search_utils.py
-    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
         "API Search Utilities & GEDCOM Processing System", "api_search_utils.py"

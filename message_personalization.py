@@ -10,9 +10,9 @@ Phase: 9.1 - Message Template Enhancement
 """
 
 import json
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple, Callable
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Import standard modules
 from standard_imports import *
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 class MessagePersonalizer:
     """
-    Enhanced message personalization system that creates dynamic, 
+    Enhanced message personalization system that creates dynamic,
     genealogically-informed messages based on extracted data.
     """
 
@@ -40,17 +40,17 @@ class MessagePersonalizer:
         try:
             script_dir = Path(__file__).resolve().parent
             messages_path = script_dir / "messages.json"
-            
+
             if not messages_path.exists():
                 logger.error(f"messages.json not found at {messages_path}")
                 return {}
-            
+
             with messages_path.open("r", encoding="utf-8") as f:
                 templates = json.load(f)
-            
+
             logger.debug(f"Loaded {len(templates)} message templates")
             return templates
-            
+
         except Exception as e:
             logger.error(f"Error loading message templates: {e}")
             return {}
@@ -151,7 +151,7 @@ class MessagePersonalizer:
             enhanced_format_data = self._create_enhanced_format_data(
                 extracted_data, base_format_data, person_data, selected_functions
             )
-            
+
             # Format the message with safe formatting
             try:
                 personalized_message = template.format(**enhanced_format_data)
@@ -194,7 +194,7 @@ class MessagePersonalizer:
 
                 # Try formatting again
                 personalized_message = template.format(**enhanced_format_data)
-            
+
             logger.info(f"Created personalized message using template '{template_key}' with {len(selected_functions)} personalization functions")
             return personalized_message, selected_functions
 
@@ -367,7 +367,7 @@ class MessagePersonalizer:
         structured_names = extracted_data.get("structured_names", [])
         if not structured_names:
             return "our shared family line"
-        
+
         # Get up to 3 most relevant names
         ancestor_names = []
         for name_data in structured_names[:self.personalization_config["max_ancestors_to_mention"]]:
@@ -377,7 +377,7 @@ class MessagePersonalizer:
                     ancestor_names.append(full_name)
             elif isinstance(name_data, str):
                 ancestor_names.append(name_data)
-        
+
         if not ancestor_names:
             return "our shared family line"
         elif len(ancestor_names) == 1:
@@ -392,7 +392,7 @@ class MessagePersonalizer:
         vital_records = extracted_data.get("vital_records", [])
         if not vital_records:
             return ""
-        
+
         details = []
         for record in vital_records[:2]:  # Limit to 2 most relevant records
             if isinstance(record, dict):
@@ -400,7 +400,7 @@ class MessagePersonalizer:
                 event_type = record.get("event_type", "")
                 date = record.get("date", "")
                 place = record.get("place", "")
-                
+
                 if person and (date or place):
                     detail_parts = [person]
                     if event_type and date:
@@ -408,7 +408,7 @@ class MessagePersonalizer:
                     if place:
                         detail_parts.append(f"in {place}")
                     details.append(" ".join(detail_parts))
-        
+
         if details:
             return f" ({'; '.join(details)})"
         return ""
@@ -416,28 +416,28 @@ class MessagePersonalizer:
     def _create_genealogical_context(self, extracted_data: Dict[str, Any]) -> str:
         """Create genealogical context paragraph."""
         context_parts = []
-        
+
         # Add location information
         locations = extracted_data.get("locations", [])
         if locations:
             location_text = self._format_location_context(extracted_data)
             if location_text:
                 context_parts.append(f"Our family history traces through{location_text}.")
-        
+
         # Add occupation information
         occupations = extracted_data.get("occupations", [])
         if occupations and self.personalization_config["include_occupations"]:
             occ_text = self._format_occupations(occupations)
             if occ_text:
                 context_parts.append(occ_text)
-        
+
         return " ".join(context_parts) if context_parts else "I'm excited to learn more about our family connection."
 
     def _format_occupations(self, occupations: List[Any]) -> str:
         """Format occupation information."""
         if not occupations:
             return ""
-        
+
         occ_descriptions = []
         for occ in occupations[:2]:  # Limit to 2 occupations
             if isinstance(occ, dict):
@@ -445,7 +445,7 @@ class MessagePersonalizer:
                 occupation = occ.get("occupation", "")
                 if person and occupation:
                     occ_descriptions.append(f"{person} worked as a {occupation}")
-        
+
         if occ_descriptions:
             return f"Family records show {', and '.join(occ_descriptions)}."
         return ""
@@ -456,20 +456,20 @@ class MessagePersonalizer:
         if research_questions:
             # Use the first research question as focus
             return f" {research_questions[0].lower()}"
-        
+
         # Fallback to general family history
         return " our shared family history"
 
     def _generate_specific_questions(self, extracted_data: Dict[str, Any]) -> str:
         """Generate specific follow-up questions based on extracted data."""
         questions = []
-        
+
         # Questions based on research gaps
         research_questions = extracted_data.get("research_questions", [])
         for question in research_questions[:self.personalization_config["max_research_questions"]]:
             if isinstance(question, str) and question:
                 questions.append(f"Do you have any information about {question.lower()}?")
-        
+
         # Questions based on locations
         locations = extracted_data.get("locations", [])
         for location in locations[:1]:  # Just one location question
@@ -477,7 +477,7 @@ class MessagePersonalizer:
                 place = location.get("place", "")
                 if place:
                     questions.append(f"Do you have any family connections to {place}?")
-        
+
         if questions:
             return " ".join(questions)
         return "Do you have any additional family information that might help our research?"
@@ -487,14 +487,14 @@ class MessagePersonalizer:
         locations = extracted_data.get("locations", [])
         if not locations:
             return "Family History Research"
-        
+
         # Get the most relevant location
         for location in locations:
             if isinstance(location, dict):
                 place = location.get("place", "")
                 if place:
                     return place
-        
+
         return "Family History Research"
 
 
@@ -504,14 +504,14 @@ class MessagePersonalizer:
         locations = extracted_data.get("locations", [])
         if not locations:
             return ""
-        
+
         location_names = []
         for location in locations[:self.personalization_config["max_locations_to_mention"]]:
             if isinstance(location, dict):
                 place = location.get("place", "")
                 if place:
                     location_names.append(place)
-        
+
         if location_names:
             if len(location_names) == 1:
                 return f" {location_names[0]}"
@@ -522,19 +522,19 @@ class MessagePersonalizer:
     def _create_research_suggestions(self, extracted_data: Dict[str, Any]) -> str:
         """Create research suggestions based on extracted data."""
         suggestions = []
-        
+
         # Suggestions based on mentioned people
         structured_names = extracted_data.get("structured_names", [])
         if structured_names:
             name = structured_names[0].get("full_name", "") if isinstance(structured_names[0], dict) else str(structured_names[0])
             if name:
                 suggestions.append(f"I'm particularly interested in learning more about {name} and their family line.")
-        
+
         # Suggestions based on research questions
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
             suggestions.append(f"I'm currently researching {research_questions[0].lower()}.")
-        
+
         return " ".join(suggestions) if suggestions else "I'd love to learn more about your family history."
 
     def _format_research_questions(self, extracted_data: Dict[str, Any]) -> str:
@@ -566,14 +566,14 @@ class MessagePersonalizer:
         structured_names = extracted_data.get("structured_names", [])
         if not structured_names:
             return "your family history"
-        
+
         names = []
         for name_data in structured_names[:3]:
             if isinstance(name_data, dict):
                 full_name = name_data.get("full_name", "")
                 if full_name:
                     names.append(full_name)
-        
+
         if names:
             if len(names) == 1:
                 return names[0]
@@ -588,14 +588,14 @@ class MessagePersonalizer:
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
             return research_questions[0]
-        
+
         # Fallback to general context
         locations = extracted_data.get("locations", [])
         if locations and isinstance(locations[0], dict):
             place = locations[0].get("place", "")
             if place:
                 return f"family connections in {place}"
-        
+
         return "our shared family history"
 
     def _create_personalized_response(self, _extracted_data: Dict[str, Any]) -> str:
@@ -606,30 +606,30 @@ class MessagePersonalizer:
     def _create_research_insights(self, extracted_data: Dict[str, Any]) -> str:
         """Create research insights based on extracted data."""
         insights = []
-        
+
         # Insights from vital records
         vital_records = extracted_data.get("vital_records", [])
         if vital_records:
             insights.append("This information helps fill in some important gaps in our family timeline.")
-        
+
         # Insights from relationships
         relationships = extracted_data.get("relationships", [])
         if relationships:
             insights.append("The family relationships you mentioned help clarify some connections I've been researching.")
-        
+
         return " ".join(insights) if insights else "This information is very valuable for our family research."
 
     def _create_follow_up_questions(self, extracted_data: Dict[str, Any]) -> str:
         """Create follow-up questions for continued research."""
         questions = []
-        
+
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
             questions.append(f"Do you have any additional information about {research_questions[0].lower()}?")
-        
+
         if not questions:
             questions.append("Do you have any other family documents or stories that might help our research?")
-        
+
         return " ".join(questions)
 
     def _format_estimated_relationship(self, extracted_data: Dict[str, Any]) -> str:
@@ -1110,9 +1110,9 @@ class MessageEffectivenessTracker:
 def test_message_personalization():
     """Test the message personalization system."""
     logger.info("Testing message personalization system...")
-    
+
     personalizer = MessagePersonalizer()
-    
+
     # Test data
     test_extracted_data = {
         "structured_names": [
@@ -1126,7 +1126,7 @@ def test_message_personalization():
         ],
         "research_questions": ["finding John Smith's parents"]
     }
-    
+
     test_person_data = {"username": "TestUser"}
     test_base_data = {
         "name": "TestUser",
@@ -1135,7 +1135,7 @@ def test_message_personalization():
         "relationship_path": "Through John Smith (1850-1920)",
         "total_rows": "150"
     }
-    
+
     # Test message creation
     message, _functions_used = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",

@@ -12,67 +12,40 @@ Features:
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    setup_module,
-    register_function,
     get_function,
     is_function_available,
-    safe_execute,
+    setup_module,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
+# === THIRD-PARTY IMPORTS ===
+import json
 import os
-import platform
 import random
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-# === THIRD-PARTY IMPORTS ===
-import psutil
-import json
-import undetected_chromedriver as uc  # Anti-bot detection bypass
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import (
-    WebDriverException,
-    NoSuchElementException,
-    TimeoutException,
-    NoSuchWindowException,
-)
-from dotenv import load_dotenv
-from my_selectors import CONFIRMED_LOGGED_IN_SELECTOR
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.remote.webdriver import WebDriver
 from typing import Optional
-import subprocess
+
+import undetected_chromedriver as uc  # Anti-bot detection bypass
+from selenium.common.exceptions import (
+    NoSuchWindowException,
+    TimeoutException,
+    WebDriverException,
+)
+from selenium.webdriver.remote.webdriver import WebDriver
+
 from config import config_schema
 from logging_config import setup_logging
 
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
-    create_mock_data,
-    assert_valid_function,
 )
 
 # Logger and registration handled by setup_module above
@@ -599,7 +572,7 @@ def test_driver_initialization(headless=True):
             try:
                 driver.quit()
                 print("  WebDriver closed after error")
-            except:
+            except Exception:
                 pass
         # Note: Cannot restore original headless mode as config is immutable
         return False
@@ -762,7 +735,6 @@ def chromedriver_module_tests() -> bool:
     Chrome Driver Management module test suite.
     Tests Chrome driver setup, configuration, and process management.
     """
-    from test_framework import TestSuite
 
     suite = TestSuite("Chrome Driver Management", __name__)
     suite.start_suite()

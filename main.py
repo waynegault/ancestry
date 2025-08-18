@@ -44,6 +44,7 @@ from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
 from action11 import run_action11
 
+
 # Configuration validation
 def validate_action_config() -> bool:
     """
@@ -94,25 +95,24 @@ def validate_action_config() -> bool:
 
 # Core modules
 from config.config_manager import ConfigManager
+from core.session_manager import SessionManager
 from database import (
-    backup_database,
     Base,
-    db_transn,
-    MessageType,
-    Person,
     ConversationLog,
     DnaMatch,
     FamilyTree,
+    MessageType,
+    Person,
+    backup_database,
+    db_transn,
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
-from core.session_manager import SessionManager
 from utils import (
     log_in,
     login_status,
     nav_to_page,
 )
-
 
 # === PHASE 12: GEDCOM AI INTEGRATION ===
 try:
@@ -338,7 +338,7 @@ def ensure_gedcom_loaded_and_cached():
             if gedcom_data:
                 # Cache the loaded data
                 set_cached_gedcom_data(gedcom_data)
-                print(f"✅ GEDCOM file loaded and cached successfully!")
+                print("✅ GEDCOM file loaded and cached successfully!")
                 print(f"   📊 Individuals: {len(getattr(gedcom_data, 'indi_index', {}))}")
                 return True
             else:
@@ -528,15 +528,15 @@ def exec_actn(
         # Perform cleanup AFTER footer to prevent logs bleeding after completion
         if should_close and isinstance(session_manager, SessionManager):
             if session_manager.browser_needed and session_manager.driver_live:
-                logger.debug(f"Closing browser session...")
+                logger.debug("Closing browser session...")
                 # Close browser but keep DB connections for most actions
                 session_manager.close_browser()
-                logger.debug(f"Browser session closed. DB connections kept.")
+                logger.debug("Browser session closed. DB connections kept.")
             elif should_close and action_name in ["all_but_first_actn"]:
                 # For specific actions, close everything including DB
-                logger.debug(f"Closing all connections including database...")
+                logger.debug("Closing all connections including database...")
                 session_manager.close_sess(keep_db=False)
-                logger.debug(f"All connections closed.")
+                logger.debug("All connections closed.")
 
     return final_outcome
 
@@ -594,7 +594,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             person_to_keep = (
                 sess.query(Person.id, Person.username)
                 .filter(
-                    Person.profile_id == profile_id_to_keep, Person.deleted_at == None
+                    Person.profile_id == profile_id_to_keep, Person.deleted_at is None
                 )
                 .first()
             )
@@ -917,24 +917,24 @@ def reset_db_actn(session_manager: SessionManager, *_):
                     inspector = inspect(sess.get_bind())
                     existing_tables = inspector.get_table_names()
                     logger.debug(f"Found existing tables: {existing_tables}")
-                    
+
                     # Delete in reverse dependency order, but only if tables exist
                     if 'conversation_log' in existing_tables:
                         sess.query(ConversationLog).delete(synchronize_session=False)
                         logger.debug("Truncated conversation_log table")
-                    
+
                     if 'dna_match' in existing_tables:
                         sess.query(DnaMatch).delete(synchronize_session=False)
                         logger.debug("Truncated dna_match table")
-                    
+
                     if 'family_tree' in existing_tables:
                         sess.query(FamilyTree).delete(synchronize_session=False)
                         logger.debug("Truncated family_tree table")
-                    
+
                     if 'people' in existing_tables:
                         sess.query(Person).delete(synchronize_session=False)
                         logger.debug("Truncated people table")
-                    
+
                     # Clear message_types too for complete reset
                     if 'message_types' in existing_tables:
                         sess.query(MessageType).delete(synchronize_session=False)
@@ -1006,7 +1006,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
                 else:
                     logger.error("'messages.json' has incorrect format. Cannot seed.")
             else:
-                logger.warning(f"'messages.json' not found. Cannot seed MessageTypes.")
+                logger.warning("'messages.json' not found. Cannot seed MessageTypes.")
             # --- End Seeding ---
 
             reset_successful = True
@@ -1107,7 +1107,7 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
         gc.collect()
 
         shutil.copy2(backup_path, db_path)
-        logger.info(f"Db restored from backup OK.")
+        logger.info("Db restored from backup OK.")
         success = True
     except FileNotFoundError:
         logger.error(f"Backup not found during copy: {backup_path}")
@@ -1438,7 +1438,7 @@ def main():
                 # Bring console window to foreground
                 user32.SetForegroundWindow(console_window)
                 user32.ShowWindow(console_window, 9)  # SW_RESTORE
-            
+
             # Method 2: For VS Code integrated terminal, try to focus current window
             # Get the currently active window
             current_window = user32.GetForegroundWindow()
@@ -1446,21 +1446,21 @@ def main():
                 # This might be VS Code - try to ensure it stays focused
                 user32.SetForegroundWindow(current_window)
                 user32.BringWindowToTop(current_window)
-                
+
                 # Also try to send a focus message to ensure terminal panel is active
                 # This is a gentle nudge that shouldn't disrupt the user
                 user32.SetActiveWindow(current_window)
-                
+
             # Small delay to ensure focus operations complete
             time.sleep(0.05)
-            
+
     except Exception as focus_error:
         # Silently ignore focus errors but log for debugging if logger is available
         try:
             # Check if logger exists and is available (logging is already imported at top)
             if 'logger' in globals() and logger and hasattr(logger, 'debug'):
                 logger.debug(f"Terminal focus attempt failed (non-critical): {focus_error}")
-        except:
+        except Exception:
             pass  # Even logging failed, continue silently
 
     try:
@@ -1798,7 +1798,7 @@ def main():
                             break
                     if console_handler:
                         current_level = console_handler.level
-                        
+
                         # Cycle through DEBUG → INFO → WARNING
                         if current_level == logging.DEBUG:
                             new_level_name = "INFO"
@@ -1806,7 +1806,7 @@ def main():
                             new_level_name = "WARNING"
                         else:  # WARNING or other
                             new_level_name = "DEBUG"
-                        
+
                         # Re-call setup_logging to potentially update filters etc. too
                         logger = setup_logging(log_level=new_level_name)
                         logger.info(f"Console log level toggled to: {new_level_name}")
@@ -1901,14 +1901,14 @@ def run_gedcom_intelligence_analysis():
         # Show top gaps
         gaps = analysis_result.get("gaps_identified", [])
         if gaps:
-            print(f"\n🔍 TOP GAPS IDENTIFIED:")
+            print("\n🔍 TOP GAPS IDENTIFIED:")
             for i, gap in enumerate(gaps[:5], 1):
                 print(f"{i}. {gap.get('description', 'Unknown gap')} (Priority: {gap.get('priority', 'unknown')})")
 
         # Show top conflicts
         conflicts = analysis_result.get("conflicts_identified", [])
         if conflicts:
-            print(f"\n⚠️  TOP CONFLICTS FOUND:")
+            print("\n⚠️  TOP CONFLICTS FOUND:")
             for i, conflict in enumerate(conflicts[:3], 1):
                 print(f"{i}. {conflict.get('description', 'Unknown conflict')} (Severity: {conflict.get('severity', 'unknown')})")
 
@@ -1919,7 +1919,7 @@ def run_gedcom_intelligence_analysis():
             completeness = tree_completeness.get("completeness_percentage", 0)
             print(f"\n🌳 Tree Completeness: {completeness:.1f}%")
 
-        print(f"\n✅ Analysis completed successfully!")
+        print("\n✅ Analysis completed successfully!")
 
     except Exception as e:
         print(f"❌ Error during GEDCOM intelligence analysis: {e}")
@@ -2015,14 +2015,14 @@ def run_dna_gedcom_crossref():
         # Show top matches
         crossref_matches = analysis_result.get("cross_reference_matches", [])
         if crossref_matches:
-            print(f"\n🔗 TOP CROSS-REFERENCE MATCHES:")
+            print("\n🔗 TOP CROSS-REFERENCE MATCHES:")
             for i, match in enumerate(crossref_matches[:5], 1):
                 confidence = match.get('confidence_score', 0)
                 dna_name = match.get('dna_match_name', 'Unknown')
                 match_type = match.get('match_type', 'unknown')
                 print(f"{i}. {dna_name} - {match_type} (Confidence: {confidence:.1%})")
 
-        print(f"\n✅ Cross-reference analysis completed!")
+        print("\n✅ Cross-reference analysis completed!")
 
     except Exception as e:
         print(f"❌ Error during DNA-GEDCOM cross-reference: {e}")
@@ -2076,7 +2076,7 @@ def run_research_prioritization():
         # Show family line analysis
         family_lines = prioritization_result.get("family_line_analysis", [])
         if family_lines:
-            print(f"\n👨‍👩‍👧‍👦 FAMILY LINE ANALYSIS:")
+            print("\n👨‍👩‍👧‍👦 FAMILY LINE ANALYSIS:")
             for line in family_lines[:3]:
                 surname = line.get('surname', 'Unknown')
                 completeness = line.get('completeness_percentage', 0)
@@ -2086,7 +2086,7 @@ def run_research_prioritization():
         # Show location clusters
         clusters = prioritization_result.get("location_clusters", [])
         if clusters:
-            print(f"\n🌍 RESEARCH CLUSTERS:")
+            print("\n🌍 RESEARCH CLUSTERS:")
             for cluster in clusters[:3]:
                 location = cluster.get('location', 'Unknown')
                 people_count = cluster.get('people_count', 0)
@@ -2096,7 +2096,7 @@ def run_research_prioritization():
         # Show top priority tasks
         tasks = prioritization_result.get("prioritized_tasks", [])
         if tasks:
-            print(f"\n🔥 TOP PRIORITY RESEARCH TASKS:")
+            print("\n🔥 TOP PRIORITY RESEARCH TASKS:")
             for i, task in enumerate(tasks[:5], 1):
                 description = task.get('description', 'Unknown task')
                 priority_score = task.get('priority_score', 0)
@@ -2106,18 +2106,18 @@ def run_research_prioritization():
         # Show recommendations
         recommendations = prioritization_result.get("research_recommendations", [])
         if recommendations:
-            print(f"\n💡 AI RECOMMENDATIONS:")
+            print("\n💡 AI RECOMMENDATIONS:")
             for i, rec in enumerate(recommendations[:3], 1):
                 print(f"{i}. {rec}")
 
         # Show next steps
         next_steps = prioritization_result.get("next_steps", [])
         if next_steps:
-            print(f"\n🚀 IMMEDIATE NEXT STEPS:")
+            print("\n🚀 IMMEDIATE NEXT STEPS:")
             for i, step in enumerate(next_steps[:3], 1):
                 print(f"{i}. {step}")
 
-        print(f"\n✅ Research prioritization completed!")
+        print("\n✅ Research prioritization completed!")
 
     except Exception as e:
         print(f"❌ Error during research prioritization: {e}")
@@ -2201,7 +2201,7 @@ def run_comprehensive_gedcom_ai():
         # Show integrated insights
         insights = comprehensive_result.get("integrated_insights", {})
         if insights:
-            print(f"\n🧠 INTEGRATED AI INSIGHTS:")
+            print("\n🧠 INTEGRATED AI INSIGHTS:")
             tree_health = insights.get('tree_health_score', 0)
             print(f"🌳 Tree Health Score: {tree_health}/100")
 
@@ -2214,12 +2214,12 @@ def run_comprehensive_gedcom_ai():
         # Show actionable recommendations
         recommendations = comprehensive_result.get("actionable_recommendations", [])
         if recommendations:
-            print(f"\n💡 ACTIONABLE RECOMMENDATIONS:")
+            print("\n💡 ACTIONABLE RECOMMENDATIONS:")
             for i, rec in enumerate(recommendations[:5], 1):
                 print(f"{i}. {rec}")
 
-        print(f"\n✅ Comprehensive GEDCOM AI analysis completed!")
-        print(f"📄 Full analysis results available in system logs.")
+        print("\n✅ Comprehensive GEDCOM AI analysis completed!")
+        print("📄 Full analysis results available in system logs.")
 
     except Exception as e:
         print(f"❌ Error during comprehensive GEDCOM AI analysis: {e}")

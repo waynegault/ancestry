@@ -77,24 +77,11 @@ ERROR HANDLING:
 
 # --- Unified import system ---
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module, safe_execute
+from standard_imports import safe_execute, setup_module
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import base64
@@ -102,19 +89,16 @@ import getpass
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
+
+import keyring
 
 # === THIRD-PARTY IMPORTS ===
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import keyring
 
 # === LOCAL IMPORTS ===
 from test_framework import (
     TestSuite,
-    assert_valid_function,
-    create_mock_data,
     suppress_logging,
 )
 
@@ -506,7 +490,6 @@ def run_comprehensive_tests() -> bool:
     - No critical errors or unhandled exceptions
     - Test cleanup should remove all temporary files
     """
-    from test_framework import TestSuite, suppress_logging
 
     logger.info("🔧 Running SecurityManager comprehensive test suite...")
 
@@ -710,7 +693,7 @@ def run_comprehensive_tests() -> bool:
             if manager.credentials_file.exists():
                 # Check file permissions (on Unix-like systems)
                 file_stat = manager.credentials_file.stat()
-                file_mode = stat.filemode(file_stat.st_mode)
+                stat.filemode(file_stat.st_mode)
 
                 # File should be readable/writable by owner only
                 # This test is best-effort since Windows permissions work differently
@@ -956,8 +939,8 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    import sys
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(description="Security Manager CLI")
     parser.add_argument(
@@ -993,16 +976,16 @@ BASIC USAGE EXAMPLES:
 1. Simple Credential Storage:
    ```python
    from security_manager import SecurityManager
-   
+
    manager = SecurityManager("MyApplication")
-   
+
    # Store credentials
    creds = {
        "ANCESTRY_USERNAME": "user@example.com",
        "ANCESTRY_PASSWORD": "my_secure_password"
    }
    manager.encrypt_credentials(creds)
-   
+
    # Later retrieve credentials
    stored_creds = manager.decrypt_credentials()
    username = manager.get_credential("ANCESTRY_USERNAME")
@@ -1011,14 +994,14 @@ BASIC USAGE EXAMPLES:
 2. Multiple API Keys:
    ```python
    manager = SecurityManager("APIManager")
-   
+
    api_credentials = {
        "OPENAI_API_KEY": "sk-openai123...",
        "DEEPSEEK_API_KEY": "sk-deepseek456...",
        "GOOGLE_API_KEY": "AIza789..."
    }
    manager.encrypt_credentials(api_credentials)
-   
+
    # Retrieve specific API key
    openai_key = manager.get_credential("OPENAI_API_KEY")
    ```
@@ -1026,13 +1009,13 @@ BASIC USAGE EXAMPLES:
 3. Credential Validation:
    ```python
    manager = SecurityManager("ValidatedApp")
-   
+
    # Check if required credentials exist and are valid
    required_creds = {
        "ANCESTRY_USERNAME": "user@domain.com",
        "ANCESTRY_PASSWORD": "password123"
    }
-   
+
    if manager.validate_credentials(required_creds):
        print("Credentials are valid!")
        manager.encrypt_credentials(required_creds)
@@ -1043,7 +1026,7 @@ BASIC USAGE EXAMPLES:
 4. Error Handling:
    ```python
    manager = SecurityManager("RobustApp")
-   
+
    try:
        # Attempt to retrieve credentials
        creds = manager.decrypt_credentials()
@@ -1061,13 +1044,13 @@ BASIC USAGE EXAMPLES:
 5. Cleanup and Management:
    ```python
    manager = SecurityManager("TemporaryApp")
-   
+
    # Store temporary credentials
    temp_creds = {"TEMP_TOKEN": "abc123"}
    manager.encrypt_credentials(temp_creds)
-   
+
    # Use credentials...
-   
+
    # Clean up when done
    manager.delete_credentials()
    ```
@@ -1081,7 +1064,7 @@ INTEGRATION PATTERNS:
        def __init__(self):
            self.security_manager = SecurityManager("MyApp")
            self.credentials = self.security_manager.decrypt_credentials()
-       
+
        def get_ancestry_credentials(self):
            return {
                "username": self.security_manager.get_credential("ANCESTRY_USERNAME"),
@@ -1092,7 +1075,7 @@ INTEGRATION PATTERNS:
 2. Context Manager Pattern:
    ```python
    from contextlib import contextmanager
-   
+
    @contextmanager
    def secure_credentials(app_name):
        manager = SecurityManager(app_name)
@@ -1101,7 +1084,7 @@ INTEGRATION PATTERNS:
        finally:
            # Optional: cleanup on exit
            pass
-   
+
    # Usage:
    with secure_credentials("MyApp") as manager:
        creds = manager.decrypt_credentials()

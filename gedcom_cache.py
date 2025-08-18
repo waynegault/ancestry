@@ -10,55 +10,37 @@ and preloading for dramatically improved family tree processing performance.
 
 # Unified import system
 from standard_imports import (
-    setup_module,
-    safe_execute,
-    register_function,
     get_function,
     is_function_available,
+    setup_module,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
 import hashlib
 import os
-import pickle
 import sys
-import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Callable
+from typing import Any, Dict, Optional, Tuple
 
 # --- Local application imports ---
 from cache import (
-    cache,
-    cache_file_based_on_mtime,
-    warm_cache_with_data,
-    get_cache_stats,
-    CacheInterface,
     BaseCacheModule,
+    cache,
+    get_cache_stats,
     get_unified_cache_key,
     invalidate_related_caches,
+    warm_cache_with_data,
 )
 from config.config_manager import ConfigManager
-from logging_config import logger
+
+# from logging_config import logger  # Unused logger, rely on get_logger if needed
 
 # Initialize config
 config_manager = ConfigManager()
@@ -68,10 +50,6 @@ config_schema = config_manager.get_config()
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
-    patch,
 )
 
 # --- Global Variables ---
@@ -363,7 +341,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
 
             disk_cached = cache.get(disk_cache_key, default=ENOVAL, retry=True)
             if disk_cached is not ENOVAL:
-                logger.debug(f"GEDCOM data loaded from disk cache")
+                logger.debug("GEDCOM data loaded from disk cache")
                 # Store in memory cache for faster next access
                 _store_in_memory_cache(memory_key, disk_cached)
                 return disk_cached
@@ -404,7 +382,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
                         "data_processing_time": gedcom_data.data_processing_time,
                     }
                     cache.set(disk_cache_key, cache_data, expire=86400, retry=True)
-                    logger.debug(f"GEDCOM data cached (without reader) in disk cache")
+                    logger.debug("GEDCOM data cached (without reader) in disk cache")
             except Exception as e:
                 logger.debug(f"Error storing in disk cache: {e}")
 
@@ -516,7 +494,7 @@ def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
                                     obj_dict[attr] = attr_value
                             if obj_dict:  # Only store if we have serializable data
                                 serializable_indi_index[key] = obj_dict
-                    except:
+                    except Exception:
                         # Skip non-serializable objects
                         pass
 
@@ -961,7 +939,6 @@ def gedcom_cache_module_tests() -> bool:
     GEDCOM Cache Management & Optimization module test suite.
     Tests GEDCOM file caching, invalidation, and performance optimization.
     """
-    from test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite("GEDCOM Cache Management & Optimization", __name__)

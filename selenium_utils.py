@@ -6,39 +6,22 @@ and element interaction, separated from general or API-specific utilities.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module, safe_execute
+from standard_imports import safe_execute, setup_module
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import os
 import sys
 import time
-from typing import Optional, Dict
+from typing import Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import (
-    NoSuchElementException,
-    TimeoutException,
-    WebDriverException,
     InvalidSessionIdException,
-    NoSuchWindowException,
+    NoSuchElementException,
 )
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -46,7 +29,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
 # Local imports
-from config import config_schema
 
 # --- Selenium Specific Helpers ---
 
@@ -225,7 +207,7 @@ def selenium_module_tests():
         mock_driver = MagicMock()
         result = force_user_agent(mock_driver, "test-agent")
         mock_driver.execute_script.assert_called_once()
-        assert result == True, "force_user_agent should return True on success"
+        assert result, "force_user_agent should return True on success"
 
     tests.append(("Force User Agent", test_force_user_agent))
 
@@ -236,7 +218,7 @@ def selenium_module_tests():
             extract_attribute(None, "href") == ""
         ), "extract_attribute should handle None safely"
         assert (
-            is_elem_there(None, "selector") == False
+            not is_elem_there(None, "selector")
         ), "is_elem_there should handle None safely"
 
     tests.append(("Safe Execution", test_safe_execution))
@@ -266,9 +248,10 @@ def selenium_module_tests():
 
 def run_comprehensive_tests() -> bool:
     """Run comprehensive selenium utilities tests using standardized TestSuite framework."""
-    from test_framework import TestSuite, suppress_logging
-    from unittest.mock import MagicMock
     import time
+    from unittest.mock import MagicMock
+
+    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Selenium Utilities & Browser Automation", "selenium_utils.py")
     suite.start_suite()
@@ -327,7 +310,7 @@ def run_comprehensive_tests() -> bool:
         mock_driver = MagicMock()
         result = force_user_agent(mock_driver, "test-agent")
         mock_driver.execute_script.assert_called_once()
-        assert result == True, "force_user_agent should return True on success"
+        assert result, "force_user_agent should return True on success"
 
     def test_safe_text_extraction():
         # Test safe extraction with None elements
@@ -351,33 +334,33 @@ def run_comprehensive_tests() -> bool:
     def test_element_detection():
         # Test with None driver
         assert (
-            is_elem_there(None, "selector") == False
+            not is_elem_there(None, "selector")
         ), "is_elem_there should handle None driver safely"
 
         # Test with mock driver - element found
         mock_driver = MagicMock()
         mock_driver.find_element.return_value = MagicMock()
         result = is_elem_there(mock_driver, "test-selector")
-        assert result == True, "is_elem_there should return True when element found"
+        assert result, "is_elem_there should return True when element found"
 
         # Test with mock driver - element not found
         mock_driver.find_element.side_effect = NoSuchElementException()
         result = is_elem_there(mock_driver, "missing-selector")
         assert (
-            result == False
+            not result
         ), "is_elem_there should return False when element not found"
 
     def test_browser_status():
         # Test with None driver
         assert (
-            is_browser_open(None) == False
+            not is_browser_open(None)
         ), "is_browser_open should return False for None driver"
 
         # Test with valid mock driver
         mock_driver = MagicMock()
         mock_driver.current_url = "https://example.com"
         result = is_browser_open(mock_driver)
-        assert result == True, "is_browser_open should return True for valid driver"
+        assert result, "is_browser_open should return True for valid driver"
 
         # Test with invalid session - use spec-based mock with property descriptor
         from selenium.webdriver.chrome.webdriver import WebDriver
@@ -393,7 +376,7 @@ def run_comprehensive_tests() -> bool:
 
         result = is_browser_open(mock_invalid_driver)
         assert (
-            result == False
+            not result
         ), "is_browser_open should return False for invalid session"
 
     def test_tab_management():
@@ -432,14 +415,14 @@ def run_comprehensive_tests() -> bool:
     def test_safe_interaction():
         # Test safe_click with None element
         result = safe_click(None, None)
-        assert result == False, "safe_click should return False for None element"
+        assert not result, "safe_click should return False for None element"
 
         # Test with mock element
         mock_driver = MagicMock()
         mock_element = MagicMock()
         result = safe_click(mock_driver, mock_element)
         mock_element.click.assert_called_once()
-        assert result == True, "safe_click should return True on successful click"
+        assert result, "safe_click should return True on successful click"
 
     def test_element_text_helpers():
         # Test get_element_text with None
@@ -449,7 +432,7 @@ def run_comprehensive_tests() -> bool:
 
         # Test is_element_visible with None
         assert (
-            is_element_visible(None) == False
+            not is_element_visible(None)
         ), "is_element_visible should handle None safely"
 
         # Test with mock elements
@@ -461,7 +444,7 @@ def run_comprehensive_tests() -> bool:
             get_element_text(mock_element) == "test content"
         ), "get_element_text should return element text"
         assert (
-            is_element_visible(mock_element) == True
+            is_element_visible(mock_element)
         ), "is_element_visible should return visibility status"
 
     def test_performance_validation():

@@ -12,34 +12,18 @@ handling and rate limiting integration with SessionManager.
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -87,7 +71,7 @@ from config.config_manager import ConfigManager
 from core.session_manager import SessionManager
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import cached_api_call, get_system_cache_stats
+from core.system_cache import cached_api_call
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -95,13 +79,6 @@ config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
 # --- Test framework imports ---
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
-)
 
 # --- Constants and Prompts ---
 try:
@@ -509,7 +486,9 @@ def extract_genealogical_entities(
         try:
             # If experimentation utilities available, attempt variant selection
             try:
-                from ai_prompt_utils import get_prompt_with_experiment  # local import to avoid circular at module import
+                from ai_prompt_utils import (
+                    get_prompt_with_experiment,  # local import to avoid circular at module import
+                )
                 # Variants mapping (control vs alt). Additional variants can be added safely.
                 variants = {"control": "extraction_task", "alt": "extraction_task_alt"}
                 loaded_prompt = get_prompt_with_experiment("extraction_task", variants=variants, user_id=getattr(session_manager, "user_id", None))
@@ -557,8 +536,8 @@ def extract_genealogical_entities(
                 # Telemetry
                 try:  # pragma: no cover - instrumentation
                     from ai_prompt_utils import get_prompt_version
+                    from extraction_quality import compute_anomaly_summary, compute_extraction_quality
                     from prompt_telemetry import record_extraction_experiment_event
-                    from extraction_quality import compute_extraction_quality, compute_anomaly_summary
                     # Determine variant label heuristically (control vs alt)
                     variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
                     quality_score = compute_extraction_quality(parsed_json)
@@ -661,8 +640,8 @@ def extract_genealogical_entities(
 
                 try:  # Telemetry salvage event
                     from ai_prompt_utils import get_prompt_version
+                    from extraction_quality import compute_anomaly_summary, compute_extraction_quality
                     from prompt_telemetry import record_extraction_experiment_event
-                    from extraction_quality import compute_extraction_quality, compute_anomaly_summary
                     variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
                     quality_score = compute_extraction_quality(salvaged)
                     try:

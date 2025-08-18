@@ -10,12 +10,9 @@ Created: August 6, 2025
 Phase: 12.1 - Advanced GEDCOM Integration & Family Tree Intelligence
 """
 
-import json
-import logging
-from typing import Dict, List, Optional, Any, Tuple, Set
-from datetime import datetime
 from dataclasses import dataclass, field
-from pathlib import Path
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -27,7 +24,7 @@ logger = get_logger(__name__)
 @dataclass
 class GedcomGap:
     """Represents a gap or missing information in the family tree."""
-    
+
     person_id: str
     person_name: str
     gap_type: str  # 'missing_parent', 'missing_spouse', 'missing_child', 'missing_dates', 'missing_places'
@@ -40,7 +37,7 @@ class GedcomGap:
 @dataclass
 class GedcomConflict:
     """Represents a conflict or inconsistency in the family tree."""
-    
+
     conflict_id: str
     conflict_type: str  # 'date_conflict', 'location_conflict', 'relationship_conflict', 'duplicate_person'
     description: str
@@ -52,7 +49,7 @@ class GedcomConflict:
 @dataclass
 class ResearchOpportunity:
     """Represents a research opportunity identified from GEDCOM analysis."""
-    
+
     opportunity_id: str
     opportunity_type: str  # 'record_search', 'dna_analysis', 'location_research', 'timeline_analysis'
     description: str
@@ -73,14 +70,14 @@ class GedcomIntelligenceAnalyzer:
         self.gaps_identified: List[GedcomGap] = []
         self.conflicts_identified: List[GedcomConflict] = []
         self.opportunities_identified: List[ResearchOpportunity] = []
-        
+
     def analyze_gedcom_data(self, gedcom_data: Any) -> Dict[str, Any]:
         """
         Perform comprehensive AI-enhanced analysis of GEDCOM data.
-        
+
         Args:
             gedcom_data: GedcomData instance with loaded family tree
-            
+
         Returns:
             Dictionary containing analysis results with gaps, conflicts, and opportunities
         """
@@ -88,24 +85,24 @@ class GedcomIntelligenceAnalyzer:
             if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
                 logger.error("Invalid GEDCOM data provided for analysis")
                 return self._empty_analysis_result()
-            
+
             logger.info(f"Starting AI-enhanced GEDCOM analysis of {len(gedcom_data.indi_index)} individuals")
-            
+
             # Clear previous analysis
             self.gaps_identified.clear()
             self.conflicts_identified.clear()
             self.opportunities_identified.clear()
-            
+
             # Perform different types of analysis
             self._analyze_family_completeness(gedcom_data)
             self._analyze_date_consistency(gedcom_data)
             self._analyze_location_patterns(gedcom_data)
             self._analyze_relationship_conflicts(gedcom_data)
             self._identify_research_opportunities(gedcom_data)
-            
+
             # Generate AI-powered insights
             ai_insights = self._generate_ai_insights(gedcom_data)
-            
+
             analysis_result = {
                 "analysis_timestamp": datetime.now().isoformat(),
                 "individuals_analyzed": len(gedcom_data.indi_index),
@@ -115,10 +112,10 @@ class GedcomIntelligenceAnalyzer:
                 "ai_insights": ai_insights,
                 "summary": self._generate_analysis_summary()
             }
-            
+
             logger.info(f"GEDCOM analysis completed: {len(self.gaps_identified)} gaps, {len(self.conflicts_identified)} conflicts, {len(self.opportunities_identified)} opportunities")
             return analysis_result
-            
+
         except Exception as e:
             logger.error(f"Error during GEDCOM analysis: {e}")
             return self._empty_analysis_result()
@@ -126,11 +123,11 @@ class GedcomIntelligenceAnalyzer:
     def _analyze_family_completeness(self, gedcom_data: Any):
         """Analyze family completeness and identify missing family members."""
         logger.debug("Analyzing family completeness...")
-        
+
         for person_id, person_record in gedcom_data.indi_index.items():
             try:
                 person_name = self._extract_person_name(person_record)
-                
+
                 # Check for missing parents
                 if person_id not in gedcom_data.id_to_parents or not gedcom_data.id_to_parents[person_id]:
                     # Only flag as gap if person was born after 1800 (more likely to have records)
@@ -145,11 +142,11 @@ class GedcomIntelligenceAnalyzer:
                             research_suggestions=[
                                 f"Search birth records for {person_name} around {birth_year}",
                                 f"Look for census records showing {person_name} with parents",
-                                f"Check marriage records for parents' names"
+                                "Check marriage records for parents' names"
                             ]
                         )
                         self.gaps_identified.append(gap)
-                
+
                 # Check for missing vital dates
                 if not self._has_birth_date(person_record):
                     gap = GedcomGap(
@@ -160,12 +157,12 @@ class GedcomIntelligenceAnalyzer:
                         priority="medium",
                         research_suggestions=[
                             f"Search vital records for {person_name}",
-                            f"Check census records for age information",
-                            f"Look for baptism or christening records"
+                            "Check census records for age information",
+                            "Look for baptism or christening records"
                         ]
                     )
                     self.gaps_identified.append(gap)
-                
+
                 # Check for missing locations
                 if not self._has_birth_place(person_record):
                     gap = GedcomGap(
@@ -175,13 +172,13 @@ class GedcomIntelligenceAnalyzer:
                         description=f"Missing birth location for {person_name}",
                         priority="medium",
                         research_suggestions=[
-                            f"Research family migration patterns",
-                            f"Check marriage records for location clues",
-                            f"Look for obituaries mentioning birthplace"
+                            "Research family migration patterns",
+                            "Check marriage records for location clues",
+                            "Look for obituaries mentioning birthplace"
                         ]
                     )
                     self.gaps_identified.append(gap)
-                    
+
             except Exception as e:
                 logger.debug(f"Error analyzing person {person_id}: {e}")
                 continue
@@ -189,13 +186,13 @@ class GedcomIntelligenceAnalyzer:
     def _analyze_date_consistency(self, gedcom_data: Any):
         """Analyze date consistency and identify conflicts."""
         logger.debug("Analyzing date consistency...")
-        
+
         for person_id, person_record in gedcom_data.indi_index.items():
             try:
                 person_name = self._extract_person_name(person_record)
                 birth_year = self._extract_birth_year(person_record)
                 death_year = self._extract_death_year(person_record)
-                
+
                 # Check for impossible date ranges
                 if birth_year and death_year:
                     age_at_death = death_year - birth_year
@@ -227,7 +224,7 @@ class GedcomIntelligenceAnalyzer:
                             ]
                         )
                         self.conflicts_identified.append(conflict)
-                        
+
             except Exception as e:
                 logger.debug(f"Error analyzing dates for person {person_id}: {e}")
                 continue
@@ -235,22 +232,22 @@ class GedcomIntelligenceAnalyzer:
     def _analyze_location_patterns(self, gedcom_data: Any):
         """Analyze location patterns and identify inconsistencies."""
         logger.debug("Analyzing location patterns...")
-        
+
         # This would analyze migration patterns, impossible location combinations, etc.
         # For now, implementing basic location consistency checks
-        
+
         for person_id, person_record in gedcom_data.indi_index.items():
             try:
                 person_name = self._extract_person_name(person_record)
                 birth_place = self._extract_birth_place(person_record)
                 death_place = self._extract_death_place(person_record)
-                
+
                 # Check for location consistency (basic implementation)
                 if birth_place and death_place:
                     # Look for major geographic inconsistencies
                     birth_country = self._extract_country_from_place(birth_place)
                     death_country = self._extract_country_from_place(death_place)
-                    
+
                     if birth_country and death_country and birth_country != death_country:
                         # This could be migration, but worth noting as research opportunity
                         opportunity = ResearchOpportunity(
@@ -262,12 +259,12 @@ class GedcomIntelligenceAnalyzer:
                             priority="medium",
                             research_steps=[
                                 f"Search immigration records for {person_name}",
-                                f"Look for ship passenger lists",
+                                "Look for ship passenger lists",
                                 f"Check naturalization records in {death_country}"
                             ]
                         )
                         self.opportunities_identified.append(opportunity)
-                        
+
             except Exception as e:
                 logger.debug(f"Error analyzing locations for person {person_id}: {e}")
                 continue
@@ -275,21 +272,21 @@ class GedcomIntelligenceAnalyzer:
     def _analyze_relationship_conflicts(self, gedcom_data: Any):
         """Analyze family relationships for conflicts."""
         logger.debug("Analyzing relationship conflicts...")
-        
+
         # Check for relationship inconsistencies
         for person_id in gedcom_data.indi_index:
             try:
                 # Check parent-child age gaps
                 if person_id in gedcom_data.id_to_parents:
                     person_birth_year = self._extract_birth_year(gedcom_data.indi_index[person_id])
-                    
+
                     for parent_id in gedcom_data.id_to_parents[person_id]:
                         if parent_id in gedcom_data.indi_index:
                             parent_birth_year = self._extract_birth_year(gedcom_data.indi_index[parent_id])
-                            
+
                             if person_birth_year and parent_birth_year:
                                 age_gap = person_birth_year - parent_birth_year
-                                
+
                                 if age_gap < 12:  # Parent too young
                                     conflict = GedcomConflict(
                                         conflict_id=f"age_gap_{parent_id}_{person_id}",
@@ -318,7 +315,7 @@ class GedcomIntelligenceAnalyzer:
                                         ]
                                     )
                                     self.conflicts_identified.append(conflict)
-                                    
+
             except Exception as e:
                 logger.debug(f"Error analyzing relationships for person {person_id}: {e}")
                 continue
@@ -326,10 +323,10 @@ class GedcomIntelligenceAnalyzer:
     def _identify_research_opportunities(self, gedcom_data: Any):
         """Identify promising research opportunities."""
         logger.debug("Identifying research opportunities...")
-        
+
         # Look for clusters of people in same location/time that could be researched together
         location_clusters = self._find_location_clusters(gedcom_data)
-        
+
         for location, people_list in location_clusters.items():
             if len(people_list) >= 3:  # Cluster research opportunity
                 opportunity = ResearchOpportunity(
@@ -341,9 +338,9 @@ class GedcomIntelligenceAnalyzer:
                     priority="high",
                     research_steps=[
                         f"Research local records for {location}",
-                        f"Check church registers for the area",
-                        f"Look for land/property records",
-                        f"Search local newspapers and obituaries"
+                        "Check church registers for the area",
+                        "Look for land/property records",
+                        "Search local newspapers and obituaries"
                     ]
                 )
                 self.opportunities_identified.append(opportunity)
@@ -353,13 +350,13 @@ class GedcomIntelligenceAnalyzer:
         try:
             # This would integrate with the AI interface to generate insights
             # For now, providing structured analysis
-            
+
             total_people = len(gedcom_data.indi_index)
             people_with_parents = len([p for p in gedcom_data.id_to_parents if gedcom_data.id_to_parents[p]])
             people_with_children = len([p for p in gedcom_data.id_to_children if gedcom_data.id_to_children[p]])
-            
+
             completeness_score = (people_with_parents / total_people) * 100 if total_people > 0 else 0
-            
+
             insights = {
                 "tree_completeness": {
                     "total_individuals": total_people,
@@ -371,9 +368,9 @@ class GedcomIntelligenceAnalyzer:
                 "family_patterns": self._analyze_family_patterns(gedcom_data),
                 "recommendations": self._generate_ai_recommendations()
             }
-            
+
             return insights
-            
+
         except Exception as e:
             logger.error(f"Error generating AI insights: {e}")
             return {"error": "Failed to generate AI insights"}
@@ -381,20 +378,20 @@ class GedcomIntelligenceAnalyzer:
     def _generate_research_priorities(self) -> List[str]:
         """Generate prioritized research recommendations."""
         priorities = []
-        
+
         high_priority_gaps = [gap for gap in self.gaps_identified if gap.priority == "high"]
         critical_conflicts = [conflict for conflict in self.conflicts_identified if conflict.severity == "critical"]
-        
+
         if critical_conflicts:
             priorities.append(f"Resolve {len(critical_conflicts)} critical data conflicts")
-        
+
         if high_priority_gaps:
             priorities.append(f"Fill {len(high_priority_gaps)} high-priority information gaps")
-        
+
         high_priority_opportunities = [opp for opp in self.opportunities_identified if opp.priority == "high"]
         if high_priority_opportunities:
             priorities.append(f"Pursue {len(high_priority_opportunities)} high-value research opportunities")
-        
+
         return priorities[:5]  # Top 5 priorities
 
     def _analyze_family_patterns(self, gedcom_data: Any) -> Dict[str, Any]:
@@ -409,18 +406,18 @@ class GedcomIntelligenceAnalyzer:
     def _generate_ai_recommendations(self) -> List[str]:
         """Generate AI-powered recommendations for research."""
         recommendations = []
-        
+
         if len(self.gaps_identified) > len(self.conflicts_identified):
             recommendations.append("Focus on filling information gaps before resolving conflicts")
         else:
             recommendations.append("Prioritize resolving data conflicts to improve tree accuracy")
-        
+
         if len(self.opportunities_identified) > 5:
             recommendations.append("Consider cluster research approach for efficiency")
-        
+
         recommendations.append("Use DNA matches to verify uncertain relationships")
         recommendations.append("Focus on recent generations where records are more available")
-        
+
         return recommendations
 
     # Helper methods for data extraction and analysis
@@ -430,7 +427,7 @@ class GedcomIntelligenceAnalyzer:
             if hasattr(person_record, 'name') and person_record.name:
                 return str(person_record.name[0])
             return "Unknown Name"
-        except:
+        except Exception:
             return "Unknown Name"
 
     def _extract_birth_year(self, person_record) -> Optional[int]:
@@ -439,7 +436,7 @@ class GedcomIntelligenceAnalyzer:
             # This would need to be implemented based on the actual GEDCOM structure
             # For now, returning None as placeholder
             return None
-        except:
+        except Exception:
             return None
 
     def _extract_death_year(self, person_record) -> Optional[int]:
@@ -447,7 +444,7 @@ class GedcomIntelligenceAnalyzer:
         try:
             # This would need to be implemented based on the actual GEDCOM structure
             return None
-        except:
+        except Exception:
             return None
 
     def _extract_birth_place(self, person_record) -> Optional[str]:
@@ -455,7 +452,7 @@ class GedcomIntelligenceAnalyzer:
         try:
             # This would need to be implemented based on the actual GEDCOM structure
             return None
-        except:
+        except Exception:
             return None
 
     def _extract_death_place(self, person_record) -> Optional[str]:
@@ -463,7 +460,7 @@ class GedcomIntelligenceAnalyzer:
         try:
             # This would need to be implemented based on the actual GEDCOM structure
             return None
-        except:
+        except Exception:
             return None
 
     def _has_birth_date(self, person_record) -> bool:
@@ -478,7 +475,7 @@ class GedcomIntelligenceAnalyzer:
         """Extract country from place string."""
         if not place:
             return None
-        
+
         # Simple implementation - look for common country names at end of place string
         place_parts = place.split(',')
         if place_parts:
@@ -492,27 +489,27 @@ class GedcomIntelligenceAnalyzer:
     def _find_location_clusters(self, gedcom_data: Any) -> Dict[str, List[str]]:
         """Find clusters of people in same locations."""
         location_clusters = {}
-        
+
         for person_id, person_record in gedcom_data.indi_index.items():
             birth_place = self._extract_birth_place(person_record)
             if birth_place:
                 if birth_place not in location_clusters:
                     location_clusters[birth_place] = []
                 location_clusters[birth_place].append(person_id)
-        
+
         # Only return clusters with multiple people
         return {loc: people for loc, people in location_clusters.items() if len(people) > 1}
 
     def _find_common_surnames(self, gedcom_data: Any) -> List[str]:
         """Find most common surnames in the tree."""
         surname_counts = {}
-        
+
         for person_record in gedcom_data.indi_index.values():
             name = self._extract_person_name(person_record)
             if ' ' in name:
                 surname = name.split()[-1]
                 surname_counts[surname] = surname_counts.get(surname, 0) + 1
-        
+
         # Return top 5 surnames
         sorted_surnames = sorted(surname_counts.items(), key=lambda x: x[1], reverse=True)
         return [surname for surname, count in sorted_surnames[:5]]
@@ -591,23 +588,23 @@ class GedcomIntelligenceAnalyzer:
 def test_gedcom_intelligence():
     """Test the GEDCOM intelligence analyzer."""
     logger.info("Testing GEDCOM intelligence analyzer...")
-    
+
     analyzer = GedcomIntelligenceAnalyzer()
-    
+
     # Test with mock data
     mock_gedcom_data = type('MockGedcom', (), {
         'indi_index': {'I1': type('Person', (), {'name': ['John Smith']})()},
         'id_to_parents': {},
         'id_to_children': {}
     })()
-    
+
     result = analyzer.analyze_gedcom_data(mock_gedcom_data)
-    
+
     assert "analysis_timestamp" in result, "Result should include timestamp"
     assert "gaps_identified" in result, "Result should include gaps"
     assert "conflicts_identified" in result, "Result should include conflicts"
     assert "research_opportunities" in result, "Result should include opportunities"
-    
+
     logger.info("✅ GEDCOM intelligence analyzer test passed")
     return True
 

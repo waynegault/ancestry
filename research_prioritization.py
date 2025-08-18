@@ -11,12 +11,10 @@ Created: August 6, 2025
 Phase: 12.3 - Intelligent Research Prioritization
 """
 
-import json
-import logging
-from typing import Dict, List, Optional, Any, Tuple, Set
-from datetime import datetime
-from dataclasses import dataclass, field
 from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -28,7 +26,7 @@ logger = get_logger(__name__)
 @dataclass
 class ResearchPriority:
     """Represents a prioritized research task with scoring and context."""
-    
+
     priority_id: str
     task_type: str  # 'vital_records', 'census', 'immigration', 'dna_verification', 'conflict_resolution'
     description: str
@@ -45,7 +43,7 @@ class ResearchPriority:
 @dataclass
 class FamilyLineStatus:
     """Tracks completion status of family lines."""
-    
+
     line_id: str
     line_name: str
     surname: str
@@ -59,7 +57,7 @@ class FamilyLineStatus:
 @dataclass
 class LocationResearchCluster:
     """Represents a geographic research cluster for efficiency."""
-    
+
     cluster_id: str
     location: str
     time_period: str
@@ -80,7 +78,7 @@ class IntelligentResearchPrioritizer:
         self.research_priorities: List[ResearchPriority] = []
         self.family_line_status: List[FamilyLineStatus] = []
         self.location_clusters: List[LocationResearchCluster] = []
-        
+
     def prioritize_research_tasks(
         self,
         gedcom_analysis: Dict[str, Any],
@@ -89,38 +87,38 @@ class IntelligentResearchPrioritizer:
     ) -> Dict[str, Any]:
         """
         Generate intelligent research prioritization based on multiple data sources.
-        
+
         Args:
             gedcom_analysis: Results from GEDCOM intelligence analysis
             dna_crossref_analysis: Results from DNA-GEDCOM cross-reference
             existing_tasks: Optional existing research tasks to incorporate
-            
+
         Returns:
             Dictionary containing prioritized research plan
         """
         try:
             logger.info("Starting intelligent research prioritization")
-            
+
             # Clear previous analysis
             self.research_priorities.clear()
             self.family_line_status.clear()
             self.location_clusters.clear()
-            
+
             # Analyze family line completeness
             self._analyze_family_line_completeness(gedcom_analysis)
-            
+
             # Create location-based research clusters
             self._create_location_research_clusters(gedcom_analysis)
-            
+
             # Generate prioritized research tasks
             self._generate_priority_tasks_from_gaps(gedcom_analysis)
             self._generate_priority_tasks_from_conflicts(gedcom_analysis)
             self._generate_priority_tasks_from_dna(dna_crossref_analysis)
             self._generate_cluster_research_tasks()
-            
+
             # Score and rank all priorities
             self._score_and_rank_priorities()
-            
+
             # Generate research plan
             research_plan = {
                 "prioritization_timestamp": datetime.now().isoformat(),
@@ -132,10 +130,10 @@ class IntelligentResearchPrioritizer:
                 "efficiency_analysis": self._analyze_research_efficiency(),
                 "next_steps": self._generate_next_steps()
             }
-            
+
             logger.info(f"Research prioritization completed: {len(self.research_priorities)} priorities identified")
             return research_plan
-            
+
         except Exception as e:
             logger.error(f"Error during research prioritization: {e}")
             return self._empty_prioritization_result()
@@ -147,7 +145,7 @@ class IntelligentResearchPrioritizer:
             ai_insights = gedcom_analysis.get("ai_insights", {})
             family_patterns = ai_insights.get("family_patterns", {})
             common_surnames = family_patterns.get("common_surnames", [])
-            
+
             # Analyze each major surname line
             for i, surname in enumerate(common_surnames[:5]):  # Top 5 surnames
                 line_status = FamilyLineStatus(
@@ -160,9 +158,9 @@ class IntelligentResearchPrioritizer:
                     research_bottlenecks=self._identify_research_bottlenecks(surname, gedcom_analysis),
                     priority_research_targets=self._identify_priority_targets(surname, gedcom_analysis)
                 )
-                
+
                 self.family_line_status.append(line_status)
-                
+
         except Exception as e:
             logger.debug(f"Error analyzing family line completeness: {e}")
 
@@ -171,10 +169,10 @@ class IntelligentResearchPrioritizer:
         try:
             # Group research opportunities by location
             location_groups = defaultdict(list)
-            
+
             gaps = gedcom_analysis.get("gaps_identified", [])
             opportunities = gedcom_analysis.get("research_opportunities", [])
-            
+
             # Group gaps by location
             for gap in gaps:
                 if gap.get("gap_type") in ["missing_places", "missing_dates"]:
@@ -187,14 +185,14 @@ class IntelligentResearchPrioritizer:
                             "person_name": gap.get("person_name"),
                             "description": gap.get("description")
                         })
-            
+
             # Group opportunities by location
             for opportunity in opportunities:
                 if opportunity.get("opportunity_type") == "location_research":
                     location = self._extract_opportunity_location(opportunity)
                     if location:
                         location_groups[location].extend(opportunity.get("target_people", []))
-            
+
             # Create clusters for locations with multiple research targets
             for location, items in location_groups.items():
                 if len(items) >= 2:  # At least 2 research targets
@@ -208,19 +206,19 @@ class IntelligentResearchPrioritizer:
                         research_efficiency_score=self._calculate_cluster_efficiency(location, items),
                         cluster_research_plan=self._generate_cluster_research_plan(location, items)
                     )
-                    
+
                     self.location_clusters.append(cluster)
-                    
+
         except Exception as e:
             logger.debug(f"Error creating location research clusters: {e}")
 
     def _generate_priority_tasks_from_gaps(self, gedcom_analysis: Dict[str, Any]):
         """Generate priority tasks from identified gaps."""
         gaps = gedcom_analysis.get("gaps_identified", [])
-        
+
         for gap in gaps:
             priority_score = self._calculate_gap_priority_score(gap)
-            
+
             priority = ResearchPriority(
                 priority_id=f"gap_{gap.get('person_id', 'unknown')}",
                 task_type=self._map_gap_to_task_type(gap.get("gap_type", "")),
@@ -238,16 +236,16 @@ class IntelligentResearchPrioritizer:
                 estimated_effort=self._estimate_research_effort(gap),
                 success_probability=self._estimate_success_probability(gap)
             )
-            
+
             self.research_priorities.append(priority)
 
     def _generate_priority_tasks_from_conflicts(self, gedcom_analysis: Dict[str, Any]):
         """Generate priority tasks from identified conflicts."""
         conflicts = gedcom_analysis.get("conflicts_identified", [])
-        
+
         for conflict in conflicts:
             priority_score = self._calculate_conflict_priority_score(conflict)
-            
+
             priority = ResearchPriority(
                 priority_id=f"conflict_{conflict.get('conflict_id', 'unknown')}",
                 task_type="conflict_resolution",
@@ -265,19 +263,19 @@ class IntelligentResearchPrioritizer:
                 estimated_effort="medium",
                 success_probability=0.7
             )
-            
+
             self.research_priorities.append(priority)
 
     def _generate_priority_tasks_from_dna(self, dna_crossref_analysis: Dict[str, Any]):
         """Generate priority tasks from DNA cross-reference analysis."""
         if not dna_crossref_analysis:
             return
-            
+
         verification_opportunities = dna_crossref_analysis.get("verification_opportunities", [])
-        
+
         for opportunity in verification_opportunities:
             priority_score = 85.0 if opportunity.get("priority") == "high" else 65.0
-            
+
             priority = ResearchPriority(
                 priority_id=f"dna_{opportunity.get('opportunity_id', 'unknown')}",
                 task_type="dna_verification",
@@ -294,7 +292,7 @@ class IntelligentResearchPrioritizer:
                 estimated_effort="low",
                 success_probability=0.8
             )
-            
+
             self.research_priorities.append(priority)
 
     def _generate_cluster_research_tasks(self):
@@ -318,7 +316,7 @@ class IntelligentResearchPrioritizer:
                     estimated_effort="medium",
                     success_probability=0.75
                 )
-                
+
                 self.research_priorities.append(priority)
 
     def _score_and_rank_priorities(self):
@@ -505,17 +503,17 @@ class IntelligentResearchPrioritizer:
         # Base efficiency on number of people and available records
         people_count = len(items)
         base_score = min(1.0, people_count / 5.0)  # More people = higher efficiency
-        
+
         # Bonus for well-documented locations
         location_bonus = 0.2 if location in ["Scotland", "England", "Ireland"] else 0.0
-        
+
         return min(1.0, base_score + location_bonus)
 
     def _generate_cluster_research_plan(self, location: str, items: List[Dict[str, Any]]) -> List[str]:
         """Generate research plan for a location cluster."""
         return [
             f"Research {location} records for multiple family members",
-            f"Check local archives and repositories",
+            "Check local archives and repositories",
             f"Look for family connections in {location} records",
             f"Cross-reference multiple sources for {location}"
         ]
@@ -760,22 +758,22 @@ class IntelligentResearchPrioritizer:
     def _generate_research_recommendations(self) -> List[str]:
         """Generate overall research recommendations."""
         recommendations = []
-        
+
         if len(self.research_priorities) > 10:
             recommendations.append("Focus on top 5-10 highest priority tasks to avoid overwhelm")
-        
+
         high_priority_count = len([p for p in self.research_priorities if p.urgency in ["critical", "high"]])
         if high_priority_count > 0:
             recommendations.append(f"Address {high_priority_count} high-priority items first")
-        
+
         cluster_count = len(self.location_clusters)
         if cluster_count > 0:
             recommendations.append(f"Consider cluster research approach for {cluster_count} geographic areas")
-        
+
         dna_tasks = len([p for p in self.research_priorities if p.task_type == "dna_verification"])
         if dna_tasks > 0:
             recommendations.append(f"Prioritize {dna_tasks} DNA verification tasks for quick wins")
-        
+
         return recommendations
 
     def _analyze_research_efficiency(self) -> Dict[str, Any]:
@@ -783,7 +781,7 @@ class IntelligentResearchPrioritizer:
         total_tasks = len(self.research_priorities)
         low_effort_tasks = len([p for p in self.research_priorities if p.estimated_effort == "low"])
         high_success_tasks = len([p for p in self.research_priorities if p.success_probability > 0.7])
-        
+
         return {
             "total_tasks": total_tasks,
             "low_effort_tasks": low_effort_tasks,
@@ -796,16 +794,16 @@ class IntelligentResearchPrioritizer:
         """Generate immediate next steps."""
         if not self.research_priorities:
             return ["No research priorities identified"]
-        
+
         top_priority = self.research_priorities[0]
         next_steps = [
             f"Start with highest priority: {top_priority.description}",
             f"Focus on {top_priority.urgency} urgency tasks first"
         ]
-        
+
         if top_priority.research_steps:
             next_steps.append(f"First step: {top_priority.research_steps[0]}")
-        
+
         return next_steps
 
     def _empty_prioritization_result(self) -> Dict[str, Any]:
@@ -869,9 +867,9 @@ class IntelligentResearchPrioritizer:
 def test_research_prioritization():
     """Test the research prioritization system."""
     logger.info("Testing research prioritization system...")
-    
+
     prioritizer = IntelligentResearchPrioritizer()
-    
+
     # Test with mock data
     mock_gedcom_analysis = {
         "gaps_identified": [
@@ -892,7 +890,7 @@ def test_research_prioritization():
             }
         }
     }
-    
+
     mock_dna_analysis = {
         "verification_opportunities": [
             {
@@ -904,14 +902,14 @@ def test_research_prioritization():
             }
         ]
     }
-    
+
     result = prioritizer.prioritize_research_tasks(mock_gedcom_analysis, mock_dna_analysis)
-    
+
     assert "prioritization_timestamp" in result, "Result should include timestamp"
     assert "prioritized_tasks" in result, "Result should include prioritized tasks"
     assert "research_recommendations" in result, "Result should include recommendations"
     assert "next_steps" in result, "Result should include next steps"
-    
+
     logger.info("✅ Research prioritization test passed")
     return True
 
