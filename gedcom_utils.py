@@ -24,19 +24,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 
 
@@ -45,28 +32,25 @@ import logging
 import re
 import sys
 import time
-import traceback
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
-    List,
-    Optional,
-    Dict,
-    Tuple,
-    Set,
-    Union,
-    Any,
-    Callable,
-    TypeAlias,
     TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
     Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
 )
-from collections import deque
-from datetime import timezone, datetime
 
 # --- Third-party imports ---
 try:
+    from ged4py.model import Individual, Name, NameRec, Record
     from ged4py.parser import GedcomReader
-    from ged4py.model import Individual, Record, Name, NameRec
 except ImportError:
     GedcomReader = type(None)
     Individual = type(None)
@@ -89,7 +73,7 @@ except ImportError:
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
-from utils import format_name, ordinal_case
+from utils import format_name
 
 # === MODULE CONFIGURATION ===
 config_manager = ConfigManager()
@@ -127,7 +111,7 @@ TAG_SURN = "SURN"
 
 # --- Logging Setup ---
 # Use centralized logger from logging_config
-from logging_config import logger
+# from logging_config import logger  # Unused in this module's pure functions
 
 
 # ==============================================
@@ -1577,7 +1561,7 @@ def calculate_match_score(
                 birth_year_approx_match = (
                     abs(c_b_year_int - t_b_year_int) <= year_score_range
                 )
-        except:  # <<< Restored missing except
+        except Exception:
             pass  # Keep flags False if error occurs
 
     death_year_match = False
@@ -1591,7 +1575,7 @@ def calculate_match_score(
                 death_year_approx_match = (
                     abs(c_d_year_int - t_d_year_int) <= year_score_range
                 )
-        except:  # <<< Restored missing except
+        except Exception:
             pass  # Keep flags False
 
     death_dates_absent = bool(
@@ -1730,7 +1714,7 @@ def calculate_match_score(
     # Death Bonus Scoring - Apply when BOTH death info matched OR BOTH are absent (living person)
     death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
     both_death_info_absent = death_dates_absent and field_scores["dplace"] == 0  # No death date AND no death place
-    
+
     if death_info_matched or both_death_info_absent:
         # Try both old and new weight keys for compatibility
         death_bonus_points = weights.get("bonus_death_info", 0) or weights.get(
@@ -2352,8 +2336,6 @@ def gedcom_module_tests() -> bool:
     from test_framework import (
         TestSuite,
         suppress_logging,
-        create_mock_data,
-        assert_valid_function,
     )
 
     with suppress_logging():

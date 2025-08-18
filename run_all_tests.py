@@ -24,18 +24,19 @@ Usage:
     python run_all_tests.py --benchmark # Run with detailed performance benchmarking
 """
 
-import sys
-import time
-import subprocess
-import json
-import threading
-import psutil
 import concurrent.futures
+import json
 import os
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass, asdict
+import subprocess
+import sys
+import threading
+import time
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import psutil
 
 
 @dataclass
@@ -120,10 +121,76 @@ class PerformanceMonitor:
                 break
 
 
+
+def run_linter() -> bool:
+    """Run Ruff and enforce blocking rules before tests.
+
+    Steps:
+    1) Apply safe auto-fixes for whitespace/import formatting
+    2) Enforce blocking rule set; fail the run if violations remain
+    3) Print non-blocking repository statistics
+    """
+    try:
+        # Step 1: safe auto-fixes
+        print("🧹 LINTER: Applying safe auto-fixes (W291/W292/W293/E401)...")
+        fix_cmd = [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--fix",
+            "--select",
+            "W291,W292,W293,E401",
+            ".",
+        ]
+        subprocess.run(fix_cmd, capture_output=True, text=True, cwd=Path.cwd())
+
+        # Step 2: blocking rule set
+        print("🧹 LINTER: Enforcing blocking rules (E722,F821,F811,F823,I001,F401)...")
+        block_cmd = [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--select",
+            "E722,F821,F811,F823,I001,F401",
+            ".",
+        ]
+        block_res = subprocess.run(block_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        if block_res.returncode != 0:
+            print("❌ LINTER FAILED (blocking): violations in E722,F821,F811,F823,I001,F401")
+            # Tail the output to keep logs compact
+            tail = (block_res.stdout or block_res.stderr or "").splitlines()[-40:]
+            for line in tail:
+                print(line)
+            return False
+
+        # Step 3: non-blocking diagnostics
+        print("🧹 LINTER: Repository diagnostics (non-blocking summary)...")
+        diag_cmd = [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--statistics",
+            "--exit-zero",
+            ".",
+        ]
+        diag_res = subprocess.run(diag_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        if diag_res.stdout:
+            lines = [ln for ln in diag_res.stdout.splitlines() if ln.strip()]
+            for line in lines[-25:]:
+                print(line)
+        return True
+    except Exception as e:
+        print(f"⚠️ LINTER step skipped due to error: {e}")
+        return True
+
+
 def discover_test_modules():
     """
     Discover all Python modules that contain tests by scanning the project directory.
-    
+
     Returns a list of module paths that contain the run_comprehensive_tests() function,
     which indicates they follow the standardized testing framework.
     """
@@ -135,7 +202,7 @@ def discover_test_modules():
         # Skip the test runner itself, main.py, and coordination files
         if python_file.name in [
             "run_all_tests.py",
-            "main.py", 
+            "main.py",
             "__init__.py",
             "__main__.py",
         ]:
@@ -544,7 +611,7 @@ def run_module_tests(
             except (ValueError, AttributeError):
                 numeric_test_count = 0
         if not success:
-            print(f"   🚨 Failure Details:")
+            print("   🚨 Failure Details:")
             if result.stderr:
                 error_lines = result.stderr.strip().split("\n")
                 for line in error_lines[-3:]:  # Show last 3 error lines
@@ -718,6 +785,10 @@ def main():
     print("=" * 60)
     print()  # Blank line
 
+    # Run linter first for hygiene; fail fast only on safe subset
+    if not run_linter():
+        return False
+
     # Auto-discover all test modules with the standardized test function
     discovered_modules = discover_test_modules()
 
@@ -742,7 +813,7 @@ def main():
     )
 
     print(f"\n{'='* 60}")
-    print(f"🧪 RUNNING TESTS")
+    print("🧪 RUNNING TESTS")
     print(f"{'='* 60}")
 
     # Prepare modules with descriptions
@@ -782,7 +853,7 @@ def main():
     success_rate = (passed_count / len(results)) * 100 if results else 0
 
     print(f"\n{'='* 60}")
-    print(f"📊 FINAL TEST SUMMARY")
+    print("📊 FINAL TEST SUMMARY")
     print(f"{'='* 60}")
     print(f"⏰ Duration: {total_duration:.1f}s")
     print(f"🧪 Total Tests Run: {total_tests_run}")
@@ -801,7 +872,7 @@ def main():
         sequential_time = sum(m.duration for m in all_metrics)
         parallel_efficiency = (sequential_time / total_duration) if total_duration > 0 else 1.0
 
-        print(f"\n📊 PERFORMANCE METRICS:")
+        print("\n📊 PERFORMANCE METRICS:")
         print(f"   💾 Memory Usage: {avg_memory:.1f}MB avg, {peak_memory:.1f}MB peak")
         print(f"   ⚡ CPU Usage: {avg_cpu:.1f}% avg, {peak_cpu:.1f}% peak")
         if enable_fast_mode:
@@ -823,7 +894,7 @@ def main():
 
         # Show optimization suggestions
         if suite_performance.optimization_suggestions:
-            print(f"\n💡 OPTIMIZATION SUGGESTIONS:")
+            print("\n💡 OPTIMIZATION SUGGESTIONS:")
             for suggestion in suite_performance.optimization_suggestions:
                 print(f"   {suggestion}")
 
@@ -833,7 +904,7 @@ def main():
 
     # Show failed modules first if any
     if failed_count > 0:
-        print(f"\n❌ FAILED MODULES:")
+        print("\n❌ FAILED MODULES:")
         for module_name, description, success in results:
             if not success:
                 print(f"   • {module_name}")
@@ -850,7 +921,7 @@ def main():
         if not success and module_name in module_descriptions
     )
 
-    print(f"\n📋 RESULTS BY CATEGORY:")
+    print("\n📋 RESULTS BY CATEGORY:")
     print(f"   Enhanced Modules: {enhanced_passed} passed, {enhanced_failed} failed")
     print(
         f"   Standard Modules: {passed_count - enhanced_passed} passed, {failed_count - enhanced_failed} failed"

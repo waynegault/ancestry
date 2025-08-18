@@ -11,8 +11,8 @@ Extends the existing cache.py infrastructure rather than duplicating functionali
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,32 +24,22 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
 import threading
 import time
 import weakref
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
 from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
+    BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
-    cache_result,  # Existing cache decorator
+    get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
     warm_cache_with_data,  # Cache warming
-    get_cache_stats,  # Statistics
-    clear_cache,  # Cache clearing
-    BaseCacheModule,  # Base cache interface
 )
 
 # === SESSION CACHE CONFIGURATION ===
@@ -403,13 +393,14 @@ def warm_session_cache():
 # All tests handled by comprehensive TestSuite framework below
 
 # =============================================================================
-# COMPREHENSIVE TEST SUITE  
+# COMPREHENSIVE TEST SUITE
 # =============================================================================
     print("\n� Test 2: Session Manager Integration")
     try:
-        from core.session_manager import SessionManager
         import time
-        
+
+        from core.session_manager import SessionManager
+
         times = []
         for i in range(3):
             start = time.time()
@@ -417,41 +408,45 @@ def warm_session_cache():
             elapsed = time.time() - start
             times.append(elapsed)
             print(f"  Initialization {i+1}: {elapsed:.3f}s")
-        
+
         avg_time = sum(times) / len(times)
         success2 = avg_time < 1.0  # Should be under 1 second with caching
         print(f"  Average: {avg_time:.3f}s")
         print(f"Result: {'✅ PASS' if success2 else '❌ FAIL'} (Target: <1.0s)")
-        
+
     except Exception as e:
         print(f"  Error: {e}")
         success2 = False
         print("Result: ❌ FAIL")
-    
+
     # Test 3: Cache statistics
     print("\n📋 Test 3: Cache Health & Statistics")
     stats = get_session_cache_stats()
     health = _session_cache.get_health_status()
-    
+
     print(f"  Cache hit rate: {stats.get('hit_rate', 0):.1f}%")
     print(f"  Cache entries: {stats.get('entries', 0)}")
     print(f"  Health status: {health.get('health', 'unknown')}")
-    
+
     success3 = (
-        stats.get('hit_rate', 0) > 0 and 
+        stats.get('hit_rate', 0) > 0 and
         health.get('health') in ['good', 'excellent']
     )
     print(f"Result: {'✅ PASS' if success3 else '❌ FAIL'}")
-    
+
     # Overall results
-    print(f"\n🎯 Phase 5.1 Optimization Summary:")
-    print(f"=" * 60)
-    all_passed = success1 and success2 and success3
+    print("\n🎯 Phase 5.1 Optimization Summary:")
+    print("=" * 60)
+    # Use local booleans if available; fall back to derived checks to avoid NameError in lint
+    cache_ok = bool(stats.get('hit_rate', 0) > 0)
+    session_ok = bool(success2)
+    health_ok = bool(health.get('health') in ['good', 'excellent'])
+    all_passed = cache_ok and session_ok and health_ok
     print(f"Overall Result: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
-    print(f"Cache Performance: {'✅ OPTIMIZED' if success1 else '❌ NEEDS WORK'}")
-    print(f"Session Integration: {'✅ WORKING' if success2 else '❌ ISSUES'}")
-    print(f"Cache Health: {'✅ HEALTHY' if success3 else '❌ DEGRADED'}")
-    
+    print(f"Cache Performance: {'✅ OPTIMIZED' if cache_ok else '❌ NEEDS WORK'}")
+    print(f"Session Integration: {'✅ WORKING' if session_ok else '❌ ISSUES'}")
+    print(f"Cache Health: {'✅ HEALTHY' if health_ok else '❌ DEGRADED'}")
+
     # Performance target validation
     if success2:
         avg_time = sum(times) / len(times) if 'times' in locals() else 0
@@ -461,7 +456,7 @@ def warm_session_cache():
             print("🚀 GREAT: Sub-500ms session initialization!")
         else:
             print("✅ GOOD: Under 1s session initialization")
-    
+
     print(f"\nDetailed Cache Stats: {stats}")
 
 
@@ -472,128 +467,128 @@ def warm_session_cache():
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for core/session_cache.py.
-    
+
     Tests high-performance session state caching including component caching,
     session state management, and cache performance optimization.
-    
+
     Returns:
         bool: True if all tests pass, False otherwise
     """
     try:
         from test_framework import TestSuite
-        
+
         suite = TestSuite("Session Cache Comprehensive Tests", __name__)
         suite.start_suite()
-        
+
         def test_cache_infrastructure_integration():
             """Test integration with existing cache infrastructure"""
             try:
                 from cache import cache, get_unified_cache_key
-                
+
                 # Test cache availability
                 assert cache is not None
-                
+
                 # Test unified key generation
                 key = get_unified_cache_key("session", "test", "hash")
                 assert key is not None
                 assert "session" in str(key)
-                
+
                 # Test session cache instance
                 assert _session_cache is not None
                 assert hasattr(_session_cache, 'get_cached_component')
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_session_component_cache_functionality():
             """Test SessionComponentCache basic operations"""
             try:
                 # Test component caching
                 test_component = {"type": "test", "data": "test_data"}
                 success = _session_cache.cache_component("test_type", test_component)
-                assert success == True
-                
+                assert success
+
                 # Test component retrieval
                 retrieved = _session_cache.get_cached_component("test_type")
                 assert retrieved is not None
                 assert retrieved.get("type") == "test"
-                
+
                 # Test cache miss
                 missing = _session_cache.get_cached_component("nonexistent_type")
                 assert missing is None
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_config_hash_generation():
             """Test configuration hash generation"""
             try:
                 hash1 = _session_cache._get_config_hash()
                 assert hash1 is not None
                 assert len(hash1) > 0
-                
+
                 # Should be consistent
                 hash2 = _session_cache._get_config_hash()
                 assert hash1 == hash2
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_caching_decorators():
             """Test session component caching decorators"""
             try:
                 call_count = 0
-                
+
                 @cached_session_component("decorator_test")
                 def expensive_function():
                     nonlocal call_count
                     call_count += 1
                     return {"call_count": call_count}
-                
+
                 # First call
                 result1 = expensive_function()
                 assert result1.get("call_count") == 1
-                
+
                 # Second call should use cache (call_count should remain 1)
                 result2 = expensive_function()
                 # Note: Result may be cached or not depending on caching logic
                 assert result2 is not None
-                
+
                 # Test specific decorators exist
                 assert callable(cached_database_manager())
                 assert callable(cached_browser_manager())
                 assert callable(cached_api_manager())
                 assert callable(cached_session_validator())
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_optimized_session_state():
             """Test OptimizedSessionState functionality"""
             try:
                 state_manager = OptimizedSessionState()
-                
+
                 # Test session state caching
                 test_state = {"user_id": "test", "logged_in": True}
                 state_manager.cache_session_state("test_session", test_state)
-                
+
                 # Test state retrieval
                 retrieved_state = state_manager.get_cached_session_state("test_session")
                 assert retrieved_state is not None
                 assert retrieved_state.get("user_id") == "test"
-                
+
                 # Test cache miss
                 missing_state = state_manager.get_cached_session_state("nonexistent")
                 assert missing_state is None
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_cache_statistics_and_health():
             """Test cache statistics and health monitoring"""
             try:
@@ -601,103 +596,102 @@ def run_comprehensive_tests() -> bool:
                 stats = get_session_cache_stats()
                 assert stats is not None
                 assert isinstance(stats, dict)
-                
+
                 # Should have basic stats
                 assert "config_hash" in stats
                 assert "component_ttl" in stats
-                
+
                 # Test health status
                 health = _session_cache.get_health_status()
                 assert health is not None
                 assert "health" in health
                 assert health["health"] in ["good", "excellent", "critical", "error"]
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_cache_clearing_and_warming():
             """Test cache management operations"""
             try:
                 # Test cache warming
                 warm_result = warm_session_cache()
-                assert warm_result == True
-                
+                assert warm_result
+
                 # Test cache clearing
                 clear_result = clear_session_cache()
                 assert clear_result >= 0  # Should return number of cleared items
-                
+
                 # Test session cache clear method
                 success = _session_cache.clear()
-                assert success == True
-                
+                assert success
+
                 return True
             except Exception:
                 return False
-        
+
         def test_performance_optimization():
             """Test actual performance improvements"""
             try:
                 # Test that cached operations are faster
-                times = []
-                
+
                 @cached_session_component("performance_test")
                 def timed_operation():
                     import time
                     time.sleep(0.01)  # Small delay
                     return {"timestamp": time.time()}
-                
+
                 # First call (creation)
                 start = time.time()
-                result1 = timed_operation()
+                timed_operation()
                 first_time = time.time() - start
-                
+
                 # Second call (cached)
                 start = time.time()
-                result2 = timed_operation()
+                timed_operation()
                 second_time = time.time() - start
-                
+
                 # Cache should provide some improvement or at least not harm performance
                 assert first_time >= 0
                 assert second_time >= 0
-                
+
                 return True
             except Exception:
                 return False
-        
+
         def test_thread_safety():
             """Test thread-safe operations"""
             try:
                 import threading
-                
+
                 results = []
-                
+
                 def cache_operation():
                     try:
                         _session_cache.cache_component("thread_test", {"thread_id": threading.current_thread().ident})
                         retrieved = _session_cache.get_cached_component("thread_test")
                         results.append(retrieved is not None)
-                    except:
+                    except Exception:
                         results.append(False)
-                
+
                 # Run multiple threads
                 threads = []
                 for i in range(3):
                     t = threading.Thread(target=cache_operation)
                     threads.append(t)
                     t.start()
-                
+
                 for t in threads:
                     t.join()
-                
+
                 # Should have some successful operations
                 assert len(results) > 0
                 assert any(results)  # At least one should succeed
-                
+
                 return True
             except Exception:
                 return False
-        
+
         # Run all tests
         suite.run_test(
             "Cache Infrastructure Integration",
@@ -706,7 +700,7 @@ def run_comprehensive_tests() -> bool:
             "Integration ensures consistent caching behavior and performance optimization",
             "Test cache availability and unified key generation integration"
         )
-        
+
         suite.run_test(
             "Session Component Cache Operations",
             test_session_component_cache_functionality,
@@ -714,7 +708,7 @@ def run_comprehensive_tests() -> bool:
             "Component caching reduces session initialization overhead",
             "Test component caching, retrieval, and cache miss handling"
         )
-        
+
         suite.run_test(
             "Configuration Hash Generation",
             test_config_hash_generation,
@@ -722,7 +716,7 @@ def run_comprehensive_tests() -> bool:
             "Config hashing ensures cache invalidation when configuration changes",
             "Test config hash generation consistency and validity"
         )
-        
+
         suite.run_test(
             "Caching Decorators",
             test_caching_decorators,
@@ -730,7 +724,7 @@ def run_comprehensive_tests() -> bool:
             "Decorators enable easy caching of expensive session component creation",
             "Test session component decorators and specialized caching functions"
         )
-        
+
         suite.run_test(
             "Optimized Session State",
             test_optimized_session_state,
@@ -738,7 +732,7 @@ def run_comprehensive_tests() -> bool:
             "Session state caching reduces validation overhead",
             "Test session state caching and retrieval with TTL handling"
         )
-        
+
         suite.run_test(
             "Cache Statistics and Health",
             test_cache_statistics_and_health,
@@ -746,7 +740,7 @@ def run_comprehensive_tests() -> bool:
             "Statistics enable monitoring and optimization of cache performance",
             "Test cache statistics retrieval and health status reporting"
         )
-        
+
         suite.run_test(
             "Cache Management Operations",
             test_cache_clearing_and_warming,
@@ -754,7 +748,7 @@ def run_comprehensive_tests() -> bool:
             "Cache management ensures optimal performance and resource cleanup",
             "Test cache warming, clearing, and management functionality"
         )
-        
+
         suite.run_test(
             "Performance Optimization",
             test_performance_optimization,
@@ -762,7 +756,7 @@ def run_comprehensive_tests() -> bool:
             "Performance optimization reduces session initialization bottlenecks",
             "Test actual performance improvements from caching operations"
         )
-        
+
         suite.run_test(
             "Thread Safety",
             test_thread_safety,
@@ -770,28 +764,28 @@ def run_comprehensive_tests() -> bool:
             "Thread safety ensures reliable operation in concurrent environments",
             "Test concurrent cache operations and thread-safe access patterns"
         )
-        
+
         return suite.finish_suite()
-        
+
     except ImportError:
         print("Warning: TestSuite not available, running basic validation...")
-        
+
         # Basic fallback tests
         try:
             # Test basic functionality
             assert _session_cache is not None
-            
+
             test_component = {"test": True}
             _session_cache.cache_component("basic_test", test_component)
             retrieved = _session_cache.get_cached_component("basic_test")
             assert retrieved is not None
-            
+
             stats = get_session_cache_stats()
             assert stats is not None
-            
+
             health = _session_cache.get_health_status()
             assert health is not None
-            
+
             print("✅ Basic session_cache validation passed")
             return True
         except Exception as e:

@@ -10,13 +10,12 @@ Created: August 6, 2025
 Phase: 11.1 - Configuration Optimization & Adaptive Processing
 """
 
-import time
-import logging
-from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-from collections import deque
 import statistics
+import time
+from collections import deque
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -28,7 +27,7 @@ logger = get_logger(__name__)
 @dataclass
 class APIResponseMetrics:
     """Tracks API response metrics for adaptive rate limiting."""
-    
+
     timestamp: datetime
     success: bool
     response_time: float
@@ -39,7 +38,7 @@ class APIResponseMetrics:
 @dataclass
 class RateLimitingStats:
     """Statistics for rate limiting performance."""
-    
+
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
@@ -58,7 +57,7 @@ class AdaptiveRateLimiter:
     def __init__(
         self,
         initial_rps: float = 1.0,  # Increased from 0.5 - start more aggressively
-        min_rps: float = 0.2,  # Increased from 0.1 
+        min_rps: float = 0.2,  # Increased from 0.1
         max_rps: float = 4.0,  # Increased from 2.0 - log shows 3.0 worked flawlessly
         initial_delay: float = 1.0,  # Reduced from 2.0 - faster startup
         min_delay: float = 0.25,  # Reduced from 0.5 - allow higher speeds
@@ -69,7 +68,7 @@ class AdaptiveRateLimiter:
     ):
         """
         Initialize adaptive rate limiter.
-        
+
         Args:
             initial_rps: Starting requests per second
             min_rps: Minimum allowed RPS
@@ -85,26 +84,26 @@ class AdaptiveRateLimiter:
         self.min_rps = min_rps
         self.max_rps = max_rps
         self.current_rps = initial_rps
-        
+
         self.initial_delay = initial_delay
         self.min_delay = min_delay
         self.max_delay = max_delay
         self.current_delay = initial_delay
-        
+
         self.adaptation_window = adaptation_window
         self.success_threshold = success_threshold
         self.rate_limit_threshold = rate_limit_threshold
-        
+
         # Metrics tracking
         self.response_history: deque = deque(maxlen=adaptation_window)
         self.last_request_time: Optional[float] = None
         self.stats = RateLimitingStats()
-        
+
         # Adaptive behavior settings
         self.adaptation_enabled = True
         self.last_adaptation_time = time.time()
         self.adaptation_cooldown = 30.0  # Seconds between adaptations
-        
+
         # ⚡ OPTIMIZATION 2: Load cached optimal settings from previous sessions
         self._load_cached_optimal_settings()
 
@@ -112,7 +111,7 @@ class AdaptiveRateLimiter:
         self.ml_optimizer = MLBasedOptimizer()
         self.predictive_processor = PredictiveProcessor()
         self.system_health_monitor = SystemHealthMonitor()
-        
+
         logger.debug(f"Initialized adaptive rate limiter: {self.current_rps} RPS, {self.current_delay}s delay")
 
     def wait(self) -> float:
@@ -121,17 +120,17 @@ class AdaptiveRateLimiter:
         Returns the actual wait time.
         """
         current_time = time.time()
-        
+
         if self.last_request_time is not None:
             time_since_last = current_time - self.last_request_time
             required_delay = 1.0 / self.current_rps
-            
+
             if time_since_last < required_delay:
                 wait_time = required_delay - time_since_last
                 time.sleep(wait_time)
                 self.last_request_time = time.time()
                 return wait_time
-        
+
         self.last_request_time = current_time
         return 0.0
 
@@ -144,7 +143,7 @@ class AdaptiveRateLimiter:
     ):
         """
         Record an API response for adaptive rate limiting.
-        
+
         Args:
             success: Whether the request was successful
             response_time: Time taken for the request
@@ -159,9 +158,9 @@ class AdaptiveRateLimiter:
             status_code=status_code,
             error_type=error_type
         )
-        
+
         self.response_history.append(metrics)
-        
+
         # Update statistics
         self.stats.total_requests += 1
         if success:
@@ -170,13 +169,13 @@ class AdaptiveRateLimiter:
             self.stats.failed_requests += 1
             if status_code == 429 or "rate limit" in str(error_type).lower():
                 self.stats.rate_limit_errors += 1
-        
+
         # Calculate current stats
         if self.response_history:
             response_times = [m.response_time for m in self.response_history]
             self.stats.average_response_time = statistics.mean(response_times)
             self.stats.current_rps = self.current_rps
-        
+
         # Trigger adaptation if enabled and enough data
         if self.adaptation_enabled and len(self.response_history) >= 10:
             self._adapt_rate_limiting()
@@ -184,24 +183,24 @@ class AdaptiveRateLimiter:
     def _adapt_rate_limiting(self):
         """Adapt rate limiting based on recent response patterns."""
         current_time = time.time()
-        
+
         # Check adaptation cooldown
         if current_time - self.last_adaptation_time < self.adaptation_cooldown:
             return
-        
+
         # Calculate recent metrics
         recent_responses = list(self.response_history)[-20:]  # Last 20 responses
         if len(recent_responses) < 10:
             return
-        
+
         success_rate = sum(1 for r in recent_responses if r.success) / len(recent_responses)
-        rate_limit_rate = sum(1 for r in recent_responses 
+        rate_limit_rate = sum(1 for r in recent_responses
                              if r.status_code == 429 or "rate limit" in str(r.error_type).lower()) / len(recent_responses)
         avg_response_time = statistics.mean([r.response_time for r in recent_responses])
-        
+
         # Determine adaptation strategy
         adaptation_made = False
-        
+
         # Simple rate limiting response
         if rate_limit_rate > 0.02:  # More than 2% rate limiting
             new_rps = max(self.min_rps, self.current_rps * 0.5)
@@ -210,7 +209,7 @@ class AdaptiveRateLimiter:
                 self.current_rps = new_rps
                 self.current_delay = min(self.max_delay, self.current_delay * 2.0)
                 adaptation_made = True
-        
+
         # Increase RPS more aggressively if performance is excellent
         elif success_rate > 0.98 and avg_response_time < 1.0 and rate_limit_rate == 0:
             # Aggressive increase for excellent performance
@@ -229,7 +228,7 @@ class AdaptiveRateLimiter:
                 self.current_rps = new_rps
                 self.current_delay = max(self.min_delay, self.current_delay * 0.85)  # More aggressive decrease
                 adaptation_made = True
-        
+
         # Decrease RPS if success rate is low (more conservative threshold)
         elif success_rate < 0.9:  # Increased threshold from 0.8 to 0.9 for earlier intervention
             new_rps = max(self.min_rps, self.current_rps * 0.7)  # More aggressive reduction from 0.8 to 0.7
@@ -238,11 +237,11 @@ class AdaptiveRateLimiter:
                 self.current_rps = new_rps
                 self.current_delay = min(self.max_delay, self.current_delay * 1.5)  # Increased from 1.2 to 1.5
                 adaptation_made = True
-        
+
         if adaptation_made:
             self.stats.adaptive_adjustments += 1
             self.last_adaptation_time = current_time
-            
+
             # ⚡ OPTIMIZATION 2: Save optimal settings when performance is good
             if success_rate >= 0.95:  # Save settings when we have good performance
                 self._save_optimal_settings()
@@ -300,13 +299,13 @@ class AdaptiveRateLimiter:
         """Generate a performance report for the adaptive rate limiter."""
         if not self.response_history:
             return "No performance data available"
-        
+
         recent_responses = list(self.response_history)[-50:]
         success_rate = sum(1 for r in recent_responses if r.success) / len(recent_responses)
         avg_response_time = statistics.mean([r.response_time for r in recent_responses])
-        rate_limit_errors = sum(1 for r in recent_responses 
+        rate_limit_errors = sum(1 for r in recent_responses
                                if r.status_code == 429 or "rate limit" in str(r.error_type).lower())
-        
+
         report = f"""
 Adaptive Rate Limiter Performance Report:
 ==========================================
@@ -337,12 +336,12 @@ Overall Statistics:
         try:
             import json
             import os
-            
+
             cache_file = "Cache/adaptive_rate_cache.json"
             if os.path.exists(cache_file):
                 with open(cache_file, 'r') as f:
                     cached_settings = json.load(f)
-                
+
                 # Use cached optimal settings if they're reasonable
                 cached_rps = cached_settings.get('optimal_rps', self.initial_rps)
                 if self.min_rps <= cached_rps <= self.max_rps:
@@ -353,7 +352,7 @@ Overall Statistics:
                     logger.debug(f"⚡ Cached RPS {cached_rps:.2f} out of range, using defaults")
             else:
                 logger.debug("⚡ No rate limit cache found, using default settings")
-                
+
         except Exception as e:
             logger.debug(f"⚡ Error loading rate limit cache: {e}")
 
@@ -364,25 +363,25 @@ Overall Statistics:
         try:
             import json
             import os
-            
+
             # Only save if we have good performance metrics
             if len(self.response_history) >= 10:
                 success_rate = sum(1 for r in self.response_history if r.success) / len(self.response_history)
                 if success_rate >= 0.9:  # Only cache if 90%+ success rate
                     cache_dir = "Cache"
                     os.makedirs(cache_dir, exist_ok=True)
-                    
+
                     cache_data = {
                         'optimal_rps': self.current_rps,
                         'success_rate': success_rate,
                         'timestamp': time.time()
                     }
-                    
+
                     with open(f"{cache_dir}/adaptive_rate_cache.json", 'w') as f:
                         json.dump(cache_data, f)
-                    
+
                     logger.debug(f"⚡ Saved optimal RPS to cache: {self.current_rps:.2f} (success: {success_rate:.2%})")
-                    
+
         except Exception as e:
             logger.debug(f"⚡ Error saving rate limit cache: {e}")
 
@@ -401,7 +400,7 @@ class SmartBatchProcessor:
     ):
         """
         Initialize smart batch processor.
-        
+
         Args:
             initial_batch_size: Starting batch size
             min_batch_size: Minimum batch size
@@ -413,11 +412,11 @@ class SmartBatchProcessor:
         self.max_batch_size = max_batch_size
         self.current_batch_size = initial_batch_size
         self.target_processing_time = target_processing_time
-        
+
         self.processing_history: deque = deque(maxlen=20)
         self.last_adaptation_time = time.time()
         self.adaptation_cooldown = 60.0  # Seconds between batch size adaptations
-        
+
         logger.debug(f"Initialized smart batch processor: {initial_batch_size} batch size")
 
     def get_next_batch_size(self) -> int:
@@ -427,7 +426,7 @@ class SmartBatchProcessor:
     def record_batch_performance(self, batch_size: int, processing_time: float, success_rate: float):
         """
         Record batch processing performance.
-        
+
         Args:
             batch_size: Size of the processed batch
             processing_time: Time taken to process the batch
@@ -439,10 +438,10 @@ class SmartBatchProcessor:
             "success_rate": success_rate,
             "timestamp": time.time()
         })
-        
+
         # Adapt batch size if enough data and cooldown passed
         current_time = time.time()
-        if (len(self.processing_history) >= 3 and 
+        if (len(self.processing_history) >= 3 and
             current_time - self.last_adaptation_time > self.adaptation_cooldown):
             self._adapt_batch_size()
 
@@ -450,32 +449,32 @@ class SmartBatchProcessor:
         """Adapt batch size based on recent performance."""
         if len(self.processing_history) < 3:
             return
-        
+
         recent_batches = list(self.processing_history)[-5:]
         avg_processing_time = statistics.mean([b["processing_time"] for b in recent_batches])
         avg_success_rate = statistics.mean([b["success_rate"] for b in recent_batches])
-        
+
         adaptation_made = False
-        
+
         # Increase batch size if processing is fast and successful
-        if (avg_processing_time < self.target_processing_time * 0.7 and 
-            avg_success_rate > 0.95 and 
+        if (avg_processing_time < self.target_processing_time * 0.7 and
+            avg_success_rate > 0.95 and
             self.current_batch_size < self.max_batch_size):
-            
+
             new_batch_size = min(self.max_batch_size, self.current_batch_size + 2)
             logger.info(f"Increasing batch size: {self.current_batch_size} → {new_batch_size}")
             self.current_batch_size = new_batch_size
             adaptation_made = True
-        
+
         # Decrease batch size if processing is slow or unsuccessful
-        elif (avg_processing_time > self.target_processing_time * 1.3 or 
+        elif (avg_processing_time > self.target_processing_time * 1.3 or
               avg_success_rate < 0.8) and self.current_batch_size > self.min_batch_size:
-            
+
             new_batch_size = max(self.min_batch_size, self.current_batch_size - 1)
             logger.info(f"Decreasing batch size: {self.current_batch_size} → {new_batch_size}")
             self.current_batch_size = new_batch_size
             adaptation_made = True
-        
+
         if adaptation_made:
             self.last_adaptation_time = time.time()
 
@@ -483,7 +482,7 @@ class SmartBatchProcessor:
         """Get performance summary for batch processing."""
         if not self.processing_history:
             return {"status": "No data available"}
-        
+
         recent_batches = list(self.processing_history)
         return {
             "current_batch_size": self.current_batch_size,
@@ -696,26 +695,26 @@ class SystemHealthMonitor:
 def test_adaptive_rate_limiter():
     """Test the adaptive rate limiter system."""
     logger.info("Testing adaptive rate limiter system...")
-    
+
     limiter = AdaptiveRateLimiter(initial_rps=1.0, min_rps=0.5, max_rps=2.0)
-    
+
     # Test basic functionality
     wait_time = limiter.wait()
     assert wait_time >= 0, "Wait time should be non-negative"
-    
+
     # Test response recording
     limiter.record_response(success=True, response_time=0.5, status_code=200)
     limiter.record_response(success=False, response_time=2.0, status_code=429, error_type="rate limit")
-    
+
     stats = limiter.get_statistics()
     assert stats.total_requests == 2, "Should have recorded 2 requests"
     assert stats.rate_limit_errors == 1, "Should have recorded 1 rate limit error"
-    
+
     # Test settings retrieval
     settings = limiter.get_current_settings()
     assert "rps" in settings, "Settings should include RPS"
     assert "delay" in settings, "Settings should include delay"
-    
+
     logger.info("✅ Adaptive rate limiter test passed")
     return True
 
@@ -723,20 +722,20 @@ def test_adaptive_rate_limiter():
 def test_smart_batch_processor():
     """Test the smart batch processor system."""
     logger.info("Testing smart batch processor system...")
-    
+
     processor = SmartBatchProcessor(initial_batch_size=5, min_batch_size=1, max_batch_size=10)
-    
+
     # Test basic functionality
     batch_size = processor.get_next_batch_size()
     assert batch_size == 5, "Should return initial batch size"
-    
+
     # Test performance recording
     processor.record_batch_performance(batch_size=5, processing_time=10.0, success_rate=0.95)
-    
+
     summary = processor.get_performance_summary()
     assert "current_batch_size" in summary, "Summary should include current batch size"
     assert summary["batches_processed"] == 1, "Should have recorded 1 batch"
-    
+
     logger.info("✅ Smart batch processor test passed")
     return True
 
@@ -923,32 +922,32 @@ def test_configuration_optimizer():
 def test_regression_prevention_rate_limiter_caching():
     """
     🛡️ REGRESSION TEST: Rate limiter optimal settings caching.
-    
+
     This test verifies that Optimization 2 (rate limiter caching) is properly
     implemented. This prevents performance regressions where rate limiters
     had to learn optimal settings from scratch every session.
     """
     print("🛡️ Testing rate limiter caching optimization regression prevention:")
     results = []
-    
+
     try:
         # Test 1: Verify caching methods exist
         limiter = AdaptiveRateLimiter()
-        
+
         if hasattr(limiter, '_load_cached_optimal_settings'):
             print("   ✅ _load_cached_optimal_settings method exists")
             results.append(True)
         else:
             print("   ❌ _load_cached_optimal_settings method missing")
             results.append(False)
-            
+
         if hasattr(limiter, '_save_optimal_settings'):
-            print("   ✅ _save_optimal_settings method exists")  
+            print("   ✅ _save_optimal_settings method exists")
             results.append(True)
         else:
             print("   ❌ _save_optimal_settings method missing")
             results.append(False)
-            
+
         # Test 2: Verify initial RPS is reasonable (should be from cache or default)
         initial_rps = limiter.current_rps
         if 0.1 <= initial_rps <= 100.0:  # Reasonable bounds
@@ -957,58 +956,58 @@ def test_regression_prevention_rate_limiter_caching():
         else:
             print(f"   ❌ Initial RPS suspicious: {initial_rps}")
             results.append(False)
-            
+
         # Test 3: Test save/load cycle
         try:
             # Adjust RPS and save
             test_rps = 2.5
             limiter.current_rps = test_rps
             limiter._save_optimal_settings()
-            
+
             # Create new limiter (should load saved settings)
             limiter2 = AdaptiveRateLimiter()
-            
+
             print(f"   ✅ Save/load cycle test completed (RPS: {limiter.current_rps} -> {limiter2.current_rps})")
             results.append(True)
-            
+
         except Exception as cache_error:
             print(f"   ⚠️  Save/load cycle test failed: {cache_error}")
             results.append(False)
-            
+
         # Test 4: Verify cache file functionality (actual implementation check)
         try:
             # Check that the cache file path is accessible in the actual implementation
             import inspect
             source = inspect.getsource(limiter._load_cached_optimal_settings)
-            
+
             # Look for the cache file path in the actual code
             cache_path_found = "Cache/adaptive_rate_cache.json" in source
-            
+
             if cache_path_found:
-                print(f"   ✅ Cache file path correctly implemented in source code")
+                print("   ✅ Cache file path correctly implemented in source code")
                 results.append(True)
             else:
-                print(f"   ⚠️  Cache file path not found in expected location")
+                print("   ⚠️  Cache file path not found in expected location")
                 results.append(False)
-                
+
             # Test that Cache directory exists or can be created
             import os
             cache_dir = "Cache"
             if os.path.exists(cache_dir) or True:  # Directory can be created if needed
-                print(f"   ✅ Cache directory accessible for rate limiter cache")
+                print("   ✅ Cache directory accessible for rate limiter cache")
                 results.append(True)
             else:
-                print(f"   ⚠️  Cache directory not accessible")
+                print("   ⚠️  Cache directory not accessible")
                 results.append(False)
-                
+
         except Exception as cache_path_error:
             print(f"   ⚠️  Cache file path test failed: {cache_path_error}")
             results.append(False)
-            
+
     except Exception as e:
         print(f"   ❌ Rate limiter caching test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 Rate limiter caching optimization regression test passed!")

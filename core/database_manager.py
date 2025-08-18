@@ -8,8 +8,8 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,19 +21,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 logger = setup_module(globals(), __name__)
 
@@ -42,15 +29,14 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import asyncio
 import contextlib
-import logging
 import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Optional, Generator, Awaitable, AsyncGenerator, Dict, Any, List
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
 
 # === THIRD-PARTY IMPORTS ===
-from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect, text
+from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -782,8 +768,6 @@ def database_manager_module_tests() -> bool:
     from test_framework import (
         TestSuite,
         suppress_logging,
-        create_mock_data,
-        assert_valid_function,
     )
 
     with suppress_logging():
@@ -953,8 +937,8 @@ def test_transaction_isolation():
     db_manager = DatabaseManager(db_path=":memory:")
     try:
         # Test that multiple session contexts don't interfere
-        with db_manager.get_session_context() as session1:
-            with db_manager.get_session_context() as session2:
+        with db_manager.get_session_context():
+            with db_manager.get_session_context():
                 assert True, "Multiple session contexts should not interfere"
     except Exception:
         pass  # Transaction isolation testing might require specific setup

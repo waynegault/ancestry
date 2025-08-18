@@ -14,19 +14,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import atexit  # For saving cache on exit
@@ -34,7 +21,7 @@ import json
 import os
 import sys  # Used for sys.exit in main block
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 # --- Third-party imports ---
 import msal  # MSAL library for authentication
@@ -48,8 +35,7 @@ config_manager = ConfigManager()
 config = config_manager.get_config()
 
 # --- Test framework imports ---
-from test_framework import TestSuite, suppress_logging, MagicMock, patch
-
+from test_framework import MagicMock, TestSuite, patch, suppress_logging
 
 # --- Initial Setup ---
 # Step 1: Load environment variables from .env file
@@ -238,8 +224,8 @@ def acquire_token_device_flow() -> Optional[str]:
     print("=" * 40)
     print(f"1. Open a web browser to: {flow['verification_uri']}")
     print(f"2. Enter the code: {flow['user_code']}")
-    print(f"3. Sign in with your Microsoft account and grant permissions.")
-    print(f"   (Waiting for authentication in browser...)")
+    print("3. Sign in with your Microsoft account and grant permissions.")
+    print("   (Waiting for authentication in browser...)")
     print("=" * 40 + "\n")
     timeout_seconds = flow.get("expires_in", 900)  # Get timeout from response
     logger.info(
@@ -504,7 +490,6 @@ def test_core_functionality():
     ), "acquire_token_device_flow should be callable"
 
     # Test with mock MSAL client using test data
-    test_client_id = "test_client_12345"
     test_token_12345 = "test_token_12345"
     with patch("ms_graph_utils.msal.PublicClientApplication") as mock_msal:
         mock_app = MagicMock()

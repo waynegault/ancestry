@@ -10,11 +10,10 @@ and includes login/session verification logic closely tied to SessionManager.
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    setup_module,
-    register_function,
-    get_function,
-    is_function_available,
     auto_register_module,  # Needed for testing
+    get_function,
+    register_function,
+    setup_module,
 )
 
 # === MODULE SETUP ===
@@ -23,6 +22,7 @@ logger = setup_module(globals(), __name__)
 # === SESSION MANAGER IMPORT ===
 # Import SessionManager from core module - use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from core.session_manager import SessionManager
 else:
@@ -30,44 +30,31 @@ else:
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import asyncio  # For async/await patterns
+import base64  # For enhanced authentication headers
 import json
 import logging
 import re
-import sys
-import time
 import threading
-from typing import (
-    Optional,
-    Dict,
-    Any,
-    Union,
-    List,
-    Tuple,
-    Callable,
-    Type,
-    Generator,
-    IO,
-)  # Consolidated typing imports
-import asyncio  # For async/await patterns
-import base64  # For enhanced authentication headers
+import time
 import uuid  # For generating trace IDs and session IDs
+from typing import (
+    IO,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+)  # Consolidated typing imports
+
 
 # PHASE 1: Utility function to get configured concurrency across the codebase
 # PHASE 2 ENHANCEMENT: Adaptive concurrency with system load monitoring
@@ -85,6 +72,7 @@ def get_configured_concurrency(default: int = 8, workload_size: Optional[int] = 
         Optimized concurrency value based on system capabilities and workload
     """
     import os
+
     import psutil
 
     # Check environment variables first (highest priority)
@@ -106,7 +94,7 @@ def get_configured_concurrency(default: int = 8, workload_size: Optional[int] = 
     try:
         # Get system capabilities
         cpu_count = psutil.cpu_count(logical=True) or 4
-        memory_gb = psutil.virtual_memory().total / (1024**3)
+        psutil.virtual_memory().total / (1024**3)
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory_percent = psutil.virtual_memory().percent
 
@@ -163,29 +151,25 @@ def get_configured_concurrency(default: int = 8, workload_size: Optional[int] = 
     except Exception:
         # Fallback to default if adaptive calculation fails
         return default
-    
+
     # Try config schema as fallback
     try:
         from config import config_schema
         thread_pool_setting = getattr(getattr(config_schema, 'api', None), 'thread_pool_workers', None)
         if thread_pool_setting is not None:
             return max(1, thread_pool_setting)
-            
+
         concurrency_setting = getattr(getattr(config_schema, 'api', None), 'max_concurrency', None)
         if concurrency_setting is not None:
             return max(1, concurrency_setting)
     except Exception:
         pass
-    
+
     return max(1, default)
-import base64  # For make_ube
 import binascii  # For make_ube
 import contextlib  # Added import for contextlib
 import random  # For make_newrelic, retry_api, DynamicRateLimiter
-import sqlite3  # For SessionManager._initialize_db_engine_and_session (pragma exception)
-import time
-import uuid  # For make_ube, make_traceparent, make_tracestate
-from datetime import datetime, timezone
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -199,7 +183,6 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
     logger.warning("aiohttp not available - async API functions will be disabled")
 
-import cloudscraper
 import requests
 from requests import Response as RequestsResponse
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -238,16 +221,13 @@ CM_VALUE_PATTERN = re.compile(r'(\d+(?:\.\d+)?)\s*cM', re.IGNORECASE)
 # If essential ones fail, other parts of the code will raise errors.
 try:
     from requests import Response as RequestsResponse
-    from requests.adapters import HTTPAdapter
     from requests.cookies import RequestsCookieJar
-    from requests.exceptions import HTTPError, RequestException, JSONDecodeError
+    from requests.exceptions import HTTPError, JSONDecodeError, RequestException
     from selenium.common.exceptions import (
         ElementClickInterceptedException,
         ElementNotInteractableException,
-        InvalidSessionIdException,
         NoSuchCookieException,
         NoSuchElementException,
-        NoSuchWindowException,
         StaleElementReferenceException,
         TimeoutException,
         UnexpectedAlertPresentException,
@@ -258,27 +238,20 @@ try:
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.wait import WebDriverWait
-    from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
-    from sqlalchemy.exc import SQLAlchemyError
-    from sqlalchemy.orm import Session, sessionmaker
-    from urllib3.util.retry import Retry
 
     # --- Local application imports ---
     # Assume these are essential or handled elsewhere if missing
-    from chromedriver import init_webdvr
-    from config import config_manager, config_schema
+    # from chromedriver import init_webdvr  # noqa: F401 - not directly used in utils
+    from config import config_schema  # noqa: F401 - config_manager unused here
     from core_imports import get_logger
 
     # Initialize logger with standardized pattern
     logger = get_logger(__name__)
 
-    from database import Base  # Import Base for table creation
-    from my_selectors import *
-
+    from my_selectors import *  # noqa: F403 - Controlled star import for selector constants
     from selenium_utils import (
         is_browser_open,
         is_elem_there,
-        export_cookies,
     )
 
     # Do NOT import api_utils here at the top level
@@ -296,9 +269,6 @@ except ImportError as import_err:
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
 )
 
 # ------------------------------------------------------------------------------------
@@ -309,10 +279,10 @@ def fast_json_loads(json_str: str) -> Any:
     """
     Fast JSON loading with fallback to standard library.
     Uses orjson if available, otherwise standard json.
-    
+
     Args:
         json_str: JSON string to parse
-        
+
     Returns:
         Parsed JSON object
     """
@@ -327,12 +297,12 @@ def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool =
     """
     Fast JSON serialization with fallback to standard library.
     Uses orjson if available, otherwise standard json.
-    
+
     Args:
         obj: Object to serialize
         indent: Optional indentation for pretty printing
         ensure_ascii: Whether to escape non-ASCII characters
-        
+
     Returns:
         JSON string
     """
@@ -1018,7 +988,7 @@ class DynamicRateLimiter:
                 base_sleep = self.current_delay
                 sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-                # OPTIMIZATION: Reduce logging verbosity - only log significant delays  
+                # OPTIMIZATION: Reduce logging verbosity - only log significant delays
                 if sleep_duration > 2.0:  # Only log delays over 2 seconds
                     logger.debug(
                         f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
@@ -1358,21 +1328,21 @@ def _apply_rate_limiting(
         The wait time applied
     """
     import time
-    
+
     # OPTIMIZATION: Cache rate limit calculations to reduce per-request overhead
     cache_key = f"{api_description}_{attempt}"
     current_time = time.time()
-    
+
     # Initialize cache if it doesn't exist
     if not hasattr(session_manager, '_rate_limit_cache'):
         session_manager._rate_limit_cache = {}
         session_manager._rate_limit_cache_cleanup_time = current_time
-    
+
     # Check if we have a cached result within the last 0.5 seconds
     cache_entry = session_manager._rate_limit_cache.get(cache_key)
     if cache_entry and (current_time - cache_entry['timestamp']) < 0.5:
         return cache_entry['wait_time']
-    
+
     # Clean up old cache entries periodically
     if (current_time - session_manager._rate_limit_cache_cleanup_time) > 30:
         cutoff_time = current_time - 5  # Keep entries from last 5 seconds
@@ -1381,11 +1351,11 @@ def _apply_rate_limiting(
             if v['timestamp'] > cutoff_time
         }
         session_manager._rate_limit_cache_cleanup_time = current_time
-    
+
     # Use both rate limiters - take the maximum delay for safety
     dynamic_wait = session_manager.dynamic_rate_limiter.wait() if session_manager.dynamic_rate_limiter else 0
     adaptive_wait = 0.0
-    
+
     # Use adaptive rate limiter if available (with error handling for performance)
     if hasattr(session_manager, 'adaptive_rate_limiter') and session_manager.adaptive_rate_limiter:
         try:
@@ -1393,16 +1363,16 @@ def _apply_rate_limiting(
         except Exception:
             # Silently ignore adaptive rate limiter errors to improve performance
             adaptive_wait = 0.0
-    
+
     # Take the maximum wait time from both systems for safety
     wait_time = max(dynamic_wait, adaptive_wait)
-    
+
     # Cache the result
     session_manager._rate_limit_cache[cache_key] = {
         'wait_time': wait_time,
         'timestamp': current_time
     }
-    
+
     # OPTIMIZATION: Reduce rate limit logging verbosity - only log significant waits
     if wait_time > 2.0:  # Only log waits over 2 seconds (increased from 0.1s)
         logger.debug(
@@ -1411,7 +1381,7 @@ def _apply_rate_limiting(
     elif adaptive_wait > 0 and adaptive_wait < dynamic_wait and wait_time > 1.0:
         # Only log optimization when wait is significant (reduced log spam)
         logger.debug(f"⚡ Adaptive rate limiter optimizing: {adaptive_wait:.2f}s vs {dynamic_wait:.2f}s")
-    
+
     return wait_time
 
 # End of _apply_rate_limiting
@@ -1425,7 +1395,7 @@ def _record_adaptive_response(
 ) -> None:
     """
     Records an API response for adaptive rate limiting learning.
-    
+
     Args:
         session_manager: The session manager instance
         success: Whether the request was successful
@@ -1854,7 +1824,6 @@ def _process_api_response(
 
     # Get status code and reason
     status = response.status_code
-    reason = response.reason
 
     # Handle successful responses (2xx)
     if response.ok:
@@ -1946,7 +1915,6 @@ def _api_req(
     # End of if
 
     cfg = config_schema.api
-    sel_cfg = config_schema.selenium
 
     # --- Step 2: Get Retry Configuration ---
     max_retries = cfg.max_retries
@@ -2042,12 +2010,12 @@ def _api_req(
                         current_delay * (backoff_factor ** (attempt - 1)), max_delay
                     ) + random.uniform(0, 0.2)
                     sleep_time = max(0.1, sleep_time)
-                    
+
                     # Handle rate limiting feedback
                     if status == 429:  # Too Many Requests
                         if session_manager.dynamic_rate_limiter:
                             session_manager.dynamic_rate_limiter.increase_delay()
-                            
+
                         # Record rate limit error for adaptive learning
                         _record_adaptive_response(
                             session_manager=session_manager,
@@ -2187,7 +2155,7 @@ def _api_req(
                 # Update DynamicRateLimiter (existing system)
                 if session_manager.dynamic_rate_limiter:
                     session_manager.dynamic_rate_limiter.decrease_delay()  # Success, decrease future delay
-                
+
                 # Record success for adaptive learning
                 _record_adaptive_response(
                     session_manager=session_manager,
@@ -2427,7 +2395,7 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
     # End of if
     driver = session_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
-    page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)
+    WebDriverWait(driver, config_schema.selenium.page_load_timeout)
     short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
     try:
         print(
@@ -3509,7 +3477,7 @@ def nav_to_page(
 
     # Define common problematic URLs/selectors
     signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip("/")
-    mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")
+    urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")
     # Selectors for known 'unavailable' pages
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),  # type: ignore # Selector : (action, wait_seconds)
@@ -3886,14 +3854,9 @@ def main() -> None:
     Provides a clear PASS/FAIL summary for each test and an overall result.
     """
     # --- Standard library imports needed for main ---
-    import sys
-    import traceback
-    from textwrap import dedent
 
     # --- Local imports needed for main ---
     # Imports are assumed successful due to strict checks at top level
-    from logging_config import setup_logging
-    from config.config_manager import ConfigManager
 
     pass  # main function placeholder, test logic removed
 
@@ -4115,7 +4078,6 @@ def utils_module_tests() -> bool:
     Comprehensive test suite for utils.py with real functionality testing.
     Tests core utility functions, decorators, rate limiting, session management, and performance.
     """
-    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
         "Core Utilities & Session Management", "utils.py"
@@ -4526,7 +4488,7 @@ async def async_batch_api_requests(
     # PHASE 1: Use configured concurrency if not explicitly provided
     if max_concurrent is None:
         max_concurrent = get_configured_concurrency(default=10)
-    
+
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def bounded_request(request_data: Dict[str, Any], index: int) -> Tuple[int, Optional[Dict[str, Any]]]:
@@ -4787,7 +4749,7 @@ async def async_batch_file_operations(
     # PHASE 1: Use configured concurrency if not explicitly provided
     if max_concurrent is None:
         max_concurrent = get_configured_concurrency(default=10)
-    
+
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def bounded_operation(operation: Dict[str, Any], index: int) -> Tuple[int, bool]:

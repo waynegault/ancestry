@@ -9,11 +9,11 @@ ensuring safe testing environments with restricted recipient targeting.
 
 FAST TESTING MODE:
   For rapid development feedback, use mocked AI functions instead of real API calls:
-  
+
   PowerShell: $env:FAST_TEST="true"; python test_program_executor.py
-  Cmd:        set FAST_TEST=true && python test_program_executor.py  
+  Cmd:        set FAST_TEST=true && python test_program_executor.py
   Normal:     python test_program_executor.py
-  
+
   Performance: ~80s → ~0.1s (99.9% faster)
 """
 
@@ -22,18 +22,19 @@ from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
+import os
 import sys
 import time
-import os
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, Optional
+
 from sqlalchemy import text
 
 try:
     from core.session_manager import SessionManager  # Use core.SessionManager as primary
 except ImportError:
     from utils import SessionManager  # Fallback to utils.SessionManager if needed
-from database import Person, DnaMatch, FamilyTree, ConversationLog, MessageDirectionEnum
+from database import Person
 
 # === FAST TEST MODE: Mock AI functions for rapid development ===
 # Set FAST_TEST=true to use instant mock responses instead of real AI API calls
@@ -41,11 +42,11 @@ USE_MOCK_AI = os.environ.get('FAST_TEST', '').lower() in ('true', '1', 'yes')
 
 if USE_MOCK_AI:
     logger.info("🚀 Fast testing mode enabled - using mock AI functions")
-    
+
     def classify_message_intent(context_history: str, session_manager) -> Optional[str]:
         """Mock classify_message_intent for fast testing."""
         return 'general_inquiry'
-    
+
     def extract_genealogical_entities(context_history: str, session_manager) -> Optional[Dict[str, Any]]:
         """Mock extract_genealogical_entities for fast testing."""
         return {
@@ -58,12 +59,9 @@ if USE_MOCK_AI:
         }
 else:
     from ai_interface import classify_message_intent, extract_genealogical_entities
-from person_search import search_gedcom_persons
-from config import config_schema
-from pathlib import Path
-
-
 from typing import Any
+
+from person_search import search_gedcom_persons
 
 # === TEST FRAMEWORK IMPORTS ===
 try:  # Prefer the full framework when available
@@ -179,11 +177,11 @@ class SafeTestingProtocol:
             # DNA Match Inventory
             total_query = text(
                 """
-                SELECT 
+                SELECT
                     COUNT(*) as total_matches,
                     SUM(CASE WHEN in_my_tree = 1 THEN 1 ELSE 0 END) as in_tree_count,
                     SUM(CASE WHEN in_my_tree = 0 THEN 1 ELSE 0 END) as out_tree_count
-                FROM people 
+                FROM people
                 WHERE deleted_at IS NULL
             """
             )
@@ -205,9 +203,9 @@ class SafeTestingProtocol:
             # Status breakdown
             status_query = text(
                 """
-                SELECT status, COUNT(*) as count 
-                FROM people 
-                WHERE deleted_at IS NULL 
+                SELECT status, COUNT(*) as count
+                FROM people
+                WHERE deleted_at IS NULL
                 GROUP BY status
             """
             )
@@ -221,7 +219,7 @@ class SafeTestingProtocol:
             # Tree placement analysis
             tree_query = text(
                 """
-                SELECT 
+                SELECT
                     ft.actual_relationship,
                     COUNT(*) as match_count,
                     AVG(dm.cM_DNA) as avg_cm
@@ -252,7 +250,7 @@ class SafeTestingProtocol:
             # Communication history
             comm_query = text(
                 """
-                SELECT 
+                SELECT
                     COUNT(DISTINCT cl.conversation_id) as total_conversations,
                     COUNT(DISTINCT CASE WHEN cl.direction = 'OUT' THEN cl.conversation_id END) as outgoing_conversations,
                     COUNT(DISTINCT CASE WHEN cl.direction = 'IN' THEN cl.conversation_id END) as incoming_conversations,
@@ -332,13 +330,13 @@ class SafeTestingProtocol:
                 # OPTIMIZATION: Add timeout and graceful degradation for AI calls
                 classification = None
                 extracted_data = None
-                
+
                 try:
                     # Test AI classification with timeout
                     start_time = time.time()
                     classification = classify_message_intent(message, ai_session_manager)
                     ai_time = time.time() - start_time
-                    
+
                     # Skip extraction if classification takes too long (over 30s)
                     if ai_time > 30:
                         logger.warning(f"AI classification took {ai_time:.1f}s, skipping extraction for speed")
@@ -346,7 +344,7 @@ class SafeTestingProtocol:
                     else:
                         # Test data extraction
                         extracted_data = extract_genealogical_entities(message, ai_session_manager)
-                        
+
                 except Exception as ai_error:
                     logger.warning(f"AI processing error: {ai_error}")
                     classification = "TEST_ERROR"
@@ -492,7 +490,7 @@ class SafeTestingProtocol:
                 "approved_patterns": self.approved_patterns,
             }
 
-            logger.info(f"✅ Phase 4 completed: Safety validation successful")
+            logger.info("✅ Phase 4 completed: Safety validation successful")
             return results
 
         except Exception as e:

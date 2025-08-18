@@ -9,24 +9,24 @@ and predictive analytics for the Ancestry automation system.
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    setup_module,
     register_function,
+    setup_module,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import sys
-import time
-import threading
-import psutil
 import json
-import pickle
+import sys
+import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
 from enum import Enum
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import psutil
 
 # === LOCAL IMPORTS ===
 from test_framework import TestSuite
@@ -59,7 +59,7 @@ class HealthMetric:
     threshold_critical: float
     weight: float = 1.0
     timestamp: float = field(default_factory=time.time)
-    
+
     @property
     def status(self) -> HealthStatus:
         """Get health status based on thresholds."""
@@ -92,7 +92,7 @@ class SessionHealthMonitor:
     """
     Comprehensive session health monitoring with predictive analytics.
     """
-    
+
     def __init__(self):
         self.metrics_history: Dict[str, deque] = {}
         self.current_metrics: Dict[str, HealthMetric] = {}
@@ -102,7 +102,7 @@ class SessionHealthMonitor:
         self.last_health_check = time.time()
         self.monitoring_active = False
         self.lock = threading.Lock()
-        
+
         # Performance tracking
         self.api_response_times: deque = deque(maxlen=50)
         self.error_counts: Dict[str, int] = {}
@@ -130,16 +130,16 @@ class SessionHealthMonitor:
         self._enhanced_monitoring_active: bool = False
         self._enhanced_monitoring_reason: str = ""
         self._enhanced_monitoring_timestamp: float = 0.0
-        
+
         # Predictive analytics
         self.failure_patterns: List[Dict[str, Any]] = []
         self.success_patterns: List[Dict[str, Any]] = []
-        
+
         # Initialize metrics
         self._initialize_metrics()
-        
+
         logger.info("Session Health Monitor initialized")
-    
+
     def _initialize_metrics(self):
         """Initialize health metrics with workload-appropriate thresholds for 724-page processing."""
         metrics_config = {
@@ -152,7 +152,7 @@ class SessionHealthMonitor:
             "cpu_usage_percent": {"warning": 70.0, "critical": 90.0, "weight": 1.0},
             "disk_usage_percent": {"warning": 85.0, "critical": 95.0, "weight": 0.5},
         }
-        
+
         for name, config in metrics_config.items():
             self.current_metrics[name] = HealthMetric(
                 name=name,
@@ -162,7 +162,7 @@ class SessionHealthMonitor:
                 weight=config["weight"]
             )
             self.metrics_history[name] = deque(maxlen=100)
-    
+
     def update_metric(self, name: str, value: float):
         """Update a specific health metric."""
         with self.lock:
@@ -170,16 +170,16 @@ class SessionHealthMonitor:
                 self.current_metrics[name].value = value
                 self.current_metrics[name].timestamp = time.time()
                 self.metrics_history[name].append((time.time(), value))
-                
+
                 # Check for alerts
                 self._check_metric_alerts(name)
             else:
                 logger.warning(f"Unknown health metric: {name}")
-    
+
     def _check_metric_alerts(self, metric_name: str):
         """Check if a metric triggers any alerts."""
         metric = self.current_metrics[metric_name]
-        
+
         if metric.value >= metric.threshold_critical:
             self._create_alert(
                 AlertLevel.CRITICAL,
@@ -192,14 +192,14 @@ class SessionHealthMonitor:
         elif metric.value >= metric.threshold_warning:
             self._create_alert(
                 AlertLevel.WARNING,
-                "session_health", 
+                "session_health",
                 f"{metric_name} is elevated: {metric.value:.2f} >= {metric.threshold_warning}",
                 metric_name,
                 metric.value,
                 metric.threshold_warning
             )
-    
-    def _create_alert(self, level: AlertLevel, component: str, message: str, 
+
+    def _create_alert(self, level: AlertLevel, component: str, message: str,
                      metric_name: str, metric_value: float, threshold: float):
         """Create a new health alert."""
         alert = HealthAlert(
@@ -210,9 +210,9 @@ class SessionHealthMonitor:
             metric_value=metric_value,
             threshold=threshold
         )
-        
+
         self.alerts.append(alert)
-        
+
         # Log alert based on level - Check if this is a test alert
         is_test_alert = "test_emergency_error" in str(metric_name) or metric_value > 100.0
         test_prefix = "🧪 [SAFETY TEST] " if is_test_alert else ""
@@ -223,18 +223,18 @@ class SessionHealthMonitor:
             logger.warning(f"{test_prefix}⚠️ WARNING: {message}")
         else:
             logger.info(f"{test_prefix}ℹ️ INFO: {message}")
-    
+
     def calculate_health_score(self) -> float:
         """
         Calculate overall health score (0-100) based on all metrics.
-        
+
         Returns:
             Health score from 0 (critical) to 100 (excellent)
         """
         with self.lock:
             total_score = 100.0
             total_weight = 0.0
-            
+
             for metric in self.current_metrics.values():
                 # Calculate metric score (0-100)
                 if metric.value <= metric.threshold_warning * 0.5:
@@ -247,26 +247,26 @@ class SessionHealthMonitor:
                     metric_score = 30.0   # Poor
                 else:
                     metric_score = 0.0    # Critical
-                
+
                 # Apply weighted average
                 total_score += metric_score * metric.weight
                 total_weight += metric.weight
-            
+
             # Calculate final weighted score
             if total_weight > 0:
                 final_score = total_score / total_weight
             else:
                 final_score = 0.0
-            
+
             # Store in history
             self.health_score_history.append((time.time(), final_score))
-            
+
             return max(0.0, min(100.0, final_score))
-    
+
     def get_health_status(self) -> HealthStatus:
         """Get overall health status based on current score."""
         score = self.calculate_health_score()
-        
+
         if score >= 80:
             return HealthStatus.EXCELLENT
         elif score >= 60:
@@ -277,7 +277,7 @@ class SessionHealthMonitor:
             return HealthStatus.POOR
         else:
             return HealthStatus.CRITICAL
-    
+
     def predict_session_death_risk(self) -> float:
         """
         Enhanced prediction of session death likelihood in next 10 pages (0.0-1.0).
@@ -327,13 +327,13 @@ class SessionHealthMonitor:
                 risk_score += 0.05  # Each warning metric adds some risk
 
         return min(1.0, risk_score)
-    
+
     def get_recommended_actions(self) -> List[str]:
         """Get recommended actions based on current health status."""
         actions = []
         health_score = self.calculate_health_score()
         risk_score = self.predict_session_death_risk()
-        
+
         if risk_score > 0.8:
             actions.append("🚨 EMERGENCY: Trigger immediate session refresh")
             actions.append("🔄 Restart browser immediately")
@@ -351,18 +351,18 @@ class SessionHealthMonitor:
             actions.append("🧹 Consider garbage collection")
         else:
             actions.append("✅ System healthy - continue current operations")
-        
+
         return actions
-    
+
     def record_api_response_time(self, response_time: float):
         """Record API response time for monitoring."""
         self.api_response_times.append(response_time)
-        
+
         # Update metric
         if len(self.api_response_times) >= 5:
             avg_response_time = sum(list(self.api_response_times)[-5:]) / 5
             self.update_metric("api_response_time", avg_response_time)
-    
+
     def record_error(self, error_type: str):
         """Record an error for monitoring with enhanced rate tracking."""
         current_time = time.time()
@@ -512,7 +512,7 @@ class SessionHealthMonitor:
         try:
             logger.critical(f"🚨 EMERGENCY INTERVENTION TRIGGERED: {pattern_type}")
             logger.critical(f"   Pattern: {error_count} errors in {window}")
-            logger.critical(f"   Action: Setting emergency halt flag")
+            logger.critical("   Action: Setting emergency halt flag")
 
             # Set emergency halt flag that can be checked by main processing loops
             self._emergency_halt_requested = True
@@ -541,7 +541,7 @@ class SessionHealthMonitor:
         try:
             logger.critical(f"⚠️ IMMEDIATE INTERVENTION TRIGGERED: {pattern_type}")
             logger.critical(f"   Pattern: {error_count} errors in {window}")
-            logger.critical(f"   Action: Setting immediate halt flag and triggering recovery")
+            logger.critical("   Action: Setting immediate halt flag and triggering recovery")
 
             # Set immediate intervention flag
             self._immediate_intervention_requested = True
@@ -570,7 +570,7 @@ class SessionHealthMonitor:
         try:
             logger.warning(f"📊 ENHANCED MONITORING TRIGGERED: {pattern_type}")
             logger.warning(f"   Pattern: {error_count} errors in {window}")
-            logger.warning(f"   Action: Increasing monitoring frequency")
+            logger.warning("   Action: Increasing monitoring frequency")
 
             # Set enhanced monitoring flag
             self._enhanced_monitoring_active = True
@@ -766,7 +766,7 @@ class SessionHealthMonitor:
     def record_page_processing_time(self, processing_time: float):
         """Record page processing time."""
         self.page_processing_times.append(processing_time)
-    
+
     def update_system_metrics(self):
         """Update system-level metrics (CPU, memory, etc.)."""
         try:
@@ -775,18 +775,18 @@ class SessionHealthMonitor:
             memory_mb = process.memory_info().rss / 1024 / 1024
             self.memory_usage_history.append(memory_mb)
             self.update_metric("memory_usage_mb", memory_mb)
-            
+
             # CPU usage
             cpu_percent = psutil.cpu_percent(interval=0.1)
             self.update_metric("cpu_usage_percent", cpu_percent)
-            
+
             # Disk usage
             disk_usage = psutil.disk_usage('/').percent
             self.update_metric("disk_usage_percent", disk_usage)
-            
+
         except Exception as e:
             logger.warning(f"Error updating system metrics: {e}")
-    
+
     def update_session_metrics(self, session_manager=None):
         """Update session-specific metrics with enhanced error handling."""
         try:
@@ -829,13 +829,13 @@ class SessionHealthMonitor:
 
         except Exception as e:
             logger.warning(f"Error updating session metrics: {e}")
-    
+
     def get_health_dashboard(self) -> Dict[str, Any]:
         """Get comprehensive health dashboard data."""
         health_score = self.calculate_health_score()
         health_status = self.get_health_status()
         risk_score = self.predict_session_death_risk()
-        
+
         return {
             "timestamp": time.time(),
             "health_score": health_score,
@@ -864,7 +864,7 @@ class SessionHealthMonitor:
                 "current_memory_mb": self.memory_usage_history[-1] if self.memory_usage_history else 0
             }
         }
-    
+
     def _get_risk_level(self, risk_score: float) -> str:
         """Convert risk score to human-readable level."""
         if risk_score > 0.8:
@@ -877,18 +877,18 @@ class SessionHealthMonitor:
             return "CAUTION"
         else:
             return "SAFE"
-    
+
     def log_health_summary(self):
         """Log a comprehensive health summary."""
         dashboard = self.get_health_dashboard()
-        
-        logger.info(f"📊 HEALTH SUMMARY:")
+
+        logger.info("📊 HEALTH SUMMARY:")
         logger.info(f"   Score: {dashboard['health_score']:.1f}/100 ({dashboard['health_status'].upper()})")
         logger.info(f"   Risk: {dashboard['risk_score']:.2f} ({dashboard['risk_level']})")
         logger.info(f"   API: {dashboard['performance_summary']['avg_api_response_time']:.1f}s avg")
         logger.info(f"   Memory: {dashboard['performance_summary']['current_memory_mb']:.1f}MB")
         logger.info(f"   Errors: {dashboard['performance_summary']['total_errors']}")
-        
+
         if dashboard['recommended_actions']:
             logger.info(f"   Actions: {dashboard['recommended_actions'][0]}")
 
@@ -1548,8 +1548,8 @@ def health_monitor_tests() -> bool:
 
         # Check required fields
         required_fields = ["health_score", "health_status", "risk_score", "metrics", "recommended_actions"]
-        for field in required_fields:
-            assert field in dashboard, f"Dashboard missing required field: {field}"
+        for req_field in required_fields:
+            assert req_field in dashboard, f"Dashboard missing required field: {req_field}"
 
         # Check data types
         assert isinstance(dashboard["health_score"], (int, float))
@@ -1729,7 +1729,7 @@ def health_monitor_tests() -> bool:
         # Test checkpoint restoration
         new_monitor = SessionHealthMonitor()
         success = new_monitor.restore_from_checkpoint(checkpoint_path)
-        assert success == True, "Should restore checkpoint successfully"
+        assert success, "Should restore checkpoint successfully"
 
         # Verify restored data
         assert "error_rate" in new_monitor.current_metrics, "Should restore metrics"

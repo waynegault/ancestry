@@ -8,8 +8,8 @@ application with proper logging, recovery strategies, and user-friendly messages
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,12 +22,12 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
+import time
 import traceback
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, Optional, Type, Union, Callable, List
 from functools import wraps
-import time
+from typing import Any, Callable, Dict, List, Optional, Type
 
 
 # Simple CircuitBreaker implementation for error handling tests
@@ -672,8 +672,6 @@ def error_handling_module_tests() -> bool:
     from test_framework import (
         TestSuite,
         suppress_logging,
-        create_mock_data,
-        assert_valid_function,
     )
 
     with suppress_logging():
@@ -836,7 +834,7 @@ if __name__ == "__main__":
     print("\U0001faea Running Error Handling comprehensive test suite...")
     try:
         success = run_comprehensive_tests()
-    except Exception as e:
+    except Exception:
         print(
             "\n[ERROR] Unhandled exception during error_handling tests:",
             file=sys.stderr,

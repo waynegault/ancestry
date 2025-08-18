@@ -1,8 +1,8 @@
 # Allows running `python -m config` without error.
 # You can add test or main logic here if needed.
 
-import sys
 import os
+import sys
 
 # Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,9 +12,9 @@ if parent_dir not in sys.path:
 if __name__ == "__main__":
     try:
         # Import the config package modules
-        from config.config_manager import ConfigManager
-        from config.credential_manager import CredentialManager
-        from config.config_schema import ConfigSchema
+        from config.config_manager import ConfigManager  # noqa: F401
+        from config.config_schema import ConfigSchema  # noqa: F401
+        from config.credential_manager import CredentialManager  # noqa: F401
 
         print("Configuration Package - Enhanced Credential and Config Management")
         print("Version: 2.0.0")

@@ -9,28 +9,14 @@ automated cleanup for efficient memory and disk usage across all cache systems.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module, is_function_available, get_function
+from standard_imports import get_function, is_function_available, setup_module
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === LOCAL IMPORTS ===
 from test_framework import TestSuite
-
 
 # ==============================================
 # MODULE: cache_manager.py
@@ -47,7 +33,6 @@ def cache_manager_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from test_framework import TestSuite
 
     def test_cache_manager_initialization():
         # Test cache manager initialization
@@ -104,7 +89,7 @@ def cache_manager_module_tests() -> bool:
         if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
             if cache_manager_class:
-                cache_manager = cache_manager_class()
+                cache_manager_class()
                 # Test performance tracking
         return True
 

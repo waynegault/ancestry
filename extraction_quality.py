@@ -8,8 +8,8 @@ extracted_data. Designed for debug-level logging without changing runtime behavi
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
 import re
+from typing import Any, Dict, List, Optional
 
 
 def summarize_extracted_data(extracted_data: Dict[str, Any]) -> Dict[str, Any]:

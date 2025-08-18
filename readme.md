@@ -167,6 +167,35 @@ Performance dashboard aggregates per-session metrics & recommendations.
 - CSRF token retrieval & cookie transfer from Selenium to requests session
 
 ### Testing Strategy
+
+### Linting & Code Hygiene
+
+- Ruff (Python linter) is integrated into the test runner.
+- When you run `python run_all_tests.py`, the runner will:
+  1) Apply safe auto-fixes (trailing whitespace/newlines and import formatting)
+  2) Enforce blocking rules and fail fast if any violations remain:
+     - E722 (no bare except)
+     - F821 (undefined name)
+     - F811 (redefined name)
+     - F823 (local referenced before assignment)
+     - I001 (unsorted imports)
+     - F401 (unused imports)
+  3) Print a compact repo diagnostics summary (non-blocking)
+
+Manual usage:
+
+```bash
+# Check everything
+ruff check .
+
+# Auto-fix safe issues and sort imports in a specific file
+ruff check --fix --select I001,W291,W292,W293,E401 path/to/file.py
+```
+
+Notes:
+- Import placement (E402) and explicit star imports (F403/F405) are allowed project-wide by configuration to support intentional module patterns.
+- If you introduce new modules, please align with existing import setup and add tests in the same file (project convention).
+
 - run_all_tests.py orchestrates discovery, optional parallelism, performance metrics
 - Categories: unit, integration, performance, error handling, personalization, extraction quality
 - Quality gate script provides CI enforcement layer without modifying core tests

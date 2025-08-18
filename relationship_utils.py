@@ -10,37 +10,19 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import html
-import json
-import logging
 import re
 import time
-import traceback
 from collections import deque
-from contextlib import contextmanager
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
-
-# === PERFORMANCE OPTIMIZATIONS ===
-from utils import fast_json_loads
+from typing import Any, Dict, List, Optional, Set, Union
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup, Tag
+
+# === PERFORMANCE OPTIMIZATIONS ===
+from utils import fast_json_loads
 
 BS4_AVAILABLE = True
 
@@ -49,15 +31,12 @@ BS4_AVAILABLE = True
 # Instead, we'll define format_name locally
 
 # --- Test framework imports ---
+# Import specific functions from gedcom_utils
+from gedcom_utils import _are_spouses as _are_spouses_orig
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
-
-# Import specific functions from gedcom_utils
-from gedcom_utils import _are_spouses as _are_spouses_orig
 
 
 def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
@@ -114,27 +93,19 @@ def format_name(name: Optional[str]) -> str:
 
 # Import GEDCOM specific helpers and types from gedcom_utils - avoid config dependency
 from gedcom_utils import (
-    _normalize_id,
-    _is_record,
-    _are_siblings,
-    _is_grandparent,
-    _is_grandchild,
-    _is_great_grandparent,
-    _is_great_grandchild,
-    _is_aunt_or_uncle,
-    _is_niece_or_nephew,
-    _are_cousins,
-    _get_event_info,
-    _get_full_name,
-    _parse_date,
-    _clean_display_date,
     TAG_BIRTH,
     TAG_DEATH,
     TAG_SEX,
-    TAG_HUSBAND,
-    TAG_WIFE,
-    GedcomReaderType,
-    GedcomIndividualType,
+    _are_cousins,
+    _are_siblings,
+    _get_event_info,
+    _get_full_name,
+    _is_aunt_or_uncle,
+    _is_grandchild,
+    _is_grandparent,
+    _is_great_grandchild,
+    _is_great_grandparent,
+    _is_niece_or_nephew,
 )
 
 GEDCOM_UTILS_AVAILABLE = True
@@ -143,32 +114,8 @@ GEDCOM_UTILS_AVAILABLE = True
 # --- Helper Functions for BFS ---
 
 
-def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
-    """Check if id2 is a grandparent of id1."""
-    if not id1 or not id2:
-        return False
-    # Get parents of id1
-    parents = id_to_parents.get(id1, set())
-    # For each parent, check if id2 is their parent
-    for parent_id in parents:
-        grandparents = id_to_parents.get(parent_id, set())
-        if id2 in grandparents:
-            return True
-    return False
-
-
-def _is_grandchild(id1: str, id2: str, id_to_children: Dict[str, Set[str]]) -> bool:
-    """Check if id2 is a grandchild of id1."""
-    if not id1 or not id2:
-        return False
-    # Get children of id1
-    children = id_to_children.get(id1, set())
-    # For each child, check if id2 is their child
-    for child_id in children:
-        grandchildren = id_to_children.get(child_id, set())
-        if id2 in grandchildren:
-            return True
-    return False
+# NOTE: Consolidated versions of these helpers exist in gedcom_utils; to avoid
+# F811 redefinition and keep single source of truth, the local copies are removed.
 
 
 # --- Relationship Path Finding Functions ---
@@ -572,7 +519,7 @@ def format_api_relationship_path(
                 step_rel_display = _get_relationship_term(None, step_rel).capitalize()
                 path_steps_json.append(f"    -> is {step_rel_display} of")
                 path_steps_json.append(f"*   {step_name}")
-            path_steps_json.append(f"    -> leads to")
+            path_steps_json.append("    -> leads to")
             path_steps_json.append(f"*   {owner_name} (You)")
             result_str = "\n".join(path_steps_json)
             return result_str
@@ -647,7 +594,7 @@ def format_api_relationship_path(
             try:
                 if not isinstance(item, Tag):
                     continue  # Skip non-Tag elements
-                    
+
                 is_hidden = item.get("aria-hidden") == "true"
                 item_classes = item.get("class")
                 if item_classes is None:
@@ -1171,7 +1118,7 @@ def convert_api_path_to_unified_format(
     # Special case for Gordon Milne
     if "gordon milne" in target_name_display.lower():
         gender = "M"
-        logger.debug(f"Set gender to M for Gordon Milne")
+        logger.debug("Set gender to M for Gordon Milne")
 
     # Add first person to result
     result.append(
@@ -1345,7 +1292,7 @@ def convert_api_path_to_unified_format(
         # Special case for Gordon Milne
         if "gordon milne" in current_name.lower():
             item_gender = "M"
-            logger.debug(f"Set gender to M for Gordon Milne")
+            logger.debug("Set gender to M for Gordon Milne")
 
         # Add to result
         result.append(
@@ -1811,7 +1758,7 @@ def relationship_module_tests():
             assert len(path) >= 2, "Path should contain at least start and end"
 
         except Exception as e:
-            print(f"   ❌ Multi-generation pathfinding")
+            print("   ❌ Multi-generation pathfinding")
             print(f"      Error: {e}")
             results.append(False)
             raise
@@ -1833,7 +1780,7 @@ def relationship_module_tests():
             assert len(same_path) == 1, "Same person path should have length 1"
 
         except Exception as e:
-            print(f"   ❌ Same person pathfinding")
+            print("   ❌ Same person pathfinding")
             print(f"      Error: {e}")
             results.append(False)
             raise
@@ -1854,7 +1801,7 @@ def relationship_module_tests():
             results.append(no_path_valid)
 
         except Exception as e:
-            print(f"   ❌ No path available handling")
+            print("   ❌ No path available handling")
             print(f"      Error: {e}")
             results.append(False)
             # Don't raise for this test as it might be expected behavior
@@ -1900,7 +1847,6 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for relationship_utils.py.
     Tests all relationship path conversion and formatting functionality.
     """
-    from test_framework import TestSuite, suppress_logging
 
     print("🧬 Running Relationship Utils comprehensive test suite...")
 

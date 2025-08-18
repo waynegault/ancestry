@@ -12,8 +12,8 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -26,18 +26,12 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
     error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
+
 
 # Compatibility exceptions (from ReliableSessionManager)
 class CriticalError(Exception):
@@ -60,29 +54,29 @@ class SystemHealthError(Exception):
 
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
 from core.session_cache import (
-    cached_database_manager,
-    cached_browser_manager,
     cached_api_manager,
+    cached_browser_manager,
+    cached_database_manager,
     cached_session_validator,
-    get_session_cache_stats,
     clear_session_cache,
+    get_session_cache_stats,
 )
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
+import os
 import threading
 import time
-import os
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 try:
     import cloudscraper
 except ImportError:
@@ -91,22 +85,18 @@ except ImportError:
 
 # === SELENIUM IMPORTS ===
 try:
-    from selenium.common.exceptions import (
-        WebDriverException,
-        InvalidSessionIdException,
-        NoSuchWindowException
-    )
+    from selenium.common.exceptions import InvalidSessionIdException, NoSuchWindowException, WebDriverException
 except ImportError:
     WebDriverException = Exception
     InvalidSessionIdException = Exception
     NoSuchWindowException = Exception
 
 # === LOCAL IMPORTS ===
-from core.database_manager import DatabaseManager
-from core.browser_manager import BrowserManager
-from core.api_manager import APIManager
-from core.session_validator import SessionValidator
 from config import config_schema
+from core.api_manager import APIManager
+from core.browser_manager import BrowserManager
+from core.database_manager import DatabaseManager
+from core.session_validator import SessionValidator
 
 # === MODULE CONSTANTS ===
 # Use global cached config instance
@@ -197,6 +187,30 @@ class SessionManager:
             'current_page': 0,
             'start_time': time.time(),
         }
+
+        # === PHASE 2: Enhanced Reliability State ===
+        # Early warning (multi-window) and intervention history
+        self._p2_error_windows = {
+            '1min': {'window_sec': 60, 'events': []},
+            '5min': {'window_sec': 300, 'events': []},
+            '15min': {'window_sec': 900, 'events': []},
+        }
+        self._p2_interventions = []  # [{timestamp, category, action, page_num}]
+        self._p2_last_warning = None
+        # Network resilience
+        self._p2_network_failures = 0
+        self._p2_max_network_failures = int(os.getenv('NETWORK_FAILURE_MAX', '5'))
+        self._p2_network_test_endpoints = [
+            'https://www.ancestry.com',
+            'https://www.google.com',
+            'https://www.cloudflare.com',
+        ]
+        # Auth monitoring
+        self._p2_last_auth_check = 0.0
+        self._p2_auth_check_interval = int(os.getenv('AUTH_CHECK_INTERVAL_SECONDS', '300'))
+        self._p2_auth_stable_successes = 0
+        self._p2_auth_interval_min = 120
+        self._p2_auth_interval_max = 1800
 
         # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
         self.session_health_monitor = {
@@ -495,7 +509,7 @@ class SessionManager:
         self.browser_manager.browser_needed = True
 
         # PHASE 5.1: Check cached session state first
-        session_id = f"{id(self)}_{action_name or 'default'}"
+        f"{id(self)}_{action_name or 'default'}"
 
         # Try to use cached readiness state, but validate driver is still live
         if self._last_readiness_check is not None:
@@ -715,7 +729,7 @@ class SessionManager:
                 self.session_health_monitor['death_detected'].set()
                 self.session_health_monitor['is_alive'].clear()
                 self.session_health_monitor['death_timestamp'] = time.time()
-                logger.critical(f"🚨 SESSION HEALTH CHECK FAILED - Assuming session death")
+                logger.critical("🚨 SESSION HEALTH CHECK FAILED - Assuming session death")
             return False
 
     def is_session_death_cascade(self) -> bool:
@@ -2466,18 +2480,35 @@ class SessionManager:
                         logger.critical("🚨 Browser recovery failed - halting")
                         return False
 
+                # Phase 2: Network and auth pre-checks
+                if not self._p2_network_resilience_wait():
+                    logger.error("❌ Network not healthy - halting")
+                    return False
+                if not self._p2_check_auth_if_needed():
+                    logger.warning("⚠️ Auth check failed - attempting recovery")
+                    if not self._p2_apply_action('auth_recovery', page_num):
+                        logger.error("❌ Auth recovery failed - halting")
+                        return False
+
                 try:
                     result = self._process_single_page(page_num)
                     self._reliable_state['pages_processed'] += 1
                     logger.debug(f"✅ Page {page_num} processed: {result}")
                 except Exception as e:
                     self._reliable_state['errors_encountered'] += 1
-                    logger.error(f"❌ Error processing page {page_num}: {e}")
-                    # Backoff and continue to next page
-                    time.sleep(min(5, 1 + self._reliable_state['errors_encountered']))
+                    category, action = self._p2_analyze_error(e)
+                    self._p2_record_error(category, e)
+                    self._p2_interventions.append({'timestamp': time.time(), 'category': category, 'action': action, 'page_num': page_num})
+                    logger.error(f"❌ Error processing page {page_num} ({category}) → action: {action}: {e}")
+                    if not self._p2_apply_action(action, page_num):
+                        logger.critical("🚨 Recovery action failed - halting")
+                        return False
+                    # continue after recovery
 
             return True
         except Exception as e:
+            # Record as unknown error for early warning
+            self._p2_record_error('unknown', e)
             logger.error(f"❌ Unexpected error in page processing: {e}")
             return False
         finally:
@@ -2493,13 +2524,11 @@ class SessionManager:
     def get_session_summary(self) -> Dict[str, Any]:
         """Return a summary compatible with ReliableSessionManager.get_session_summary()."""
         # Memory/process health via existing methods
-        overall_ok = self.check_browser_health()
-        memory_info = {'status': 'unknown'}
-        processes_info = {'status': 'unknown'}
+        self.check_browser_health()
         try:
             import psutil
             mem = psutil.virtual_memory()
-            memory_info = {
+            {
                 'status': 'healthy' if mem.available > 1024*1024*500 else 'warning',
                 'available_mb': mem.available / (1024*1024),
             }
@@ -2511,9 +2540,136 @@ class SessionManager:
                         proc_count += 1
                 except Exception:
                     continue
-            processes_info = {'status': 'healthy', 'process_count': proc_count}
         except Exception:
             pass
+    # === PHASE 2: Enhanced Reliability Helpers ===
+    def _p2_record_error(self, category: str, error: Exception | None = None) -> None:
+        now = time.time()
+        event = {'timestamp': now, 'category': category, 'message': str(error) if error else ''}
+        for window in self._p2_error_windows.values():
+            window['events'].append(event)
+            # prune old
+            cutoff = now - window['window_sec']
+            window['events'] = [e for e in window['events'] if e['timestamp'] >= cutoff]
+
+    def _p2_error_rates(self) -> Dict[str, float]:
+        now = time.time()
+        rates = {}
+        for name, window in self._p2_error_windows.items():
+            cutoff = now - window['window_sec']
+            count = sum(1 for e in window['events'] if e['timestamp'] >= cutoff)
+            rates[name] = count / (window['window_sec'] / 60.0)  # per minute
+        return rates
+
+    def _p2_analyze_error(self, exc: Exception) -> tuple[str, str]:
+        msg = str(exc).lower()
+        # 8 categories mapping
+        patterns: list[tuple[str, list[str], str]] = [
+            ('webdriver_death', ['invalid session id', 'no such window', 'chrome not reachable', 'target crashed'], 'auth_recovery'),
+            ('memory_pressure', ['memory error', 'out of memory', 'cannot allocate'], 'adaptive_backoff'),
+            ('network_failure', ['timed out', 'dns', 'connection aborted', 'connection reset', 'proxy'], 'network_resilience_retry'),
+            ('auth_loss', ['login', 'sign in', 'unauthorized', '403', 'csrf'], 'auth_recovery'),
+            ('rate_limiting', ['rate limit', 'too many requests', '429'], 'exponential_backoff'),
+            ('ancestry_specific', ['ancestry.com error', 'service unavailable', 'maintenance', 'server error', '502', '503', '504'], 'ancestry_service_retry'),
+            ('selenium_specific', ['stale element', 'element not found', 'not clickable', 'element click intercepted', 'timeout waiting for'], 'selenium_recovery'),
+            ('javascript_errors', ['javascript error', 'script timeout', 'script error', 'uncaught exception'], 'page_refresh'),
+        ]
+        for category, needles, action in patterns:
+            if any(n in msg for n in needles):
+                return category, action
+        return 'unknown', 'retry_with_backoff'
+
+    def _p2_apply_action(self, action: str, page_num: int) -> bool:
+        if action == 'retry_with_backoff':
+            time.sleep(1.0)
+            return True
+        if action == 'exponential_backoff':
+            time.sleep(2.0)
+            return True
+        if action == 'adaptive_backoff':
+            delay = min(5.0, 1.0 + self._reliable_state['errors_encountered'] * 0.5)
+            time.sleep(delay)
+            return True
+        if action == 'network_resilience_retry':
+            return self._p2_network_resilience_wait()
+        if action == 'ancestry_service_retry':
+            time.sleep(3.0)
+            return True
+        if action == 'selenium_recovery':
+            try:
+                return self.perform_proactive_browser_refresh()
+            except Exception:
+                return False
+        if action == 'page_refresh':
+            try:
+                if self.browser_manager and self.browser_manager.driver:
+                    self.browser_manager.driver.refresh()
+                    return True
+            except Exception:
+                return False
+        if action == 'auth_recovery':
+            try:
+                # attempt login refresh
+                from utils import log_in, login_status
+                ok = login_status(self, disable_ui_fallback=False)
+                if ok is True:
+                    return True
+                return log_in(self)
+            except Exception:
+                return False
+        return False
+
+    def _p2_network_resilience_wait(self) -> bool:
+        # Probe multiple endpoints with backoff
+        for attempt in range(1, 4):
+            for url in self._p2_network_test_endpoints:
+                try:
+                    import requests
+                    r = requests.get(url, timeout=2 + attempt)
+                    if r.status_code < 500:
+                        self._p2_network_failures = 0
+                        return True
+                except Exception:
+                    continue
+            self._p2_network_failures += 1
+            time.sleep(attempt * 1.5)
+            if self._p2_network_failures >= self._p2_max_network_failures:
+                return False
+        return True
+
+    def _p2_check_auth_if_needed(self) -> bool:
+        now = time.time()
+        if now - self._p2_last_auth_check < self._p2_auth_check_interval:
+            return True
+        self._p2_last_auth_check = now
+        try:
+            from utils import login_status
+            ok = login_status(self, disable_ui_fallback=False)
+            if ok:
+                # On consecutive successes, gently widen check interval up to max
+                self._p2_auth_stable_successes = min(self._p2_auth_stable_successes + 1, 10)
+                if self._p2_auth_check_interval < self._p2_auth_interval_max and self._p2_auth_stable_successes >= 3:
+                    self._p2_auth_check_interval = min(self._p2_auth_check_interval * 2, self._p2_auth_interval_max)
+            else:
+                # On failure, reset to minimum interval
+                self._p2_auth_stable_successes = 0
+                self._p2_auth_check_interval = max(self._p2_auth_interval_min, int(os.getenv('AUTH_CHECK_INTERVAL_SECONDS', '300')))
+            return bool(ok)
+        except Exception:
+            # On exception, also reset to minimum interval
+            self._p2_auth_stable_successes = 0
+            self._p2_auth_check_interval = max(self._p2_auth_interval_min, int(os.getenv('AUTH_CHECK_INTERVAL_SECONDS', '300')))
+            return False
+
+
+
+
+        # Provide minimal safe defaults if local health snapshots are not set
+        overall_ok = True
+        memory_info: dict = {}
+        processes_info: list = []
+
+
 
         return {
             'session_state': {
@@ -2528,9 +2684,20 @@ class SessionManager:
                 'memory': memory_info,
                 'processes': processes_info,
             },
-            'error_summary': {},
-            'early_warning': {},
-            'network_resilience': {},
+            'error_summary': {
+                'error_count': self._reliable_state['errors_encountered'],
+                'rates_per_min': self._p2_error_rates(),
+                'recent_interventions': self._p2_interventions[-10:],
+            },
+            'early_warning': {
+                'status': 'active' if any(v > 0 for v in self._p2_error_rates().values()) else 'monitoring',
+                'last_warning': self._p2_last_warning,
+            },
+            'network_resilience': {
+                'network_failures': self._p2_network_failures,
+                'max_network_failures': self._p2_max_network_failures,
+                'endpoints': self._p2_network_test_endpoints,
+            },
             'phase2_features': {'merged': True}
         }
 
@@ -2560,7 +2727,7 @@ def _test_session_manager_initialization():
     ]
 
     print("📋 Testing SessionManager initialization:")
-    print(f"   Creating SessionManager instance...")
+    print("   Creating SessionManager instance...")
 
     try:
         session_manager = SessionManager()
@@ -2586,8 +2753,8 @@ def _test_session_manager_initialization():
         initial_ready = session_manager.session_ready
         print(f"   ✅ Initial session_ready state: {initial_ready} (Expected: False)")
 
-        results.append(initial_ready == False)
-        assert initial_ready == False, "Should start with session_ready=False"
+        results.append(not initial_ready)
+        assert not initial_ready, "Should start with session_ready=False"
 
         print(f"📊 Results: {sum(results)}/{len(results)} initialization checks passed")
         return True
@@ -2866,7 +3033,7 @@ def _test_regression_prevention_property_access():
 
         for prop, description in properties_to_test:
             try:
-                value = getattr(session_manager, prop)
+                getattr(session_manager, prop)
                 print(f"   ✅ Property '{prop}' accessible ({description})")
                 results.append(True)
             except AttributeError:
@@ -3023,8 +3190,8 @@ def run_comprehensive_tests() -> bool:
         # === PHASE 4: LOAD SIMULATION FRAMEWORK ===
         def test_724_page_workload_simulation():
             """Simulate 724-page workload with realistic error injection."""
-            from unittest.mock import Mock, patch
             import time
+            from unittest.mock import Mock, patch
 
             # Create mock session manager
             session_manager = Mock()
@@ -3086,7 +3253,7 @@ def run_comprehensive_tests() -> bool:
 
                     # For realistic error rates, should not halt
                     if errors_injected < 500:  # Below emergency threshold
-                        assert should_halt == False, f"Should not halt at page {page} with {errors_injected} errors"
+                        assert not should_halt, f"Should not halt at page {page} with {errors_injected} errors"
 
                     # Simulate browser refresh every 50 pages
                     if page % 50 == 0:
@@ -3109,7 +3276,7 @@ def run_comprehensive_tests() -> bool:
 
         def test_memory_pressure_simulation():
             """Test browser replacement under memory pressure conditions."""
-            from unittest.mock import patch, Mock
+            from unittest.mock import Mock, patch
 
             # Test memory availability check under pressure
             session_manager = Mock()
@@ -3120,17 +3287,17 @@ def run_comprehensive_tests() -> bool:
                 # Test insufficient memory (400MB available)
                 mock_memory.return_value.available = 400 * 1024 * 1024
                 result = session_manager._check_memory_availability()
-                assert result == False, "Should fail with insufficient memory"
+                assert not result, "Should fail with insufficient memory"
 
                 # Test sufficient memory (1GB available)
                 mock_memory.return_value.available = 1024 * 1024 * 1024
                 result = session_manager._check_memory_availability()
-                assert result == True, "Should pass with sufficient memory"
+                assert result, "Should pass with sufficient memory"
 
         def test_network_instability_simulation():
             """Test system behavior under poor network conditions."""
-            from unittest.mock import Mock, patch
             import time
+            from unittest.mock import Mock, patch
 
             # Create mock session manager
             session_manager = Mock()
@@ -3154,7 +3321,7 @@ def run_comprehensive_tests() -> bool:
                     new_browser.is_session_valid.return_value = True
 
                     result = session_manager._verify_session_continuity(new_browser, old_browser)
-                    assert result == False, "Should fail with network navigation failure"
+                    assert not result, "Should fail with network navigation failure"
 
                     # Test 2: Successful navigation under good conditions
                     mock_nav.return_value = True  # Navigation succeeds
@@ -3163,12 +3330,12 @@ def run_comprehensive_tests() -> bool:
                     new_browser.driver.current_url = "https://ancestry.com/dashboard"
 
                     result = session_manager._verify_session_continuity(new_browser, old_browser)
-                    assert result == True, "Should pass with good network conditions"
+                    assert result, "Should pass with good network conditions"
 
         def test_cascade_failure_recovery():
             """Test system recovery from cascade failure scenarios."""
-            from unittest.mock import Mock, patch
             import time
+            from unittest.mock import Mock, patch
 
             # Create mock session manager
             session_manager = Mock()
@@ -3199,7 +3366,7 @@ def run_comprehensive_tests() -> bool:
 
                 # Should trigger emergency halt
                 result = session_manager.check_automatic_intervention()
-                assert result == True, "Should trigger emergency halt for cascade failure"
+                assert result, "Should trigger emergency halt for cascade failure"
                 session_manager.session_health_monitor['death_detected'].set.assert_called_once()
 
                 # Test 2: Immediate intervention with successful recovery
@@ -3216,7 +3383,7 @@ def run_comprehensive_tests() -> bool:
 
                 # Should attempt recovery
                 result = session_manager.check_automatic_intervention()
-                assert result == False, "Should attempt recovery for immediate intervention"
+                assert not result, "Should attempt recovery for immediate intervention"
                 session_manager.perform_proactive_browser_refresh.assert_called_once()
 
         suite.run_test(

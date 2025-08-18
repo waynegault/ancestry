@@ -14,18 +14,14 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import contextlib
 import logging
 import sys
 import time
-import traceback
 from contextlib import contextmanager
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from unittest.mock import MagicMock, patch
-
 
 # Export commonly used testing utilities
 __all__ = [
@@ -41,7 +37,7 @@ __all__ = [
     "Icons",
     # Universal formatting functions
     "format_test_section_header",
-    "format_score_breakdown_table", 
+    "format_score_breakdown_table",
     "format_search_criteria",
     "format_test_result",
     "suppress_debug_logging",
@@ -331,6 +327,7 @@ def create_test_data_factory(use_real_data=None):
     if use_real_data:
         # For real data tests, load from environment variables
         import os
+
         from dotenv import load_dotenv
         load_dotenv()
 
@@ -651,11 +648,11 @@ def mock_logger_context(module_globals: dict, logger_name: str = "logger"):
 def format_test_section_header(title: str, emoji: str = "🧮") -> str:
     """
     Create a consistent, visually appealing test section header.
-    
+
     Args:
         title: The title text for the section
         emoji: Optional emoji to use (defaults to 🧮)
-        
+
     Returns:
         Formatted header string with colors and separators
     """
@@ -669,18 +666,18 @@ def format_test_section_header(title: str, emoji: str = "🧮") -> str:
 def format_score_breakdown_table(field_scores: dict, total_score: int) -> str:
     """
     Format scoring breakdown as a readable table with colors and descriptions.
-    
+
     Args:
         field_scores: Dictionary of field names to scores
         total_score: The total calculated score
-        
+
     Returns:
         Formatted table string with color coding
     """
     table = f"\n{Colors.BOLD}{Colors.WHITE}📊 Scoring Breakdown:{Colors.RESET}\n"
     table += f"{Colors.GRAY}{'Field':<12} {'Score':<6} {'Description':<30}{Colors.RESET}\n"
     table += f"{Colors.GRAY}{'-' * 50}{Colors.RESET}\n"
-    
+
     # Field descriptions for readability
     descriptions = {
         'givn': 'First Name Match', 'surn': 'Surname Match', 'gender': 'Gender Match',
@@ -688,7 +685,7 @@ def format_score_breakdown_table(field_scores: dict, total_score: int) -> str:
         'bbonus': 'Birth Info Bonus', 'dyear': 'Death Year Match', 'ddate': 'Death Date Match',
         'dplace': 'Death Place Match', 'dbonus': 'Death Info Bonus', 'bonus': 'Name Bonus'
     }
-    
+
     for field, score in field_scores.items():
         desc = descriptions.get(field, field.capitalize().replace('_', ' '))
         if score > 0:
@@ -697,22 +694,22 @@ def format_score_breakdown_table(field_scores: dict, total_score: int) -> str:
             color = Colors.GRAY
         else:
             color = Colors.RED
-            
+
         table += f"{Colors.WHITE}{field:<12}{color} {score:<6}{Colors.RESET} {desc:<30}\n"
-    
+
     table += f"{Colors.GRAY}{'-' * 50}{Colors.RESET}\n"
     table += f"{Colors.BOLD}{Colors.YELLOW}{'Total':<12} {total_score:<6} Final Match Score{Colors.RESET}\n"
-    
+
     return table
 
 
 def format_search_criteria(criteria: dict) -> str:
     """
     Format search criteria in a clean, readable way with bullets and colors.
-    
+
     Args:
         criteria: Dictionary of search criteria
-        
+
     Returns:
         Formatted criteria string
     """
@@ -720,19 +717,19 @@ def format_search_criteria(criteria: dict) -> str:
     for key, value in criteria.items():
         clean_key = key.replace('_', ' ').title()
         formatted += f"   {Colors.CYAN}•{Colors.RESET} {clean_key}: {Colors.WHITE}{value}{Colors.RESET}\n"
-    
+
     return formatted
 
 
 def format_test_result(test_name: str, success: bool, duration: Optional[float] = None) -> str:
     """
     Format a test result with consistent styling and colors.
-    
+
     Args:
         test_name: Name of the test
         success: Whether the test passed
         duration: Optional duration in seconds
-        
+
     Returns:
         Formatted result string
     """
@@ -744,11 +741,11 @@ def format_test_result(test_name: str, success: bool, duration: Optional[float] 
         status_color = Colors.RED
         status_icon = Icons.FAIL
         status_text = "FAILED"
-    
+
     result = f"{status_color}{status_icon} {test_name}: {status_text}{Colors.RESET}"
     if duration:
         result += f" {Colors.GRAY}({duration:.3f}s){Colors.RESET}"
-    
+
     return result
 
 
@@ -767,14 +764,14 @@ def restore_debug_logging():
 def clean_test_output():
     """
     Context manager for clean test output without debug noise.
-    
+
     Usage:
         with clean_test_output():
             # Test code here - debug logging will be suppressed
             result = some_function()
     """
     from contextlib import contextmanager
-    
+
     @contextmanager
     def _clean_output():
         suppress_debug_logging()
@@ -782,5 +779,5 @@ def clean_test_output():
             yield
         finally:
             restore_debug_logging()
-    
+
     return _clean_output()

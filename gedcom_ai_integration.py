@@ -10,11 +10,8 @@ Created: August 6, 2025
 Phase: 12 - Advanced GEDCOM Integration & Family Tree Intelligence
 """
 
-import json
-import logging
-from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
-from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -24,8 +21,8 @@ logger = get_logger(__name__)
 
 # === PHASE 12 IMPORTS ===
 try:
-    from gedcom_intelligence import GedcomIntelligenceAnalyzer
     from dna_gedcom_crossref import DNAGedcomCrossReferencer, DNAMatch
+    from gedcom_intelligence import GedcomIntelligenceAnalyzer
     from research_prioritization import IntelligentResearchPrioritizer
     GEDCOM_AI_AVAILABLE = True
     logger.info("GEDCOM AI integration components loaded successfully")
@@ -49,7 +46,7 @@ class GedcomAIIntegrator:
         self.intelligence_analyzer = None
         self.dna_crossref = None
         self.research_prioritizer = None
-        
+
         if GEDCOM_AI_AVAILABLE:
             try:
                 if all([
@@ -80,27 +77,27 @@ class GedcomAIIntegrator:
     ) -> Dict[str, Any]:
         """
         Perform comprehensive GEDCOM AI analysis including intelligence, cross-referencing, and prioritization.
-        
+
         Args:
             gedcom_data: GEDCOM data instance
             dna_matches_data: Optional DNA match data
             tree_owner_info: Optional tree owner information
-            
+
         Returns:
             Comprehensive analysis results
         """
         try:
             if not GEDCOM_AI_AVAILABLE:
                 return self._unavailable_analysis_result()
-            
+
             logger.info("Starting comprehensive GEDCOM AI analysis")
-            
+
             # Step 1: GEDCOM Intelligence Analysis
             logger.debug("Performing GEDCOM intelligence analysis...")
             if self.intelligence_analyzer is None:
                 return self._unavailable_analysis_result()
             gedcom_analysis = self.intelligence_analyzer.analyze_gedcom_data(gedcom_data)
-            
+
             # Step 2: DNA-GEDCOM Cross-Reference (if DNA data available)
             dna_analysis = {}
             if dna_matches_data:
@@ -110,7 +107,7 @@ class GedcomAIIntegrator:
                     dna_analysis = self.dna_crossref.analyze_dna_gedcom_connections(
                         dna_matches, gedcom_data, tree_owner_info
                     )
-            
+
             # Step 3: Research Prioritization
             logger.debug("Performing research prioritization...")
             if self.research_prioritizer is None:
@@ -118,7 +115,7 @@ class GedcomAIIntegrator:
             prioritization_analysis = self.research_prioritizer.prioritize_research_tasks(
                 gedcom_analysis, dna_analysis
             )
-            
+
             # Combine all analyses
             comprehensive_result = {
                 "analysis_timestamp": datetime.now().isoformat(),
@@ -136,10 +133,10 @@ class GedcomAIIntegrator:
                     gedcom_analysis, dna_analysis, prioritization_analysis
                 )
             }
-            
+
             logger.info("Comprehensive GEDCOM AI analysis completed successfully")
             return comprehensive_result
-            
+
         except Exception as e:
             logger.error(f"Error during comprehensive GEDCOM AI analysis: {e}")
             return self._error_analysis_result(str(e))
@@ -153,28 +150,28 @@ class GedcomAIIntegrator:
         """
         Generate enhanced research tasks using GEDCOM AI analysis.
         This method can be called by existing action modules.
-        
+
         Args:
             person_data: Information about the person being researched
             extracted_genealogical_data: Genealogical data extracted from conversations
             gedcom_data: Optional GEDCOM data for enhanced analysis
-            
+
         Returns:
             List of enhanced research tasks
         """
         try:
             if not GEDCOM_AI_AVAILABLE:
                 return self._fallback_research_tasks(person_data, extracted_genealogical_data)
-            
+
             enhanced_tasks = []
-            
+
             # If GEDCOM data is available, use AI analysis
             if gedcom_data:
                 analysis = self.perform_comprehensive_analysis(gedcom_data)
-                
+
                 # Extract relevant tasks for this person
                 prioritized_tasks = analysis.get("research_prioritization", {}).get("prioritized_tasks", [])
-                
+
                 # Filter tasks relevant to this person
                 person_name = person_data.get("username", "")
                 relevant_tasks = [
@@ -182,7 +179,7 @@ class GedcomAIIntegrator:
                     if person_name in task.get("target_people", []) or
                        any(person_name.lower() in target.lower() for target in task.get("target_people", []))
                 ]
-                
+
                 # Convert to enhanced task format
                 for task in relevant_tasks[:3]:  # Top 3 relevant tasks
                     enhanced_task = {
@@ -193,13 +190,13 @@ class GedcomAIIntegrator:
                         "template_used": "gedcom_ai_enhanced"
                     }
                     enhanced_tasks.append(enhanced_task)
-            
+
             # Add general AI-enhanced tasks based on extracted data
             general_tasks = self._generate_ai_enhanced_tasks_from_data(extracted_genealogical_data)
             enhanced_tasks.extend(general_tasks)
-            
+
             return enhanced_tasks[:5]  # Limit to top 5 tasks
-            
+
         except Exception as e:
             logger.error(f"Error generating enhanced research tasks: {e}")
             return self._fallback_research_tasks(person_data, extracted_genealogical_data)
@@ -211,23 +208,23 @@ class GedcomAIIntegrator:
     ) -> Dict[str, Any]:
         """
         Get GEDCOM AI insights for a specific person.
-        
+
         Args:
             person_identifier: Person ID or name to analyze
             gedcom_data: GEDCOM data instance
-            
+
         Returns:
             Person-specific insights from GEDCOM AI analysis
         """
         try:
             if not GEDCOM_AI_AVAILABLE or not gedcom_data:
                 return {"insights": "GEDCOM AI analysis not available"}
-            
+
             # Perform analysis
             if self.intelligence_analyzer is None:
                 return {"insights": "GEDCOM AI analysis not available"}
             analysis = self.intelligence_analyzer.analyze_gedcom_data(gedcom_data)
-            
+
             # Extract person-specific insights
             person_insights = {
                 "person_identifier": person_identifier,
@@ -237,9 +234,9 @@ class GedcomAIIntegrator:
                 "family_context": self._get_person_family_context(person_identifier, gedcom_data),
                 "ai_recommendations": self._get_person_ai_recommendations(person_identifier, analysis)
             }
-            
+
             return person_insights
-            
+
         except Exception as e:
             logger.error(f"Error getting GEDCOM insights for person {person_identifier}: {e}")
             return {"error": f"Failed to get insights: {e}"}
@@ -247,7 +244,7 @@ class GedcomAIIntegrator:
     def _convert_to_dna_matches(self, dna_matches_data: List[Dict[str, Any]]) -> List[Any]:
         """Convert DNA match data to DNAMatch objects."""
         dna_matches = []
-        
+
         for match_data in dna_matches_data:
             if DNAMatch is None:
                 continue
@@ -265,7 +262,7 @@ class GedcomAIIntegrator:
             except Exception as e:
                 logger.debug(f"Error converting DNA match data: {e}")
                 continue
-        
+
         return dna_matches
 
     def _generate_integrated_insights(
@@ -282,7 +279,7 @@ class GedcomAIIntegrator:
             "priority_research_areas": self._identify_priority_research_areas(prioritization_analysis),
             "data_quality_assessment": self._assess_data_quality(gedcom_analysis)
         }
-        
+
         return insights
 
     def _generate_actionable_recommendations(
@@ -293,23 +290,23 @@ class GedcomAIIntegrator:
     ) -> List[str]:
         """Generate actionable recommendations from all analyses."""
         recommendations = []
-        
+
         # From GEDCOM analysis
         gedcom_summary = gedcom_analysis.get("summary", {})
         high_priority_items = gedcom_summary.get("high_priority_items", 0)
         if high_priority_items > 0:
             recommendations.append(f"Address {high_priority_items} high-priority GEDCOM issues first")
-        
+
         # From DNA analysis
         if dna_analysis:
             high_confidence_matches = dna_analysis.get("summary", {}).get("high_confidence_matches", 0)
             if high_confidence_matches > 0:
                 recommendations.append(f"Verify {high_confidence_matches} high-confidence DNA-tree matches")
-        
+
         # From prioritization analysis
         prioritization_recs = prioritization_analysis.get("research_recommendations", [])
         recommendations.extend(prioritization_recs[:3])  # Top 3 prioritization recommendations
-        
+
         return recommendations[:5]  # Limit to top 5 recommendations
 
     def _generate_comprehensive_summary(
@@ -326,13 +323,13 @@ class GedcomAIIntegrator:
             "research_priorities_generated": prioritization_analysis.get("total_priorities_identified", 0),
             "analysis_completeness": "comprehensive" if dna_analysis else "gedcom_only"
         }
-        
+
         if dna_analysis:
             summary.update({
                 "dna_matches_analyzed": dna_analysis.get("dna_matches_analyzed", 0),
                 "dna_crossref_matches": dna_analysis.get("summary", {}).get("total_cross_references", 0)
             })
-        
+
         return summary
 
     def _format_enhanced_task_description(self, task: Dict[str, Any]) -> str:
@@ -340,28 +337,28 @@ class GedcomAIIntegrator:
         description = task.get("description", "")
         priority_score = task.get("priority_score", 0)
         success_probability = task.get("success_probability", 0.5)
-        
+
         enhanced_description = f"{description}\n\n"
         enhanced_description += f"Priority Score: {priority_score:.1f}/100\n"
         enhanced_description += f"Success Probability: {success_probability:.0%}\n"
         enhanced_description += f"Estimated Effort: {task.get('estimated_effort', 'medium').title()}\n\n"
-        
+
         research_steps = task.get("research_steps", [])
         if research_steps:
             enhanced_description += "AI-Recommended Steps:\n"
             for i, step in enumerate(research_steps[:3], 1):
                 enhanced_description += f"{i}. {step}\n"
-        
+
         expected_outcomes = task.get("expected_outcomes", [])
         if expected_outcomes:
             enhanced_description += f"\nExpected Outcomes: {', '.join(expected_outcomes)}"
-        
+
         return enhanced_description
 
     def _generate_ai_enhanced_tasks_from_data(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate AI-enhanced tasks from extracted genealogical data."""
         tasks = []
-        
+
         # Enhanced tasks based on structured names
         structured_names = extracted_data.get("structured_names", [])
         if structured_names:
@@ -373,7 +370,7 @@ class GedcomAIIntegrator:
                 "template_used": "ai_enhanced_names"
             }
             tasks.append(task)
-        
+
         # Enhanced tasks based on locations
         locations = extracted_data.get("locations", [])
         if locations:
@@ -385,7 +382,7 @@ class GedcomAIIntegrator:
                 "template_used": "ai_enhanced_locations"
             }
             tasks.append(task)
-        
+
         return tasks
 
     def _fallback_research_tasks(self, person_data: Dict[str, Any], extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -436,33 +433,33 @@ class GedcomAIIntegrator:
         total_gaps = summary.get("total_gaps", 0)
         total_conflicts = summary.get("total_conflicts", 0)
         individuals = gedcom_analysis.get("individuals_analyzed", 1)
-        
+
         # Simple health score calculation
         issue_ratio = (total_gaps + total_conflicts) / max(1, individuals)
         health_score = max(0, 100 - (issue_ratio * 20))
-        
+
         return round(health_score, 1)
 
     def _identify_efficiency_opportunities(self, prioritization_analysis: Dict[str, Any]) -> List[str]:
         """Identify research efficiency opportunities."""
         efficiency = prioritization_analysis.get("efficiency_analysis", {})
         opportunities = []
-        
+
         cluster_count = efficiency.get("cluster_opportunities", 0)
         if cluster_count > 0:
             opportunities.append(f"Cluster research in {cluster_count} geographic areas")
-        
+
         low_effort_tasks = efficiency.get("low_effort_tasks", 0)
         if low_effort_tasks > 0:
             opportunities.append(f"Focus on {low_effort_tasks} low-effort, high-impact tasks")
-        
+
         return opportunities
 
     def _assess_dna_verification_potential(self, dna_analysis: Dict[str, Any]) -> str:
         """Assess DNA verification potential."""
         if not dna_analysis:
             return "No DNA data available"
-        
+
         verification_opportunities = len(dna_analysis.get("verification_opportunities", []))
         if verification_opportunities > 5:
             return "High DNA verification potential"
@@ -474,13 +471,13 @@ class GedcomAIIntegrator:
     def _identify_priority_research_areas(self, prioritization_analysis: Dict[str, Any]) -> List[str]:
         """Identify priority research areas."""
         prioritized_tasks = prioritization_analysis.get("prioritized_tasks", [])
-        
+
         # Group by task type
         task_types = {}
         for task in prioritized_tasks[:10]:  # Top 10 tasks
             task_type = task.get("task_type", "general")
             task_types[task_type] = task_types.get(task_type, 0) + 1
-        
+
         # Return top task types
         sorted_types = sorted(task_types.items(), key=lambda x: x[1], reverse=True)
         return [task_type for task_type, count in sorted_types[:3]]
@@ -490,9 +487,9 @@ class GedcomAIIntegrator:
         summary = gedcom_analysis.get("summary", {})
         total_conflicts = summary.get("total_conflicts", 0)
         individuals = gedcom_analysis.get("individuals_analyzed", 1)
-        
+
         conflict_ratio = total_conflicts / max(1, individuals)
-        
+
         if conflict_ratio < 0.05:
             return "High data quality"
         elif conflict_ratio < 0.15:

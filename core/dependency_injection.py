@@ -12,8 +12,8 @@ This module provides a comprehensive dependency injection system to:
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,31 +25,15 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
-import threading
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Type, TypeVar, Optional, Callable, Union, List
-from functools import wraps
 import inspect
-import sys
 import os
+import sys
+import threading
 import unittest
-from unittest.mock import MagicMock
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 
 T = TypeVar("T")
 
@@ -448,11 +432,11 @@ def configure_dependencies():
 
     try:
         # Register core services
-        from core.database_manager import DatabaseManager
-        from core.browser_manager import BrowserManager
         from core.api_manager import APIManager
-        from core.session_validator import SessionValidator
+        from core.browser_manager import BrowserManager
+        from core.database_manager import DatabaseManager
         from core.session_manager import SessionManager
+        from core.session_validator import SessionValidator
 
         # Register managers as singletons
         container.register_singleton(DatabaseManager, DatabaseManager)

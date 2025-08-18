@@ -11,27 +11,11 @@ AI interactions including intent classification and response generation.
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -39,14 +23,12 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
 
 # Attempt to import configuration for feature flag checks (safe optional import)
@@ -307,8 +289,8 @@ def _append_changelog_entry(
 
     Includes timestamp, versions, length delta, and truncated diff hashes for traceability.
     """
-    from datetime import datetime as _dt
     import hashlib as _hashlib
+    from datetime import datetime as _dt
 
     timestamp = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     old_hash = _hashlib.sha256(old_content.encode("utf-8", errors="ignore")).hexdigest()[:12]
@@ -521,7 +503,7 @@ def cleanup_old_backups(keep_count: int = 5, logs_dir: Optional[Path] = None) ->
     try:
         if logs_dir is None:
             logs_dir = PROMPTS_FILE.parent / "Logs"
-        backup_pattern = f"ai_prompts.bak.*"
+        backup_pattern = "ai_prompts.bak.*"
         backup_files = list(logs_dir.glob(backup_pattern))
 
         if len(backup_files) <= keep_count:
@@ -554,7 +536,6 @@ def ai_prompt_utils_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from test_framework import TestSuite, suppress_logging
 
     def test_prompts_loading():
         """Test basic prompt loading functionality"""
@@ -681,7 +662,7 @@ def ai_prompt_utils_module_tests() -> bool:
             # Check last line contains new version
             with open(CHANGELOG_FILE, "r", encoding="utf-8") as fh:
                 tail = fh.readlines()[-5:]
-            assert any("0.2.0" in l and key in l for l in tail), "New version entry missing"
+            assert any("0.2.0" in line and key in line for line in tail), "New version entry missing"
             return True
         except Exception:
             return False
@@ -1358,8 +1339,8 @@ def get_prompt_with_experiment(base_key: str,
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":
-    import sys
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(
         description="AI Prompt Utilities CLI (tests, summaries, reports)"
@@ -1413,8 +1394,8 @@ if __name__ == "__main__":
         print(_json.dumps(report, indent=2, ensure_ascii=False))
         did_output = True
     if args.write_report is not None:
-        from pathlib import Path as _Path
         import json as _json
+        from pathlib import Path as _Path
         report = generate_prompts_report()
         target = args.write_report
         if not target:

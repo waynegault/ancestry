@@ -12,22 +12,9 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === THIRD-PARTY IMPORTS ===
-from test_framework import TestSuite, suppress_logging, MagicMock
+from test_framework import TestSuite, suppress_logging
 
 # --- General Page Elements ---
 WAIT_FOR_PAGE_SELECTOR = "body"  # Used to wait for page load.
@@ -121,13 +108,6 @@ MESSAGE_SENT_SELECTOR = (
 # ==============================================
 # Test framework imports
 # ==============================================
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
-)
 
 
 def my_selectors_module_tests() -> bool:
@@ -135,12 +115,6 @@ def my_selectors_module_tests() -> bool:
     CSS Selectors & Element Identification module test suite.
     Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
-    from test_framework import (
-        TestSuite,
-        suppress_logging,
-        create_mock_data,
-        assert_valid_function,
-    )
 
     with suppress_logging():
         suite = TestSuite("CSS Selectors & Element Identification", "my_selectors.py")

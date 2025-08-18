@@ -8,8 +8,8 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,27 +21,12 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
 import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -53,10 +38,10 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from chromedriver import init_webdvr
+
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
-from chromedriver import init_webdvr
-from selenium_utils import export_cookies
 from utils import nav_to_page
 
 # === MODULE CONFIGURATION ===
@@ -118,6 +103,27 @@ class BrowserManager:
                 logger.debug(
                     f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
                 )
+                # Optimization: if already at base URL, skip re-navigation
+                try:
+                    current = self.driver.current_url or ""
+                    base = (config_schema.api.base_url or "").rstrip("/")
+                    if current.startswith(base):
+                        logger.debug("Already at base URL; skipping stabilization navigation")
+                    else:
+                        if not nav_to_page(self.driver, config_schema.api.base_url):
+                            logger.error(
+                                f"Failed to navigate to base URL: {config_schema.api.base_url}"
+                            )
+                            self.close_browser()
+                            return False
+                except Exception:
+                    if not nav_to_page(self.driver, config_schema.api.base_url):
+                        logger.error(
+                            f"Failed to navigate to base URL: {config_schema.api.base_url}"
+                        )
+                        self.close_browser()
+                        return False
+
 
                 if not nav_to_page(self.driver, config_schema.api.base_url):
                     logger.error(
@@ -309,8 +315,8 @@ class BrowserManager:
 def _test_browser_manager_initialization():
     manager = BrowserManager()
     assert manager is not None, "BrowserManager should initialize"
-    assert manager.driver_live == False, "Should start with driver_live=False"
-    assert manager.browser_needed == False, "Should start with browser_needed=False"
+    assert not manager.driver_live, "Should start with driver_live=False"
+    assert not manager.browser_needed, "Should start with browser_needed=False"
     assert manager.driver is None, "Should start with driver=None"
     assert (
         manager.session_start_time is None
@@ -338,7 +344,7 @@ def _test_method_availability():
 def _test_session_validation_no_driver():
     manager = BrowserManager()
     result = manager.is_session_valid()
-    assert result == False, "Should return False when no driver exists"
+    assert not result, "Should return False when no driver exists"
     return True
 
 
@@ -346,14 +352,14 @@ def _test_ensure_driver_not_needed():
     manager = BrowserManager()
     manager.browser_needed = False
     result = manager.ensure_driver_live("test_action")
-    assert result == True, "Should return True when browser not needed"
+    assert result, "Should return True when browser not needed"
     return True
 
 
 def _test_cookie_check_invalid_session():
     manager = BrowserManager()
     result = manager.get_cookies(["test_cookie"])
-    assert result == False, "Should return False for invalid session"
+    assert not result, "Should return False for invalid session"
     return True
 
 
@@ -361,16 +367,16 @@ def _test_close_browser_no_driver():
     manager = BrowserManager()
     manager.close_browser()
     assert manager.driver is None, "Driver should remain None"
-    assert manager.driver_live == False, "driver_live should be False"
+    assert not manager.driver_live, "driver_live should be False"
     return True
 
 
 def _test_state_management():
     manager = BrowserManager()
     manager.browser_needed = True
-    assert manager.browser_needed == True, "browser_needed should be modifiable"
+    assert manager.browser_needed, "browser_needed should be modifiable"
     manager.close_browser()
-    assert manager.browser_needed == False, "close_browser should reset browser_needed"
+    assert not manager.browser_needed, "close_browser should reset browser_needed"
     return True
 
 
@@ -385,7 +391,7 @@ def _test_initialization_performance():
 
     start_time = time.time()
     for _ in range(100):
-        manager = BrowserManager()
+        BrowserManager()
     end_time = time.time()
     total_time = end_time - start_time
     assert (
@@ -492,11 +498,11 @@ def run_comprehensive_tests() -> bool:
         def test_real_browser_concurrency():
             """Test real browser instances under concurrent access patterns."""
             import threading
-            import time
-            from unittest.mock import patch, Mock
+            from unittest.mock import Mock, patch
 
             # Test with mock browser to avoid actual browser creation in tests
-            with patch('core.browser_manager.init_webdvr') as mock_init:
+            with patch('core.browser_manager.init_webdvr') as mock_init, \
+                 patch('core.browser_manager.nav_to_page', return_value=True):
                 mock_driver = Mock()
                 mock_driver.current_url = "https://ancestry.com"
                 mock_driver.get_cookies.return_value = [{'name': 'test', 'value': 'value'}]
@@ -518,7 +524,7 @@ def run_comprehensive_tests() -> bool:
                             valid = browser_manager.is_session_valid()
                             if valid:
                                 # Get cookies (the originally failing operation)
-                                cookies = browser_manager.driver.get_cookies()
+                                browser_manager.driver.get_cookies()
                                 results.append(f"Thread-{thread_id}: Success")
                             else:
                                 errors.append(f"Thread-{thread_id}: Invalid session")

@@ -21,97 +21,50 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import ProgressIndicator, create_progress_indicator
-from core.enhanced_error_recovery import with_enhanced_recovery, with_api_recovery
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    DatabaseConnectionError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
-import enum
 import inspect
-import json
-import logging
-import math
-import os
-import random
-import re
 import sys
-import time
-import traceback
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, cast, Union
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
 # === THIRD-PARTY IMPORTS ===
-import requests
 from selenium.common.exceptions import WebDriverException
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Enum as SQLEnum,
-    Index,
-    Integer,
-    String,
-    Subquery,
-    desc,
-    func,
-    inspect as sa_inspect,
-    over,
-    text,
-    update,
-    select as sql_select,
-)
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session as DbSession, aliased, joinedload
+from sqlalchemy.orm import Session as DbSession
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === LOCAL IMPORTS ===
 from ai_interface import classify_message_intent
 from config import config_schema
-from extraction_quality import summarize_extracted_data  # Debug-only QA summaries
-from database import (
-    ConversationLog,
-    MessageDirectionEnum,
-    MessageType,
-    Person,
-    PersonStatusEnum,
-    db_transn,
-    commit_bulk_data,
-)
+from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
+from core.progress_indicators import create_progress_indicator
+from core.session_manager import SessionManager
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from core.system_cache import (
     cached_api_call,
-    cached_database_query,
-    get_system_cache_stats,
+)
+from database import (
+    ConversationLog,
+    MessageDirectionEnum,
+    Person,
+    PersonStatusEnum,
+    commit_bulk_data,
 )
 
-from core.session_manager import SessionManager
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    circuit_breaker,
+    error_context,
+    retry_on_failure,
+    timeout_protection,
+)
+from extraction_quality import summarize_extracted_data  # Debug-only QA summaries
 from utils import (
-    DynamicRateLimiter,
-    SessionManagerType,  # Added SessionManagerType
     _api_req,
     format_name,
-    retry,
     retry_api,
-    time_wait,
     urljoin,
 )
 
@@ -529,7 +482,7 @@ class InboxProcessor:
         try:
             # Apply rate limit wait *before* the call
             limiter = cast(Any, getattr(self, "dynamic_rate_limiter", None))
-            wait_time = limiter.wait() if limiter is not None else 0.0
+            limiter.wait() if limiter is not None else 0.0
             # Optional: log wait time if significant
             # if wait_time > 0.1: logger.debug(f"Rate limit wait for context fetch: {wait_time:.2f}s")
 
@@ -692,7 +645,7 @@ class InboxProcessor:
                 )
                 person = (
                     session.query(Person)
-                    .filter(Person.profile_id == profile_id, Person.deleted_at == None)
+                    .filter(Person.profile_id == profile_id, Person.deleted_at is None)
                     .first()
                 )
             except SQLAlchemyError as e:
@@ -1172,7 +1125,7 @@ class InboxProcessor:
                             session.query(Person)
                             .filter(
                                 Person.profile_id.in_(batch_profile_ids),
-                                Person.deleted_at == None,
+                                Person.deleted_at is None,
                             )
                             .all()
                         )
@@ -1330,7 +1283,7 @@ class InboxProcessor:
                         # Update progress bar for skipped items
                         if progress_bar is not None:
                             progress_bar.update(1)
-                            progress_bar.set_description(f"Processing (up-to-date)")
+                            progress_bar.set_description("Processing (up-to-date)")
 
                             # PHASE 1 OPTIMIZATION: Enhanced progress tracking
                             if hasattr(progress_bar, '_enhanced_progress'):
@@ -1769,7 +1722,6 @@ def action7_inbox_tests():
     # Test circuit breaker configuration
     def test_circuit_breaker_config():
         """Test circuit breaker decorator configuration reflects Action 6 lessons."""
-        import inspect
 
         # Get the search_inbox method from InboxProcessor
         try:

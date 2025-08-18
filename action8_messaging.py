@@ -21,22 +21,14 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import ProgressIndicator, create_progress_indicator
-from core.enhanced_error_recovery import with_enhanced_recovery, with_api_recovery
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
-    retry_on_failure,
     circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
     error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
 
 # === PHASE 9.1: MESSAGE PERSONALIZATION ===
@@ -51,18 +43,14 @@ except ImportError as e:
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import logging
 import sys
-import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
-from urllib.parse import urljoin
 from string import Formatter
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 # === THIRD-PARTY IMPORTS ===
-import requests
 from sqlalchemy import (
     and_,
     func,
@@ -132,57 +120,41 @@ def safe_column_value(obj, attr_name, default=None):
 
 
 # Corrected SQLAlchemy ORM imports
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import (
     Session,  # Use Session directly
-    aliased,
     joinedload,
 )
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
 
+from api_utils import (  # API utilities
+    call_send_message_api,  # Real API function for sending messages
+)
+
 # --- Local application imports ---
 # Import standardization handled by setup_module above
-
 from cache import cache_result  # Caching utility
 from config import config_schema  # Configuration singletons
+from core.session_manager import SessionManager
 from database import (  # Database models and utilities
     ConversationLog,
-    DnaMatch,
     FamilyTree,
     MessageDirectionEnum,
     MessageType,
     Person,
-    PersonStatusEnum,
-    RoleType,
-    db_transn,
     commit_bulk_data,
+    db_transn,
 )
-from core.session_manager import SessionManager
-from utils import (  # Core utilities
-    DynamicRateLimiter,  # Rate limiter (accessed via SessionManager)
-    _api_req,  # API request helper (unused directly here, via _send_message)
-    format_name,  # Name formatting
-    login_status,  # Login check utility
-    retry,  # Decorators (unused here)
-    retry_api,  # Decorators (unused here)
-    time_wait,  # Decorators (unused here)
-)
-from api_utils import (  # API utilities
-    call_send_message_api,  # Real API function for sending messages
-    SEND_SUCCESS_DELIVERED,  # Status constants
-    SEND_SUCCESS_DRY_RUN,
-)
-
 
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
-    patch,
+)
+from utils import (  # Core utilities
+    format_name,  # Name formatting
+    login_status,  # Login check utility
 )
 
 # --- Initialization & Template Loading ---
@@ -364,6 +336,7 @@ if MESSAGE_TEMPLATES:
 
 # Initialize message personalizer
 from typing import Any as _Any  # alias to avoid conflicts in type annotations
+
 MESSAGE_PERSONALIZER: Optional[_Any] = None
 if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     try:
@@ -525,7 +498,7 @@ def determine_next_message_type(
         or None if no standard message should be sent according to the sequence rules.
     """
     # Step 1: Log inputs for debugging
-    logger.debug(f"Determining next message type:")
+    logger.debug("Determining next message type:")
     logger.debug(f"  Is In Tree: {is_in_family_tree}")
     logger.debug(f"  Last Script Msg Details: {last_message_details}")
 
@@ -921,7 +894,7 @@ def _prefetch_messaging_data(
             # Create mock candidate persons for testing
             logger.info("Running in mock mode, creating mock candidate persons...")
             candidate_persons = []
-            logger.debug(f"Created empty mock candidate_persons list for testing")
+            logger.debug("Created empty mock candidate_persons list for testing")
         else:
             # Normal database query
             candidate_persons = (
@@ -937,11 +910,11 @@ def _prefetch_messaging_data(
                 .filter(
                     Person.profile_id.isnot(None),  # Ensure profile ID exists
                     Person.profile_id != "UNKNOWN",
-                    Person.contactable == True,  # Only contactable people
+                    Person.contactable,  # Only contactable people
                     Person.status.in_(
                         [PersonStatusEnum.ACTIVE, PersonStatusEnum.DESIST]
                     ),  # Eligible statuses
-                    Person.deleted_at == None,  # Exclude soft-deleted records
+                    Person.deleted_at is None,  # Exclude soft-deleted records
                 )
                 .order_by(Person.id)  # Consistent order
                 .all()
@@ -1944,7 +1917,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 # ==============================================
 def action8_messaging_tests():
     """Test suite for action8_messaging.py - Automated Messaging System with detailed reporting."""
-    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
 
@@ -2057,7 +2029,7 @@ def action8_messaging_tests():
             assert templates_loaded, "load_message_templates should return a dictionary"
 
         except Exception as e:
-            print(f"   ❌ Message template loading")
+            print("   ❌ Message template loading")
             print(f"      Error: {e}")
             results.append(False)
             # Don't raise as templates file might not exist in test environment
