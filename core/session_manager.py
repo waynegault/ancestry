@@ -39,6 +39,25 @@ from error_handling import (
     ErrorContext,
 )
 
+# Compatibility exceptions (from ReliableSessionManager)
+class CriticalError(Exception):
+    pass
+
+class ResourceNotReadyError(Exception):
+    pass
+
+class BrowserStartupError(Exception):
+    pass
+
+class BrowserValidationError(Exception):
+    pass
+
+class BrowserRestartError(Exception):
+    pass
+
+class SystemHealthError(Exception):
+    pass
+
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
 from core.session_cache import (
     cached_database_manager,
@@ -56,6 +75,7 @@ logger = setup_module(globals(), __name__)
 import logging
 import threading
 import time
+import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
@@ -166,6 +186,17 @@ class SessionManager:
             self.dynamic_rate_limiter = DynamicRateLimiter()
         except ImportError:
             self.dynamic_rate_limiter = None
+
+        # Reliable processing state (merged from ReliableSessionManager)
+        self._reliable_state = {
+            'restart_interval_pages': int(os.getenv('RESTART_INTERVAL_PAGES', '50')),
+            'max_session_hours': float(os.getenv('MAX_SESSION_HOURS', '24')),
+            'pages_processed': 0,
+            'errors_encountered': 0,
+            'restarts_performed': 0,
+            'current_page': 0,
+            'start_time': time.time(),
+        }
 
         # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
         self.session_health_monitor = {
@@ -2252,7 +2283,7 @@ class SessionManager:
             cache_age = time.time() - self._csrf_cache_time
             if cache_age < self._csrf_cache_duration:
                 return self._cached_csrf_token
-        
+
         # Return cached token from API manager if available
         return self.api_manager.csrf_token
 
@@ -2269,14 +2300,14 @@ class SessionManager:
             # Try to get CSRF token from cookies
             driver = self.browser_manager.driver
             csrf_cookie_names = ['_dnamatches-matchlistui-x-csrf-token', '_csrf']
-            
+
             driver_cookies_list = driver.get_cookies()
             driver_cookies_dict = {
                 c["name"]: c["value"]
                 for c in driver_cookies_list
                 if isinstance(c, dict) and "name" in c and "value" in c
             }
-            
+
             for name in csrf_cookie_names:
                 if name in driver_cookies_dict and driver_cookies_dict[name]:
                     from urllib.parse import unquote
@@ -2288,16 +2319,16 @@ class SessionManager:
                         csrf_token_val = unquoted_val.split("|")[0]
                     else:
                         csrf_token_val = unquoted_val
-                    
+
                     # Cache the token
                     self._cached_csrf_token = csrf_token_val
                     self._csrf_cache_time = time.time()
-                    
+
                     logger.debug(f"⚡ Pre-cached CSRF token '{name}' during session setup (performance optimization)")
                     return
-            
+
             logger.debug("⚡ CSRF pre-cache: No CSRF tokens found in cookies yet")
-            
+
         except Exception as e:
             logger.debug(f"⚡ CSRF pre-cache: Error pre-caching CSRF token: {e}")
 
@@ -2307,7 +2338,7 @@ class SessionManager:
         """
         if not self._cached_csrf_token or not self._csrf_cache_time:
             return False
-        
+
         cache_age = time.time() - self._csrf_cache_time
         return cache_age < self._csrf_cache_duration
 
@@ -2392,6 +2423,125 @@ class SessionManager:
             }
         )
         return stats
+
+    # === Reliable Processing API (compatibility with ReliableSessionManager) ===
+    def process_pages(self, start_page: int, end_page: int) -> bool:
+        """Main processing loop with restart and health checks.
+        This delegates page work to _process_single_page which can be overridden by callers (e.g., Action 6 coordinator/demo).
+        """
+        logger.info(f"📊 Starting page processing: {start_page} to {end_page}")
+        start_ts = time.time()
+        try:
+            # Ensure session ready before starting
+            if not self.ensure_session_ready("Reliable Processing Start", skip_csrf=True):
+                logger.error("❌ Session not ready for processing start")
+                return False
+
+            for page_num in range(start_page, end_page + 1):
+                self._reliable_state['current_page'] = page_num
+
+                # Check session duration
+                hours = (time.time() - self._reliable_state['start_time']) / 3600.0
+                if hours >= self._reliable_state['max_session_hours']:
+                    logger.info("⏱️ Max session hours reached - performing proactive refresh")
+                    if not self.perform_proactive_browser_refresh():
+                        logger.error("❌ Proactive browser refresh failed at duration limit")
+                        return False
+                    # Reset timer
+                    self._reliable_state['start_time'] = time.time()
+
+                # Proactive browser refresh based on pages
+                if (self._reliable_state['pages_processed'] > 0 and
+                        self._reliable_state['pages_processed'] % self._reliable_state['restart_interval_pages'] == 0):
+                    logger.info(f"🔄 Restart interval reached at page {page_num} - proactive browser refresh")
+                    if not self.perform_proactive_browser_refresh():
+                        logger.error("❌ Proactive browser refresh failed at page interval")
+                        return False
+                    self._reliable_state['restarts_performed'] += 1
+
+                # Health check before page
+                if not self.check_browser_health():
+                    logger.warning("⚠️ Browser health check failed - attempting recovery")
+                    if not self.attempt_browser_recovery():
+                        logger.critical("🚨 Browser recovery failed - halting")
+                        return False
+
+                try:
+                    result = self._process_single_page(page_num)
+                    self._reliable_state['pages_processed'] += 1
+                    logger.debug(f"✅ Page {page_num} processed: {result}")
+                except Exception as e:
+                    self._reliable_state['errors_encountered'] += 1
+                    logger.error(f"❌ Error processing page {page_num}: {e}")
+                    # Backoff and continue to next page
+                    time.sleep(min(5, 1 + self._reliable_state['errors_encountered']))
+
+            return True
+        except Exception as e:
+            logger.error(f"❌ Unexpected error in page processing: {e}")
+            return False
+        finally:
+            duration = time.time() - start_ts
+            logger.info(f"📊 Page processing finished in {duration:.1f}s")
+
+    def _process_single_page(self, page_num: int) -> Dict[str, Any]:
+        """Default single-page processing; should be overridden by caller/demo.
+        We keep this stub to match ReliableSessionManager integration patterns.
+        """
+        raise NotImplementedError("_process_single_page must be provided by caller")
+
+    def get_session_summary(self) -> Dict[str, Any]:
+        """Return a summary compatible with ReliableSessionManager.get_session_summary()."""
+        # Memory/process health via existing methods
+        overall_ok = self.check_browser_health()
+        memory_info = {'status': 'unknown'}
+        processes_info = {'status': 'unknown'}
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            memory_info = {
+                'status': 'healthy' if mem.available > 1024*1024*500 else 'warning',
+                'available_mb': mem.available / (1024*1024),
+            }
+            # Count browser processes
+            proc_count = 0
+            for proc in psutil.process_iter(['name']):
+                try:
+                    if proc.info.get('name') and any(b in proc.info['name'].lower() for b in ['chrome', 'firefox', 'edge']):
+                        proc_count += 1
+                except Exception:
+                    continue
+            processes_info = {'status': 'healthy', 'process_count': proc_count}
+        except Exception:
+            pass
+
+        return {
+            'session_state': {
+                'current_page': self._reliable_state['current_page'],
+                'pages_processed': self._reliable_state['pages_processed'],
+                'error_count': self._reliable_state['errors_encountered'],
+                'restart_count': self._reliable_state['restarts_performed'],
+                'session_duration_hours': (time.time() - self._reliable_state['start_time'])/3600.0
+            },
+            'system_health': {
+                'overall': 'healthy' if overall_ok else 'warning',
+                'memory': memory_info,
+                'processes': processes_info,
+            },
+            'error_summary': {},
+            'early_warning': {},
+            'network_resilience': {},
+            'phase2_features': {'merged': True}
+        }
+
+    def cleanup(self) -> None:
+        """Cleanup resources to match ReliableSessionManager.cleanup()."""
+        try:
+            if hasattr(self, 'browser_manager') and self.browser_manager:
+                self.browser_manager.close_browser()
+        except Exception:
+            pass
+
 
     @classmethod
     def clear_session_caches(cls) -> int:
@@ -2627,17 +2777,17 @@ def _test_error_handling():
 def _test_regression_prevention_csrf_optimization():
     """
     🛡️ REGRESSION TEST: CSRF token caching optimization.
-    
+
     This test verifies that Optimization 1 (CSRF token pre-caching) is properly
     implemented and working. This would have prevented performance regressions
     caused by fetching CSRF tokens on every API call.
     """
     print("🛡️ Testing CSRF token caching optimization regression prevention:")
     results = []
-    
+
     try:
         session_manager = SessionManager()
-        
+
         # Test 1: Verify CSRF caching attributes exist
         if hasattr(session_manager, '_cached_csrf_token'):
             print("   ✅ _cached_csrf_token attribute exists")
@@ -2645,18 +2795,18 @@ def _test_regression_prevention_csrf_optimization():
         else:
             print("   ❌ _cached_csrf_token attribute missing")
             results.append(False)
-            
+
         if hasattr(session_manager, '_csrf_cache_time'):
             print("   ✅ _csrf_cache_time attribute exists")
             results.append(True)
         else:
             print("   ❌ _csrf_cache_time attribute missing")
             results.append(False)
-            
+
         # Test 2: Verify CSRF validation method exists
         if hasattr(session_manager, '_is_csrf_token_valid'):
             print("   ✅ _is_csrf_token_valid method exists")
-            
+
             # Test that it returns a boolean
             try:
                 is_valid = session_manager._is_csrf_token_valid()
@@ -2672,7 +2822,7 @@ def _test_regression_prevention_csrf_optimization():
         else:
             print("   ❌ _is_csrf_token_valid method missing")
             results.append(False)
-            
+
         # Test 3: Verify pre-cache method exists
         if hasattr(session_manager, '_precache_csrf_token'):
             print("   ✅ _precache_csrf_token method exists")
@@ -2680,11 +2830,11 @@ def _test_regression_prevention_csrf_optimization():
         else:
             print("   ⚠️  _precache_csrf_token method not found (may be named differently)")
             results.append(False)
-            
+
     except Exception as e:
         print(f"   ❌ SessionManager CSRF optimization test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 CSRF token caching optimization regression test passed!")
@@ -2694,17 +2844,17 @@ def _test_regression_prevention_csrf_optimization():
 def _test_regression_prevention_property_access():
     """
     🛡️ REGRESSION TEST: SessionManager property access stability.
-    
+
     This test verifies that SessionManager properties are accessible without
     errors. This would have caught the duplicate method definition issues
     we encountered.
     """
     print("🛡️ Testing SessionManager property access regression prevention:")
     results = []
-    
+
     try:
         session_manager = SessionManager()
-        
+
         # Test key properties that had duplicate definition issues
         properties_to_test = [
             ('requests_session', 'requests session object'),
@@ -2713,7 +2863,7 @@ def _test_regression_prevention_property_access():
             ('my_tree_id', 'tree ID string'),
             ('session_ready', 'session ready boolean')
         ]
-        
+
         for prop, description in properties_to_test:
             try:
                 value = getattr(session_manager, prop)
@@ -2725,11 +2875,11 @@ def _test_regression_prevention_property_access():
             except Exception as prop_error:
                 print(f"   ❌ Property '{prop}' error: {prop_error}")
                 results.append(False)
-                
+
     except Exception as e:
         print(f"   ❌ SessionManager property access test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 SessionManager property access regression test passed!")
@@ -2739,13 +2889,13 @@ def _test_regression_prevention_property_access():
 def _test_regression_prevention_initialization_stability():
     """
     🛡️ REGRESSION TEST: SessionManager initialization stability.
-    
+
     This test verifies that SessionManager initializes without crashes,
     which would have caught WebDriver stability issues.
     """
     print("🛡️ Testing SessionManager initialization stability regression prevention:")
     results = []
-    
+
     try:
         # Test multiple initialization attempts
         for i in range(3):
@@ -2753,24 +2903,24 @@ def _test_regression_prevention_initialization_stability():
                 session_manager = SessionManager()
                 print(f"   ✅ Initialization attempt {i+1} successful")
                 results.append(True)
-                
+
                 # Test basic attribute access
                 _ = hasattr(session_manager, 'db_manager')
                 _ = hasattr(session_manager, 'browser_manager')
                 _ = hasattr(session_manager, 'api_manager')
-                
+
                 print(f"   ✅ Basic attribute access {i+1} successful")
                 results.append(True)
-                
+
             except Exception as init_error:
                 print(f"   ❌ Initialization attempt {i+1} failed: {init_error}")
                 results.append(False)
                 break
-                
+
     except Exception as e:
         print(f"   ❌ SessionManager initialization stability test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 SessionManager initialization stability regression test passed!")
@@ -2853,15 +3003,15 @@ def run_comprehensive_tests() -> bool:
             "Prevents regression of Optimization 1 (CSRF token pre-caching)",
             "Verify _cached_csrf_token, _csrf_cache_time, and _is_csrf_token_valid implementation",
         )
-        
+
         suite.run_test(
-            "SessionManager property access regression prevention", 
+            "SessionManager property access regression prevention",
             _test_regression_prevention_property_access,
             "All SessionManager properties are accessible without errors or conflicts",
             "Prevents regression of duplicate method definitions and property conflicts",
             "Test key properties that had duplicate definition issues (csrf_token, requests_session, etc.)",
         )
-        
+
         suite.run_test(
             "SessionManager initialization stability regression prevention",
             _test_regression_prevention_initialization_stability,

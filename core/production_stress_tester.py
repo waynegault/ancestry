@@ -34,8 +34,8 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
-    from core.reliable_session_manager import (
-        ReliableSessionManager,
+    from core.session_manager import (
+        SessionManager as ReliableSessionManager,
         CriticalError,
         SystemHealthError,
         ResourceNotReadyError
@@ -45,8 +45,8 @@ except ImportError:
     import sys
     import os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from core.reliable_session_manager import (
-        ReliableSessionManager,
+    from core.session_manager import (
+        SessionManager as ReliableSessionManager,
         CriticalError,
         SystemHealthError,
         ResourceNotReadyError
@@ -850,19 +850,26 @@ if __name__ == "__main__":
 
     # Check if user wants to run tests or stress tests
     if len(sys.argv) > 1:
-        if sys.argv[1] == "--test":
+        arg = sys.argv[1]
+        tester = ProductionStressTester()
+        if arg == "--test":
             # Run embedded tests
             success = run_embedded_tests()
             sys.exit(0 if success else 1)
-        elif sys.argv[1] == "--light":
-            # Run light stress test
-            tester = ProductionStressTester()
-            result = tester.run_stress_test('light_load')
-            print(f"\n🎯 Light stress test {'✅ PASSED' if result.success else '❌ FAILED'}")
+        elif arg in ("--light", "--medium", "--heavy", "--endurance", "--production"):
+            scenario_map = {
+                "--light": "light_load",
+                "--medium": "medium_load",
+                "--heavy": "heavy_load",
+                "--endurance": "endurance_test",
+                "--production": "production_simulation",
+            }
+            scenario = scenario_map[arg]
+            result = tester.run_stress_test(scenario)
+            print(f"\n🎯 {scenario} {'✅ PASSED' if result.success else '❌ FAILED'}")
             sys.exit(0 if result.success else 1)
-        elif sys.argv[1] == "--suite":
+        elif arg == "--suite":
             # Run production validation suite
-            tester = ProductionStressTester()
             results = tester.run_production_validation_suite()
             print(f"\n🎯 Production validation suite {'✅ PASSED' if results['overall_success'] else '❌ FAILED'}")
             sys.exit(0 if results['overall_success'] else 1)
@@ -870,9 +877,13 @@ if __name__ == "__main__":
         print("🚀 Production Stress Tester - Phase 3 Implementation")
         print("=" * 60)
         print("Usage:")
-        print("  python core/production_stress_tester.py --test     # Run embedded tests")
-        print("  python core/production_stress_tester.py --light    # Run light stress test")
-        print("  python core/production_stress_tester.py --suite    # Run validation suite")
+        print("  python core/production_stress_tester.py --test        # Run embedded tests")
+        print("  python core/production_stress_tester.py --light       # Light stress test (10 pages)")
+        print("  python core/production_stress_tester.py --medium      # Medium stress test (50 pages)")
+        print("  python core/production_stress_tester.py --heavy       # Heavy stress test (100 pages)")
+        print("  python core/production_stress_tester.py --endurance   # Endurance test (200 pages, 8h)")
+        print("  python core/production_stress_tester.py --production  # Production simulation (724 pages, 20h)")
+        print("  python core/production_stress_tester.py --suite       # Run validation suite")
         print("\nAvailable stress test scenarios:")
         tester = ProductionStressTester()
         for name, config in tester.stress_scenarios.items():

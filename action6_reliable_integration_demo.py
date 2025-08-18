@@ -22,8 +22,8 @@ coordination logic.
 import time
 import logging
 from typing import Dict, Any, Optional
-from core.reliable_session_manager import (
-    ReliableSessionManager,
+from core.session_manager import (
+    SessionManager as ReliableSessionManager,
     CriticalError,
     SystemHealthError,
     ResourceNotReadyError
