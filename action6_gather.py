@@ -20,8 +20,8 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 from typing import Dict, Any
 
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import ProgressIndicator, create_progress_indicator
-from core.enhanced_error_recovery import with_enhanced_recovery, with_api_recovery
+from core.progress_indicators import create_progress_indicator
+from core.enhanced_error_recovery import with_enhanced_recovery
 
 # Performance monitoring helper with session manager integration
 def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
@@ -92,9 +92,7 @@ from standard_imports import setup_module
 # === PERFORMANCE OPTIMIZATIONS ===
 from utils import (
     fast_json_loads,
-    fast_json_dumps,
     JSONP_PATTERN,
-    CM_VALUE_PATTERN,
 )
 from core.logging_utils import OptimizedLogger
 
@@ -102,7 +100,7 @@ from core.logging_utils import OptimizedLogger
 from performance_cache import progressive_processing
 
 # FINAL OPTIMIZATION 2: Memory Optimization Import
-from memory_optimizer import ObjectPool, lazy_property
+# from memory_optimizer import ObjectPool, lazy_property  # Unused - commented out
 
 # ENHANCEMENT: Advanced Caching Layer
 import hashlib
@@ -165,15 +163,9 @@ from error_handling import (
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
-    graceful_degradation,
     error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    DatabaseConnectionError,
     BrowserSessionError,
     AuthenticationExpiredError,
-    ErrorContext,
 )
 
 # === STANDARD LIBRARY IMPORTS ===
@@ -183,8 +175,7 @@ import random
 import re
 import sys
 import time
-import threading
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio  # PHASE 2: Add asyncio for async/await patterns
 from datetime import datetime, timezone
@@ -2143,11 +2134,13 @@ def _prepare_bulk_db_data(
                     # PHASE 1 OPTIMIZATION: Enhanced progress tracking
                     if hasattr(progress_bar, '_enhanced_progress'):
                         enhanced_progress = progress_bar._enhanced_progress
+                        # Use status_for_this_match if available, otherwise default to "unknown"
+                        current_status = locals().get('status_for_this_match', 'unknown')
                         enhanced_progress.update(
                             increment=1,
-                            errors=1 if status == "error" else 0,
+                            errors=1 if current_status == "error" else 0,
                             api_calls=1,  # Approximate API calls per match
-                            cache_hits=1 if status == "skipped" else 0
+                            cache_hits=1 if current_status == "skipped" else 0
                         )
                 except Exception as pbar_e:
                     logger.warning(f"Progress bar update error: {pbar_e}")
@@ -5169,7 +5162,6 @@ def _fetch_combined_details(
     if not my_uuid or not match_uuid:
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         _log_api_performance("combined_details", api_start_time, "error_missing_uuid")
-        return None
         return None
 
     # SURGICAL FIX #20: Universal session validation with SessionManager death detection
