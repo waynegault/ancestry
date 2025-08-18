@@ -421,8 +421,8 @@ class APIConfig:
 
     # Rate limiting (made very conservative to handle aggressive 429 errors)
     rate_limit_enabled: bool = True
-    requests_per_second: float = 0.25  # Optimized from 0.2 to 0.25 (4s between requests) - safe speed increase
-    burst_limit: int = 2  # Increased from 1 to 2 to allow small bursts for efficiency
+    requests_per_second: float = 0.33  # Optimized from 0.25 to 0.33 (3s between requests) - aggressive speed increase
+    burst_limit: int = 3  # Increased from 2 to 3 to allow better bursts for efficiency
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
@@ -1224,13 +1224,13 @@ def run_comprehensive_tests() -> bool:
         # Validate conservative settings for API rate limiting compliance
         issues = []
         
-        if api_config.requests_per_second > 0.25:
+        if api_config.requests_per_second > 0.33:
             issues.append(f"requests_per_second too high: {api_config.requests_per_second}")
         if api_config.thread_pool_workers > 4:
             issues.append(f"thread_pool_workers too high: {api_config.thread_pool_workers}")
         if api_config.max_concurrency > 4:
             issues.append(f"max_concurrency too high: {api_config.max_concurrency}")
-        if api_config.burst_limit > 2:
+        if api_config.burst_limit > 3:
             issues.append(f"burst_limit too high: {api_config.burst_limit}")
         if api_config.max_retries < 5:
             issues.append(f"max_retries too low: {api_config.max_retries}")

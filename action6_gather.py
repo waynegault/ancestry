@@ -1163,7 +1163,7 @@ def _main_page_processing_loop(
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=3, recovery_timeout=60)
-@timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
+@timeout_protection(timeout=1800)  # Increased from 900s (15min) to 1800s (30min) for Action 6's extended runtime
 @error_context("DNA match gathering coordination")
 def coord(
     session_manager: SessionManager, _config_schema: "ConfigSchema", start: int = 1
@@ -3043,9 +3043,10 @@ def _do_batch(
         for batch_idx in range(0, num_matches_on_page, optimized_batch_size):
             batch_matches = matches_on_page[batch_idx:batch_idx + optimized_batch_size]
             batch_num = (batch_idx // optimized_batch_size) + 1
-            
+            batch_start_time = time.time()  # Track individual batch time
+
             logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
-            
+
             # Process this batch using the original logic with reused session
             new, updated, skipped, errors = _process_page_matches(
                 session_manager, batch_matches, current_page, progress_bar, is_batch=True, reused_session=page_session
@@ -3059,19 +3060,20 @@ def _do_batch(
             
             # Log batch summary with green color
             print("\n\n")
-            logger.debug(Colors.green(f"---- Page {current_page} Batch No{batch_num} Summary ----"))
+            logger.debug(Colors.green(f"---- Page {current_page} Batch No{batch_num} Summary ({len(batch_matches)} matches) ----"))
             logger.debug(Colors.green(f"  New Person/Data: {new}"))
             logger.debug(Colors.green(f"  Updated Person/Data: {updated}"))
             logger.debug(Colors.green(f"  Skipped (No Change): {skipped}"))
             logger.debug(Colors.green(f"  Errors during Prep/DB: {errors}"))
 
-            # Calculate and log average duration per record
+            # Calculate and log average duration per record for this batch
             total_records = new + updated
             if total_records > 0:
-                batch_duration = time.time() - batch_start_time
-                avg_duration_per_record = batch_duration / total_records
+                batch_time = time.time() - batch_start_time
+                avg_duration_per_record = batch_time / total_records
                 logger.debug(Colors.green(f"  Average duration per record: {avg_duration_per_record:.2f}s"))
 
+            logger.debug(Colors.green(f"  Batch processing time: {time.time() - batch_start_time:.2f}s"))
             logger.debug(Colors.green("---------------------------\n\n"))
 
         # PRIORITY 5: Track batch performance for future optimization
@@ -3086,8 +3088,11 @@ def _do_batch(
         
         # Log performance metrics
         success_rate = (total_stats["new"] + total_stats["updated"] + total_stats["skipped"]) / num_matches_on_page if num_matches_on_page > 0 else 1.0
-        logger.debug(f"Batch performance: {batch_duration:.2f}s for {num_matches_on_page} matches "
-                    f"({success_rate:.1%} success rate, batch size: {optimized_batch_size})")
+        num_batches = (num_matches_on_page + optimized_batch_size - 1) // optimized_batch_size  # Ceiling division
+        logger.debug(f"PAGE {current_page} TOTAL: {batch_duration:.2f}s for {num_matches_on_page} matches "
+                    f"({success_rate:.1%} success rate, {num_batches} batches of size {optimized_batch_size})")
+        logger.debug(f"PAGE {current_page} RESULTS: {total_stats['new']} new, {total_stats['updated']} updated, "
+                    f"{total_stats['skipped']} skipped, {total_stats['error']} errors")
         
         if batch_duration > 30.0:  # Log slow batch processing
             logger.warning(f"Slow batch processing: Page {current_page} took {batch_duration:.1f}s")
