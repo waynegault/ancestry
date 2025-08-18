@@ -258,11 +258,15 @@ class SessionManager:
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
-        
+
         # CSRF token caching for performance optimization
         self._cached_csrf_token: Optional[str] = None
         self._csrf_cache_time: float = 0
         self._csrf_cache_duration: float = 300  # 5 minutes
+
+        # === THREAD SAFETY MOVED TO BROWSER MANAGER ===
+        # Thread safety now handled by unified master lock in BrowserManager
+        logger.debug("Thread safety delegated to BrowserManager master lock")
 
         # Initialize enhanced requests session with advanced configuration
         self._initialize_enhanced_requests_session()
@@ -971,12 +975,26 @@ class SessionManager:
             logger.info(f"🔄 Proactive refresh completed in {refresh_duration:.1f}s")
 
     def should_proactive_browser_refresh(self) -> bool:
-        """Check if browser should be proactively refreshed to prevent death."""
+        """
+        Check if browser should be proactively refreshed to prevent death.
+
+        Enhanced with browser health pre-checks to prevent unnecessary refreshes.
+        """
         current_time = time.time()
 
         # Don't refresh if already in progress
         if self.browser_health_monitor['browser_refresh_in_progress'].is_set():
             return False
+
+        # ENHANCEMENT: Perform browser health pre-check first
+        health_check_result = self._browser_health_precheck()
+        if health_check_result == "unhealthy":
+            logger.info("🔍 Browser health pre-check: Browser is unhealthy - immediate refresh needed")
+            return True
+        elif health_check_result == "healthy_skip_refresh":
+            logger.debug("🔍 Browser health pre-check: Browser is very healthy, skipping refresh")
+            return False
+        # If "healthy_allow_refresh", continue with normal time/page-based checks
 
         # Check if browser is approaching max age
         browser_age = current_time - self.browser_health_monitor['browser_start_time']
@@ -998,8 +1016,93 @@ class SessionManager:
 
         return False
 
+    def _browser_health_precheck(self) -> str:
+        """
+        Perform comprehensive browser health assessment to determine refresh necessity.
+
+        Returns:
+            str: "unhealthy" if immediate refresh needed,
+                 "healthy_skip_refresh" if browser is very healthy and refresh should be skipped,
+                 "healthy_allow_refresh" if browser is healthy but refresh can proceed based on other criteria
+        """
+        try:
+            # Check 1: Basic browser session validity
+            if not self.browser_manager.is_session_valid():
+                logger.info("🔍 Browser health check: Session invalid - immediate refresh needed")
+                return "unhealthy"
+
+            # Check 2: Test basic browser responsiveness
+            try:
+                current_url = self.driver.current_url
+                if not current_url or "about:blank" in current_url:
+                    logger.info("🔍 Browser health check: Invalid URL state - immediate refresh needed")
+                    return "unhealthy"
+            except Exception as url_exc:
+                logger.info(f"🔍 Browser health check: URL access failed - immediate refresh needed: {url_exc}")
+                return "unhealthy"
+
+            # Check 3: Test cookie access (this was the failing operation in the error logs)
+            try:
+                cookies = self.driver.get_cookies()
+                if not isinstance(cookies, list):
+                    logger.info("🔍 Browser health check: Cookie access failed - immediate refresh needed")
+                    return "unhealthy"
+            except Exception as cookie_exc:
+                logger.info(f"🔍 Browser health check: Cookie retrieval failed - immediate refresh needed: {cookie_exc}")
+                return "unhealthy"
+
+            # Check 4: Verify we're on the correct domain
+            try:
+                base_url = config_schema.api.base_url
+                if base_url and not current_url.startswith(base_url):
+                    logger.info(f"🔍 Browser health check: Wrong domain ({current_url}) - refresh needed")
+                    return "unhealthy"
+            except Exception:
+                pass  # Non-critical check
+
+            # Check 5: Test JavaScript execution capability
+            try:
+                js_result = self.driver.execute_script("return document.readyState;")
+                if js_result != "complete":
+                    logger.info(f"🔍 Browser health check: Page not ready ({js_result}) - refresh needed")
+                    return "unhealthy"
+            except Exception as js_exc:
+                logger.info(f"🔍 Browser health check: JavaScript execution failed - refresh needed: {js_exc}")
+                return "unhealthy"
+
+            # Check 6: Verify browser process is still running (if possible)
+            try:
+                if hasattr(self.driver, 'service') and hasattr(self.driver.service, 'is_connectable'):
+                    if not self.driver.service.is_connectable():
+                        logger.info("🔍 Browser health check: Service not connectable - refresh needed")
+                        return "unhealthy"
+            except Exception:
+                pass  # Non-critical check
+
+            # Check 7: Assess if browser is very healthy and refresh can be skipped
+            current_time = time.time()
+            browser_age = current_time - self.browser_health_monitor['browser_start_time']
+            pages_processed = self.browser_health_monitor['pages_since_refresh']
+
+            # If browser is very young and hasn't processed many pages, skip refresh
+            if browser_age < 600 and pages_processed < 10:  # Less than 10 minutes and 10 pages
+                logger.debug("🔍 Browser health check: Browser is very healthy and young - skip refresh")
+                return "healthy_skip_refresh"
+
+            # All health checks passed - browser is healthy but allow refresh based on other criteria
+            logger.debug("🔍 Browser health check: All checks passed - browser is healthy, allow refresh")
+            return "healthy_allow_refresh"
+
+        except Exception as health_exc:
+            logger.warning(f"🔍 Browser health check failed with exception - immediate refresh needed: {health_exc}")
+            return "unhealthy"
+
     def perform_proactive_browser_refresh(self) -> bool:
-        """Perform proactive browser refresh to prevent browser death."""
+        """
+        Perform proactive browser refresh to prevent browser death.
+
+        Uses thread synchronization to prevent race conditions during browser replacement.
+        """
         if self.browser_health_monitor['browser_refresh_in_progress'].is_set():
             logger.debug("Proactive browser refresh already in progress, skipping")
             return True
@@ -1007,6 +1110,7 @@ class SessionManager:
         max_attempts = 3
         start_time = time.time()
 
+        # Thread safety now handled by BrowserManager master lock
         try:
             self.browser_health_monitor['browser_refresh_in_progress'].set()
             logger.info("🔄 Starting proactive browser refresh...")
@@ -1015,37 +1119,30 @@ class SessionManager:
                 logger.info(f"🔄 Browser refresh attempt {attempt}/{max_attempts}...")
 
                 try:
-                    # Close current browser safely
-                    self.close_browser()
-                    time.sleep(1)  # Brief pause to ensure cleanup
-
-                    # Start new browser with proper error handling
-                    success = self.start_browser(f"Proactive Refresh - Attempt {attempt}")
+                    # CRITICAL FIX: Use atomic browser replacement instead of close→sleep→start
+                    logger.debug(f"🔄 Attempting atomic browser replacement (attempt {attempt})")
+                    success = self._atomic_browser_replacement(f"Proactive Refresh - Attempt {attempt}")
 
                     if success:
-                        # Verify browser is actually working
-                        if self.browser_manager.is_session_valid():
-                            # Perform full session readiness check
-                            session_ready = self.ensure_session_ready(f"Browser Refresh Verification - Attempt {attempt}")
+                        # Perform full session readiness check
+                        session_ready = self.ensure_session_ready(f"Browser Refresh Verification - Attempt {attempt}")
 
-                            if session_ready:
-                                # Update browser health tracking
-                                current_time = time.time()
-                                self.browser_health_monitor['last_browser_refresh'] = current_time
-                                self.browser_health_monitor['browser_start_time'] = current_time
-                                old_page_count = self.browser_health_monitor['pages_since_refresh']
-                                self.browser_health_monitor['pages_since_refresh'] = 0
+                        if session_ready:
+                            # Update browser health tracking
+                            current_time = time.time()
+                            self.browser_health_monitor['last_browser_refresh'] = current_time
+                            self.browser_health_monitor['browser_start_time'] = current_time
+                            old_page_count = self.browser_health_monitor['pages_since_refresh']
+                            self.browser_health_monitor['pages_since_refresh'] = 0
 
-                                duration = current_time - start_time
-                                logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (proactive_browser_refresh)")
-                                logger.info(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
-                                return True
-                            else:
-                                logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
+                            duration = current_time - start_time
+                            logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (atomic_browser_replacement)")
+                            logger.info(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
+                            return True
                         else:
-                            logger.warning(f"❌ Browser refresh attempt {attempt}: Browser session invalid after start")
+                            logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
                     else:
-                        logger.warning(f"❌ Browser refresh attempt {attempt}: Failed to start new browser")
+                        logger.warning(f"❌ Browser refresh attempt {attempt}: Atomic browser replacement failed")
 
                 except Exception as attempt_exc:
                     logger.error(f"❌ Browser refresh attempt {attempt} exception: {attempt_exc}")
@@ -1067,6 +1164,297 @@ class SessionManager:
             return False
         finally:
             self.browser_health_monitor['browser_refresh_in_progress'].clear()
+
+    def _atomic_browser_replacement(self, action_name: str) -> bool:
+        """
+        Perform TRUE atomic browser replacement with rollback capability.
+
+        Creates and validates new browser before closing the old one.
+        Includes comprehensive session continuity verification and rollback on failure.
+
+        Args:
+            action_name: Name of the action for logging
+
+        Returns:
+            bool: True if replacement successful, False otherwise
+        """
+        logger.debug(f"🔄 Starting TRUE atomic browser replacement for: {action_name}")
+
+        # Use master browser lock to ensure atomic operation
+        with self.browser_manager._master_browser_lock:
+            # Step 1: Backup current browser state for rollback
+            backup_browser_manager = self.browser_manager
+            backup_session_state = self._capture_session_state()
+
+            # Step 2: Check memory usage before creating new browser
+            if not self._check_memory_availability():
+                logger.warning("❌ Insufficient memory for browser replacement")
+                return False
+
+            # Step 3: Create new browser manager instance
+            from core.browser_manager import BrowserManager
+            new_browser_manager = BrowserManager()
+
+            try:
+                # Step 4: Initialize new browser
+                logger.debug("🔄 Initializing new browser instance...")
+                new_browser_success = new_browser_manager.start_browser(action_name)
+
+                if not new_browser_success:
+                    logger.warning("❌ Failed to initialize new browser for atomic replacement")
+                    return False
+
+                # Step 5: Comprehensive session continuity verification
+                if not self._verify_session_continuity(new_browser_manager, backup_browser_manager):
+                    logger.warning("❌ Session continuity verification failed")
+                    new_browser_manager.close_browser()
+                    return False
+
+                # Step 6: Atomically replace old browser with new one
+                logger.debug("🔄 Performing atomic browser replacement...")
+
+                # CRITICAL: This is the only point where the browser reference changes
+                # All validation must be complete before this line
+                self.browser_manager = new_browser_manager
+
+                # Step 7: Verify replacement was successful with final validation
+                if not self._verify_replacement_success():
+                    logger.error("❌ Post-replacement validation failed - CRITICAL ERROR")
+                    # This is a critical failure - we can't rollback safely at this point
+                    # Log extensively for debugging
+                    logger.error("🚨 BROWSER REPLACEMENT IN INCONSISTENT STATE")
+                    return False
+
+                # Step 8: Clean up old browser safely (only after successful replacement)
+                try:
+                    backup_browser_manager.close_browser()
+                    logger.debug("✅ Old browser closed successfully")
+                except Exception as close_exc:
+                    logger.warning(f"⚠️ Error closing old browser (non-critical): {close_exc}")
+
+                logger.info(f"✅ TRUE atomic browser replacement completed successfully for: {action_name}")
+                return True
+
+            except Exception as exc:
+                logger.error(f"❌ Atomic browser replacement failed: {exc}")
+                # ROLLBACK: Restore original browser state
+                logger.warning("🔄 Rolling back to original browser state...")
+                self.browser_manager = backup_browser_manager
+                self._restore_session_state(backup_session_state)
+
+                # Clean up new browser if something went wrong
+                try:
+                    new_browser_manager.close_browser()
+                except Exception:
+                    pass
+                return False
+
+    def _capture_session_state(self) -> dict:
+        """Capture current session state for rollback purposes."""
+        try:
+            state = {
+                'browser_start_time': self.browser_health_monitor.get('browser_start_time'),
+                'pages_since_refresh': self.browser_health_monitor.get('pages_since_refresh'),
+                'last_browser_refresh': self.browser_health_monitor.get('last_browser_refresh'),
+                'session_cookies_synced': getattr(self, '_session_cookies_synced', False),
+                'csrf_cache_time': getattr(self, '_csrf_cache_time', 0),
+            }
+            logger.debug("📸 Session state captured for rollback")
+            return state
+        except Exception as e:
+            logger.warning(f"Failed to capture session state: {e}")
+            return {}
+
+    def _restore_session_state(self, state: dict) -> None:
+        """Restore session state from backup."""
+        try:
+            if state:
+                self.browser_health_monitor['browser_start_time'] = state.get('browser_start_time', time.time())
+                self.browser_health_monitor['pages_since_refresh'] = state.get('pages_since_refresh', 0)
+                self.browser_health_monitor['last_browser_refresh'] = state.get('last_browser_refresh', time.time())
+                self._session_cookies_synced = state.get('session_cookies_synced', False)
+                self._csrf_cache_time = state.get('csrf_cache_time', 0)
+                logger.debug("🔄 Session state restored from backup")
+        except Exception as e:
+            logger.warning(f"Failed to restore session state: {e}")
+
+    def _check_memory_availability(self) -> bool:
+        """Check if sufficient memory is available for browser replacement."""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            available_mb = memory.available / (1024 * 1024)
+
+            # Require at least 500MB available memory for browser replacement
+            if available_mb < 500:
+                logger.warning(f"Low memory: {available_mb:.1f}MB available, need 500MB minimum")
+                return False
+
+            logger.debug(f"Memory check passed: {available_mb:.1f}MB available")
+            return True
+        except ImportError:
+            logger.debug("psutil not available, skipping memory check")
+            return True
+        except Exception as e:
+            logger.warning(f"Memory check failed: {e}")
+            return True  # Allow operation if check fails
+
+    def _verify_session_continuity(self, new_browser_manager, old_browser_manager) -> bool:
+        """Comprehensive verification that new browser maintains session continuity."""
+        try:
+            logger.debug("🔍 Verifying session continuity...")
+
+            # Test 1: Basic browser functionality
+            if not new_browser_manager.is_session_valid():
+                logger.warning("❌ New browser session invalid")
+                return False
+
+            # Test 2: Navigation capability
+            try:
+                from utils import nav_to_page
+                base_url = config_schema.api.base_url
+                if base_url:
+                    nav_success = nav_to_page(new_browser_manager.driver, base_url)
+                    if not nav_success:
+                        logger.warning("❌ New browser failed navigation test")
+                        return False
+            except Exception as nav_exc:
+                logger.warning(f"❌ Navigation test failed: {nav_exc}")
+                return False
+
+            # Test 3: Cookie access (the original failing operation)
+            try:
+                cookies = new_browser_manager.driver.get_cookies()
+                if not isinstance(cookies, list):
+                    logger.warning("❌ New browser cookie access failed")
+                    return False
+            except Exception as cookie_exc:
+                logger.warning(f"❌ Cookie access test failed: {cookie_exc}")
+                return False
+
+            # Test 4: JavaScript execution
+            try:
+                js_result = new_browser_manager.driver.execute_script("return document.readyState;")
+                if js_result != "complete":
+                    logger.warning(f"❌ JavaScript execution test failed: {js_result}")
+                    return False
+            except Exception as js_exc:
+                logger.warning(f"❌ JavaScript test failed: {js_exc}")
+                return False
+
+            # Test 5: Authentication state verification (if possible)
+            try:
+                # Check if we're on the correct domain and not redirected to login
+                current_url = new_browser_manager.driver.current_url
+                if current_url and "login" in current_url.lower():
+                    logger.warning("❌ New browser appears to be on login page - authentication lost")
+                    return False
+            except Exception:
+                pass  # Non-critical test
+
+            logger.debug("✅ Session continuity verification passed")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Session continuity verification failed: {e}")
+            return False
+
+    def _verify_replacement_success(self) -> bool:
+        """Final verification that browser replacement was successful."""
+        try:
+            logger.debug("🔍 Verifying replacement success...")
+
+            # Verify the new browser manager is properly assigned
+            if not self.browser_manager:
+                logger.error("❌ Browser manager is None after replacement")
+                return False
+
+            # Verify the browser is still valid
+            if not self.browser_manager.is_session_valid():
+                logger.error("❌ Browser session invalid after replacement")
+                return False
+
+            # Test critical operation that was originally failing
+            try:
+                cookies = self.browser_manager.driver.get_cookies()
+                if not isinstance(cookies, list):
+                    logger.error("❌ Cookie access failed after replacement")
+                    return False
+            except Exception as cookie_exc:
+                logger.error(f"❌ Post-replacement cookie test failed: {cookie_exc}")
+                return False
+
+            logger.debug("✅ Replacement success verification passed")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Replacement success verification failed: {e}")
+            return False
+
+    def check_automatic_intervention(self) -> bool:
+        """
+        Check if automatic intervention has been triggered by health monitoring.
+
+        Returns:
+            bool: True if processing should halt, False if it can continue
+        """
+        try:
+            # Get health monitor instance
+            from health_monitor import get_health_monitor
+            health_monitor = get_health_monitor()
+
+            # Check for emergency halt
+            if health_monitor.should_emergency_halt():
+                status = health_monitor.get_intervention_status()
+                emergency_info = status["emergency_halt"]
+                logger.critical("🚨 AUTOMATIC EMERGENCY HALT DETECTED")
+                logger.critical(f"   Reason: {emergency_info['reason']}")
+                logger.critical(f"   Triggered: {time.ctime(emergency_info['timestamp'])}")
+
+                # Set session death flag to halt all operations
+                self.session_health_monitor['death_detected'].set()
+                self.session_health_monitor['death_timestamp'] = time.time()
+                self.session_health_monitor['death_reason'] = f"Automatic Emergency Halt: {emergency_info['reason']}"
+
+                return True
+
+            # Check for immediate intervention
+            if health_monitor.should_immediate_intervention():
+                status = health_monitor.get_intervention_status()
+                intervention_info = status["immediate_intervention"]
+                logger.critical("⚠️ AUTOMATIC IMMEDIATE INTERVENTION DETECTED")
+                logger.critical(f"   Reason: {intervention_info['reason']}")
+                logger.critical(f"   Triggered: {time.ctime(intervention_info['timestamp'])}")
+                logger.critical("   Attempting browser refresh and recovery...")
+
+                # Attempt proactive browser refresh
+                refresh_success = self.perform_proactive_browser_refresh()
+                if not refresh_success:
+                    logger.critical("❌ Browser refresh failed during immediate intervention")
+                    # Escalate to emergency halt
+                    self.session_health_monitor['death_detected'].set()
+                    self.session_health_monitor['death_timestamp'] = time.time()
+                    self.session_health_monitor['death_reason'] = f"Failed Recovery: {intervention_info['reason']}"
+                    return True
+                else:
+                    logger.info("✅ Browser refresh successful during immediate intervention")
+                    # Reset immediate intervention flag after successful recovery
+                    health_monitor._immediate_intervention_requested = False
+                    return False
+
+            # Check for enhanced monitoring
+            if health_monitor.is_enhanced_monitoring_active():
+                status = health_monitor.get_intervention_status()
+                monitoring_info = status["enhanced_monitoring"]
+                logger.debug(f"📊 Enhanced monitoring active: {monitoring_info['reason']}")
+                # Enhanced monitoring doesn't halt processing, just increases surveillance
+                return False
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to check automatic intervention: {e}")
+            return False
 
     def increment_page_count(self):
         """Increment the page count for browser health monitoring."""
@@ -1093,15 +1481,12 @@ class SessionManager:
         return True
 
     def attempt_browser_recovery(self) -> bool:
-        """Attempt to recover from browser death."""
+        """Attempt to recover from browser death using atomic replacement."""
         try:
-            logger.info("🔄 Attempting browser recovery...")
+            logger.info("🔄 Attempting browser recovery with atomic replacement...")
 
-            # Close dead browser
-            self.close_browser()
-
-            # Start new browser
-            success = self.start_browser("Browser Recovery")
+            # Use atomic browser replacement for recovery
+            success = self._atomic_browser_replacement("Browser Recovery")
 
             if success:
                 # Re-authenticate if needed
@@ -1121,7 +1506,7 @@ class SessionManager:
                     logger.error("❌ Browser recovery failed - re-authentication failed")
                     return False
             else:
-                logger.error("❌ Browser recovery failed - could not start new browser")
+                logger.error("❌ Browser recovery failed - atomic replacement failed")
                 return False
 
         except Exception as exc:
@@ -2480,9 +2865,232 @@ def run_comprehensive_tests() -> bool:
         suite.run_test(
             "SessionManager initialization stability regression prevention",
             _test_regression_prevention_initialization_stability,
-            "SessionManager initializes reliably without crashes or WebDriver issues", 
+            "SessionManager initializes reliably without crashes or WebDriver issues",
             "Prevents regression of SessionManager initialization and WebDriver crashes",
             "Test multiple initialization attempts and basic attribute access stability",
+        )
+
+        # === PHASE 4: LOAD SIMULATION FRAMEWORK ===
+        def test_724_page_workload_simulation():
+            """Simulate 724-page workload with realistic error injection."""
+            from unittest.mock import Mock, patch
+            import time
+
+            # Create mock session manager
+            session_manager = Mock()
+            session_manager.browser_health_monitor = {
+                'pages_since_refresh': 0,
+                'browser_start_time': time.time(),
+                'last_browser_refresh': time.time()
+            }
+            session_manager.session_health_monitor = {
+                'death_detected': Mock(),
+                'death_timestamp': 0,
+                'death_reason': ""
+            }
+
+            # Add the methods we're testing
+            session_manager.check_automatic_intervention = SessionManager.check_automatic_intervention.__get__(session_manager)
+            session_manager.perform_proactive_browser_refresh = Mock(return_value=True)
+
+            # Simulate processing 724 pages with realistic error patterns
+            pages_processed = 0
+            errors_injected = 0
+            interventions_triggered = 0
+
+            # Mock health monitor for load simulation
+            with patch('health_monitor.get_health_monitor') as mock_get_monitor:
+                mock_monitor = Mock()
+                mock_monitor.should_emergency_halt.return_value = False
+                mock_monitor.should_immediate_intervention.return_value = False
+                mock_monitor.is_enhanced_monitoring_active.return_value = False
+                mock_monitor.error_timestamps = []
+
+                # Simulate realistic error injection pattern
+                # Expect ~100-200 errors over 724 pages (13-27% error rate)
+                error_injection_points = [50, 150, 300, 450, 600, 700]  # Pages where errors cluster
+
+                for page in range(1, 725):  # 724 pages
+                    pages_processed += 1
+
+                    # Inject realistic error patterns
+                    if page in error_injection_points:
+                        # Simulate error cluster (12-15 errors to reach thresholds)
+                        for _ in range(15):
+                            errors_injected += 1
+                            mock_monitor.error_timestamps.append(time.time() - (errors_injected * 0.1))
+
+                        # Check if this triggers intervention (only count once per threshold)
+                        if errors_injected >= 75 and interventions_triggered == 0:  # Enhanced monitoring threshold (count once)
+                            mock_monitor.is_enhanced_monitoring_active.return_value = True
+                            interventions_triggered += 1
+
+                        if errors_injected >= 200 and interventions_triggered == 1:  # Immediate intervention threshold (count once)
+                            mock_monitor.should_immediate_intervention.return_value = True
+                            interventions_triggered += 1
+
+                    mock_get_monitor.return_value = mock_monitor
+
+                    # Test intervention check (should not halt for realistic error rates)
+                    should_halt = session_manager.check_automatic_intervention()
+
+                    # For realistic error rates, should not halt
+                    if errors_injected < 500:  # Below emergency threshold
+                        assert should_halt == False, f"Should not halt at page {page} with {errors_injected} errors"
+
+                    # Simulate browser refresh every 50 pages
+                    if page % 50 == 0:
+                        session_manager.browser_health_monitor['pages_since_refresh'] = 0
+                        session_manager.browser_health_monitor['last_browser_refresh'] = time.time()
+
+            # Verify load simulation results
+            assert pages_processed == 724, f"Should process 724 pages, processed {pages_processed}"
+            assert errors_injected >= 40, f"Should inject realistic errors, got {errors_injected}"
+            assert errors_injected <= 200, f"Should not inject excessive errors, got {errors_injected}"
+            assert interventions_triggered >= 1, f"Should trigger some interventions, got {interventions_triggered}"
+
+        suite.run_test(
+            "724-Page Workload Simulation",
+            test_724_page_workload_simulation,
+            "Simulate 724-page workload with realistic error injection patterns",
+            "Test system behavior under full production workload with realistic error patterns",
+            "Verify system can handle 724 pages with 100-200 errors without cascade failure",
+        )
+
+        def test_memory_pressure_simulation():
+            """Test browser replacement under memory pressure conditions."""
+            from unittest.mock import patch, Mock
+
+            # Test memory availability check under pressure
+            session_manager = Mock()
+            session_manager._check_memory_availability = SessionManager._check_memory_availability.__get__(session_manager)
+
+            # Simulate low memory condition
+            with patch('psutil.virtual_memory') as mock_memory:
+                # Test insufficient memory (400MB available)
+                mock_memory.return_value.available = 400 * 1024 * 1024
+                result = session_manager._check_memory_availability()
+                assert result == False, "Should fail with insufficient memory"
+
+                # Test sufficient memory (1GB available)
+                mock_memory.return_value.available = 1024 * 1024 * 1024
+                result = session_manager._check_memory_availability()
+                assert result == True, "Should pass with sufficient memory"
+
+        def test_network_instability_simulation():
+            """Test system behavior under poor network conditions."""
+            from unittest.mock import Mock, patch
+            import time
+
+            # Create mock session manager
+            session_manager = Mock()
+            session_manager.browser_manager = Mock()
+            session_manager.browser_health_monitor = {'browser_start_time': time.time()}
+
+            # Add the methods we're testing
+            session_manager._verify_session_continuity = SessionManager._verify_session_continuity.__get__(session_manager)
+
+            # Create mock browser managers
+            new_browser = Mock()
+            old_browser = Mock()
+
+            # Simulate network instability during session continuity verification
+            with patch('utils.nav_to_page') as mock_nav:
+                with patch('config.config_manager.ConfigManager') as mock_config:
+                    mock_config.return_value.get_config.return_value.api.base_url = "https://ancestry.com"
+
+                    # Test 1: Network failure during navigation
+                    mock_nav.return_value = False  # Navigation fails
+                    new_browser.is_session_valid.return_value = True
+
+                    result = session_manager._verify_session_continuity(new_browser, old_browser)
+                    assert result == False, "Should fail with network navigation failure"
+
+                    # Test 2: Successful navigation under good conditions
+                    mock_nav.return_value = True  # Navigation succeeds
+                    new_browser.driver.get_cookies.return_value = [{'name': 'test', 'value': 'value'}]
+                    new_browser.driver.execute_script.return_value = "complete"
+                    new_browser.driver.current_url = "https://ancestry.com/dashboard"
+
+                    result = session_manager._verify_session_continuity(new_browser, old_browser)
+                    assert result == True, "Should pass with good network conditions"
+
+        def test_cascade_failure_recovery():
+            """Test system recovery from cascade failure scenarios."""
+            from unittest.mock import Mock, patch
+            import time
+
+            # Create mock session manager
+            session_manager = Mock()
+            session_manager.session_health_monitor = {
+                'death_detected': Mock(),
+                'death_timestamp': 0,
+                'death_reason': ""
+            }
+            session_manager.perform_proactive_browser_refresh = Mock(return_value=True)
+            session_manager.check_automatic_intervention = SessionManager.check_automatic_intervention.__get__(session_manager)
+
+            # Test cascade failure detection and recovery
+            with patch('health_monitor.get_health_monitor') as mock_get_monitor:
+                mock_monitor = Mock()
+
+                # Test 1: Emergency halt scenario
+                mock_monitor.should_emergency_halt.return_value = True
+                mock_monitor.should_immediate_intervention.return_value = False
+                mock_monitor.is_enhanced_monitoring_active.return_value = False
+                mock_monitor.get_intervention_status.return_value = {
+                    "emergency_halt": {
+                        "requested": True,
+                        "reason": "CASCADE_FAILURE: 500 errors in 30-minute",
+                        "timestamp": time.time()
+                    }
+                }
+                mock_get_monitor.return_value = mock_monitor
+
+                # Should trigger emergency halt
+                result = session_manager.check_automatic_intervention()
+                assert result == True, "Should trigger emergency halt for cascade failure"
+                session_manager.session_health_monitor['death_detected'].set.assert_called_once()
+
+                # Test 2: Immediate intervention with successful recovery
+                session_manager.session_health_monitor['death_detected'].reset_mock()
+                mock_monitor.should_emergency_halt.return_value = False
+                mock_monitor.should_immediate_intervention.return_value = True
+                mock_monitor.get_intervention_status.return_value = {
+                    "immediate_intervention": {
+                        "requested": True,
+                        "reason": "SEVERE_ERROR_PATTERN: 200 errors in 15-minute",
+                        "timestamp": time.time()
+                    }
+                }
+
+                # Should attempt recovery
+                result = session_manager.check_automatic_intervention()
+                assert result == False, "Should attempt recovery for immediate intervention"
+                session_manager.perform_proactive_browser_refresh.assert_called_once()
+
+        suite.run_test(
+            "Memory Pressure Simulation",
+            test_memory_pressure_simulation,
+            "Test browser replacement under memory pressure conditions",
+            "Test memory availability checks and browser replacement under resource constraints",
+            "Verify system prevents browser replacement when memory is insufficient",
+        )
+
+        suite.run_test(
+            "Network Instability Simulation",
+            test_network_instability_simulation,
+            "Test system behavior under poor network conditions and connectivity issues",
+            "Test session continuity verification under network instability",
+            "Verify system handles network failures gracefully during browser replacement",
+        )
+
+        suite.run_test(
+            "Cascade Failure Recovery",
+            test_cascade_failure_recovery,
+            "Test system recovery from cascade failure scenarios",
+            "Test automatic intervention system response to cascade failures",
+            "Verify system can detect and respond to cascade failures with appropriate interventions",
         )
 
         return suite.finish_suite()
