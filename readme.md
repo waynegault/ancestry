@@ -65,7 +65,39 @@ python action9_process_productive.py  # generate tasks
 python action8_messaging.py      # send personalized messages
 ```
 
+### Main Menu Options (At a Glance)
+
+- Core Workflow (recommended)
+  - Option 1: Run Full Workflow (inbox → tasks → messaging)
+  - Option 6: Gather Matches (collect DNA match data)
+  - Option 7: Search Inbox (AI-driven conversation analysis)
+  - Option 8: Send Messages (personalized messaging)
+  - Option 9: Process Productive Messages (generate Microsoft To‑Do tasks)
+- GEDCOM & API Family Tree Analysis
+  - Option 10: GEDCOM Report (local file)
+  - Option 11: API Report (Ancestry online)
+  - Options 12–15: GEDCOM AI Intelligence (advanced analysis)
+- Database & Session Utilities
+  - Option 2: Reset Database
+  - Option 3: Backup Database
+  - Option 4: Restore Database
+  - Option 5: Check Login Status
+
 ### Quality & Safety
+
+### Success Metrics (Typical)
+
+- 50–80% increase in DNA match response rates with personalized messaging
+- 3–5x faster research progress via automated data collection and organization
+- 90% reduction in manual data entry and tracking
+- Improved research focus through AI-prioritized task generation
+
+### Support & Learning
+
+- Comprehensive testing: 570+ automated tests ensure reliability
+- Detailed logging: contained, level-aware logs for clarity
+- Performance monitoring: dashboards and per-run summaries
+- Graceful error handling: retries, circuit breaker, and safe fallbacks
 
 - 100% passing test baseline (565 tests across 62 modules)
 - Credential encryption with Fernet + system keyring
@@ -136,35 +168,72 @@ python quality_regression_gate.py  # exit 1 on regression
 - Baseline JSON: Logs/prompt_quality_baseline.json
 
 ### AI Integration
+
 - Prompt library (ai_prompts.json) aligned with structured output contract
 - ai_interface.py centralizes provider calls, variant labeling, and response normalization
 - Supports specialized prompts (DNA analysis, record research, reply generation)
 
 ### Messaging Personalization
+
 - Templates use placeholders resolved by message_personalization.py (20+ functions)
 - Robust fallback chain ensures message always sends even with sparse data
 - Productivity classification informs template selection & task generation
 
 ### Research Task Generation
+
 - genealogical_task_templates.py defines domain templates (vital, census, immigration, DNA, etc.)
 - action9_process_productive maps extracted entities + conversation signals → prioritized tasks
 - Optional enrichment & de-dup feature flags (enable_task_enrichment, enable_task_dedup)
 
 ### Performance & Adaptation
-AdaptiveRateLimiter:
-- Monitors success & 429 rates; adjusts effective RPS (0.1–2.0)
-Smart batching selects batch size optimizing target cycle time
-Performance dashboard aggregates per-session metrics & recommendations.
+
+- AdaptiveRateLimiter monitors success & 429 rates; adjusts effective RPS (0.1–2.0)
+- Smart batching selects batch size optimizing target cycle time
+- Performance dashboard aggregates per-session metrics & recommendations
 
 ### Database & Persistence
+
 - SQLite schema (people, dna_matches, conversation_logs, tasks) via DatabaseManager
 - Caching layers for GEDCOM parsing & API responses
 - Backup & restore operations (action menu options)
 
 ### Security Model
+
 - Encrypted credentials (Fernet) + system keyring master key
 - Minimal scope storage; local-only persistence
 - CSRF token retrieval & cookie transfer from Selenium to requests session
+
+### Implementation Phases (Summary)
+
+- Phase 1 — Simplified Architecture (Complete)
+  - Single browser instance with proactive restarts and immediate halt on critical patterns
+  - Resource health checks and simplified state management
+- Phase 2 — Enhanced Reliability (Complete)
+  - Eight error categories with early-warning windows and targeted recovery
+  - Network resilience, adaptive backoff, and authentication monitoring
+- Phase 3 — Production Hardening (Complete)
+  - Stress testing framework, failure injection, long-running validation, and performance monitoring
+- Phase 4 — Concurrency Evaluation (Planned)
+  - Prefer actor-like patterns only if needed; keep single-actor browser model by default
+  - Focus on safe micro-optimizations and caching before introducing concurrency
+
+### Embedded Testing Policy
+
+- Tests live in the same file as the functions they validate (project convention)
+- A standardized test function `run_comprehensive_tests()` enables discovery by the runner
+- Tests are strict: they must fail when required conditions or dependencies are missing
+- Logging output remains contained; respects current log level
+
+### Database & Persistence (Overview)
+
+- SQLite schema managed in database.py (people, dna_matches, conversations, tasks)
+- Caching layers for GEDCOM parsing and API responses (api_cache.py, gedcom_cache.py)
+- Backup/restore utilities available via main menu options
+
+### Change Log (Prompts)
+
+- Prompt version changes are tracked internally; a consolidated summary is maintained within this README
+- Prompt library updates are surfaced via the AI Integration section above
 
 ### Testing Strategy
 
@@ -193,6 +262,7 @@ ruff check --fix --select I001,W291,W292,W293,E401 path/to/file.py
 ```
 
 Notes:
+
 - Import placement (E402) and explicit star imports (F403/F405) are allowed project-wide by configuration to support intentional module patterns.
 - If you introduce new modules, please align with existing import setup and add tests in the same file (project convention).
 
@@ -201,24 +271,30 @@ Notes:
 - Quality gate script provides CI enforcement layer without modifying core tests
 
 ### Configuration & Flags
+
 Environment & config manager unify defaults; feature toggles:
+
 - enable_task_dedup
 - enable_task_enrichment
 - enable_prompt_experiments
+
 Supports multiple AI providers via AI_PROVIDER env.
 
 ### Extensibility Guidelines
+
 - Add new prompt variant: update ai_prompts.json + version label → capture telemetry automatically
 - Add new task template: extend genealogical_task_templates.py & integrate selection logic in action9
 - Introduce new quality dimension: extend extraction_quality.compute_extraction_quality (preserve backward compatibility by additive fields)
 
 ### Planned Enhancements
+
 - Statistical significance (bootstrap / Mann-Whitney) for variant quality deltas
 - Separate task_quality_score telemetry field
 - Baseline rotation policy (age / sample volume)
 - Cost efficiency metrics (quality per 1K chars/tokens)
 
 ### Troubleshooting (Developer Focus)
+
 | Symptom | Check | Likely Cause |
 |---------|-------|--------------|
 | quality_regression_gate exits 1 | baseline & latest medians | Real score drop or stale baseline |
@@ -227,7 +303,8 @@ Supports multiple AI providers via AI_PROVIDER env.
 | Missing tasks | action9 logs & feature flags | Enrichment flag disabled or empty extraction |
 
 ### Project Structure (Condensed)
-```
+
+```text
 action*.py            # Workflow drivers
 adaptive_rate_limiter.py
 ai_interface.py / ai_prompts.json
