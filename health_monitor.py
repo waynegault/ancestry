@@ -139,6 +139,9 @@ class SessionHealthMonitor:
         # Predictive analytics
         self.failure_patterns: List[Dict[str, Any]] = []
         self.success_patterns: List[Dict[str, Any]] = []
+        # Safety test mode flag to standardize alert prefixes
+        self._safety_test_mode: bool = False
+
 
         # Initialize metrics
         self._initialize_metrics()
@@ -165,6 +168,18 @@ class SessionHealthMonitor:
                 threshold_warning=config["warning"],
                 threshold_critical=config["critical"],
                 weight=config["weight"]
+    def begin_safety_test(self):
+        """Enable safety test mode to uniformly prefix all alerts and notices."""
+        self._safety_test_mode = True
+
+    def end_safety_test(self):
+        """Disable safety test mode."""
+        self._safety_test_mode = False
+
+    def _safety_prefix(self) -> str:
+        """Return the standard prefix for safety-test logs if enabled."""
+        return "🧪 [SAFETY TEST] " if self._safety_test_mode else ""
+
             )
             self.metrics_history[name] = deque(maxlen=100)
 
@@ -236,9 +251,8 @@ class SessionHealthMonitor:
 
         self.alerts.append(alert)
 
-        # Log alert based on level - Check if this is a test alert
-        is_test_alert = "test_emergency_error" in str(metric_name) or metric_value > 100.0
-        test_prefix = "🧪 [SAFETY TEST] " if is_test_alert else ""
+        # Log alert with standardized safety test prefix when in test mode
+        test_prefix = self._safety_prefix()
 
         if level == AlertLevel.CRITICAL:
             logger.critical(f"{test_prefix}🚨 CRITICAL ALERT: {message}")
@@ -456,17 +470,18 @@ class SessionHealthMonitor:
                     )
 
                     self.alerts.append(alert)
-                    logger.critical(f"🚨 CRITICAL ALERT: {alert.message}")
+                    prefix = self._safety_prefix()
+                    logger.critical(f"{prefix}🚨 CRITICAL ALERT: {alert.message}")
 
                     # WORKLOAD-APPROPRIATE: Cascade failure detection with automatic intervention
                     if window_name == "30-minute" and errors_in_window >= 500:
-                        logger.critical("🚨 CASCADE FAILURE DETECTED - EMERGENCY INTERVENTION REQUIRED")
+                        logger.critical(f"{prefix}🚨 CASCADE FAILURE DETECTED - EMERGENCY INTERVENTION REQUIRED")
                         self._trigger_emergency_intervention("CASCADE_FAILURE", errors_in_window, window_name)
                     elif window_name == "15-minute" and errors_in_window >= 200:
-                        logger.critical("🚨 SEVERE ERROR PATTERN DETECTED - Triggering immediate intervention")
+                        logger.critical(f"{prefix}🚨 SEVERE ERROR PATTERN DETECTED - Triggering immediate intervention")
                         self._trigger_immediate_intervention("SEVERE_ERROR_PATTERN", errors_in_window, window_name)
                     elif window_name == "5-minute" and errors_in_window >= 75:
-                        logger.warning("⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
+                        logger.warning(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
                         self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", errors_in_window, window_name)
 
     def get_error_rate_statistics(self) -> Dict[str, Any]:
@@ -533,9 +548,10 @@ class SessionHealthMonitor:
     def _trigger_emergency_intervention(self, pattern_type: str, error_count: int, window: str) -> None:
         """Trigger emergency intervention for cascade failures."""
         try:
-            logger.critical(f"🚨 EMERGENCY INTERVENTION TRIGGERED: {pattern_type}")
-            logger.critical(f"   Pattern: {error_count} errors in {window}")
-            logger.critical("   Action: Setting emergency halt flag")
+            prefix = self._safety_prefix()
+            logger.critical(f"{prefix}🚨 EMERGENCY INTERVENTION TRIGGERED: {pattern_type}")
+            logger.critical(f"{prefix}   Pattern: {error_count} errors in {window}")
+            logger.critical(f"{prefix}   Action: Setting emergency halt flag")
 
             # Set emergency halt flag that can be checked by main processing loops
             self._emergency_halt_requested = True
@@ -554,7 +570,7 @@ class SessionHealthMonitor:
             )
             self.alerts.append(alert)
 
-            logger.critical("🚨 EMERGENCY INTERVENTION COMPLETE - Processing should halt immediately")
+            logger.critical(f"{self._safety_prefix()}🚨 EMERGENCY INTERVENTION COMPLETE - Processing should halt immediately")
 
         except Exception as e:
             logger.error(f"Failed to trigger emergency intervention: {e}")
@@ -562,9 +578,10 @@ class SessionHealthMonitor:
     def _trigger_immediate_intervention(self, pattern_type: str, error_count: int, window: str) -> None:
         """Trigger immediate intervention for severe error patterns."""
         try:
-            logger.critical(f"⚠️ IMMEDIATE INTERVENTION TRIGGERED: {pattern_type}")
-            logger.critical(f"   Pattern: {error_count} errors in {window}")
-            logger.critical("   Action: Setting immediate halt flag and triggering recovery")
+            prefix = self._safety_prefix()
+            logger.critical(f"{prefix}⚠️ IMMEDIATE INTERVENTION TRIGGERED: {pattern_type}")
+            logger.critical(f"{prefix}   Pattern: {error_count} errors in {window}")
+            logger.critical(f"{prefix}   Action: Setting immediate halt flag and triggering recovery")
 
             # Set immediate intervention flag
             self._immediate_intervention_requested = True
@@ -583,7 +600,7 @@ class SessionHealthMonitor:
             )
             self.alerts.append(alert)
 
-            logger.critical("⚠️ IMMEDIATE INTERVENTION COMPLETE - Consider halting or recovery")
+            logger.critical(f"{self._safety_prefix()}⚠️ IMMEDIATE INTERVENTION COMPLETE - Consider halting or recovery")
 
         except Exception as e:
             logger.error(f"Failed to trigger immediate intervention: {e}")
@@ -591,9 +608,10 @@ class SessionHealthMonitor:
     def _trigger_enhanced_monitoring(self, pattern_type: str, error_count: int, window: str) -> None:
         """Trigger enhanced monitoring for elevated error rates."""
         try:
-            logger.warning(f"📊 ENHANCED MONITORING TRIGGERED: {pattern_type}")
-            logger.warning(f"   Pattern: {error_count} errors in {window}")
-            logger.warning("   Action: Increasing monitoring frequency")
+            prefix = self._safety_prefix()
+            logger.warning(f"{prefix}📊 ENHANCED MONITORING TRIGGERED: {pattern_type}")
+            logger.warning(f"{prefix}   Pattern: {error_count} errors in {window}")
+            logger.warning(f"{prefix}   Action: Increasing monitoring frequency")
 
             # Set enhanced monitoring flag
             self._enhanced_monitoring_active = True
@@ -615,7 +633,7 @@ class SessionHealthMonitor:
             )
             self.alerts.append(alert)
 
-            logger.warning("📊 ENHANCED MONITORING ACTIVE - Increased error rate surveillance")
+            logger.warning(f"{self._safety_prefix()}📊 ENHANCED MONITORING ACTIVE - Increased error rate surveillance")
 
         except Exception as e:
             logger.error(f"Failed to trigger enhanced monitoring: {e}")
