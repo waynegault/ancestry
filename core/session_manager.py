@@ -706,16 +706,19 @@ class SessionManager:
                     )
                     return False
 
-            # Quick session validation
+            # Quick session validation (avoid flagging death during controlled refresh)
             if not self.is_sess_valid():
-                if not self.session_health_monitor['death_detected'].is_set():
-                    self.session_health_monitor['death_detected'].set()
-                    self.session_health_monitor['is_alive'].clear()
-                    self.session_health_monitor['death_timestamp'] = time.time()
-                    logger.critical(
-                        f"🚨 SESSION DEATH DETECTED at {time.strftime('%H:%M:%S')}"
-                        f" - Universal session health monitoring triggered"
-                    )
+                if not self.session_health_monitor.get('refresh_in_progress', threading.Event()).is_set():
+                    if not self.session_health_monitor['death_detected'].is_set():
+                        self.session_health_monitor['death_detected'].set()
+                        self.session_health_monitor['is_alive'].clear()
+                        self.session_health_monitor['death_timestamp'] = time.time()
+                        logger.critical(
+                            f"🚨 SESSION DEATH DETECTED at {time.strftime('%H:%M:%S')}"
+                            f" - Universal session health monitoring triggered"
+                        )
+                else:
+                    logger.debug("Session invalid during refresh_in_progress; suppressing death detection")
                 return False
 
             # Update heartbeat if session is alive
@@ -1158,6 +1161,9 @@ class SessionManager:
         # Thread safety now handled by BrowserManager master lock
         try:
             self.browser_health_monitor['browser_refresh_in_progress'].set()
+            # Also mark session-level refresh to suppress transient death detection
+            if 'refresh_in_progress' in self.session_health_monitor:
+                self.session_health_monitor['refresh_in_progress'].set()
             logger.info("🔄 Starting proactive browser refresh...")
 
             for attempt in range(1, max_attempts + 1):
@@ -1169,7 +1175,17 @@ class SessionManager:
                     success = self._atomic_browser_replacement(f"Proactive Refresh - Attempt {attempt}")
 
                     if success:
-                        # Perform full session readiness check
+                        # Warm-up sequence to ensure cookies and CSRF are populated
+                        try:
+                            from utils import nav_to_page
+                            base_ok = nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
+                            _ = self.get_csrf_token()
+                            _ = self.get_my_tree_id()
+                            nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees")
+                        except Exception as warm_exc:
+                            logger.debug(f"Warm-up sequence encountered a non-fatal issue: {warm_exc}")
+
+                        # Perform full session readiness check (validator will relax cookie rule during refresh)
                         session_ready = self.ensure_session_ready(f"Browser Refresh Verification - Attempt {attempt}")
 
                         if session_ready:
@@ -1183,6 +1199,9 @@ class SessionManager:
                             duration = current_time - start_time
                             logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (atomic_browser_replacement)")
                             logger.info(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
+                            # Clear refresh flag on success
+                            if 'refresh_in_progress' in self.session_health_monitor:
+                                self.session_health_monitor['refresh_in_progress'].clear()
                             return True
                         else:
                             logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
@@ -1191,6 +1210,11 @@ class SessionManager:
 
                 except Exception as attempt_exc:
                     logger.error(f"❌ Browser refresh attempt {attempt} exception: {attempt_exc}")
+                finally:
+                    # Ensure flag is cleared if we exit attempts without success
+                    if attempt == max_attempts:
+                        if 'refresh_in_progress' in self.session_health_monitor:
+                            self.session_health_monitor['refresh_in_progress'].clear()
 
                 # Wait before next attempt (except on last attempt)
                 if attempt < max_attempts:

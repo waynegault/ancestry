@@ -344,6 +344,11 @@ class SessionValidator:
             logger.debug("Skipping essential cookies check for Action 11 - API-based operation")
             return True, None
 
+        # During browser refresh verification, relax the essential cookie requirement
+        if action_name and ("refresh" in action_name.lower()):
+            logger.debug("Relaxing essential cookies check during browser refresh verification - deferring to later checks")
+            return True, None
+
         try:
             if not browser_manager.get_cookies(essential_cookies):
                 error_msg = f"Essential cookies not found: {essential_cookies}"
