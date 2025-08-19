@@ -267,6 +267,8 @@ def test_emergency_intervention_trigger(session_manager) -> bool:
         if hasattr(health_monitor, "end_safety_test"):
             health_monitor.end_safety_test()
 
+        # Final safety-test summary line for easy visual scanning
+        logger.info("🧪 [SAFETY TEST] Summary: All above alerts were simulated (test-only); normal operation restored.")
         logger.info("✅ SAFETY TEST COMPLETE: System restored to normal operation")
 
         return success
