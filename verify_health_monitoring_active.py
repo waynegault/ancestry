@@ -209,6 +209,10 @@ def test_emergency_intervention_trigger(session_manager) -> bool:
         for name, metric in health_monitor.current_metrics.items():
             original_metrics[name] = metric.value
 
+        # Enable safety test mode to standardize prefixes
+        if hasattr(health_monitor, "begin_safety_test"):
+            health_monitor.begin_safety_test()
+
         logger.info("🧪 INJECTING FAKE TEST VALUES (these are not real system conditions):")
 
         # Simulate emergency conditions
@@ -258,6 +262,10 @@ def test_emergency_intervention_trigger(session_manager) -> bool:
 
         # Clear test errors
         health_monitor.error_counts.clear()
+
+        # Disable safety test mode
+        if hasattr(health_monitor, "end_safety_test"):
+            health_monitor.end_safety_test()
 
         logger.info("✅ SAFETY TEST COMPLETE: System restored to normal operation")
 
