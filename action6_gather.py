@@ -1424,8 +1424,8 @@ def _lookup_existing_persons(
         existing_persons = (
             session.query(Person)
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .filter(Person.deleted_at is None)  # type: ignore  # Exclude soft-deleted
-            .filter(Person.uuid.in_(uuids_norm))  # type: ignore
+            .filter(Person.deleted_at.is_(None))  # Exclude soft-deleted (use SQLAlchemy is_)
+            .filter(Person.uuid.in_(uuids_norm))
             .all()
         )
         # Step 4: Populate the result map (key by UUID)
@@ -2438,8 +2438,7 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
         try:
             logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
             existing_records = session.query(Person.profile_id).filter(
-                Person.profile_id.in_(profile_ids_to_check),
-                Person.deleted_at is None
+                Person.profile_id.in_(profile_ids_to_check)
             ).all()
             existing_profile_ids = {record.profile_id for record in existing_records}
             if existing_profile_ids:
@@ -2451,8 +2450,7 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
         try:
             logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
             existing_uuid_records = session.query(Person.uuid).filter(
-                Person.uuid.in_(uuids_to_check),
-                Person.deleted_at is None
+                Person.uuid.in_(uuids_to_check)
             ).all()
             existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
             if existing_uuids:
