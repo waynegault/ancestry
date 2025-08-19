@@ -1179,7 +1179,8 @@ class SessionManager:
                         try:
                             from utils import nav_to_page
                             base_ok = nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
-                            _ = self.get_csrf_token()
+                            # Prefer built-in CSRF retrieval/precache to avoid attribute errors
+                            _ = self.get_csrf()
                             _ = self.get_my_tree_id()
                             nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees")
                         except Exception as warm_exc:
