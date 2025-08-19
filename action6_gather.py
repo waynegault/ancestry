@@ -703,6 +703,11 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
+                # If a refresh is in progress, pause all processing until it completes
+                while session_manager.session_health_monitor.get('refresh_in_progress').is_set():
+                    logger.info(f"⏸️ Refresh in progress; pausing processing at page {current_page_num}...")
+                    time.sleep(0.5)
+
                 # OPTION C: PROACTIVE BROWSER REFRESH - Check if browser needs refresh before processing
                 if session_manager.should_proactive_browser_refresh():
                     logger.info(f"🔄 Performing proactive browser refresh at page {current_page_num}")
@@ -730,9 +735,15 @@ def _main_page_processing_loop(
                 # PROACTIVE SESSION REFRESH: Check if session needs refresh before processing
                 if session_manager.should_proactive_refresh():
                     logger.info(f"🔄 Performing proactive session refresh at page {current_page_num}")
-                    if not session_manager.perform_proactive_refresh():
-                        logger.error(f"❌ Proactive session refresh failed at page {current_page_num}")
-                        # Continue anyway - reactive recovery will handle if needed
+
+                    # Pause processing while refresh runs
+                    session_manager.session_health_monitor['refresh_in_progress'].set()
+                    try:
+                        if not session_manager.perform_proactive_refresh():
+                            logger.error(f"❌ Proactive session refresh failed at page {current_page_num}")
+                            # Continue anyway - reactive recovery will handle if needed
+                    finally:
+                        session_manager.session_health_monitor['refresh_in_progress'].clear()
 
                 # AUTOMATIC INTERVENTION CHECK - Check for health monitor intervention requests
                 if session_manager.check_automatic_intervention():
@@ -760,17 +771,19 @@ def _main_page_processing_loop(
                         break  # Exit while loop
 
                 # SURGICAL FIX #20: Universal Session Health Monitoring via SessionManager
-                if not session_manager.check_session_health():
-                    logger.critical(
-                        f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
-                        f"Immediately halting processing to prevent cascade failures."
-                    )
-                    loop_final_success = False
-                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-                    if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
-                        state["total_errors"] += remaining_matches_estimate
-                    break  # Exit while loop immediately
+                # Skip health halt while a refresh is in progress; block earlier until it's done
+                if not session_manager.session_health_monitor.get('refresh_in_progress').is_set():
+                    if not session_manager.check_session_health():
+                        logger.critical(
+                            f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
+                            f"Immediately halting processing to prevent cascade failures."
+                        )
+                        loop_final_success = False
+                        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                        if remaining_matches_estimate > 0:
+                            progress_bar.update(remaining_matches_estimate)
+                            state["total_errors"] += remaining_matches_estimate
+                        break  # Exit while loop immediately
 
                 # CRITICAL FIX: Check for emergency shutdown first
                 if hasattr(session_manager, 'is_emergency_shutdown') and session_manager.is_emergency_shutdown():
