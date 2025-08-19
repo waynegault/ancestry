@@ -171,6 +171,18 @@ class SessionHealthMonitor:
             )
             self.metrics_history[name] = deque(maxlen=100)
 
+    def begin_safety_test(self):
+        """Enable safety test mode to uniformly prefix all alerts and notices."""
+        self._safety_test_mode = True
+
+    def end_safety_test(self):
+        """Disable safety test mode."""
+        self._safety_test_mode = False
+
+    def _safety_prefix(self) -> str:
+        """Return the standard prefix for safety-test logs if enabled."""
+        return "🧪 [SAFETY TEST] " if self._safety_test_mode else ""
+
     def update_metric(self, name: str, value: float):
         """Update a specific health metric."""
         with self.lock:
@@ -194,18 +206,6 @@ class SessionHealthMonitor:
 
         if metric.value >= metric.threshold_critical:
             level = AlertLevel.CRITICAL
-    def begin_safety_test(self):
-        """Enable safety test mode to uniformly prefix all alerts and notices."""
-        self._safety_test_mode = True
-
-    def end_safety_test(self):
-        """Disable safety test mode."""
-        self._safety_test_mode = False
-
-    def _safety_prefix(self) -> str:
-        """Return the standard prefix for safety-test logs if enabled."""
-        return "🧪 [SAFETY TEST] " if self._safety_test_mode else ""
-
             message = f"{metric_name} is critical: {metric.value:.2f} >= {metric.threshold_critical}"
             threshold = metric.threshold_critical
         elif metric.value >= metric.threshold_warning:
