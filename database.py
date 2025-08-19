@@ -1568,9 +1568,9 @@ def exclude_deleted_persons(query):
         query: A SQLAlchemy query object that includes the Person model.
 
     Returns:
-        The modified query with a filter for Person.deleted_at == None.
+        The modified query with a filter for Person.deleted_at IS NULL.
     """
-    return query.filter(Person.deleted_at is None)
+    return query.filter(Person.deleted_at.is_(None))
 
 
 # End of exclude_deleted_persons
@@ -2144,7 +2144,7 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
             .filter(
                 func.upper(Person.profile_id) == profile_id.upper(),
                 Person.username == username,
-                Person.deleted_at is None,  # Only consider non-deleted records
+                Person.deleted_at.is_(None),  # Only consider non-deleted records
             )
             .first()
         )
