@@ -444,7 +444,7 @@ def classify_message_intent(
     if raw_classification:
         processed_classification = raw_classification.strip().upper()
         if processed_classification in EXPECTED_INTENT_CATEGORIES:
-            logger.info(
+            logger.debug(
                 f"AI intent classification: '{processed_classification}' (Took {duration:.2f}s)"
             )
             return processed_classification

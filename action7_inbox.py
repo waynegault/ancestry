@@ -932,15 +932,21 @@ class InboxProcessor:
                 with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                     # Link enhanced progress to tqdm for updates
                     progress_bar._enhanced_progress = enhanced_progress
-                (
-                    stop_reason,
-                    total_processed_api_items,
-                    ai_classified_count,
-                    status_updated_count,
-                    items_processed_before_stop,
-                ) = self._process_inbox_loop(
-                    session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
-                )
+                    (
+                        stop_reason,
+                        total_processed_api_items,
+                        ai_classified_count,
+                        status_updated_count,
+                        items_processed_before_stop,
+                    ) = self._process_inbox_loop(
+                        session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+                    )
+                    # Ensure a newline after the progress bar completes to avoid inline log overlap
+                    try:
+                        progress_bar.close()
+                    finally:
+                        sys.stderr.write("\n")
+                        sys.stderr.flush()
 
                 # Update the progress bar to show completion - only set total if needed
                 if progress_bar.total is None:
@@ -1689,15 +1695,19 @@ class InboxProcessor:
         max_inbox_limit: int,
     ):
         """Logs a unified summary of the inbox search process."""
-        # Step 1: Print header
+        # Step 1: Print header (green summary block)
         print(" ")
-        logger.info("------ Inbox Search Summary ------")
+        green = '\x1b[32m'
+        reset = '\x1b[0m'
+        def g(msg: str) -> str:
+            return f"{green}{msg}{reset}"
+        logger.info(g("------ Inbox Search Summary ------"))
         # Step 2: Log key metrics
-        logger.info(f"  API Conversations Fetched:    {total_api_items}")
-        logger.info(f"  Conversations Processed:      {items_processed}")
+        logger.info(g(f"  API Conversations Fetched:    {total_api_items}"))
+        logger.info(g(f"  Conversations Processed:      {items_processed}"))
         # logger.info(f"  New/Updated Log Entries:    {new_logs}") # Removed as upsert logic complicates exact counts
-        logger.info(f"  AI Classifications Attempted: {ai_classified}")
-        logger.info(f"  Person Status Updates Made:   {status_updates}")
+        logger.info(g(f"  AI Classifications Attempted: {ai_classified}"))
+        logger.info(g(f"  Person Status Updates Made:   {status_updates}"))
         # Step 3: Log stopping reason
         final_reason = stop_reason
         if not stop_reason:
@@ -1706,9 +1716,9 @@ class InboxProcessor:
                 final_reason = "End of Inbox Reached or Comparator Match"
             else:
                 final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
-        logger.info(f"  Processing Stopped Due To:    {final_reason}")
+        logger.info(g(f"  Processing Stopped Due To:    {final_reason}"))
         # Step 4: Print footer
-        logger.info("----------------------------------\n")  # Add newline
+        logger.info(g("----------------------------------\n"))
 
         # Update statistics
         self.stats.update(
