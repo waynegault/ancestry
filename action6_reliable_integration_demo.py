@@ -240,7 +240,8 @@ def demo_reliable_processing():
     print(f"   Duration: {duration:.2f} seconds")
 
     if result['success']:
-        print(f"   Processing Rate: {result['processing_stats']['matches_processed'] / duration:.1f} matches/second")
+        # Reduce duplication with progress summary; keep a concise rate line
+        print(f"   Rate: {result['processing_stats']['matches_processed'] / duration:.1f} matches/s")
 
     # Display system health
     health = result['final_system_health']

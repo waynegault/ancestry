@@ -250,7 +250,7 @@ class SessionManager:
             from health_monitor import get_health_monitor, integrate_with_session_manager
             self.health_monitor = get_health_monitor()
             integrate_with_session_manager(self)
-            logger.info("Health monitoring integrated with session manager")
+            logger.debug("Health monitoring integrated with session manager")
         except ImportError:
             logger.warning("Health monitoring module not available")
             self.health_monitor = None
@@ -1047,19 +1047,19 @@ class SessionManager:
         # Check if browser is approaching max age
         browser_age = current_time - self.browser_health_monitor['browser_start_time']
         if browser_age >= self.browser_health_monitor['max_browser_age']:
-            logger.info(f"🔄 Browser age ({browser_age:.0f}s) approaching limit - proactive browser refresh needed")
+            logger.debug(f"🔄 Browser age ({browser_age:.0f}s) approaching limit - proactive browser refresh needed")
             return True
 
         # Check if enough time has passed since last browser refresh
         time_since_refresh = current_time - self.browser_health_monitor['last_browser_refresh']
         if time_since_refresh >= self.browser_health_monitor['browser_refresh_interval']:
-            logger.info(f"🔄 Time since last browser refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
+            logger.debug(f"🔄 Time since last browser refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
             return True
 
         # Check if too many pages processed since last refresh
         pages_processed = self.browser_health_monitor['pages_since_refresh']
         if pages_processed >= self.browser_health_monitor['max_pages_before_refresh']:
-            logger.info(f"🔄 Pages since last refresh ({pages_processed}) - proactive browser refresh needed")
+            logger.debug(f"🔄 Pages since last refresh ({pages_processed}) - proactive browser refresh needed")
             return True
 
         return False
@@ -1164,10 +1164,10 @@ class SessionManager:
             # Also mark session-level refresh to suppress transient death detection
             if 'refresh_in_progress' in self.session_health_monitor:
                 self.session_health_monitor['refresh_in_progress'].set()
-            logger.info("🔄 Starting proactive browser refresh...")
+            logger.debug("🔄 Starting proactive browser refresh...")
 
             for attempt in range(1, max_attempts + 1):
-                logger.info(f"🔄 Browser refresh attempt {attempt}/{max_attempts}...")
+                logger.debug(f"🔄 Browser refresh attempt {attempt}/{max_attempts}...")
 
                 try:
                     # CRITICAL FIX: Use atomic browser replacement instead of close→sleep→start
@@ -1178,7 +1178,7 @@ class SessionManager:
                         # Warm-up sequence to ensure cookies and CSRF are populated
                         try:
                             from utils import nav_to_page
-                            base_ok = nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
+                            nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
                             # Prefer built-in CSRF retrieval/precache to avoid attribute errors
                             _ = self.get_csrf()
                             _ = self.get_my_tree_id()
@@ -1199,7 +1199,7 @@ class SessionManager:
 
                             duration = current_time - start_time
                             logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (atomic_browser_replacement)")
-                            logger.info(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
+                            logger.debug(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
                             # Clear refresh flag on success
                             if 'refresh_in_progress' in self.session_health_monitor:
                                 self.session_health_monitor['refresh_in_progress'].clear()
@@ -1302,7 +1302,7 @@ class SessionManager:
                 except Exception as close_exc:
                     logger.warning(f"⚠️ Error closing old browser (non-critical): {close_exc}")
 
-                logger.info(f"✅ TRUE atomic browser replacement completed successfully for: {action_name}")
+                logger.debug(f"✅ TRUE atomic browser replacement completed successfully for: {action_name}")
                 return True
 
             except Exception as exc:

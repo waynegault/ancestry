@@ -28,6 +28,7 @@ from core.progress_indicators import create_progress_indicator
 # Performance monitoring helper with session manager integration
 def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
     """Log API performance metrics for monitoring and optimization."""
+
     duration = time.time() - start_time
 
     # Always log performance metrics for analysis
@@ -39,10 +40,8 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
 
     # Log warnings for slow API calls with enhanced context - ADJUSTED: Less pessimistic thresholds
     if duration > 25.0:  # OPTIMIZATION: Increased from 10.0s to 25.0s - more realistic for batch processing
-        print()
         logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
     elif duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - batch processing can take 10-15s normally
-        print()
         logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
     elif duration > 8.0:  # OPTIMIZATION: Increased from 2.0s to 8.0s - individual API calls can take 3-8s normally
         logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
@@ -118,6 +117,11 @@ class Colors:
         """Return text in red color"""
         return f"{Colors.RED}{text}{Colors.END}"
 
+    @staticmethod
+    def yellow(text: str) -> str:
+        """Return text in yellow color"""
+        return f"{Colors.YELLOW}{text}{Colors.END}"
+
 
 # === RUN-ID & SINGLE-INSTANCE LOCK ===
 import atexit
@@ -153,12 +157,8 @@ def _a6_acquire_single_instance_lock() -> bool:
                 data = _A6_LOCK_FILE.read_text(encoding="utf-8", errors="ignore").strip()
                 parts = data.split("|")
                 prev_pid = int(parts[0]) if parts and parts[0].isdigit() else None
-                prev_run_id = parts[1] if len(parts) > 1 else ""
-                prev_ts = float(parts[2]) if len(parts) > 2 else 0.0
             except Exception:
                 prev_pid = None
-                prev_run_id = ""
-                prev_ts = 0.0
 
             stale = False
             if prev_pid and _a6_is_process_alive(prev_pid):
@@ -208,10 +208,8 @@ def _a6_release_lock() -> None:
 def _a6_log_run_id_prefix(msg: str) -> str:
     return f"[{_A6_RUN_ID}] {msg}"
 
-    @staticmethod
-    def yellow(text: str) -> str:
-        """Return text in yellow color"""
-        return f"{Colors.YELLOW}{text}{Colors.END}"
+# Reduce cookie/CSRF debug chattiness (set True only when deep debugging auth)
+_AUTH_DEBUG_VERBOSE = False
 
 # === ENHANCED LOGGER WITH COLORS ===
 class ColorLogger:
@@ -220,17 +218,17 @@ class ColorLogger:
     def __init__(self, base_logger):
         self.base_logger = base_logger
 
-    def debug(self, message):
-        self.base_logger.debug(message)
+    def debug(self, message, *args, **kwargs):
+        self.base_logger.debug(message, *args, **kwargs)
 
-    def info(self, message):
-        self.base_logger.info(message)
+    def info(self, message, *args, **kwargs):
+        self.base_logger.info(message, *args, **kwargs)
 
-    def warning(self, message):
+    def warning(self, message, *args, **kwargs):
         # Auto-colorize warnings in yellow unless already colored
         if '\033[' not in str(message):  # Check if already has ANSI codes
             message = Colors.yellow(str(message))
-        self.base_logger.warning(message)
+        self.base_logger.warning(message, *args, **kwargs)
 
     def error(self, message, **kwargs):
         # Auto-colorize errors in red unless already colored
@@ -343,7 +341,6 @@ from selenium.common.exceptions import (
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
 from tqdm.auto import tqdm  # Progress bar
-from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
 from error_handling import (
     AuthenticationExpiredError,
@@ -581,7 +578,7 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
                 if hasattr(session_manager, 'api_manager') and hasattr(session_manager.api_manager, 'get_csrf_token'):
                     fresh_token = session_manager.api_manager.get_csrf_token()
                     if fresh_token:
-                        logger.info("Successfully obtained fresh CSRF token from API")
+                        logger.debug("Successfully obtained fresh CSRF token from API")
                         return fresh_token
                     else:
                         logger.debug("API CSRF token request returned None, falling back to cookies")
@@ -744,7 +741,7 @@ def _main_page_processing_loop(
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
     original_threshold = CRITICAL_API_FAILURE_THRESHOLD
     CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold
-    logger.info(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
+    logger.debug(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
 
     current_page_num = start_page
     # Estimate total matches for the progress bar based on pages *this run*
@@ -765,28 +762,30 @@ def _main_page_processing_loop(
     loop_final_success = True  # Success flag for this loop's execution
 
     # PHASE 1 OPTIMIZATION: Enhanced progress tracking with ETA and memory monitoring
+    # Use central ProgressIndicator as the single source of truth for the bar and stats
     with create_progress_indicator(
         description="DNA Match Gathering",
         total=total_matches_estimate_this_run,
         unit="matches",
         show_memory=True,
-        show_rate=True
-    ):
+        show_rate=True,
+        log_start=False,
+        log_finish=False,
+        leave=False,
+    ) as progress:
+        progress_bar = progress.progress_bar
 
-        # Keep original tqdm for compatibility
-        with logging_redirect_tqdm():
-            progress_bar = tqdm(
-                total=total_matches_estimate_this_run,
-                desc="",
-                unit=" match",
-                bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
-                file=sys.stderr,
-                leave=True,
-                dynamic_ncols=True,
-                ascii=False,
-                mininterval=0.1,
-                maxinterval=1.0,
-            )
+        # Redirect any existing progress_bar.update() calls to progress.update()
+        if progress_bar is not None:
+            def _pb_update_wrapper(increment: int = 1):
+                try:
+                    progress.update(int(increment))
+                except Exception:
+                    progress.update(0)
+            try:
+                progress_bar.update = _pb_update_wrapper  # type: ignore[attr-defined]
+            except Exception:
+                pass
         try:
             matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = (
                 initial_matches_on_page
@@ -794,13 +793,19 @@ def _main_page_processing_loop(
 
             while current_page_num <= last_page_to_process:
                 # If a refresh is in progress, pause all processing until it completes
-                while session_manager.session_health_monitor.get('refresh_in_progress').is_set():
-                    logger.info(f"⏸️ Refresh in progress; pausing processing at page {current_page_num}...")
+                while True:
+                    refresh_event = session_manager.session_health_monitor.get('refresh_in_progress')
+                    if hasattr(refresh_event, 'is_set') and callable(refresh_event.is_set):
+                        if not refresh_event.is_set():
+                            break
+                    else:
+                        break
+                    logger.debug(f"⏸️ Refresh in progress; pausing processing at page {current_page_num}...")
                     time.sleep(0.5)
 
                 # OPTION C: PROACTIVE BROWSER REFRESH - Check if browser needs refresh before processing
                 if session_manager.should_proactive_browser_refresh():
-                    logger.info(f"🔄 Performing proactive browser refresh at page {current_page_num}")
+                    logger.debug(f"🔄 Performing proactive browser refresh at page {current_page_num}")
                     refresh_success = session_manager.perform_proactive_browser_refresh()
 
                     if not refresh_success:
@@ -820,7 +825,7 @@ def _main_page_processing_loop(
                         else:
                             logger.warning("⚠️ Browser refresh failed but session still valid - continuing with current session")
                     else:
-                        logger.info(f"✅ Proactive browser refresh successful at page {current_page_num}")
+                        logger.debug(f"✅ Proactive browser refresh successful at page {current_page_num}")
 
                 # PROACTIVE SESSION REFRESH: Check if session needs refresh before processing
                 if session_manager.should_proactive_refresh():
@@ -862,7 +867,9 @@ def _main_page_processing_loop(
 
                 # SURGICAL FIX #20: Universal Session Health Monitoring via SessionManager
                 # Skip health halt while a refresh is in progress; block earlier until it's done
-                if not session_manager.session_health_monitor.get('refresh_in_progress').is_set():
+                refresh_event = session_manager.session_health_monitor.get('refresh_in_progress')
+                refresh_active = bool(getattr(refresh_event, 'is_set', lambda: False)())
+                if not refresh_active:
                     if not session_manager.check_session_health():
                         logger.critical(
                             f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
@@ -1000,20 +1007,20 @@ def _main_page_processing_loop(
                         health_score = dashboard['health_score']
                         risk_score = dashboard['risk_score']
 
-                        # COMPREHENSIVE HEALTH SUMMARY every 25 pages
+                        # COMPREHENSIVE HEALTH SUMMARY every 25 pages (now at DEBUG, green)
                         if current_page_num % 25 == 0:
-                            logger.info(f"📊 COMPREHENSIVE HEALTH SUMMARY - Page {current_page_num}")
-                            logger.info(f"   Health Score: {health_score:.1f}/100 ({dashboard['health_status'].upper()})")
-                            logger.info(f"   Risk Level: {dashboard['risk_level']} (Score: {risk_score:.2f})")
-                            logger.info(f"   API Response: {dashboard['performance_summary']['avg_api_response_time']:.1f}s avg")
-                            logger.info(f"   Memory: {dashboard['performance_summary']['current_memory_mb']:.1f}MB")
-                            logger.info(f"   Errors: {dashboard['performance_summary']['total_errors']}")
+                            logger.debug(Colors.green(f"📊 COMPREHENSIVE HEALTH SUMMARY - Page {current_page_num}"))
+                            logger.debug(Colors.green(f"   Health Score: {health_score:.1f}/100 ({dashboard['health_status'].upper()})"))
+                            logger.debug(Colors.green(f"   Risk Level: {dashboard['risk_level']} (Score: {risk_score:.2f})"))
+                            logger.debug(Colors.green(f"   API Response: {dashboard['performance_summary']['avg_api_response_time']:.1f}s avg"))
+                            logger.debug(Colors.green(f"   Memory: {dashboard['performance_summary']['current_memory_mb']:.1f}MB"))
+                            logger.debug(Colors.green(f"   Errors: {dashboard['performance_summary']['total_errors']}"))
 
                             # Show recommended actions
                             if dashboard['recommended_actions']:
-                                logger.info("   Recommended Actions:")
+                                logger.debug(Colors.green("   Recommended Actions:"))
                                 for action in dashboard['recommended_actions'][:3]:
-                                    logger.info(f"     • {action}")
+                                    logger.debug(Colors.green(f"     • {action}"))
 
                         # EMERGENCY INTERVENTION - Check on every page
                         if risk_score > 0.8:
@@ -1209,8 +1216,7 @@ def _main_page_processing_loop(
 
                                 # If all matches on the page can be skipped, do fast processing
                                 if len(fetch_candidates_uuid) == 0:
-                                    print()
-                                    logger.info(_a6_log_run_id_prefix(f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip"))
+                                    logger.debug((f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip"))
                                     progress_bar.update(len(matches_on_page_for_batch))
                                     state["total_skipped"] += page_skip_count
                                     state["total_pages_processed"] += 1
@@ -1236,13 +1242,7 @@ def _main_page_processing_loop(
                 state["total_errors"] += page_errors
                 state["total_pages_processed"] += 1
 
-                progress_bar.set_postfix(
-                    New=state["total_new"],
-                    Upd=state["total_updated"],
-                    Skip=state["total_skipped"],
-                    Err=state["total_errors"],
-                    refresh=True,
-                )
+                # Postfix disabled to preserve single-line progress stability
 
                 _adjust_delay(session_manager, current_page_num)
                 limiter = getattr(session_manager, "dynamic_rate_limiter", None)
@@ -1258,13 +1258,7 @@ def _main_page_processing_loop(
                 session_manager.increment_page_count()
         finally:
             if progress_bar:
-                progress_bar.set_postfix(
-                    New=state["total_new"],
-                    Upd=state["total_updated"],
-                    Skip=state["total_skipped"],
-                    Err=state["total_errors"],
-                    refresh=True,
-                )
+                # Final postfix disabled to preserve single-line progress stability
                 if progress_bar.n < progress_bar.total and loop_final_success:
                     # If loop ended early but successfully (e.g. fewer pages than estimated)
                     # Ensure bar reflects actual processed, not estimate.
@@ -1281,9 +1275,7 @@ def _main_page_processing_loop(
                     progress_bar.refresh()  # Force update before close
                     progress_bar.close()
                 finally:
-                    # Ensure clean output after progress bar with multiple newlines
-                    print("", file=sys.stderr, flush=True)  # Newline to separate from any following log output
-                    sys.stderr.flush()  # Additional flush to ensure output
+                    pass  # Avoid printing extra newlines that can break single-line progress bar
 
     return loop_final_success
 
@@ -1339,15 +1331,18 @@ def coord(
     # Acquire single-instance lock
     if not _a6_acquire_single_instance_lock():
         # Graceful no-op: another run is active in this process or another.
-        logger.info(_a6_log_run_id_prefix("Another Action 6 instance is running (lock present). Skipping duplicate start."))
+        logger.error(_a6_log_run_id_prefix("Another Action 6 instance is running (lock present). Skipping duplicate start."))
         return True
+
+    # Record coord start timestamp for summary rate/time
+    state["coord_start_ts"] = time.time()
 
     logger.debug(_a6_log_run_id_prefix(
         f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---"
     ))
 
     # EMERGENCY FIX: Force session validation before starting
-    logger.info(_a6_log_run_id_prefix("🔍 Performing comprehensive session validation before starting..."))
+    logger.debug(_a6_log_run_id_prefix("🔍 Performing comprehensive session validation before starting..."))
 
     # Test API connectivity with a simple call
     try:
@@ -1367,9 +1362,9 @@ def coord(
             if not login_status(session_manager, disable_ui_fallback=False):
                 raise Exception("Failed to re-authenticate after session refresh")
 
-            logger.info("✅ Session refresh and re-authentication successful")
+            logger.debug("✅ Session refresh and re-authentication successful")
         else:
-            logger.info("✅ Session validation passed - API connectivity confirmed")
+            logger.debug("✅ Session validation passed - API connectivity confirmed")
 
         # === CRITICAL: VERIFY HEALTH MONITORING IS ACTIVE ===
         # For Action 6 interactive runs, do NOT execute self-tests; only verify monitor is present.
@@ -1398,7 +1393,9 @@ def coord(
         state["matches_on_current_page"] = (
             initial_matches if initial_matches is not None else []
         )
+        print()
         logger.info(f"Total pages found: {total_pages_api}")
+        print()
 
         # Step 4: Determine Page Range
         last_page_to_process, total_pages_in_run = _determine_page_processing_range(
@@ -1453,6 +1450,8 @@ def coord(
         logger.error(f"Critical error during coord execution: {e}", exc_info=True)
         state["final_success"] = False
     finally:
+        # Emit forensic debug before final summary
+        logger.debug(f"Released lock for run [{_A6_RUN_ID}]")
         # Step 7: Final Summary Logging (uses updated state from the loop)
         _log_coord_summary(
             state["total_pages_processed"],
@@ -1460,6 +1459,7 @@ def coord(
             state["total_updated"],
             state["total_skipped"],
             state["total_errors"],
+            start_ts=state.get("coord_start_ts"),
         )
 
 
@@ -4436,11 +4436,14 @@ def get_matches(
             session_manager._sync_cookies_to_requests()
             # Track the sync time
             setattr(session_manager, '_last_cookie_sync_time', current_time)
-            logger.debug("Smart cookie sync performed (cookies were stale)")
+            if _AUTH_DEBUG_VERBOSE:
+                logger.debug("Smart cookie sync performed (cookies were stale)")
         elif not cookie_sync_needed:
-            logger.debug("Skipping cookie sync - cookies are fresh")
+            if _AUTH_DEBUG_VERBOSE:
+                logger.debug("Skipping cookie sync - cookies are fresh")
         else:
-            logger.debug("Cookie sync method not available")
+            if _AUTH_DEBUG_VERBOSE:
+                logger.debug("Cookie sync method not available")
 
     except Exception as session_validation_error:
         logger.error(f"Session validation error: {session_validation_error}")
@@ -4453,7 +4456,8 @@ def get_matches(
     csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
 
     if cached_csrf_token and csrf_cache_valid:
-        logger.debug(f"Using cached CSRF token (age: {time_module.time() - cached_csrf_time:.1f}s)")
+        if _AUTH_DEBUG_VERBOSE:
+            logger.debug(f"Using cached CSRF token (age: {time_module.time() - cached_csrf_time:.1f}s)")
         specific_csrf_token = cached_csrf_token
     else:
         # Need to read CSRF token from cookies
@@ -4463,13 +4467,15 @@ def get_matches(
             "_csrf",
         )
         try:
-            logger.debug(f"Reading fresh CSRF token from cookies: {csrf_token_cookie_names}")
+            if _AUTH_DEBUG_VERBOSE:
+                logger.debug(f"Reading fresh CSRF token from cookies: {csrf_token_cookie_names}")
             for cookie_name in csrf_token_cookie_names:
                 try:
                     cookie_obj = driver.get_cookie(cookie_name)
                     if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
                         specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
-                        logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
+                        if _AUTH_DEBUG_VERBOSE:
+                            logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
                         # Cache the token for future use
                         setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
                         setattr(session_manager, '_cached_csrf_time', time_module.time())
@@ -4487,9 +4493,10 @@ def get_matches(
                     )
 
             if not specific_csrf_token:
-                logger.debug(
-                    "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
-                )
+                if _AUTH_DEBUG_VERBOSE:
+                    logger.debug(
+                        "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
+                    )
                 all_cookies = get_driver_cookies(driver)
                 if all_cookies:
                     # get_driver_cookies returns a list of cookie dictionaries
@@ -4497,9 +4504,10 @@ def get_matches(
                         for cookie in all_cookies:
                             if cookie.get("name") == cookie_name and cookie.get("value"):
                                 specific_csrf_token = unquote(cookie["value"]).split("|")[0]
-                                logger.debug(
-                                    f"Read CSRF token via fallback from '{cookie_name}'."
-                                )
+                                if _AUTH_DEBUG_VERBOSE:
+                                    logger.debug(
+                                        f"Read CSRF token via fallback from '{cookie_name}'."
+                                    )
                                 # Cache the token for future use
                                 setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
                                 setattr(session_manager, '_cached_csrf_time', time_module.time())
@@ -4507,9 +4515,10 @@ def get_matches(
                         if specific_csrf_token:
                             break
                 else:
-                    logger.warning(
-                        "Fallback get_driver_cookies also failed to retrieve cookies."
-                    )
+                    if _AUTH_DEBUG_VERBOSE:
+                        logger.warning(
+                            "Fallback get_driver_cookies also failed to retrieve cookies."
+                        )
         except Exception as csrf_err:
             logger.error(
                 f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
@@ -4522,7 +4531,19 @@ def get_matches(
         )
         return None
     else:
-        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+        if _AUTH_DEBUG_VERBOSE:
+            logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+
+    # Warm-up: visit the UI list page to ensure match-list CSRF is set in browser, then sync cookies + refresh CSRF
+    try:
+        from utils import nav_to_page
+        ui_list_url = urljoin(config_schema.api.base_url, "discoveryui-matches/list/")
+        nav_to_page(driver, ui_list_url)
+        # Sync browser cookies to requests and refresh CSRF
+        session_manager._sync_cookies_to_requests()
+        specific_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True) or specific_csrf_token
+    except Exception as warmup_exc:
+        logger.debug(f"Match list warm-up skipped due to: {warmup_exc}")
 
     # Use the working API endpoint pattern that matches other working API calls (like matchProbabilityData, badges, etc.)
     match_list_url = urljoin(
@@ -4536,13 +4557,15 @@ def get_matches(
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
     }
     logger.debug(_a6_log_run_id_prefix(f"Calling Match List API for page {current_page}..."))
-    logger.debug(_a6_log_run_id_prefix(
-        f"Headers being passed to _api_req for Match List: {match_list_headers}"
-    ))
+    if _AUTH_DEBUG_VERBOSE:
+        logger.debug(_a6_log_run_id_prefix(
+            f"Headers being passed to _api_req for Match List: {match_list_headers}"
+        ))
 
     # Additional debug logging for troubleshooting 303 redirects
-    logger.debug(f"Match List URL: {match_list_url}")
-    logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
+    if _AUTH_DEBUG_VERBOSE:
+        logger.debug(f"Match List URL: {match_list_url}")
+        logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
 
     # CRITICAL: Ensure cookies are synced immediately before API call
     # This was simpler in the working version from 6 weeks ago
@@ -4551,7 +4574,8 @@ def get_matches(
         if hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
     except Exception as cookie_sync_error:
-        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
+        if _AUTH_DEBUG_VERBOSE:
+            logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
     # ROOT CAUSE FIX: Match List API REQUIRES CSRF token authentication
     # The Profile API works without CSRF, but Match List API needs it
@@ -5960,8 +5984,12 @@ def _log_coord_summary(
     total_updated: int,
     total_skipped: int,
     total_errors: int,
+    start_ts: float | None = None,
 ):
     """Logs the final summary of the entire coord (match gathering) execution."""
+    # Compute processed count from counters
+    processed = (total_new or 0) + (total_updated or 0) + (total_skipped or 0)
+
     logger.info(Colors.green("---- Gather Matches Final Summary ----"))
     logger.info(Colors.green(f"Run id: [{_A6_RUN_ID}]"))
     logger.info(Colors.green(f"Total Pages Processed: {total_pages_processed}"))
@@ -5969,7 +5997,35 @@ def _log_coord_summary(
     logger.info(Colors.green(f"Total Updated:       {total_updated}"))
     logger.info(Colors.green(f"Total Skipped:       {total_skipped}"))
     logger.info(Colors.green(f"Total Errors:        {total_errors}"))
-    logger.info(Colors.green("------------------------------------\n"))
+
+    # Integrate processed count, rate and elapsed
+    elapsed_seconds = None
+    if start_ts:
+        try:
+            elapsed_seconds = max(0.0, time.time() - float(start_ts))
+        except Exception:
+            elapsed_seconds = None
+
+    if elapsed_seconds is None:
+        # Fallback: approximate using lock file timestamp
+        try:
+            payload = _A6_LOCK_FILE.read_text(encoding="utf-8").strip()
+            parts = payload.split("|")
+            if len(parts) == 3:
+                lf_start_ts = float(parts[2])
+                elapsed_seconds = max(0.0, time.time() - lf_start_ts)
+        except Exception:
+            elapsed_seconds = None
+
+    if elapsed_seconds is not None:
+        from datetime import timedelta as _td
+        rate_val = (processed / elapsed_seconds) if elapsed_seconds > 0 else 0.0
+        logger.info(Colors.green(f"Processed: {processed} | Rate: {rate_val:.1f} matches/s | Total time: {_td(seconds=int(elapsed_seconds))}"))
+    else:
+        logger.info(Colors.green(f"Processed: {processed}"))
+
+    logger.info(Colors.green("------------------------------------"))
+    logger.info("")
 
 
 # End of _log_coord_summary
@@ -6662,6 +6718,45 @@ def action6_gather_module_tests() -> bool:
             expected_behavior="Module initializes correctly with proper state management and page validation",
             test_description="Module initialization and state management functions",
             method_description="Testing state initialization, page validation, and parameter handling for DNA match gathering",
+        )
+
+        # NEW: Progress bar integration correctness (would catch 0 processed bug)
+        def test_progress_integration_counts():
+            """Ensure ProgressIndicator stats reflect progress_bar.update increments."""
+            from core.progress_indicators import create_progress_indicator
+            with create_progress_indicator(
+                description="TEST",
+                total=10,
+                unit="items",
+                log_start=False,
+                log_finish=False,
+                leave=False,
+            ) as progress:
+                pb = progress.progress_bar
+                assert pb is not None, "Progress bar should be created"
+                # Attach the same wrapper used in production loop
+                def _pb_update_wrapper(increment: int = 1):
+                    try:
+                        progress.update(int(increment))
+                    except Exception:
+                        progress.update(0)
+                pb.update = _pb_update_wrapper  # type: ignore[attr-defined]
+                # Simulate work
+                pb.update(3)
+                pb.update(2)
+                pb.update(5)
+            # After context exit, stats should show 10 processed
+            assert progress.stats.items_processed == 10, (
+                f"Expected 10 processed, got {progress.stats.items_processed}"
+            )
+            return True
+
+        suite.run_test(
+            test_name="ProgressIndicator integration increments processed count",
+            test_func=test_progress_integration_counts,
+            expected_behavior="ProgressIndicator.stats matches total updates to progress_bar",
+            test_description="Would catch regressions where final summary shows 0 processed despite bar moving",
+            method_description="Attach the production wrapper and call update; assert stats == total",
         )
 
         # 🛡️ REGRESSION PREVENTION TESTS - These would have caught the issues we encountered

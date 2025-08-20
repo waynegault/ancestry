@@ -385,7 +385,7 @@ def exec_actn(
 
     logger.info("------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("------------------------------------------")
+    logger.info("------------------------------------------\n")
 
     action_result = None
     action_exception = None  # Store exception if one occurs
@@ -1261,7 +1261,7 @@ def coord_action(session_manager, config_schema=None, start=1):
         print("ERROR: Session not ready. Cannot gather matches.")
         return False
 
-    print(f"Gathering DNA Matches from page {start}...")
+    logger.info(f"Gathering DNA Matches from page {start}...")
     try:
         # Call the imported function from action6
         result = coord(session_manager, config, start=start)

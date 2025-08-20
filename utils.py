@@ -3421,6 +3421,17 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
 
 # End of login_status
 
+
+# Helper: URL base matching with optional subpath allowance
+# Accepts landed URL bases that are the same as target OR are subpaths under it.
+def _url_base_matches(target_url_base: str, landed_url_base: str) -> bool:
+    try:
+        target = (target_url_base or "").rstrip("/")
+        landed = (landed_url_base or "").rstrip("/")
+        return landed == target or landed.startswith(target + "/")
+    except Exception:
+        return False
+
 # ------------------------------------------------------------------------------------
 # Navigation Functions (Remains in utils.py)
 # ------------------------------------------------------------------------------------
@@ -3645,7 +3656,7 @@ def nav_to_page(
 
             # Check if landed on an unexpected URL (and not login/mfa)
             # Allow for slight variations (e.g., trailing slash) via base comparison
-            if landed_url_base != target_url_base:
+            if not _url_base_matches(target_url_base, landed_url_base):
                 # Check if it's a known redirect (e.g., signin page redirecting to base URL after successful login)
                 is_signin_to_base_redirect = (
                     target_url_base == signin_page_url_base
@@ -4057,6 +4068,39 @@ def test_performance_validation():
 
         elapsed = time.time() - start_time
         assert elapsed < 1.0, f"Performance test should complete quickly, took {elapsed:.3f}s"
+
+        # New test ensuring that nav_to_page accepts subpath under the target base
+        def test_nav_to_list_accepts_uuid_subpath():
+            class MockDriver:
+                def __init__(self, current_url):
+                    self.current_url = current_url
+                def get(self, url):
+                    self.current_url = url
+                def execute_script(self, script):
+                    return "complete"
+            # Target is /discoveryui-matches/list/ while landed has /list/<UUID>
+            base = "https://www.ancestry.co.uk/discoveryui-matches/list/"
+            uuid_url = base + "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7"
+            _ = MockDriver(uuid_url)
+            # Monkey-patch is_browser_open to True
+            from utils import is_browser_open as real_is_open
+            try:
+                def is_open_mock(driver):
+                    return True
+                globals()['is_browser_open'] = is_open_mock
+                assert _url_base_matches(base.rstrip('/'), uuid_url.rstrip('/'))
+            finally:
+                globals()['is_browser_open'] = real_is_open
+            return True
+
+        suite.run_test(
+            test_name="nav_to_page accepts subpath under target base",
+            test_func=test_nav_to_list_accepts_uuid_subpath,
+            expected_behavior="Navigation logic should not treat UUID subpath as wrong base",
+            test_description="Fixes repeated 'unexpected URL base' on matches list where site appends /<UUID>",
+            method_description="Assert _url_base_matches accepts target base and its subpaths",
+        )
+
         return True
     except Exception:
         return False

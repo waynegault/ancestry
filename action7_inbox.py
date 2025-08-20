@@ -910,7 +910,7 @@ class InboxProcessor:
                 "file": sys.stderr,
             }
             logger.info(
-                f"Processing inbox items (limit: {self.max_inbox_limit if self.max_inbox_limit > 0 else 'unlimited'})...\n"
+                f"Processing inbox items (limit: {self.max_inbox_limit if self.max_inbox_limit > 0 else 'unlimited'})..."
             )
 
             # PHASE 1 OPTIMIZATION: Enhanced progress tracking for inbox processing
@@ -919,7 +919,9 @@ class InboxProcessor:
                 total=self.max_inbox_limit if self.max_inbox_limit > 0 else None,
                 unit="conversations",
                 show_memory=True,
-                show_rate=True
+                show_rate=True,
+                log_finish=False,
+                leave=False,
             ) as enhanced_progress:
 
                 with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:

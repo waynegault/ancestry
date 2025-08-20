@@ -40,12 +40,12 @@ def verify_health_monitoring_active(session_manager) -> bool:
     }
 
     try:
-        logger.info("🔍 VERIFYING HEALTH MONITORING IS ACTIVE IN PRODUCTION")
+        logger.debug("🔍 VERIFYING HEALTH MONITORING IS ACTIVE IN PRODUCTION")
 
         # TEST 1: Health monitor exists and is integrated
         if hasattr(session_manager, 'health_monitor') and session_manager.health_monitor:
             health_monitor = session_manager.health_monitor
-            logger.info("✅ Health monitor found and integrated")
+            logger.debug("✅ Health monitor found and integrated")
             verification_results["health_monitor_exists"] = True
 
             # TEST 2: Metrics are updating
@@ -68,7 +68,7 @@ def verify_health_monitoring_active(session_manager) -> bool:
                 if (new_api_times > old_api_times or
                     new_memory_history > old_memory_history or
                     hasattr(health_monitor, 'record_api_response_time')):
-                    logger.info("✅ Metrics tracking is working")
+                    logger.debug("✅ Metrics tracking is working")
                     verification_results["metrics_updating"] = True
                 else:
                     logger.warning("⚠️ Metrics tracking may not be fully working, but basic monitoring exists")
@@ -83,7 +83,7 @@ def verify_health_monitoring_active(session_manager) -> bool:
                 if dashboard and "health_score" in dashboard and "risk_score" in dashboard:
                     health_score = dashboard["health_score"]
                     risk_score = dashboard["risk_score"]
-                    logger.info(f"✅ Dashboard working - Health: {health_score:.1f}, Risk: {risk_score:.2f}")
+                    logger.debug(f"✅ Dashboard working - Health: {health_score:.1f}, Risk: {risk_score:.2f}")
                     verification_results["dashboard_working"] = True
                 else:
                     logger.error("❌ Dashboard generation failed")
@@ -94,7 +94,7 @@ def verify_health_monitoring_active(session_manager) -> bool:
             try:
                 risk_score = health_monitor.predict_session_death_risk()
                 if 0.0 <= risk_score <= 1.0:
-                    logger.info(f"✅ Risk assessment working - Current risk: {risk_score:.2f}")
+                    logger.debug(f"✅ Risk assessment working - Current risk: {risk_score:.2f}")
                     verification_results["risk_assessment_working"] = True
                 else:
                     logger.error(f"❌ Risk assessment returned invalid score: {risk_score}")
@@ -106,7 +106,7 @@ def verify_health_monitoring_active(session_manager) -> bool:
                 from health_monitor import get_performance_recommendations
                 emergency_recs = get_performance_recommendations(10.0, 0.9)  # Low health, high risk
                 if emergency_recs and emergency_recs.get("action_required") == "emergency_refresh":
-                    logger.info("✅ Emergency intervention logic is ready")
+                    logger.debug("✅ Emergency intervention logic is ready")
                     verification_results["emergency_intervention_ready"] = True
                 else:
                     logger.error("❌ Emergency intervention logic not working")
@@ -119,7 +119,7 @@ def verify_health_monitoring_active(session_manager) -> bool:
         # TEST 6: Session refresh mechanism ready
         try:
             if hasattr(session_manager, 'perform_proactive_refresh'):
-                logger.info("✅ Session refresh mechanism is available")
+                logger.debug("✅ Session refresh mechanism is available")
                 verification_results["session_refresh_ready"] = True
             else:
                 logger.error("❌ Session refresh mechanism not available")
@@ -134,10 +134,10 @@ def verify_health_monitoring_active(session_manager) -> bool:
     passed_checks = sum(verification_results.values())
     total_checks = len(verification_results)
 
-    logger.info(f"🎯 HEALTH MONITORING VERIFICATION: {passed_checks}/{total_checks} checks passed")
+    logger.debug(f"🎯 HEALTH MONITORING VERIFICATION: {passed_checks}/{total_checks} checks passed")
 
     if passed_checks == total_checks:
-        logger.info("🎉 ALL HEALTH MONITORING CHECKS PASSED - System is ready!")
+        logger.debug("🎉 ALL HEALTH MONITORING CHECKS PASSED - System is ready!")
         return True
     else:
         logger.error("❌ SOME HEALTH MONITORING CHECKS FAILED - System may not be protected!")
@@ -166,9 +166,13 @@ def log_health_status_for_verification(session_manager, page_number: int):
             risk_score = dashboard.get("risk_score", 0)
             risk_level = dashboard.get("risk_level", "UNKNOWN")
 
-            # Log verification info
-            logger.info(f"📊 HEALTH VERIFICATION - Page {page_number}: "
-                       f"Health={health_score:.1f}/100, Risk={risk_score:.2f} ({risk_level})")
+            # Log verification info (DEBUG, green wrapped only if Colors available)
+            try:
+                from logging_config import Colors as LogColors
+                logger.debug(LogColors.green(f"📊 HEALTH VERIFICATION - Page {page_number}: "
+                           f"Health={health_score:.1f}/100, Risk={risk_score:.2f} ({risk_level})"))
+            except Exception:
+                logger.debug(f"📊 HEALTH VERIFICATION - Page {page_number}: Health={health_score:.1f}/100, Risk={risk_score:.2f} ({risk_level})")
 
             # Check for concerning conditions
             if risk_score > 0.8:
