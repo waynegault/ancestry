@@ -919,9 +919,10 @@ class InboxProcessor:
             )
 
             # PHASE 1 OPTIMIZATION: Enhanced progress tracking for inbox processing
+            dynamic_total = self.max_inbox_limit if self.max_inbox_limit > 0 else 0
             with create_progress_indicator(
                 description="Inbox Message Processing",
-                total=self.max_inbox_limit if self.max_inbox_limit > 0 else None,
+                total=dynamic_total if dynamic_total > 0 else None,
                 unit="conversations",
                 show_memory=True,
                 show_rate=True,

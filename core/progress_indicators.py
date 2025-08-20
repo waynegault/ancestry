@@ -155,7 +155,7 @@ class ProgressIndicator:
 
     def _update_display(self, custom_status: Optional[str] = None):
         """Update the progress bar display"""
-        if not self.progress_bar:
+        if self.progress_bar is None:
             return
 
         # Update progress bar position
@@ -196,7 +196,7 @@ class ProgressIndicator:
         """Update the total number of items"""
         with self._lock:
             self.stats.total_items = total
-            if self.progress_bar:
+            if self.progress_bar is not None:
                 self.progress_bar.total = total
                 self.progress_bar.refresh()
 
@@ -219,7 +219,7 @@ class ProgressIndicator:
 
     def finish(self, final_message: Optional[str] = None):
         """Complete the progress tracking"""
-        if self.progress_bar:
+        if self.progress_bar is not None:
             # Ensure progress bar shows completion
             if self.stats.total_items:
                 self.progress_bar.n = self.stats.total_items
