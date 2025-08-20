@@ -854,9 +854,9 @@ def _main_page_processing_loop(
                 if session_manager.check_automatic_intervention():
                     logger.critical(f"🚨 AUTOMATIC INTERVENTION TRIGGERED - Halting processing at page {current_page_num}")
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
+                        progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
 
@@ -869,9 +869,9 @@ def _main_page_processing_loop(
                     else:
                         logger.critical(f"❌ Browser recovery failed at page {current_page_num} - halting")
                         loop_final_success = False
-                        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                        remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                         if remaining_matches_estimate > 0:
-                            progress_bar.update(remaining_matches_estimate)
+                            progress.update(remaining_matches_estimate)
                             state["total_errors"] += remaining_matches_estimate
                         break  # Exit while loop
 
@@ -886,9 +886,9 @@ def _main_page_processing_loop(
                             f"Immediately halting processing to prevent cascade failures."
                         )
                         loop_final_success = False
-                        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                        remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                         if remaining_matches_estimate > 0:
-                            progress_bar.update(remaining_matches_estimate)
+                            progress.update(remaining_matches_estimate)
                             state["total_errors"] += remaining_matches_estimate
                         break  # Exit while loop immediately
 
@@ -899,9 +899,9 @@ def _main_page_processing_loop(
                         f"Immediate termination required."
                     )
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
+                        progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
 
@@ -913,9 +913,9 @@ def _main_page_processing_loop(
                         f"Cascade count: {cascade_count}. Emergency termination triggered."
                     )
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
+                        progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
 
@@ -926,9 +926,9 @@ def _main_page_processing_loop(
                         f"Terminating immediately to prevent infinite loops."
                     )
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
+                        progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
 
@@ -944,9 +944,9 @@ def _main_page_processing_loop(
                         session_manager.session_health_monitor['death_detected'].set()
                         session_manager.session_health_monitor['is_alive'].clear()
                         loop_final_success = False
-                        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                        remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                         if remaining_matches_estimate > 0:
-                            progress_bar.update(remaining_matches_estimate)
+                            progress.update(remaining_matches_estimate)
                             state["total_errors"] += remaining_matches_estimate
                         break
 
@@ -1081,10 +1081,10 @@ def _main_page_processing_loop(
                     )
                     loop_final_success = False
                     remaining_matches_estimate = max(
-                        0, progress_bar.total - progress_bar.n
+                        0, int((progress.stats.total_items or 0)) - progress.stats.items_processed
                     )
                     if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
+                        progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop
 
@@ -1110,17 +1110,17 @@ def _main_page_processing_loop(
                             f"Could not get DB session for page {current_page_num} after retries. Skipping page."
                         )
                         state["total_errors"] += MATCHES_PER_PAGE
-                        progress_bar.update(MATCHES_PER_PAGE)
+                        progress.update(MATCHES_PER_PAGE)
                         if state["db_connection_errors"] >= DB_ERROR_PAGE_THRESHOLD:
                             logger.critical(
                                 f"Aborting run due to {state['db_connection_errors']} consecutive DB connection failures."
                             )
                             loop_final_success = False
                             remaining_matches_estimate = max(
-                                0, progress_bar.total - progress_bar.n
+                                0, int((progress.stats.total_items or 0)) - progress.stats.items_processed
                             )
                             if remaining_matches_estimate > 0:
-                                progress_bar.update(remaining_matches_estimate)
+                                progress.update(remaining_matches_estimate)
                                 state["total_errors"] += remaining_matches_estimate
                             break  # Exit while loop
                         current_page_num += 1
@@ -1140,7 +1140,7 @@ def _main_page_processing_loop(
                             logger.warning(
                                 f"get_matches returned None for page {current_page_num}. Skipping."
                             )
-                            progress_bar.update(MATCHES_PER_PAGE)
+                            progress.update(MATCHES_PER_PAGE)
                             state["total_errors"] += MATCHES_PER_PAGE
                         else:
                             matches_on_page_for_batch, _ = (
@@ -1154,9 +1154,9 @@ def _main_page_processing_loop(
                                 f"Halting main loop to prevent infinite cascade."
                             )
                             loop_final_success = False
-                            remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+                            remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
                             if remaining_matches_estimate > 0:
-                                progress_bar.update(remaining_matches_estimate)
+                                progress.update(remaining_matches_estimate)
                                 state["total_errors"] += remaining_matches_estimate
                             break  # Exit while loop immediately
 
@@ -1164,7 +1164,7 @@ def _main_page_processing_loop(
                             f"ConnectionError get_matches page {current_page_num}: {conn_e}",
                             exc_info=False,
                         )
-                        progress_bar.update(MATCHES_PER_PAGE)
+                        progress.update(MATCHES_PER_PAGE)
                         state["total_errors"] += MATCHES_PER_PAGE
                         matches_on_page_for_batch = []  # Ensure it's reset
                     except Exception as get_match_e:
@@ -1172,7 +1172,7 @@ def _main_page_processing_loop(
                             f"Error get_matches page {current_page_num}: {get_match_e}",
                             exc_info=True,
                         )
-                        progress_bar.update(MATCHES_PER_PAGE)
+                        progress.update(MATCHES_PER_PAGE)
                         state["total_errors"] += MATCHES_PER_PAGE
                         matches_on_page_for_batch = []  # Ensure it's reset
                     finally:
@@ -1199,7 +1199,7 @@ def _main_page_processing_loop(
                         current_page_num == start_page
                         and state["total_pages_processed"] == 0
                     ):
-                        progress_bar.update(
+                        progress.update(
                             MATCHES_PER_PAGE
                         )  # Assume a full page skip if not first&empty
                     matches_on_page_for_batch = None  # Reset for next iteration
@@ -1227,7 +1227,7 @@ def _main_page_processing_loop(
                                 # If all matches on the page can be skipped, do fast processing
                                 if len(fetch_candidates_uuid) == 0:
                                     logger.debug((f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip"))
-                                    progress_bar.update(len(matches_on_page_for_batch))
+                                    progress.update(len(matches_on_page_for_batch))
                                     state["total_skipped"] += page_skip_count
                                     state["total_pages_processed"] += 1
                                     matches_on_page_for_batch = None
@@ -1275,9 +1275,9 @@ def _main_page_processing_loop(
                     pass  # tqdm closes itself correctly.
                 elif progress_bar.n < progress_bar.total and not loop_final_success:
                     # If loop ended due to error, update bar to reflect error count for remaining
-                    remaining_to_mark_error = progress_bar.total - progress_bar.n
+                    remaining_to_mark_error = int((progress.stats.total_items or 0)) - progress.stats.items_processed
                     if remaining_to_mark_error > 0:
-                        progress_bar.update(remaining_to_mark_error)
+                        progress.update(remaining_to_mark_error)
                         # No need to update total_errors here, already done by specific error handling
                 try:
                     # Set final status before closing
@@ -2272,24 +2272,11 @@ def _prepare_bulk_db_data(
             )
             page_statuses["error"] += 1  # Count as error for this item
         finally:
-            # Step 4: Update progress bar after processing each item (regardless of outcome)
-            if progress_bar:
-                try:
-                    progress_bar.update(1)
-
-                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking (disabled - attribute access issue)
-                    # if hasattr(progress_bar, '_enhanced_progress'):
-                    #     enhanced_progress = progress_bar._enhanced_progress
-                    #     # Use status_for_this_match if available, otherwise default to "unknown"
-                    #     current_status = locals().get('status_for_this_match', 'unknown')
-                    #     enhanced_progress.update(
-                    #         increment=1,
-                    #         errors=1 if current_status == "error" else 0,
-                    #         api_calls=1,  # Approximate API calls per match
-                    #         cache_hits=1 if current_status == "skipped" else 0
-                    #     )
-                except Exception as pbar_e:
-                    logger.warning(f"Progress bar update error: {pbar_e}")
+            # Step 4: Update progress after processing each item (regardless of outcome)
+            try:
+                progress.update(1)
+            except Exception as progress_e:
+                logger.warning(f"Progress update error: {progress_e}")
 
     # Step 5: Log summary and return results
     process_duration = time.time() - process_start_time
