@@ -40,11 +40,11 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
 
     # Log warnings for slow API calls with enhanced context - ADJUSTED: Less pessimistic thresholds
     if duration > 25.0:  # OPTIMIZATION: Increased from 10.0s to 25.0s - more realistic for batch processing
-        logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
+        logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization\n")
     elif duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - batch processing can take 10-15s normally
-        logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
+        logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s\n")
     elif duration > 8.0:  # OPTIMIZATION: Increased from 2.0s to 8.0s - individual API calls can take 3-8s normally
-        logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
+        logger.debug(f"Moderate API call: {api_name} took {duration:.3f}s\n")
 
     # Track performance metrics for optimization analysis
     try:
@@ -340,7 +340,6 @@ from selenium.common.exceptions import (
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
-from tqdm.auto import tqdm  # Progress bar
 
 from error_handling import (
     AuthenticationExpiredError,
@@ -767,34 +766,13 @@ def _main_page_processing_loop(
         description="DNA Match Gathering",
         total=total_matches_estimate_this_run,
         unit="matches",
+        update_interval=1.0,
         show_memory=True,
         show_rate=True,
         log_start=False,
         log_finish=False,
         leave=False,
     ) as progress:
-        # Make progress_bar type-safe for Pylance and robust if disabled
-        from typing import Any as _Any
-        progress_bar: _Any = progress.progress_bar
-        if progress_bar is None:
-            class _NoopPB:
-                total = 0
-                n = 0
-                def update(self, *_: int) -> None:
-                    return None
-            progress_bar = _NoopPB()
-
-        # Redirect any existing progress_bar.update() calls to progress.update()
-        if progress.progress_bar is not None:
-            def _pb_update_wrapper(increment: int = 1):
-                try:
-                    progress.update(int(increment))
-                except Exception:
-                    progress.update(0)
-            try:
-                progress.progress_bar.update = _pb_update_wrapper  # type: ignore[attr-defined]
-            except Exception:
-                pass
         try:
             matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = (
                 initial_matches_on_page
@@ -1243,7 +1221,7 @@ def _main_page_processing_loop(
                     session_manager=session_manager,
                     matches_on_page=matches_on_page_for_batch,
                     current_page=current_page_num,
-                    progress_bar=progress_bar,
+                    progress=progress,
                 )
 
                 state["total_new"] += page_new
@@ -1267,25 +1245,13 @@ def _main_page_processing_loop(
                 # OPTION C: Increment browser page count for health monitoring
                 session_manager.increment_page_count()
         finally:
-            if progress_bar:
-                # Final postfix disabled to preserve single-line progress stability
-                if progress_bar.n < progress_bar.total and loop_final_success:
-                    # If loop ended early but successfully (e.g. fewer pages than estimated)
-                    # Ensure bar reflects actual processed, not estimate.
-                    pass  # tqdm closes itself correctly.
-                elif progress_bar.n < progress_bar.total and not loop_final_success:
-                    # If loop ended due to error, update bar to reflect error count for remaining
-                    remaining_to_mark_error = int((progress.stats.total_items or 0)) - progress.stats.items_processed
-                    if remaining_to_mark_error > 0:
-                        progress.update(remaining_to_mark_error)
-                        # No need to update total_errors here, already done by specific error handling
+            # Finalization handled by ProgressIndicator context manager; ensure stats reflect any remaining errors
+            remaining_to_mark_error = int((progress.stats.total_items or 0)) - progress.stats.items_processed
+            if remaining_to_mark_error > 0 and not loop_final_success:
                 try:
-                    # Set final status before closing
-                    progress_bar.set_description("Complete")
-                    progress_bar.refresh()  # Force update before close
-                    progress_bar.close()
-                finally:
-                    pass  # Avoid printing extra newlines that can break single-line progress bar
+                    progress.update(remaining_to_mark_error)
+                except Exception:
+                    pass
 
     return loop_final_success
 
@@ -1456,7 +1422,7 @@ def coord(
         )
         state["final_success"] = False
     except Exception as e:
-        logger.error(f"Critical error during coord execution: {e}", exc_info=True)
+        logger.error(f"Critical error during coord execution: {e}\n", exc_info=True)
         state["final_success"] = False
     finally:
         # Emit forensic debug before final summary
@@ -2136,7 +2102,7 @@ def _prepare_bulk_db_data(
     matches_to_process: List[Dict[str, Any]],
     existing_persons_map: Dict[str, Person],
     prefetched_data: Dict[str, Dict[str, Any]],
-    progress_bar: Optional[tqdm],
+    progress: Optional["Any"],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
     Processes individual matches using prefetched API data, compares with existing
@@ -2149,7 +2115,7 @@ def _prepare_bulk_db_data(
         matches_to_process: List of match data dictionaries identified as candidates.
         existing_persons_map: Dictionary mapping UUIDs to existing Person objects.
         prefetched_data: Dictionary containing results from `_perform_api_prefetches`.
-        progress_bar: Optional tqdm progress bar instance to update.
+        progress: Optional ProgressIndicator instance for centralized progress tracking.
 
     Returns:
         A tuple containing:
@@ -2274,7 +2240,8 @@ def _prepare_bulk_db_data(
         finally:
             # Step 4: Update progress after processing each item (regardless of outcome)
             try:
-                progress.update(1)
+                if progress is not None:
+                    progress.update(1)
             except Exception as progress_e:
                 logger.warning(f"Progress update error: {progress_e}")
 
@@ -3153,7 +3120,7 @@ def _do_batch(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
     current_page: int,
-    progress_bar: Optional[tqdm] = None,  # Accept progress bar
+    progress: Optional["Any"] = None,  # Accept ProgressIndicator
 ) -> Tuple[int, int, int, int]:
     """
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
@@ -3189,7 +3156,7 @@ def _do_batch(
 
     # If we have fewer matches than optimized batch size, process normally (no need to split)
     if num_matches_on_page <= optimized_batch_size:
-        return _process_page_matches(session_manager, matches_on_page, current_page, progress_bar)
+        return _process_page_matches(session_manager, matches_on_page, current_page, progress)
 
     # SURGICAL FIX #7: Create single session for all batches on this page
     page_session = session_manager.get_db_conn()
@@ -3214,7 +3181,7 @@ def _do_batch(
 
             # Process this batch using the original logic with reused session
             new, updated, skipped, errors = _process_page_matches(
-                session_manager, batch_matches, current_page, progress_bar, is_batch=True, reused_session=page_session
+                session_manager, batch_matches, current_page, progress, is_batch=True, reused_session=page_session
             )
 
             # Accumulate totals
@@ -3293,7 +3260,7 @@ def _process_page_matches(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
     current_page: int,
-    progress_bar: Optional[tqdm] = None,
+    progress: Optional["Any"] = None,
     is_batch: bool = False,
     reused_session: Optional[SqlAlchemySession] = None,  # SURGICAL FIX #7: Accept reused session
 ) -> Tuple[int, int, int, int]:
@@ -3362,13 +3329,13 @@ def _process_page_matches(
             )
             page_statuses["skipped"] = skipped_count
 
-            if progress_bar and skipped_count > 0:
-                # This logic updates the progress bar for items identified as "skipped" (no change from list view)
+            if progress and skipped_count > 0:
+                # This logic updates progress for items identified as "skipped" (no change from list view)
                 # It ensures the bar progresses even for items not going through full API fetch/DB prep.
                 try:
-                    progress_bar.update(skipped_count)
+                    progress.update(skipped_count)
                 except Exception as pbar_e:
-                    logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
+                    logger.warning(f"Progress update error for skipped items: {pbar_e}")
 
             # SURGICAL FIX #6: Smart API Call Elimination
             # Early exit when no API processing needed - skip expensive operations
@@ -3409,7 +3376,7 @@ def _process_page_matches(
                 matches_to_process_later,
                 existing_persons_map,
                 prefetched_data,
-                progress_bar,  # Pass progress_bar here
+                progress,  # Pass ProgressIndicator here
             )
             page_statuses["new"] = prep_statuses.get("new", 0)
             page_statuses["updated"] = prep_statuses.get("updated", 0)
@@ -3490,8 +3457,8 @@ def _process_page_matches(
             f"CRITICAL ERROR processing batch page {current_page}: {critical_err}",
             exc_info=True,
         )
-        # If progress_bar is active, update it for the remaining items in this batch as errors
-        if progress_bar:
+        # If progress is active, update it for the remaining items in this batch as errors
+        if progress:
             items_already_accounted_for_in_bar = (
                 page_statuses["skipped"]
                 + page_statuses["new"]
@@ -3504,12 +3471,12 @@ def _process_page_matches(
             if remaining_in_batch > 0:
                 try:
                     logger.debug(
-                        f"Updating progress bar by {remaining_in_batch} due to critical error in _do_batch."
+                        f"Updating progress by {remaining_in_batch} due to critical error in _do_batch."
                     )
-                    progress_bar.update(remaining_in_batch)
+                    progress.update(remaining_in_batch)
                 except Exception as pbar_e:
                     logger.warning(
-                        f"Progress bar update error during critical exception handling: {pbar_e}"
+                        f"Progress update error during critical exception handling: {pbar_e}"
                     )
         # Calculate final error count for the page
         # Errors are items that hit an error in prep + items that couldn't be processed due to critical batch error
@@ -3535,7 +3502,7 @@ def _process_page_matches(
             f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}",
             exc_info=True,
         )
-        if progress_bar:
+        if progress:
             items_already_accounted_for_in_bar = (
                 page_statuses["skipped"]
                 + page_statuses["new"]
@@ -3547,9 +3514,9 @@ def _process_page_matches(
             )
             if remaining_in_batch > 0:
                 try:
-                    progress_bar.update(remaining_in_batch)
+                    progress.update(remaining_in_batch)
                 except Exception:
-                    pass  # Ignore progress bar errors during exception handling
+                    pass  # Ignore progress update errors during exception handling
         # All remaining items in the batch are considered errors
         final_error_count_for_page = num_matches_on_page - (
             page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
@@ -5994,22 +5961,33 @@ def _log_coord_summary(
     logger.info(Colors.green(f"Total Skipped:       {total_skipped}"))
     logger.info(Colors.green(f"Total Errors:        {total_errors}"))
 
-    # Integrate processed count, rate and elapsed
-    elapsed_seconds = None
-    if start_ts:
-        try:
-            elapsed_seconds = max(0.0, time.time() - float(start_ts))
-        except Exception:
-            elapsed_seconds = None
+    # Integrate processed count, rate and elapsed (anchor to earliest of coord_start_ts or lock-file ts)
+    coord_ts = None
+    lock_ts = None
+    try:
+        if start_ts is not None:
+            coord_ts = float(start_ts)
+    except Exception:
+        coord_ts = None
 
-    if elapsed_seconds is None:
-        # Fallback: approximate using lock file timestamp
+    try:
+        payload = _A6_LOCK_FILE.read_text(encoding="utf-8").strip()
+        parts = payload.split("|")
+        if len(parts) == 3:
+            lock_ts = float(parts[2])
+    except Exception:
+        lock_ts = None
+
+    anchor_ts = None
+    for ts in (coord_ts, lock_ts):
+        if ts is None:
+            continue
+        anchor_ts = ts if anchor_ts is None else min(anchor_ts, ts)
+
+    elapsed_seconds = None
+    if anchor_ts is not None:
         try:
-            payload = _A6_LOCK_FILE.read_text(encoding="utf-8").strip()
-            parts = payload.split("|")
-            if len(parts) == 3:
-                lf_start_ts = float(parts[2])
-                elapsed_seconds = max(0.0, time.time() - lf_start_ts)
+            elapsed_seconds = max(0.0, time.time() - anchor_ts)
         except Exception:
             elapsed_seconds = None
 
@@ -6020,8 +5998,8 @@ def _log_coord_summary(
     else:
         logger.info(Colors.green(f"Processed: {processed}"))
 
-    logger.info(Colors.green("------------------------------------"))
-    logger.info("")
+    logger.info(Colors.green("------------------------------------\n"))
+
 
 
 # End of _log_coord_summary

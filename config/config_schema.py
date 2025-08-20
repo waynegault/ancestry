@@ -412,7 +412,7 @@ class APIConfig:
 
     # Concurrency (controls ThreadPoolExecutor workers in Action 6)
     max_concurrency: int = 2  # Drastically reduced from 8 to 2 to prevent API rate limiting
-    thread_pool_workers: int = 2  # Reduced to match max_concurrency for conservative processing
+    thread_pool_workers: int = 3  # Bumped by +1 for slightly higher throughput while remaining conservative
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
