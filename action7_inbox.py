@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 from tqdm.auto import tqdm
@@ -643,9 +644,13 @@ class InboxProcessor:
                 logger.debug(
                     f"{log_ref}: Prefetched person not found. Querying DB by Profile ID..."
                 )
+                # Robust lookup: match by normalized profile_id (uppercase)
                 person = (
                     session.query(Person)
-                    .filter(Person.profile_id == profile_id, Person.deleted_at is None)
+                    .filter(
+                        func.upper(Person.profile_id) == profile_id.upper(),
+                        Person.deleted_at.is_(None),
+                    )
                     .first()
                 )
             except SQLAlchemyError as e:
@@ -1123,16 +1128,19 @@ class InboxProcessor:
                 )  # Key: (conv_id, direction_enum.name)
                 try:
                     if batch_profile_ids:
+                        # Normalize both sides to uppercase for robust matching
                         persons = (
                             session.query(Person)
                             .filter(
-                                Person.profile_id.in_(batch_profile_ids),
-                                Person.deleted_at is None,
+                                func.upper(Person.profile_id).in_(
+                                    [pid.upper() for pid in batch_profile_ids]
+                                ),
+                                Person.deleted_at.is_(None),
                             )
                             .all()
                         )
                         existing_persons_map = {
-                            safe_column_value(p, "profile_id"): p
+                            safe_column_value(p, "profile_id").upper(): p
                             for p in persons
                             if safe_column_value(p, "profile_id")
                         }
