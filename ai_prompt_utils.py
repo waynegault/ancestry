@@ -84,7 +84,7 @@ def load_prompts() -> Dict[str, Any]:
                 backup_prompts_file()
                 return default_data
 
-            logger.info(f"Loaded AI prompts from {PROMPTS_FILE}")
+            logger.debug(f"Loaded AI prompts from {PROMPTS_FILE}")
             return prompts_data
 
     except json.JSONDecodeError as e:
