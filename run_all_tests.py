@@ -224,6 +224,22 @@ def discover_test_modules():
         ):
             continue
 
+        # Warn on demo/prototype scripts present in repo
+        demo_markers = ["demo", "prototype", "experimental", "sandbox"]
+        name_lower = python_file.name.lower()
+        if any(marker in name_lower for marker in demo_markers):
+            print(f"⚠️ WARNING: Demo-labeled script found and will be skipped: {python_file}")
+            continue
+
+    # Warn on demo/prototype scripts present in repo
+    demo_markers = ["demo", "prototype", "experimental", "sandbox"]
+    for python_file in project_root.rglob("*.py"):
+        name_lower = python_file.name.lower()
+        if any(marker in name_lower for marker in demo_markers):
+            print(f"⚠️ WARNING: Demo-labeled script found and will be skipped: {python_file}")
+
+            continue
+
         # Check if the file has the standardized test function
         try:
             with open(python_file, "r", encoding="utf-8") as f:

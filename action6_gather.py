@@ -773,17 +773,26 @@ def _main_page_processing_loop(
         log_finish=False,
         leave=False,
     ) as progress:
-        progress_bar = progress.progress_bar
+        # Make progress_bar type-safe for Pylance and robust if disabled
+        from typing import Any as _Any
+        progress_bar: _Any = progress.progress_bar
+        if progress_bar is None:
+            class _NoopPB:
+                total = 0
+                n = 0
+                def update(self, *_: int) -> None:
+                    return None
+            progress_bar = _NoopPB()
 
         # Redirect any existing progress_bar.update() calls to progress.update()
-        if progress_bar is not None:
+        if progress.progress_bar is not None:
             def _pb_update_wrapper(increment: int = 1):
                 try:
                     progress.update(int(increment))
                 except Exception:
                     progress.update(0)
             try:
-                progress_bar.update = _pb_update_wrapper  # type: ignore[attr-defined]
+                progress.progress_bar.update = _pb_update_wrapper  # type: ignore[attr-defined]
             except Exception:
                 pass
         try:
@@ -795,8 +804,9 @@ def _main_page_processing_loop(
                 # If a refresh is in progress, pause all processing until it completes
                 while True:
                     refresh_event = session_manager.session_health_monitor.get('refresh_in_progress')
-                    if hasattr(refresh_event, 'is_set') and callable(refresh_event.is_set):
-                        if not refresh_event.is_set():
+                    is_set_func = getattr(refresh_event, 'is_set', None)
+                    if callable(is_set_func):
+                        if not is_set_func():
                             break
                     else:
                         break
