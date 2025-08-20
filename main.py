@@ -416,6 +416,35 @@ def exec_actn(
     else:
         required_state = "db_ready"  # Database-only session
 
+        # --- Preflight: prevent duplicate Action 6 run if lock is held ---
+        if action_name in ("coord", "coord_action"):
+            try:
+                from pathlib import Path
+                lock_file = Path("Locks") / "action6.lock"
+                if lock_file.exists():
+                    try:
+                        data = lock_file.read_text(encoding="utf-8", errors="ignore").strip()
+                        parts = data.split("|")
+                        holder_pid = int(parts[0]) if parts and parts[0].isdigit() else None
+                        holder_run_id = parts[1] if len(parts) > 1 else ""
+                    except Exception:
+                        holder_pid = None
+                        holder_run_id = ""
+                    # Check if holder is alive
+                    alive = False
+                    if holder_pid:
+                        try:
+                            alive = psutil.pid_exists(holder_pid)
+                        except Exception:
+                            alive = False
+                    if alive:
+                        logger.info(
+                            f"Action 6 already running (PID={holder_pid}, RUN={holder_run_id}). Skipping duplicate start."
+                        )
+                        return True  # Graceful no-op, do not close session
+            except Exception as e:
+                logger.debug(f"Action 6 lock preflight check error: {e}")
+
     try:
         # --- Ensure Required State ---
         state_ok = True

@@ -399,7 +399,8 @@ def clear_cache():
         logger.debug("Cache directory does not exist. Nothing to clear manually.")
         return True  # Considered success as the directory is gone
 
-    # Should only be reached if API clear fails AND manual removal fails
+    # Unreachable tail: kept for defensive clarity but return paths above are exhaustive
+    # (Left intentionally; not executed under normal flow)
     return False
 
 
@@ -917,7 +918,7 @@ class IntelligentCacheWarmer:
         self.predictive_cache_keys: Set[str] = set()
         self.dependency_graph: Dict[str, List[str]] = {}
 
-    def record_cache_access(self, cache_key: str, hit: bool, access_time: float = None):
+    def record_cache_access(self, cache_key: str, hit: bool, access_time: Optional[float] = None):
         """Record cache access patterns for learning."""
         if access_time is None:
             access_time = time.time()
@@ -1068,7 +1069,7 @@ class IntelligentCacheWarmer:
             logger.debug(f"Could not warm API data for {cache_key}: {e}")
         return False
 
-    def _warm_profile_data(self, cache_key: str, session_manager=None) -> bool:
+    def _warm_profile_data(self, cache_key: str, session_manager: Optional[Any] = None) -> bool:
         """Warm profile-related cache data."""
         try:
             # Warm with basic profile metadata
