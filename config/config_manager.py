@@ -667,7 +667,17 @@ class ConfigManager:
         db_config = {}
         database_file_value = os.getenv("DATABASE_FILE")
         if database_file_value:
-            db_config["database_file"] = Path(database_file_value)
+            # Enforce canonical project-relative DB path when a relative ancestry.db is provided
+            p = Path(database_file_value)
+            if not p.is_absolute() and p.name.lower() == "ancestry.db":
+                # Normalize to canonical Data/ancestry.db within project
+                db_config["database_file"] = Path("Data") / "ancestry.db"
+            else:
+                # Respect absolute or custom filenames
+                db_config["database_file"] = p
+        else:
+            # Default to canonical project DB path
+            db_config["database_file"] = Path("Data") / "ancestry.db"
 
         gedcom_file_path_value = os.getenv("GEDCOM_FILE_PATH")
         if gedcom_file_path_value:
