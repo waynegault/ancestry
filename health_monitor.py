@@ -146,7 +146,7 @@ class SessionHealthMonitor:
         # Initialize metrics
         self._initialize_metrics()
 
-        logger.info("Session Health Monitor initialized")
+        logger.debug("Session Health Monitor initialized")
 
     def _initialize_metrics(self):
         """Initialize health metrics with workload-appropriate thresholds for 724-page processing."""

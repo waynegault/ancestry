@@ -80,13 +80,21 @@ class ProgressIndicator:
         unit: str = "items",
         show_memory: bool = True,
         show_rate: bool = True,
-        update_interval: float = 1.0
+        update_interval: float = 3.0,
+        show_bar: bool = True,
+        log_start: bool = True,
+        log_finish: bool = True,
+        leave: bool = True,
     ):
         self.description = description
         self.unit = unit
         self.show_memory = show_memory
         self.show_rate = show_rate
         self.update_interval = update_interval
+        self.show_bar = show_bar
+        self.log_start = log_start
+        self.log_finish = log_finish
+        self.leave = leave
 
         self.stats = ProgressStats(total_items=total)
         self.progress_bar: Optional[tqdm] = None
@@ -104,17 +112,19 @@ class ProgressIndicator:
 
     def start(self):
         """Initialize the progress bar"""
-        tqdm_kwargs = {
-            'desc': self.description,
-            'total': self.stats.total_items,
-            'unit': self.unit,
-            'dynamic_ncols': True,
-            'leave': True
-        }
-
-        self.progress_bar = tqdm(**tqdm_kwargs)
+        if self.show_bar:
+            tqdm_kwargs = {
+                'desc': self.description,
+                'total': self.stats.total_items,
+                'unit': self.unit,
+                'dynamic_ncols': True,
+                'leave': self.leave,
+                'bar_format': "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}"
+            }
+            self.progress_bar = tqdm(**tqdm_kwargs)
         self.stats.start_time = datetime.now()
-        logger.info(f"Started progress tracking: {self.description}")
+        if self.log_start:
+            logger.info(f"Started progress tracking: {self.description}")
 
     def update(
         self,
@@ -220,6 +230,7 @@ class ProgressIndicator:
             self.progress_bar.set_description("Completed")
             self.progress_bar.refresh()
             self.progress_bar.close()
+            self.progress_bar = None
 
         # Log final summary
         elapsed = self.stats.elapsed_seconds()
@@ -238,7 +249,11 @@ class ProgressIndicator:
         if final_message:
             summary_msg += f" | {final_message}"
 
-        logger.info(summary_msg)
+        # Only log completion when explicitly requested
+        if self.log_finish:
+            logger.info(summary_msg)
+            # Add a blank line below the completion summary for readability (per user preference)
+            logger.info("")
 
 def create_progress_indicator(
     description: str,
