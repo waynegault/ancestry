@@ -124,7 +124,7 @@ class ProgressIndicator:
             self.progress_bar = tqdm(**tqdm_kwargs)
         self.stats.start_time = datetime.now()
         if self.log_start:
-            logger.info(f"Started progress tracking: {self.description}")
+            logger.debug(f"Started progress tracking: {self.description}")
 
     def update(
         self,

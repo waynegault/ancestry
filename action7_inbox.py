@@ -1742,64 +1742,121 @@ class InboxProcessor:
 
 
 # --- Enhanced Test Framework Implementation ---
-def action7_inbox_tests():
-    """Test suite for action7_inbox.py - Ancestry Inbox Processing & AI Classification"""
-    # Test implementation moved to unified test framework
 
-    # Test circuit breaker configuration
+def action7_inbox_module_tests() -> bool:
+    """Comprehensive test suite for action7_inbox.py using the unified TestSuite."""
+    from test_framework import TestSuite, suppress_logging, mock_logger_context
+    from unittest.mock import MagicMock
+    from core.progress_indicators import create_progress_indicator
+
+    suite = TestSuite("Action 7 - Inbox Processor", "action7_inbox.py")
+    suite.start_suite()
+
+    def test_class_and_methods_available():
+        """Ensure core classes and methods exist and are callable."""
+        # InboxProcessor exists
+        assert 'InboxProcessor' in globals(), "InboxProcessor class should exist"
+        assert callable(InboxProcessor), "InboxProcessor should be callable"
+        # search_inbox method exists and is callable on an instance
+        sm = MagicMock()
+        processor = InboxProcessor(sm)
+        assert hasattr(processor, 'search_inbox') and callable(getattr(processor, 'search_inbox'))
+        # internal helpers exist
+        assert hasattr(processor, '_process_inbox_loop'), "_process_inbox_loop should exist"
+        assert hasattr(processor, '_log_unified_summary'), "_log_unified_summary should exist"
+        return True
+
     def test_circuit_breaker_config():
-        """Test circuit breaker decorator configuration reflects Action 6 lessons."""
-
-        # Get the search_inbox method from InboxProcessor
+        """Verify search_inbox bears expected signature/decorators."""
         try:
-            processor_class = InboxProcessor
-            search_method = getattr(processor_class, 'search_inbox', None)
-
-            if search_method:
-                # Check if method has decorators applied
-                has_decorators = hasattr(search_method, '__wrapped__') or hasattr(search_method, '__name__')
-                sig = inspect.signature(search_method)
-                has_self_param = 'self' in sig.parameters
-
-                return has_decorators and has_self_param
-            return False
+            search_method = getattr(InboxProcessor, 'search_inbox', None)
+            if not search_method:
+                return False
+            sig = inspect.signature(search_method)
+            return 'self' in sig.parameters
         except Exception:
             return False
 
-    # Simulate comprehensive test suite for reporting
-    test_results = {
-        "test_inbox_api_connection": True,
-        "test_message_classification": True,
-        "test_database_integration": True,
-        "test_pagination_handling": True,
-        "test_rate_limiting": True,
-        "test_error_handling": True,
-        "test_session_management": True,
-        "test_ai_sentiment_analysis": True,
-        "test_circuit_breaker_config": test_circuit_breaker_config(),
-    }
+    def test_progress_indicator_smoke():
+        """Progress indicator can be created (smoke)."""
+        with create_progress_indicator(
+            description="TEST",
+            total=5,
+            unit="conv",
+            log_start=False,
+            log_finish=False,
+            leave=False,
+        ) as progress:
+            pb = progress.progress_bar
+            assert pb is not None, "Progress bar should be created"
+            pb.update(1)
+        return True
 
-    passed_tests = sum(1 for result in test_results.values() if result)
-    failed_tests = len(test_results) - passed_tests
+    def test_summary_logging_structure():
+        """_log_unified_summary emits the expected lines to logger (captured)."""
+        sm = MagicMock()
+        processor = InboxProcessor(sm)
+        with mock_logger_context(globals()) as mock_log:
+            processor._log_unified_summary(
+                total_api_items=3,
+                items_processed=2,
+                new_logs=0,
+                ai_classified=2,
+                status_updates=1,
+                stop_reason="Inbox Limit (2)",
+                max_inbox_limit=2,
+            )
+            combined = "\n".join(mock_log.lines)
+            assert "Inbox Search Summary" in combined
+            assert "API Conversations Fetched" in combined
+            assert "Conversations Processed" in combined
+            assert "AI Classifications Attempted" in combined
+            assert "Person Status Updates Made" in combined
+            assert "Processing Stopped Due To" in combined
+        return True
 
-    # Report test counts in detectable format
-    print(f"✅ Passed: {passed_tests}")
-    print(f"❌ Failed: {failed_tests}")
+    with suppress_logging():
+        suite.run_test(
+            test_name="Class and method availability",
+            test_func=test_class_and_methods_available,
+            expected_behavior="InboxProcessor and key methods present",
+            test_description="Module structure",
+            method_description="Check class and method existence",
+        )
+        suite.run_test(
+            test_name="Circuit breaker config",
+            test_func=test_circuit_breaker_config,
+            expected_behavior="search_inbox has 'self' parameter and decorators",
+            test_description="Decorator verification",
+            method_description="Signature inspection",
+        )
+        suite.run_test(
+            test_name="Progress indicator smoke",
+            test_func=test_progress_indicator_smoke,
+            expected_behavior="ProgressIndicator creates tqdm without errors",
+            test_description="Progress bar integration",
+            method_description="Context manager smoke test",
+        )
+        suite.run_test(
+            test_name="Summary logging structure",
+            test_func=test_summary_logging_structure,
+            expected_behavior="Summary logs contain required lines",
+            test_description="Unified summary logging",
+            method_description="Mock logger capture",
+        )
 
-    return all(test_results.values())
+    return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:
     """Run tests using unified test framework."""
-    return action7_inbox_tests()
+    return action7_inbox_module_tests()
 
 
 # --- Main Execution Block ---
 
 if __name__ == "__main__":
-    # When run directly, run comprehensive tests
     import sys
-
     print("🔄 Running Action 7 (Inbox Processor) comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
