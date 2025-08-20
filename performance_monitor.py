@@ -117,7 +117,7 @@ class PerformanceMonitor:
         self._monitor_thread = None
         self._stop_monitoring = False
 
-        logger.info("Performance monitor initialized")
+        logger.debug("Performance monitor initialized")
 
     def _default_thresholds(self) -> Dict[str, float]:
         """Default performance alert thresholds."""
@@ -138,14 +138,14 @@ class PerformanceMonitor:
                 target=self._background_monitor, daemon=True
             )
             self._monitor_thread.start()
-            logger.info("Background performance monitoring started")
+            logger.debug("Background performance monitoring started")
 
     def stop_monitoring(self) -> None:
         """Stop background performance monitoring."""
         self._stop_monitoring = True
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=5.0)
-        logger.info("Background performance monitoring stopped")
+        logger.debug("Background performance monitoring stopped")
 
     def _background_monitor(self) -> None:
         """Background monitoring loop."""
@@ -908,7 +908,7 @@ def track_api_performance(api_name: str, duration: float, status: str = "unknown
     try:
         # Simple performance tracking - just log and store basic metrics - OPTIMIZATION: Less pessimistic threshold
         if duration > 20.0:  # OPTIMIZATION: Increased from 5.0s to 20.0s - align with action6_gather.py thresholds
-            logger.warning(f"API Performance Alert: {api_name} took {duration:.3f}s (status: {status})")
+            logger.warning(f"API Performance Alert: {api_name} took {duration:.3f}s (status: {status})\n")
 
         # Update advanced monitor performance history if available
         performance_data = {

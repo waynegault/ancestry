@@ -1395,7 +1395,6 @@ def coord(
         )
         print()
         logger.info(f"Total pages found: {total_pages_api}")
-        print()
 
         # Step 4: Determine Page Range
         last_page_to_process, total_pages_in_run = _determine_page_processing_range(
@@ -1802,7 +1801,7 @@ def _perform_api_prefetches(
 
         # Combined high and medium for API calls, but prioritize high
         priority_uuids = high_priority_uuids.union(medium_priority_uuids)
-        logger.info(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
+        logger.debug(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
                    f"{len(medium_priority_uuids)} medium priority, "
                    f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
 
