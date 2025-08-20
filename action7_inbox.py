@@ -931,8 +931,11 @@ class InboxProcessor:
             ) as enhanced_progress:
 
                 with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-                    # Link enhanced progress to tqdm for updates
-                    progress_bar._enhanced_progress = enhanced_progress
+                    # Link enhanced progress to tqdm for updates (avoid pylance attr warnings)
+                    try:
+                        setattr(progress_bar, "_enhanced_progress", enhanced_progress)
+                    except Exception:
+                        pass
                     (
                         stop_reason,
                         total_processed_api_items,
@@ -1220,8 +1223,9 @@ class InboxProcessor:
                             progress_bar.set_description("Processing (skipped invalid)")
 
                             # PHASE 1 OPTIMIZATION: Enhanced progress tracking
-                            if hasattr(progress_bar, '_enhanced_progress'):
-                                progress_bar._enhanced_progress.update(
+                            _ep = getattr(progress_bar, '_enhanced_progress', None)
+                            if _ep is not None:
+                                _ep.update(
                                     increment=1,
                                     warnings=1,  # Invalid items are warnings
                                     custom_status="Skipped invalid"
@@ -1303,8 +1307,9 @@ class InboxProcessor:
                             progress_bar.set_description("Processing (up-to-date)")
 
                             # PHASE 1 OPTIMIZATION: Enhanced progress tracking
-                            if hasattr(progress_bar, '_enhanced_progress'):
-                                progress_bar._enhanced_progress.update(
+                            _ep = getattr(progress_bar, '_enhanced_progress', None)
+                            if _ep is not None:
+                                _ep.update(
                                     increment=1,
                                     cache_hits=1,  # Up-to-date items are cache hits
                                     custom_status="Up-to-date"
@@ -1330,8 +1335,9 @@ class InboxProcessor:
                         )
 
                         # PHASE 1 OPTIMIZATION: Enhanced progress tracking
-                        if hasattr(progress_bar, '_enhanced_progress'):
-                            progress_bar._enhanced_progress.update(
+                        _ep = getattr(progress_bar, '_enhanced_progress', None)
+                        if _ep is not None:
+                            _ep.update(
                                 increment=1,
                                 api_calls=2,  # Conversation fetch + AI classification
                                 custom_status=f"Processing {api_conv_id[:8]}"
@@ -1346,7 +1352,7 @@ class InboxProcessor:
                         continue  # Skip this conversation if context fetch fails
 
                     # --- Lookup/Create Person ---
-                    person, person_op_status = self._lookup_or_create_person(
+                    person, _ = self._lookup_or_create_person(
                         session,
                         profile_id_upper,
                         conversation_info.get("username", "Unknown"),
