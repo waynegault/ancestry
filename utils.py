@@ -1610,7 +1610,7 @@ def _add_enhanced_browser_headers(
 
         # Reduced verbosity: Only log header enhancement at INFO level for important calls
         if len(enhanced_headers) - len(headers) > 15:  # Only log when significant enhancement
-            logger.info(f"Enhanced headers with {len(enhanced_headers) - len(headers)} additional browser-like headers")
+            logger.debug(f"Enhanced headers with {len(enhanced_headers) - len(headers)} additional browser-like headers")
 
     except Exception as e:
         logger.warning(f"Failed to add enhanced browser headers: {e}")

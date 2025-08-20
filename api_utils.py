@@ -2864,7 +2864,7 @@ def call_enhanced_api(
         )
 
         if response:
-            logger.info(f"{api_description} successful")
+            logger.debug(f"{api_description} successful")
             return response
         else:
             logger.warning(f"{api_description} returned no data")
