@@ -608,6 +608,9 @@ class ConfigSchema:
     ai_context_message_max_words: int = 100
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message
 
+    # Proactive refresh settings
+    proactive_refresh_cooldown_seconds: int = 300  # Minimum seconds between proactive session refreshes to avoid per-page loops
+
     # User settings
     user_name: str = "Tree Owner"
     user_location: str = ""

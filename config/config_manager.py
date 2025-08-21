@@ -656,6 +656,14 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid AI_CONTEXT_WINDOW_MESSAGES: {ai_ctx_window}")
 
+        # Proactive refresh cooldown (seconds)
+        refresh_cooldown = os.getenv("PROACTIVE_REFRESH_COOLDOWN")
+        if refresh_cooldown:
+            try:
+                config["proactive_refresh_cooldown_seconds"] = int(refresh_cooldown)
+            except ValueError:
+                logger.warning(f"Invalid PROACTIVE_REFRESH_COOLDOWN: {refresh_cooldown}")
+
         # Load API configuration
         api_config = {}
 
