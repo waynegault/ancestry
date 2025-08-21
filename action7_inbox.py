@@ -577,8 +577,11 @@ class InboxProcessor:
         """
         # Step 1: Initialize list for formatted lines
         context_lines = []
+        # Step 1a: Limit to a sliding window of most recent messages for classification context
+        window_size = getattr(self, "ai_context_window_messages", 6)
+        msgs = context_messages[-window_size:] if isinstance(context_messages, list) else []
         # Step 2: Iterate through messages (assumed sorted oldest to newest)
-        for msg in context_messages:
+        for msg in msgs:
             # Step 2a: Determine label (SCRIPT or USER)
             author_lower = msg.get("author", "")
             label = "SCRIPT: " if author_lower == my_pid_lower else "USER: "
