@@ -820,14 +820,11 @@ def _main_page_processing_loop(
                 if session_manager.should_proactive_refresh():
                     logger.info(f"🔄 Performing proactive session refresh at page {current_page_num}")
 
-                    # Pause processing while refresh runs
-                    session_manager.session_health_monitor['refresh_in_progress'].set()
-                    try:
-                        if not session_manager.perform_proactive_refresh():
-                            logger.error(f"❌ Proactive session refresh failed at page {current_page_num}")
-                            # Continue anyway - reactive recovery will handle if needed
-                    finally:
-                        session_manager.session_health_monitor['refresh_in_progress'].clear()
+                    # Let SessionManager manage its own refresh_in_progress flag internally
+                    refresh_success = session_manager.perform_proactive_refresh()
+                    if not refresh_success:
+                        logger.error(f"❌ Proactive session refresh failed at page {current_page_num}")
+                        # Continue anyway - reactive recovery will handle if needed
 
                 # AUTOMATIC INTERVENTION CHECK - Check for health monitor intervention requests
                 if session_manager.check_automatic_intervention():
