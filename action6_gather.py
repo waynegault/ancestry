@@ -510,6 +510,7 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
 
         rate_duration = time.time() - rate_start_time
         if rate_duration > 2.0:
+            print()
             logger.warning(f"Extended rate limiting delay: {rate_duration:.2f}s")
 
         # Track rate limiting performance
