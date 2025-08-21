@@ -436,8 +436,8 @@ def classify_message_intent(
         system_prompt=system_prompt,
         user_content=context_history,
         session_manager=session_manager,
-        max_tokens=20,  # Expecting a single word
-        temperature=0.1,
+        max_tokens=10,  # Expecting a single word
+        temperature=0.0,
     )
     duration = time.time() - start_time
 
