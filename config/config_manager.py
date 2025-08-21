@@ -635,6 +635,27 @@ class ConfigManager:
         if ai_provider_value:
             config["ai_provider"] = ai_provider_value
 
+        ai_ctx_msgs = os.getenv("AI_CONTEXT_MESSAGES_COUNT")
+        if ai_ctx_msgs:
+            try:
+                config["ai_context_messages_count"] = int(ai_ctx_msgs)
+            except ValueError:
+                logger.warning(f"Invalid AI_CONTEXT_MESSAGES_COUNT: {ai_ctx_msgs}")
+
+        ai_ctx_max_words = os.getenv("AI_CONTEXT_MESSAGE_MAX_WORDS")
+        if ai_ctx_max_words:
+            try:
+                config["ai_context_message_max_words"] = int(ai_ctx_max_words)
+            except ValueError:
+                logger.warning(f"Invalid AI_CONTEXT_MESSAGE_MAX_WORDS: {ai_ctx_max_words}")
+
+        ai_ctx_window = os.getenv("AI_CONTEXT_WINDOW_MESSAGES")
+        if ai_ctx_window:
+            try:
+                config["ai_context_window_messages"] = int(ai_ctx_window)
+            except ValueError:
+                logger.warning(f"Invalid AI_CONTEXT_WINDOW_MESSAGES: {ai_ctx_window}")
+
         # Load API configuration
         api_config = {}
 
