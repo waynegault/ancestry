@@ -934,6 +934,8 @@ class SessionManager:
 
         try:
             self.session_health_monitor['refresh_in_progress'].set()
+            # Record the start time as the last proactive refresh to avoid immediate re-triggering
+            self.session_health_monitor['last_proactive_refresh'] = refresh_start_time
 
             # STEP 1: Pre-refresh verification
             logger.info("   Step 1: Pre-refresh session verification...")
