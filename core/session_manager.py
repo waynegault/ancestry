@@ -903,7 +903,7 @@ class SessionManager:
 
         # Cooldown: if we refreshed very recently, skip proactive refresh to avoid per-page loops
         time_since_refresh = current_time - self.session_health_monitor['last_proactive_refresh']
-        cooldown = getattr(self.config_schema, 'proactive_refresh_cooldown_seconds', 300)
+        cooldown = getattr(config_schema, 'proactive_refresh_cooldown_seconds', 300)
         if time_since_refresh < cooldown:
             return False
 
