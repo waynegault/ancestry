@@ -862,6 +862,12 @@ class InboxProcessor:
         """
         # Initialize statistics
         self.stats["start_time"] = datetime.now(timezone.utc)
+        # Clear any prior cancellation signals at the start of a new run
+        try:
+            from core.cancellation import clear_cancel
+            clear_cancel()
+        except Exception:
+            pass
 
         # --- Step 1: Initialization ---
         logger.debug("--- Starting Action 7: Search Inbox ---")
@@ -1587,6 +1593,17 @@ class InboxProcessor:
                         progress_bar.total = items_processed_before_stop
                         progress_bar.refresh()
                     break  # Break outer while loop
+
+                # Cooperative cancellation: if a timeout wrapper requested cancel, stop gracefully
+                try:
+                    from core.cancellation import is_cancel_requested
+                    if is_cancel_requested():
+                        stop_reason = stop_reason or "Timeout Cancellation"
+                        stop_processing = True
+                        logger.warning("Cancellation requested by timeout wrapper. Stopping inbox processing loop.")
+                        break
+                except Exception:
+                    pass
 
             # --- Step 3: Handle Exceptions During Batch Processing ---
             except WebDriverException as wde:

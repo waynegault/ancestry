@@ -923,6 +923,12 @@ def timeout_protection(timeout: int = 30):
             if thread.is_alive():
                 # Thread is still running, timeout occurred
                 logger.warning(f"{func.__name__} timed out after {timeout}s")
+                # Cooperatively request cancellation for any in-progress loops
+                try:
+                    from core.cancellation import request_cancel
+                    request_cancel(scope=func.__name__)
+                except Exception:
+                    pass
                 raise NetworkTimeoutError(
                     f"{func.__name__} timed out after {timeout} seconds",
                     context={"timeout": timeout, "function": func.__name__},
