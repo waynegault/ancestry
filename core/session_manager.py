@@ -901,6 +901,11 @@ class SessionManager:
         if self.session_health_monitor['refresh_in_progress'].is_set():
             return False
 
+        # Cooldown: if we refreshed very recently, skip proactive refresh to avoid per-page loops
+        time_since_refresh = current_time - self.session_health_monitor['last_proactive_refresh']
+        if time_since_refresh < 300:  # 5-minute cooldown
+            return False
+
         # Check if session is approaching max age
         session_age = current_time - self.session_health_monitor['session_start_time']
         if session_age >= self.session_health_monitor['max_session_age']:
@@ -908,7 +913,6 @@ class SessionManager:
             return True
 
         # Check if enough time has passed since last proactive refresh
-        time_since_refresh = current_time - self.session_health_monitor['last_proactive_refresh']
         if time_since_refresh >= self.session_health_monitor['proactive_refresh_interval']:
             logger.info(f"🔄 Time since last refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
             return True
@@ -1007,9 +1011,13 @@ class SessionManager:
                     return True
                 else:
                     logger.error("   ❌ Post-refresh verification failed - session still invalid")
+                    # Minimal guard: still update last_proactive_refresh to prevent immediate re-trigger
+                    self.session_health_monitor['last_proactive_refresh'] = time.time()
                     return False
             else:
                 logger.error("   ❌ All refresh attempts failed")
+                # Minimal guard: update last_proactive_refresh so next page doesn't immediately re-trigger
+                self.session_health_monitor['last_proactive_refresh'] = time.time()
                 return False
 
         except Exception as exc:
