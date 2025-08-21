@@ -172,6 +172,9 @@ class InboxProcessor:
         self.ai_context_max_words = getattr(
             config_schema, "ai_context_message_max_words", 100
         )  # Correct assignment
+        self.ai_context_window_messages = getattr(
+            config_schema, "ai_context_window_messages", 6
+        )
 
         # Add input validation
         if self.ai_context_msg_count <= 0:
@@ -1442,6 +1445,31 @@ class InboxProcessor:
                                     formatted_context, self.session_manager
                                 )
 
+                            # Guardrail: if model returns PRODUCTIVE but last USER msg lacks actionable cues, downgrade
+                            def _downgrade_if_non_actionable(label: Optional[str]) -> Optional[str]:
+                                try:
+                                    if (not label) or label != "PRODUCTIVE":
+                                        return label
+                                    # Identify last USER message text from context_messages
+                                    last_user = None
+                                    for m in reversed(context_messages):
+                                        if m.get("author", "").lower() != my_pid_lower:
+                                            last_user = str(m.get("content", ""))
+                                            break
+                                    if not last_user:
+                                        return label
+                                    txt = last_user.lower()
+                                    actionable_cues = (
+                                        "share", "send", "attach", "tree", "record", "certificate",
+                                        "born", "married", "died", "parents", "ancestor", "where", "how",
+                                        "i will", "i'll", "i can", "i'll send", "i can share", "link"
+                                    )
+                                    if not any(cue in txt for cue in actionable_cues):
+                                        return "ENTHUSIASTIC" if any(k in txt for k in ("thanks", "thank you", "cheers", "take care")) else "OTHER"
+                                    return label
+                                except Exception:
+                                    return label
+
                             ai_result = _classify_with_recovery()
                             # Handle AI result - it should return just a string, not a tuple
                             if isinstance(ai_result, tuple):
@@ -1450,6 +1478,9 @@ class InboxProcessor:
                                 )
                             else:
                                 ai_sentiment_result = ai_result
+
+                            # Apply guardrail downgrade if necessary
+                            ai_sentiment_result = _downgrade_if_non_actionable(ai_sentiment_result)
 
                             if ai_sentiment_result:
                                 ai_classified_count += (
