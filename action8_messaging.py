@@ -1576,6 +1576,11 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
     # --- Step 1: Initialization ---
     logger.debug("--- Starting Action 8: Send Standard Messages ---")
+    # Visibility of mode and interval
+    try:
+        logger.info(f"Action 8: APP_MODE={getattr(config_schema, 'app_mode', 'production')}, MIN_MESSAGE_INTERVAL={MIN_MESSAGE_INTERVAL}")
+    except Exception:
+        pass
     # Validate prerequisites
     if not session_manager:
         logger.error("Action 8: SessionManager missing.")
